@@ -1,0 +1,62 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Load Patient</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+</head>
+<body class="container my-4">
+  <h2>🔍 Load Patient</h2>
+
+  <form id="loadForm" class="mb-4">
+    <div class="mb-3">
+      <label for="patientId">Enter Patient ID</label>
+      <input type="text" class="form-control" id="patientId" required />
+    </div>
+    <button type="submit" class="btn btn-primary">Load</button>
+  </form>
+
+  <div id="result" class="mt-4"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script>
+    const form = document.getElementById("loadForm");
+    const resultDiv = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = document.getElementById("patientId").value.trim();
+
+      try {
+        const doc = await db.collection("patients").doc(id).get();
+        if (doc.exists) {
+          const data = doc.data();
+          resultDiv.innerHTML = `
+            <div class="card">
+              <div class="card-body">
+                <h5 class="card-title">${data.name}</h5>
+                <p class="card-text">
+                  <strong>Age:</strong> ${data.age || "-"}<br>
+                  <strong>Parity:</strong> ${data.parity || "-"}<br>
+                  <strong>Labour Onset:</strong> ${data.labourOnset || "-"}<br>
+                  <strong>FHR:</strong> ${data.fhr || "-"}<br>
+                </p>
+                <a href="record.html?patient=${doc.id}" class="btn btn-success me-2">➕ Record Observations</a>
+                <a href="summary.html?patient=${doc.id}" class="btn btn-secondary">📊 View Summary</a>
+              </div>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML = '<div class="alert alert-warning">❗ No patient found with that ID.</div>';
+        }
+      } catch (err) {
+        resultDiv.innerHTML = '<div class="alert alert-danger">❌ Error: ' + err.message + '</div>';
+      }
+    });
+  </script>
+</body>
+</html>
