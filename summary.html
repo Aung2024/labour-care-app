@@ -3,22 +3,99 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <title>Summary Chart</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Patient Summary</title>
-  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="css/style.css" />
-  <!-- Firebase SDK v8 -->
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-<script src="js/firebase.js"></script>
-
+  <style>
+    table { font-size: 0.9rem; }
+    th, td { text-align: center; vertical-align: middle; }
+    td.alert { background-color: #ffcccc; }
+  </style>
 </head>
-<body class="container">
-  <h2>Patient Summary</h2>
-  <p>This is a scaffold. Form and layout will go here.</p>
+<body class="container my-4">
+  <h2>📊 Patient Summary</h2>
+  <div id="patientInfo" class="mb-4"></div>
+  <div class="table-responsive">
+    <table class="table table-bordered" id="summaryTable">
+      <thead class="table-light">
+        <tr>
+          <th>Time</th>
+          <th>Pulse</th>
+          <th>Temp</th>
+          <th>BP</th>
+          <th>Contractions</th>
+          <th>Cervix</th>
+          <th>Descent</th>
+          <th>FHR</th>
+          <th>Oxytocin</th>
+          <th>Initials</th>
+        </tr>
+      </thead>
+      <tbody id="summaryBody"></tbody>
+    </table>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const patientId = urlParams.get("patient");
+
+    const summaryBody = document.getElementById("summaryBody");
+
+    function getTimeSlot(dateStr) {
+      const dt = new Date(dateStr);
+      const hour = dt.getHours().toString().padStart(2, "0");
+      const min = dt.getMinutes() < 30 ? "00" : "30";
+      return hour + ":" + min;
+    }
+
+    function rowTemplate(time, r = {}) {
+      return `
+        <tr>
+          <td>${time}</td>
+          <td class="${r.pulse > 100 ? 'alert' : ''}">${r.pulse || ''}</td>
+          <td>${r.temperature || ''}</td>
+          <td>${r.bp || ''}</td>
+          <td>${r.contractions || ''}</td>
+          <td>${r.cervix || ''}</td>
+          <td>${r.descent || ''}</td>
+          <td>${r.fhr || ''}</td>
+          <td>${r.oxytocin || ''}</td>
+          <td>${r.initials || ''}</td>
+        </tr>
+      `;
+    }
+
+    async function loadData() {
+      const pat = await db.collection("patients").doc(patientId).get();
+      if (!pat.exists) {
+        document.getElementById("patientInfo").innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+        return;
+      }
+
+      const patient = pat.data();
+      document.getElementById("patientInfo").innerHTML = `
+        <h5>👩 ${patient.name} (${patientId})</h5>
+        <p><strong>Age:</strong> ${patient.age || "-"} | <strong>Parity:</strong> ${patient.parity || "-"}</p>
+      `;
+
+      const recordsSnap = await db.collection("patients").doc(patientId).collection("records").orderBy("timestamp").get();
+      const grouped = {};
+
+      recordsSnap.forEach(doc => {
+        const r = doc.data();
+        const time = getTimeSlot(r.timestamp);
+        grouped[time] = r;
+      });
+
+      summaryBody.innerHTML = Object.entries(grouped)
+        .map(([time, rec]) => rowTemplate(time, rec))
+        .join("");
+    }
+
+    loadData();
+  </script>
 </body>
 </html>
