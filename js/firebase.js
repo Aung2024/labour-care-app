@@ -1,6 +1,5 @@
-// placeholder for firebase config
+
 // js/firebase.js
-// Firebase v8 - Classic version that works without build tools
 
 var firebaseConfig = {
   apiKey: "AIzaSyC8-y2xnLINlVTWOOaU8-w82RBzSo2djAQ",
@@ -14,4 +13,3 @@ var firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-
