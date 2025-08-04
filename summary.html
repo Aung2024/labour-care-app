@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Labour Summary - WHO Format</title>
+  <title>Labour Summary - Minimal Working</title>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -11,12 +11,12 @@
   <style>
     body { font-family: sans-serif; padding: 1em; }
     .patient-info {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: 10px;
       margin-bottom: 20px;
     }
-    .patient-info div { display: flex; flex-direction: column; }
+    .patient-info div { display: flex; flex-direction: column; min-width: 200px; }
 
     .table-container {
       overflow-x: auto;
@@ -25,8 +25,7 @@
 
     table {
       border-collapse: collapse;
-      min-width: 1600px;
-      table-layout: fixed;
+      min-width: 1200px;
       width: 100%;
     }
 
@@ -59,15 +58,12 @@
   </style>
 </head>
 <body>
-  <h2>WHO Labour Care Summary</h2>
+  <h2>Minimal Labour Summary</h2>
 
   <div class="patient-info">
     <div><label>Name</label><input id="p_name" /></div>
     <div><label>Age</label><input id="p_age" /></div>
     <div><label>Parity</label><input id="p_parity" /></div>
-    <div><label>Labour Onset</label><input id="p_onset" type="datetime-local" /></div>
-    <div><label>Active Labour Diagnosis</label><input id="p_active" type="date" /></div>
-    <div><label>Ruptured Membranes</label><input id="p_membrane" type="datetime-local" /></div>
     <div><label>Risk Factors</label><input id="p_risk" /></div>
   </div>
 
@@ -75,11 +71,11 @@
     <table id="summaryTable"></table>
   </div>
 
-  <button onclick="saveData()">💾 Save All</button>
+  <button onclick="saveData()">💾 Save</button>
 
   <script>
     const params = new URLSearchParams(window.location.search);
-    const patientId = params.get("patient");
+    const patientId = params.get("patient") || "001";
 
     const timeCols = Array.from({ length: 25 }, (_, i) => {
       const h = String(Math.floor(i / 2)).padStart(2, '0');
@@ -88,38 +84,22 @@
     });
 
     const sections = {
-      "Supportive Care": ["Companion", "Pain relief", "Oral fluid", "Posture"],
-      "Baby": ["Baseline FHR", "FHR deceleration", "Amniotic fluid", "Fetal position", "Caput", "Moulding"],
-      "Woman": ["Pulse", "Systolic BP", "Diastolic BP", "Temperature", "Urine"],
-      "Labour Progress (Cervix)": ["10", "9", "8", "7", "6", "5"],
-      "Labour Progress (Descent)": ["4", "3", "2", "1"],
-      "Medication": ["Oxytocin", "Medicine", "IV Fluids"],
-      "Shared Decision-Making": ["Assessment", "Plan"],
-      "Initials": ["Initials"]
+      "Supportive Care": ["Companion", "Pain relief"],
+      "Baby": ["Baseline FHR", "FHR deceleration"],
+      "Woman": ["Pulse", "Temperature"]
     };
 
     const dropdownOptions = {
       "Companion": ["Yes", "No"],
       "Pain relief": ["None", "Given"],
-      "Oral fluid": ["Yes", "No"],
-      "Posture": ["Upright", "Supine"],
       "Baseline FHR": ["<110", "110-160", ">160"],
-      "FHR deceleration": ["None", "Early", "Late"],
-      "Amniotic fluid": ["Clear", "Meconium", "Blood stained"],
-      "Fetal position": ["LOA", "ROA", "OP", "Transverse"],
-      "Caput": ["None", "Mild", "Severe"],
-      "Moulding": ["None", "1+", "2+", "3+"],
-      "Urine": ["Clear", "Protein", "Ketones"],
-      "Assessment": ["Continue", "Refer", "Urgent review"]
+      "FHR deceleration": ["None", "Late"],
     };
 
     function checkAlert(field, value) {
       return (
         (field === "FHR deceleration" && value === "Late") ||
-        (field === "Amniotic fluid" && value === "Meconium") ||
-        (field === "Temperature" && value === ">38") ||
-        (field === "Caput" && value === "Severe") ||
-        (field === "Moulding" && value === "3+")
+        (field === "Temperature" && parseFloat(value) > 38)
       );
     }
 
@@ -130,10 +110,7 @@
         document.getElementById("p_name").value = d.name || "";
         document.getElementById("p_age").value = d.age || "";
         document.getElementById("p_parity").value = d.parity || "";
-        document.getElementById("p_onset").value = d.labour_onset || "";
-        document.getElementById("p_active").value = d.active_labour || "";
-        document.getElementById("p_membrane").value = d.ruptured_membrane || "";
-        document.getElementById("p_risk").value = d.risk_factors || "";
+        document.getElementById("p_risk").value = d.risk || "";
       }
 
       const records = {};
@@ -196,10 +173,7 @@
         name: document.getElementById("p_name").value,
         age: document.getElementById("p_age").value,
         parity: document.getElementById("p_parity").value,
-        labour_onset: document.getElementById("p_onset").value,
-        active_labour: document.getElementById("p_active").value,
-        ruptured_membrane: document.getElementById("p_membrane").value,
-        risk_factors: document.getElementById("p_risk").value
+        risk: document.getElementById("p_risk").value
       });
 
       for (const time of timeCols) {
