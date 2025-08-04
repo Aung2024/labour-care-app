@@ -1,16 +1,14 @@
-
 <!DOCTYPE html>
 <html>
 <head>
   <title>WHO Labour Summary</title>
-  <meta charset="UTF-8">
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <style>
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     th, td { border: 1px solid #ccc; text-align: center; padding: 5px; }
-    .alert-cell { background-color: #f8d7da !important; }
+    .alert-cell { background-color: #f8d7da; }
     select, input { width: 100%; }
   </style>
 </head>
@@ -44,35 +42,44 @@
     };
 
     async function loadData() {
+      // Load patient info (basic example)
+      const patientDiv = document.getElementById("patientInfo");
+      const patientDoc = await db.collection("patients").doc(patientId).get();
+      if (patientDoc.exists) {
+        const pdata = patientDoc.data();
+        patientDiv.innerHTML = `<b>Name:</b> ${pdata.name || "Unknown"}<br><b>ID:</b> ${patientId}`;
+      } else {
+        patientDiv.innerHTML = `<b>Patient not found</b>`;
+      }
+
       const table = document.getElementById("summaryTable");
-      table.innerHTML = `<tr><th>Section</th><th>Field</th>${timeCols.map(t => `<th>${t}</th>`).join("")}</tr>`;
+      table.innerHTML = "<tr><th>Section</th><th>Field</th>" + timeCols.map(t => `<th>${t}</th>`).join("") + "</tr>";
 
       const existing = {};
       const snap = await db.collection("patients").doc(patientId).collection("records").get();
       snap.forEach(doc => {
         const d = doc.data();
-        existing[d.time] = d;
+        existing[d.time] = d; // Use time as key for easier lookup
       });
 
       for (const [section, fields] of Object.entries(sections)) {
-        table.innerHTML += `<tr><td rowspan="${fields.length}">${section}</td><td>${fields[0]}</td>${buildRow(fields[0], existing)}</tr>`;
+        table.innerHTML += `<tr><td rowspan="${fields.length}">${section}</td><td>${fields[0]}</td>` + buildRow(fields[0], existing) + "</tr>";
         for (let i = 1; i < fields.length; i++) {
-          table.innerHTML += `<tr><td>${fields[i]}</td>${buildRow(fields[i], existing)}</tr>`;
+          table.innerHTML += `<tr><td>${fields[i]}</td>` + buildRow(fields[i], existing) + "</tr>";
         }
       }
     }
 
     function buildRow(field, existing) {
       return timeCols.map(time => {
-        const key = `${time}_${field.replace(/\s+/g, "_")}`;
-        const value = existing[time] && existing[time][field] ? existing[time][field] : "";
+        const key = time + "_" + field.replace(/\s+/g, "_");
+        const val = existing[time];
+        const value = val && val[field] ? val[field] : "";
         const alert = checkAlert(field, value) ? "alert-cell" : "";
         if (dropdownOptions[field]) {
-          return `<td class="${alert}"><select name="${key}">${dropdownOptions[field].map(opt =>
-            `<option value="${opt}" ${opt === value ? "selected" : ""}>${opt}</option>`
-          ).join("")}</select></td>`;
+          return `<td class="${alert}"><select name="${key}">${dropdownOptions[field].map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${opt}</option>`).join("")}</select></td>`;
         }
-        return `<td class="${alert}"><input name="${key}" value="${value}"></td>`;
+        return `<td class="${alert}"><input name="${key}" value="${value || ""}"></td>`;
       }).join("");
     }
 
@@ -86,10 +93,10 @@
 
     async function saveData() {
       for (const time of timeCols) {
-        const data = { time, timestamp: new Date().toISOString() };
+        const data = { timestamp: new Date().toISOString(), time };
         for (const fieldList of Object.values(sections)) {
           for (const field of fieldList) {
-            const key = `${time}_${field.replace(/\s+/g, "_")}`;
+            const key = time + "_" + field.replace(/\s+/g, "_");
             const el = document.getElementsByName(key)[0];
             if (el) data[field] = el.value;
           }
