@@ -1,27 +1,48 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <title>WHO Labour Summary</title>
+  <meta charset="UTF-8">
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <style>
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { border: 1px solid #ccc; text-align: center; padding: 5px; }
-    .alert-cell { background-color: #f8d7da; }
-    select, input { width: 100%; }
+    body { font-family: sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; text-align: center; padding: 5px; font-size: 0.9em; }
+    .alert-cell { background-color: #f8d7da !important; }
+    select, input { width: 100%; font-size: 0.9em; }
+    .patient-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .patient-info div { display: flex; flex-direction: column; }
+    .section-label { writing-mode: vertical-rl; text-orientation: mixed; background: #eee; font-weight: bold; }
   </style>
 </head>
 <body>
   <h2>Labour Summary</h2>
-  <div id="patientInfo"></div>
+
+  <div class="patient-info" id="patientInfo">
+    <div><label>Name</label><input id="p_name" /></div>
+    <div><label>Age</label><input id="p_age" /></div>
+    <div><label>Parity</label><input id="p_parity" /></div>
+    <div><label>Labour Onset</label><input id="p_onset" type="datetime-local" /></div>
+    <div><label>Active Labour Diagnosis</label><input id="p_active" type="date" /></div>
+    <div><label>Ruptured Membranes</label><input id="p_membrane" type="datetime-local" /></div>
+    <div><label>Risk Factors</label><input id="p_risk" /></div>
+  </div>
+
   <table id="summaryTable"></table>
   <button onclick="saveData()">💾 Save</button>
 
   <script>
     const params = new URLSearchParams(window.location.search);
     const patientId = params.get("patient");
-    const timeCols = ["00:00", "00:30", "01:00", "01:30", "02:00"];
+    const timeCols = Array.from({ length: 25 }, (_, i) => {
+      const h = String(Math.floor(i / 2)).padStart(2, '0');
+      const m = i % 2 === 0 ? "00" : "30";
+      return `${h}:${m}`;
+    });
+
     const sections = {
       "Supportive care": ["Companion", "Pain relief", "Oral fluid", "Posture"],
       "Baby": ["Baseline FHR", "FHR deceleration", "Amniotic fluid"],
@@ -42,45 +63,72 @@
     };
 
     async function loadData() {
-      // Load patient info (basic example)
-      const patientDiv = document.getElementById("patientInfo");
       const patientDoc = await db.collection("patients").doc(patientId).get();
       if (patientDoc.exists) {
-        const pdata = patientDoc.data();
-        patientDiv.innerHTML = `<b>Name:</b> ${pdata.name || "Unknown"}<br><b>ID:</b> ${patientId}`;
-      } else {
-        patientDiv.innerHTML = `<b>Patient not found</b>`;
+        const d = patientDoc.data();
+        document.getElementById("p_name").value = d.name || "";
+        document.getElementById("p_age").value = d.age || "";
+        document.getElementById("p_parity").value = d.parity || "";
+        document.getElementById("p_onset").value = d.labour_onset || "";
+        document.getElementById("p_active").value = d.active_labour || "";
+        document.getElementById("p_membrane").value = d.ruptured_membrane || "";
+        document.getElementById("p_risk").value = d.risk_factors || "";
       }
 
-      const table = document.getElementById("summaryTable");
-      table.innerHTML = "<tr><th>Section</th><th>Field</th>" + timeCols.map(t => `<th>${t}</th>`).join("") + "</tr>";
-
-      const existing = {};
       const snap = await db.collection("patients").doc(patientId).collection("records").get();
+      const existing = {};
       snap.forEach(doc => {
         const d = doc.data();
-        existing[d.time] = d; // Use time as key for easier lookup
+        existing[d.time] = d;
       });
 
-      for (const [section, fields] of Object.entries(sections)) {
-        table.innerHTML += `<tr><td rowspan="${fields.length}">${section}</td><td>${fields[0]}</td>` + buildRow(fields[0], existing) + "</tr>";
-        for (let i = 1; i < fields.length; i++) {
-          table.innerHTML += `<tr><td>${fields[i]}</td>` + buildRow(fields[i], existing) + "</tr>";
-        }
-      }
-    }
+      const table = document.getElementById("summaryTable");
+      table.innerHTML = `<tr><th rowspan="2">Section</th><th rowspan="2">Field</th><th colspan="${timeCols.length}">Time</th></tr>`;
+      table.innerHTML += `<tr>${timeCols.map(t => `<th>${t}</th>`).join("")}</tr>`;
 
-    function buildRow(field, existing) {
-      return timeCols.map(time => {
-        const key = time + "_" + field.replace(/\s+/g, "_");
-        const val = existing[time];
-        const value = val && val[field] ? val[field] : "";
-        const alert = checkAlert(field, value) ? "alert-cell" : "";
-        if (dropdownOptions[field]) {
-          return `<td class="${alert}"><select name="${key}">${dropdownOptions[field].map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${opt}</option>`).join("")}</select></td>`;
-        }
-        return `<td class="${alert}"><input name="${key}" value="${value || ""}"></td>`;
-      }).join("");
+      for (const [section, fields] of Object.entries(sections)) {
+        fields.forEach((field, index) => {
+          const row = document.createElement("tr");
+          if (index === 0) {
+            const sectionCell = document.createElement("td");
+            sectionCell.className = "section-label";
+            sectionCell.rowSpan = fields.length;
+            sectionCell.textContent = section;
+            row.appendChild(sectionCell);
+          }
+          const label = document.createElement("td");
+          label.textContent = field;
+          row.appendChild(label);
+
+          for (const time of timeCols) {
+            const key = `${time}_${field.replace(/\s+/g, "_")}`;
+            const value = existing[time] && existing[time][field] ? existing[time][field] : "";
+            const alert = checkAlert(field, value) ? "alert-cell" : "";
+
+            const td = document.createElement("td");
+            td.className = alert;
+            if (dropdownOptions[field]) {
+              const select = document.createElement("select");
+              select.name = key;
+              dropdownOptions[field].forEach(opt => {
+                const option = document.createElement("option");
+                option.value = opt;
+                option.textContent = opt;
+                if (opt === value) option.selected = true;
+                select.appendChild(option);
+              });
+              td.appendChild(select);
+            } else {
+              const input = document.createElement("input");
+              input.name = key;
+              input.value = value;
+              td.appendChild(input);
+            }
+            row.appendChild(td);
+          }
+          table.appendChild(row);
+        });
+      }
     }
 
     function checkAlert(field, value) {
@@ -92,16 +140,28 @@
     }
 
     async function saveData() {
+      const base = db.collection("patients").doc(patientId);
+
+      await base.set({
+        name: document.getElementById("p_name").value,
+        age: document.getElementById("p_age").value,
+        parity: document.getElementById("p_parity").value,
+        labour_onset: document.getElementById("p_onset").value,
+        active_labour: document.getElementById("p_active").value,
+        ruptured_membrane: document.getElementById("p_membrane").value,
+        risk_factors: document.getElementById("p_risk").value
+      });
+
       for (const time of timeCols) {
-        const data = { timestamp: new Date().toISOString(), time };
+        const data = { time, timestamp: new Date().toISOString() };
         for (const fieldList of Object.values(sections)) {
           for (const field of fieldList) {
-            const key = time + "_" + field.replace(/\s+/g, "_");
+            const key = `${time}_${field.replace(/\s+/g, "_")}`;
             const el = document.getElementsByName(key)[0];
             if (el) data[field] = el.value;
           }
         }
-        await db.collection("patients").doc(patientId).collection("records").doc(time).set(data);
+        await base.collection("records").doc(time).set(data);
       }
       alert("✅ Saved");
     }
