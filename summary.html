@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WHO Labour Summary - Final</title>
+  <title>WHO Labour Summary - Persistent + Alerts</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -16,11 +16,12 @@
     input, select { width: 100%; border: none; background: transparent; text-align: center; }
     input:focus, select:focus { outline: 1px solid #007bff; background-color: #eef; }
     .patient-info { background: #f3f3f3; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+    .alert-cell { background-color: #ffe6e6 !important; }
   </style>
 </head>
 <body class="container-fluid py-3">
-  <h4>📝 WHO Labour Care Chart</h4>
-  <div id="patientInfo" class="patient-info"></div>
+  <h4>📝 WHO Labour Care Chart (Auto Save + Alerts)</h4>
+  <div id="patientInfo" class="patient-info"></div><div id="alertSummary" class="alert alert-warning mt-2" style="display:none;"></div>
   <form id="summaryForm">
     <div class="scroll-wrapper">
       <table id="summaryTable">
@@ -44,7 +45,7 @@
     const sections = {
       "Supportive Care": ["Companion", "Pain relief", "Oral fluid", "Posture"],
       "Baby": ["Baseline FHR", "FHR deceleration", "Amniotic fluid", "Fetal position", "Caput", "Moulding"],
-      "Woman": ["Pulse", "Systolic BP", "Diastolic BP", "Temperature", "Urine"],
+      "Woman": ["Pulse", "Systolic BP", "Diastolic BP", "Temperature", "Urine"],,
       "Labour Progress - Cervix": ["0 cm", "1 cm", "2 cm", "3 cm", "4 cm", "5 cm"],
       "Labour Progress - Descent": ["0", "1", "2", "3", "4", "5"],
       "Medication": ["Oxytocin", "Medicine", "IV fluids"],
@@ -53,6 +54,32 @@
     };
 
     const dropdownOptions = {
+      "Companion": ["Yes", "No"],
+      "Pain relief": ["None", "Requested", "Given"],
+      "Oral fluid": ["Yes", "No"],
+      "Posture": ["Upright", "Supine", "Lateral", "Other"],
+      "Baseline FHR": ["<110", "110-160", ">160"],
+      "FHR deceleration": ["None", "Early", "Late", "Variable"],
+      "Amniotic fluid": ["Clear", "Meconium", "Blood", "Absent"],
+      "Fetal position": ["OA", "OP", "OT", "Unknown"],
+      "Caput": ["0", "+", "++", "+++"],
+      "Moulding": ["0", "+", "++", "+++"],
+      "Pulse": ["<60", "60-100", ">100"],
+      "Systolic BP": ["<90", "90-140", ">140"],
+      "Diastolic BP": ["<60", "60-90", ">90"],
+      "Temperature": ["<36", "36-37.5", ">38"],
+      "Urine": ["Clear", "Cloudy", "Bloody"],
+      "Oxytocin": ["Yes", "No"],
+      "Medicine": ["Yes", "No"],
+      "IV fluids": ["Yes", "No"],
+      "Assessment": ["Stable", "Needs Monitoring", "Urgent Attention"],
+      "Plan": ["Continue Monitoring", "Notify Doctor", "Immediate Intervention"]
+
+      "Pulse": ["<60", "60-100", ">100"],
+      "Systolic BP": ["<90", "90-140", ">140"],
+      "Diastolic BP": ["<60", "60-90", ">90"],
+      "Temperature": ["<36", "36-37.5", ">38"],
+      "Urine": ["Clear", "Cloudy", "Bloody"],
       "FHR deceleration": ["None", "Early", "Late", "Variable"],
       "Amniotic fluid": ["Clear", "Meconium", "Blood", "Absent"],
       "Fetal position": ["OA", "OP", "OT", "Unknown"],
@@ -87,22 +114,50 @@
       `;
     }
 
-    function buildGrid() {
+    function alertCheck(field, value) {
+      if ((field === "FHR deceleration" && value === "Late") ||
+          (field === "Amniotic fluid" && value === "Meconium") ||
+          (field === "Caput" && value === "+++") ||
+          (field === "Moulding" && value === "+++") ||
+          (field === "Temperature" && parseFloat(value) > 38)) {
+        return true;
+      }
+      return false;
+    }
+
+    async function buildGrid() {
       const tbody = document.getElementById("summaryBody");
+      const existing = await db.collection("patients").doc(patientId).collection("records").get();
+      const dataMap = {};
+      existing.forEach(doc => {
+        const d = doc.data();
+        const time = new Date(d.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        dataMap[time] = d;
+      });
+
       for (const [section, fields] of Object.entries(sections)) {
         fields.forEach((field, i) => {
           const row = document.createElement("tr");
-          if (i === 0) {
-            row.innerHTML = `<td class="sticky" rowspan="${fields.length}">${section}</td>`;
-          }
+          if (i === 0) row.innerHTML = `<td class="sticky" rowspan="${fields.length}">${section}</td>`;
           row.innerHTML += `<td class="section">${field}</td>`;
           row.innerHTML += columns.map(col => {
-            const key = col + "_" + field.replace(/\s+/g, "_");
+            const name = col + "_" + field.replace(/\s+/g, "_");
+            let value = "", highlight = "";
+            for (const d in dataMap) {
+              if (dataMap[d][field]) {
+                value = dataMap[d][field];
+                if (alertCheck(field, value)) highlight = "alert-cell";
+            if (!summary[field]) summary[field] = [];
+            if (highlight) summary[field].push({ time: col, value });
+              }
+            }
             if (dropdownOptions[field]) {
-              const opts = dropdownOptions[field].map(o => `<option value="${o}">${o}</option>`).join('');
-              return `<td><select name="${key}">${opts}</select></td>`;
+              const opts = dropdownOptions[field].map(o =>
+                `<option value="${o}" ${o === value ? "selected" : ""}>${o}</option>`
+              ).join('');
+              return `<td class="${highlight}"><select name="${name}">${opts}</select></td>`;
             } else {
-              return `<td><input name="${key}" /></td>`;
+              return `<td class="${highlight}"><input name="${name}" value="${value || ""}" /></td>`;
             }
           }).join('');
           tbody.appendChild(row);
@@ -122,7 +177,31 @@
       for (const t in records) {
         await db.collection("patients").doc(patientId).collection("records").add(records[t]);
       }
-      alert("✅ Saved.");
+      
+      let summary = {}, alertText = "";
+      for (const t in records) {
+        for (const key in records[t]) {
+          if (key !== "timestamp" && alertCheck(key, records[t][key])) {
+            alertText += `🚨 ${key} at ${t}: ${records[t][key]}<br>`;
+          }
+        }
+      }
+      
+      let suggestions = "";
+      if (summary["FHR deceleration"]) suggestions += "⚠️ Consider continuous fetal monitoring.<br>";
+      if (summary["Amniotic fluid"]?.some(d => d.value === "Meconium")) suggestions += "⚠️ Alert for meconium-stained fluid, consider obstetrician review.<br>";
+      if (summary["Temperature"]?.some(d => d.value === ">38")) suggestions += "⚠️ Possible infection, monitor closely and prepare antibiotics.<br>";
+      if (summary["Moulding"]?.some(d => d.value === "+++")) suggestions += "⚠️ Consider obstruction — surgical evaluation may be necessary.<br>";
+
+      if (alertText) {
+
+        const alertBox = document.getElementById("alertSummary");
+        alertBox.innerHTML = "<strong>Alerts:</strong><br>" + alertText + "<hr><strong>Suggested Plan:</strong><br>" + suggestions;
+        alertBox.style.display = "block";
+      } else {
+        alert("✅ Saved with no alerts.");
+      }
+  
     }
 
     loadPatientInfo();
