@@ -150,7 +150,14 @@
     <div><label>Name</label><input id="p_name" /></div>
     <div><label>Age</label><input id="p_age" /></div>
     <div><label>Parity</label><input id="p_parity" /></div>
-    <div><label>Labour Onset</label><input id="p_onset" type="datetime-local" /></div>
+    <div>
+      <label>Labour Onset</label>
+      <select id="p_onset">
+        <option value="">Select...</option>
+        <option value="Spontaneous">Spontaneous</option>
+        <option value="Induced">Induced</option>
+      </select>
+    </div>
     <div><label>Active Labour Diagnosis</label><input id="p_active" type="date" /></div>
     <div><label>Ruptured Membranes</label><input id="p_membrane" type="datetime-local" /></div>
     <div><label>Risk Factors</label><input id="p_risk" /></div>
@@ -159,6 +166,7 @@
     <table id="summaryTable"></table>
   </div>
   <button onclick="saveData()">💾 Save</button>
+  <div id="recommendationsBox" style="margin-bottom:20px;"></div>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -295,6 +303,73 @@
   // (No alerts specified in LCG for these)
 };
 
+    const recommendations = {
+  "Companion": {
+    "No": "Encourage presence of a companion of choice for support."
+  },
+  "Pain relief": {
+    "No": "Assess pain and offer appropriate pain relief options."
+  },
+  "Oral fluid": {
+    "No": "Encourage oral fluid intake unless contraindicated."
+  },
+  "Posture": {
+    "Supine": "Encourage upright or mobile posture for comfort and progress."
+  },
+  "Baseline FHR": {
+    "<110": "Assess for fetal distress. Prepare for immediate intervention.",
+    ">160": "Assess for fetal distress. Prepare for immediate intervention."
+  },
+  "FHR deceleration": {
+    "Late": "Reassess fetal condition. Consider immediate intervention.",
+    "Variable": "Monitor closely and reassess fetal condition."
+  },
+  "Amniotic fluid": {
+    "Meconium": "Monitor for fetal distress. Prepare for possible intervention.",
+    "Bloody": "Assess for placental abruption or other complications."
+  },
+  "Fetal position": {
+    "OP": "Monitor labour progress. Consider position change or intervention.",
+    "OT": "Monitor labour progress. Consider position change or intervention."
+  },
+  "Caput": {
+    "+++": "Monitor for obstructed labour. Consider intervention."
+  },
+  "Moulding": {
+    "+++": "Monitor for obstructed labour. Consider intervention."
+  },
+  "Pulse": {
+    "<60": "Assess for underlying causes. Monitor closely.",
+    ">120": "Assess for infection, dehydration, pain, anxiety."
+  },
+  "Systolic BP": {
+    "<90": "Assess for shock. Initiate appropriate management.",
+    ">140": "Assess for pre-eclampsia. Initiate appropriate management."
+  },
+  "Diastolic BP": {
+    "<60": "Assess for shock. Monitor closely.",
+    ">90": "Assess for pre-eclampsia. Initiate appropriate management."
+  },
+  "Temperature C": {
+    "<36": "Assess for hypothermia. Initiate warming measures.",
+    ">37.5": "Assess for infection. Initiate appropriate management."
+  },
+  "Urine": {
+    "P1+": "Assess for pre-eclampsia. Monitor and manage.",
+    "P2+": "Assess for pre-eclampsia. Monitor and manage.",
+    "P3+": "Assess for pre-eclampsia. Monitor and manage."
+  },
+  "Contractions per 10 min": {
+    "<2": "Assess labour progress. Consider augmentation.",
+    ">5": "Assess for uterine hyperstimulation. Consider tocolysis."
+  },
+  "Duration of contractions": {
+    "<20s": "Assess labour progress. Consider augmentation.",
+    ">40s": "Assess for uterine hyperstimulation. Consider tocolysis."
+  }
+  // Add more as per WHO manual if needed
+};
+
     async function loadData() {
       const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
       if (patientDoc.exists) {
@@ -391,6 +466,29 @@
     function checkAlert(field, value) {
       return alertValues[field] && alertValues[field].includes(value);
     }
+
+    function showRecommendations() {
+  const recs = [];
+  for (const time of timeCols) {
+    for (const fieldList of Object.values(sections)) {
+      for (const field of fieldList) {
+        const key = `${time}_${field.replace(/\s+/g, "_")}`;
+        const el = document.getElementsByName(key)[0];
+        if (el && recommendations[field] && recommendations[field][el.value]) {
+          recs.push(`${field} (${el.value}): ${recommendations[field][el.value]}`);
+        }
+      }
+    }
+  }
+  const box = document.getElementById("recommendationsBox");
+  if (recs.length) {
+    box.innerHTML = `<div style="background:#e0e7ff;border-left:6px solid #6366f1;padding:12px;border-radius:8px;">
+      <b>Recommendations:</b><ul>${recs.map(r => `<li>${r}</li>`).join("")}</ul>
+    </div>`;
+  } else {
+    box.innerHTML = "";
+  }
+}
 
     async function saveData() {
       const base = db.collection("patients").doc(patientId);
