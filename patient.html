@@ -52,18 +52,33 @@
   </form>
   <div id="message" class="mt-3"></div>
   <a href="index.html" class="btn btn-secondary mt-3">⬅️ Back to Home</a>
+  <button class="btn btn-outline-danger" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
   <script>
     const form = document.getElementById("patientForm");
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form));
       try {
-        await db.collection("patients").doc(data.id).set(data);
+        const user = firebase.auth().currentUser;
+        await db.collection("patients").doc(form.id.value).set({
+          name: form.name.value,
+          age: form.age.value,
+          parity: form.parity.value,
+          rupturedMembranes: form.rupturedMembranes.value,
+          riskFactors: form.riskFactors.value,
+          labourOnset: form.labourOnset.value,
+          activeDiagnosis: form.activeDiagnosis.value,
+          createdBy: user.uid
+        });
         document.getElementById("message").innerHTML = '<div class="alert alert-success">✅ Patient created. <a href="summary.html?patient=' + data.id + '">Open Summary</a></div>';
         form.reset();
       } catch (err) {
         document.getElementById("message").innerHTML = '<div class="alert alert-danger">❌ Error: ' + err.message + '</div>';
       }
+    });
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) window.location.href = "login.html";
     });
   </script>
 </body>

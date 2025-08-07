@@ -26,25 +26,30 @@
     </tbody>
   </table>
   <a href="index.html" class="btn btn-secondary mt-3">⬅️ Back</a>
+  <button class="btn btn-outline-danger" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
   <script>
     async function loadPatients() {
       const tableBody = document.querySelector("#patientsTable tbody");
       tableBody.innerHTML = "";
+      const role = localStorage.getItem("role");
+      const uid = localStorage.getItem("uid");
       const snap = await db.collection("patients").get({ source: "server" });
       snap.forEach(doc => {
         const d = doc.data();
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${d.name || ""}</td>
-          <td>${doc.id}</td>
-          <td>${d.age || ""}</td>
-          <td>${d.parity || ""}</td>
-          <td>
-            <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
-            <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
-          </td>
-        `;
-        tableBody.appendChild(tr);
+        if (role === "admin" || d.createdBy === uid) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${d.name || ""}</td>
+            <td>${doc.id}</td>
+            <td>${d.age || ""}</td>
+            <td>${d.parity || ""}</td>
+            <td>
+              <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
+              <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
+            </td>
+          `;
+          tableBody.appendChild(tr);
+        }
       });
     }
     async function deletePatient(id, btn) {
@@ -54,6 +59,12 @@
       }
     }
     loadPatients();
+  </script>
+  <!-- Add to index.html, patient.html, list.html, summary.html, etc. -->
+  <script>
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) window.location.href = "login.html";
+    });
   </script>
 </body>
 </html>
