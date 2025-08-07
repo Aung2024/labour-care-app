@@ -488,20 +488,23 @@
       });
     }
 
-    function checkAlert(field, value) {
-      return alertValues[field] && alertValues[field].includes(value);
-    }
+    function getLatestValue(field) {
+  // Go through timeCols in reverse to find the latest non-empty value
+  for (let i = timeCols.length - 1; i >= 0; i--) {
+    const key = `${timeCols[i]}_${field.replace(/\s+/g, "_")}`;
+    const el = document.getElementsByName(key)[0];
+    if (el && el.value) return el.value;
+  }
+  return "";
+}
 
     function showRecommendations() {
   const recs = [];
-  for (const time of timeCols) {
-    for (const fieldList of Object.values(sections)) {
-      for (const field of fieldList) {
-        const key = `${time}_${field.replace(/\s+/g, "_")}`;
-        const el = document.getElementsByName(key)[0];
-        if (el && recommendations[field] && recommendations[field][el.value]) {
-          recs.push(`${field} (${el.value}): ${recommendations[field][el.value]}`);
-        }
+  for (const fieldList of Object.values(sections)) {
+    for (const field of fieldList) {
+      const latestValue = getLatestValue(field);
+      if (recommendations[field] && recommendations[field][latestValue]) {
+        recs.push(`${field} (${latestValue}): ${recommendations[field][latestValue]}`);
       }
     }
   }
@@ -513,6 +516,12 @@
   } else {
     box.innerHTML = "";
   }
+}
+
+// For cell highlighting, update checkAlert to use only the latest value:
+function checkAlert(field, value) {
+  const latestValue = getLatestValue(field);
+  return alertValues[field] && alertValues[field].includes(latestValue);
 }
 
     async function saveData() {

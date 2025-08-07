@@ -5,37 +5,102 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Patient List</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <style>
+    body {
+      background: linear-gradient(120deg, #eef2ff 0%, #f8fafc 100%);
+      min-height: 100vh;
+    }
+    .nav-bar {
+      background: #6366f1;
+      color: #fff;
+      border-radius: 0 0 18px 18px;
+      padding: 12px 24px;
+      margin-bottom: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      color: #fff;
+      font-weight: bold;
+      font-size: 1.5em;
+      letter-spacing: 1px;
+    }
+    #userInfo {
+      font-size: 1em;
+      color: #fff;
+      margin-left: auto;
+      margin-right: 16px;
+    }
+    .main-card {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 32px 24px;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 4px 32px rgba(60,80,180,0.10);
+    }
+    .table th, .table td {
+      vertical-align: middle;
+      text-align: center;
+    }
+    .btn-sm {
+      font-size: 0.95em;
+    }
+    @media (max-width: 600px) {
+      .main-card { margin: 20px auto; padding: 12px 2px; }
+      .nav-bar { padding: 8px 8px; font-size: 0.95em; }
+      .brand { font-size: 1.1em; }
+      .table th, .table td { font-size: 0.95em; }
+    }
+  </style>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script> <!-- MISSING! -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
-
-   <!-- THEN run your auth check -->
   <script>
     firebase.auth().onAuthStateChanged(function(user) {
       if (!user) window.location.href = "login.html";
+      else {
+        db.collection("users").doc(user.uid).get().then(doc => {
+          if (doc.exists) {
+            document.getElementById("userInfo").textContent =
+              `Logged in as: ${user.email} (${doc.data().role})`;
+          }
+        });
+      }
     });
   </script>
-  
 </head>
-<body class="container">
-  <h2>👥 Patient List</h2>
-  <table class="table table-striped table-bordered" id="patientsTable">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Patient ID</th>
-        <th>Age</th>
-        <th>Parity</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- Rows will be inserted here -->
-    </tbody>
-  </table>
-  <a href="index.html" class="btn btn-secondary mt-3">⬅️ Back</a>
-  <button class="btn btn-outline-danger" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
+<body>
+  <div class="nav-bar">
+    <a href="index.html" class="brand text-decoration-none">👩‍⚕️ Labour Care</a>
+    <span id="userInfo"></span>
+    <button class="btn btn-outline-light btn-sm ms-3" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
+  </div>
+  <div class="main-card">
+    <h2 class="mb-4 text-center">👥 Patient List</h2>
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered align-middle" id="patientsTable">
+        <thead class="table-light">
+          <tr>
+            <th>Name</th>
+            <th>Patient ID</th>
+            <th>Age</th>
+            <th>Parity</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Rows will be inserted here -->
+        </tbody>
+      </table>
+    </div>
+    <div class="d-flex justify-content-between mt-4">
+      <a href="index.html" class="btn btn-secondary">⬅️ Back</a>
+      <span></span>
+    </div>
+  </div>
   <script>
     async function loadPatients() {
       const tableBody = document.querySelector("#patientsTable tbody");
@@ -50,20 +115,18 @@
       }
       snap.forEach(doc => {
         const d = doc.data();
-        if (role === "admin" || d.createdBy === uid) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${d.name || ""}</td>
-            <td>${doc.id}</td>
-            <td>${d.age || ""}</td>
-            <td>${d.parity || ""}</td>
-            <td>
-              <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
-              <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
-            </td>
-          `;
-          tableBody.appendChild(tr);
-        }
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${d.name || ""}</td>
+          <td>${doc.id}</td>
+          <td>${d.age || ""}</td>
+          <td>${d.parity || ""}</td>
+          <td>
+            <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
+            <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
       });
     }
     async function deletePatient(id, btn) {
@@ -73,12 +136,6 @@
       }
     }
     loadPatients();
-  </script>
-  <!-- Add to index.html, patient.html, list.html, summary.html, etc. -->
-  <script>
-    firebase.auth().onAuthStateChanged(function(user) {
-      if (!user) window.location.href = "login.html";
-    });
   </script>
 </body>
 </html>
