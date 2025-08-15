@@ -25,7 +25,7 @@
         <input type="password" id="password" class="form-control" required />
       </div>
       <button type="submit" class="btn btn-primary w-100">Login</button>
-      <button type="button" class="btn btn-link w-100 mt-2" onclick="showRegister()">Register</button>
+      <a href="registration.html" class="btn btn-link w-100 mt-2">Register</a>
     </form>
     <form id="registerForm" style="display:none;">
       <div class="mb-3">
@@ -71,10 +71,17 @@
       const password = document.getElementById("password").value;
       try {
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
-        // Get role from Firestore
+        // Get user document from Firestore
         const userDoc = await db.collection("users").doc(userCred.user.uid).get();
         if (!userDoc.exists) throw new Error("User role not found.");
-        localStorage.setItem("role", userDoc.data().role);
+        const userData = userDoc.data();
+        if (!userData.approved) {
+          await firebase.auth().signOut();
+          message.textContent = "Your account is pending approval by a super admin.";
+          message.className = "mt-3 text-warning";
+          return;
+        }
+        localStorage.setItem("role", userData.role);
         localStorage.setItem("uid", userCred.user.uid);
         window.location.replace("index.html");
       } catch (err) {
