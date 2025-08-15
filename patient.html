@@ -67,9 +67,8 @@
       const data = Object.fromEntries(new FormData(form));
       try {
         const user = firebase.auth().currentUser;
-        console.log("Patient ID:", form.id.value);
-        console.log("Created By:", user.uid);
-        await db.collection("patients").doc(form.id.value).set({
+        // Create patient with auto-generated ID
+        const docRef = await db.collection("patients").add({
           name: form.name.value,
           age: form.age.value,
           parity: form.parity.value,
@@ -77,13 +76,19 @@
           riskFactors: form.riskFactors.value,
           labourOnset: form.labourOnset.value,
           activeDiagnosis: form.activeDiagnosis.value,
-          createdBy: user.uid
+          createdBy: user.uid,
+          township: form.township ? form.township.value : "", // if you add township
+          createdAt: new Date().toISOString()
         });
-        console.log("Patient saved to Firestore with createdBy:", user.uid);
-        document.getElementById("message").innerHTML = '<div class="alert alert-success">✅ Patient created. <a href="summary.html?patient=' + data.id + '">Open Summary</a></div>';
+        // Optionally update the document with its own ID for easy search
+        await docRef.update({ id: docRef.id });
+
+        document.getElementById("message").innerHTML =
+          `<div class="alert alert-success">✅ Patient created. <a href="summary.html?patient=${docRef.id}">Open Summary</a></div>`;
         form.reset();
       } catch (err) {
-        document.getElementById("message").innerHTML = '<div class="alert alert-danger">❌ Error: ' + err.message + '</div>';
+        document.getElementById("message").innerHTML =
+          `<div class="alert alert-danger">❌ Error: ${err.message}</div>`;
       }
     });
 
