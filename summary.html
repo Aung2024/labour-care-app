@@ -102,8 +102,87 @@
         <p class="table-subtitle">Complete the form below for each time interval during active labour</p>
       </div>
       
-      <div class="table-wrapper">
-        <table id="summaryTable" class="summary-table"></table>
+      <!-- Time Headers -->
+      <div class="time-headers">
+        <div class="time-header-row">
+          <div class="header-cell section-header-cell">Section</div>
+          <div class="header-cell field-header-cell">Field</div>
+          <div class="header-cell alert-header-cell">Alert</div>
+          <div class="header-cell time-header-cell">
+            <div class="time-header-content">
+              <div class="stage-label">ACTIVE FIRST STAGE</div>
+              <div class="time-intervals">
+                <div class="time-columns" id="timeColumns">
+                  <!-- Time columns will be populated by JavaScript -->
+                </div>
+                <div class="time-divider">
+                  <div class="divider-line"></div>
+                  <div class="divider-text">30 min intervals</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Supportive Care Table -->
+      <div class="section-table">
+        <div class="section-title">
+          <h4><i class="fas fa-hands-helping"></i> Supportive Care</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="supportiveCareTable"></table>
+        </div>
+      </div>
+
+      <!-- Baby Table -->
+      <div class="section-table">
+        <div class="section-title">
+          <h4><i class="fas fa-baby"></i> Baby</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="babyTable"></table>
+        </div>
+      </div>
+
+      <!-- Woman Table -->
+      <div class="section-table">
+        <div class="section-title">
+          <h4><i class="fas fa-female"></i> Woman</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="womanTable"></table>
+        </div>
+      </div>
+
+      <!-- Labour Progress Table -->
+      <div class="section-table">
+        <div class="section-title">
+          <h4><i class="fas fa-chart-line"></i> Labour Progress</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="labourProgressTable"></table>
+        </div>
+      </div>
+
+      <!-- Medication Table -->
+      <div class="section-table">
+        <div class="section-table">
+          <h4><i class="fas fa-pills"></i> Medication</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="medicationTable"></table>
+        </div>
+      </div>
+
+      <!-- Shared Decision-Making Table -->
+      <div class="section-table">
+        <div class="section-title">
+          <h4><i class="fas fa-comments"></i> Shared Decision-Making</h4>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="decisionMakingTable"></table>
+        </div>
       </div>
     </div>
   </div>
@@ -404,98 +483,132 @@
     }
 
     function generateSummaryTable(existing) {
-      const table = document.getElementById("summaryTable");
+      // Clear existing tables
+      document.getElementById("supportiveCareTable").innerHTML = "";
+      document.getElementById("babyTable").innerHTML = "";
+      document.getElementById("womanTable").innerHTML = "";
+      document.getElementById("labourProgressTable").innerHTML = "";
+      document.getElementById("medicationTable").innerHTML = "";
+      document.getElementById("decisionMakingTable").innerHTML = "";
+
+      // Generate each section table
+      generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
+      generateSectionTable("Baby", sections["Baby"], "babyTable", existing);
+      generateSectionTable("Woman", sections["Woman"], "womanTable", existing);
+      generateSectionTable("Labour Progress", sections["Labour Progress"], "labourProgressTable", existing);
+      generateSectionTable("Medication", sections["Medication"], "medicationTable", existing);
+      generateSectionTable("Shared Decision-Making", sections["Shared Decision-Making"], "decisionMakingTable", existing);
       
-      // Table header
-      let header = `
-        <thead>
-          <tr class="table-header-row">
-            <th class="sticky-section">Section</th>
-            <th class="sticky-field">Field</th>
-            ${timeCols.map(t => `<th class="time-header">${t}</th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-      `;
+      // Add event listeners for form changes
+      addFormEventListeners();
+    }
 
-      // Table body
-      for (const [section, fields] of Object.entries(sections)) {
-        // Section header row
-        header += `<tr class="section-header">
-          <td class="section-title" colspan="${timeCols.length + 2}">
-            <div class="section-header-content">
-              <i class="fas fa-layer-group"></i>
-              ${section}
-            </div>
-          </td>
-        </tr>`;
-
-        // Field rows
-        fields.forEach((field, index) => {
-          const row = document.createElement("tr");
-          row.className = "field-row";
+    function generateSectionTable(sectionName, fields, tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Alert header
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Time headers
+      timeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      fields.forEach(field => {
+        const row = document.createElement("tr");
+        row.className = "field-row";
+        
+        // Field cell
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell";
+        fieldCell.textContent = field;
+        row.appendChild(fieldCell);
+        
+        // Alert cell
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell";
+        const latestValue = getLatestValue(field);
+        if (alertValues[field] && alertValues[field].includes(latestValue)) {
+          alertCell.innerHTML = '<span class="alert-indicator alert-danger">Alert</span>';
+        } else {
+          alertCell.innerHTML = '<span class="alert-indicator">Normal</span>';
+        }
+        row.appendChild(alertCell);
+        
+        // Time cells
+        timeCols.forEach(time => {
+          const key = `${time}_${field.replace(/\s+/g, "_")}`;
+          const value = existing[time] && existing[time][field] ? existing[time][field] : "";
           
-          // Section cell (sticky)
-          if (index === 0) {
-            const sectionCell = document.createElement("td");
-            sectionCell.className = "sticky-section section-label";
-            sectionCell.rowSpan = fields.length;
-            sectionCell.innerHTML = `<div class="section-label-content">${section}</div>`;
-            row.appendChild(sectionCell);
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell";
+          
+          if (dropdownOptions[field]) {
+            const select = document.createElement("select");
+            select.name = key;
+            select.className = "form-select form-select-sm";
+            
+            // Add blank option first
+            const blankOption = document.createElement("option");
+            blankOption.value = "";
+            blankOption.textContent = "";
+            select.appendChild(blankOption);
+            
+            dropdownOptions[field].forEach(opt => {
+              const option = document.createElement("option");
+              option.value = opt;
+              option.textContent = opt;
+              select.appendChild(option);
+            });
+            
+            select.value = value !== undefined ? value : "";
+            timeCell.appendChild(select);
+          } else {
+            const input = document.createElement("input");
+            input.name = key;
+            input.type = "text";
+            input.className = "form-control form-control-sm";
+            input.value = value;
+            timeCell.appendChild(input);
           }
           
-          // Field cell (sticky)
-          const label = document.createElement("td");
-          label.className = "sticky-field field-label";
-          label.innerHTML = `<div class="field-label-content">${field}</div>`;
-          row.appendChild(label);
-
-          // Time columns
-          for (const time of timeCols) {
-            const key = `${time}_${field.replace(/\s+/g, "_")}`;
-            const value = existing[time] && existing[time][field] ? existing[time][field] : "";
-            
-            const td = document.createElement("td");
-            td.className = "time-cell";
-            
-            if (dropdownOptions[field]) {
-              const select = document.createElement("select");
-              select.name = key;
-              select.className = "form-select form-select-sm";
-              
-              // Add blank option first
-              const blankOption = document.createElement("option");
-              blankOption.value = "";
-              blankOption.textContent = "";
-              select.appendChild(blankOption);
-              
-              dropdownOptions[field].forEach(opt => {
-                const option = document.createElement("option");
-                option.value = opt;
-                option.textContent = opt;
-                select.appendChild(option);
-              });
-              
-              select.value = value !== undefined ? value : "";
-              td.appendChild(select);
-            } else {
-              const input = document.createElement("input");
-              input.name = key;
-              input.type = "text";
-              input.className = "form-control form-control-sm";
-              input.value = value;
-              td.appendChild(input);
-            }
-            
-            row.appendChild(td);
-          }
-          
-          table.appendChild(row);
+          row.appendChild(timeCell);
         });
-      }
+        
+        tbody.appendChild(row);
+      });
+      
+      table.appendChild(tbody);
+    }
 
-      header += "</tbody>";
-      table.innerHTML = header;
+    function addFormEventListeners() {
+      // Add event listeners to all select and input elements
+      document.querySelectorAll('select, input').forEach(el => {
+        el.addEventListener('change', showRecommendations);
+        el.addEventListener('input', showRecommendations);
+      });
     }
 
     function getLatestValue(field) {
@@ -560,16 +673,21 @@
           createdBy
         });
 
-        // Save time-based records
+        // Save time-based records from all tables
         for (const time of timeCols) {
           const data = { time, timestamp: new Date().toISOString() };
+          
+          // Collect data from all section tables
           for (const fieldList of Object.values(sections)) {
             for (const field of fieldList) {
               const key = `${time}_${field.replace(/\s+/g, "_")}`;
               const el = document.getElementsByName(key)[0];
-              if (el) data[field] = el.value;
+              if (el) {
+                data[field] = el.value;
+              }
             }
           }
+          
           await base.collection("records").doc(time).set(data);
         }
         
@@ -613,6 +731,21 @@
         // Only load data after user is authenticated
         loadData();
       }
+    });
+
+    // Populate time columns in the header
+    function populateTimeColumns() {
+      const timeColumnsContainer = document.getElementById('timeColumns');
+      if (timeColumnsContainer) {
+        timeColumnsContainer.innerHTML = timeCols.map(t => 
+          `<div class="time-column">${t}</div>`
+        ).join('');
+      }
+    }
+
+    // Call this after DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+      populateTimeColumns();
     });
   </script>
 </body>
