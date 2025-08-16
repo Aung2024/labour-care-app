@@ -249,18 +249,44 @@
 };
 
     async function loadData() {
+      // Get current user and their Firestore profile
+      const user = firebase.auth().currentUser;
+      if (!user) {
+        document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
+        return;
+      }
+      const userDoc = await db.collection("users").doc(user.uid).get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+
+      // Get patient document
       const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
-      if (patientDoc.exists) {
-        const d = patientDoc.data();
-        document.getElementById("p_name").value = d.name || "";
-        document.getElementById("p_age").value = d.age || "";
-        document.getElementById("p_parity").value = d.parity || "";
-        document.getElementById("p_onset").value = d.labour_onset || "";
-        document.getElementById("p_active").value = d.active_labour || "";
-        document.getElementById("p_membrane").value = d.ruptured_membrane || "";
-        document.getElementById("p_risk").value = d.risk_factors || "";
+      if (!patientDoc.exists) {
+        document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+        return;
+      }
+      const d = patientDoc.data();
+
+      // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
+      let allowed = false;
+      if (userData.role === "Super Admin") allowed = true;
+      else if (userData.role === "TMO" && d.township && userData.township && d.township === userData.township) allowed = true;
+      else if (userData.role === "Midwife" && d.createdBy === user.uid) allowed = true;
+
+      if (!allowed) {
+        document.body.innerHTML = '<div class="alert alert-danger">You do not have permission to view this patient record.</div>';
+        return;
       }
 
+      // Populate patient info
+      document.getElementById("p_name").value = d.name || "";
+      document.getElementById("p_age").value = d.age || "";
+      document.getElementById("p_parity").value = d.parity || "";
+      document.getElementById("p_onset").value = d.labour_onset || "";
+      document.getElementById("p_active").value = d.active_labour || "";
+      document.getElementById("p_membrane").value = d.ruptured_membrane || "";
+      document.getElementById("p_risk").value = d.risk_factors || "";
+
+      // Load records
       const snap = await db.collection("patients").doc(patientId).collection("records").get({ source: "server" });
       const existing = {};
       snap.forEach(doc => {
