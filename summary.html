@@ -255,8 +255,13 @@
         document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
         return;
       }
+      // Fetch user profile
       const userDoc = await db.collection("users").doc(user.uid).get();
-      const userData = userDoc.exists ? userDoc.data() : {};
+      if (!userDoc.exists) {
+        document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
+        return;
+      }
+      const userData = userDoc.data();
 
       // Get patient document
       const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
@@ -268,9 +273,9 @@
 
       // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
       let allowed = false;
-      if (userData.role === "Super Admin") allowed = true;
+      if (userData.role === "Super Admin" || userData.role === "admin") allowed = true;
       else if (userData.role === "TMO" && d.township && userData.township && d.township === userData.township) allowed = true;
-      else if (userData.role === "Midwife" && d.createdBy === user.uid) allowed = true;
+      else if ((userData.role === "Midwife" || userData.role === "midwife") && d.createdBy === user.uid) allowed = true;
 
       if (!allowed) {
         document.body.innerHTML = '<div class="alert alert-danger">You do not have permission to view this patient record.</div>';

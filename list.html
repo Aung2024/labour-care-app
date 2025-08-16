@@ -63,13 +63,22 @@
     async function loadPatients() {
       const tableBody = document.querySelector("#patientsTable tbody");
       tableBody.innerHTML = "";
-      const role = localStorage.getItem("role");
-      const uid = localStorage.getItem("uid");
+      const user = firebase.auth().currentUser;
+      if (!user) return;
+      // Fetch user profile to get role and township
+      const userDoc = await db.collection("users").doc(user.uid).get();
+      if (!userDoc.exists) return;
+      const userData = userDoc.data();
       let snap;
-      if (role === "admin") {
+      if (userData.role === "Super Admin" || userData.role === "admin") {
         snap = await db.collection("patients").get({ source: "server" });
+      } else if (userData.role === "TMO") {
+        snap = await db.collection("patients").where("township", "==", userData.township).get({ source: "server" });
+      } else if (userData.role === "Midwife" || userData.role === "midwife") {
+        snap = await db.collection("patients").where("createdBy", "==", user.uid).get({ source: "server" });
       } else {
-        snap = await db.collection("patients").where("createdBy", "==", uid).get({ source: "server" });
+        // fallback: no access
+        snap = { forEach: () => {} };
       }
       const search = document.getElementById("searchInput").value.trim().toLowerCase();
       let serial = 1;
