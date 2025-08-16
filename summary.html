@@ -292,18 +292,30 @@
       } else {
         if (userData.role === "Super Admin" || userData.role === "admin") {
           allowed = true;
+          console.log("Access granted: Super Admin");
         } else if (userData.role === "TMO") {
           // TMO can access if township matches (handle cases where township might be undefined)
           const patientTownship = d.township || "";
           const userTownship = userData.township || "";
           if (patientTownship && userTownship && patientTownship === userTownship) {
             allowed = true;
+            console.log("Access granted: TMO - township match");
+          } else {
+            console.log("Access denied: TMO - township mismatch", { patientTownship, userTownship });
           }
         } else if (userData.role === "Midwife" || userData.role === "midwife") {
           // Midwife can access if they created the patient
           if (d.createdBy === user.uid) {
             allowed = true;
+            console.log("Access granted: Midwife - created by user");
+          } else {
+            console.log("Access denied: Midwife - not created by user", { 
+              patientCreatedBy: d.createdBy, 
+              userUid: user.uid 
+            });
           }
+        } else {
+          console.log("Access denied: Unknown role", userData.role);
         }
       }
 
@@ -314,10 +326,21 @@
         console.log("Patient createdBy:", d.createdBy);
         console.log("User UID:", user.uid);
         
-        // Temporary debug display
+        // Better error message based on role
+        let errorMessage = "";
+        if (userData.role === "TMO") {
+          errorMessage = `Access Denied: You can only access patients in your township (${userData.township || 'undefined'}). This patient is in township: ${d.township || 'undefined'}.`;
+        } else if (userData.role === "Midwife" || userData.role === "midwife") {
+          errorMessage = `Access Denied: You can only access patients you created. This patient was created by: ${d.createdBy || 'unknown'}.`;
+        } else {
+          errorMessage = `Access Denied: You do not have permission to view this patient record. Please contact your administrator.`;
+        }
+        
         document.body.innerHTML = `
           <div class="alert alert-danger">
-            <h4>Access Denied - Debug Info</h4>
+            <h4>Access Denied</h4>
+            <p><strong>Reason:</strong> ${errorMessage}</p>
+            <hr>
             <p><strong>User Role:</strong> ${userData.role}</p>
             <p><strong>User Township:</strong> ${userData.township || 'undefined'}</p>
             <p><strong>Patient Township:</strong> ${d.township || 'undefined'}</p>
@@ -325,7 +348,8 @@
             <p><strong>User UID:</strong> ${user.uid}</p>
             <p><strong>Patient ID:</strong> ${patientId}</p>
             <hr>
-            <p>Please contact your administrator or check the console for more details.</p>
+            <a href="list.html" class="btn btn-primary">← Back to Patient List</a>
+            <button class="btn btn-warning ms-2" onclick="loadDataWithDebug()">🐛 Debug Mode</button>
           </div>
         `;
         return;

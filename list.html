@@ -141,9 +141,52 @@
       }
     }
     async function deletePatient(id, btn) {
-      if (confirm("Are you sure you want to delete this patient?")) {
-        await db.collection("patients").doc(id).delete();
-        btn.closest("tr").remove();
+      try {
+        // Check if user has permission to delete this patient
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          alert("You must be logged in to delete patients.");
+          return;
+        }
+        
+        const userDoc = await db.collection("users").doc(user.uid).get();
+        if (!userDoc.exists) {
+          alert("User profile not found.");
+          return;
+        }
+        
+        const userData = userDoc.data();
+        const patientDoc = await db.collection("patients").doc(id).get();
+        
+        if (!patientDoc.exists) {
+          alert("Patient not found.");
+          return;
+        }
+        
+        const patientData = patientDoc.data();
+        let canDelete = false;
+        
+        if (userData.role === "Super Admin" || userData.role === "admin") {
+          canDelete = true;
+        } else if (userData.role === "TMO") {
+          canDelete = patientData.township === userData.township;
+        } else if (userData.role === "Midwife" || userData.role === "midwife") {
+          canDelete = patientData.createdBy === user.uid;
+        }
+        
+        if (!canDelete) {
+          alert("You don't have permission to delete this patient.");
+          return;
+        }
+        
+        // Proceed with deletion
+        if (confirm("Are you sure you want to delete this patient?")) {
+          await db.collection("patients").doc(id).delete();
+          btn.closest("tr").remove();
+        }
+      } catch (error) {
+        console.error("Error deleting patient:", error);
+        alert("Error deleting patient: " + error.message);
       }
     }
     
