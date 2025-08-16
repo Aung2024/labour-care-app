@@ -149,15 +149,6 @@
         </div>
       </div>
 
-      <!-- Second Stage Divider -->
-      <div class="second-stage-divider">
-        <div class="divider-content">
-          <div class="divider-line"></div>
-          <div class="divider-text">SECOND STAGE (3 hours)</div>
-          <div class="divider-line"></div>
-        </div>
-      </div>
-
       <!-- Medication Table -->
       <div class="section-table">
         <div class="section-title">
@@ -575,40 +566,46 @@
         row.appendChild(alertCell);
         
         // Time cells
-        timeCols.forEach(time => {
+        timeCols.forEach((time, index) => {
           const key = `${time}_${field.replace(/\s+/g, "_")}`;
           const value = existing[time] && existing[time][field] ? existing[time][field] : "";
           
           const timeCell = document.createElement("td");
           timeCell.className = "time-cell";
           
-          if (dropdownOptions[field]) {
-            const select = document.createElement("select");
-            select.name = key;
-            select.className = "form-select form-select-sm";
-            
-            // Add blank option first
-            const blankOption = document.createElement("option");
-            blankOption.value = "";
-            blankOption.textContent = "";
-            select.appendChild(blankOption);
-            
-            dropdownOptions[field].forEach(opt => {
-              const option = document.createElement("option");
-              option.value = opt;
-              option.textContent = opt;
-              select.appendChild(option);
-            });
-            
-            select.value = value !== undefined ? value : "";
-            timeCell.appendChild(select);
+          // Add stage divider after 12 hours (24 time columns)
+          if (index === 24) {
+            timeCell.innerHTML = '<div class="stage-divider-cell">SECOND STAGE</div>';
+            timeCell.className = "time-cell stage-divider-cell";
           } else {
-            const input = document.createElement("input");
-            input.name = key;
-            input.type = "text";
-            input.className = "form-control form-control-sm";
-            input.value = value;
-            timeCell.appendChild(input);
+            if (dropdownOptions[field]) {
+              const select = document.createElement("select");
+              select.name = key;
+              select.className = "form-select form-select-sm";
+              
+              // Add blank option first
+              const blankOption = document.createElement("option");
+              blankOption.value = "";
+              blankOption.textContent = "";
+              select.appendChild(blankOption);
+              
+              dropdownOptions[field].forEach(opt => {
+                const option = document.createElement("option");
+                option.value = opt;
+                option.textContent = opt;
+                select.appendChild(option);
+              });
+              
+              select.value = value !== undefined ? value : "";
+              timeCell.appendChild(select);
+            } else {
+              const input = document.createElement("input");
+              input.name = key;
+              input.type = "text";
+              input.className = "form-control form-control-sm";
+              input.value = value;
+              timeCell.appendChild(input);
+            }
           }
           
           row.appendChild(timeCell);
@@ -704,11 +701,11 @@
               }
             }
           }
-          
+
+          // Save to Firestore
           await base.collection("records").doc(time).set(data);
         }
-        
-        // Show success message
+
         showSaveSuccess();
       } catch (error) {
         console.error("Error saving data:", error);
@@ -716,28 +713,38 @@
       }
     }
 
+    // Show save success message
     function showSaveSuccess() {
-      const actionBar = document.querySelector('.action-right');
-      const successMsg = document.createElement('div');
-      successMsg.className = 'save-success';
-      successMsg.innerHTML = '<i class="fas fa-check-circle"></i> Saved successfully!';
-      actionBar.appendChild(successMsg);
+      const saveBtn = document.querySelector('.btn-save');
+      const originalText = saveBtn.innerHTML;
+      
+      saveBtn.innerHTML = '<i class="fas fa-check"></i> <span>Saved!</span>';
+      saveBtn.style.background = '#059669';
+      saveBtn.disabled = true;
       
       setTimeout(() => {
-        successMsg.remove();
-      }, 3000);
+        saveBtn.innerHTML = originalText;
+        saveBtn.style.background = '#10b981';
+        saveBtn.disabled = false;
+      }, 2000);
     }
 
-    function showSaveError(message) {
-      const actionBar = document.querySelector('.action-right');
-      const errorMsg = document.createElement('div');
-      errorMsg.className = 'save-error';
-      errorMsg.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error: ${message}`;
-      actionBar.appendChild(errorMsg);
+    // Show save error message
+    function showSaveError(errorMessage) {
+      const saveBtn = document.querySelector('.btn-save');
+      const originalText = saveBtn.innerHTML;
+      
+      saveBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error!</span>';
+      saveBtn.style.background = '#dc2626';
+      saveBtn.disabled = true;
       
       setTimeout(() => {
-        errorMsg.remove();
-      }, 5000);
+        saveBtn.innerHTML = originalText;
+        saveBtn.style.background = '#10b981';
+        saveBtn.disabled = false;
+      }, 3000);
+      
+      console.error("Save error:", errorMessage);
     }
 
     // Load data when page loads
