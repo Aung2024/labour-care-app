@@ -39,27 +39,46 @@
     });
 
     async function loadPendingUsers() {
-      const pendingDiv = document.getElementById('pendingUsers');
-      pendingDiv.innerHTML = 'Loading...';
-      const snap = await db.collection('users').where('approved', '==', false).get();
-      if (snap.empty) {
-        pendingDiv.innerHTML = '<div class="text-success">No pending users.</div>';
-        return;
+      try {
+        const pendingDiv = document.getElementById('pendingUsers');
+        pendingDiv.innerHTML = 'Loading...';
+        console.log("Loading pending users...");
+        
+        const snap = await db.collection('users').where('approved', '==', false).get();
+        console.log("Found pending users:", snap.size);
+        
+        if (snap.empty) {
+          pendingDiv.innerHTML = '<div class="text-success">No pending users.</div>';
+          return;
+        }
+        
+        let html = '<table class="table table-sm"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Township</th><th>Action</th></tr></thead><tbody>';
+        snap.forEach(doc => {
+          const d = doc.data();
+          console.log("Pending user data:", d);
+          html += `<tr><td>${d.name||''}</td><td>${d.email||''}</td><td>${d.role||''}</td><td>${d.township||'N/A'}</td><td><button class='btn btn-success btn-sm' onclick='approveUser("${doc.id}")'>Approve</button></td></tr>`;
+        });
+        html += '</tbody></table>';
+        pendingDiv.innerHTML = html;
+      } catch (error) {
+        console.error("Error loading pending users:", error);
+        pendingDiv.innerHTML = `<div class="alert alert-danger">Error loading users: ${error.message}</div>`;
       }
-      let html = '<table class="table table-sm"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Action</th></tr></thead><tbody>';
-      snap.forEach(doc => {
-        const d = doc.data();
-        html += `<tr><td>${d.name||''}</td><td>${d.email||''}</td><td>${d.role||''}</td><td><button class='btn btn-success btn-sm' onclick='approveUser("${doc.id}")'>Approve</button></td></tr>`;
-      });
-      html += '</tbody></table>';
-      pendingDiv.innerHTML = html;
     }
 
     async function approveUser(uid) {
-      await db.collection('users').doc(uid).update({approved:true});
-      loadPendingUsers();
-      document.getElementById('adminMsg').innerHTML = '<div class="alert alert-success">User approved.</div>';
-      setTimeout(()=>{document.getElementById('adminMsg').innerHTML='';},2000);
+      try {
+        console.log("Attempting to approve user:", uid);
+        await db.collection('users').doc(uid).update({approved:true});
+        console.log("User approved successfully");
+        loadPendingUsers();
+        document.getElementById('adminMsg').innerHTML = '<div class="alert alert-success">User approved.</div>';
+        setTimeout(()=>{document.getElementById('adminMsg').innerHTML='';},2000);
+      } catch (error) {
+        console.error("Error approving user:", error);
+        document.getElementById('adminMsg').innerHTML = `<div class="alert alert-danger">Error approving user: ${error.message}</div>`;
+        setTimeout(()=>{document.getElementById('adminMsg').innerHTML='';},5000);
+      }
     }
   </script>
 </body>

@@ -156,6 +156,17 @@
         }
         
         const userData = userDoc.data();
+        
+        // Super Admin can delete any patient - no need to check patient data
+        if (userData.role === "Super Admin" || userData.role === "admin") {
+          if (confirm("Are you sure you want to delete this patient?")) {
+            await db.collection("patients").doc(id).delete();
+            btn.closest("tr").remove();
+          }
+          return;
+        }
+        
+        // For other roles, check patient data
         const patientDoc = await db.collection("patients").doc(id).get();
         
         if (!patientDoc.exists) {
@@ -166,9 +177,7 @@
         const patientData = patientDoc.data();
         let canDelete = false;
         
-        if (userData.role === "Super Admin" || userData.role === "admin") {
-          canDelete = true;
-        } else if (userData.role === "TMO") {
+        if (userData.role === "TMO") {
           canDelete = patientData.township === userData.township;
         } else if (userData.role === "Midwife" || userData.role === "midwife") {
           canDelete = patientData.createdBy === user.uid;
