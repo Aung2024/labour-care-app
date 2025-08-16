@@ -36,10 +36,6 @@
     <div class="controls-bar">
       <button class="btn btn-primary" onclick="saveData()">💾 Save</button>
       <a href="list.html" class="btn btn-secondary">⬅️ Back to List</a>
-      <div>
-        <button class="btn btn-warning me-2" onclick="loadDataWithDebug()">🐛 Debug Load</button>
-        <button class="btn btn-info" onclick="testFirestoreAccess()">🔍 Test Access</button>
-      </div>
     </div>
     <div id="recommendationsBox"></div>
     <div class="table-responsive">
@@ -284,38 +280,19 @@
       // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
       let allowed = false;
       
-      // TEMPORARY: Add bypass for testing (remove this in production)
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('debug') === 'true') {
+      if (userData.role === "Super Admin" || userData.role === "admin") {
         allowed = true;
-        console.log("DEBUG MODE: Access granted for testing");
-      } else {
-        if (userData.role === "Super Admin" || userData.role === "admin") {
+      } else if (userData.role === "TMO") {
+        // TMO can access if township matches (handle cases where township might be undefined)
+        const patientTownship = d.township || "";
+        const userTownship = userData.township || "";
+        if (patientTownship && userTownship && patientTownship === userTownship) {
           allowed = true;
-          console.log("Access granted: Super Admin");
-        } else if (userData.role === "TMO") {
-          // TMO can access if township matches (handle cases where township might be undefined)
-          const patientTownship = d.township || "";
-          const userTownship = userData.township || "";
-          if (patientTownship && userTownship && patientTownship === userTownship) {
-            allowed = true;
-            console.log("Access granted: TMO - township match");
-          } else {
-            console.log("Access denied: TMO - township mismatch", { patientTownship, userTownship });
-          }
-        } else if (userData.role === "Midwife" || userData.role === "midwife") {
-          // Midwife can access if they created the patient
-          if (d.createdBy === user.uid) {
-            allowed = true;
-            console.log("Access granted: Midwife - created by user");
-          } else {
-            console.log("Access denied: Midwife - not created by user", { 
-              patientCreatedBy: d.createdBy, 
-              userUid: user.uid 
-            });
-          }
-        } else {
-          console.log("Access denied: Unknown role", userData.role);
+        }
+      } else if (userData.role === "Midwife" || userData.role === "midwife") {
+        // Midwife can access if they created the patient
+        if (d.createdBy === user.uid) {
+          allowed = true;
         }
       }
 
@@ -349,7 +326,6 @@
             <p><strong>Patient ID:</strong> ${patientId}</p>
             <hr>
             <a href="list.html" class="btn btn-primary">← Back to Patient List</a>
-            <button class="btn btn-warning ms-2" onclick="loadDataWithDebug()">🐛 Debug Mode</button>
           </div>
         `;
         return;
@@ -548,41 +524,6 @@ function checkAlert(field, value) {
       alert("✅ Saved");
     }
     
-    async function loadDataWithDebug() {
-      // Temporarily enable debug mode
-      const currentUrl = new URL(window.location);
-      currentUrl.searchParams.set('debug', 'true');
-      window.history.pushState({}, '', currentUrl);
-      await loadData();
-    }
-    
-    async function testFirestoreAccess() {
-      try {
-        console.log("Testing Firestore access in summary...");
-        const user = firebase.auth().currentUser;
-        console.log("Current user:", user);
-        
-        if (user) {
-          // Test reading user document
-          const userDoc = await db.collection("users").doc(user.uid).get();
-          console.log("User document accessible:", userDoc.exists);
-          
-          // Test reading specific patient document
-          try {
-            const patientDoc = await db.collection("patients").doc(patientId).get();
-            console.log("Patient document accessible:", patientDoc.exists);
-            if (patientDoc.exists) {
-              console.log("Patient data:", patientDoc.data());
-            }
-          } catch (error) {
-            console.error("Cannot access patient document:", error.message);
-          }
-        }
-      } catch (error) {
-        console.error("Firestore test failed:", error);
-      }
-    }
-
     // loadData(); // Removed - now called in auth callback
   </script>
   <script>
