@@ -19,6 +19,8 @@
           if (doc.exists) {
             document.getElementById("userInfo").textContent =
               `Logged in as: ${user.email} (${doc.data().role})`;
+            // Load patients after user is authenticated and role is fetched
+            loadPatients();
           }
         });
       }
@@ -56,54 +58,87 @@
     </div>
     <div class="d-flex justify-content-between mt-4">
       <a href="index.html" class="btn btn-secondary">⬅️ Back</a>
-      <span></span>
+      <div>
+        <button class="btn btn-warning me-2" onclick="loadPatientsWithDebug()">🐛 Debug Load</button>
+        <button class="btn btn-info" onclick="testFirestoreAccess()">🔍 Test Access</button>
+      </div>
     </div>
   </div>
   <script>
     async function loadPatients() {
-      const tableBody = document.querySelector("#patientsTable tbody");
-      tableBody.innerHTML = "";
-      const user = firebase.auth().currentUser;
-      if (!user) return;
-      // Fetch user profile to get role and township
-      const userDoc = await db.collection("users").doc(user.uid).get();
-      if (!userDoc.exists) return;
-      const userData = userDoc.data();
-      let snap;
-      if (userData.role === "Super Admin" || userData.role === "admin") {
-        snap = await db.collection("patients").get({ source: "server" });
-      } else if (userData.role === "TMO") {
-        snap = await db.collection("patients").where("township", "==", userData.township).get({ source: "server" });
-      } else if (userData.role === "Midwife" || userData.role === "midwife") {
-        snap = await db.collection("patients").where("createdBy", "==", user.uid).get({ source: "server" });
-      } else {
-        // fallback: no access
-        snap = { forEach: () => {} };
-      }
-      const search = document.getElementById("searchInput").value.trim().toLowerCase();
-      let serial = 1;
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (
-          !search ||
-          (d.name && d.name.toLowerCase().includes(search)) ||
-          (d.township && d.township.toLowerCase().includes(search)) ||
-          (d.age && String(d.age).includes(search))
-        ) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${serial++}</td>
-            <td>${d.name || ""}</td>
-            <td>${d.age || ""}</td>
-            <td>${d.parity || ""}</td>
-            <td>
-              <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
-              <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
-            </td>
-          `;
-          tableBody.appendChild(tr);
+      try {
+        const tableBody = document.querySelector("#patientsTable tbody");
+        tableBody.innerHTML = "";
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          console.log("No user found");
+          return;
         }
-      });
+        
+        // Fetch user profile to get role and township
+        const userDoc = await db.collection("users").doc(user.uid).get();
+        if (!userDoc.exists) {
+          console.log("User document not found");
+          return;
+        }
+        
+        const userData = userDoc.data();
+        console.log("User data:", userData);
+        
+        let snap;
+        
+        // TEMPORARY: Add bypass for testing (remove this in production)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('debug') === 'true') {
+          console.log("DEBUG MODE: Loading all patients for testing");
+          snap = await db.collection("patients").get({ source: "server" });
+        } else if (userData.role === "Super Admin" || userData.role === "admin") {
+          console.log("Loading all patients for Super Admin");
+          snap = await db.collection("patients").get({ source: "server" });
+        } else if (userData.role === "TMO") {
+          console.log("Loading patients for TMO in township:", userData.township);
+          snap = await db.collection("patients").where("township", "==", userData.township).get({ source: "server" });
+        } else if (userData.role === "Midwife" || userData.role === "midwife") {
+          console.log("Loading patients for Midwife created by:", user.uid);
+          snap = await db.collection("patients").where("createdBy", "==", user.uid).get({ source: "server" });
+        } else {
+          console.log("Unknown role:", userData.role);
+          // fallback: no access
+          snap = { forEach: () => {} };
+        }
+        
+        console.log("Found patients:", snap.size);
+        
+        const search = document.getElementById("searchInput").value.trim().toLowerCase();
+        let serial = 1;
+        snap.forEach(doc => {
+          const d = doc.data();
+          console.log("Patient data:", d);
+          if (
+            !search ||
+            (d.name && d.name.toLowerCase().includes(search)) ||
+            (d.township && d.township.toLowerCase().includes(search)) ||
+            (d.age && String(d.age).includes(search))
+          ) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${serial++}</td>
+              <td>${d.name || ""}</td>
+              <td>${d.age || ""}</td>
+              <td>${d.parity || ""}</td>
+              <td>
+                <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">View Summary</a>
+                <button class="btn btn-sm btn-danger ms-2" onclick="deletePatient('${doc.id}', this)">Delete</button>
+              </td>
+            `;
+            tableBody.appendChild(tr);
+          }
+        });
+      } catch (error) {
+        console.error("Error loading patients:", error);
+        const tableBody = document.querySelector("#patientsTable tbody");
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading patients: ${error.message}</td></tr>`;
+      }
     }
     async function deletePatient(id, btn) {
       if (confirm("Are you sure you want to delete this patient?")) {
@@ -111,7 +146,40 @@
         btn.closest("tr").remove();
       }
     }
-    loadPatients();
+    
+    async function loadPatientsWithDebug() {
+      // Temporarily enable debug mode
+      const currentUrl = new URL(window.location);
+      currentUrl.searchParams.set('debug', 'true');
+      window.history.pushState({}, '', currentUrl);
+      await loadPatients();
+    }
+    
+    async function testFirestoreAccess() {
+      try {
+        console.log("Testing Firestore access...");
+        const user = firebase.auth().currentUser;
+        console.log("Current user:", user);
+        
+        if (user) {
+          // Test reading user document
+          const userDoc = await db.collection("users").doc(user.uid).get();
+          console.log("User document accessible:", userDoc.exists);
+          
+          // Test reading patients collection (this might fail due to rules)
+          try {
+            const patientsSnap = await db.collection("patients").limit(1).get();
+            console.log("Patients collection accessible:", patientsSnap.size, "documents");
+          } catch (error) {
+            console.error("Cannot access patients collection:", error.message);
+          }
+        }
+      } catch (error) {
+        console.error("Firestore test failed:", error);
+      }
+    }
+    
+    // loadPatients(); // Removed - now called in auth callback
   </script>
 </body>
 <footer class="footer">

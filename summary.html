@@ -36,6 +36,10 @@
     <div class="controls-bar">
       <button class="btn btn-primary" onclick="saveData()">💾 Save</button>
       <a href="list.html" class="btn btn-secondary">⬅️ Back to List</a>
+      <div>
+        <button class="btn btn-warning me-2" onclick="loadDataWithDebug()">🐛 Debug Load</button>
+        <button class="btn btn-info" onclick="testFirestoreAccess()">🔍 Test Access</button>
+      </div>
     </div>
     <div id="recommendationsBox"></div>
     <div class="table-responsive">
@@ -249,36 +253,81 @@
 };
 
     async function loadData() {
-      // Get current user and their Firestore profile
-      const user = firebase.auth().currentUser;
-      if (!user) {
-        document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
-        return;
-      }
-      // Fetch user profile
-      const userDoc = await db.collection("users").doc(user.uid).get();
-      if (!userDoc.exists) {
-        document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
-        return;
-      }
-      const userData = userDoc.data();
+      try {
+        // Get current user and their Firestore profile
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
+          return;
+        }
+        console.log("User authenticated:", user.uid);
+        
+        // Fetch user profile
+        const userDoc = await db.collection("users").doc(user.uid).get();
+        if (!userDoc.exists) {
+          document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
+          return;
+        }
+        const userData = userDoc.data();
+        console.log("User profile loaded:", userData);
 
-      // Get patient document
-      const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
-      if (!patientDoc.exists) {
-        document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
-        return;
-      }
-      const d = patientDoc.data();
+        // Get patient document
+        console.log("Loading patient:", patientId);
+        const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
+        if (!patientDoc.exists) {
+          document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+          return;
+        }
+        const d = patientDoc.data();
+        console.log("Patient data loaded:", d);
 
       // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
       let allowed = false;
-      if (userData.role === "Super Admin" || userData.role === "admin") allowed = true;
-      else if (userData.role === "TMO" && d.township && userData.township && d.township === userData.township) allowed = true;
-      else if ((userData.role === "Midwife" || userData.role === "midwife") && d.createdBy === user.uid) allowed = true;
+      
+      // TEMPORARY: Add bypass for testing (remove this in production)
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('debug') === 'true') {
+        allowed = true;
+        console.log("DEBUG MODE: Access granted for testing");
+      } else {
+        if (userData.role === "Super Admin" || userData.role === "admin") {
+          allowed = true;
+        } else if (userData.role === "TMO") {
+          // TMO can access if township matches (handle cases where township might be undefined)
+          const patientTownship = d.township || "";
+          const userTownship = userData.township || "";
+          if (patientTownship && userTownship && patientTownship === userTownship) {
+            allowed = true;
+          }
+        } else if (userData.role === "Midwife" || userData.role === "midwife") {
+          // Midwife can access if they created the patient
+          if (d.createdBy === user.uid) {
+            allowed = true;
+          }
+        }
+      }
 
       if (!allowed) {
-        document.body.innerHTML = '<div class="alert alert-danger">You do not have permission to view this patient record.</div>';
+        console.log("Access denied. User role:", userData.role);
+        console.log("User township:", userData.township);
+        console.log("Patient township:", d.township);
+        console.log("Patient createdBy:", d.createdBy);
+        console.log("User UID:", user.uid);
+        
+        // Temporary debug display
+        document.body.innerHTML = `
+          <div class="alert alert-danger">
+            <h4>Access Denied - Debug Info</h4>
+            <p><strong>User Role:</strong> ${userData.role}</p>
+            <p><strong>User Township:</strong> ${userData.township || 'undefined'}</p>
+            <p><strong>Patient Township:</strong> ${d.township || 'undefined'}</p>
+            <p><strong>Patient Created By:</strong> ${d.createdBy || 'undefined'}</p>
+            <p><strong>User UID:</strong> ${user.uid}</p>
+            <p><strong>Patient ID:</strong> ${patientId}</p>
+            <hr>
+            <p>Please contact your administrator or check the console for more details.</p>
+          </div>
+        `;
         return;
       }
 
@@ -388,7 +437,11 @@
       document.querySelectorAll('select, input').forEach(el => {
         el.addEventListener('change', showRecommendations);
       });
+    } catch (error) {
+      console.error("Error loading data:", error);
+      document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
     }
+  }
 
     function getLatestValue(field) {
   // Go through timeCols in reverse to find the latest non-empty value
@@ -469,6 +522,41 @@ function checkAlert(field, value) {
         await base.collection("records").doc(time).set(data);
       }
       alert("✅ Saved");
+    }
+    
+    async function loadDataWithDebug() {
+      // Temporarily enable debug mode
+      const currentUrl = new URL(window.location);
+      currentUrl.searchParams.set('debug', 'true');
+      window.history.pushState({}, '', currentUrl);
+      await loadData();
+    }
+    
+    async function testFirestoreAccess() {
+      try {
+        console.log("Testing Firestore access in summary...");
+        const user = firebase.auth().currentUser;
+        console.log("Current user:", user);
+        
+        if (user) {
+          // Test reading user document
+          const userDoc = await db.collection("users").doc(user.uid).get();
+          console.log("User document accessible:", userDoc.exists);
+          
+          // Test reading specific patient document
+          try {
+            const patientDoc = await db.collection("patients").doc(patientId).get();
+            console.log("Patient document accessible:", patientDoc.exists);
+            if (patientDoc.exists) {
+              console.log("Patient data:", patientDoc.data());
+            }
+          } catch (error) {
+            console.error("Cannot access patient document:", error.message);
+          }
+        }
+      } catch (error) {
+        console.error("Firestore test failed:", error);
+      }
     }
 
     loadData();
