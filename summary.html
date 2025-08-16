@@ -33,10 +33,13 @@
   <div class="main-container">
     <!-- Patient Information Card -->
     <div class="patient-card">
-      <div class="card-header">
+      <div class="card-header" onclick="togglePatientInfo()" style="cursor: pointer;">
         <h3><i class="fas fa-user-injured"></i> Patient Information</h3>
+        <div class="toggle-icon">
+          <i class="fas fa-chevron-down" id="toggleIcon"></i>
+        </div>
       </div>
-      <div class="patient-form">
+      <div class="patient-form" id="patientForm">
         <div class="form-row">
           <div class="form-group">
             <label for="p_name">Patient Name</label>
@@ -78,18 +81,16 @@
       </div>
     </div>
 
-    <!-- Action Bar -->
-    <div class="action-bar">
-      <div class="action-left">
-        <a href="list.html" class="btn btn-outline-secondary">
-          <i class="fas fa-arrow-left"></i> Back to Patient List
-        </a>
-      </div>
-      <div class="action-right">
-        <button class="btn btn-primary btn-lg" onclick="saveData()">
-          <i class="fas fa-save"></i> Save Progress
-        </button>
-      </div>
+    <!-- Floating Action Buttons -->
+    <div class="floating-actions">
+      <a href="list.html" class="floating-btn btn-back">
+        <i class="fas fa-arrow-left"></i>
+        <span>Back to List</span>
+      </a>
+      <button class="floating-btn btn-save" onclick="saveData()">
+        <i class="fas fa-save"></i>
+        <span>Save Progress</span>
+      </button>
     </div>
 
     <!-- Recommendations Box -->
@@ -102,27 +103,10 @@
         <p class="table-subtitle">Complete the form below for each time interval during active labour</p>
       </div>
       
-      <!-- Time Headers -->
-      <div class="time-headers">
-        <div class="time-header-row">
-          <div class="header-cell section-header-cell">Section</div>
-          <div class="header-cell field-header-cell">Field</div>
-          <div class="header-cell alert-header-cell">Alert</div>
-          <div class="header-cell time-header-cell">
-            <div class="time-header-content">
-              <div class="stage-label">ACTIVE FIRST STAGE</div>
-              <div class="time-intervals">
-                <div class="time-columns" id="timeColumns">
-                  <!-- Time columns will be populated by JavaScript -->
-                </div>
-                <div class="time-divider">
-                  <div class="divider-line"></div>
-                  <div class="divider-text">30 min intervals</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <!-- Stage Header -->
+      <div class="stage-header">
+        <div class="stage-label">ACTIVE FIRST STAGE</div>
+        <div class="stage-divider"></div>
       </div>
 
       <!-- Supportive Care Table -->
@@ -165,9 +149,18 @@
         </div>
       </div>
 
+      <!-- Second Stage Divider -->
+      <div class="second-stage-divider">
+        <div class="divider-content">
+          <div class="divider-line"></div>
+          <div class="divider-text">SECOND STAGE (3 hours)</div>
+          <div class="divider-line"></div>
+        </div>
+      </div>
+
       <!-- Medication Table -->
       <div class="section-table">
-        <div class="section-table">
+        <div class="section-title">
           <h4><i class="fas fa-pills"></i> Medication</h4>
         </div>
         <div class="table-wrapper">
@@ -293,30 +286,58 @@
     };
 
     const alertValues = {
-      // Supportive care
-      "Companion": ["No"],
-      "Pain relief": ["No"],
-      "Oral fluid": ["No"],
-      "Posture": ["Supine"],
+      // Supportive care - WHO LCG values
+      "Companion": ["N"], // N = No companion
+      "Pain relief": ["N"], // N = No pain relief
+      "Oral fluid": ["N"], // N = No oral fluid
+      "Posture": ["SP"], // SP = Supine position
+
+      // Baby - WHO LCG values
+      "Baseline FHR": ["N"], // N = Abnormal (<110 or >160)
+      "FHR deceleration": ["N"], // N = Late decelerations
+      "Amniotic fluid": ["N"], // N = Meconium or bloody
+      "Fetal position": ["N"], // N = OP or OT position
+      "Caput": ["N"], // N = +++ caput
+      "Moulding": ["N"], // N = +++ moulding
+
+      // Woman - WHO LCG values
+      "Pulse": ["N"], // N = <60 or >120
+      "Systolic BP": ["N"], // N = <90 or >140
+      "Diastolic BP": ["N"], // N = <60 or >90
+      "Temperature C": ["N"], // N = <36 or >37.5
+      "Urine": ["N"], // N = P1+, P2+, P3+
+
+      // Labour Progress - WHO LCG values
+      "Contractions per 10 min": ["N"], // N = <2 or >5
+      "Duration of contractions": ["N"] // N = <20s or >40s
+    };
+
+    // WHO LCG Alert Values for each field
+    const whoAlertValues = {
+      // Supportive Care
+      "Companion": "N", // N = No companion
+      "Pain relief": "N", // N = No pain relief  
+      "Oral fluid": "N", // N = No oral fluid
+      "Posture": "SP", // SP = Supine position
 
       // Baby
-      "Baseline FHR": ["<110", ">160"],
-      "FHR deceleration": ["Late"],
-      "Amniotic fluid": ["Meconium", "Bloody"],
-      "Fetal position": ["OP", "OT"],
-      "Caput": ["+++"],
-      "Moulding": ["+++"],
+      "Baseline FHR": "N", // N = Abnormal FHR
+      "FHR deceleration": "N", // N = Late decelerations
+      "Amniotic fluid": "N", // N = Meconium/bloody
+      "Fetal position": "N", // N = OP/OT position
+      "Caput": "N", // N = +++ caput
+      "Moulding": "N", // N = +++ moulding
 
       // Woman
-      "Pulse": ["<60", ">120"],
-      "Systolic BP": ["<90", ">140"],
-      "Diastolic BP": ["<60", ">90"],
-      "Temperature C": ["<36", ">37.5"],
-      "Urine": ["P1+", "P2+", "P3+"],
+      "Pulse": "N", // N = Abnormal pulse
+      "Systolic BP": "N", // N = Abnormal BP
+      "Diastolic BP": "N", // N = Abnormal BP
+      "Temperature C": "N", // N = Abnormal temp
+      "Urine": "N", // N = Proteinuria
 
       // Labour Progress
-      "Contractions per 10 min": ["<2", ">5"],
-      "Duration of contractions": ["<20s", ">40s"]
+      "Contractions per 10 min": "N", // N = Abnormal contractions
+      "Duration of contractions": "N" // N = Abnormal duration
     };
 
     const recommendations = {
@@ -512,13 +533,13 @@
       
       // Field header
       const fieldHeader = document.createElement("th");
-      fieldHeader.className = "field-header";
+      fieldHeader.className = "field-header sticky-field";
       fieldHeader.textContent = "Field";
       headerRow.appendChild(fieldHeader);
       
       // Alert header
       const alertHeader = document.createElement("th");
-      alertHeader.className = "alert-header";
+      alertHeader.className = "alert-header sticky-alert";
       alertHeader.textContent = "Alert";
       headerRow.appendChild(alertHeader);
       
@@ -540,21 +561,17 @@
         const row = document.createElement("tr");
         row.className = "field-row";
         
-        // Field cell
+        // Field cell (sticky)
         const fieldCell = document.createElement("td");
-        fieldCell.className = "field-cell";
+        fieldCell.className = "field-cell sticky-field";
         fieldCell.textContent = field;
         row.appendChild(fieldCell);
         
-        // Alert cell
+        // Alert cell (sticky) - Use WHO LCG values
         const alertCell = document.createElement("td");
-        alertCell.className = "alert-cell";
-        const latestValue = getLatestValue(field);
-        if (alertValues[field] && alertValues[field].includes(latestValue)) {
-          alertCell.innerHTML = '<span class="alert-indicator alert-danger">Alert</span>';
-        } else {
-          alertCell.innerHTML = '<span class="alert-indicator">Normal</span>';
-        }
+        alertCell.className = "alert-cell sticky-alert";
+        const alertValue = whoAlertValues[field] || "";
+        alertCell.innerHTML = `<span class="alert-indicator">${alertValue}</span>`;
         row.appendChild(alertCell);
         
         // Time cells
@@ -747,6 +764,20 @@
     document.addEventListener('DOMContentLoaded', function() {
       populateTimeColumns();
     });
+
+    // Toggle patient information section
+    function togglePatientInfo() {
+      const patientForm = document.getElementById('patientForm');
+      const toggleIcon = document.getElementById('toggleIcon');
+      
+      if (patientForm.style.display === 'none') {
+        patientForm.style.display = 'block';
+        toggleIcon.className = 'fas fa-chevron-down';
+      } else {
+        patientForm.style.display = 'none';
+        toggleIcon.className = 'fas fa-chevron-right';
+      }
+    }
   </script>
 </body>
 <footer class="footer">
