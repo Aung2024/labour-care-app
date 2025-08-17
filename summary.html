@@ -109,12 +109,6 @@
         <p class="table-subtitle">Complete the form below for each time interval during active labour</p>
       </div>
       
-      <!-- Stage Header -->
-      <div class="stage-header">
-        <div class="stage-label">ACTIVE FIRST STAGE</div>
-        <div class="stage-divider"></div>
-      </div>
-
       <!-- Supportive Care Table -->
       <div class="section-table">
         <div class="section-title" onclick="toggleSection('supportiveCare')" style="cursor: pointer;">
@@ -163,7 +157,11 @@
           </div>
         </div>
         <div class="table-wrapper" id="labourProgressWrapper">
-          <table class="summary-table" id="labourProgressTable"></table>
+          <!-- First Table: Contractions -->
+          <table class="summary-table" id="contractionsTable"></table>
+          
+          <!-- Second Table: Cervix and Descent Plots -->
+          <table class="summary-table" id="plotsTable"></table>
         </div>
       </div>
 
@@ -519,7 +517,8 @@
       document.getElementById("supportiveCareTable").innerHTML = "";
       document.getElementById("babyTable").innerHTML = "";
       document.getElementById("womanTable").innerHTML = "";
-      document.getElementById("labourProgressTable").innerHTML = "";
+      document.getElementById("contractionsTable").innerHTML = "";
+      document.getElementById("plotsTable").innerHTML = "";
       document.getElementById("medicationTable").innerHTML = "";
       document.getElementById("decisionMakingTable").innerHTML = "";
 
@@ -527,7 +526,8 @@
       generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
       generateSectionTable("Baby", sections["Baby"], "babyTable", existing);
       generateSectionTable("Woman", sections["Woman"], "womanTable", existing);
-      generateLabourProgressTable("labourProgressTable", existing);
+      generateContractionsTable("contractionsTable", existing);
+      generatePlotsTable("plotsTable", existing);
       generateSectionTable("Medication", sections["Medication"], "medicationTable", existing);
       generateSectionTable("Shared Decision-Making", sections["Shared Decision-Making"], "decisionMakingTable", existing);
       
@@ -810,6 +810,7 @@
     document.addEventListener('DOMContentLoaded', function() {
       populateTimeColumns();
       initializeFoldedSections(); // Initialize all sections as folded
+      addAlertHighlighting(); // Add alert highlighting functionality
     });
 
     // Toggle patient information section
@@ -841,7 +842,7 @@
     }
 
     // Special handling for Labour Progress table
-    function generateLabourProgressTable(tableId, existing) {
+    function generateContractionsTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
       // Create table header
@@ -859,18 +860,6 @@
       alertHeader.className = "alert-header sticky-alert";
       alertHeader.textContent = "Alert";
       headerRow.appendChild(alertHeader);
-      
-      // Cervix Plot header
-      const cervixHeader = document.createElement("th");
-      cervixHeader.className = "cervix-header";
-      cervixHeader.textContent = "Cervix [Plot X]";
-      headerRow.appendChild(cervixHeader);
-      
-      // Descent Plot header
-      const descentHeader = document.createElement("th");
-      descentHeader.className = "descent-header";
-      descentHeader.textContent = "Descent [Plot O]";
-      headerRow.appendChild(descentHeader);
       
       // Time headers
       timeCols.forEach(time => {
@@ -903,58 +892,6 @@
         const alertValue = whoAlertValues[field] || "";
         alertCell.innerHTML = `<span class="alert-indicator">${alertValue}</span>`;
         row.appendChild(alertCell);
-        
-        // Special handling for Cervix and Descent plots
-        if (field === "Cervix [Plot X]") {
-          const cervixCell = document.createElement("td");
-          cervixCell.className = "cervix-cell";
-          cervixCell.colSpan = 2;
-          
-          // Create mini table for cervix values
-          const cervixTable = document.createElement("table");
-          cervixTable.className = "mini-plot-table";
-          cervixTable.innerHTML = `
-            <tr><td>10</td><td>9</td><td>8</td><td>7</td><td>6</td><td>5</td></tr>
-            <tr><td></td><td>≥2h</td><td>≥2.5h</td><td>≥3h</td><td>≥5h</td><td>≥6h</td></tr>
-          `;
-          cervixCell.appendChild(cervixTable);
-          row.appendChild(cervixCell);
-          
-          // Skip the descent cell for this row
-          const skipCell = document.createElement("td");
-          skipCell.style.display = "none";
-          row.appendChild(skipCell);
-        } else if (field === "Descent [Plot O]") {
-          const descentCell = document.createElement("td");
-          descentCell.className = "descent-cell";
-          descentCell.colSpan = 2;
-          
-          // Create mini table for descent values
-          const descentTable = document.createElement("table");
-          descentTable.className = "mini-plot-table";
-          descentTable.innerHTML = `
-            <tr><td>5</td><td>4</td><td>3</td><td>2</td><td>1</td><td>0</td></tr>
-            <tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-          `;
-          descentCell.appendChild(descentTable);
-          row.appendChild(descentCell);
-          
-          // Skip the cervix cell for this row
-          const skipCell = document.createElement("td");
-          skipCell.style.display = "none";
-          row.appendChild(skipCell);
-        } else {
-          // Regular fields - add empty cervix and descent cells
-          const cervixCell = document.createElement("td");
-          cervixCell.className = "cervix-cell";
-          cervixCell.textContent = "";
-          row.appendChild(cervixCell);
-          
-          const descentCell = document.createElement("td");
-          descentCell.className = "descent-cell";
-          descentCell.textContent = "";
-          row.appendChild(descentCell);
-        }
         
         // Time cells
         timeCols.forEach((time, index) => {
@@ -1006,6 +943,174 @@
       });
       
       table.appendChild(tbody);
+    }
+
+    function generatePlotsTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Alert header
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header sticky-alert";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Cervix Plot header
+      const cervixHeader = document.createElement("th");
+      cervixHeader.className = "cervix-header";
+      cervixHeader.textContent = "Cervix [Plot X]";
+      headerRow.appendChild(cervixHeader);
+      
+      // Time headers
+      timeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Cervix Plot rows
+      const cervixValues = ["10", "9", "8", "7", "6", "5"];
+      const cervixThresholds = ["", "≥2h", "≥2.5h", "≥3h", "≥5h", "≥6h"];
+      
+      cervixValues.forEach((value, index) => {
+        const row = document.createElement("tr");
+        row.className = "field-row";
+        
+        // Field cell
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.textContent = value;
+        row.appendChild(fieldCell);
+        
+        // Alert cell
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell sticky-alert";
+        alertCell.textContent = cervixThresholds[index];
+        row.appendChild(alertCell);
+        
+        // Cervix Plot cell
+        const cervixCell = document.createElement("td");
+        cervixCell.className = "cervix-cell";
+        cervixCell.textContent = "X";
+        row.appendChild(cervixCell);
+        
+        // Time cells for plotting
+        timeCols.forEach((time, timeIndex) => {
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell plot-cell";
+          
+          // Add stage divider after 12 hours
+          if (timeIndex === 24) {
+            timeCell.innerHTML = '<div class="stage-divider-cell">SECOND STAGE</div>';
+            timeCell.className = "time-cell stage-divider-cell";
+          } else {
+            // Create input for X plotting
+            const input = document.createElement("input");
+            input.name = `cervix_${value}_${time}`;
+            input.type = "text";
+            input.className = "form-control form-control-sm plot-input";
+            input.placeholder = "X";
+            input.value = existing[time] && existing[time][`cervix_${value}`] ? existing[time][`cervix_${value}`] : "";
+            timeCell.appendChild(input);
+          }
+          
+          row.appendChild(timeCell);
+        });
+        
+        tbody.appendChild(row);
+      });
+      
+      // Descent Plot rows
+      const descentValues = ["5", "4", "3", "2", "1", "0"];
+      
+      descentValues.forEach((value) => {
+        const row = document.createElement("tr");
+        row.className = "field-row";
+        
+        // Field cell
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.textContent = value;
+        row.appendChild(fieldCell);
+        
+        // Alert cell (empty for descent)
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell sticky-alert";
+        alertCell.textContent = "";
+        row.appendChild(alertCell);
+        
+        // Descent Plot cell
+        const descentCell = document.createElement("td");
+        descentCell.className = "descent-cell";
+        descentCell.textContent = "O";
+        row.appendChild(descentCell);
+        
+        // Time cells for plotting
+        timeCols.forEach((time, timeIndex) => {
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell plot-cell";
+          
+          // Add stage divider after 12 hours
+          if (timeIndex === 24) {
+            timeCell.innerHTML = '<div class="stage-divider-cell">SECOND STAGE</div>';
+            timeCell.className = "time-cell stage-divider-cell";
+          } else {
+            // Create input for O plotting
+            const input = document.createElement("input");
+            input.name = `descent_${value}_${time}`;
+            input.type = "text";
+            input.className = "form-control form-control-sm plot-input";
+            input.placeholder = "O";
+            input.value = existing[time] && existing[time][`descent_${value}`] ? existing[time][`descent_${value}`] : "";
+            timeCell.appendChild(input);
+          }
+          
+          row.appendChild(timeCell);
+        });
+        
+        tbody.appendChild(row);
+      });
+      
+      table.appendChild(tbody);
+    }
+
+    // Add alert highlighting functionality
+    function addAlertHighlighting() {
+      // Add event listeners to all select elements
+      document.addEventListener('change', function(e) {
+        if (e.target.tagName === 'SELECT') {
+          const select = e.target;
+          const value = select.value;
+          const field = select.name.split('_').slice(1).join('_').replace(/_/g, ' ');
+          
+          // Check if this value is an alert value
+          if (alertValues[field] && alertValues[field].includes(value)) {
+            select.classList.add('alert-value');
+            select.style.border = '2px solid #dc2626';
+            select.style.backgroundColor = '#fef2f2';
+          } else {
+            select.classList.remove('alert-value');
+            select.style.border = '';
+            select.style.backgroundColor = '';
+          }
+        }
+      });
     }
 
     // Initialize all sections as folded
