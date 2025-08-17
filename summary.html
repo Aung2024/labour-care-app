@@ -96,6 +96,12 @@
     <!-- Recommendations Box -->
     <div id="recommendationsBox" class="recommendations-box"></div>
 
+    <!-- Success Message Display -->
+    <div id="successMessage" class="success-message" style="display: none;">
+      <i class="fas fa-check-circle"></i>
+      <span>Saved Successfully</span>
+    </div>
+
     <!-- Labour Care Summary Table -->
     <div class="summary-container">
       <div class="table-header">
@@ -174,12 +180,7 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const patientId = params.get("patient");
-    const timeCols = Array.from({ length: 25 }, (_, i) => {
-      const h = String(Math.floor(i / 2)).padStart(2, '0');
-      const m = i % 2 === 0 ? "00" : "30";
-      return `${h}:${m}`;
-    });
-
+    
     const sections = {
       "Supportive Care": [
         "Companion",
@@ -715,37 +716,56 @@
 
     // Show save success message
     function showSaveSuccess() {
-      const saveBtn = document.querySelector('.btn-save');
-      const originalText = saveBtn.innerHTML;
-      
-      saveBtn.innerHTML = '<i class="fas fa-check"></i> <span>Saved!</span>';
-      saveBtn.style.background = '#059669';
-      saveBtn.disabled = true;
+      const successMessage = document.getElementById('successMessage');
+      successMessage.style.display = 'flex';
       
       setTimeout(() => {
-        saveBtn.innerHTML = originalText;
-        saveBtn.style.background = '#10b981';
-        saveBtn.disabled = false;
-      }, 2000);
+        successMessage.style.display = 'none';
+      }, 3000);
     }
 
     // Show save error message
     function showSaveError(errorMessage) {
-      const saveBtn = document.querySelector('.btn-save');
-      const originalText = saveBtn.innerHTML;
-      
-      saveBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error!</span>';
-      saveBtn.style.background = '#dc2626';
-      saveBtn.disabled = true;
+      const successMessage = document.getElementById('successMessage');
+      successMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i><span>Save Error: ' + errorMessage + '</span>';
+      successMessage.className = 'success-message error-message';
+      successMessage.style.display = 'flex';
       
       setTimeout(() => {
-        saveBtn.innerHTML = originalText;
-        saveBtn.style.background = '#10b981';
-        saveBtn.disabled = false;
-      }, 3000);
+        successMessage.style.display = 'none';
+        successMessage.innerHTML = '<i class="fas fa-check-circle"></i><span>Saved Successfully</span>';
+        successMessage.className = 'success-message';
+      }, 5000);
       
       console.error("Save error:", errorMessage);
     }
+
+    // Generate time columns including Second Stage
+    function generateTimeColumns() {
+      const timeCols = [];
+      
+      // First Stage: 00:00 to 12:00 (25 columns: 00:00, 00:30, 01:00, ..., 12:00)
+      for (let hour = 0; hour <= 12; hour++) {
+        for (let minute = 0; minute < 60; minute += 30) {
+          const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+          timeCols.push(timeStr);
+        }
+      }
+      
+      // Second Stage: 12:30 to 15:30 (7 columns: 12:30, 13:00, 13:30, 14:00, 14:30, 15:00, 15:30)
+      for (let hour = 12; hour <= 15; hour++) {
+        for (let minute = 0; minute < 60; minute += 30) {
+          if (hour === 12 && minute === 0) continue; // Skip 12:00 as it's already in first stage
+          const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+          timeCols.push(timeStr);
+        }
+      }
+      
+      return timeCols;
+    }
+
+    // Initialize time columns
+    const timeCols = generateTimeColumns();
 
     // Load data when page loads
     firebase.auth().onAuthStateChanged(function(user) {
