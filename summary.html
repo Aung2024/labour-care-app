@@ -93,9 +93,6 @@
       </button>
     </div>
 
-    <!-- Recommendations Box -->
-    <div id="recommendationsBox" class="recommendations-box"></div>
-
     <!-- Success Message Display -->
     <div id="successMessage" class="success-message" style="display: none;">
       <i class="fas fa-check-circle"></i>
@@ -157,6 +154,14 @@
         <div class="table-wrapper" id="womanWrapper">
           <table class="summary-table" id="womanTable"></table>
         </div>
+        <div class="table-legend">
+          <small><strong>Legend:</strong> 
+            Pulse: <60 or >120 bpm | 
+            BP: SBP <90 or >140, DBP >90 mmHg | 
+            Temperature: <36 or >37.5°C | 
+            Urine: -/- (none), P (Protein), A (Acetone) with grades -, Trace, +, ++, +++, ++++
+          </small>
+        </div>
       </div>
 
       <!-- Labour Progress Table -->
@@ -199,6 +204,19 @@
         </div>
         <div class="table-wrapper" id="decisionMakingWrapper">
           <table class="summary-table" id="decisionMakingTable"></table>
+        </div>
+      </div>
+
+      <!-- Clinical Recommendations Section -->
+      <div class="section-table">
+        <div class="section-title" onclick="toggleSection('recommendations')" style="cursor: pointer;">
+          <h4><i class="fas fa-lightbulb"></i> Clinical Recommendations</h4>
+          <div class="toggle-icon">
+            <i class="fas fa-chevron-down" id="toggleRecommendations"></i>
+          </div>
+        </div>
+        <div class="recommendations-container" id="recommendationsWrapper">
+          <div id="recommendationsBox"></div>
         </div>
       </div>
     </div>
@@ -269,7 +287,7 @@
       "Systolic BP": ["<90", "90-140", ">140"],
       "Diastolic BP": ["<60", "60-90", ">90"],
       "Temperature C": ["<36", "36-37.5", ">37.5"],
-      "Urine": ["P-", "P Trace", "P1+", "P2+", "P3+"],
+      "Urine": ["-/-", "P-", "P Trace", "P+", "P++", "P+++", "P++++", "A-", "A Trace", "A+", "A++", "A+++", "A++++"],
 
       // Labour Progress
       "Contractions per 10 min": ["<2", "2-5", ">5"],
@@ -300,11 +318,11 @@
       "Moulding": ["+++"], // +++ = Severe moulding
 
       // Woman - WHO LCG values
-      "Pulse": ["<60", ">120"], // Abnormal pulse values
-      "Systolic BP": ["<90", ">140"], // Abnormal BP values
-      "Diastolic BP": [">90"], // High diastolic BP
-      "Temperature C": ["<36", ">37.5"], // Abnormal temperature
-      "Urine": ["P1+", "P2+", "P3+"], // Proteinuria
+      "Pulse": [], // Will be handled by number input range checking
+      "Systolic BP": [], // Will be handled by number input range checking
+      "Diastolic BP": [], // Will be handled by number input range checking
+      "Temperature C": [], // Will be handled by number input range checking
+      "Urine": ["P+", "P++", "P+++", "P++++", "A+", "A++", "A+++", "A++++"], // Protein and Acetone alerts
 
       // Labour Progress - WHO LCG values
       "Contractions per 10 min": ["<2", ">5"], // Abnormal contraction frequency
@@ -616,15 +634,36 @@
             timeCell.innerHTML = '<div class="stage-divider-cell">SECOND STAGE</div>';
             timeCell.className = "time-cell stage-divider-cell";
           } else {
-            // Special handling for Baseline FHR - use number input
-            if (field === "Baseline FHR") {
+            // Special handling for number input fields
+            if (field === "Baseline FHR" || field === "Pulse" || field === "Systolic BP" || field === "Diastolic BP" || field === "Temperature C") {
               const input = document.createElement("input");
               input.name = key;
               input.type = "number";
               input.className = "form-control form-control-sm";
-              input.min = "50";
-              input.max = "200";
-              input.step = "1";
+              
+              // Set appropriate ranges for each field
+              if (field === "Baseline FHR") {
+                input.min = "50";
+                input.max = "200";
+                input.step = "1";
+              } else if (field === "Pulse") {
+                input.min = "40";
+                input.max = "200";
+                input.step = "1";
+              } else if (field === "Systolic BP") {
+                input.min = "60";
+                input.max = "200";
+                input.step = "1";
+              } else if (field === "Diastolic BP") {
+                input.min = "40";
+                input.max = "120";
+                input.step = "1";
+              } else if (field === "Temperature C") {
+                input.min = "30";
+                input.max = "42";
+                input.step = "0.1";
+              }
+              
               input.value = value;
               timeCell.appendChild(input);
             } else if (dropdownOptions[field]) {
@@ -1154,35 +1193,45 @@
         if (field === "Baseline FHR" && element.type === "number") {
           const fhrValue = parseFloat(value);
           if (!isNaN(fhrValue) && (fhrValue < 110 || fhrValue > 160)) {
-            console.log('FHR alert triggered:', fhrValue);
+            isAlert = true;
+          }
+        } else if (field === "Pulse" && element.type === "number") {
+          const pulseValue = parseFloat(value);
+          if (!isNaN(pulseValue) && (pulseValue < 60 || pulseValue > 120)) {
+            isAlert = true;
+          }
+        } else if (field === "Systolic BP" && element.type === "number") {
+          const bpValue = parseFloat(value);
+          if (!isNaN(bpValue) && (bpValue < 90 || bpValue > 140)) {
+            isAlert = true;
+          }
+        } else if (field === "Diastolic BP" && element.type === "number") {
+          const bpValue = parseFloat(value);
+          if (!isNaN(bpValue) && bpValue > 90) {
+            isAlert = true;
+          }
+        } else if (field === "Temperature C" && element.type === "number") {
+          const tempValue = parseFloat(value);
+          if (!isNaN(tempValue) && (tempValue < 36 || tempValue > 37.5)) {
             isAlert = true;
           }
         } else if (field === "FHR deceleration" && value === "L") {
-          console.log('FHR deceleration alert triggered');
           isAlert = true;
         } else if (field === "Amniotic fluid" && (value === "M+++" || value === "B")) {
-          console.log('Amniotic fluid alert triggered');
           isAlert = true;
         } else if (field === "Fetal position" && (value === "P" || value === "T")) {
-          console.log('Fetal position alert triggered');
           isAlert = true;
         } else if (field === "Caput" && value === "+++") {
-          console.log('Caput alert triggered');
           isAlert = true;
         } else if (field === "Moulding" && value === "+++") {
-          console.log('Moulding alert triggered');
           isAlert = true;
         } else if (field === "Companion" && value === "N") {
-          console.log('Companion alert triggered');
           isAlert = true;
         } else if (field === "Pain relief" && value === "N") {
-          console.log('Pain relief alert triggered');
           isAlert = true;
         } else if (field === "Oral fluid" && value === "N") {
-          console.log('Oral fluid alert triggered');
           isAlert = true;
         } else if (field === "Posture" && value === "SP") {
-          console.log('Posture alert triggered');
           isAlert = true;
         }
         
@@ -1237,7 +1286,7 @@
       document.getElementById('toggleIcon').className = 'fas fa-chevron-right';
       
       // Start with all section tables folded
-      const sections = ['supportiveCare', 'baby', 'woman', 'labourProgress', 'medication', 'decisionMaking'];
+      const sections = ['supportiveCare', 'baby', 'woman', 'labourProgress', 'medication', 'decisionMaking', 'recommendations'];
       sections.forEach(sectionId => {
         const wrapper = document.getElementById(`${sectionId}Wrapper`);
         const toggleIcon = document.getElementById(`toggle${sectionId.charAt(0).toUpperCase() + sectionId.slice(1)}`);
