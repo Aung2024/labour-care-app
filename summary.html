@@ -15,79 +15,130 @@
   <script src="js/firebase.js"></script>
 </head>
 <body>
-  <!-- Professional Header -->
-  <div class="medical-header">
-    <div class="header-content">
-      <div class="header-left">
-        <div class="app-title">👩‍⚕️ Labour Care Guide</div>
-        <div class="page-subtitle">WHO Labour Care Summary Form</div>
-      </div>
-      <div class="header-right">
-        <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
-          <i class="fas fa-sign-out-alt"></i> Logout
-        </button>
-      </div>
-    </div>
-  </div>
+      // Table body
+      for (const [section, fields] of Object.entries(sections)) {
+        if (section !== "Labour Progress") {
+          // ...existing code for non-Labour Progress sections...
+          fields.forEach((field, index) => {
+            const row = document.createElement("tr");
+            if (index === 0) row.className = "section-row";
+            if (index === 0) {
+              const sectionCell = document.createElement("td");
+              sectionCell.className = "sticky section-label";
+              sectionCell.rowSpan = fields.length;
+              sectionCell.textContent = section;
+              row.appendChild(sectionCell);
+            }
+            const label = document.createElement("td");
+            label.className = "sticky2";
+            label.textContent = field;
+            row.appendChild(label);
+            const { value: latestValue, time: latestTime } = getLatestValueAndTime(field, existing, timeCols);
+            for (const time of timeCols) {
+              const key = `${time}_${field.replace(/\s+/g, "_")}`;
+              const value = existing[time] && existing[time][field] ? existing[time][field] : "";
+              let cellClass = "time";
+              if (time === latestTime && alertValues[field] && alertValues[field].includes(latestValue)) {
+                cellClass += " alert-cell";
+              }
+              const td = document.createElement("td");
+              td.className = cellClass;
+              if (dropdownOptions[field]) {
+                const select = document.createElement("select");
+                select.name = key;
+                const blankOption = document.createElement("option");
+                blankOption.value = "";
+                blankOption.textContent = "";
+                select.appendChild(blankOption);
+                dropdownOptions[field].forEach(opt => {
+                  const option = document.createElement("option");
+                  option.value = opt;
+                  option.textContent = opt;
+                  select.appendChild(option);
+                });
+                select.value = value !== undefined ? value : "";
+                td.appendChild(select);
+              } else {
+                const input = document.createElement("input");
+                input.name = key;
+                input.value = value;
+                td.appendChild(input);
+              }
+              row.appendChild(td);
+            }
+            table.appendChild(row);
+          });
+          const dividerRow = document.createElement("tr");
+          dividerRow.innerHTML = `<td colspan="${2 + timeCols.length}"><hr class="section-divider"></td>`;
+          table.appendChild(dividerRow);
+        } else {
+          // Render Labour Progress as a partograph-style table
+          // --- Header row for Cervix [Plot X] ---
+          const cervixHeader = document.createElement("tr");
+          const cervixHeaderCell = document.createElement("td");
+          cervixHeaderCell.colSpan = timeCols.length + 1;
+          cervixHeaderCell.style.textAlign = "center";
+          cervixHeaderCell.textContent = "Cervix [Plot X]";
+          cervixHeader.appendChild(cervixHeaderCell);
+          table.appendChild(cervixHeader);
 
-  <div class="main-container">
-    <!-- Patient Information Card -->
-    <div class="patient-card">
-      <div class="card-header" onclick="togglePatientInfo()" style="cursor: pointer;">
-        <h3><i class="fas fa-user-injured"></i> Patient Information</h3>
-        <div class="toggle-icon">
-          <i class="fas fa-chevron-down" id="toggleIcon"></i>
-        </div>
-      </div>
-      <div class="patient-form" id="patientForm">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="p_name">Patient Name</label>
-            <input type="text" id="p_name" class="form-control" placeholder="Enter patient name">
-          </div>
-          <div class="form-group">
-            <label for="p_age">Age</label>
-            <input type="number" id="p_age" class="form-control" placeholder="Age">
-          </div>
-          <div class="form-group">
-            <label for="p_parity">Parity</label>
-            <input type="number" id="p_parity" class="form-control" placeholder="Parity">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="p_onset">Labour Onset</label>
-            <select id="p_onset" class="form-control">
-              <option value="">Select onset type</option>
-              <option value="Spontaneous">Spontaneous</option>
-              <option value="Induced">Induced</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="p_active">Active Labour Diagnosis</label>
-            <input type="date" id="p_active" class="form-control">
-          </div>
-          <div class="form-group">
-            <label for="p_membrane">Ruptured Membranes</label>
-            <input type="datetime-local" id="p_membrane" class="form-control">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group full-width">
-            <label for="p_risk">Risk Factors</label>
-            <textarea id="p_risk" class="form-control" rows="2" placeholder="Enter any risk factors"></textarea>
-          </div>
-        </div>
-      </div>
-    </div>
+          // Cervix rows (10 to 5)
+          const cervixRows = [10, 9, 8, 7, 6, 5];
+          const cervixLabels = ["", "≥ 2h", "≥ 2.5h", "≥ 3h", "≥ 5h", "≥ 6h"];
+          for (let i = 0; i < cervixRows.length; i++) {
+            const row = document.createElement("tr");
+            const labelCell = document.createElement("td");
+            labelCell.textContent = cervixRows[i] + (cervixLabels[i] ? ` ${cervixLabels[i]}` : "");
+            row.appendChild(labelCell);
+            for (const time of timeCols) {
+              const key = `${time}_Cervix_${cervixRows[i]}`;
+              const value = existing[time] && existing[time][`Cervix ${cervixRows[i]}`] ? existing[time][`Cervix ${cervixRows[i]}`] : "";
+              const td = document.createElement("td");
+              td.className = "time";
+              const input = document.createElement("input");
+              input.name = key;
+              input.value = value;
+              td.appendChild(input);
+              row.appendChild(td);
+            }
+            table.appendChild(row);
+          }
 
-    <!-- Floating Action Buttons -->
-    <div class="floating-actions">
-      <a href="list.html" class="floating-btn btn-back">
-        <i class="fas fa-arrow-left"></i>
-        <span>Back to List</span>
-      </a>
-      <button class="floating-btn btn-save" onclick="saveData()">
+          // Descent header
+          const descentHeader = document.createElement("tr");
+          const descentLabel = document.createElement("td");
+          descentLabel.colSpan = timeCols.length + 1;
+          descentLabel.style.textAlign = "center";
+          descentLabel.textContent = "Descent [Plot O]";
+          descentHeader.appendChild(descentLabel);
+          table.appendChild(descentHeader);
+
+          // Descent rows (5 to 0)
+          const descentRows = [5, 4, 3, 2, 1, 0];
+          for (let i = 0; i < descentRows.length; i++) {
+            const row = document.createElement("tr");
+            const labelCell = document.createElement("td");
+            labelCell.textContent = descentRows[i];
+            row.appendChild(labelCell);
+            for (const time of timeCols) {
+              const key = `${time}_Descent_${descentRows[i]}`;
+              const value = existing[time] && existing[time][`Descent ${descentRows[i]}`] ? existing[time][`Descent ${descentRows[i]}`] : "";
+              const td = document.createElement("td");
+              td.className = "time";
+              const input = document.createElement("input");
+              input.name = key;
+              input.value = value;
+              td.appendChild(input);
+              row.appendChild(td);
+            }
+            table.appendChild(row);
+          }
+          // Divider after Labour Progress
+          const dividerRow = document.createElement("tr");
+          dividerRow.innerHTML = `<td colspan="${2 + timeCols.length}"><hr class="section-divider"></td>`;
+          table.appendChild(dividerRow);
+        }
+      }
         <i class="fas fa-save"></i>
         <span>Save Progress</span>
       </button>
