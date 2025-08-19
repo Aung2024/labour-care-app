@@ -119,9 +119,9 @@
         </div>
         <div class="table-legend">
           <small><strong>Legend:</strong> 
-            Table 1: Contractions frequency and duration with number inputs | 
-            Table 2: Cervix plotting with X marks (hourly intervals) | 
-            Table 3: Descent plotting with O marks (hourly intervals)
+            Table 1: Contractions with 30-min intervals | 
+            Table 2: Cervix plotting with hourly intervals | 
+            Table 3: Descent plotting with hourly intervals
           </small>
         </div>
       </div>
@@ -221,6 +221,19 @@
         </div>
       </div>
 
+      <!-- Initials Table -->
+      <div class="section-table">
+        <div class="section-title" onclick="toggleSection('initials')" style="cursor: pointer;">
+          <h4><i class="fas fa-signature"></i> Initials</h4>
+          <div class="toggle-icon">
+            <i class="fas fa-chevron-down" id="toggleInitials"></i>
+          </div>
+        </div>
+        <div class="table-wrapper" id="initialsWrapper">
+          <table class="summary-table" id="initialsTable"></table>
+        </div>
+      </div>
+
       <!-- Clinical Recommendations Section -->
       <div class="section-table">
         <div class="section-title" onclick="toggleSection('recommendations')" style="cursor: pointer;">
@@ -273,16 +286,14 @@
         "Descent [Plot O]"
       ],
       "Medication": [
-        "Oxytocin",
-        "Analgesia",
-        "Antibiotics",
-        "Other"
+        "Oxytocin (U/L, drops/min)",
+        "Medicine",
+        "IV fluids"
       ],
       "Shared Decision-Making": [
-        "Informed consent",
-        "Plan discussed",
-        "Questions answered",
-        "Support person present"
+        "ASSESSMENT",
+        "PLAN",
+        "INITIALS"
       ]
     };
 
@@ -314,10 +325,9 @@
       "Descent [Plot O]": ["", "O"],
 
       // Medication
-      "Oxytocin": ["None", "Started", "Stopped"],
-      "Analgesia": ["None", "Started", "Stopped"],
-      "Antibiotics": ["None", "Started", "Stopped"],
-      "Other": ["None", "Started", "Stopped"]
+      "Oxytocin (U/L, drops/min)": ["None", "Started", "Stopped"],
+      "Medicine": ["None", "Started", "Stopped"],
+      "IV fluids": ["None", "Started", "Stopped"]
     };
 
     const alertValues = {
@@ -569,6 +579,7 @@
       document.getElementById("descentPlotTable").innerHTML = "";
       document.getElementById("medicationTable").innerHTML = "";
       document.getElementById("decisionMakingTable").innerHTML = "";
+      document.getElementById("initialsTable").innerHTML = ""; // Clear initials table
 
       // Generate each section table
       generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
@@ -579,6 +590,7 @@
       generateDescentPlotTable("descentPlotTable", existing);
       generateSectionTable("Medication", sections["Medication"], "medicationTable", existing);
       generateSectionTable("Shared Decision-Making", sections["Shared Decision-Making"], "decisionMakingTable", existing);
+      generateInitialsTable("initialsTable", existing); // Generate initials table
       
       // Add event listeners for form changes
       addFormEventListeners();
@@ -942,7 +954,7 @@
       }
     }
 
-    // Special handling for Labour Progress table
+    // Labour Progress Table - Fixed structure based on HTML file
     function generateContractionsTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
@@ -950,14 +962,19 @@
       const thead = document.createElement("thead");
       const headerRow = document.createElement("tr");
       
-      // Single column header for Contractions
-      const headerCell = document.createElement("th");
-      headerCell.className = "field-header sticky-field";
-      headerCell.textContent = "Contractions";
-      headerCell.rowSpan = 2; // Span 2 rows
-      headerRow.appendChild(headerCell);
+      // First column: Field
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
       
-      // Time headers
+      // Second column: Alert
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header sticky-alert";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Time headers (30-minute intervals for contractions)
       timeCols.forEach(time => {
         const timeHeader = document.createElement("th");
         timeHeader.className = "time-header";
@@ -974,13 +991,19 @@
       // First row: Contractions per 10 min
       const contractionsRow = document.createElement("tr");
       
-      // First column: Contractions per 10 min label
-      const contractionsLabelCell = document.createElement("td");
-      contractionsLabelCell.className = "field-cell sticky-field";
-      contractionsLabelCell.textContent = "per 10 min";
-      contractionsRow.appendChild(contractionsLabelCell);
+      // Field cell
+      const contractionsFieldCell = document.createElement("td");
+      contractionsFieldCell.className = "field-cell sticky-field";
+      contractionsFieldCell.textContent = "Contractions per 10 min";
+      contractionsRow.appendChild(contractionsFieldCell);
       
-      // Time cells for contractions row
+      // Alert cell
+      const contractionsAlertCell = document.createElement("td");
+      contractionsAlertCell.className = "alert-cell sticky-alert";
+      contractionsAlertCell.textContent = "≤2, >5";
+      contractionsRow.appendChild(contractionsAlertCell);
+      
+      // Time cells
       timeCols.forEach((time, index) => {
         const timeCell = document.createElement("td");
         timeCell.className = "time-cell";
@@ -1005,13 +1028,19 @@
       // Second row: Duration of contractions
       const durationRow = document.createElement("tr");
       
-      // First column: Duration label
-      const durationLabelCell = document.createElement("td");
-      durationLabelCell.className = "field-cell sticky-field";
-      durationLabelCell.textContent = "Duration";
-      durationRow.appendChild(durationLabelCell);
+      // Field cell
+      const durationFieldCell = document.createElement("td");
+      durationFieldCell.className = "field-cell sticky-field";
+      durationFieldCell.textContent = "Duration of contractions";
+      durationRow.appendChild(durationFieldCell);
       
-      // Time cells for duration row
+      // Alert cell
+      const durationAlertCell = document.createElement("td");
+      durationAlertCell.className = "alert-cell sticky-alert";
+      durationAlertCell.textContent = "<20, >60";
+      durationRow.appendChild(durationAlertCell);
+      
+      // Time cells
       timeCols.forEach((time, index) => {
         const timeCell = document.createElement("td");
         timeCell.className = "time-cell";
@@ -1042,14 +1071,19 @@
       const thead = document.createElement("thead");
       const headerRow = document.createElement("tr");
       
-      // Cervix Plot header (merged cell spanning all rows)
-      const cervixHeader = document.createElement("th");
-      cervixHeader.className = "cervix-header";
-      cervixHeader.textContent = "Cervix [Plot X]";
-      cervixHeader.rowSpan = 7; // Span all 6 data rows + 1 header row
-      headerRow.appendChild(cervixHeader);
+      // First column: Field
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
       
-      // Time headers (no 30-minute intervals for plotting tables)
+      // Second column: Alert
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header sticky-alert";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Time headers (hourly intervals for plotting)
       const plotTimeCols = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"];
       
       plotTimeCols.forEach(time => {
@@ -1067,12 +1101,24 @@
       
       // Cervix Plot rows (10, 9, 8, 7, 6, 5)
       const cervixValues = ["10", "9", "8", "7", "6", "5"];
-      const timeLabels = ["≥ 2h", "≥ 2.5h", "≥ 3h", "≥ 5h", "≥ 6h", ""];
+      const timeLabels = ["", "≥ 2h", "≥ 2.5h", "≥ 3h", "≥ 5h", "≥ 6h"];
       
       cervixValues.forEach((cervix, index) => {
         const row = document.createElement("tr");
         
-        // Time cells (no field or alert columns)
+        // Field cell (cervix value)
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.textContent = cervix;
+        row.appendChild(fieldCell);
+        
+        // Alert cell (time label)
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell sticky-alert";
+        alertCell.textContent = timeLabels[index];
+        row.appendChild(alertCell);
+        
+        // Time cells
         plotTimeCols.forEach((time, timeIndex) => {
           const timeCell = document.createElement("td");
           timeCell.className = "time-cell";
@@ -1114,14 +1160,19 @@
       const thead = document.createElement("thead");
       const headerRow = document.createElement("tr");
       
-      // Descent Plot header (merged cell spanning all rows)
-      const descentHeader = document.createElement("th");
-      descentHeader.className = "descent-header";
-      descentHeader.textContent = "Descent [Plot O]";
-      descentHeader.rowSpan = 7; // Span all 6 data rows + 1 header row
-      headerRow.appendChild(descentHeader);
+      // First column: Field
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
       
-      // Time headers (no 30-minute intervals for plotting tables)
+      // Second column: Alert
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header sticky-alert";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Time headers (hourly intervals for plotting)
       const plotTimeCols = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"];
       
       plotTimeCols.forEach(time => {
@@ -1143,7 +1194,19 @@
       descentValues.forEach((descent, index) => {
         const row = document.createElement("tr");
         
-        // Time cells (no field or alert columns)
+        // Field cell (descent value)
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.textContent = descent;
+        row.appendChild(fieldCell);
+        
+        // Alert cell (empty for descent)
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell sticky-alert";
+        alertCell.textContent = "";
+        row.appendChild(alertCell);
+        
+        // Time cells
         plotTimeCols.forEach((time, timeIndex) => {
           const timeCell = document.createElement("td");
           timeCell.className = "time-cell";
@@ -1309,7 +1372,7 @@
       document.getElementById('toggleIcon').className = 'fas fa-chevron-right';
       
       // Start with all section tables folded
-      const sections = ['supportiveCare', 'baby', 'woman', 'labourProgress', 'medication', 'decisionMaking', 'recommendations'];
+      const sections = ['supportiveCare', 'baby', 'woman', 'labourProgress', 'medication', 'decisionMaking', 'initials', 'recommendations'];
       sections.forEach(sectionId => {
         const wrapper = document.getElementById(`${sectionId}Wrapper`);
         const toggleIcon = document.getElementById(`toggle${sectionId.charAt(0).toUpperCase() + sectionId.slice(1)}`);
@@ -1319,6 +1382,77 @@
           toggleIcon.className = 'fas fa-chevron-right';
         }
       });
+    }
+
+    // Generate Initials Table
+    function generateInitialsTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // First column: Field
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Second column: Alert
+      const alertHeader = document.createElement("th");
+      alertHeader.className = "alert-header sticky-alert";
+      alertHeader.textContent = "Alert";
+      headerRow.appendChild(alertHeader);
+      
+      // Time headers (30-minute intervals)
+      timeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Initials row
+      const initialsRow = document.createElement("tr");
+      
+      // Field cell
+      const fieldCell = document.createElement("td");
+      fieldCell.className = "field-cell sticky-field";
+      fieldCell.textContent = "INITIALS";
+      initialsRow.appendChild(fieldCell);
+      
+      // Alert cell (empty for initials)
+      const alertCell = document.createElement("td");
+      alertCell.className = "alert-cell sticky-alert";
+      alertCell.textContent = "";
+      initialsRow.appendChild(alertCell);
+      
+      // Time cells
+      timeCols.forEach((time, index) => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const key = `Initials_${time}`;
+        const value = existing[key] || "";
+        
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "Initials";
+        input.value = value;
+        timeCell.appendChild(input);
+        initialsRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(initialsRow);
+      table.appendChild(tbody);
     }
   </script>
 </body>
