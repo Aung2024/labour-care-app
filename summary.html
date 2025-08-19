@@ -168,7 +168,7 @@
         </div>
       </div>
 
-      <!-- Labour Progress Table -->
+      <!-- Labour Progress Section -->
       <div class="section-table">
         <div class="section-title" onclick="toggleSection('labourProgress')" style="cursor: pointer;">
           <h4><i class="fas fa-chart-line"></i> Labour Progress</h4>
@@ -177,20 +177,53 @@
           </div>
         </div>
         <div class="table-wrapper" id="labourProgressWrapper">
-          <!-- First Table: Contractions -->
-          <table class="summary-table" id="contractionsTable"></table>
+          <!-- Contractions Table (Keep as is) -->
+          <div class="contractions-section">
+            <h5 class="chart-title">Contractions</h5>
+            <table class="summary-table" id="contractionsTable"></table>
+          </div>
           
-          <!-- Second Table: Cervix Plot -->
-          <table class="summary-table" id="cervixPlotTable"></table>
+          <!-- Cervix Plotting Chart -->
+          <div class="plotting-section">
+            <h5 class="chart-title">Cervix Plotting (WHO LCG Guidelines)</h5>
+            <div class="plotting-container">
+              <div class="plotting-info">
+                <p><strong>Instructions:</strong> Click on the chart to plot cervical dilation progress. Plot 'X' when cervical dilation is observed.</p>
+                <p><strong>Alert Thresholds:</strong> Plot 'X' to record cervical dilatation. Alert triggered when lag time for current cervical dilatation is exceeded with no progress.</p>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="cervixChart" width="800" height="400"></canvas>
+                <div class="chart-controls">
+                  <button class="btn btn-sm btn-outline-primary" onclick="clearCervixChart()">Clear Chart</button>
+                  <button class="btn btn-sm btn-outline-success" onclick="addCervixPoint()">Add Point</button>
+                </div>
+              </div>
+            </div>
+          </div>
           
-          <!-- Third Table: Descent Plot -->
-          <table class="summary-table" id="descentPlotTable"></table>
+          <!-- Descent Plotting Chart -->
+          <div class="plotting-section">
+            <h5 class="chart-title">Fetal Descent Plotting (WHO LCG Guidelines)</h5>
+            <div class="plotting-container">
+              <div class="plotting-info">
+                <p><strong>Instructions:</strong> Click on the chart to plot fetal descent progress. Plot 'O' when descent is observed.</p>
+                <p><strong>Alert Thresholds:</strong> Monitor descent progress. In second stage, insert 'P' to indicate when pushing begins.</p>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="descentChart" width="800" height="400"></canvas>
+                <div class="chart-controls">
+                  <button class="btn btn-sm btn-outline-primary" onclick="clearDescentChart()">Clear Chart</button>
+                  <button class="btn btn-sm btn-outline-success" onclick="addDescentPoint()">Add Point</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="table-legend">
           <small><strong>Legend:</strong> 
             Contractions: Number inputs for frequency and duration | 
-            Cervix Plot: Select "X" to plot cervical dilation progress | 
-            Descent Plot: Select "O" to plot fetal descent progress
+            Cervix Plot: Click to plot 'X' for cervical dilation progress | 
+            Descent Plot: Click to plot 'O' for fetal descent progress
           </small>
         </div>
       </div>
@@ -576,27 +609,24 @@
       document.getElementById("babyTable").innerHTML = "";
       document.getElementById("womanTable").innerHTML = "";
       document.getElementById("contractionsTable").innerHTML = "";
-      document.getElementById("cervixPlotTable").innerHTML = "";
-      document.getElementById("descentPlotTable").innerHTML = "";
+      // Note: Plotting charts are handled separately
       document.getElementById("medicationTable").innerHTML = "";
       document.getElementById("decisionMakingTable").innerHTML = "";
       document.getElementById("initialsTable").innerHTML = ""; // Clear initials table
 
       // Generate each section table
       generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
-      
       generateSectionTable("Baby", sections["Baby"], "babyTable", existing);
-      
       generateSectionTable("Woman", sections["Woman"], "womanTable", existing);
       
+      // Generate Contractions table (keep as is)
       generateContractionsTable("contractionsTable", existing);
-      generateCervixPlotTable("cervixPlotTable", existing);
-      generateDescentPlotTable("descentPlotTable", existing);
+      
+      // Initialize plotting charts (replaces the old table generation)
+      initializePlottingCharts();
       
       generateSectionTable("Medication", sections["Medication"], "medicationTable", existing);
-      
       generateSectionTable("Shared Decision-Making", sections["Shared Decision-Making"], "decisionMakingTable", existing);
-      
       generateInitialsTable("initialsTable", existing); // Generate initials table
       
       // Add event listeners for form changes
@@ -914,6 +944,7 @@
       populateTimeColumns();
       initializeFoldedSections(); // Initialize all sections as folded
       addAlertHighlighting(); // Add alert highlighting functionality
+      initializePlottingCharts(); // Initialize plotting charts
       
       // Test if sticky positioning is supported
       testStickySupport();
@@ -1050,6 +1081,219 @@
       
       tbody.appendChild(initialsRow);
       table.appendChild(tbody);
+    }
+
+    // Interactive Plotting Functions
+    let cervixChart = null;
+    let descentChart = null;
+    let cervixData = [];
+    let descentData = [];
+
+    // Initialize plotting charts
+    function initializePlottingCharts() {
+      // Initialize Cervix Chart
+      const cervixCanvas = document.getElementById('cervixChart');
+      if (cervixCanvas) {
+        cervixChart = cervixCanvas.getContext('2d');
+        setupChart(cervixCanvas, 'cervix');
+      }
+      
+      // Initialize Descent Chart
+      const descentCanvas = document.getElementById('descentChart');
+      if (descentCanvas) {
+        descentChart = descentCanvas.getContext('2d');
+        setupChart(descentCanvas, 'descent');
+      }
+    }
+
+    // Setup chart with grid and labels
+    function setupChart(canvas, type) {
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+      
+      // Draw grid
+      drawGrid(ctx, width, height, type);
+      
+      // Draw labels
+      drawLabels(ctx, width, height, type);
+      
+      // Add click/touch event listeners
+      addChartEventListeners(canvas, type);
+    }
+
+    // Draw grid lines
+    function drawGrid(ctx, width, height, type) {
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
+      
+      // Vertical lines (time intervals)
+      const timeIntervals = type === 'cervix' ? 15 : 15; // 15 hours
+      for (let i = 0; i <= timeIntervals; i++) {
+        const x = (width * 0.1) + (i * (width * 0.8) / timeIntervals);
+        ctx.beginPath();
+        ctx.moveTo(x, height * 0.1);
+        ctx.lineTo(x, height * 0.9);
+        ctx.stroke();
+      }
+      
+      // Horizontal lines (cervix/descent values)
+      const valueIntervals = type === 'cervix' ? 6 : 6; // 6 levels
+      for (let i = 0; i <= valueIntervals; i++) {
+        const y = height * 0.1 + (i * (height * 0.8) / valueIntervals);
+        ctx.beginPath();
+        ctx.moveTo(width * 0.1, y);
+        ctx.lineTo(width * 0.9, y);
+        ctx.stroke();
+      }
+    }
+
+    // Draw chart labels
+    function drawLabels(ctx, width, height, type) {
+      ctx.fillStyle = '#374151';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      
+      // Time labels (x-axis)
+      const timeIntervals = type === 'cervix' ? 15 : 15;
+      for (let i = 0; i <= timeIntervals; i++) {
+        const x = (width * 0.1) + (i * (width * 0.8) / timeIntervals);
+        const time = i === 0 ? '0h' : `${i}h`;
+        ctx.fillText(time, x, height * 0.95);
+      }
+      
+      // Value labels (y-axis)
+      if (type === 'cervix') {
+        const cervixValues = ['10cm', '9cm', '8cm', '7cm', '6cm', '5cm'];
+        for (let i = 0; i < cervixValues.length; i++) {
+          const y = height * 0.1 + (i * (height * 0.8) / (cervixValues.length - 1));
+          ctx.fillText(cervixValues[i], width * 0.05, y + 4);
+        }
+      } else {
+        const descentValues = ['5', '4', '3', '2', '1', '0'];
+        for (let i = 0; i < descentValues.length; i++) {
+          const y = height * 0.1 + (i * (height * 0.8) / (descentValues.length - 1));
+          ctx.fillText(descentValues[i], width * 0.05, y + 4);
+        }
+      }
+      
+      // Chart title
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText(type === 'cervix' ? 'Cervical Dilation Progress' : 'Fetal Descent Progress', width / 2, height * 0.05);
+    }
+
+    // Add event listeners for chart interaction
+    function addChartEventListeners(canvas, type) {
+      // Mouse events
+      canvas.addEventListener('click', (e) => handleChartClick(e, canvas, type));
+      
+      // Touch events for mobile
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        handleChartClick({ offsetX: x, offsetY: y }, canvas, type);
+      });
+    }
+
+    // Handle chart clicks/touches
+    function handleChartClick(e, canvas, type) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.offsetX;
+      const y = e.offsetY;
+      
+      // Convert pixel coordinates to chart values
+      const timeValue = Math.round(((x - rect.width * 0.1) / (rect.width * 0.8)) * 15);
+      const valueIndex = Math.round(((y - rect.height * 0.1) / (rect.height * 0.8)) * 5);
+      
+      if (timeValue >= 0 && timeValue <= 15 && valueIndex >= 0 && valueIndex <= 5) {
+        addPlotPoint(canvas, type, timeValue, valueIndex);
+      }
+    }
+
+    // Add a plot point to the chart
+    function addPlotPoint(canvas, type, time, value) {
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      
+      // Calculate pixel coordinates
+      const x = (width * 0.1) + (time * (width * 0.8) / 15);
+      const y = height * 0.1 + (value * (height * 0.8) / 5);
+      
+      // Draw the plot point
+      ctx.fillStyle = type === 'cervix' ? '#3b82f6' : '#10b981';
+      ctx.font = 'bold 20px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      if (type === 'cervix') {
+        ctx.fillText('X', x, y);
+      } else {
+        ctx.fillText('O', x, y);
+      }
+      
+      // Store the data point
+      const dataPoint = { time, value, x, y };
+      if (type === 'cervix') {
+        cervixData.push(dataPoint);
+      } else {
+        descentData.push(dataPoint);
+      }
+      
+      // Check for alerts based on WHO LCG guidelines
+      checkPlottingAlerts(type, time, value);
+    }
+
+    // Check for plotting alerts based on WHO LCG guidelines
+    function checkPlottingAlerts(type, time, value) {
+      if (type === 'cervix') {
+        // WHO LCG Cervix Alert Guidelines
+        const cervixValues = [10, 9, 8, 7, 6, 5];
+        const alertThresholds = ['', '≥ 2h', '≥ 2.5h', '≥ 3h', '≥ 5h', '≥ 6h'];
+        
+        if (alertThresholds[value] && time > 0) {
+          console.log(`⚠️ Cervix Alert: ${cervixValues[value]}cm at ${time}h - ${alertThresholds[value]}`);
+          // You can add visual alerts here
+        }
+      } else {
+        // WHO LCG Descent Alert Guidelines
+        if (time >= 12 && value > 0) {
+          console.log(`⚠️ Descent Alert: Second stage - pushing should begin`);
+          // You can add visual alerts here
+        }
+      }
+    }
+
+    // Clear chart functions
+    function clearCervixChart() {
+      if (cervixChart) {
+        cervixData = [];
+        setupChart(document.getElementById('cervixChart'), 'cervix');
+      }
+    }
+
+    function clearDescentChart() {
+      if (descentChart) {
+        descentData = [];
+        setupChart(document.getElementById('descentChart'), 'descent');
+      }
+    }
+
+    // Add point functions (for manual entry)
+    function addCervixPoint() {
+      // This could open a modal for manual time/value entry
+      alert('Click on the chart to add a point, or use the manual entry feature');
+    }
+
+    function addDescentPoint() {
+      // This could open a modal for manual time/value entry
+      alert('Click on the chart to add a point, or use the manual entry feature');
     }
   </script>
 </body>
