@@ -258,7 +258,6 @@
       "Posture": ["M", "SP"],
 
       // Baby
-      "Baseline FHR": ["<110", "110-160", ">160"],
       "FHR deceleration": ["N", "E", "L", "V"],
       "Amniotic fluid": ["I", "C", "M", "M+", "M++", "M+++", "B"],
       "Fetal position": ["A", "P", "T"],
@@ -293,7 +292,7 @@
       "Posture": ["SP"], // SP = Supine position
 
       // Baby - WHO LCG values
-      "Baseline FHR": ["<110", ">160"], // Abnormal FHR values
+      "Baseline FHR": [], // Will be handled by number input range checking
       "FHR deceleration": ["L"], // L = Late decelerations
       "Amniotic fluid": ["M+++", "B"], // M+++ = Severe meconium, B = Bloody
       "Fetal position": ["P", "T"], // P = Posterior, T = Transverse
@@ -544,6 +543,15 @@
       
       // Add event listeners for form changes
       addFormEventListeners();
+      
+      // Highlight any existing alert values after tables are generated
+      setTimeout(() => {
+        const allSelects = document.querySelectorAll('select');
+        const allNumberInputs = document.querySelectorAll('input[type="number"]');
+        
+        allSelects.forEach(select => checkAndHighlightAlert(select));
+        allNumberInputs.forEach(input => checkAndHighlightAlert(input));
+      }, 100);
     }
 
     function generateSectionTable(sectionName, fields, tableId, existing) {
@@ -609,7 +617,19 @@
             timeCell.innerHTML = '<div class="stage-divider-cell">SECOND STAGE</div>';
             timeCell.className = "time-cell stage-divider-cell";
           } else {
-            if (dropdownOptions[field]) {
+            // Special handling for Baseline FHR - use number input
+            if (field === "Baseline FHR") {
+              const input = document.createElement("input");
+              input.name = key;
+              input.type = "number";
+              input.className = "form-control form-control-sm";
+              input.placeholder = "FHR value";
+              input.min = "50";
+              input.max = "200";
+              input.step = "1";
+              input.value = value;
+              timeCell.appendChild(input);
+            } else if (dropdownOptions[field]) {
               const select = document.createElement("select");
               select.name = key;
               select.className = "form-select form-select-sm";
@@ -1114,42 +1134,6 @@
 
     // Add alert highlighting functionality
     function addAlertHighlighting() {
-      // Function to check and highlight alert values
-      function checkAndHighlightAlert(element) {
-        const value = element.value;
-        const nameParts = element.name.split('_');
-        if (nameParts.length >= 2) {
-          const field = nameParts.slice(1).join('_');
-          
-          let isAlert = false;
-          
-          // Check if this value is an alert value
-          if (alertValues[field] && alertValues[field].includes(value)) {
-            isAlert = true;
-          }
-          
-          // Special handling for Baseline FHR number input
-          if (field === "Baseline FHR" && element.type === "number") {
-            const fhrValue = parseFloat(value);
-            if (!isNaN(fhrValue)) {
-              if (fhrValue < 110 || fhrValue > 160) {
-                isAlert = true;
-              }
-            }
-          }
-          
-          if (isAlert) {
-            element.classList.add('alert-value');
-            element.style.border = '2px solid #dc2626';
-            element.style.backgroundColor = '#fef2f2';
-          } else {
-            element.classList.remove('alert-value');
-            element.style.border = '';
-            element.style.backgroundColor = '';
-          }
-        }
-      }
-
       // Add event listeners to all select elements
       document.addEventListener('change', function(e) {
         if (e.target.tagName === 'SELECT') {
