@@ -135,6 +135,14 @@
         </div>
         <div class="table-wrapper" id="babyWrapper">
           <table class="summary-table" id="babyTable"></table>
+          <div class="table-legend">
+            <small><strong>Legend:</strong> 
+              FHR: N=No, E=Early, L=Late, V=Variable | 
+              Amniotic: I=Intact, C=Clear, M=Meconium, B=Bloody | 
+              Position: A=Anterior, P=Posterior, T=Transverse | 
+              Caput/Moulding: 0=None, +=Mild, ++=Moderate, +++=Severe
+            </small>
+          </div>
         </div>
       </div>
 
@@ -251,11 +259,11 @@
 
       // Baby
       "Baseline FHR": ["<110", "110-160", ">160"],
-      "FHR deceleration": ["None", "Early", "Late", "Variable"],
-      "Amniotic fluid": ["Clear", "Meconium", "Bloody", "Intact Membranes"],
-      "Fetal position": ["OA", "OP", "OT"],
-      "Caput": ["None", "+", "++", "+++"],
-      "Moulding": ["None", "+", "++", "+++"],
+      "FHR deceleration": ["N", "E", "L", "V"],
+      "Amniotic fluid": ["I", "C", "M", "M+", "M++", "M+++", "B"],
+      "Fetal position": ["A", "P", "T"],
+      "Caput": ["0", "+", "++", "+++"],
+      "Moulding": ["0", "+", "++", "+++"],
 
       // Woman
       "Pulse": ["<60", "60-100", ">100", ">120"],
@@ -285,23 +293,23 @@
       "Posture": ["SP"], // SP = Supine position
 
       // Baby - WHO LCG values
-      "Baseline FHR": ["N"], // N = Abnormal (<110 or >160)
-      "FHR deceleration": ["N"], // N = Late decelerations
-      "Amniotic fluid": ["N"], // N = Meconium or bloody
-      "Fetal position": ["N"], // N = OP or OT position
-      "Caput": ["N"], // N = +++ caput
-      "Moulding": ["N"], // N = +++ moulding
+      "Baseline FHR": ["<110", ">160"], // Abnormal FHR values
+      "FHR deceleration": ["L"], // L = Late decelerations
+      "Amniotic fluid": ["M+++", "B"], // M+++ = Severe meconium, B = Bloody
+      "Fetal position": ["P", "T"], // P = Posterior, T = Transverse
+      "Caput": ["+++"], // +++ = Severe caput
+      "Moulding": ["+++"], // +++ = Severe moulding
 
       // Woman - WHO LCG values
-      "Pulse": ["N"], // N = <60 or >120
-      "Systolic BP": ["N"], // N = <90 or >140
-      "Diastolic BP": ["N"], // N = <60 or >90
-      "Temperature C": ["N"], // N = <36 or >37.5
-      "Urine": ["N"], // N = P1+, P2+, P3+
+      "Pulse": ["<60", ">120"], // Abnormal pulse values
+      "Systolic BP": ["<90", ">140"], // Abnormal BP values
+      "Diastolic BP": [">90"], // High diastolic BP
+      "Temperature C": ["<36", ">37.5"], // Abnormal temperature
+      "Urine": ["P1+", "P2+", "P3+"], // Proteinuria
 
       // Labour Progress - WHO LCG values
-      "Contractions per 10 min": ["N"], // N = <2 or >5
-      "Duration of contractions": ["N"] // N = <20s or >40s
+      "Contractions per 10 min": ["<2", ">5"], // Abnormal contraction frequency
+      "Duration of contractions": ["<20s", ">40s"] // Abnormal contraction duration
     };
 
     // WHO LCG Alert Values for each field
@@ -322,9 +330,9 @@
 
       // Woman
       "Pulse": "<60, ≥120", // Abnormal pulse values
-      "Systolic BP": "<80, ≥140", // Abnormal BP values
+      "Systolic BP": "<90, ≥140", // Abnormal BP values
       "Diastolic BP": "≥90", // High diastolic BP
-      "Temperature C": "<35.0, ≥37.5", // Abnormal temperature
+      "Temperature C": "<36, ≥37.5", // Abnormal temperature
       "Urine": "P++, A++", // P++ = Proteinuria, A++ = Acetone
 
       // Labour Progress
@@ -1106,32 +1114,69 @@
 
     // Add alert highlighting functionality
     function addAlertHighlighting() {
+      // Function to check and highlight alert values
+      function checkAndHighlightAlert(element) {
+        const value = element.value;
+        const nameParts = element.name.split('_');
+        if (nameParts.length >= 2) {
+          const field = nameParts.slice(1).join('_');
+          
+          let isAlert = false;
+          
+          // Check if this value is an alert value
+          if (alertValues[field] && alertValues[field].includes(value)) {
+            isAlert = true;
+          }
+          
+          // Special handling for Baseline FHR number input
+          if (field === "Baseline FHR" && element.type === "number") {
+            const fhrValue = parseFloat(value);
+            if (!isNaN(fhrValue)) {
+              if (fhrValue < 110 || fhrValue > 160) {
+                isAlert = true;
+              }
+            }
+          }
+          
+          if (isAlert) {
+            element.classList.add('alert-value');
+            element.style.border = '2px solid #dc2626';
+            element.style.backgroundColor = '#fef2f2';
+          } else {
+            element.classList.remove('alert-value');
+            element.style.border = '';
+            element.style.backgroundColor = '';
+          }
+        }
+      }
+
       // Add event listeners to all select elements
       document.addEventListener('change', function(e) {
         if (e.target.tagName === 'SELECT') {
-          const select = e.target;
-          const value = select.value;
-          
-          // Extract field name from the select element's name attribute
-          // Format: time_fieldname (e.g., "00:00_Companion")
-          const nameParts = select.name.split('_');
-          if (nameParts.length >= 2) {
-            // Join all parts after the first one (time) to get the field name
-            const field = nameParts.slice(1).join('_');
-            
-            // Check if this value is an alert value
-            if (alertValues[field] && alertValues[field].includes(value)) {
-              select.classList.add('alert-value');
-              select.style.border = '2px solid #dc2626';
-              select.style.backgroundColor = '#fef2f2';
-            } else {
-              select.classList.remove('alert-value');
-              select.style.border = '';
-              select.style.backgroundColor = '';
-            }
-          }
+          checkAndHighlightAlert(e.target);
         }
       });
+
+      // Add event listeners to all input elements
+      document.addEventListener('input', function(e) {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'number') {
+          checkAndHighlightAlert(e.target);
+        }
+      });
+
+      // Check all existing elements on page load
+      function highlightExistingAlerts() {
+        const allSelects = document.querySelectorAll('select');
+        const allNumberInputs = document.querySelectorAll('input[type="number"]');
+        
+        allSelects.forEach(select => checkAndHighlightAlert(select));
+        allNumberInputs.forEach(input => checkAndHighlightAlert(input));
+      }
+
+      // Run immediately and also after a short delay to catch dynamically created elements
+      highlightExistingAlerts();
+      setTimeout(highlightExistingAlerts, 100);
+      setTimeout(highlightExistingAlerts, 500);
     }
 
     // Initialize all sections as folded
