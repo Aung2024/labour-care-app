@@ -180,7 +180,9 @@
           <!-- Contractions Table (Keep as is) -->
           <div class="contractions-section">
             <h5 class="chart-title">Contractions</h5>
-            <table class="summary-table" id="contractionsTable"></table>
+            <div class="table-wrapper">
+              <table class="summary-table" id="contractionsTable"></table>
+            </div>
           </div>
           
           <!-- Cervix Plotting Chart -->
@@ -202,6 +204,7 @@
                   </div>
                   <button class="btn btn-sm btn-outline-primary" onclick="clearCervixChart()">Clear New Points</button>
                   <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
+                  <button class="btn btn-sm btn-outline-danger" onclick="clearAllCervixData()">Clear All Plot</button>
                 </div>
               </div>
             </div>
@@ -226,6 +229,7 @@
                   </div>
                   <button class="btn btn-sm btn-outline-primary" onclick="clearDescentChart()">Clear New Points</button>
                   <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
+                  <button class="btn btn-sm btn-outline-danger" onclick="clearAllDescentData()">Clear All Plot</button>
                 </div>
               </div>
             </div>
@@ -456,14 +460,14 @@
       "Companion": {
         "N": "Encourage presence of a companion of choice for support."
       },
+      "Mobility": {
+        "SP": "Encourage upright or mobile posture for comfort and progress."
+      },
       "Pain relief": {
         "N": "Assess pain and offer appropriate pain relief options."
       },
       "Oral fluid": {
         "N": "Encourage oral fluid intake unless contraindicated."
-      },
-      "Posture": {
-        "SP": "Encourage upright or mobile posture for comfort and progress."
       },
       "Baseline FHR": {
         "<110": "Assess for fetal distress. Prepare for immediate intervention.",
@@ -474,6 +478,9 @@
         "V": "Monitor closely and reassess fetal condition."
       },
       "Amniotic fluid": {
+        "M": "Monitor for fetal distress. Prepare for possible intervention.",
+        "M+": "Monitor for fetal distress. Prepare for possible intervention.",
+        "M++": "Monitor for fetal distress. Prepare for possible intervention.",
         "M+++": "Monitor for fetal distress. Prepare for possible intervention.",
         "B": "Assess for placental abruption or other complications."
       },
@@ -482,38 +489,47 @@
         "T": "Monitor labour progress. Consider position change or intervention."
       },
       "Caput": {
+        "+": "Monitor for obstructed labour. Consider intervention.",
+        "++": "Monitor for obstructed labour. Consider intervention.",
         "+++": "Monitor for obstructed labour. Consider intervention."
       },
       "Moulding": {
+        "++": "Monitor for obstructed labour. Consider intervention.",
         "+++": "Monitor for obstructed labour. Consider intervention."
       },
       "Pulse": {
-        "<60": "Assess for underlying causes. Monitor closely.",
-        ">120": "Assess for infection, dehydration, pain, anxiety."
+        "<50": "Assess for underlying causes. Monitor closely.",
+        ">100": "Assess for infection, dehydration, pain, anxiety."
       },
       "Systolic BP": {
         "<90": "Assess for shock. Initiate appropriate management.",
         ">140": "Assess for pre-eclampsia. Initiate appropriate management."
       },
       "Diastolic BP": {
+        "<60": "Assess for hypotension. Monitor closely.",
         ">90": "Assess for pre-eclampsia. Initiate appropriate management."
       },
       "Temperature C": {
-        "<36": "Assess for hypothermia. Initiate warming measures.",
+        "<36.0": "Assess for hypothermia. Initiate warming measures.",
         ">37.5": "Assess for infection. Initiate appropriate management."
       },
       "Urine": {
-        "P1+": "Assess for pre-eclampsia. Monitor and manage.",
-        "P2+": "Assess for pre-eclampsia. Monitor and manage.",
-        "P3+": "Assess for pre-eclampsia. Monitor and manage."
+        "P+": "Assess for pre-eclampsia. Monitor and manage.",
+        "P++": "Assess for pre-eclampsia. Monitor and manage.",
+        "P+++": "Assess for pre-eclampsia. Monitor and manage.",
+        "P++++": "Assess for pre-eclampsia. Monitor and manage.",
+        "A+": "Assess for diabetic ketoacidosis. Monitor and manage.",
+        "A++": "Assess for diabetic ketoacidosis. Monitor and manage.",
+        "A+++": "Assess for diabetic ketoacidosis. Monitor and manage.",
+        "A++++": "Assess for diabetic ketoacidosis. Monitor and manage."
       },
       "Contractions per 10 min": {
         "<2": "Assess labour progress. Consider augmentation.",
         ">5": "Assess for uterine hyperstimulation. Consider tocolysis."
       },
       "Duration of contractions": {
-        "<20s": "Assess labour progress. Consider augmentation.",
-        ">40s": "Assess for uterine hyperstimulation. Consider tocolysis."
+        "<20": "Assess labour progress. Consider augmentation.",
+        ">60": "Assess for uterine hyperstimulation. Consider tocolysis."
       }
     };
 
@@ -896,14 +912,35 @@
       
       tbody.appendChild(durationRow);
       table.appendChild(tbody);
+      
+      // Add event listeners to contractions inputs for real-time alerts
+      const allInputs = table.querySelectorAll('input[type="number"]');
+      allInputs.forEach(input => {
+        input.addEventListener('input', function() {
+          checkAndHighlightAlert(this);
+          showRecommendations();
+        });
+        input.addEventListener('change', function() {
+          checkAndHighlightAlert(this);
+          showRecommendations();
+        });
+      });
     }
 
     // Essential functions that were accidentally removed
     function addFormEventListeners() {
       // Add event listeners to all select and input elements
       document.querySelectorAll('select, input').forEach(el => {
-        el.addEventListener('change', showRecommendations);
-        el.addEventListener('input', showRecommendations);
+        el.addEventListener('change', function() {
+          checkAndHighlightAlert(this);
+          showRecommendations();
+        });
+        el.addEventListener('input', function() {
+          if (this.type === 'number') {
+            checkAndHighlightAlert(this);
+            showRecommendations();
+          }
+        });
       });
     }
 
@@ -918,18 +955,85 @@
     }
 
     function showRecommendations() {
-      const recs = [];
+      const recs = new Set(); // Use Set to avoid duplicates
+      
+      // Check all section tables
       for (const fieldList of Object.values(sections)) {
         for (const field of fieldList) {
           const latestValue = getLatestValue(field);
           if (recommendations[field] && recommendations[field][latestValue]) {
-            recs.push(`${field} (${latestValue}): ${recommendations[field][latestValue]}`);
+            recs.add(`${field} (${latestValue}): ${recommendations[field][latestValue]}`);
           }
         }
       }
       
+      // Check contractions table specifically
+      const contractionsTable = document.getElementById('contractionsTable');
+      if (contractionsTable) {
+        const contractionsInputs = contractionsTable.querySelectorAll('input[type="number"]');
+        contractionsInputs.forEach(input => {
+          const fieldName = input.name;
+          const value = input.value;
+          
+          if (fieldName.includes('Contractions_per_10_min')) {
+            const numValue = parseFloat(value);
+            if (numValue < 2 && recommendations["Contractions per 10 min"]["<2"]) {
+              recs.add(`Contractions per 10 min (<2): ${recommendations["Contractions per 10 min"]["<2"]}`);
+            } else if (numValue > 5 && recommendations["Contractions per 10 min"][">5"]) {
+              recs.add(`Contractions per 10 min (>5): ${recommendations["Contractions per 10 min"][">5"]}`);
+            }
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const numValue = parseFloat(value);
+            if (numValue < 20 && recommendations["Duration of contractions"]["<20"]) {
+              recs.add(`Duration of contractions (<20): ${recommendations["Duration of contractions"]["<20"]}`);
+            } else if (numValue > 60 && recommendations["Duration of contractions"][">60"]) {
+              recs.add(`Duration of contractions (>60): ${recommendations["Duration of contractions"][">60"]}`);
+            }
+          }
+        });
+      }
+      
+      // Check all number inputs for alert values
+      const allNumberInputs = document.querySelectorAll('input[type="number"]');
+      allNumberInputs.forEach(input => {
+        const fieldName = input.name;
+        const value = parseFloat(input.value);
+        
+        if (fieldName.includes('Baseline_FHR')) {
+          if (value < 110 && recommendations["Baseline FHR"]["<110"]) {
+            recs.add(`Baseline FHR (<110): ${recommendations["Baseline FHR"]["<110"]}`);
+          } else if (value > 160 && recommendations["Baseline FHR"][">160"]) {
+            recs.add(`Baseline FHR (>160): ${recommendations["Baseline FHR"][">160"]}`);
+          }
+        } else if (fieldName.includes('Pulse')) {
+          if (value < 50 && recommendations["Pulse"]["<50"]) {
+            recs.add(`Pulse (<50): ${recommendations["Pulse"]["<50"]}`);
+          } else if (value > 100 && recommendations["Pulse"][">100"]) {
+            recs.add(`Pulse (>100): ${recommendations["Pulse"][">100"]}`);
+          }
+        } else if (fieldName.includes('Systolic_BP')) {
+          if (value < 90 && recommendations["Systolic BP"]["<90"]) {
+            recs.add(`Systolic BP (<90): ${recommendations["Systolic BP"]["<90"]}`);
+          } else if (value > 140 && recommendations["Systolic BP"][">140"]) {
+            recs.add(`Systolic BP (>140): ${recommendations["Systolic BP"][">140"]}`);
+          }
+        } else if (fieldName.includes('Diastolic_BP')) {
+          if (value < 60 && recommendations["Diastolic BP"]["<60"]) {
+            recs.add(`Diastolic BP (<60): ${recommendations["Diastolic BP"]["<60"]}`);
+          } else if (value > 90 && recommendations["Diastolic BP"][">90"]) {
+            recs.add(`Diastolic BP (>90): ${recommendations["Diastolic BP"][">90"]}`);
+          }
+        } else if (fieldName.includes('Temperature_C')) {
+          if (value < 36.0 && recommendations["Temperature C"]["<36.0"]) {
+            recs.add(`Temperature C (<36.0): ${recommendations["Temperature C"]["<36.0"]}`);
+          } else if (value > 37.5 && recommendations["Temperature C"][">37.5"]) {
+            recs.add(`Temperature C (>37.5): ${recommendations["Temperature C"][">37.5"]}`);
+          }
+        }
+      });
+      
       const box = document.getElementById("recommendationsBox");
-      if (recs.length) {
+      if (recs.size > 0) {
         box.innerHTML = `
           <div class="recommendations-content">
             <div class="recommendations-header">
@@ -937,7 +1041,7 @@
               <span>Clinical Recommendations</span>
             </div>
             <div class="recommendations-list">
-              ${recs.map(r => `<div class="recommendation-item">${r}</div>`).join("")}
+              ${Array.from(recs).map(r => `<div class="recommendation-item">${r}</div>`).join("")}
             </div>
           </div>
         `;
@@ -1440,6 +1544,51 @@
       }
     }
 
+    // Clear ALL data (both saved and unsaved)
+    async function clearAllCervixData() {
+      if (confirm('⚠️ This will permanently delete ALL cervix plot data. Are you sure?')) {
+        try {
+          // Clear from Firestore
+          const base = db.collection("patients").doc(patientId);
+          await base.collection("plotData").doc("cervix").delete();
+          
+          // Clear local data
+          cervixData = [];
+          unsavedCervixPoints = [];
+          
+          // Redraw chart
+          setupChart(document.getElementById('cervixChart'), 'cervix');
+          updateChartStatus();
+          
+          console.log('🗑️ Cleared all cervix data');
+        } catch (error) {
+          console.error('❌ Error clearing cervix data:', error);
+        }
+      }
+    }
+
+    async function clearAllDescentData() {
+      if (confirm('⚠️ This will permanently delete ALL descent plot data. Are you sure?')) {
+        try {
+          // Clear from Firestore
+          const base = db.collection("patients").doc(patientId);
+          await base.collection("plotData").doc("descent").delete();
+          
+          // Clear local data
+          descentData = [];
+          unsavedDescentPoints = [];
+          
+          // Redraw chart
+          setupChart(document.getElementById('descentChart'), 'descent');
+          updateChartStatus();
+          
+          console.log('🗑️ Cleared all descent data');
+        } catch (error) {
+          console.error('❌ Error clearing descent data:', error);
+        }
+      }
+    }
+
     // Redraw saved points
     function redrawSavedPoints(canvas, type) {
       const data = type === 'cervix' ? cervixData : descentData;
@@ -1618,6 +1767,20 @@
         element.classList.add('alert-value');
       } else if (fieldName.includes('Oral_fluids') && value === 'N') {
         element.classList.add('alert-value');
+      } else if (fieldName.includes('Contractions_per_10_min')) {
+        const contractions = parseFloat(value);
+        if (contractions < 2 || contractions > 5) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Duration_of_contractions')) {
+        const duration = parseFloat(value);
+        if (duration < 20 || duration > 60) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Urine')) {
+        if (value.includes('P') || value.includes('A')) {
+          element.classList.add('alert-value');
+        }
       }
     }
 
