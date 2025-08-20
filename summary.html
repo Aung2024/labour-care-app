@@ -194,7 +194,13 @@
               <div class="chart-wrapper">
                 <canvas id="cervixChart" width="800" height="400"></canvas>
                 <div class="chart-controls">
-                  <button class="btn btn-sm btn-outline-primary" onclick="clearCervixChart()">Clear Chart</button>
+                  <div class="chart-status mb-2">
+                    <small class="text-muted">
+                      <span class="badge bg-primary">Saved: <span id="cervixSavedCount">0</span></span>
+                      <span class="badge bg-warning">New: <span id="cervixUnsavedCount">0</span></span>
+                    </small>
+                  </div>
+                  <button class="btn btn-sm btn-outline-primary" onclick="clearCervixChart()">Clear New Points</button>
                   <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
                 </div>
               </div>
@@ -212,7 +218,13 @@
               <div class="chart-wrapper">
                 <canvas id="descentChart" width="800" height="400"></canvas>
                 <div class="chart-controls">
-                  <button class="btn btn-sm btn-outline-primary" onclick="clearDescentChart()">Clear Chart</button>
+                  <div class="chart-status mb-2">
+                    <small class="text-muted">
+                      <span class="badge bg-primary">Saved: <span id="descentSavedCount">0</span></span>
+                      <span class="badge bg-warning">New: <span id="descentUnsavedCount">0</span></span>
+                    </small>
+                  </div>
+                  <button class="btn btn-sm btn-outline-primary" onclick="clearDescentChart()">Clear New Points</button>
                   <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
                 </div>
               </div>
@@ -1200,11 +1212,13 @@
       table.appendChild(tbody);
     }
 
-    // Interactive Plotting Functions
+    // Global variables for plotting
     let cervixChart = null;
     let descentChart = null;
     let cervixData = [];
     let descentData = [];
+    let unsavedCervixPoints = [];
+    let unsavedDescentPoints = [];
 
     // Initialize plotting charts
     function initializePlottingCharts() {
@@ -1221,6 +1235,9 @@
         descentChart = descentCanvas.getContext('2d');
         setupChart(descentCanvas, 'descent');
       }
+      
+      // Update initial status
+      updateChartStatus();
     }
 
     // Setup chart with grid and labels
@@ -1237,6 +1254,12 @@
       
       // Draw labels
       drawLabels(ctx, width, height, type);
+      
+      // Redraw all saved points
+      redrawSavedPoints(canvas, type);
+      
+      // Redraw all unsaved points
+      redrawUnsavedPoints(canvas, type);
       
       // Add click/touch event listeners
       addChartEventListeners(canvas, type);
@@ -1314,7 +1337,13 @@
         const rect = canvas.getBoundingClientRect();
         const x = touch.clientX - rect.left;
         const y = touch.clientY - rect.top;
-        handleChartClick({ offsetX: x, offsetY: y }, canvas, type);
+        
+        // Create a synthetic event
+        const syntheticEvent = {
+          offsetX: x,
+          offsetY: y
+        };
+        handleChartClick(syntheticEvent, canvas, type);
       });
     }
 
@@ -1333,7 +1362,7 @@
       }
     }
 
-    // Add a plot point to the chart
+    // Add a plot point to the chart (as unsaved)
     function addPlotPoint(canvas, type, time, value) {
       const ctx = canvas.getContext('2d');
       const width = canvas.width;
@@ -1343,9 +1372,19 @@
       const x = (width * 0.1) + (time * (width * 0.8) / 15);
       const y = height * 0.1 + (value * (height * 0.8) / 5);
       
-      // Draw the plot point
-      ctx.fillStyle = type === 'cervix' ? '#3b82f6' : '#10b981';
-      ctx.font = 'bold 20px Arial';
+      // Create the data point
+      const dataPoint = { time, value, x, y, saved: false };
+      
+      // Add to unsaved points
+      if (type === 'cervix') {
+        unsavedCervixPoints.push(dataPoint);
+      } else {
+        unsavedDescentPoints.push(dataPoint);
+      }
+      
+      // Draw the plot point with unsaved style
+      ctx.fillStyle = type === 'cervix' ? '#60a5fa' : '#34d399'; // Lighter color for unsaved
+      ctx.font = 'bold 18px Arial'; // Smaller font for unsaved points
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
@@ -1355,13 +1394,8 @@
         ctx.fillText('O', x, y);
       }
       
-      // Store the data point
-      const dataPoint = { time, value, x, y };
-      if (type === 'cervix') {
-        cervixData.push(dataPoint);
-      } else {
-        descentData.push(dataPoint);
-      }
+      // Update status indicators
+      updateChartStatus();
       
       // Check for alerts based on WHO LCG guidelines
       checkPlottingAlerts(type, time, value);
@@ -1387,30 +1421,147 @@
       }
     }
 
-    // Clear chart functions
+    // Clear only unsaved points (keep saved data)
     function clearCervixChart() {
       if (cervixChart) {
-        cervixData = [];
+        unsavedCervixPoints = [];
         setupChart(document.getElementById('cervixChart'), 'cervix');
+        updateChartStatus();
+        console.log('🧹 Cleared unsaved cervix points');
       }
     }
 
     function clearDescentChart() {
       if (descentChart) {
-        descentData = [];
+        unsavedDescentPoints = [];
         setupChart(document.getElementById('descentChart'), 'descent');
+        updateChartStatus();
+        console.log('🧹 Cleared unsaved descent points');
       }
     }
 
-    // Add point functions (for manual entry)
-    function addCervixPoint() {
-      // This could open a modal for manual time/value entry
-      alert('Click on the chart to add a point, or use the manual entry feature');
+    // Redraw saved points
+    function redrawSavedPoints(canvas, type) {
+      const data = type === 'cervix' ? cervixData : descentData;
+      const ctx = canvas.getContext('2d');
+      
+      ctx.fillStyle = type === 'cervix' ? '#3b82f6' : '#10b981';
+      ctx.font = 'bold 24px Arial'; // Larger font for saved points
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      data.forEach(point => {
+        if (type === 'cervix') {
+          ctx.fillText('X', point.x, point.y);
+        } else {
+          ctx.fillText('O', point.x, point.y);
+        }
+      });
     }
 
-    function addDescentPoint() {
-      // This could open a modal for manual time/value entry
-      alert('Click on the chart to add a point, or use the manual entry feature');
+    // Redraw unsaved points
+    function redrawUnsavedPoints(canvas, type) {
+      const data = type === 'cervix' ? unsavedCervixPoints : unsavedDescentPoints;
+      const ctx = canvas.getContext('2d');
+      
+      ctx.fillStyle = type === 'cervix' ? '#60a5fa' : '#34d399'; // Lighter color for unsaved
+      ctx.font = 'bold 18px Arial'; // Smaller font for unsaved points
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      data.forEach(point => {
+        if (type === 'cervix') {
+          ctx.fillText('X', point.x, point.y);
+        } else {
+          ctx.fillText('O', point.x, point.y);
+        }
+      });
+    }
+
+    // Save plotting data to Firestore
+    async function savePlotData() {
+      try {
+        // Check if user is authenticated
+        if (!firebase.auth().currentUser) {
+          throw new Error('User not authenticated');
+        }
+
+        const base = db.collection("patients").doc(patientId);
+        
+        // Combine saved and unsaved data
+        const allCervixData = [...cervixData, ...unsavedCervixPoints];
+        const allDescentData = [...descentData, ...unsavedDescentPoints];
+        
+        // Save cervix plot data
+        if (allCervixData.length > 0) {
+          await base.collection("plotData").doc("cervix").set({
+            data: allCervixData,
+            timestamp: new Date().toISOString(),
+            savedBy: firebase.auth().currentUser.uid
+          });
+          cervixData = allCervixData;
+          unsavedCervixPoints = [];
+        }
+        
+        // Save descent plot data
+        if (allDescentData.length > 0) {
+          await base.collection("plotData").doc("descent").set({
+            data: allDescentData,
+            timestamp: new Date().toISOString(),
+            savedBy: firebase.auth().currentUser.uid
+          });
+          descentData = allDescentData;
+          unsavedDescentPoints = [];
+        }
+        
+        // Show success message
+        showSaveSuccess();
+        console.log('✅ Plot data saved successfully');
+        
+        // Redraw charts to show saved state
+        if (cervixChart) {
+          setupChart(document.getElementById('cervixChart'), 'cervix');
+        }
+        if (descentChart) {
+          setupChart(document.getElementById('descentChart'), 'descent');
+        }
+        
+        // Update status indicators
+        updateChartStatus();
+        
+      } catch (error) {
+        console.error('❌ Error saving plot data:', error);
+        showSaveError(`Failed to save plot data: ${error.message}`);
+      }
+    }
+
+    // Load plotting data from Firestore
+    async function loadPlotData() {
+      try {
+        const base = db.collection("patients").doc(patientId);
+        
+        // Load cervix data
+        const cervixDoc = await base.collection("plotData").doc("cervix").get();
+        if (cervixDoc.exists) {
+          cervixData = cervixDoc.data().data || [];
+          console.log('📊 Loaded cervix data:', cervixData.length, 'points');
+        }
+        
+        // Load descent data
+        const descentDoc = await base.collection("plotData").doc("descent").get();
+        if (descentDoc.exists) {
+          descentData = descentDoc.data().data || [];
+          console.log('📊 Loaded descent data:', descentData.length, 'points');
+        }
+        
+        console.log('✅ Plot data loaded successfully');
+        
+        // Update status indicators
+        updateChartStatus();
+      } catch (error) {
+        console.error('❌ Error loading plot data:', error);
+        // Don't show error to user for loading, just log it
+      }
     }
 
     // Alert highlighting function - RESTORED!
@@ -1486,59 +1637,19 @@
       });
     }
 
-    // Save plotting data to Firestore
-    async function savePlotData() {
-      try {
-        const base = db.collection("patients").doc(patientId);
-        
-        // Save cervix plot data
-        if (cervixData.length > 0) {
-          await base.collection("plotData").doc("cervix").set({
-            data: cervixData,
-            timestamp: new Date().toISOString()
-          });
-        }
-        
-        // Save descent plot data
-        if (descentData.length > 0) {
-          await base.collection("plotData").doc("descent").set({
-            data: descentData,
-            timestamp: new Date().toISOString()
-          });
-        }
-        
-        // Show success message
-        showSaveSuccess();
-        console.log('✅ Plot data saved successfully');
-      } catch (error) {
-        console.error('❌ Error saving plot data:', error);
-        showSaveError('Failed to save plot data');
-      }
-    }
-
-    // Load plotting data from Firestore
-    async function loadPlotData() {
-      try {
-        const base = db.collection("patients").doc(patientId);
-        
-        // Load cervix data
-        const cervixDoc = await base.collection("plotData").doc("cervix").get();
-        if (cervixDoc.exists) {
-          cervixData = cervixDoc.data().data || [];
-          redrawChart('cervix');
-        }
-        
-        // Load descent data
-        const descentDoc = await base.collection("plotData").doc("descent").get();
-        if (descentDoc.exists) {
-          descentData = descentDoc.data().data || [];
-          redrawChart('descent');
-        }
-        
-        console.log('✅ Plot data loaded successfully');
-      } catch (error) {
-        console.error('❌ Error loading plot data:', error);
-      }
+    // Update chart status indicators
+    function updateChartStatus() {
+      // Update cervix chart status
+      const cervixSavedElement = document.getElementById('cervixSavedCount');
+      const cervixUnsavedElement = document.getElementById('cervixUnsavedCount');
+      if (cervixSavedElement) cervixSavedElement.textContent = cervixData.length;
+      if (cervixUnsavedElement) cervixUnsavedElement.textContent = unsavedCervixPoints.length;
+      
+      // Update descent chart status
+      const descentSavedElement = document.getElementById('descentSavedCount');
+      const descentUnsavedElement = document.getElementById('descentUnsavedCount');
+      if (descentSavedElement) descentSavedElement.textContent = descentData.length;
+      if (descentUnsavedElement) descentUnsavedElement.textContent = unsavedDescentPoints.length;
     }
 
     // Redraw chart with existing data
