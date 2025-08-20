@@ -195,7 +195,7 @@
                 <canvas id="cervixChart" width="800" height="400"></canvas>
                 <div class="chart-controls">
                   <button class="btn btn-sm btn-outline-primary" onclick="clearCervixChart()">Clear Chart</button>
-                  <button class="btn btn-sm btn-outline-success" onclick="addCervixPoint()">Add Point</button>
+                  <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
                 </div>
               </div>
             </div>
@@ -213,7 +213,7 @@
                 <canvas id="descentChart" width="800" height="400"></canvas>
                 <div class="chart-controls">
                   <button class="btn btn-sm btn-outline-primary" onclick="clearDescentChart()">Clear Chart</button>
-                  <button class="btn btn-sm btn-outline-success" onclick="addDescentPoint()">Add Point</button>
+                  <button class="btn btn-sm btn-outline-success" onclick="savePlotData()">Save Plot</button>
                 </div>
               </div>
             </div>
@@ -591,6 +591,12 @@
         // Generate the summary table
         generateSummaryTable(existing);
         showRecommendations();
+        
+        // Load plotting data from previous sessions
+        await loadPlotData();
+        
+        // Setup alert highlighting for real-time alerts
+        addAlertHighlighting();
         
         // Add event listeners for form changes
         document.querySelectorAll('select, input').forEach(el => {
@@ -1405,6 +1411,158 @@
     function addDescentPoint() {
       // This could open a modal for manual time/value entry
       alert('Click on the chart to add a point, or use the manual entry feature');
+    }
+
+    // Alert highlighting function - RESTORED!
+    function checkAndHighlightAlert(element) {
+      if (!element) return;
+      
+      const fieldName = element.name;
+      const value = element.value;
+      
+      // Remove any existing alert highlighting
+      element.classList.remove('alert-value');
+      
+      // Check for alert conditions based on field and value
+      if (fieldName.includes('Companion') && value === 'N') {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Mobility') && value === 'SP') {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Baseline_FHR')) {
+        const fhr = parseFloat(value);
+        if (fhr < 110 || fhr > 160) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Pulse')) {
+        const pulse = parseFloat(value);
+        if (pulse < 50 || pulse > 100) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Systolic_BP')) {
+        const bp = parseFloat(value);
+        if (bp < 90 || bp > 140) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Diastolic_BP')) {
+        const bp = parseFloat(value);
+        if (bp < 60 || bp > 90) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('Temperature_C')) {
+        const temp = parseFloat(value);
+        if (temp < 36.0 || temp > 37.5) {
+          element.classList.add('alert-value');
+        }
+      } else if (fieldName.includes('FHR_deceleration') && value === 'L') {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Amniotic_fluid') && (value === 'M' || value === 'M+' || value === 'M++' || value === 'M+++')) {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Fetal_position') && value === 'T') {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Caput') && (value === '+' || value === '++' || value === '+++')) {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Moulding') && (value === '++' || value === '+++')) {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+        element.classList.add('alert-value');
+      } else if (fieldName.includes('Oral_fluids') && value === 'N') {
+        element.classList.add('alert-value');
+      }
+    }
+
+    // Add alert highlighting to all form elements
+    function addAlertHighlighting() {
+      // Add event listeners for real-time alert checking
+      document.addEventListener('change', function(e) {
+        if (e.target.matches('select, input')) {
+          checkAndHighlightAlert(e.target);
+        }
+      });
+      
+      document.addEventListener('input', function(e) {
+        if (e.target.matches('input[type="number"]')) {
+          checkAndHighlightAlert(e.target);
+        }
+      });
+    }
+
+    // Save plotting data to Firestore
+    async function savePlotData() {
+      try {
+        const base = db.collection("patients").doc(patientId);
+        
+        // Save cervix plot data
+        if (cervixData.length > 0) {
+          await base.collection("plotData").doc("cervix").set({
+            data: cervixData,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Save descent plot data
+        if (descentData.length > 0) {
+          await base.collection("plotData").doc("descent").set({
+            data: descentData,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Show success message
+        showSaveSuccess();
+        console.log('✅ Plot data saved successfully');
+      } catch (error) {
+        console.error('❌ Error saving plot data:', error);
+        showSaveError('Failed to save plot data');
+      }
+    }
+
+    // Load plotting data from Firestore
+    async function loadPlotData() {
+      try {
+        const base = db.collection("patients").doc(patientId);
+        
+        // Load cervix data
+        const cervixDoc = await base.collection("plotData").doc("cervix").get();
+        if (cervixDoc.exists) {
+          cervixData = cervixDoc.data().data || [];
+          redrawChart('cervix');
+        }
+        
+        // Load descent data
+        const descentDoc = await base.collection("plotData").doc("descent").get();
+        if (descentDoc.exists) {
+          descentData = descentDoc.data().data || [];
+          redrawChart('descent');
+        }
+        
+        console.log('✅ Plot data loaded successfully');
+      } catch (error) {
+        console.error('❌ Error loading plot data:', error);
+      }
+    }
+
+    // Redraw chart with existing data
+    function redrawChart(type) {
+      const canvas = document.getElementById(type === 'cervix' ? 'cervixChart' : 'descentChart');
+      if (!canvas) return;
+      
+      setupChart(canvas, type);
+      
+      // Redraw all saved points
+      const data = type === 'cervix' ? cervixData : descentData;
+      data.forEach(point => {
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = type === 'cervix' ? '#3b82f6' : '#10b981';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        if (type === 'cervix') {
+          ctx.fillText('X', point.x, point.y);
+        } else {
+          ctx.fillText('O', point.x, point.y);
+        }
+      });
     }
   </script>
 </body>
