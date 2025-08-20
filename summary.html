@@ -1124,7 +1124,7 @@
 
       // Save medication table data with 1-hour intervals
       const medicationTimeCols = [];
-      for (let hour = 0; hour <= 15; hour++) {
+      for (let hour = 1; hour <= 15; hour++) {
         medicationTimeCols.push(`${hour.toString().padStart(2, '0')}:00`);
       }
       
@@ -1952,7 +1952,7 @@
       
       // Time headers (1-hour intervals for medication)
       const medicationTimeCols = [];
-      for (let hour = 0; hour <= 15; hour++) {
+      for (let hour = 1; hour <= 15; hour++) {
         medicationTimeCols.push(`${hour.toString().padStart(2, '0')}:00`);
       }
       
@@ -2198,72 +2198,48 @@
     function generateSharedDecisionTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
-      // Create table header with mixed time columns
-      const thead = document.createElement("thead");
-      const headerRow = document.createElement("tr");
+      // Create two separate mini-tables for better usability
       
-      // Field header (no Alert column for shared decision-making)
-      const fieldHeader = document.createElement("th");
-      fieldHeader.className = "field-header sticky-field";
-      fieldHeader.textContent = "Field";
-      headerRow.appendChild(fieldHeader);
+      // ===== ASSESSMENT TABLE =====
+      const assessmentTable = document.createElement("div");
+      assessmentTable.className = "mini-table-container mb-4";
       
-      // Time headers - Assessment uses 1-hour, Plan uses 2-hour intervals
+      const assessmentTitle = document.createElement("h5");
+      assessmentTitle.className = "mini-table-title";
+      assessmentTitle.innerHTML = '<i class="fas fa-clipboard-list"></i> Assessment';
+      assessmentTable.appendChild(assessmentTitle);
+      
+      const assessmentTableElement = document.createElement("table");
+      assessmentTableElement.className = "summary-table mini-table";
+      
+      // Assessment table header
+      const assessmentThead = document.createElement("thead");
+      const assessmentHeaderRow = document.createElement("tr");
+      
+      // Field header
+      const assessmentFieldHeader = document.createElement("th");
+      assessmentFieldHeader.className = "field-header sticky-field";
+      assessmentFieldHeader.textContent = "Field";
+      assessmentHeaderRow.appendChild(assessmentFieldHeader);
+      
+      // Time headers (1-hour intervals from 01:00 to 15:00)
       const assessmentTimeCols = [];
-      for (let hour = 0; hour <= 15; hour++) {
+      for (let hour = 1; hour <= 15; hour++) {
         assessmentTimeCols.push(`${hour.toString().padStart(2, '0')}:00`);
       }
       
-      const planTimeCols = [];
-      for (let hour = 0; hour <= 14; hour += 2) {
-        planTimeCols.push(`${hour.toString().padStart(2, '0')}:00`);
-      }
-      
-      // Add all time columns (1-hour intervals for assessment, 2-hour for plan)
       assessmentTimeCols.forEach(time => {
         const timeHeader = document.createElement("th");
         timeHeader.className = "time-header";
         timeHeader.textContent = time;
-        headerRow.appendChild(timeHeader);
+        assessmentHeaderRow.appendChild(timeHeader);
       });
       
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
+      assessmentThead.appendChild(assessmentHeaderRow);
+      assessmentTableElement.appendChild(assessmentThead);
       
-      // Create table body
-      const tbody = document.createElement("tbody");
-      
-      // Assessment Section
-      const assessmentHeaderRow = document.createElement("tr");
-      assessmentHeaderRow.className = "section-header-row";
-      
-      // Assessment header cell
-      const assessmentHeaderCell = document.createElement("td");
-      assessmentHeaderCell.className = "field-cell sticky-field section-header";
-      assessmentHeaderCell.textContent = "Assessment";
-      assessmentHeaderCell.colSpan = 1;
-      assessmentHeaderRow.appendChild(assessmentHeaderCell);
-      
-      // Assessment time cells (1-hour intervals)
-      assessmentTimeCols.forEach(time => {
-        const timeCell = document.createElement("td");
-        timeCell.className = "time-cell assessment-cell";
-        timeCell.style.minWidth = "60px";
-        
-        const key = `Shared_Decision_Assessment_${time}`;
-        const value = existing[key] || "";
-        
-        const input = document.createElement("input");
-        input.name = key;
-        input.type = "text";
-        input.className = "form-control form-control-sm";
-        input.placeholder = "Brief assessment";
-        input.value = value;
-        timeCell.appendChild(input);
-        assessmentHeaderRow.appendChild(timeCell);
-      });
-      
-      tbody.appendChild(assessmentHeaderRow);
+      // Assessment table body
+      const assessmentTbody = document.createElement("tbody");
       
       // Assessment data rows
       const assessmentFields = ["Woman's condition", "Baby's condition", "Labour progress", "Other concerns"];
@@ -2280,7 +2256,7 @@
         // Time cells for assessment (1-hour intervals)
         assessmentTimeCols.forEach(time => {
           const timeCell = document.createElement("td");
-          timeCell.className = "time-cell assessment-cell";
+          timeCell.className = "time-cell";
           timeCell.style.minWidth = "60px";
           
           const key = `Shared_Decision_${field.replace(/\s+/g, "_")}_${time}`;
@@ -2296,54 +2272,54 @@
           row.appendChild(timeCell);
         });
         
-        tbody.appendChild(row);
+        assessmentTbody.appendChild(row);
       });
       
-      // Plan Section
+      assessmentTableElement.appendChild(assessmentTbody);
+      assessmentTable.appendChild(assessmentTableElement);
+      
+      // ===== PLAN TABLE =====
+      const planTable = document.createElement("div");
+      planTable.className = "mini-table-container";
+      
+      const planTitle = document.createElement("h5");
+      planTitle.className = "mini-table-title";
+      planTitle.innerHTML = '<i class="fas fa-tasks"></i> Plan';
+      planTable.appendChild(planTitle);
+      
+      const planTableElement = document.createElement("table");
+      planTableElement.className = "summary-table mini-table";
+      
+      // Plan table header
+      const planThead = document.createElement("thead");
       const planHeaderRow = document.createElement("tr");
-      planHeaderRow.className = "section-header-row";
       
-      // Plan header cell
-      const planHeaderCell = document.createElement("td");
-      planHeaderCell.className = "field-cell sticky-field section-header";
-      planHeaderCell.textContent = "Plan";
-      planHeaderCell.colSpan = 1;
-      planHeaderRow.appendChild(planHeaderCell);
+      // Field header
+      const planFieldHeader = document.createElement("th");
+      planFieldHeader.className = "field-header sticky-field";
+      planFieldHeader.textContent = "Field";
+      planHeaderRow.appendChild(planFieldHeader);
       
-      // Plan time cells (2-hour intervals with wider spacing)
-      assessmentTimeCols.forEach((time, index) => {
-        const timeCell = document.createElement("td");
-        timeCell.className = "time-cell plan-cell";
-        
-        // Check if this is a 2-hour interval for plan
-        const hour = parseInt(time.split(':')[0]);
-        if (hour % 2 === 0) {
-          // This is a 2-hour interval - make it wider
-          timeCell.style.minWidth = "120px";
-          timeCell.style.backgroundColor = "#f8fafc";
-          
-          const key = `Shared_Decision_Plan_${time}`;
-          const value = existing[key] || "";
-          
-          const input = document.createElement("input");
-          input.name = key;
-          input.type = "text";
-          input.className = "form-control form-control-sm";
-          input.placeholder = "Detailed plan";
-          input.value = value;
-          timeCell.appendChild(input);
-        } else {
-          // This is not a 2-hour interval - leave empty
-          timeCell.style.backgroundColor = "#f1f5f9";
-          timeCell.innerHTML = "&nbsp;";
-        }
-        
-        planHeaderRow.appendChild(timeCell);
+      // Time headers (2-hour intervals from 02:00 to 14:00)
+      const planTimeCols = [];
+      for (let hour = 2; hour <= 14; hour += 2) {
+        planTimeCols.push(`${hour.toString().padStart(2, '0')}:00`);
+      }
+      
+      planTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        timeHeader.textContent = time;
+        planHeaderRow.appendChild(timeHeader);
       });
       
-      tbody.appendChild(planHeaderRow);
+      planThead.appendChild(planHeaderRow);
+      planTableElement.appendChild(planThead);
       
-      // Plan data row
+      // Plan table body
+      const planTbody = document.createElement("tbody");
+      
+      // Single plan row
       const planRow = document.createElement("tr");
       
       // Field cell
@@ -2352,41 +2328,34 @@
       planFieldCell.textContent = "Plan";
       planRow.appendChild(planFieldCell);
       
-      // Time cells for plan (2-hour intervals with wider spacing)
-      assessmentTimeCols.forEach((time, index) => {
+      // Time cells for plan (2-hour intervals)
+      planTimeCols.forEach(time => {
         const timeCell = document.createElement("td");
-        timeCell.className = "time-cell plan-cell";
+        timeCell.className = "time-cell";
+        timeCell.style.minWidth = "120px";
         
-        // Check if this is a 2-hour interval for plan
-        const hour = parseInt(time.split(':')[0]);
-        if (hour % 2 === 0) {
-          // This is a 2-hour interval - make it wider
-          timeCell.style.minWidth = "120px";
-          timeCell.style.backgroundColor = "#f8fafc";
-          
-          const key = `Shared_Decision_Plan_${time}`;
-          const value = existing[key] || "";
-          
-          const input = document.createElement("input");
-          input.name = key;
-          input.type = "text";
-          input.className = "form-control form-control-sm";
-          input.placeholder = "Detailed plan";
-          input.value = value;
-          timeCell.appendChild(input);
-        } else {
-          // This is not a 2-hour interval - leave empty
-          timeCell.style.backgroundColor = "#f1f5f9";
-          timeCell.innerHTML = "&nbsp;";
-        }
+        const key = `Shared_Decision_Plan_${time}`;
+        const value = existing[key] || "";
         
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "Detailed plan";
+        input.value = value;
+        timeCell.appendChild(input);
         planRow.appendChild(timeCell);
       });
       
-      tbody.appendChild(planRow);
-      table.appendChild(tbody);
+      planTbody.appendChild(planRow);
+      planTableElement.appendChild(planTbody);
+      planTable.appendChild(planTableElement);
       
-      // Add event listeners for shared decision inputs
+      // Add both tables to the main container
+      table.appendChild(assessmentTable);
+      table.appendChild(planTable);
+      
+      // Add event listeners for all inputs
       const allInputs = table.querySelectorAll('input[type="text"]');
       allInputs.forEach(input => {
         input.addEventListener('change', function() {
