@@ -487,35 +487,55 @@
 
     // Add event listeners to form elements
     function addFormEventListeners() {
-      // Add event listeners to all selects and inputs
-      const allSelects = document.querySelectorAll('select');
-      const allInputs = document.querySelectorAll('input');
-      
-      allSelects.forEach(select => {
-        select.addEventListener('change', function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
+      // Add event listeners for starting time changes
+      const startingTimeInput = document.getElementById('startingTime');
+      if (startingTimeInput) {
+        startingTimeInput.addEventListener('change', function() {
+          const newStartingTime = this.value;
+          if (newStartingTime) {
+            const oldStartingTime = activeFirstStageStartTime;
+            activeFirstStageStartTime = newStartingTime;
+            
+            // Preserve existing data before regenerating
+            const existingData = preserveExistingData();
+            
+            // Generate new time columns
+            generateDynamicTimeColumns();
+            
+            // Map existing data to new time columns
+            const mappedData = mapDataToNewTimes(existingData, oldStartingTime, newStartingTime);
+            
+            // Save the starting time
+            saveStartingTime();
+            
+            // Show all tables with preserved data
+            showAllTables();
+            
+            // Regenerate tables with preserved data
+            regenerateAllTablesWithData(mappedData);
+          }
+        });
+      }
+
+      // Add event listeners for all form inputs
+      document.addEventListener('change', function(e) {
+        if (e.target.matches('input, select')) {
+          checkAndHighlightAlert(e.target);
+          // Show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        });
+        }
       });
-      
-      allInputs.forEach(input => {
-        input.addEventListener('input', function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
+
+      document.addEventListener('input', function(e) {
+        if (e.target.matches('input')) {
+          checkAndHighlightAlert(e.target);
+          // Show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        });
-        input.addEventListener('change', function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        });
+        }
       });
     }
 
@@ -530,60 +550,102 @@
       const activeAlerts = new Set();
       
       // Check all form elements for alert values
-      const allElements = document.querySelectorAll('select, input');
-      allElements.forEach(element => {
-        if (element.classList.contains('alert-value')) {
-          const fieldName = element.name;
-          const value = element.value;
+      const allInputs = document.querySelectorAll('input, select');
+      allInputs.forEach(input => {
+        if (input.value && input.value.trim() !== '') {
+          const fieldName = input.name;
+          const value = input.value;
           
-          // Find the field name from the sections
-          for (const [sectionName, fields] of Object.entries(sections)) {
-            for (const field of fields) {
-              if (fieldName.includes(field.replace(/\s+/g, '_'))) {
-                activeAlerts.add(`${field}: ${value}`);
-                break;
-              }
+          // Check if this value should trigger an alert
+          let shouldAlert = false;
+          let alertReason = '';
+          
+          // Check against WHO LCG alert values
+          if (fieldName.includes('FHR') || fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            if (fhr < 110 || fhr > 160) {
+              shouldAlert = true;
+              alertReason = `FHR ${fhr} is outside normal range (110-160)`;
             }
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            if (pulse < 60 || pulse > 120) {
+              shouldAlert = true;
+              alertReason = `Pulse ${pulse} is outside normal range (60-120)`;
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            if (bp < 90 || bp > 140) {
+              shouldAlert = true;
+              alertReason = `Systolic BP ${bp} is outside normal range (90-140)`;
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            if (bp > 90) {
+              shouldAlert = true;
+              alertReason = `Diastolic BP ${bp} is above normal range (>90)`;
+            }
+          } else if (fieldName.includes('Temperature')) {
+            const temp = parseFloat(value);
+            if (temp < 36 || temp > 37.5) {
+              shouldAlert = true;
+              alertReason = `Temperature ${temp}°C is outside normal range (36-37.5)`;
+            }
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No pain relief provided';
+          } else if (fieldName.includes('Oral_fluids') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No oral fluids provided';
+          } else if (fieldName.includes('Mobility') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No mobility encouraged';
+          }
+          
+          if (shouldAlert) {
+            // Extract field name for display
+            const displayName = fieldName.split('_').slice(0, -2).join(' ').replace(/_/g, ' ');
+            activeAlerts.add(`${displayName}: ${alertReason}`);
           }
         }
       });
       
       // Generate recommendations HTML
       if (activeAlerts.size > 0) {
-        let recommendationsHTML = '<div class="alert alert-warning"><strong>Active Alerts:</strong><ul>';
+        let recommendationsHTML = '<div class="alert alert-warning"><strong>⚠️ Active Alerts:</strong><ul>';
         activeAlerts.forEach(alert => {
           recommendationsHTML += `<li>${alert}</li>`;
         });
         recommendationsHTML += '</ul></div>';
         
-        // Add specific recommendations based on alerts
-        recommendationsHTML += '<div class="alert alert-info"><strong>Clinical Recommendations:</strong><ul>';
+        // Add clinical recommendations
+        recommendationsHTML += '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
         activeAlerts.forEach(alert => {
-          const [field, value] = alert.split(': ');
-          if (recommendations[field]) {
-            recommendationsHTML += `<li><strong>${field}:</strong> ${recommendations[field]}</li>`;
+          const [field, reason] = alert.split(': ');
+          
+          // Provide specific recommendations based on field type
+          let recommendation = '';
+          if (field.includes('FHR') || field.includes('Baseline')) {
+            recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+          } else if (field.includes('Pulse')) {
+            recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
+          } else if (field.includes('BP')) {
+            recommendation = 'Monitor blood pressure closely. Consider antihypertensive therapy if severe hypertension.';
+          } else if (field.includes('Temperature')) {
+            recommendation = 'Monitor for signs of infection. Consider antibiotics if infection suspected.';
+          } else if (field.includes('Pain') || field.includes('Mobility') || field.includes('Oral')) {
+            recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
           } else {
-            // Provide general recommendations based on field type
-            let generalRecommendation = '';
-            if (field.includes('FHR') || field.includes('Pulse')) {
-              generalRecommendation = 'Monitor closely and consider fetal assessment';
-            } else if (field.includes('BP')) {
-              generalRecommendation = 'Monitor blood pressure and consider antihypertensive if needed';
-            } else if (field.includes('Temperature')) {
-              generalRecommendation = 'Monitor for signs of infection';
-            } else if (field.includes('Pain') || field.includes('Mobility')) {
-              generalRecommendation = 'Consider pain relief and encourage mobility';
-            } else {
-              generalRecommendation = 'Monitor and document progress';
-            }
-            recommendationsHTML += `<li><strong>${field}:</strong> ${generalRecommendation}</li>`;
+            recommendation = 'Monitor and document progress. Consider specialist consultation if needed.';
           }
+          
+          recommendationsHTML += `<li><strong>${field}:</strong> ${recommendation}</li>`;
         });
         recommendationsHTML += '</ul></div>';
         
         recommendationsDiv.innerHTML = recommendationsHTML;
       } else {
-        recommendationsDiv.innerHTML = '<div class="alert alert-success">No active alerts. All parameters within normal ranges.</div>';
+        recommendationsDiv.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
       }
     }
 
@@ -664,219 +726,88 @@
   }
 };
 
+    // Load data from Firestore
     async function loadData() {
       try {
-      // Get current user and their Firestore profile
-      const user = firebase.auth().currentUser;
-      if (!user) {
-        document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
-        return;
-      }
-        
-      // Fetch user profile
-      const userDoc = await db.collection("users").doc(user.uid).get();
-      if (!userDoc.exists) {
-        document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
-        return;
-      }
-      const userData = userDoc.data();
-
-      // Get patient document
-      const patientDoc = await db.collection("patients").doc(patientId).get({ source: "server" });
-      if (!patientDoc.exists) {
-        document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
-        return;
-      }
-      const d = patientDoc.data();
-
-      // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
-      let allowed = false;
-        
-        if (userData.role === "Super Admin" || userData.role === "admin") {
-          allowed = true;
-        } else if (userData.role === "TMO") {
-          // TMO can access if township matches (handle cases where township might be undefined)
-          const patientTownship = d.township || "";
-          const userTownship = userData.township || "";
-          if (patientTownship && userTownship && patientTownship === userTownship) {
-            allowed = true;
-          }
-        } else if (userData.role === "Midwife" || userData.role === "midwife") {
-          // Midwife can access if they created the patient
-          if (d.createdBy === user.uid) {
-            allowed = true;
-          }
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) {
+          console.error('No patient ID found in URL');
+          return;
         }
 
-      if (!allowed) {
-          // Better error message based on role
-          let errorMessage = "";
-          if (userData.role === "TMO") {
-            errorMessage = `Access Denied: You can only access patients in your township (${userData.township || 'undefined'}). This patient is in township: ${d.township || 'undefined'}.`;
-          } else if (userData.role === "Midwife" || userData.role === "midwife") {
-            errorMessage = `Access Denied: You can only access patients you created. This patient was created by: ${d.createdBy || 'unknown'}.`;
-          } else {
-            errorMessage = `Access Denied: You do not have permission to view this patient record. Please contact your administrator.`;
-          }
-          
-          document.body.innerHTML = `
-            <div class="alert alert-danger">
-              <h4>Access Denied</h4>
-              <p><strong>Reason:</strong> ${errorMessage}</p>
-              <hr>
-              <a href="list.html" class="btn btn-primary">← Back to Patient List</a>
-            </div>
-          `;
-        return;
-      }
+        // Load patient info
+        const patientDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .get();
 
-      // Populate patient info
-      document.getElementById("p_name").value = d.name || "";
-      document.getElementById("p_age").value = d.age || "";
-      document.getElementById("p_parity").value = d.parity || "";
-      document.getElementById("p_onset").value = d.labour_onset || "";
-      document.getElementById("p_active").value = d.active_labour || "";
-      document.getElementById("p_membrane").value = d.ruptured_membrane || "";
-      document.getElementById("p_risk").value = d.risk_factors || "";
+        if (patientDoc.exists) {
+          const patientData = patientDoc.data();
+          displayPatientInfo(patientData);
+        }
 
-      // Load starting time and second stage data
-      try {
-        const startingTimeDoc = await db.collection("patients").doc(patientId).collection("records").doc("startingTime").get();
+        // Load starting time data
+        const startingTimeDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('startingTime')
+          .get();
+
         if (startingTimeDoc.exists) {
-          const startingData = startingTimeDoc.data();
-          activeFirstStageStartTime = startingData.startingTime;
-          document.getElementById("startingTime").value = activeFirstStageStartTime;
-          
-          // If starting time exists, show all tables
+          const data = startingTimeDoc.data();
+          activeFirstStageStartTime = data.startingTime;
+          document.getElementById('startingTime').value = activeFirstStageStartTime;
+        }
+
+        // Load second stage data
+        await loadSecondStageData();
+
+        // Generate dynamic time columns
+        generateDynamicTimeColumns();
+
+        // Load existing records
+        const recordsDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('summary')
+          .get();
+
+        let existing = {};
+        if (recordsDoc.exists) {
+          existing = recordsDoc.data();
+        }
+
+        // Load plot data
+        await loadPlotData();
+
+        // Load medication data
+        await loadMedicationData();
+
+        // Show/hide tables based on starting time
+        if (activeFirstStageStartTime) {
           showAllTables();
-          document.getElementById("startingTimeRequirement").style.display = "none";
+          generateSummaryTable(existing);
         } else {
-          // No starting time set, hide all tables
           hideAllTables();
           showStartingTimeRequirement();
         }
-        
-        const secondStageDoc = await db.collection("patients").doc(patientId).collection("records").doc("secondStage").get();
-        if (secondStageDoc.exists) {
-          const secondStageData = secondStageDoc.data();
-          secondStageStartTime = secondStageData.secondStageStartTime;
-          isSecondStageActive = secondStageData.isSecondStageActive;
-          
-          if (isSecondStageActive) {
-            document.getElementById("secondStageTime").value = secondStageStartTime;
-            document.getElementById("secondStageCard").style.display = "block";
-            
-            // Calculate and display first stage duration
-            if (activeFirstStageStartTime && secondStageStartTime) {
-              const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
-              const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
-              const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
-              document.getElementById("firstStageDuration").textContent = `${firstStageDuration} minutes`;
-              document.getElementById("secondStageDisplay").textContent = secondStageStartTime;
-            }
+
+        // Add event listeners
+        addFormEventListeners();
+
+        // Show recommendations after tables are generated
+        setTimeout(() => {
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
           }
-        }
+        }, 500);
+
       } catch (error) {
-        console.error("Error loading time data:", error);
-        // On error, hide all tables and show requirement
-        hideAllTables();
-        showStartingTimeRequirement();
-      }
-
-      // Generate dynamic time columns
-      generateDynamicTimeColumns();
-
-      // Add event listeners for starting time changes
-      document.getElementById("startingTime").addEventListener("change", function() {
-        const newStartingTime = this.value;
-        if (newStartingTime) {
-          const oldStartingTime = activeFirstStageStartTime;
-          activeFirstStageStartTime = newStartingTime;
-          
-          // Preserve existing data before regenerating
-          const existingData = preserveExistingData();
-          
-          // Generate new time columns
-          generateDynamicTimeColumns();
-          
-          // Map existing data to new time columns
-          const mappedData = mapDataToNewTimes(existingData, oldStartingTime, newStartingTime);
-          
-          // Save the starting time
-          saveStartingTime();
-          
-          // Hide starting time requirement message
-          document.getElementById("startingTimeRequirement").style.display = "none";
-          
-          // Show all tables with preserved data
-          showAllTables();
-          
-          // Regenerate tables with preserved data
-          regenerateAllTablesWithData(mappedData);
-          
-          // Regenerate tables if second stage is active
-          if (isSecondStageActive) {
-            regenerateAllTables();
-          }
-        }
-      });
-
-      // Load records
-      const snap = await db.collection("patients").doc(patientId).collection("records").get({ source: "server" });
-      const existing = {};
-      snap.forEach(doc => {
-        const d = doc.data();
-        existing[d.time] = d;
-      });
-
-      // Load medication data
-      const medicationSnap = await db.collection("patients").doc(patientId).collection("medication").get({ source: "server" });
-      medicationSnap.forEach(doc => {
-        const d = doc.data();
-        const time = d.time;
-        
-        // Store oxytocin data
-        if (d.oxytocin) {
-          existing[`Medication_Oxytocin_${time}`] = d.oxytocin;
-          if (d.oxytocin === "Yes") {
-            existing[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
-            existing[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
-          }
-        }
-        
-        // Store medicine data
-        if (d.medicine) {
-          existing[`Medication_Medicine_${time}`] = d.medicine;
-        }
-        
-        // Store IV fluids data
-        if (d.iv_fluids) {
-          existing[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
-        }
-      });
-
-        // Generate the summary table
-        generateSummaryTable(existing);
-        
-        // Load plotting data from previous sessions
-        await loadPlotData();
-        
-        // Setup alert highlighting for real-time alerts
-        addAlertHighlighting();
-        
-        // Add event listeners for form changes
-        document.querySelectorAll('select, input').forEach(el => {
-          el.addEventListener('change', function() {
-            checkAndHighlightAlert(this);
-            // Only show recommendations if the div exists
-            if (document.getElementById('recommendations')) {
-              showRecommendations();
-            }
-          });
-        });
-      } catch (error) {
-        console.error("Error loading data:", error);
-        document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+        console.error('Error loading data:', error);
+        document.getElementById('errorMessage').textContent = 'Error loading data: ' + error.message;
+        document.getElementById('errorMessage').style.display = 'block';
       }
     }
 
@@ -929,18 +860,22 @@
       }, 100);
     }
 
+    // Generate a section table with dynamic time columns
     function generateSectionTable(sectionName, fields, tableId, existing) {
       const table = document.getElementById(tableId);
+      if (!table) {
+        console.error('Table not found:', tableId);
+        return;
+      }
       
-      // Determine which time columns to use based on section
-      let timeColumns;
-      switch(sectionName) {
+      // Get the appropriate time columns for this section
+      let timeColumns = [];
+      switch (sectionName) {
         case "Supportive Care":
           timeColumns = supportiveCareTimeCols;
           break;
         case "Baby":
-          // Baby table will be handled separately with two mini-tables
-          timeColumns = babyOtherTimeCols;
+          timeColumns = babyTimeCols;
           break;
         case "Woman":
           timeColumns = womanTimeCols;
@@ -950,138 +885,68 @@
       }
       
       // Create table header
-      const thead = document.createElement("thead");
-      const headerRow = document.createElement("tr");
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="sticky-field">Field</th>';
+      tableHTML += '<th class="sticky-alert">Alert</th>';
       
-      // Field header
-      const fieldHeader = document.createElement("th");
-      fieldHeader.className = "field-header sticky-field";
-      fieldHeader.textContent = "Field";
-      headerRow.appendChild(fieldHeader);
-      
-      // Alert header
-      const alertHeader = document.createElement("th");
-      alertHeader.className = "alert-header sticky-alert";
-      alertHeader.textContent = "Alert";
-      headerRow.appendChild(alertHeader);
-      
-      // Time headers with second stage highlighting
+      // Add time column headers with second stage highlighting
       timeColumns.forEach(time => {
-        const timeHeader = document.createElement("th");
-        timeHeader.className = "time-header";
-        
-        // Apply second stage highlighting
-        if (isSecondStageTime(time)) {
-          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
-          timeHeader.style.color = "#166534"; // Dark green text
-        } else {
-          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
-          timeHeader.style.color = "#1e40af"; // Dark blue text
-        }
-        
-        timeHeader.textContent = time;
-        headerRow.appendChild(timeHeader);
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-header second-stage' : 'time-header';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
       });
       
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
+      tableHTML += '</tr></thead><tbody>';
       
-      // Create table body
-      const tbody = document.createElement("tbody");
-      
+      // Create table rows
       fields.forEach(field => {
-        const row = document.createElement("tr");
-        row.className = "field-row";
+        const fieldName = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="sticky-field">${field}</td>`;
         
-        // Field cell (sticky)
-        const fieldCell = document.createElement("td");
-        fieldCell.className = "field-cell sticky-field";
-        fieldCell.textContent = field;
-        row.appendChild(fieldCell);
+        // Add alert value cell
+        const alertValue = alertValues[field] || '';
+        tableHTML += `<td class="sticky-alert"><span class="alert-value">${alertValue}</span></td>`;
         
-        // Alert cell (sticky) - Use WHO LCG values
-        const alertCell = document.createElement("td");
-        alertCell.className = "alert-cell sticky-alert";
-        const alertValue = whoAlertValues[field] || "";
-        alertCell.innerHTML = `<span class="alert-indicator">${alertValue}</span>`;
-        row.appendChild(alertCell);
-        
-        // Time cells
-        timeColumns.forEach((time, index) => {
-            const key = `${time}_${field.replace(/\s+/g, "_")}`;
-            const value = existing[time] && existing[time][field] ? existing[time][field] : "";
+        // Add time input cells
+        timeColumns.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const inputName = `${fieldName}_${timeKey}`;
+          const existingValue = existing && existing[inputName] ? existing[inputName] : '';
           
-          const timeCell = document.createElement("td");
-          timeCell.className = "time-cell";
-          
-          // Special handling for number input fields
-          if (field === "Baseline FHR" || field === "Pulse" || field === "Systolic BP" || field === "Diastolic BP" || field === "Temperature C") {
-            const input = document.createElement("input");
-            input.name = key;
-            input.type = "number";
-            input.className = "form-control form-control-sm";
-            
-            // Set appropriate ranges for each field
-            if (field === "Baseline FHR") {
-              input.min = "50";
-              input.max = "200";
-              input.step = "1";
-            } else if (field === "Pulse") {
-              input.min = "40";
-              input.max = "200";
-              input.step = "1";
-            } else if (field === "Systolic BP") {
-              input.min = "60";
-              input.max = "200";
-              input.step = "1";
-            } else if (field === "Diastolic BP") {
-              input.min = "40";
-              input.max = "120";
-              input.step = "1";
-            } else if (field === "Temperature C") {
-              input.min = "30";
-              input.max = "42";
-              input.step = "0.1";
-            }
-            
-            input.value = value;
-            timeCell.appendChild(input);
-          } else if (dropdownOptions[field]) {
-              const select = document.createElement("select");
-              select.name = key;
-            select.className = "form-select form-select-sm";
-            
-              // Add blank option first
-              const blankOption = document.createElement("option");
-              blankOption.value = "";
-              blankOption.textContent = "";
-              select.appendChild(blankOption);
-            
-              dropdownOptions[field].forEach(opt => {
-                const option = document.createElement("option");
-                option.value = opt;
-                option.textContent = opt;
-                select.appendChild(option);
-              });
-            
-              select.value = value !== undefined ? value : "";
-            timeCell.appendChild(select);
-            } else {
-              const input = document.createElement("input");
-              input.name = key;
-            input.type = "text";
-            input.className = "form-control form-control-sm";
-              input.value = value;
-            timeCell.appendChild(input);
+          // Determine input type based on field
+          let inputHTML = '';
+          if (field.includes('FHR') || field.includes('Pulse') || field.includes('BP') || field.includes('Temperature')) {
+            inputHTML = `<input type="number" name="${inputName}" value="${existingValue}" class="time-cell" placeholder="Enter value">`;
+          } else if (field.includes('Urine')) {
+            inputHTML = `<select name="${inputName}" class="time-cell">
+              <option value="">Select</option>
+              <option value="P++++" ${existingValue === 'P++++' ? 'selected' : ''}>P++++</option>
+              <option value="A++++" ${existingValue === 'A++++' ? 'selected' : ''}>A++++</option>
+              <option value="P+++" ${existingValue === 'P+++' ? 'selected' : ''}>P+++</option>
+              <option value="A+++" ${existingValue === 'A+++' ? 'selected' : ''}>A+++</option>
+              <option value="P++" ${existingValue === 'P++' ? 'selected' : ''}>P++</option>
+              <option value="A++" ${existingValue === 'A++' ? 'selected' : ''}>A++</option>
+              <option value="P+" ${existingValue === 'P+' ? 'selected' : ''}>P+</option>
+              <option value="A+" ${existingValue === 'A+' ? 'selected' : ''}>A+</option>
+              <option value="N" ${existingValue === 'N' ? 'selected' : ''}>N</option>
+            </select>`;
+          } else {
+            inputHTML = `<select name="${inputName}" class="time-cell">
+              <option value="">Select</option>
+              <option value="Y" ${existingValue === 'Y' ? 'selected' : ''}>Y</option>
+              <option value="N" ${existingValue === 'N' ? 'selected' : ''}>N</option>
+            </select>`;
           }
           
-          row.appendChild(timeCell);
+          tableHTML += `<td class="time-cell">${inputHTML}</td>`;
         });
         
-        tbody.appendChild(row);
+        tableHTML += '</tr>';
       });
       
-      table.appendChild(tbody);
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
     }
 
     // Generate Contractions table (keep as is)
@@ -2773,16 +2638,67 @@
       showSaveSuccess();
     }
     
-    // Save second stage data
+    // Save second stage data to Firestore
     async function saveSecondStageData() {
       try {
-        await db.collection("patients").doc(patientId).collection("records").doc("secondStage").set({
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) {
+          console.error('No patient ID found in URL');
+          return;
+        }
+        
+        const secondStageData = {
           secondStageStartTime: secondStageStartTime,
           isSecondStageActive: isSecondStageActive,
-          timestamp: new Date()
-        });
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('secondStage')
+          .set(secondStageData);
+        
+        console.log('Second stage data saved successfully');
       } catch (error) {
-        console.error("Error saving second stage data:", error);
+        console.error('Error saving second stage data:', error);
+      }
+    }
+    
+    // Load second stage data from Firestore
+    async function loadSecondStageData() {
+      try {
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        const doc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('secondStage')
+          .get();
+        
+        if (doc.exists) {
+          const data = doc.data();
+          secondStageStartTime = data.secondStageStartTime;
+          isSecondStageActive = data.isSecondStageActive;
+          
+          if (isSecondStageActive && secondStageStartTime) {
+            // Show second stage card
+            document.getElementById('secondStageCard').style.display = 'block';
+            
+            // Update display
+            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+            const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
+            const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
+            
+            document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
+            document.getElementById('secondStageStartDisplay').textContent = secondStageStartTime;
+          }
+        }
+      } catch (error) {
+        console.error('Error loading second stage data:', error);
       }
     }
     
@@ -3203,6 +3119,55 @@
       const requirementDiv = document.getElementById('startingTimeRequirement');
       if (requirementDiv) {
         requirementDiv.style.display = 'block';
+      }
+    }
+
+    // Display patient information
+    function displayPatientInfo(patientData) {
+      document.getElementById('p_name').value = patientData.name || '';
+      document.getElementById('p_age').value = patientData.age || '';
+      document.getElementById('p_parity').value = patientData.parity || '';
+      document.getElementById('p_onset').value = patientData.labour_onset || '';
+      document.getElementById('p_active').value = patientData.active_labour || '';
+      document.getElementById('p_membrane').value = patientData.ruptured_membrane || '';
+      document.getElementById('p_risk').value = patientData.risk_factors || '';
+    }
+
+    // Load medication data from Firestore
+    async function loadMedicationData() {
+      try {
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        const medicationSnap = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('medication')
+          .get();
+        
+        medicationSnap.forEach(doc => {
+          const data = doc.data();
+          const time = data.time;
+          
+          // Store medication data in existing records
+          if (data.oxytocin) {
+            existing[`Medication_Oxytocin_${time}`] = data.oxytocin;
+            if (data.oxytocin === "Yes") {
+              existing[`Medication_Oxytocin_${time}_UL`] = data.oxytocin_UL || "";
+              existing[`Medication_Oxytocin_${time}_drops`] = data.oxytocin_drops || "";
+            }
+          }
+          
+          if (data.medicine) {
+            existing[`Medication_Medicine_${time}`] = data.medicine;
+          }
+          
+          if (data.iv_fluids) {
+            existing[`Medication_IV_Fluids_${time}`] = data.iv_fluids;
+          }
+        });
+      } catch (error) {
+        console.error('Error loading medication data:', error);
       }
     }
   </script>
