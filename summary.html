@@ -101,6 +101,15 @@
       </div>
     </div>
 
+    <!-- Starting Time Requirement Message -->
+    <div class="starting-time-requirement" id="startingTimeRequirement">
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <strong>Next Step Required:</strong> Please enter the <strong>Active First Stage Start Time</strong> above to generate the labour monitoring tables. 
+        This should be when the patient's cervical dilatation reached 5cm or more.
+      </div>
+    </div>
+
     <!-- Second Stage Detection Section -->
     <div class="second-stage-card" id="secondStageCard" style="display: none;">
       <div class="card-header">
@@ -504,7 +513,10 @@
     // Show clinical recommendations based on alert values
     function showRecommendations() {
       const recommendationsDiv = document.getElementById('recommendations');
-      if (!recommendationsDiv) return;
+      if (!recommendationsDiv) {
+        console.log('Recommendations div not found yet');
+        return;
+      }
       
       const activeAlerts = new Set();
       
@@ -710,6 +722,14 @@
           const startingData = startingTimeDoc.data();
           activeFirstStageStartTime = startingData.startingTime;
           document.getElementById("startingTime").value = activeFirstStageStartTime;
+          
+          // If starting time exists, show all tables
+          showAllTables();
+          document.getElementById("startingTimeRequirement").style.display = "none";
+        } else {
+          // No starting time set, hide all tables
+          hideAllTables();
+          showStartingTimeRequirement();
         }
         
         const secondStageDoc = await db.collection("patients").doc(patientId).collection("records").doc("secondStage").get();
@@ -728,12 +748,15 @@
               const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
               const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
               document.getElementById("firstStageDuration").textContent = `${firstStageDuration} minutes`;
-              document.getElementById("secondStageStartDisplay").textContent = secondStageStartTime;
+              document.getElementById("secondStageDisplay").textContent = secondStageStartTime;
             }
           }
         }
       } catch (error) {
         console.error("Error loading time data:", error);
+        // On error, hide all tables and show requirement
+        hideAllTables();
+        showStartingTimeRequirement();
       }
 
       // Generate dynamic time columns
@@ -748,6 +771,12 @@
           
           // Save the starting time
           saveStartingTime();
+          
+          // Hide starting time requirement message
+          document.getElementById("startingTimeRequirement").style.display = "none";
+          
+          // Show all tables
+          showAllTables();
           
           // Regenerate tables if second stage is active
           if (isSecondStageActive) {
@@ -2674,7 +2703,7 @@
       // Update display
       const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
       document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
-      document.getElementById('secondStageStartDisplay').textContent = secondStageTime;
+      document.getElementById('secondStageDisplay').textContent = secondStageTime;
       
       // Regenerate all tables with new time highlighting
       regenerateAllTables();
@@ -2991,10 +3020,61 @@
       table.appendChild(baselineTable);
       table.appendChild(otherTable);
     }
+
+    // Hide all tables initially
+    function hideAllTables() {
+      const allSections = [
+        'supportiveCareTable', 'babyTable', 'womanTable', 'labourProgressTable', 
+        'medicationTable', 'decisionMakingTable', 'initialsTable'
+      ];
+      
+      allSections.forEach(sectionId => {
+        const section = document.getElementById(sectionId);
+        if (section) {
+          section.style.display = 'none';
+        }
+      });
+      
+      // Also hide second stage card and clinical recommendations
+      const secondStageCard = document.getElementById('secondStageCard');
+      if (secondStageCard) {
+        secondStageCard.style.display = 'none';
+      }
+      
+      const recommendationsSection = document.querySelector('.recommendations-section');
+      if (recommendationsSection) {
+        recommendationsSection.style.display = 'none';
+      }
+    }
+
+    // Show all tables after starting time is set
+    function showAllTables() {
+      const allSections = [
+        'supportiveCareTable', 'babyTable', 'womanTable', 'labourProgressTable', 
+        'medicationTable', 'decisionMakingTable', 'initialsTable'
+      ];
+      
+      allSections.forEach(sectionId => {
+        const section = document.getElementById(sectionId);
+        if (section) {
+          section.style.display = 'block';
+        }
+      });
+      
+      // Show clinical recommendations
+      const recommendationsSection = document.querySelector('.recommendations-section');
+      if (recommendationsSection) {
+        recommendationsSection.style.display = 'block';
+      }
+    }
+
+    // Show starting time requirement message
+    function showStartingTimeRequirement() {
+      const requirementDiv = document.getElementById('startingTimeRequirement');
+      if (requirementDiv) {
+        requirementDiv.style.display = 'block';
+      }
+    }
   </script>
 </body>
-<footer class="footer">
-  © 2025 Labour Care App &mdash; Designed for clinical excellence
-</footer>
-</html>
 </html>
