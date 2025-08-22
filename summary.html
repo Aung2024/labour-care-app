@@ -842,14 +842,8 @@
             const oldStartingTime = activeFirstStageStartTime;
             activeFirstStageStartTime = newStartingTime;
             
-            // Preserve existing data before regenerating
-            const existingData = preserveExistingData();
-            
             // Generate new time columns
             generateDynamicTimeColumns();
-            
-            // Map existing data to new time columns
-            const mappedData = mapDataToNewTimes(existingData, oldStartingTime, newStartingTime);
             
             // Save the starting time
             saveStartingTime();
@@ -857,16 +851,14 @@
             // Hide starting time requirement message
             document.getElementById("startingTimeRequirement").style.display = "none";
             
-            // Show all tables with preserved data
+            // Show all tables immediately
             showAllTables();
             
-            // Regenerate tables with preserved data
-            regenerateAllTablesWithData(mappedData);
+            // Generate tables with empty data (fresh start)
+            generateSummaryTable({});
             
-            // Regenerate tables if second stage is active
-            if (isSecondStageActive) {
-              regenerateAllTables();
-            }
+            // Show warning about data loss
+            showDataLossWarning();
           }
         });
 
@@ -2673,10 +2665,10 @@
     // Check if a time column should be highlighted for second stage
     function isSecondStageTime(time) {
       if (!secondStageStartTime || !isSecondStageActive) {
-        console.log('Second stage not active:', { secondStageStartTime, isSecondStageActive });
         return false;
       }
       
+      // Convert time strings to comparable values
       const timeHour = parseInt(time.split(':')[0]);
       const timeMinute = parseInt(time.split(':')[1]);
       const secondHour = parseInt(secondStageStartTime.split(':')[0]);
@@ -2685,10 +2677,7 @@
       const timeMinutes = timeHour * 60 + timeMinute;
       const secondMinutes = secondHour * 60 + secondMinute;
       
-      const shouldHighlight = timeMinutes >= secondMinutes;
-      console.log('Time check:', { time, timeMinutes, secondMinutes, shouldHighlight });
-      
-      return shouldHighlight;
+      return timeMinutes >= secondMinutes;
     }
     
     // Confirm second stage
@@ -2726,11 +2715,11 @@
       document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
       document.getElementById('secondStageStartDisplay').textContent = secondStageTime;
       
-      // Regenerate all tables with new time highlighting
-      regenerateAllTables();
-      
       // Save the second stage time
       saveSecondStageData();
+      
+      // Regenerate all tables with new time highlighting
+      regenerateAllTables();
       
       // Show success message
       showSaveSuccess();
@@ -2803,10 +2792,23 @@
     // Save starting time data
     async function saveStartingTime() {
       try {
-        await db.collection("patients").doc(patientId).collection("records").doc("startingTime").set({
-          startingTime: activeFirstStageStartTime,
-          timestamp: new Date()
-        });
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) {
+          console.error('No patient ID found in URL');
+          return;
+        }
+        
+        await firebase.firestore()
+          .collection("patients")
+          .doc(patientId)
+          .collection("records")
+          .doc("startingTime")
+          .set({
+            startingTime: activeFirstStageStartTime,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        
+        console.log('Starting time saved successfully');
       } catch (error) {
         console.error("Error saving starting time:", error);
       }
@@ -2857,21 +2859,28 @@
       return mappedData;
     }
     
-    // Regenerate all tables with new time highlighting
+    // Regenerate all tables (used when second stage is confirmed)
     function regenerateAllTables() {
       // Clear existing tables
-      document.getElementById('supportiveCareTable').innerHTML = '';
-      document.getElementById('babyTable').innerHTML = '';
-      document.getElementById('womanTable').innerHTML = '';
-      document.getElementById('contractionsTable').innerHTML = '';
-      document.getElementById('cervixPlotTable').innerHTML = '';
-      document.getElementById('descentPlotTable').innerHTML = '';
-      document.getElementById('medicationTable').innerHTML = '';
-      document.getElementById('decisionMakingTable').innerHTML = '';
-      document.getElementById('initialsTable').innerHTML = '';
+      document.getElementById("supportiveCareTable").innerHTML = "";
+      document.getElementById("babyTable").innerHTML = "";
+      document.getElementById("womanTable").innerHTML = "";
+      document.getElementById("contractionsTable").innerHTML = "";
+      document.getElementById("medicationTable").innerHTML = "";
+      document.getElementById("decisionMakingTable").innerHTML = "";
+      document.getElementById("initialsTable").innerHTML = "";
       
-      // Regenerate tables
-      generateSummaryTable();
+      // Generate tables with empty data (fresh start)
+      generateSummaryTable({});
+      
+      // Re-initialize plotting charts
+      setTimeout(() => {
+        initializePlottingCharts();
+        loadPlotData();
+      }, 100);
+      
+      // Add event listeners again
+      addFormEventListeners();
     }
     
     // Regenerate all tables with preserved data
@@ -3258,6 +3267,36 @@
       } catch (error) {
         console.error('Error loading medication data:', error);
       }
+    }
+
+    // Show warning about data loss when starting time changes
+    function showDataLossWarning() {
+      // Create warning message if it doesn't exist
+      let warningDiv = document.getElementById('dataLossWarning');
+      if (!warningDiv) {
+        warningDiv = document.createElement('div');
+        warningDiv.id = 'dataLossWarning';
+        warningDiv.className = 'alert alert-warning';
+        warningDiv.innerHTML = `
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>Warning:</strong> You have changed the Active First Stage Start Time. 
+          All previously saved data has been cleared. Please re-enter the patient data.
+        `;
+        
+        // Insert after the starting time requirement div
+        const startingTimeRequirement = document.getElementById('startingTimeRequirement');
+        if (startingTimeRequirement) {
+          startingTimeRequirement.parentNode.insertBefore(warningDiv, startingTimeRequirement.nextSibling);
+        }
+      }
+      
+      // Show the warning
+      warningDiv.style.display = 'block';
+      
+      // Auto-hide after 10 seconds
+      setTimeout(() => {
+        warningDiv.style.display = 'none';
+      }, 10000);
     }
   </script>
 </body>
