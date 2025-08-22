@@ -1046,6 +1046,25 @@
           }
         });
 
+        // Add event listener for second stage time input
+        document.getElementById("secondStageTime").addEventListener("change", function() {
+          const newSecondStageTime = this.value;
+          if (newSecondStageTime && activeFirstStageStartTime) {
+            // Validate that second stage is after first stage
+            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+            const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
+            
+            if (secondTime <= firstTime) {
+              alert('Second stage must start after the active first stage start time.');
+              this.value = '';
+              return;
+            }
+            
+            // Show the second stage controls
+            document.getElementById('secondStageControls').style.display = 'block';
+          }
+        });
+
       } catch (error) {
         console.error("Error loading data:", error);
         document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
@@ -2136,7 +2155,10 @@
       if (confirm('⚠️ This will permanently delete ALL cervix plot data. Are you sure?')) {
         try {
           // Clear from Firestore
-          const base = db.collection("patients").doc(patientId);
+          const patientId = getPatientIdFromUrl();
+          if (!patientId) return;
+          
+          const base = firebase.firestore().collection("patients").doc(patientId);
           await base.collection("plotData").doc("cervix").delete();
           
           // Clear local data
@@ -2158,7 +2180,10 @@
       if (confirm('⚠️ This will permanently delete ALL descent plot data. Are you sure?')) {
         try {
           // Clear from Firestore
-          const base = db.collection("patients").doc(patientId);
+          const patientId = getPatientIdFromUrl();
+          if (!patientId) return;
+          
+          const base = firebase.firestore().collection("patients").doc(patientId);
           await base.collection("plotData").doc("descent").delete();
           
           // Clear local data
@@ -2222,7 +2247,12 @@
           throw new Error('User not authenticated');
         }
 
-        const base = db.collection("patients").doc(patientId);
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) {
+          throw new Error('No patient ID found');
+        }
+
+        const base = firebase.firestore().collection("patients").doc(patientId);
         
         // Combine saved and unsaved data
         const allCervixData = [...cervixData, ...unsavedCervixPoints];
@@ -2274,7 +2304,10 @@
     // Load plotting data from Firestore
     async function loadPlotData() {
       try {
-        const base = db.collection("patients").doc(patientId);
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        const base = firebase.firestore().collection("patients").doc(patientId);
         
         // Load cervix data
         const cervixDoc = await base.collection("plotData").doc("cervix").get();
@@ -3285,12 +3318,14 @@
             document.getElementById('secondStageCard').style.display = 'block';
             
             // Update display
-            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
-            const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
-            const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
-            
-            document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
-            document.getElementById('secondStageStartDisplay').textContent = secondStageStartTime;
+            if (activeFirstStageStartTime) {
+              const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+              const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
+              const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
+              
+              document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
+              document.getElementById('secondStageStartDisplay').textContent = secondStageStartTime;
+            }
           }
         }
       } catch (error) {
