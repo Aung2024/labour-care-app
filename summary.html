@@ -487,55 +487,35 @@
 
     // Add event listeners to form elements
     function addFormEventListeners() {
-      // Add event listeners for starting time changes
-      const startingTimeInput = document.getElementById('startingTime');
-      if (startingTimeInput) {
-        startingTimeInput.addEventListener('change', function() {
-          const newStartingTime = this.value;
-          if (newStartingTime) {
-            const oldStartingTime = activeFirstStageStartTime;
-            activeFirstStageStartTime = newStartingTime;
-            
-            // Preserve existing data before regenerating
-            const existingData = preserveExistingData();
-            
-            // Generate new time columns
-            generateDynamicTimeColumns();
-            
-            // Map existing data to new time columns
-            const mappedData = mapDataToNewTimes(existingData, oldStartingTime, newStartingTime);
-            
-            // Save the starting time
-            saveStartingTime();
-            
-            // Show all tables with preserved data
-            showAllTables();
-            
-            // Regenerate tables with preserved data
-            regenerateAllTablesWithData(mappedData);
+      // Add event listeners to all selects and inputs
+      const allSelects = document.querySelectorAll('select');
+      const allInputs = document.querySelectorAll('input');
+      
+      allSelects.forEach(select => {
+        select.addEventListener('change', function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
           }
         });
-      }
-
-      // Add event listeners for all form inputs
-      document.addEventListener('change', function(e) {
-        if (e.target.matches('input, select')) {
-          checkAndHighlightAlert(e.target);
-          // Show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        }
       });
-
-      document.addEventListener('input', function(e) {
-        if (e.target.matches('input')) {
-          checkAndHighlightAlert(e.target);
-          // Show recommendations if the div exists
+      
+      allInputs.forEach(input => {
+        input.addEventListener('input', function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        }
+        });
+        input.addEventListener('change', function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        });
       });
     }
 
@@ -729,85 +709,224 @@
     // Load data from Firestore
     async function loadData() {
       try {
+        // Get current user and their Firestore profile
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          document.body.innerHTML = '<div class="alert alert-danger">Not authenticated.</div>';
+          return;
+        }
+          
+        // Fetch user profile
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        if (!userDoc.exists) {
+          document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
+          return;
+        }
+        const userData = userDoc.data();
+
+        // Get patient document
         const patientId = getPatientIdFromUrl();
         if (!patientId) {
-          console.error('No patient ID found in URL');
+          document.body.innerHTML = '<div class="alert alert-danger">Patient ID not found.</div>';
           return;
         }
 
-        // Load patient info
-        const patientDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .get();
+        const patientDoc = await firebase.firestore().collection("patients").doc(patientId).get({ source: "server" });
+        if (!patientDoc.exists) {
+          document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+          return;
+        }
+        const d = patientDoc.data();
 
-        if (patientDoc.exists) {
-          const patientData = patientDoc.data();
-          displayPatientInfo(patientData);
+        // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
+        let allowed = false;
+          
+        if (userData.role === "Super Admin" || userData.role === "admin") {
+          allowed = true;
+        } else if (userData.role === "TMO") {
+          // TMO can access if township matches (handle cases where township might be undefined)
+          const patientTownship = d.township || "";
+          const userTownship = userData.township || "";
+          if (patientTownship && userTownship && patientTownship === userTownship) {
+            allowed = true;
+          }
+        } else if (userData.role === "Midwife" || userData.role === "midwife") {
+          // Midwife can access if they created the patient
+          if (d.createdBy === user.uid) {
+            allowed = true;
+          }
         }
 
-        // Load starting time data
-        const startingTimeDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('startingTime')
-          .get();
-
-        if (startingTimeDoc.exists) {
-          const data = startingTimeDoc.data();
-          activeFirstStageStartTime = data.startingTime;
-          document.getElementById('startingTime').value = activeFirstStageStartTime;
+        if (!allowed) {
+          // Better error message based on role
+          let errorMessage = "";
+          if (userData.role === "TMO") {
+            errorMessage = `Access Denied: You can only access patients in your township (${userData.township || 'undefined'}). This patient is in township: ${d.township || 'undefined'}.`;
+          } else if (userData.role === "Midwife" || userData.role === "midwife") {
+            errorMessage = `Access Denied: You can only access patients you created. This patient was created by: ${d.createdBy || 'unknown'}.`;
+          } else {
+            errorMessage = `Access Denied: You do not have permission to view this patient record. Please contact your administrator.`;
+          }
+          
+          document.body.innerHTML = `
+            <div class="alert alert-danger">
+              <h4>Access Denied</h4>
+              <p><strong>Reason:</strong> ${errorMessage}</p>
+              <hr>
+              <a href="list.html" class="btn btn-primary">← Back to Patient List</a>
+            </div>
+          `;
+          return;
         }
 
-        // Load second stage data
-        await loadSecondStageData();
+        // Populate patient info
+        document.getElementById("p_name").value = d.name || "";
+        document.getElementById("p_age").value = d.age || "";
+        document.getElementById("p_parity").value = d.parity || "";
+        document.getElementById("p_onset").value = d.labour_onset || "";
+        document.getElementById("p_active").value = d.active_labour || "";
+        document.getElementById("p_membrane").value = d.ruptured_membrane || "";
+        document.getElementById("p_risk").value = d.risk_factors || "";
 
-        // Generate dynamic time columns
-        generateDynamicTimeColumns();
-
-        // Load existing records
-        const recordsDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('summary')
-          .get();
-
-        let existing = {};
-        if (recordsDoc.exists) {
-          existing = recordsDoc.data();
-        }
-
-        // Load plot data
-        await loadPlotData();
-
-        // Load medication data
-        await loadMedicationData();
-
-        // Show/hide tables based on starting time
-        if (activeFirstStageStartTime) {
-          showAllTables();
-          generateSummaryTable(existing);
-        } else {
+        // Load starting time and second stage data
+        try {
+          const startingTimeDoc = await firebase.firestore().collection("patients").doc(patientId).collection("records").doc("startingTime").get();
+          if (startingTimeDoc.exists) {
+            const startingData = startingTimeDoc.data();
+            activeFirstStageStartTime = startingData.startingTime;
+            document.getElementById("startingTime").value = activeFirstStageStartTime;
+            
+            // If starting time exists, show all tables
+            showAllTables();
+            document.getElementById("startingTimeRequirement").style.display = "none";
+          } else {
+            // No starting time set, hide all tables
+            hideAllTables();
+            showStartingTimeRequirement();
+          }
+          
+          const secondStageDoc = await firebase.firestore().collection("patients").doc(patientId).collection("records").doc("secondStage").get();
+          if (secondStageDoc.exists) {
+            const secondStageData = secondStageDoc.data();
+            secondStageStartTime = secondStageData.secondStageStartTime;
+            isSecondStageActive = secondStageData.isSecondStageActive;
+            
+            if (isSecondStageActive) {
+              document.getElementById("secondStageTime").value = secondStageStartTime;
+              document.getElementById("secondStageCard").style.display = "block";
+              
+              // Calculate and display first stage duration
+              if (activeFirstStageStartTime && secondStageStartTime) {
+                const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+                const secondTime = new Date(`2000-01-01T${secondStageStartTime}:00`);
+                const firstStageDuration = Math.round((secondTime - firstTime) / (1000 * 60));
+                document.getElementById("firstStageDuration").textContent = `${firstStageDuration} minutes`;
+                document.getElementById("secondStageStartDisplay").textContent = secondStageStartTime;
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error loading time data:", error);
+          // On error, hide all tables and show requirement
           hideAllTables();
           showStartingTimeRequirement();
         }
 
-        // Add event listeners
-        addFormEventListeners();
+        // Generate dynamic time columns
+        generateDynamicTimeColumns();
 
-        // Show recommendations after tables are generated
-        setTimeout(() => {
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
+        // Add event listeners for starting time changes
+        document.getElementById("startingTime").addEventListener("change", function() {
+          const newStartingTime = this.value;
+          if (newStartingTime) {
+            const oldStartingTime = activeFirstStageStartTime;
+            activeFirstStageStartTime = newStartingTime;
+            
+            // Preserve existing data before regenerating
+            const existingData = preserveExistingData();
+            
+            // Generate new time columns
+            generateDynamicTimeColumns();
+            
+            // Map existing data to new time columns
+            const mappedData = mapDataToNewTimes(existingData, oldStartingTime, newStartingTime);
+            
+            // Save the starting time
+            saveStartingTime();
+            
+            // Hide starting time requirement message
+            document.getElementById("startingTimeRequirement").style.display = "none";
+            
+            // Show all tables with preserved data
+            showAllTables();
+            
+            // Regenerate tables with preserved data
+            regenerateAllTablesWithData(mappedData);
+            
+            // Regenerate tables if second stage is active
+            if (isSecondStageActive) {
+              regenerateAllTables();
+            }
           }
-        }, 500);
+        });
+
+        // Load records
+        const snap = await firebase.firestore().collection("patients").doc(patientId).collection("records").get({ source: "server" });
+        const existing = {};
+        snap.forEach(doc => {
+          const d = doc.data();
+          existing[d.time] = d;
+        });
+
+        // Load medication data
+        const medicationSnap = await firebase.firestore().collection("patients").doc(patientId).collection("medication").get({ source: "server" });
+        medicationSnap.forEach(doc => {
+          const d = doc.data();
+          const time = d.time;
+          
+          // Store oxytocin data
+          if (d.oxytocin) {
+            existing[`Medication_Oxytocin_${time}`] = d.oxytocin;
+            if (d.oxytocin === "Yes") {
+              existing[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
+              existing[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
+            }
+          }
+          
+          // Store medicine data
+          if (d.medicine) {
+            existing[`Medication_Medicine_${time}`] = d.medicine;
+          }
+          
+          // Store IV fluids data
+          if (d.iv_fluids) {
+            existing[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
+          }
+        });
+
+        // Generate the summary table
+        generateSummaryTable(existing);
+        
+        // Load plotting data from previous sessions
+        await loadPlotData();
+        
+        // Setup alert highlighting for real-time alerts
+        addAlertHighlighting();
+        
+        // Add event listeners for form changes
+        document.querySelectorAll('select, input').forEach(el => {
+          el.addEventListener('change', function() {
+            checkAndHighlightAlert(this);
+            // Only show recommendations if the div exists
+            if (document.getElementById('recommendations')) {
+              showRecommendations();
+            }
+          });
+        });
 
       } catch (error) {
-        console.error('Error loading data:', error);
-        document.getElementById('errorMessage').textContent = 'Error loading data: ' + error.message;
-        document.getElementById('errorMessage').style.display = 'block';
+        console.error("Error loading data:", error);
+        document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
       }
     }
 
@@ -1087,28 +1206,7 @@
       table.appendChild(tbody);
     }
 
-    // Essential functions that were accidentally removed
-    function addFormEventListeners() {
-      // Add event listeners to all select and input elements
-      document.querySelectorAll('select, input').forEach(el => {
-        el.addEventListener('change', function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        });
-        el.addEventListener('input', function() {
-          if (this.type === 'number') {
-            checkAndHighlightAlert(this);
-            // Only show recommendations if the div exists
-            if (document.getElementById('recommendations')) {
-              showRecommendations();
-            }
-          }
-        });
-      });
-    }
+
 
     function getLatestValue(field) {
   // Go through timeCols in reverse to find the latest non-empty value
@@ -3122,16 +3220,7 @@
       }
     }
 
-    // Display patient information
-    function displayPatientInfo(patientData) {
-      document.getElementById('p_name').value = patientData.name || '';
-      document.getElementById('p_age').value = patientData.age || '';
-      document.getElementById('p_parity').value = patientData.parity || '';
-      document.getElementById('p_onset').value = patientData.labour_onset || '';
-      document.getElementById('p_active').value = patientData.active_labour || '';
-      document.getElementById('p_membrane').value = patientData.ruptured_membrane || '';
-      document.getElementById('p_risk').value = patientData.risk_factors || '';
-    }
+
 
     // Load medication data from Firestore
     async function loadMedicationData() {
