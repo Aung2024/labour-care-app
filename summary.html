@@ -860,21 +860,26 @@
             // Show all tables immediately
             showAllTables();
             
-            // Generate tables with empty data (fresh start)
-            generateSummaryTable({});
+            // Generate tables with existing data (preserve data)
+            generateSummaryTable(existing);
             
             // Show warning about data loss
             showDataLossWarning();
           }
         });
 
-        // Load records
-        const snap = await firebase.firestore().collection("patients").doc(patientId).collection("records").get({ source: "server" });
-        const existing = {};
-        snap.forEach(doc => {
-          const d = doc.data();
-          existing[d.time] = d;
-        });
+        // Load existing records from the new structure
+        const recordsDoc = await firebase.firestore()
+          .collection("patients")
+          .doc(patientId)
+          .collection("records")
+          .doc("summary")
+          .get();
+        
+        let existing = {};
+        if (recordsDoc.exists) {
+          existing = recordsDoc.data();
+        }
 
         // Load medication data
         const medicationSnap = await firebase.firestore().collection("patients").doc(patientId).collection("medication").get({ source: "server" });
@@ -1022,7 +1027,7 @@
         tableHTML += `<td class="sticky-field">${field}</td>`;
         
         // Add alert value cell
-        const alertValue = alertValues[field] || '';
+        const alertValue = whoAlertValues[field] || '';
         tableHTML += `<td class="sticky-alert"><span class="alert-value">${alertValue}</span></td>`;
         
         // Add time input cells
@@ -1314,90 +1319,95 @@
 
     async function saveData() {
       try {
-      const base = db.collection("patients").doc(patientId);
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) {
+          console.error('No patient ID found in URL');
+          return;
+        }
 
-      // Fetch existing patient data to preserve createdBy
-      const patientDoc = await base.get();
-      let createdBy = "";
-      if (patientDoc.exists && patientDoc.data().createdBy) {
-        createdBy = patientDoc.data().createdBy;
-      }
+        const base = firebase.firestore().collection("patients").doc(patientId);
+
+        // Fetch existing patient data to preserve createdBy
+        const patientDoc = await base.get();
+        let createdBy = "";
+        if (patientDoc.exists && patientDoc.data().createdBy) {
+          createdBy = patientDoc.data().createdBy;
+        }
 
         // Save patient info
-      await base.set({
-        name: document.getElementById("p_name").value,
-        age: document.getElementById("p_age").value,
-        parity: document.getElementById("p_parity").value,
-        labour_onset: document.getElementById("p_onset").value,
-        active_labour: document.getElementById("p_active").value,
-        ruptured_membrane: document.getElementById("p_membrane").value,
-        risk_factors: document.getElementById("p_risk").value,
+        await base.set({
+          name: document.getElementById("p_name").value,
+          age: document.getElementById("p_age").value,
+          parity: document.getElementById("p_parity").value,
+          labour_onset: document.getElementById("p_onset").value,
+          active_labour: document.getElementById("p_active").value,
+          ruptured_membrane: document.getElementById("p_membrane").value,
+          risk_factors: document.getElementById("p_risk").value,
           createdBy
-      });
+        });
 
-      // Save starting time if it exists
-      if (activeFirstStageStartTime) {
-        await saveStartingTime();
-      }
-
-        // Save time-based records from all tables
-      for (const time of supportiveCareTimeCols) {
-        const data = { time, timestamp: new Date().toISOString() };
-          
-          // Collect data from all section tables
-        for (const fieldList of Object.values(sections)) {
-          for (const field of fieldList) {
-            const key = `${time}_${field.replace(/\s+/g, "_")}`;
-            const el = document.getElementsByName(key)[0];
-              if (el) {
-                data[field] = el.value;
-          }
+        // Save starting time if it exists
+        if (activeFirstStageStartTime) {
+          await saveStartingTime();
         }
-          }
 
-          // Save to Firestore
-        await base.collection("records").doc(time).set(data);
-      }
-
-      // Save medication table data with dynamic time columns
-      for (const time of medicationTimeCols) {
-        const medicationData = { time, timestamp: new Date().toISOString() };
+        // Save all form data to a single summary document
+        const formData = {};
         
-        // Save oxytocin data
-        const oxytocinKey = `Medication_Oxytocin_${time}`;
-        const oxytocinEl = document.getElementsByName(oxytocinKey)[0];
-        if (oxytocinEl) {
-          medicationData.oxytocin = oxytocinEl.value;
+        // Collect data from all form inputs
+        const allInputs = document.querySelectorAll('input, select');
+        allInputs.forEach(input => {
+          if (input.name && input.value) {
+            formData[input.name] = input.value;
+          }
+        });
+
+        // Save the summary data
+        await base.collection("records").doc("summary").set({
+          ...formData,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          lastUpdated: new Date().toISOString()
+        });
+
+        // Save medication table data with dynamic time columns
+        for (const time of medicationTimeCols) {
+          const medicationData = { time, timestamp: new Date().toISOString() };
           
-          // If oxytocin is "Yes", save the details
-          if (oxytocinEl.value === "Yes") {
-            const uLKey = `${oxytocinKey}_UL`;
-            const dropsKey = `${oxytocinKey}_drops`;
-            const uLEl = document.getElementsByName(uLKey)[0];
-            const dropsEl = document.getElementsByName(dropsKey)[0];
+          // Save oxytocin data
+          const oxytocinKey = `Medication_Oxytocin_${time}`;
+          const oxytocinEl = document.getElementsByName(oxytocinKey)[0];
+          if (oxytocinEl) {
+            medicationData.oxytocin = oxytocinEl.value;
             
-            if (uLEl) medicationData.oxytocin_UL = uLEl.value;
-            if (dropsEl) medicationData.oxytocin_drops = dropsEl.value;
+            // If oxytocin is "Yes", save the details
+            if (oxytocinEl.value === "Yes") {
+              const uLKey = `${oxytocinKey}_UL`;
+              const dropsKey = `${oxytocinKey}_drops`;
+              const uLEl = document.getElementsByName(uLKey)[0];
+              const dropsEl = document.getElementsByName(dropsKey)[0];
+              
+              if (uLEl) medicationData.oxytocin_UL = uLEl.value;
+              if (dropsEl) medicationData.oxytocin_drops = dropsEl.value;
+            }
           }
+          
+          // Save medicine data
+          const medicineKey = `Medication_Medicine_${time}`;
+          const medicineEl = document.getElementsByName(medicineKey)[0];
+          if (medicineEl) {
+            medicationData.medicine = medicineEl.value;
+          }
+          
+          // Save IV fluids data
+          const ivFluidsKey = `Medication_IV_Fluids_${time}`;
+          const ivFluidsEl = document.getElementsByName(ivFluidsKey)[0];
+          if (ivFluidsEl) {
+            medicationData.iv_fluids = ivFluidsEl.value;
+          }
+          
+          // Save medication data to Firestore
+          await base.collection("medication").doc(time).set(medicationData);
         }
-        
-        // Save medicine data
-        const medicineKey = `Medication_Medicine_${time}`;
-        const medicineEl = document.getElementsByName(medicineKey)[0];
-        if (medicineEl) {
-          medicationData.medicine = medicineEl.value;
-        }
-        
-        // Save IV fluids data
-        const ivFluidsKey = `Medication_IV_Fluids_${time}`;
-        const ivFluidsEl = document.getElementsByName(ivFluidsKey)[0];
-        if (ivFluidsEl) {
-          medicationData.iv_fluids = ivFluidsEl.value;
-        }
-        
-        // Save medication data to Firestore
-        await base.collection("medication").doc(time).set(medicationData);
-      }
 
         showSaveSuccess();
       } catch (error) {
@@ -3282,11 +3292,11 @@
       if (!warningDiv) {
         warningDiv = document.createElement('div');
         warningDiv.id = 'dataLossWarning';
-        warningDiv.className = 'alert alert-warning';
+        warningDiv.className = 'alert alert-info';
         warningDiv.innerHTML = `
-          <i class="fas fa-exclamation-triangle"></i>
-          <strong>Warning:</strong> You have changed the Active First Stage Start Time. 
-          All previously saved data has been cleared. Please re-enter the patient data.
+          <i class="fas fa-info-circle"></i>
+          <strong>Info:</strong> You have changed the Active First Stage Start Time. 
+          Your existing data has been preserved and mapped to the new time columns.
         `;
         
         // Insert after the starting time requirement div
