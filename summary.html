@@ -316,6 +316,8 @@
     const params = new URLSearchParams(window.location.search);
     const patientId = params.get("patient");
 
+
+
     const sections = {
       "Supportive Care": [
         "Companion",
@@ -744,6 +746,9 @@
         }
         const d = patientDoc.data();
 
+        // Initialize existing data variable
+        let existing = {};
+
         // Access control: Super Admin always allowed, TMO if township matches, Midwife if createdBy matches
         let allowed = false;
           
@@ -802,11 +807,83 @@
             activeFirstStageStartTime = startingData.startingTime;
             document.getElementById("startingTime").value = activeFirstStageStartTime;
             
-            // If starting time exists, show all tables
+            // Generate dynamic time columns based on starting time
+            generateDynamicTimeColumns();
+            
+            // Load existing records from the new structure
+            const recordsDoc = await firebase.firestore()
+              .collection("patients")
+              .doc(patientId)
+              .collection("records")
+              .doc("summary")
+              .get();
+            
+            if (recordsDoc.exists) {
+              const savedData = recordsDoc.data();
+              const savedStartingTime = savedData.startingTime;
+              
+              // Only load data if the starting time matches (preserves data when starting time hasn't changed)
+              if (savedStartingTime === activeFirstStageStartTime) {
+                existing = savedData;
+                console.log('Loading existing data with matching starting time:', savedStartingTime);
+              } else {
+                console.log('Starting time changed, not loading old data. Old:', savedStartingTime, 'New:', activeFirstStageStartTime);
+                // Data will be cleared since starting time changed
+              }
+            }
+
+            // Load medication data
+            const medicationSnap = await firebase.firestore().collection("patients").doc(patientId).collection("medication").get({ source: "server" });
+            medicationSnap.forEach(doc => {
+              const d = doc.data();
+              const time = d.time;
+              
+              // Store oxytocin data
+              if (d.oxytocin) {
+                existing[`Medication_Oxytocin_${time}`] = d.oxytocin;
+                if (d.oxytocin === "Yes") {
+                  existing[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
+                  existing[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
+                }
+              }
+              
+              // Store medicine data
+              if (d.medicine) {
+                existing[`Medication_Medicine_${time}`] = d.medicine;
+              }
+              
+              // Store IV fluids data
+              if (d.iv_fluids) {
+                existing[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
+              }
+            });
+
+            // If starting time exists, show all tables with data
             showAllTables();
             document.getElementById("startingTimeRequirement").style.display = "none";
+            
+            // Generate the summary table with existing data
+            generateSummaryTable(existing);
+            
+            // Load plotting data from previous sessions
+            await loadPlotData();
+            
+            // Setup alert highlighting for real-time alerts
+            addAlertHighlighting();
+            
+            // Add event listeners for form changes
+            document.querySelectorAll('select, input').forEach(el => {
+              el.addEventListener('change', function() {
+                checkAndHighlightAlert(this);
+                // Only show recommendations if the div exists
+                if (document.getElementById('recommendations')) {
+                  showRecommendations();
+                }
+              });
+            });
+            
           } else {
-            // No starting time set, hide all tables
+            // No starting time set, hide all tables and show requirement
             hideAllTables();
             showStartingTimeRequirement();
           }
@@ -876,7 +953,6 @@
           .doc("summary")
           .get();
         
-        let existing = {};
         if (recordsDoc.exists) {
           const savedData = recordsDoc.data();
           const savedStartingTime = savedData.startingTime;
@@ -935,6 +1011,33 @@
               showRecommendations();
             }
           });
+        });
+
+        // Add event listeners for starting time changes
+        document.getElementById("startingTime").addEventListener("change", function() {
+          const newStartingTime = this.value;
+          if (newStartingTime) {
+            const oldStartingTime = activeFirstStageStartTime;
+            activeFirstStageStartTime = newStartingTime;
+            
+            // Generate new time columns
+            generateDynamicTimeColumns();
+            
+            // Save the starting time
+            saveStartingTime();
+            
+            // Hide starting time requirement message
+            document.getElementById("startingTimeRequirement").style.display = "none";
+            
+            // Show all tables immediately
+            showAllTables();
+            
+            // Generate tables with empty data (clear all data since time intervals changed)
+            generateSummaryTable({});
+            
+            // Show warning about data loss
+            showDataLossWarning();
+          }
         });
 
       } catch (error) {
@@ -1007,7 +1110,9 @@
           timeColumns = supportiveCareTimeCols;
           break;
         case "Baby":
-          timeColumns = babyTimeCols;
+          // Baby section uses different time columns for different fields
+          // This will be handled by generateBabyTable function
+          timeColumns = babyBaselineTimeCols; // fallback
           break;
         case "Woman":
           timeColumns = womanTimeCols;
@@ -1378,10 +1483,26 @@
           });
         });
         
-        // Baby
-        babyTimeCols.forEach(time => {
+        // Baby - use the correct variable names
+        babyBaselineTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
-          sections["Baby"].forEach(field => {
+          // Only Baseline FHR and FHR deceleration use 30-min intervals
+          const baselineFields = ["Baseline FHR", "FHR deceleration"];
+          baselineFields.forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
+        
+        babyOtherTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          // Other baby fields use 1-hour intervals
+          const otherFields = ["Amniotic fluid", "Fetal position", "Caput", "Moulding"];
+          otherFields.forEach(field => {
             const fieldName = field.replace(/\s+/g, '_');
             const inputName = `${fieldName}_${timeKey}`;
             const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
