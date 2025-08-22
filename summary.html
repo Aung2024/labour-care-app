@@ -1546,17 +1546,54 @@
           });
         });
         
-        // Medication
+        // Medication - Fix the data collection
         medicationTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
-          sections["Medication"].forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
+          
+          // Oxytocin
+          const oxytocinKey = `Medication_Oxytocin_${timeKey}`;
+          const oxytocinInput = document.querySelector(`input[name="${oxytocinKey}"], select[name="${oxytocinKey}"]`);
+          if (oxytocinInput && oxytocinInput.value) {
+            formData[oxytocinKey] = oxytocinInput.value;
+            
+            // If oxytocin is "Y", save the additional details
+            if (oxytocinInput.value === "Y") {
+              const uLKey = `${oxytocinKey}_UL`;
+              const dropsKey = `${oxytocinKey}_drops`;
+              const uLInput = document.querySelector(`input[name="${uLKey}"]`);
+              const dropsInput = document.querySelector(`input[name="${dropsKey}"]`);
+              
+              if (uLInput && uLInput.value) {
+                formData[uLKey] = uLInput.value;
+              }
+              if (dropsInput && dropsInput.value) {
+                formData[dropsKey] = dropsInput.value;
+              }
             }
-          });
+          }
+          
+          // Medicine
+          const medicineKey = `Medication_Medicine_${timeKey}`;
+          const medicineInput = document.querySelector(`input[name="${medicineKey}"], select[name="${medicineKey}"]`);
+          if (medicineInput && medicineInput.value) {
+            formData[medicineKey] = medicineInput.value;
+            
+            // If medicine is "Y", save the text input
+            if (medicineInput.value === "Y") {
+              const textKey = `${medicineKey}_text`;
+              const textInput = document.querySelector(`input[name="${textKey}"]`);
+              if (textInput && textInput.value) {
+                formData[textKey] = textInput.value;
+              }
+            }
+          }
+          
+          // IV Fluids
+          const ivFluidsKey = `Medication_IV_Fluids_${timeKey}`;
+          const ivFluidsInput = document.querySelector(`input[name="${ivFluidsKey}"], select[name="${ivFluidsKey}"]`);
+          if (ivFluidsInput && ivFluidsInput.value) {
+            formData[ivFluidsKey] = ivFluidsInput.value;
+          }
         });
         
         // Shared Decision Making
@@ -1599,50 +1636,10 @@
         console.log('Saved form data:', formData);
         console.log('Total fields saved:', Object.keys(formData).length);
 
-        // Save medication table data with dynamic time columns
-        for (const time of medicationTimeCols) {
-          const medicationData = { time, timestamp: new Date().toISOString() };
-          
-          // Save oxytocin data
-          const oxytocinKey = `Medication_Oxytocin_${time}`;
-          const oxytocinEl = document.getElementsByName(oxytocinKey)[0];
-          if (oxytocinEl) {
-            medicationData.oxytocin = oxytocinEl.value;
-            
-            // If oxytocin is "Yes", save the details
-            if (oxytocinEl.value === "Yes") {
-              const uLKey = `${oxytocinKey}_UL`;
-              const dropsKey = `${oxytocinKey}_drops`;
-              const uLEl = document.getElementsByName(uLKey)[0];
-              const dropsEl = document.getElementsByName(dropsKey)[0];
-              
-              if (uLEl) medicationData.oxytocin_UL = uLEl.value;
-              if (dropsEl) medicationData.oxytocin_drops = dropsEl.value;
-            }
-          }
-          
-          // Save medicine data
-          const medicineKey = `Medication_Medicine_${time}`;
-          const medicineEl = document.getElementsByName(medicineKey)[0];
-          if (medicineEl) {
-            medicationData.medicine = medicineEl.value;
-          }
-          
-          // Save IV fluids data
-          const ivFluidsKey = `Medication_IV_Fluids_${time}`;
-          const ivFluidsEl = document.getElementsByName(ivFluidsKey)[0];
-          if (ivFluidsEl) {
-            medicationData.iv_fluids = ivFluidsEl.value;
-          }
-          
-          // Save medication data to Firestore
-          await base.collection("medication").doc(time).set(medicationData);
-        }
-
         showSaveSuccess();
       } catch (error) {
-        console.error("Error saving data:", error);
-        showSaveError(error.message);
+        console.error('Save error:', error);
+        showSaveError(`Failed to save data: ${error.message}`);
       }
     }
 
