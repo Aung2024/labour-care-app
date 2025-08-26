@@ -619,40 +619,60 @@
     // Load all summary data
     async function loadSummaryData() {
       try {
+        console.log('Loading summary data for patient:', patientId);
         const base = firebase.firestore().collection("patients").doc(patientId);
         
         // Load patient basic info
         const patientDoc = await base.get();
         if (patientDoc.exists) {
           patientData = patientDoc.data();
+          console.log('Patient data loaded:', patientData);
           populatePatientInfo();
+        } else {
+          console.log('No patient document found');
         }
 
         // Load summary records
         const summaryDoc = await base.collection("records").doc("summary").get();
         if (summaryDoc.exists) {
           summaryData = summaryDoc.data();
+          console.log('Summary data loaded:', summaryData);
+        } else {
+          console.log('No summary document found');
         }
 
         // Load starting time
         const startingTimeDoc = await base.collection("records").doc("startingTime").get();
         if (startingTimeDoc.exists) {
           const startingData = startingTimeDoc.data();
+          console.log('Starting time data:', startingData);
           if (startingData.startingTime) {
             generateTimeColumns(startingData.startingTime);
+            console.log('Time columns generated from starting time:', timeColumns);
+          } else {
+            generateDefaultTimeColumns();
+            console.log('Default time columns generated:', timeColumns);
           }
+        } else {
+          console.log('No starting time document found, using defaults');
+          generateDefaultTimeColumns();
+          console.log('Default time columns generated:', timeColumns);
         }
 
         // Load second stage data
         const secondStageDoc = await base.collection("records").doc("secondStage").get();
         if (secondStageDoc.exists) {
           const secondStageData = secondStageDoc.data();
+          console.log('Second stage data:', secondStageData);
           if (secondStageData.isSecondStageActive) {
             document.getElementById('secondStageStart').textContent = secondStageData.secondStageStartTime || '-';
           }
+        } else {
+          console.log('No second stage document found');
         }
 
         // Generate all tables
+        console.log('Generating tables with timeColumns:', timeColumns);
         generateAllTables();
         
         // Load plotting data
@@ -682,6 +702,36 @@
     function generateTimeColumns(startingTime) {
       const startHour = parseInt(startingTime.split(':')[0]);
       const startMinute = parseInt(startingTime.split(':')[1]);
+      
+      // Supportive Care, Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals
+      timeColumns.hourly = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        timeColumns.hourly.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+      
+      // Baby Baseline & FHR, Contractions: +30 minute intervals
+      timeColumns.thirtyMin = [];
+      for (let i = 0; i <= 24; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 30);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        timeColumns.thirtyMin.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+      
+      // Plan: +2 hour intervals
+      timeColumns.twoHour = [];
+      for (let i = 0; i <= 6; i++) {
+        const hour = (startHour + (i * 2)) % 24;
+        timeColumns.twoHour.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+    }
+    
+    // Generate default time columns if no starting time is available
+    function generateDefaultTimeColumns() {
+      const now = new Date();
+      const startHour = now.getHours();
+      const startMinute = now.getMinutes();
       
       // Supportive Care, Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals
       timeColumns.hourly = [];
@@ -1071,26 +1121,42 @@
         // Load cervix plot data
         const cervixDoc = await base.collection("plotData").doc("cervix").get();
         if (cervixDoc.exists) {
-          const cervixData = cervixDoc.data().data || [];
+          const cervixData = cervixDoc.data().data || cervixDoc.data().cervixData || [];
+          console.log('Cervix data loaded:', cervixData);
           drawCervixChart(cervixData);
+        } else {
+          console.log('No cervix plot data found');
+          drawCervixChart([]);
         }
         
         // Load descent plot data
         const descentDoc = await base.collection("plotData").doc("descent").get();
         if (descentDoc.exists) {
-          const descentData = descentDoc.data().data || [];
+          const descentData = descentDoc.data().data || descentDoc.data().descentData || [];
+          console.log('Descent data loaded:', descentData);
           drawDescentChart(descentData);
+        } else {
+          console.log('No descent plot data found');
+          drawDescentChart([]);
         }
         
       } catch (error) {
         console.error('Error loading plot data:', error);
+        // Draw empty charts on error
+        drawCervixChart([]);
+        drawDescentChart([]);
       }
     }
     
     // Draw cervix chart
     function drawCervixChart(data) {
       const canvas = document.getElementById('cervixChart');
-      if (!canvas) return;
+      if (!canvas) {
+        console.log('Cervix canvas not found');
+        return;
+      }
+      
+      console.log('Drawing cervix chart with data:', data);
       
       const ctx = canvas.getContext('2d');
       const width = canvas.width;
@@ -1108,17 +1174,34 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      data.forEach(point => {
-        if (point.x && point.y) {
-          ctx.fillText('X', point.x, point.y);
-        }
-      });
+      if (data && data.length > 0) {
+        data.forEach((point, index) => {
+          if (point.x && point.y) {
+            ctx.fillText('X', point.x, point.y);
+            console.log(`Drawing point ${index}: x=${point.x}, y=${point.y}`);
+          } else {
+            console.log(`Invalid point ${index}:`, point);
+          }
+        });
+      } else {
+        console.log('No data points to draw for cervix chart');
+        // Draw a message on the chart
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available', width / 2, height / 2);
+      }
     }
     
     // Draw descent chart
     function drawDescentChart(data) {
       const canvas = document.getElementById('descentChart');
-      if (!canvas) return;
+      if (!canvas) {
+        console.log('Descent canvas not found');
+        return;
+      }
+      
+      console.log('Drawing descent chart with data:', data);
       
       const ctx = canvas.getContext('2d');
       const width = canvas.width;
@@ -1136,11 +1219,23 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      data.forEach(point => {
-        if (point.x && point.y) {
-          ctx.fillText('O', point.x, point.y);
-        }
-      });
+      if (data && data.length > 0) {
+        data.forEach((point, index) => {
+          if (point.x && point.y) {
+            ctx.fillText('O', point.x, point.y);
+            console.log(`Drawing point ${index}: x=${point.x}, y=${point.y}`);
+          } else {
+            console.log(`Invalid point ${index}:`, point);
+          }
+        });
+      } else {
+        console.log('No data points to draw for descent chart');
+        // Draw a message on the chart
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available', width / 2, height / 2);
+      }
     }
     
     // Draw chart grid
