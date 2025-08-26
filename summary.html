@@ -58,7 +58,7 @@
           <div class="form-group">
             <label for="p_onset">Labour Onset</label>
             <select id="p_onset" class="form-control">
-              <option value="">Select onset type</option>
+              <option value=""></option>
           <option value="Spontaneous">Spontaneous</option>
           <option value="Induced">Induced</option>
         </select>
@@ -1186,7 +1186,7 @@
             inputHTML = `<input type="number" name="${inputName}" value="${existingValue}" class="time-cell" placeholder="Enter value">`;
           } else if (field.includes('Urine')) {
             inputHTML = `<select name="${inputName}" class="time-cell">
-              <option value="">Select</option>
+              <option value=""></option>
               <option value="P++++" ${existingValue === 'P++++' ? 'selected' : ''}>P++++</option>
               <option value="A++++" ${existingValue === 'A++++' ? 'selected' : ''}>A++++</option>
               <option value="P+++" ${existingValue === 'P+++' ? 'selected' : ''}>P+++</option>
@@ -1199,7 +1199,7 @@
             </select>`;
           } else {
             inputHTML = `<select name="${inputName}" class="time-cell">
-              <option value="">Select</option>
+              <option value=""></option>
               <option value="Y" ${existingValue === 'Y' ? 'selected' : ''}>Y</option>
               <option value="N" ${existingValue === 'N' ? 'selected' : ''}>N</option>
             </select>`;
@@ -1208,69 +1208,61 @@
           tableHTML += `<td class="time-cell">${inputHTML}</td>`;
         });
         
-        tableHTML += '</tr>';
-      });
-      
-      tableHTML += '</tbody>';
-      table.innerHTML = tableHTML;
-    }
-
-    // Generate Contractions table (keep as is)
-    function generateContractionsTable(tableId, existing) {
-      const table = document.getElementById(tableId);
-      
-      // Create table header
-      const thead = document.createElement("thead");
-      const headerRow = document.createElement("tr");
-      
-      // Field header
-      const fieldHeader = document.createElement("th");
-      fieldHeader.className = "field-header sticky-field";
-      fieldHeader.textContent = "Field";
-      headerRow.appendChild(fieldHeader);
-      
-      // Alert header
-      const alertHeader = document.createElement("th");
-      alertHeader.className = "alert-header sticky-alert";
-      alertHeader.textContent = "Alert";
-      headerRow.appendChild(alertHeader);
-      
-      // Time headers (30-minute intervals with second stage highlighting)
-      contractionsTimeCols.forEach(time => {
-        const timeHeader = document.createElement("th");
-        timeHeader.className = "time-header";
-        
-        // Apply second stage highlighting
-        if (isSecondStageTime(time)) {
-          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
-          timeHeader.style.color = "#166534"; // Dark green text
-        } else {
-          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
-          timeHeader.style.color = "#1e40af"; // Dark blue text
-        }
-        
-        timeHeader.textContent = time;
-        headerRow.appendChild(timeHeader);
-      });
-      
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      
-      // Create table body
-      const tbody = document.createElement("tbody");
-      
-      // Contractions per 10 min row
-      const contractionsRow = document.createElement("tr");
-      
-      // Field cell
-      const contractionsFieldCell = document.createElement("td");
-      contractionsFieldCell.className = "field-cell sticky-field";
-      contractionsFieldCell.textContent = "Contractions per 10 min";
-      contractionsRow.appendChild(contractionsFieldCell);
-      
-      // Alert cell
-      const contractionsAlertCell = document.createElement("td");
-      contractionsAlertCell.className = "alert-cell sticky-alert";
+        // Create table header
+        let tableHTML = '<thead><tr>';
+        tableHTML += '<th class="sticky-field">Field</th>';
+        tableHTML += '<th class="sticky-alert">Alert</th>';
+        // Add time column headers with second stage highlighting
+        timeColumns.forEach(time => {
+          const isSecondStage = isSecondStageTime(time);
+          const headerClass = isSecondStage ? 'time-header second-stage' : 'time-header';
+          tableHTML += `<th class="${headerClass}">${time}</th>`;
+        });
+        tableHTML += '</tr></thead><tbody>';
+        // Create table rows
+        fields.forEach(field => {
+          const fieldKey = field.replace(/\s+/g, '_');
+          tableHTML += '<tr>';
+          tableHTML += `<td class="sticky-field">${field}</td>`;
+          // Add alert value cell (fix: use fieldKey for lookup, fallback to field)
+          let alertValue = whoAlertValues[fieldKey];
+          if (typeof alertValue === 'undefined') alertValue = whoAlertValues[field] || '';
+          tableHTML += `<td class="sticky-alert"><span class="alert-value">${alertValue}</span></td>`;
+          // Add time input cells
+          timeColumns.forEach(time => {
+            const timeKey = time.replace(':', '_');
+            const inputName = `${fieldKey}_${timeKey}`;
+            const existingValue = existing && existing[inputName] ? existing[inputName] : '';
+            // Determine input type based on field
+            let inputHTML = '';
+            if (field.includes('FHR') || field.includes('Pulse') || field.includes('BP') || field.includes('Temperature')) {
+              inputHTML = `<input type="number" name="${inputName}" value="${existingValue}" class="time-cell" placeholder="Enter value">`;
+            } else if (field.includes('Urine')) {
+              inputHTML = `<select name="${inputName}" class="time-cell">
+                <option value=""></option>
+                <option value="P++++" ${existingValue === 'P++++' ? 'selected' : ''}>P++++</option>
+                <option value="A++++" ${existingValue === 'A++++' ? 'selected' : ''}>A++++</option>
+                <option value="P+++" ${existingValue === 'P+++' ? 'selected' : ''}>P+++</option>
+                <option value="A+++" ${existingValue === 'A+++' ? 'selected' : ''}>A+++</option>
+                <option value="P++" ${existingValue === 'P++' ? 'selected' : ''}>P++</option>
+                <option value="A++" ${existingValue === 'A++' ? 'selected' : ''}>A++</option>
+                <option value="P+" ${existingValue === 'P+' ? 'selected' : ''}>P+</option>
+                <option value="A+" ${existingValue === 'A+' ? 'selected' : ''}>A+</option>
+                <option value="N" ${existingValue === 'N' ? 'selected' : ''}>N</option>
+              </select>`;
+            } else {
+              inputHTML = `<select name="${inputName}" class="time-cell">
+                <option value=""></option>
+                <option value="Y" ${existingValue === 'Y' ? 'selected' : ''}>Y</option>
+                <option value="N" ${existingValue === 'N' ? 'selected' : ''}>N</option>
+              </select>`;
+            }
+            tableHTML += `<td class="time-cell">${inputHTML}</td>`;
+          });
+          tableHTML += '</tr>';
+        });
+        tableHTML += '</tbody>';
+        table.innerHTML = tableHTML;
       contractionsAlertCell.innerHTML = '<span class="alert-indicator">>5</span>';
       contractionsRow.appendChild(contractionsAlertCell);
       
