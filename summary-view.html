@@ -1078,38 +1078,32 @@
       
       let tableHTML = '<colgroup>';
       tableHTML += '<col class="field-column">';
-      
+      tableHTML += '<col class="alert-column">';
       timeColumns.hourly.forEach(() => {
         tableHTML += '<col class="time-column">';
       });
-      
       tableHTML += '</colgroup><thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
-      
+      tableHTML += '<th class="alert-column">Alert</th>';
       timeColumns.hourly.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
       });
-      
       tableHTML += '</tr></thead><tbody>';
-      
       fields.forEach(field => {
         const fieldKey = field.replace(/\s+/g, '_');
         tableHTML += '<tr>';
         tableHTML += `<td class="field-column">${field}</td>`;
-        
+        tableHTML += `<td class="alert-column"></td>`;
         timeColumns.hourly.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `Medication_${fieldKey}_${timeKey}`;
           const value = summaryData[key] || '';
-          
           tableHTML += `<td class="data-cell">${value}</td>`;
         });
-        
         tableHTML += '</tr>';
       });
-      
       tableHTML += '</tbody>';
       table.innerHTML = tableHTML;
     }
@@ -1120,54 +1114,45 @@
       
       let tableHTML = '<colgroup>';
       tableHTML += '<col class="field-column">';
-      
+      tableHTML += '<col class="alert-column">';
       timeColumns.hourly.forEach(() => {
         tableHTML += '<col class="time-column">';
       });
-      
       tableHTML += '</colgroup><thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
-      
+      tableHTML += '<th class="alert-column">Alert</th>';
       timeColumns.hourly.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
       });
-      
       tableHTML += '</tr></thead><tbody>';
-      
       // Assessment fields
       const assessmentFields = ["Woman's condition", "Baby's condition", "Labour progress", "Other concerns"];
       assessmentFields.forEach(field => {
         const fieldKey = field.replace(/\s+/g, '_').replace("'", "");
         tableHTML += '<tr>';
         tableHTML += `<td class="field-column">Assessment: ${field}</td>`;
-        
+        tableHTML += `<td class="alert-column"></td>`;
         timeColumns.hourly.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `ASSESSMENT_${fieldKey}_${timeKey}`;
           const value = summaryData[key] || '';
-          
           tableHTML += `<td class="data-cell">${value}</td>`;
         });
-        
         tableHTML += '</tr>';
       });
-      
       // Plan field
       tableHTML += '<tr>';
       tableHTML += '<td class="field-column">Plan</td>';
-      
+      tableHTML += '<td class="alert-column"></td>';
       timeColumns.twoHour.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `PLAN_${timeKey}`;
         const value = summaryData[key] || '';
-        
         tableHTML += `<td class="data-cell" colspan="2">${value}</td>`;
       });
-      
       tableHTML += '</tr>';
-      
       tableHTML += '</tbody>';
       table.innerHTML = tableHTML;
     }
@@ -1178,33 +1163,28 @@
       
       let tableHTML = '<colgroup>';
       tableHTML += '<col class="field-column">';
-      
+      tableHTML += '<col class="alert-column">';
       timeColumns.hourly.forEach(() => {
         tableHTML += '<col class="time-column">';
       });
-      
       tableHTML += '</colgroup><thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
-      
+      tableHTML += '<th class="alert-column">Alert</th>';
       timeColumns.hourly.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
       });
-      
       tableHTML += '</tr></thead><tbody>';
-      
       tableHTML += '<tr>';
       tableHTML += '<td class="field-column">Initials</td>';
-      
+      tableHTML += '<td class="alert-column"></td>';
       timeColumns.hourly.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `INITIALS_${timeKey}`;
         const value = summaryData[key] || '';
-        
         tableHTML += `<td class="data-cell">${value}</td>`;
       });
-      
       tableHTML += '</tr>';
       tableHTML += '</tbody>';
       table.innerHTML = tableHTML;
@@ -1313,24 +1293,36 @@
       // Draw grid
       drawChartGrid(ctx, width, height, 'cervix');
       
-      // Draw data points
+      // Draw data points and connect with lines
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
       ctx.fillStyle = '#3b82f6';
       ctx.font = 'bold 16px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
       if (data && data.length > 0) {
+        ctx.beginPath();
+        let started = false;
         data.forEach((point, index) => {
           if (point.x && point.y) {
-            ctx.fillText('X', point.x, point.y);
-            console.log(`Drawing point ${index}: x=${point.x}, y=${point.y}`);
-          } else {
-            console.log(`Invalid point ${index}:`, point);
+            if (!started) {
+              ctx.moveTo(point.x, point.y);
+              started = true;
+            } else {
+              ctx.lineTo(point.x, point.y);
+            }
+          }
+        });
+        ctx.stroke();
+        // Draw points
+        data.forEach((point, index) => {
+          if (point.x && point.y) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+            ctx.fill();
           }
         });
       } else {
-        console.log('No data points to draw for cervix chart');
-        // Draw a message on the chart
         ctx.fillStyle = '#9ca3af';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
@@ -1358,24 +1350,36 @@
       // Draw grid
       drawChartGrid(ctx, width, height, 'descent');
       
-      // Draw data points
+      // Draw data points and connect with lines
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2;
       ctx.fillStyle = '#10b981';
       ctx.font = 'bold 16px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
       if (data && data.length > 0) {
+        ctx.beginPath();
+        let started = false;
         data.forEach((point, index) => {
           if (point.x && point.y) {
-            ctx.fillText('O', point.x, point.y);
-            console.log(`Drawing point ${index}: x=${point.x}, y=${point.y}`);
-          } else {
-            console.log(`Invalid point ${index}:`, point);
+            if (!started) {
+              ctx.moveTo(point.x, point.y);
+              started = true;
+            } else {
+              ctx.lineTo(point.x, point.y);
+            }
+          }
+        });
+        ctx.stroke();
+        // Draw points
+        data.forEach((point, index) => {
+          if (point.x && point.y) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+            ctx.fill();
           }
         });
       } else {
-        console.log('No data points to draw for descent chart');
-        // Draw a message on the chart
         ctx.fillStyle = '#9ca3af';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
