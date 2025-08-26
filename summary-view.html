@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>WHO Labour Care Guide - Summary View</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="js/firebase.js"></script>
+  
+  <style>
+    /* WHO LCG Summary View Styles */
+    .summary-view-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: white;
+    }
+    
+    .summary-header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 3px solid #2c3e50;
+      padding-bottom: 20px;
+    }
+    
+    .summary-title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    
+    .patient-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    
+    .patient-info-item {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .patient-info-label {
+      font-weight: 600;
+      color: #495057;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    
+    .patient-info-value {
+      font-size: 14px;
+      color: #212529;
+      font-weight: 500;
+    }
+    
+    /* WHO LCG Table Styles */
+    .lcg-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+      font-size: 12px;
+    }
+    
+    .lcg-table th,
+    .lcg-table td {
+      border: 1px solid #dee2e6;
+      padding: 8px 6px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    
+    .lcg-table th {
+      background: #e9ecef;
+      font-weight: 600;
+      color: #495057;
+      font-size: 11px;
+    }
+    
+    .lcg-table .field-column {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #495057;
+      text-align: left;
+      min-width: 150px;
+      max-width: 200px;
+    }
+    
+    .lcg-table .alert-column {
+      background: #fff3cd;
+      font-weight: 600;
+      color: #856404;
+      font-size: 10px;
+      min-width: 80px;
+    }
+    
+    .lcg-table .time-column {
+      background: #dbeafe;
+      color: #1e40af;
+      font-weight: 600;
+      min-width: 60px;
+    }
+    
+    .lcg-table .time-column.second-stage {
+      background: #dcfce7;
+      color: #166534;
+    }
+    
+    .lcg-table .data-cell {
+      background: white;
+      min-width: 60px;
+      height: 40px;
+    }
+    
+    /* Section Headers */
+    .section-header {
+      background: #2c3e50;
+      color: white;
+      padding: 12px 15px;
+      margin: 30px 0 15px 0;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+    
+    .section-header i {
+      margin-right: 10px;
+    }
+    
+    /* Action Buttons */
+    .action-buttons {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .action-btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-print {
+      background: #28a745;
+      color: white;
+    }
+    
+    .btn-print:hover {
+      background: #218838;
+      transform: translateY(-2px);
+    }
+    
+    .btn-export {
+      background: #17a2b8;
+      color: white;
+    }
+    
+    .btn-export:hover {
+      background: #138496;
+      transform: translateY(-2px);
+    }
+    
+    .btn-share {
+      background: #6f42c1;
+      color: white;
+    }
+    
+    .btn-share:hover {
+      background: #5a32a3;
+      transform: translateY(-2px);
+    }
+    
+    .btn-back {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .btn-back:hover {
+      background: #5a6268;
+      transform: translateY(-2px);
+    }
+    
+    /* Print Styles */
+    @media print {
+      .action-buttons {
+        display: none;
+      }
+      
+      .summary-view-container {
+        padding: 0;
+        margin: 0;
+      }
+      
+      .lcg-table {
+        page-break-inside: avoid;
+      }
+      
+      .section-header {
+        page-break-after: avoid;
+      }
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+      .summary-view-container {
+        padding: 10px;
+      }
+      
+      .lcg-table {
+        font-size: 10px;
+      }
+      
+      .lcg-table th,
+      .lcg-table td {
+        padding: 4px 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Action Buttons -->
+  <div class="action-buttons">
+    <button class="action-btn btn-print" onclick="printSummary()">
+      <i class="fas fa-print"></i>
+      Print PDF
+    </button>
+    <button class="action-btn btn-export" onclick="exportToExcel()">
+      <i class="fas fa-file-excel"></i>
+      Export Excel
+    </button>
+    <button class="action-btn btn-share" onclick="shareSummary()">
+      <i class="fas fa-share-alt"></i>
+      Share Link
+    </button>
+    <button class="action-btn btn-back" onclick="goBack()">
+      <i class="fas fa-arrow-left"></i>
+      Back
+    </button>
+  </div>
+
+  <div class="summary-view-container">
+    <!-- Header -->
+    <div class="summary-header">
+      <div class="summary-title">
+        <i class="fas fa-clipboard-list"></i>
+        WHO Labour Care Guide - Summary Form
+      </div>
+      <div style="color: #6c757d; font-size: 14px;">
+        Clinical Summary for Labour Monitoring and Decision Making
+      </div>
+    </div>
+
+    <!-- Patient Information -->
+    <div class="patient-info-grid">
+      <div class="patient-info-item">
+        <div class="patient-info-label">Patient Name</div>
+        <div class="patient-info-value" id="patientName">Loading...</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Age</div>
+        <div class="patient-info-value" id="patientAge">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Parity</div>
+        <div class="patient-info-value" id="patientParity">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Labour Onset</div>
+        <div class="patient-info-value" id="labourOnset">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Active Labour Start</div>
+        <div class="patient-info-value" id="activeLabourStart">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Membranes Ruptured</div>
+        <div class="patient-info-value" id="membranesRuptured">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Risk Factors</div>
+        <div class="patient-info-value" id="riskFactors">-</div>
+      </div>
+      <div class="patient-info-item">
+        <div class="patient-info-label">Second Stage Start</div>
+        <div class="patient-info-value" id="secondStageStart">-</div>
+      </div>
+    </div>
+
+    <!-- Supportive Care Section -->
+    <div class="section-header">
+      <i class="fas fa-hands-helping"></i>
+      Supportive Care
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="supportiveCareTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Baby Section -->
+    <div class="section-header">
+      <i class="fas fa-baby"></i>
+      Baby
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="babyTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Woman Section -->
+    <div class="section-header">
+      <i class="fas fa-female"></i>
+      Woman
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="womanTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Labour Progress Section -->
+    <div class="section-header">
+      <i class="fas fa-chart-line"></i>
+      Labour Progress
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="labourProgressTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Medication Section -->
+    <div class="section-header">
+      <i class="fas fa-pills"></i>
+      Medication
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="medicationTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Shared Decision-Making Section -->
+    <div class="section-header">
+      <i class="fas fa-comments"></i>
+      Shared Decision-Making
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="decisionMakingTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Initials Section -->
+    <div class="section-header">
+      <i class="fas fa-signature"></i>
+      Initials
+    </div>
+    <div class="table-responsive">
+      <table class="lcg-table" id="initialsTable">
+        <!-- Table will be generated here -->
+      </table>
+    </div>
+
+    <!-- Clinical Recommendations -->
+    <div class="section-header">
+      <i class="fas fa-stethoscope"></i>
+      Clinical Recommendations
+    </div>
+    <div id="recommendations" class="p-3 bg-light rounded">
+      <!-- Recommendations will be populated here -->
+    </div>
+  </div>
+
+  <script>
+    // Get patient ID from URL parameters
+    function getPatientIdFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('patient');
+    }
+
+    const patientId = getPatientIdFromUrl();
+    let patientData = {};
+    let summaryData = {};
+    let timeColumns = {};
+
+    // Load data when page loads
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        loadSummaryData();
+      }
+    });
+
+    // Load all summary data
+    async function loadSummaryData() {
+      try {
+        const base = firebase.firestore().collection("patients").doc(patientId);
+        
+        // Load patient basic info
+        const patientDoc = await base.get();
+        if (patientDoc.exists) {
+          patientData = patientDoc.data();
+          populatePatientInfo();
+        }
+
+        // Load summary records
+        const summaryDoc = await base.collection("records").doc("summary").get();
+        if (summaryDoc.exists) {
+          summaryData = summaryDoc.data();
+        }
+
+        // Load starting time
+        const startingTimeDoc = await base.collection("records").doc("startingTime").get();
+        if (startingTimeDoc.exists) {
+          const startingData = startingTimeDoc.data();
+          if (startingData.startingTime) {
+            generateTimeColumns(startingData.startingTime);
+          }
+        }
+
+        // Load second stage data
+        const secondStageDoc = await base.collection("records").doc("secondStage").get();
+        if (secondStageDoc.exists) {
+          const secondStageData = secondStageDoc.data();
+          if (secondStageData.isSecondStageActive) {
+            document.getElementById('secondStageStart').textContent = secondStageData.secondStageStartTime || '-';
+          }
+        }
+
+        // Generate all tables
+        generateAllTables();
+        
+        // Load recommendations
+        loadRecommendations();
+
+      } catch (error) {
+        console.error("Error loading summary data:", error);
+        document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+      }
+    }
+
+    // Populate patient information
+    function populatePatientInfo() {
+      document.getElementById('patientName').textContent = patientData.name || 'Not specified';
+      document.getElementById('patientAge').textContent = patientData.age || '-';
+      document.getElementById('patientParity').textContent = patientData.parity || '-';
+      document.getElementById('labourOnset').textContent = patientData.labour_onset || '-';
+      document.getElementById('activeLabourStart').textContent = patientData.active_labour || '-';
+      document.getElementById('membranesRuptured').textContent = patientData.ruptured_membrane || '-';
+      document.getElementById('riskFactors').textContent = patientData.risk_factors || 'None identified';
+    }
+
+    // Generate time columns based on starting time
+    function generateTimeColumns(startingTime) {
+      const startHour = parseInt(startingTime.split(':')[0]);
+      const startMinute = parseInt(startingTime.split(':')[1]);
+      
+      // Supportive Care, Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals
+      timeColumns.hourly = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        timeColumns.hourly.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+      
+      // Baby Baseline & FHR, Contractions: +30 minute intervals
+      timeColumns.thirtyMin = [];
+      for (let i = 0; i <= 24; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 30);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        timeColumns.thirtyMin.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+      
+      // Plan: +2 hour intervals
+      timeColumns.twoHour = [];
+      for (let i = 0; i <= 6; i++) {
+        const hour = (startHour + (i * 2)) % 24;
+        timeColumns.twoHour.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+    }
+
+    // Generate all tables
+    function generateAllTables() {
+      generateSupportiveCareTable();
+      generateBabyTable();
+      generateWomanTable();
+      generateLabourProgressTable();
+      generateMedicationTable();
+      generateDecisionMakingTable();
+      generateInitialsTable();
+    }
+
+    // Generate Supportive Care table
+    function generateSupportiveCareTable() {
+      const table = document.getElementById('supportiveCareTable');
+      const fields = ["Companion", "Pain Relief", "Oral fluids", "Mobility"];
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      tableHTML += '<th class="alert-column">Alert</th>';
+      
+      timeColumns.hourly.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      fields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        tableHTML += `<td class="alert-column">${getAlertValue(field)}</td>`;
+        
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Baby table
+    function generateBabyTable() {
+      const table = document.getElementById('babyTable');
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      tableHTML += '<th class="alert-column">Alert</th>';
+      
+      timeColumns.thirtyMin.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      // Baseline FHR and FHR deceleration (30-min intervals)
+      const baselineFields = ["Baseline FHR", "FHR deceleration"];
+      baselineFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        tableHTML += `<td class="alert-column">${getAlertValue(field)}</td>`;
+        
+        timeColumns.thirtyMin.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      // Other baby fields (1-hour intervals)
+      const otherFields = ["Amniotic fluid", "Fetal position", "Caput", "Moulding"];
+      otherFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        tableHTML += `<td class="alert-column">${getAlertValue(field)}</td>`;
+        
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Woman table
+    function generateWomanTable() {
+      const table = document.getElementById('womanTable');
+      const fields = ["Pulse", "Systolic BP", "Diastolic BP", "Temperature C", "Urine"];
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      tableHTML += '<th class="alert-column">Alert</th>';
+      
+      timeColumns.hourly.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      fields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        tableHTML += `<td class="alert-column">${getAlertValue(field)}</td>`;
+        
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Labour Progress table
+    function generateLabourProgressTable() {
+      const table = document.getElementById('labourProgressTable');
+      const fields = ["Contractions per 10 min", "Duration of contractions"];
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      tableHTML += '<th class="alert-column">Alert</th>';
+      
+      timeColumns.thirtyMin.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      fields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        tableHTML += `<td class="alert-column">${getAlertValue(field)}</td>`;
+        
+        timeColumns.thirtyMin.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Medication table
+    function generateMedicationTable() {
+      const table = document.getElementById('medicationTable');
+      const fields = ["Oxytocin", "Medicine", "IV fluids"];
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      
+      timeColumns.hourly.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      fields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">${field}</td>`;
+        
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `Medication_${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Decision Making table
+    function generateDecisionMakingTable() {
+      const table = document.getElementById('decisionMakingTable');
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      
+      timeColumns.hourly.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      // Assessment fields
+      const assessmentFields = ["Woman's condition", "Baby's condition", "Labour progress", "Other concerns"];
+      assessmentFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_').replace("'", "");
+        tableHTML += '<tr>';
+        tableHTML += `<td class="field-column">Assessment: ${field}</td>`;
+        
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `ASSESSMENT_${fieldKey}_${timeKey}`;
+          const value = summaryData[key] || '';
+          
+          tableHTML += `<td class="data-cell">${value}</td>`;
+        });
+        
+        tableHTML += '</tr>';
+      });
+      
+      // Plan field
+      tableHTML += '<tr>';
+      tableHTML += '<td class="field-column">Plan</td>';
+      
+      timeColumns.twoHour.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const key = `PLAN_${timeKey}`;
+        const value = summaryData[key] || '';
+        
+        tableHTML += `<td class="data-cell" colspan="2">${value}</td>`;
+      });
+      
+      tableHTML += '</tr>';
+      
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Generate Initials table
+    function generateInitialsTable() {
+      const table = document.getElementById('initialsTable');
+      
+      let tableHTML = '<thead><tr>';
+      tableHTML += '<th class="field-column">Field</th>';
+      
+      timeColumns.hourly.forEach(time => {
+        const isSecondStage = isSecondStageTime(time);
+        const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
+        tableHTML += `<th class="${headerClass}">${time}</th>`;
+      });
+      
+      tableHTML += '</tr></thead><tbody>';
+      
+      tableHTML += '<tr>';
+      tableHTML += '<td class="field-column">Initials</td>';
+      
+      timeColumns.hourly.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const key = `INITIALS_${timeKey}`;
+        const value = summaryData[key] || '';
+        
+        tableHTML += `<td class="data-cell">${value}</td>`;
+      });
+      
+      tableHTML += '</tr>';
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+    }
+
+    // Load clinical recommendations
+    function loadRecommendations() {
+      const recommendationsDiv = document.getElementById('recommendations');
+      // This would integrate with your existing recommendations system
+      recommendationsDiv.innerHTML = '<p class="text-muted">Clinical recommendations will be displayed here based on the data entered.</p>';
+    }
+
+    // Helper functions
+    function getAlertValue(field) {
+      const alertValues = {
+        "Companion": "N",
+        "Pain Relief": "N",
+        "Oral fluids": "N",
+        "Mobility": "SP",
+        "Baseline FHR": "110-160",
+        "FHR deceleration": "L",
+        "Amniotic fluid": "M+++, B",
+        "Fetal position": "P, T",
+        "Caput": "+++",
+        "Moulding": "+++",
+        "Pulse": "<60, >120",
+        "Systolic BP": "<90, >140",
+        "Diastolic BP": ">90",
+        "Temperature C": "<36, >37.5",
+        "Urine": "P++++, A++++",
+        "Contractions per 10 min": ">5",
+        "Duration of contractions": ">40s"
+      };
+      
+      return alertValues[field] || '';
+    }
+
+    function isSecondStageTime(time) {
+      const secondStageStart = document.getElementById('secondStageStart').textContent;
+      if (secondStageStart === '-') return false;
+      
+      const timeHour = parseInt(time.split(':')[0]);
+      const timeMinute = parseInt(time.split(':')[1]);
+      const secondHour = parseInt(secondStageStart.split(':')[0]);
+      const secondMinute = parseInt(secondStageStart.split(':')[1]);
+      
+      const timeMinutes = timeHour * 60 + timeMinute;
+      const secondMinutes = secondHour * 60 + secondMinute;
+      
+      return timeMinutes >= secondMinutes;
+    }
+
+    // Action functions
+    function printSummary() {
+      window.print();
+    }
+
+    function exportToExcel() {
+      try {
+        // Create a new workbook
+        const wb = XLSX.utils.book_new();
+        
+        // Create the main summary sheet
+        const summaryData = generateExcelData();
+        const ws = XLSX.utils.aoa_to_sheet(summaryData);
+        
+        // Set column widths
+        ws['!cols'] = [
+          { width: 25 }, // Field column
+          { width: 15 }, // Alert column
+          ...Array(timeColumns.hourly.length).fill({ width: 12 }) // Time columns
+        ];
+        
+        // Add the worksheet to the workbook
+        XLSX.utils.book_append_sheet(wb, ws, "WHO LCG Summary");
+        
+        // Generate filename
+        const patientName = patientData.name || 'Patient';
+        const timestamp = new Date().toISOString().split('T')[0];
+        const filename = `WHO_LCG_${patientName}_${timestamp}.xlsx`;
+        
+        // Save the file
+        XLSX.writeFile(wb, filename);
+        
+      } catch (error) {
+        console.error('Error exporting to Excel:', error);
+        alert('Error exporting to Excel: ' + error.message);
+      }
+    }
+    
+    function generateExcelData() {
+      const data = [];
+      
+      // Header row
+      const headerRow = ['Field', 'Alert'];
+      timeColumns.hourly.forEach(time => {
+        headerRow.push(time);
+      });
+      data.push(headerRow);
+      
+      // Supportive Care section
+      data.push(['', '']); // Empty row
+      data.push(['SUPPORTIVE CARE', '']);
+      const supportiveFields = ["Companion", "Pain Relief", "Oral fluids", "Mobility"];
+      supportiveFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        const row = [field, getAlertValue(field)];
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          row.push(summaryData[key] || '');
+        });
+        data.push(row);
+      });
+      
+      // Baby section
+      data.push(['', '']); // Empty row
+      data.push(['BABY', '']);
+      const babyFields = ["Baseline FHR", "FHR deceleration", "Amniotic fluid", "Fetal position", "Caput", "Moulding"];
+      babyFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        const row = [field, getAlertValue(field)];
+        
+        if (field === "Baseline FHR" || field === "FHR deceleration") {
+          // Use 30-min intervals for these fields
+          timeColumns.thirtyMin.forEach(time => {
+            const timeKey = time.replace(':', '_');
+            const key = `${fieldKey}_${timeKey}`;
+            row.push(summaryData[key] || '');
+          });
+        } else {
+          // Use 1-hour intervals for other fields
+          timeColumns.hourly.forEach(time => {
+            const timeKey = time.replace(':', '_');
+            const key = `${fieldKey}_${timeKey}`;
+            row.push(summaryData[key] || '');
+          });
+        }
+        data.push(row);
+      });
+      
+      // Woman section
+      data.push(['', '']); // Empty row
+      data.push(['WOMAN', '']);
+      const womanFields = ["Pulse", "Systolic BP", "Diastolic BP", "Temperature C", "Urine"];
+      womanFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        const row = [field, getAlertValue(field)];
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          row.push(summaryData[key] || '');
+        });
+        data.push(row);
+      });
+      
+      // Labour Progress section
+      data.push(['', '']); // Empty row
+      data.push(['LABOUR PROGRESS', '']);
+      const labourFields = ["Contractions per 10 min", "Duration of contractions"];
+      labourFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        const row = [field, getAlertValue(field)];
+        timeColumns.thirtyMin.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `${fieldKey}_${timeKey}`;
+          row.push(summaryData[key] || '');
+        });
+        data.push(row);
+      });
+      
+      // Medication section
+      data.push(['', '']); // Empty row
+      data.push(['MEDICATION', '']);
+      const medicationFields = ["Oxytocin", "Medicine", "IV fluids"];
+      medicationFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_');
+        const row = [field, ''];
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `Medication_${fieldKey}_${timeKey}`;
+          row.push(summaryData[key] || '');
+        });
+        data.push(row);
+      });
+      
+      // Shared Decision-Making section
+      data.push(['', '']); // Empty row
+      data.push(['SHARED DECISION-MAKING', '']);
+      const assessmentFields = ["Woman's condition", "Baby's condition", "Labour progress", "Other concerns"];
+      assessmentFields.forEach(field => {
+        const fieldKey = field.replace(/\s+/g, '_').replace("'", "");
+        const row = [`Assessment: ${field}`, ''];
+        timeColumns.hourly.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `ASSESSMENT_${fieldKey}_${timeKey}`;
+          row.push(summaryData[key] || '');
+        });
+        data.push(row);
+      });
+      
+      // Plan row
+      const planRow = ['Plan', ''];
+      timeColumns.twoHour.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const key = `PLAN_${timeKey}`;
+        planRow.push(summaryData[key] || '');
+        planRow.push(''); // Add empty cell for 2-hour intervals
+      });
+      data.push(planRow);
+      
+      // Initials section
+      data.push(['', '']); // Empty row
+      data.push(['INITIALS', '']);
+      const initialsRow = ['Initials', ''];
+      timeColumns.hourly.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const key = `INITIALS_${timeKey}`;
+        initialsRow.push(summaryData[key] || '');
+      });
+      data.push(initialsRow);
+      
+      return data;
+    }
+
+    function shareSummary() {
+      const currentUrl = window.location.href;
+      navigator.clipboard.writeText(currentUrl).then(() => {
+        alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
+      }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = currentUrl;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+        alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
+      });
+    }
+
+    function goBack() {
+      window.history.back();
+    }
+  </script>
+</body>
+</html>
