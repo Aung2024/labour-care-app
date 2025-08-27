@@ -872,6 +872,9 @@
             showAllTables();
             document.getElementById("startingTimeRequirement").style.display = "none";
             
+            // Lock the starting time input since it's already set
+            lockTimeInput("startingTime", "Active First Stage Start Time");
+            
             // Generate the summary table with existing data
             generateSummaryTable(existing);
             
@@ -908,6 +911,9 @@
               document.getElementById("secondStageTime").value = secondStageStartTime;
               document.getElementById("secondStageCard").style.display = "block";
               
+              // Lock the second stage time input since it's already set
+              lockTimeInput("secondStageTime", "Second Stage Start Time");
+              
               // Calculate and display first stage duration
               if (activeFirstStageStartTime && secondStageStartTime) {
                 const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
@@ -930,8 +936,21 @@
 
         // Add event listeners for starting time changes
         document.getElementById("startingTime").addEventListener("change", function() {
+          // Check if input is already locked
+          if (isTimeInputLocked("startingTime")) {
+            console.log("Starting time input is locked, cannot change");
+            return;
+          }
+          
           const newStartingTime = this.value;
           if (newStartingTime) {
+            // Validate time format
+            if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newStartingTime)) {
+              alert('Please enter a valid time in HH:MM format (e.g., 08:00)');
+              this.value = '';
+              return;
+            }
+            
             const oldStartingTime = activeFirstStageStartTime;
             activeFirstStageStartTime = newStartingTime;
             
@@ -955,6 +974,41 @@
             
             // Show warning about data loss
             showDataLossWarning();
+          }
+        });
+
+        // Add event listener for second stage time input
+        document.getElementById("secondStageTime").addEventListener("change", function() {
+          // Check if input is already locked
+          if (isTimeInputLocked("secondStageTime")) {
+            console.log("Second stage time input is locked, cannot change");
+            return;
+          }
+          
+          const newSecondStageTime = this.value;
+          if (newSecondStageTime && activeFirstStageStartTime) {
+            // Validate time format
+            if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newSecondStageTime)) {
+              alert('Please enter a valid time in HH:MM format (e.g., 16:00)');
+              this.value = '';
+              return;
+            }
+            
+            // Validate that second stage is after first stage
+            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+            const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
+            
+            if (secondTime <= firstTime) {
+              alert('Second Stage Start Time must be after the Active First Stage Start Time.');
+              this.value = '';
+              return;
+            }
+            
+            // Lock the second stage time input after first use
+            lockTimeInput("secondStageTime", "Second Stage Start Time");
+            
+            // Show the second stage controls
+            document.getElementById('secondStageControls').style.display = 'block';
           }
         });
 
@@ -1026,57 +1080,7 @@
           });
         });
 
-        // Add event listeners for starting time changes
-        document.getElementById("startingTime").addEventListener("change", function() {
-          const newStartingTime = this.value;
-          if (newStartingTime) {
-            const oldStartingTime = activeFirstStageStartTime;
-            activeFirstStageStartTime = newStartingTime;
-            
-            // Generate new time columns
-            generateDynamicTimeColumns();
-            
-            // Save the starting time
-            saveStartingTime();
-            
-            // Lock the starting time input after first use
-            lockTimeInput("startingTime", "Active First Stage Start Time");
-            
-            // Hide starting time requirement message
-            document.getElementById("startingTimeRequirement").style.display = "none";
-            
-            // Show all tables immediately
-            showAllTables();
-            
-            // Generate tables with empty data (clear all data since time intervals changed)
-            generateSummaryTable({});
-            
-            // Show warning about data loss
-            showDataLossWarning();
-          }
-        });
 
-        // Add event listener for second stage time input
-        document.getElementById("secondStageTime").addEventListener("change", function() {
-          const newSecondStageTime = this.value;
-          if (newSecondStageTime && activeFirstStageStartTime) {
-            // Validate that second stage is after first stage
-            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
-            const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
-            
-            if (secondTime <= firstTime) {
-              alert('Second stage must start after the active first stage start time.');
-              this.value = '';
-              return;
-            }
-            
-            // Lock the second stage time input after first use
-            lockTimeInput("secondStageTime", "Second Stage Start Time");
-            
-            // Show the second stage controls
-            document.getElementById('secondStageControls').style.display = 'block';
-          }
-        });
 
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1761,6 +1765,9 @@
       
       // Test if sticky positioning is supported
       testStickySupport();
+      
+      // Set up protection for locked inputs
+      preventLockedInputModifications();
     });
     
     // Test if sticky positioning is supported
@@ -3281,6 +3288,9 @@
       // Save the second stage time
       saveSecondStageData();
       
+      // Lock the second stage time input after confirmation
+      lockTimeInput("secondStageTime", "Second Stage Start Time");
+      
       // IMPORTANT: Don't regenerate tables - just update the colors!
       // The isSecondStageTime() function will handle the color changes
       updateSecondStageColors();
@@ -3857,6 +3867,154 @@
       } catch (error) {
         console.error('Error loading medication data:', error);
       }
+    }
+
+    // Lock time input fields to prevent changes once set
+    function lockTimeInput(inputId, fieldName) {
+      const input = document.getElementById(inputId);
+      if (input) {
+        // Check if already locked to prevent duplicate elements
+        if (input.disabled && input.classList.contains('locked-input')) {
+          console.log(`🔒 ${fieldName} input is already locked`);
+          return;
+        }
+        
+        // Disable the input
+        input.disabled = true;
+        
+        // Add CSS class for locked styling
+        input.classList.add('locked-input');
+        
+        // Check if lock icon already exists
+        const existingLockIcon = input.parentNode.querySelector(`.lock-icon[data-field="${fieldName}"]`);
+        if (!existingLockIcon) {
+          // Add a lock icon and tooltip
+          const lockIcon = document.createElement('i');
+          lockIcon.className = 'fas fa-lock lock-icon';
+          lockIcon.setAttribute('data-field', fieldName);
+          lockIcon.title = `${fieldName} is locked and cannot be changed`;
+          
+          // Insert lock icon after the input
+          input.parentNode.insertBefore(lockIcon, input.nextSibling);
+        }
+        
+        // Check if lock note already exists
+        const existingLockNote = input.parentNode.querySelector(`.lock-note[data-field="${fieldName}"]`);
+        if (!existingLockNote) {
+          // Add a small note below the input
+          const lockNote = document.createElement('small');
+          lockNote.className = 'form-text lock-note';
+          lockNote.setAttribute('data-field', fieldName);
+          lockNote.innerHTML = `<i class="fas fa-info-circle"></i> ${fieldName} is now locked and cannot be modified`;
+          
+          // Insert note after the input
+          input.parentNode.insertBefore(lockNote, input.nextSibling);
+        }
+        
+        console.log(`🔒 ${fieldName} input locked successfully`);
+        
+        // Set up protection for the newly locked input
+        preventLockedInputModifications();
+        
+        // Show a brief success message
+        showLockSuccessMessage(fieldName);
+      } else {
+        console.error(`Input element with ID '${inputId}' not found`);
+      }
+    }
+
+    // Show success message when input is locked
+    function showLockSuccessMessage(fieldName) {
+      // Create a temporary success message
+      const lockMessage = document.createElement('div');
+      lockMessage.className = 'alert alert-success lock-success-message';
+      lockMessage.style.position = 'fixed';
+      lockMessage.style.top = '20px';
+      lockMessage.style.right = '20px';
+      lockMessage.style.zIndex = '9999';
+      lockMessage.style.minWidth = '300px';
+      lockMessage.style.animation = 'slideInRight 0.5s ease-out';
+      lockMessage.innerHTML = `
+        <i class="fas fa-lock"></i>
+        <strong>${fieldName}</strong> has been locked successfully and cannot be modified.
+      `;
+      
+      // Add to page
+      document.body.appendChild(lockMessage);
+      
+      // Auto-remove after 3 seconds
+      setTimeout(() => {
+        lockMessage.style.animation = 'slideOutRight 0.5s ease-out';
+        setTimeout(() => {
+          if (lockMessage.parentNode) {
+            lockMessage.parentNode.removeChild(lockMessage);
+          }
+        }, 500);
+      }, 3000);
+    }
+
+    // Unlock time input fields (for admin purposes)
+    function unlockTimeInput(inputId, fieldName) {
+      const input = document.getElementById(inputId);
+      if (input) {
+        // Enable the input
+        input.disabled = false;
+        
+        // Remove CSS class for locked styling
+        input.classList.remove('locked-input');
+        
+        // Remove lock icon
+        const existingLockIcon = input.parentNode.querySelector(`.lock-icon[data-field="${fieldName}"]`);
+        if (existingLockIcon) {
+          existingLockIcon.remove();
+        }
+        
+        // Remove lock note
+        const existingLockNote = input.parentNode.querySelector(`.lock-note[data-field="${fieldName}"]`);
+        if (existingLockNote) {
+          existingLockNote.remove();
+        }
+        
+        console.log(`🔓 ${fieldName} input unlocked successfully`);
+      } else {
+        console.error(`Input element with ID '${inputId}' not found`);
+      }
+    }
+
+    // Check if a time input is locked
+    function isTimeInputLocked(inputId) {
+      const input = document.getElementById(inputId);
+      return input && input.disabled && input.classList.contains('locked-input');
+    }
+
+    // Prevent any modifications to locked inputs
+    function preventLockedInputModifications() {
+      const lockedInputs = document.querySelectorAll('.locked-input');
+      lockedInputs.forEach(input => {
+        // Prevent any user input
+        input.addEventListener('keydown', function(e) {
+          e.preventDefault();
+          return false;
+        });
+        
+        // Prevent paste
+        input.addEventListener('paste', function(e) {
+          e.preventDefault();
+          return false;
+        });
+        
+        // Prevent drag and drop
+        input.addEventListener('drop', function(e) {
+          e.preventDefault();
+          return false;
+        });
+        
+        // Prevent context menu
+        input.addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+          return false;
+        });
+      });
     }
 
     // Show warning about data loss when starting time changes
