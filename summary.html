@@ -9,6 +9,36 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   
+  <style>
+    /* Locked time input styling */
+    .time-input-locked {
+      background-color: #f8f9fa !important;
+      color: #6c757d !important;
+      cursor: not-allowed !important;
+      border-color: #dee2e6 !important;
+      opacity: 0.8;
+    }
+    
+    .time-input-locked:focus {
+      box-shadow: none !important;
+      border-color: #dee2e6 !important;
+    }
+    
+    .lock-icon {
+      margin-left: 8px;
+      color: #6c757d;
+      font-size: 14px;
+    }
+    
+    .lock-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: #6c757d;
+      font-style: italic;
+    }
+  </style>
+  
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -872,6 +902,9 @@
             showAllTables();
             document.getElementById("startingTimeRequirement").style.display = "none";
             
+            // Lock the starting time input since it was already set
+            lockTimeInput("startingTime", "Active First Stage Start Time");
+            
             // Generate the summary table with existing data
             generateSummaryTable(existing);
             
@@ -908,6 +941,9 @@
               document.getElementById("secondStageTime").value = secondStageStartTime;
               document.getElementById("secondStageCard").style.display = "block";
               
+              // Lock the second stage time input since it was already set
+              lockTimeInput("secondStageTime", "Second Stage Start Time");
+              
               // Calculate and display first stage duration
               if (activeFirstStageStartTime && secondStageStartTime) {
                 const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
@@ -930,6 +966,12 @@
 
         // Add event listeners for starting time changes
         document.getElementById("startingTime").addEventListener("change", function() {
+          // Check if input is locked
+          if (isTimeInputLocked("startingTime")) {
+            console.log("🔒 Starting time input is locked, ignoring change event");
+            return;
+          }
+          
           const newStartingTime = this.value;
           if (newStartingTime) {
             const oldStartingTime = activeFirstStageStartTime;
@@ -940,6 +982,9 @@
             
             // Save the starting time
             saveStartingTime();
+            
+            // Lock the starting time input after first use
+            lockTimeInput("startingTime", "Active First Stage Start Time");
             
             // Hide starting time requirement message
             document.getElementById("startingTimeRequirement").style.display = "none";
@@ -1025,6 +1070,12 @@
 
         // Add event listeners for starting time changes
         document.getElementById("startingTime").addEventListener("change", function() {
+          // Check if input is locked
+          if (isTimeInputLocked("startingTime")) {
+            console.log("🔒 Starting time input is locked, ignoring change event");
+            return;
+          }
+          
           const newStartingTime = this.value;
           if (newStartingTime) {
             const oldStartingTime = activeFirstStageStartTime;
@@ -1035,6 +1086,9 @@
             
             // Save the starting time
             saveStartingTime();
+            
+            // Lock the starting time input after first use
+            lockTimeInput("startingTime", "Active First Stage Start Time");
             
             // Hide starting time requirement message
             document.getElementById("startingTimeRequirement").style.display = "none";
@@ -1052,6 +1106,12 @@
 
         // Add event listener for second stage time input
         document.getElementById("secondStageTime").addEventListener("change", function() {
+          // Check if input is locked
+          if (isTimeInputLocked("secondStageTime")) {
+            console.log("🔒 Second stage time input is locked, ignoring change event");
+            return;
+          }
+          
           const newSecondStageTime = this.value;
           if (newSecondStageTime && activeFirstStageStartTime) {
             // Validate that second stage is after first stage
@@ -1063,6 +1123,9 @@
               this.value = '';
               return;
             }
+            
+            // Lock the second stage time input after first use
+            lockTimeInput("secondStageTime", "Second Stage Start Time");
             
             // Show the second stage controls
             document.getElementById('secondStageControls').style.display = 'block';
@@ -1752,6 +1815,11 @@
       
       // Test if sticky positioning is supported
       testStickySupport();
+      
+      // Show initial time input lock status
+      setTimeout(() => {
+        showTimeInputLockStatus();
+      }, 1000); // Wait for data to load
     });
     
     // Test if sticky positioning is supported
@@ -3272,6 +3340,9 @@
       // Save the second stage time
       saveSecondStageData();
       
+      // Lock the second stage time input after confirmation
+      lockTimeInput("secondStageTime", "Second Stage Start Time");
+      
       // IMPORTANT: Don't regenerate tables - just update the colors!
       // The isSecondStageTime() function will handle the color changes
       updateSecondStageColors();
@@ -3387,6 +3458,90 @@
       } catch (error) {
         console.error("Error saving starting time:", error);
       }
+    }
+    
+    // Lock time input after first use
+    function lockTimeInput(inputId, inputLabel) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      
+      // Check if already locked
+      if (isTimeInputLocked(inputId)) {
+        console.log(`🔒 ${inputLabel} input is already locked`);
+        return;
+      }
+      
+      // Disable the input
+      input.disabled = true;
+      input.readOnly = true;
+      
+      // Add CSS class for locked styling
+      input.classList.add('time-input-locked');
+      
+      // Add a lock icon and label
+      const lockIcon = document.createElement('i');
+      lockIcon.className = 'fas fa-lock lock-icon';
+      lockIcon.title = `${inputLabel} is locked and cannot be changed`;
+      
+      // Insert the lock icon after the input
+      input.parentNode.insertBefore(lockIcon, input.nextSibling);
+      
+      // Add a small note below the input
+      const note = document.createElement('small');
+      note.className = 'lock-note';
+      note.textContent = `${inputLabel} is now locked and cannot be modified`;
+      
+      // Insert the note after the input
+      input.parentNode.insertBefore(note, input.nextSibling);
+      
+      console.log(`🔒 ${inputLabel} input locked successfully`);
+    }
+    
+    // Check if time input is already locked
+    function isTimeInputLocked(inputId) {
+      const input = document.getElementById(inputId);
+      if (!input) return false;
+      return input.disabled && input.readOnly && input.classList.contains('time-input-locked');
+    }
+    
+    // Unlock time input (for admin purposes)
+    function unlockTimeInput(inputId, inputLabel) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      
+      // Check if it's actually locked
+      if (!isTimeInputLocked(inputId)) {
+        console.log(`🔓 ${inputLabel} input is not locked`);
+        return;
+      }
+      
+      // Enable the input
+      input.disabled = false;
+      input.readOnly = false;
+      
+      // Remove CSS class for locked styling
+      input.classList.remove('time-input-locked');
+      
+      // Remove lock icon
+      const lockIcon = input.parentNode.querySelector('.lock-icon');
+      if (lockIcon) {
+        lockIcon.remove();
+      }
+      
+      // Remove lock note
+      const lockNote = input.parentNode.querySelector('.lock-note');
+      if (lockNote) {
+        lockNote.remove();
+      }
+      
+      console.log(`🔓 ${inputLabel} input unlocked successfully`);
+    }
+    
+    // Show lock status for all time inputs
+    function showTimeInputLockStatus() {
+      console.log('🔒 Time Input Lock Status:');
+      console.log(`Starting Time: ${isTimeInputLocked("startingTime") ? 'LOCKED' : 'UNLOCKED'}`);
+      console.log(`Second Stage Time: ${isTimeInputLocked("secondStageTime") ? 'LOCKED' : 'UNLOCKED'}`);
     }
     
     // Preserve existing data when starting time changes
