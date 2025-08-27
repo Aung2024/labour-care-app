@@ -460,11 +460,17 @@
       // Remove existing alert highlighting
       element.classList.remove('alert-value');
       
+      // Extract the base field name from compound names (e.g., "Companion_08_00" -> "Companion")
+      const baseFieldName = fieldName.split('_').slice(0, -2).join('_');
+      
+      console.log(`🔍 Checking alert for: ${fieldName} (base: ${baseFieldName}), value: ${value}`);
+      
       // Check if this field has alert values defined
-      if (alertValues[fieldName] && alertValues[fieldName].length > 0) {
+      if (alertValues[baseFieldName] && alertValues[baseFieldName].length > 0) {
         // Check if current value matches any alert value
-        if (alertValues[fieldName].includes(value)) {
+        if (alertValues[baseFieldName].includes(value)) {
           element.classList.add('alert-value');
+          console.log(`⚠️ Alert triggered for ${baseFieldName}: ${value}`);
         }
       }
       
@@ -472,32 +478,27 @@
       if (element.type === 'number') {
         const numValue = parseFloat(value);
         if (!isNaN(numValue)) {
-          switch(fieldName) {
-            case 'Baseline FHR':
-              if (numValue < 110 || numValue > 160) {
-                element.classList.add('alert-value');
-              }
-              break;
-            case 'Pulse':
-              if (numValue < 60 || numValue > 120) {
-                element.classList.add('alert-value');
-              }
-              break;
-            case 'Systolic BP':
-              if (numValue < 90 || numValue > 140) {
-                element.classList.add('alert-value');
-              }
-              break;
-            case 'Diastolic BP':
-              if (numValue > 90) {
-                element.classList.add('alert-value');
-              }
-              break;
-            case 'Temperature C':
-              if (numValue < 36 || numValue > 37.5) {
-                element.classList.add('alert-value');
-              }
-              break;
+          // Check if the field name contains the specific field type
+          if (fieldName.includes('Baseline_FHR')) {
+            if (numValue < 110 || numValue > 160) {
+              element.classList.add('alert-value');
+            }
+          } else if (fieldName.includes('Pulse')) {
+            if (numValue < 60 || numValue > 120) {
+              element.classList.add('alert-value');
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            if (numValue < 90 || numValue > 140) {
+              element.classList.add('alert-value');
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            if (numValue > 90) {
+              element.classList.add('alert-value');
+            }
+          } else if (fieldName.includes('Temperature_C')) {
+            if (numValue < 36 || numValue > 37.5) {
+              element.classList.add('alert-value');
+            }
           }
         }
       }
@@ -510,142 +511,61 @@
       const allInputs = document.querySelectorAll('input');
       
       allSelects.forEach(select => {
-        select.addEventListener('change', function() {
+        // Remove existing event listeners to prevent duplicates
+        select.removeEventListener('change', select._changeHandler);
+        select.removeEventListener('input', select._inputHandler);
+        
+        // Create new event handler functions
+        select._changeHandler = function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        });
+        };
+        
+        select._inputHandler = function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        };
+        
+        // Add event listeners
+        select.addEventListener('change', select._changeHandler);
+        select.addEventListener('input', select._inputHandler);
       });
       
       allInputs.forEach(input => {
-        input.addEventListener('input', function() {
+        // Remove existing event listeners to prevent duplicates
+        input.removeEventListener('change', input._changeHandler);
+        input.removeEventListener('input', input._inputHandler);
+        
+        // Create new event handler functions
+        input._changeHandler = function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        });
-        input.addEventListener('change', function() {
+        };
+        
+        input._inputHandler = function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        });
+        };
+        
+        // Add event listeners
+        input.addEventListener('change', input._changeHandler);
+        input.addEventListener('input', input._inputHandler);
       });
     }
 
-    // Show clinical recommendations based on alert values
-    function showRecommendations() {
-      const recommendationsDiv = document.getElementById('recommendations');
-      if (!recommendationsDiv) {
-        console.log('Recommendations div not found yet');
-        return;
-      }
-      
-      const activeAlerts = new Set();
-      
-      // Check all form elements for alert values
-      const allInputs = document.querySelectorAll('input, select');
-      allInputs.forEach(input => {
-        if (input.value && input.value.trim() !== '') {
-          const fieldName = input.name;
-          const value = input.value;
-          
-          // Check if this value should trigger an alert
-          let shouldAlert = false;
-          let alertReason = '';
-          
-          // Check against WHO LCG alert values
-          if (fieldName.includes('FHR') || fieldName.includes('Baseline_FHR')) {
-            const fhr = parseInt(value);
-            if (fhr < 110 || fhr > 160) {
-              shouldAlert = true;
-              alertReason = `FHR ${fhr} is outside normal range (110-160)`;
-            }
-          } else if (fieldName.includes('Pulse')) {
-            const pulse = parseInt(value);
-            if (pulse < 60 || pulse > 120) {
-              shouldAlert = true;
-              alertReason = `Pulse ${pulse} is outside normal range (60-120)`;
-            }
-          } else if (fieldName.includes('Systolic_BP')) {
-            const bp = parseInt(value);
-            if (bp < 90 || bp > 140) {
-              shouldAlert = true;
-              alertReason = `Systolic BP ${bp} is outside normal range (90-140)`;
-            }
-          } else if (fieldName.includes('Diastolic_BP')) {
-            const bp = parseInt(value);
-            if (bp > 90) {
-              shouldAlert = true;
-              alertReason = `Diastolic BP ${bp} is above normal range (>90)`;
-            }
-          } else if (fieldName.includes('Temperature')) {
-            const temp = parseFloat(value);
-            if (temp < 36 || temp > 37.5) {
-              shouldAlert = true;
-              alertReason = `Temperature ${temp}°C is outside normal range (36-37.5)`;
-            }
-          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
-            shouldAlert = true;
-            alertReason = 'No pain relief provided';
-          } else if (fieldName.includes('Oral_fluids') && value === 'N') {
-            shouldAlert = true;
-            alertReason = 'No oral fluids provided';
-          } else if (fieldName.includes('Mobility') && value === 'N') {
-            shouldAlert = true;
-            alertReason = 'No mobility encouraged';
-          }
-          
-          if (shouldAlert) {
-            // Extract field name for display
-            const displayName = fieldName.split('_').slice(0, -2).join(' ').replace(/_/g, ' ');
-            activeAlerts.add(`${displayName}: ${alertReason}`);
-          }
-        }
-      });
-      
-      // Generate recommendations HTML
-      if (activeAlerts.size > 0) {
-        let recommendationsHTML = '<div class="alert alert-warning"><strong>⚠️ Active Alerts:</strong><ul>';
-        activeAlerts.forEach(alert => {
-          recommendationsHTML += `<li>${alert}</li>`;
-        });
-        recommendationsHTML += '</ul></div>';
-        
-        // Add clinical recommendations
-        recommendationsHTML += '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
-        activeAlerts.forEach(alert => {
-          const [field, reason] = alert.split(': ');
-          
-          // Provide specific recommendations based on field type
-          let recommendation = '';
-          if (field.includes('FHR') || field.includes('Baseline')) {
-            recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
-          } else if (field.includes('Pulse')) {
-            recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
-          } else if (field.includes('BP')) {
-            recommendation = 'Monitor blood pressure closely. Consider antihypertensive therapy if severe hypertension.';
-          } else if (field.includes('Temperature')) {
-            recommendation = 'Monitor for signs of infection. Consider antibiotics if infection suspected.';
-          } else if (field.includes('Pain') || field.includes('Mobility') || field.includes('Oral')) {
-            recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
-          } else {
-            recommendation = 'Monitor and document progress. Consider specialist consultation if needed.';
-          }
-          
-          recommendationsHTML += `<li><strong>${field}:</strong> ${recommendation}</li>`;
-        });
-        recommendationsHTML += '</ul></div>';
-        
-        recommendationsDiv.innerHTML = recommendationsHTML;
-      } else {
-        recommendationsDiv.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
-      }
-    }
+
 
     const recommendations = {
   "Companion": {
@@ -973,7 +893,7 @@
             generateSummaryTable({});
             
             // Show warning about data loss
-            showDataLossWarning();
+           
           }
         });
 
@@ -1226,6 +1146,82 @@
       
       tableHTML += '</tbody>';
       table.innerHTML = tableHTML;
+      
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
+    }
+
+    // Add event listeners to a specific table
+    function addTableEventListeners(table) {
+      if (!table) return;
+      
+      // Add event listeners to all selects and inputs in this table
+      const selects = table.querySelectorAll('select');
+      const inputs = table.querySelectorAll('input');
+      
+      console.log(`🔗 Adding event listeners to table: ${selects.length} selects, ${inputs.length} inputs`);
+      
+      selects.forEach(select => {
+        // Remove existing event listeners to prevent duplicates
+        if (select._changeHandler) {
+          select.removeEventListener('change', select._changeHandler);
+        }
+        if (select._inputHandler) {
+          select.removeEventListener('input', select._inputHandler);
+        }
+        
+        // Create new event handler functions
+        select._changeHandler = function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        };
+        
+        select._inputHandler = function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        };
+        
+        // Add event listeners
+        select.addEventListener('change', select._changeHandler);
+        select.addEventListener('input', select._inputHandler);
+      });
+      
+      inputs.forEach(input => {
+        // Remove existing event listeners to prevent duplicates
+        if (input._changeHandler) {
+          input.removeEventListener('change', input._changeHandler);
+        }
+        if (input._inputHandler) {
+          input.removeEventListener('input', input._inputHandler);
+        }
+        
+        // Create new event handler functions
+        input._changeHandler = function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        };
+        
+        input._inputHandler = function() {
+          checkAndHighlightAlert(this);
+          // Only show recommendations if the div exists
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        };
+        
+        // Add event listeners
+        input.addEventListener('change', input._changeHandler);
+        input.addEventListener('input', input._inputHandler);
+      });
     }
 
     // Generate Contractions table (keep as is)
@@ -1366,29 +1362,49 @@
       
       tbody.appendChild(durationRow);
       table.appendChild(tbody);
+      
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
     }
 
 
 
     function getLatestValue(field) {
-  // Go through timeCols in reverse to find the latest non-empty value
-  for (let i = timeCols.length - 1; i >= 0; i--) {
-    const key = `${timeCols[i]}_${field.replace(/\s+/g, "_")}`;
-    const el = document.getElementsByName(key)[0];
-    if (el && el.value) return el.value;
-  }
-  return "";
-}
+      // Determine which time columns to use based on the field
+      let timeColumns = [];
+      
+      if (field.includes('FHR') || field.includes('Baseline')) {
+        timeColumns = babyBaselineTimeCols || [];
+      } else if (field.includes('Contractions') || field.includes('Duration')) {
+        timeColumns = contractionsTimeCols || [];
+      } else {
+        // Default to 1-hour intervals for most fields
+        timeColumns = supportiveCareTimeCols || [];
+      }
+      
+      // Go through time columns in reverse to find the latest non-empty value
+      for (let i = timeColumns.length - 1; i >= 0; i--) {
+        const timeKey = timeColumns[i].replace(':', '_');
+        const key = `${field.replace(/\s+/g, "_")}_${timeKey}`;
+        const el = document.getElementsByName(key)[0];
+        if (el && el.value) return el.value;
+      }
+      return "";
+    }
 
     function showRecommendations() {
+      console.log('📊 Generating recommendations...');
       const recs = new Set(); // Use Set to avoid duplicates
       
       // Check all section tables
-  for (const fieldList of Object.values(sections)) {
-    for (const field of fieldList) {
-      const latestValue = getLatestValue(field);
-      if (recommendations[field] && recommendations[field][latestValue]) {
+      console.log('🔍 Checking section tables...');
+      for (const fieldList of Object.values(sections)) {
+        for (const field of fieldList) {
+          const latestValue = getLatestValue(field);
+          console.log(`  Field: ${field}, Latest Value: ${latestValue}`);
+          if (recommendations[field] && recommendations[field][latestValue]) {
             recs.add(`${field} (${latestValue}): ${recommendations[field][latestValue]}`);
+            console.log(`  ✅ Added recommendation for ${field}`);
           }
         }
       }
@@ -1458,22 +1474,32 @@
         }
       });
       
-  const box = document.getElementById("recommendationsBox");
-      if (recs.size > 0) {
-        box.innerHTML = `
-          <div class="recommendations-content">
-            <div class="recommendations-header">
-              <i class="fas fa-lightbulb"></i>
-              <span>Clinical Recommendations</span>
-            </div>
-            <div class="recommendations-list">
-              ${Array.from(recs).map(r => `<div class="recommendation-item">${r}</div>`).join("")}
-            </div>
-          </div>
-        `;
-  } else {
-    box.innerHTML = "";
-  }
+  const recommendationsDiv = document.getElementById("recommendations");
+      if (recommendationsDiv) {
+        if (recs.size > 0) {
+          let recommendationsHTML = '<div class="alert alert-warning"><strong>⚠️ Active Alerts:</strong><ul>';
+          recs.forEach(rec => {
+            recommendationsHTML += `<li>${rec}</li>`;
+          });
+          recommendationsHTML += '</ul></div>';
+          
+          // Add clinical recommendations
+          recommendationsHTML += '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
+          recs.forEach(rec => {
+            const [field, reason] = rec.split(': ');
+            recommendationsHTML += `<li><strong>${field}:</strong> ${reason}</li>`;
+          });
+          recommendationsHTML += '</ul></div>';
+          
+          recommendationsDiv.innerHTML = recommendationsHTML;
+          console.log(`📋 Generated ${recs.size} recommendations`);
+        } else {
+          recommendationsDiv.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
+          console.log('✅ No recommendations needed');
+        }
+      } else {
+        console.log('❌ Recommendations div not found');
+      }
 }
 
     async function saveData() {
@@ -1930,6 +1956,9 @@
       
       tbody.appendChild(initialsRow);
       table.appendChild(tbody);
+      
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
     }
 
     // Global variables for plotting
@@ -2784,6 +2813,9 @@
       
       tbody.appendChild(ivFluidsRow);
       table.appendChild(tbody);
+      
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
     }
 
     // Helper function to generate Oxytocin cell content
@@ -3131,16 +3163,8 @@
       table.appendChild(assessmentTable);
       table.appendChild(planTable);
       
-      // Add event listeners for all inputs
-      const allInputs = table.querySelectorAll('input[type="text"]');
-      allInputs.forEach(input => {
-        input.addEventListener('change', function() {
-          showRecommendations();
-        });
-        input.addEventListener('input', function() {
-          showRecommendations();
-        });
-      });
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
     }
 
     // ===== DYNAMIC TIME MANAGEMENT =====
@@ -3765,6 +3789,9 @@
       // Add both tables to the main container
       table.appendChild(baselineTable);
       table.appendChild(otherTable);
+      
+      // Add event listeners to the newly generated table
+      addTableEventListeners(table);
     }
 
     // Hide all tables initially
@@ -4017,36 +4044,7 @@
       });
     }
 
-    // Show warning about data loss when starting time changes
-    function showDataLossWarning() {
-      // Create warning message if it doesn't exist
-      let warningDiv = document.getElementById('dataLossWarning');
-      if (!warningDiv) {
-        warningDiv = document.createElement('div');
-        warningDiv.id = 'dataLossWarning';
-        warningDiv.className = 'alert alert-warning';
-        warningDiv.innerHTML = `
-          <i class="fas fa-exclamation-triangle"></i>
-          <strong>Warning:</strong> You have changed the Active First Stage Start Time. 
-          All previously saved data has been cleared because the time intervals are now different. 
-          Please re-enter the patient data for the new time schedule.
-        `;
-        
-        // Insert after the starting time requirement div
-        const startingTimeRequirement = document.getElementById('startingTimeRequirement');
-        if (startingTimeRequirement) {
-          startingTimeRequirement.parentNode.insertBefore(warningDiv, startingTimeRequirement.nextSibling);
-        }
-      }
-      
-      // Show the warning
-      warningDiv.style.display = 'block';
-      
-      // Auto-hide after 15 seconds (longer since it's important)
-      setTimeout(() => {
-        warningDiv.style.display = 'none';
-      }, 15000);
-    }
+  
 
   </script>
 </body>
