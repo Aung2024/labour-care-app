@@ -12,11 +12,76 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   
+  <!-- Custom CSS for this page -->
+  <style>
+    .plot-inputs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      align-items: center;
+    }
+    
+    .plot-inputs input {
+      flex: 1;
+    }
+    
+    .plot-inputs button {
+      white-space: nowrap;
+    }
+    
+    .back-button-section {
+      margin: 20px 0;
+    }
+    
+    .time-input-section {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    
+    .alert-value {
+      background-color: #dc3545 !important;
+      color: white !important;
+    }
+    
+    .second-stage {
+      background-color: #dcfce7 !important;
+      color: #166534 !important;
+    }
+    
+    .success-message {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 15px;
+      margin: 15px 0;
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    
+    .success-message.error-message {
+      background-color: #f8d7da;
+      color: #721c24;
+      border-color: #f5c6cb;
+    }
+    
+    .success-message i {
+      font-size: 18px;
+    }
+  </style>
+  
   <!-- Firebase Scripts -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  
+  <!-- Chart.js for plotting -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <!-- Professional Header -->
@@ -91,12 +156,34 @@
       <strong>Please set the Active First Stage Start Time to begin data entry</strong>
     </div>
 
+    <!-- Success Message -->
+    <div id="successMessage" class="success-message" style="display: none;">
+      <i class="fas fa-check-circle"></i>
+      <span>Saved Successfully</span>
+    </div>
+
     <!-- Starting Time Input -->
     <div class="time-input-section">
       <div class="form-group">
         <label for="startingTime">Active First Stage Start Time</label>
         <input type="time" id="startingTime" class="form-control" required>
       </div>
+    </div>
+
+    <!-- Second Stage Time Input -->
+    <div class="time-input-section">
+      <div class="form-group">
+        <label for="secondStageTime">Second Stage Start Time</label>
+        <input type="time" id="secondStageTime" class="form-control">
+        <button class="btn btn-warning btn-sm" onclick="confirmSecondStage()">Confirm Second Stage</button>
+      </div>
+    </div>
+
+    <!-- Back Button -->
+    <div class="back-button-section">
+      <button class="btn btn-secondary" onclick="goBack()">
+        <i class="fas fa-arrow-left"></i> Back to Patient List
+      </button>
     </div>
 
     <!-- Second Stage Card -->
@@ -197,10 +284,20 @@
           <div class="plotting-charts">
             <div class="chart-container">
               <h4>Cervix Dilation</h4>
+              <div class="plot-inputs">
+                <input type="number" id="cervixDilation" class="form-control" placeholder="Dilation (cm)" min="0" max="10" step="0.5">
+                <input type="time" id="cervixTime" class="form-control">
+                <button class="btn btn-primary btn-sm" onclick="addPlotPoint('cervix')">Add Point</button>
+              </div>
               <canvas id="cervixChart" width="800" height="400"></canvas>
             </div>
             <div class="chart-container">
               <h4>Fetal Descent</h4>
+              <div class="plot-inputs">
+                <input type="number" id="fetalDescent" class="form-control" placeholder="Station (-3 to +3)" min="-3" max="3" step="0.5">
+                <input type="time" id="descentTime" class="form-control">
+                <button class="btn btn-primary btn-sm" onclick="addPlotPoint('descent')">Add Point</button>
+              </div>
               <canvas id="descentChart" width="800" height="400"></canvas>
             </div>
           </div>
@@ -410,11 +507,21 @@
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
       
       timeCols = [];
-      for (let hour = startHour; hour <= startHour + 12; hour++) {
-        for (let minute = 0; minute < 60; minute += 30) {
-          if (hour === startHour && minute < startMinute) continue;
-          const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-          timeCols.push(timeStr);
+      
+      // Start from the exact starting time
+      let currentHour = startHour;
+      let currentMinute = startMinute;
+      
+      // Generate columns for 12 hours from the exact starting time
+      for (let i = 0; i < 24; i++) { // 24 half-hour intervals = 12 hours
+        const timeStr = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+        timeCols.push(timeStr);
+        
+        // Move to next 30-minute interval
+        currentMinute += 30;
+        if (currentMinute >= 60) {
+          currentMinute = 0;
+          currentHour += 1;
         }
       }
       
@@ -470,7 +577,7 @@
           
           tableHTML += `
             <td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}">
-              <select name="${key}" class="form-control">
+              <select name="${key}" class="form-control" onchange="checkAndHighlightAlert(this)">
                 <option value="">Select</option>
                 ${options.map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}
               </select>
@@ -488,6 +595,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select').forEach(select => {
+          if (select.value) {
+            checkAndHighlightAlert(select);
+          }
+        });
+      }, 100);
     }
 
     function generateBabyTable() {
@@ -514,13 +630,13 @@
           <td class="alert-column">110-160</td>
       `;
       
-      timeCols.forEach(time => {
-        const timeKey = time.replace(':', '_');
-        const key = `Baseline_FHR_${timeKey}`;
-        const value = existing[key] || '';
-        
-        tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="number" name="${key}" value="${value}" class="form-control" min="60" max="200"></td>`;
-      });
+              timeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const key = `Baseline_FHR_${timeKey}`;
+          const value = existing[key] || '';
+          
+          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="number" name="${key}" value="${value}" class="form-control" min="60" max="200" onchange="checkAndHighlightAlert(this)"></td>`;
+        });
       
       tableHTML += '</tr>';
       
@@ -544,7 +660,7 @@
           
           tableHTML += `
             <td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}">
-              <select name="${key}" class="form-control">
+              <select name="${key}" class="form-control" onchange="checkAndHighlightAlert(this)">
                 <option value="">Select</option>
                 ${options.map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}
               </select>
@@ -562,6 +678,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateWomanTable() {
@@ -596,7 +721,7 @@
           const key = `${fieldKey}_${timeKey}`;
           const value = existing[key] || '';
           
-          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control"></td>`;
+          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" onchange="checkAndHighlightAlert(this)"></td>`;
         });
         
         tableHTML += '</tr>';
@@ -609,6 +734,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateContractionsTable() {
@@ -644,7 +778,7 @@
           const key = `${fieldKey}_${timeKey}`;
           const value = existing[key] || '';
           
-          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="number" name="${key}" value="${value}" class="form-control"></td>`;
+          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="number" name="${key}" value="${value}" class="form-control" onchange="checkAndHighlightAlert(this)"></td>`;
         });
         
         tableHTML += '</tr>';
@@ -657,6 +791,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateMedicationTable() {
@@ -694,7 +837,7 @@
           
           tableHTML += `
             <td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}">
-              <select name="${key}" class="form-control">
+              <select name="${key}" class="form-control" onchange="checkAndHighlightAlert(this)">
                 <option value="">Select</option>
                 ${options.map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}
               </select>
@@ -712,6 +855,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateDecisionMakingTable() {
@@ -747,7 +899,7 @@
           const key = `ASSESSMENT_${fieldKey}_${timeKey}`;
           const value = existing[key] || '';
           
-          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Assessment"></td>`;
+          tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Assessment" onchange="checkAndHighlightAlert(this)"></td>`;
         });
         
         tableHTML += '</tr>';
@@ -765,7 +917,7 @@
         const key = `PLAN_${timeKey}`;
         const value = existing[key] || '';
         
-        tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Plan"></td>`;
+        tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Plan" onchange="checkAndHighlightAlert(this)"></td>`;
       });
       
       tableHTML += '</tr>';
@@ -777,6 +929,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateInitialsTable() {
@@ -804,7 +965,7 @@
         const key = `INITIALS_${timeKey}`;
         const value = existing[key] || '';
         
-        tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Initials"></td>`;
+        tableHTML += `<td class="data-cell ${isSecondStageTime(time) ? 'second-stage' : ''}"><input type="text" name="${key}" value="${value}" class="form-control" placeholder="Initials" onchange="checkAndHighlightAlert(this)"></td>`;
       });
       
       tableHTML += `
@@ -815,6 +976,15 @@
       `;
       
       table.innerHTML = tableHTML;
+      
+      // Apply alert highlighting after table generation
+      setTimeout(() => {
+        table.querySelectorAll('select, input').forEach(element => {
+          if (element.value) {
+            checkAndHighlightAlert(element);
+          }
+        });
+      }, 100);
     }
 
     function generateAllTables() {
@@ -1032,6 +1202,153 @@
       }
     }
 
+    function confirmSecondStage() {
+      const secondStageTime = document.getElementById('secondStageTime').value;
+      if (!secondStageTime) {
+        alert('Please enter the Second Stage Start Time first');
+        return;
+      }
+      
+      if (!activeFirstStageStartTime) {
+        alert('Please set the Active First Stage Start Time first');
+        return;
+      }
+      
+      // Save second stage time
+      saveSecondStageData(secondStageTime);
+      
+      // Update colors for second stage
+      updateSecondStageColors();
+      
+      alert('Second Stage confirmed! Time columns will now show second stage highlighting.');
+    }
+
+    function saveSecondStageData(secondStageTime) {
+      const patientId = getPatientIdFromUrl();
+      if (patientId) {
+        firebase.firestore()
+          .collection("patients").doc(patientId)
+          .collection("records").doc("secondStage")
+          .set({
+            secondStageTime: secondStageTime,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+      }
+    }
+
+    function updateSecondStageColors() {
+      // Add second-stage class to time columns and data cells
+      document.querySelectorAll('.time-column').forEach((col, index) => {
+        if (index >= 2) { // Skip Field and Alert columns
+          const timeText = col.textContent;
+          if (isSecondStageTime(timeText)) {
+            col.classList.add('second-stage');
+          }
+        }
+      });
+    }
+
+    function goBack() {
+      window.location.href = 'list.html';
+    }
+
+    // ============================================================================
+    // PLOTTING FUNCTIONS
+    // ============================================================================
+    
+    let cervixData = [];
+    let descentData = [];
+    let cervixChart = null;
+    let descentChart = null;
+
+    function addPlotPoint(type) {
+      if (type === 'cervix') {
+        const dilation = document.getElementById('cervixDilation').value;
+        const time = document.getElementById('cervixTime').value;
+        if (dilation && time) {
+          cervixData.push({ x: time, y: parseFloat(dilation) });
+          updateCervixChart();
+          document.getElementById('cervixDilation').value = '';
+          document.getElementById('cervixTime').value = '';
+        }
+      } else if (type === 'descent') {
+        const descent = document.getElementById('fetalDescent').value;
+        const time = document.getElementById('descentTime').value;
+        if (descent && time) {
+          descentData.push({ x: time, y: parseFloat(descent) });
+          updateDescentChart();
+          document.getElementById('fetalDescent').value = '';
+          document.getElementById('descentTime').value = '';
+        }
+      }
+    }
+
+    function updateCervixChart() {
+      const ctx = document.getElementById('cervixChart').getContext('2d');
+      if (cervixChart) {
+        cervixChart.destroy();
+      }
+      
+      cervixChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: cervixData.map(d => d.x),
+          datasets: [{
+            label: 'Cervix Dilation (cm)',
+            data: cervixData.map(d => d.y),
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 10
+            }
+          }
+        }
+      });
+    }
+
+    function updateDescentChart() {
+      const ctx = document.getElementById('descentChart').getContext('2d');
+      if (descentChart) {
+        descentChart.destroy();
+      }
+      
+      descentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: descentData.map(d => d.x),
+          datasets: [{
+            label: 'Fetal Descent (Station)',
+            data: descentData.map(d => d.y),
+            borderColor: 'rgb(255, 99, 132)',
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              min: -3,
+              max: 3
+            }
+          }
+        }
+      });
+    }
+
+    function initializePlottingCharts() {
+      // Initialize empty charts
+      updateCervixChart();
+      updateDescentChart();
+    }
+
     // ============================================================================
     // INITIALIZATION
     // ============================================================================
@@ -1057,6 +1374,9 @@
       // Initialize patient form as collapsed
       document.getElementById('patientForm').style.display = 'none';
       document.getElementById('toggleIcon').className = 'fas fa-chevron-right';
+      
+      // Initialize plotting charts
+      initializePlottingCharts();
     });
   </script>
 </body>
