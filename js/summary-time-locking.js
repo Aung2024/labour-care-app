@@ -191,7 +191,7 @@ export async function loadSecondStageData() {
 
 // Confirm second stage and update colors
 export function confirmSecondStage() {
-  if (!secondStageStartTime) {
+  if (!secondStageTime) {
     alert('Please set the second stage start time first.');
     return;
   }
@@ -217,8 +217,10 @@ export function confirmSecondStage() {
   // Lock the second stage time input after confirmation
   lockTimeInput("secondStageTime", "Second Stage Start Time");
   
-  // IMPORTANT: Don't regenerate tables - just update the colors!
-  console.log('✅ Second stage colors updated without data loss');
+  // Regenerate tables with second stage time columns
+  regenerateTablesForSecondStage();
+  
+  console.log('✅ Second stage confirmed and tables regenerated');
 }
 
 // Update second stage colors for all tables
@@ -248,7 +250,7 @@ export function updateSecondStageColors() {
     }
   });
   
-  console.log('✅ Second stage colors updated without data loss');
+  console.log('✅ Second stage colors updated');
 }
 
 // Check if a time is in the second stage
@@ -274,7 +276,7 @@ export function generateDynamicTimeColumns() {
   
   // Generate time columns starting from the starting time
   timeCols = [];
-  for (let hour = startHour; hour <= startHour + 15; hour++) {
+  for (let hour = startHour; hour <= startHour + 12; hour++) {
     for (let minute = 0; minute < 60; minute += 30) {
       if (hour === startHour && minute < startMinute) continue; // Skip times before starting time
       const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
@@ -286,4 +288,138 @@ export function generateDynamicTimeColumns() {
   
   // Update the time columns display
   populateTimeColumns();
+}
+
+// Generate time columns for specific table types
+export function generateTimeColumnsForTable(tableType, isSecondStage = false) {
+  if (!activeFirstStageStartTime) return [];
+  
+  const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
+  const startMinute = parseInt(activeFirstStageStartTime.split(':')[0]);
+  
+  let timeColumns = [];
+  
+  if (isSecondStage && secondStageStartTime) {
+    // Second stage: 3 hours with appropriate intervals
+    const secondStageHour = parseInt(secondStageStartTime.split(':')[0]);
+    
+    switch (tableType) {
+      case 'fhr':
+        // FHR table: 15-minute intervals for 3 hours (12 columns)
+        for (let hour = secondStageHour; hour < secondStageHour + 3; hour++) {
+          for (let minute = 0; minute < 60; minute += 15) {
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+        break;
+        
+      case 'baby':
+        // Baby table: 30-minute intervals for 3 hours (6 columns)
+        for (let hour = secondStageHour; hour < secondStageHour + 3; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+        break;
+        
+      case 'contractions':
+        // Contractions table: 15-minute intervals for 3 hours (12 columns)
+        for (let hour = secondStageHour; hour < secondStageHour + 3; hour++) {
+          for (let minute = 0; minute < 60; minute += 15) {
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+        break;
+        
+      default:
+        // Default: 30-minute intervals for 3 hours
+        for (let hour = secondStageHour; hour < secondStageHour + 3; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+    }
+  } else {
+    // First stage: 12 hours with appropriate intervals
+    switch (tableType) {
+      case 'fhr':
+        // FHR table: 30-minute intervals for 12 hours
+        for (let hour = startHour; hour <= startHour + 12; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            if (hour === startHour && minute < startMinute) continue;
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+        break;
+        
+      case 'baby':
+        // Baby table: 1-hour intervals for 12 hours
+        for (let hour = startHour; hour <= startHour + 12; hour++) {
+          if (hour === startHour && startMinute > 0) continue;
+          const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+          timeColumns.push(timeStr);
+        }
+        break;
+        
+      case 'contractions':
+        // Contractions table: 30-minute intervals for 12 hours
+        for (let hour = startHour; hour <= startHour + 12; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            if (hour === startHour && minute < startMinute) continue;
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+        break;
+        
+      default:
+        // Default: 30-minute intervals for 12 hours
+        for (let hour = startHour; hour <= startHour + 12; hour++) {
+          for (let minute = 0; minute < 60; minute += 30) {
+            if (hour === startHour && minute < startMinute) continue;
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            timeColumns.push(timeStr);
+          }
+        }
+    }
+  }
+  
+  return timeColumns;
+}
+
+// Regenerate tables for second stage
+export function regenerateTablesForSecondStage() {
+  if (!secondStageStartTime) {
+    console.log('No second stage time set');
+    return;
+  }
+  
+  console.log('🔄 Regenerating tables for second stage...');
+  
+  // Regenerate each table with appropriate time columns
+  generateSupportiveCareTable();
+  generateFHRTable();
+  generateBabyTable();
+  generateWomanTable();
+  generateContractionsTable();
+  
+  // Update second stage colors
+  updateSecondStageColors();
+  
+  console.log('✅ Tables regenerated for second stage');
+}
+
+// Populate time columns in the header
+export function populateTimeColumns() {
+  const timeColumnsContainer = document.getElementById('timeColumns');
+  if (timeColumnsContainer) {
+    timeColumnsContainer.innerHTML = timeCols.map(t => 
+      `<div class="time-column">${t}</div>`
+    ).join('');
+  }
 }
