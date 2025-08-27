@@ -98,6 +98,16 @@
             <small class="form-text text-muted">Click to confirm patient has entered second stage of labour</small>
           </div>
         </div>
+        
+        <!-- Test Button for Alert Highlighting -->
+        <div class="form-row">
+          <div class="form-group full-width">
+            <button type="button" class="btn btn-warning" onclick="testAlertHighlighting()">
+              <i class="fas fa-bug"></i> Test Alert Highlighting
+            </button>
+            <small class="form-text text-muted">Click to test if alert highlighting is working</small>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -464,14 +474,20 @@
       const baseFieldName = fieldName.split('_').slice(0, -2).join('_');
       
       console.log(`🔍 Checking alert for: ${fieldName} (base: ${baseFieldName}), value: ${value}`);
+      console.log(`🔍 Available alert values for ${baseFieldName}:`, alertValues[baseFieldName]);
       
       // Check if this field has alert values defined
       if (alertValues[baseFieldName] && alertValues[baseFieldName].length > 0) {
+        console.log(`✅ Found alert values for ${baseFieldName}:`, alertValues[baseFieldName]);
         // Check if current value matches any alert value
         if (alertValues[baseFieldName].includes(value)) {
           element.classList.add('alert-value');
           console.log(`⚠️ Alert triggered for ${baseFieldName}: ${value}`);
+        } else {
+          console.log(`❌ Value ${value} not in alert values for ${baseFieldName}`);
         }
+      } else {
+        console.log(`❌ No alert values found for ${baseFieldName}`);
       }
       
       // Special handling for number inputs (Baseline FHR, Pulse, BP, Temperature)
@@ -1044,11 +1060,7 @@
       
       // Highlight any existing alert values after tables are generated
       setTimeout(() => {
-        const allSelects = document.querySelectorAll('select');
-        const allNumberInputs = document.querySelectorAll('input[type="number"]');
-        
-        allSelects.forEach(select => checkAndHighlightAlert(select));
-        allNumberInputs.forEach(input => checkAndHighlightAlert(input));
+        highlightAllExistingValues();
         
         // Show initial recommendations after tables are generated
         if (document.getElementById('recommendations')) {
@@ -1477,14 +1489,7 @@
   const recommendationsDiv = document.getElementById("recommendations");
       if (recommendationsDiv) {
         if (recs.size > 0) {
-          let recommendationsHTML = '<div class="alert alert-warning"><strong>⚠️ Active Alerts:</strong><ul>';
-          recs.forEach(rec => {
-            recommendationsHTML += `<li>${rec}</li>`;
-          });
-          recommendationsHTML += '</ul></div>';
-          
-          // Add clinical recommendations
-          recommendationsHTML += '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
+          let recommendationsHTML = '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
           recs.forEach(rec => {
             const [field, reason] = rec.split(': ');
             recommendationsHTML += `<li><strong>${field}:</strong> ${reason}</li>`;
@@ -1794,7 +1799,49 @@
       
       // Set up protection for locked inputs
       preventLockedInputModifications();
+      
+      // Test alert highlighting functionality
+      setTimeout(() => {
+        testAlertHighlighting();
+      }, 1000);
     });
+
+    // Test function to verify alert highlighting is working
+    function testAlertHighlighting() {
+      console.log('🧪 Testing alert highlighting functionality...');
+      
+      // Find a select element and test highlighting
+      const testSelect = document.querySelector('select');
+      if (testSelect) {
+        console.log('🔍 Found test select element:', testSelect.name);
+        
+        // Set a test value that should trigger an alert
+        testSelect.value = 'N';
+        console.log('📝 Set test value to "N"');
+        
+        // Trigger the highlighting function
+        checkAndHighlightAlert(testSelect);
+        console.log('✅ Called checkAndHighlightAlert');
+        
+        // Check if the class was added
+        if (testSelect.classList.contains('alert-value')) {
+          console.log('🎨 Alert class successfully added!');
+        } else {
+          console.log('❌ Alert class was NOT added');
+        }
+        
+        // Also test with a different value
+        testSelect.value = 'Y';
+        checkAndHighlightAlert(testSelect);
+        if (testSelect.classList.contains('alert-value')) {
+          console.log('❌ Alert class should NOT be present for "Y"');
+        } else {
+          console.log('✅ Alert class correctly removed for "Y"');
+        }
+      } else {
+        console.log('❌ No select elements found for testing');
+      }
+    }
     
     // Test if sticky positioning is supported
     function testStickySupport() {
@@ -3840,12 +3887,15 @@
         recommendationsSection.style.display = 'block';
       }
       
-      // Show initial recommendations after tables are displayed
-      setTimeout(() => {
-        if (document.getElementById('recommendations')) {
-          showRecommendations();
-        }
-      }, 200);
+              // Show initial recommendations after tables are displayed
+        setTimeout(() => {
+          // Highlight any existing values that should trigger alerts
+          highlightAllExistingValues();
+          
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          }
+        }, 200);
     }
 
     // Show starting time requirement message
@@ -4012,6 +4062,23 @@
     function isTimeInputLocked(inputId) {
       const input = document.getElementById(inputId);
       return input && input.disabled && input.classList.contains('locked-input');
+    }
+
+    // Highlight all existing values that should trigger alerts
+    function highlightAllExistingValues() {
+      console.log('🎨 Highlighting all existing alert values...');
+      
+      // Check all form elements for alert values
+      const allInputs = document.querySelectorAll('input, select');
+      console.log(`🔍 Found ${allInputs.length} form elements to check for highlighting`);
+      
+      allInputs.forEach(input => {
+        if (input.value && input.value.trim() !== '') {
+          checkAndHighlightAlert(input);
+        }
+      });
+      
+      console.log('✅ Finished highlighting all existing values');
     }
 
     // Prevent any modifications to locked inputs
