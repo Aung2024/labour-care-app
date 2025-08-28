@@ -400,8 +400,11 @@
       return urlParams.get('patient');
     }
 
+    // Get patient ID from URL parameters
     const params = new URLSearchParams(window.location.search);
     const patientId = params.get("patient");
+    
+    console.log('Patient ID from URL:', patientId);
 
 
 
@@ -830,6 +833,8 @@
     // Load data from Firestore
     async function loadData() {
       try {
+        console.log('loadData called');
+        
         // Get current user and their Firestore profile
         const user = firebase.auth().currentUser;
         if (!user) {
@@ -846,13 +851,15 @@
         const userData = userDoc.data();
 
         // Get patient document
-        const patientId = getPatientIdFromUrl();
-        if (!patientId) {
+        const patientIdFromUrl = getPatientIdFromUrl();
+        console.log('Patient ID from getPatientIdFromUrl():', patientIdFromUrl);
+        
+        if (!patientIdFromUrl) {
           document.body.innerHTML = '<div class="alert alert-danger">Patient ID not found.</div>';
           return;
         }
 
-        const patientDoc = await firebase.firestore().collection("patients").doc(patientId).get({ source: "server" });
+        const patientDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).get({ source: "server" });
         if (!patientDoc.exists) {
           document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
           return;
@@ -914,7 +921,7 @@
 
         // Load starting time and second stage data
         try {
-          const startingTimeDoc = await firebase.firestore().collection("patients").doc(patientId).collection("records").doc("startingTime").get();
+          const startingTimeDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get();
           if (startingTimeDoc.exists) {
             const startingData = startingTimeDoc.data();
             activeFirstStageStartTime = startingData.startingTime;
@@ -926,7 +933,7 @@
             // Load existing records from the new structure
             const recordsDoc = await firebase.firestore()
               .collection("patients")
-              .doc(patientId)
+              .doc(patientIdFromUrl)
               .collection("records")
               .doc("summary")
               .get();
@@ -946,7 +953,7 @@
             }
 
             // Load medication data
-            const medicationSnap = await firebase.firestore().collection("patients").doc(patientId).collection("medication").get({ source: "server" });
+            const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
             medicationSnap.forEach(doc => {
               const d = doc.data();
               const time = d.time;
@@ -1009,7 +1016,7 @@
             showStartingTimeRequirement();
           }
           
-          const secondStageDoc = await firebase.firestore().collection("patients").doc(patientId).collection("records").doc("secondStage").get();
+          const secondStageDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get();
           if (secondStageDoc.exists) {
             const secondStageData = secondStageDoc.data();
             secondStageStartTime = secondStageData.secondStageStartTime;
@@ -1072,7 +1079,7 @@
         // Load existing records from the new structure
         const recordsDoc = await firebase.firestore()
           .collection("patients")
-          .doc(patientId)
+          .doc(patientIdFromUrl)
           .collection("records")
           .doc("summary")
           .get();
@@ -1092,7 +1099,7 @@
         }
 
         // Load medication data
-        const medicationSnap = await firebase.firestore().collection("patients").doc(patientId).collection("medication").get({ source: "server" });
+        const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
         medicationSnap.forEach(doc => {
           const d = doc.data();
           const time = d.time;
@@ -1611,13 +1618,13 @@
 
     async function saveData() {
       try {
-        const patientId = getPatientIdFromUrl();
-        if (!patientId) {
+        const patientIdToSave = getPatientIdFromUrl();
+        if (!patientIdToSave) {
           console.error('No patient ID found in URL');
           return;
         }
 
-        const base = firebase.firestore().collection("patients").doc(patientId);
+        const base = firebase.firestore().collection("patients").doc(patientIdToSave);
 
         // Fetch existing patient data to preserve createdBy
         const patientDoc = await base.get();
@@ -1874,13 +1881,19 @@
       if (!user) {
         window.location.href = "login.html";
       } else {
+        console.log('User authenticated, patientId from URL:', getPatientIdFromUrl());
+        
         // Only load data after user is authenticated
         loadData();
         
         // Set the View Summary button href with the correct patient ID
         const viewSummaryBtn = document.getElementById('viewSummaryBtn');
-        if (viewSummaryBtn && patientId) {
-          viewSummaryBtn.href = `summary-view.html?patient=${patientId}`;
+        const currentPatientId = getPatientIdFromUrl();
+        if (viewSummaryBtn && currentPatientId) {
+          viewSummaryBtn.href = `summary-view.html?patient=${currentPatientId}`;
+          console.log('View Summary button href set to:', viewSummaryBtn.href);
+        } else {
+          console.log('View Summary button not found or patientId missing:', { viewSummaryBtn, currentPatientId });
         }
       }
     });
@@ -1897,6 +1910,14 @@
 
     // Call this after DOM is loaded
     document.addEventListener('DOMContentLoaded', function() {
+      // Set the View Summary button href immediately
+      const viewSummaryBtn = document.getElementById('viewSummaryBtn');
+      const currentPatientId = getPatientIdFromUrl();
+      if (viewSummaryBtn && currentPatientId) {
+        viewSummaryBtn.href = `summary-view.html?patient=${currentPatientId}`;
+        console.log('View Summary button href set on DOM load:', viewSummaryBtn.href);
+      }
+      
       populateTimeColumns();
       initializeFoldedSections(); // Initialize all sections as folded
       addAlertHighlighting(); // Add alert highlighting functionality
