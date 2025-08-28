@@ -9,6 +9,63 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   
+  <style>
+    /* Locked input styling */
+    .locked-input {
+      background-color: #f8f9fa !important;
+      color: #6c757d !important;
+      cursor: not-allowed !important;
+      border: 1px solid #dee2e6 !important;
+      opacity: 0.8 !important;
+    }
+    
+    .lock-indicator {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      color: #6c757d;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #dee2e6;
+    }
+    
+    .form-group {
+      position: relative;
+    }
+    
+    /* Ensure form groups have relative positioning for lock indicators */
+    .form-group .form-control {
+      position: relative;
+    }
+    
+    /* Locked input container styling */
+    .form-group:has(.locked-input) {
+      opacity: 0.9;
+    }
+    
+    .form-group:has(.locked-input) label {
+      color: #6c757d;
+      font-weight: 500;
+    }
+    
+    /* Badge styling for locked status */
+    .badge.bg-secondary {
+      background-color: #6c757d !important;
+      color: white !important;
+    }
+    
+    /* Hover effect for locked inputs */
+    .locked-input:hover {
+      background-color: #e9ecef !important;
+      border-color: #ced4da !important;
+    }
+  </style>
+  
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -868,29 +925,37 @@
               }
             });
 
-            // If starting time exists, show all tables with data
-            showAllTables();
-            document.getElementById("startingTimeRequirement").style.display = "none";
-            
-            // Generate the summary table with existing data
-            generateSummaryTable(existing);
-            
-            // Load plotting data from previous sessions
-            await loadPlotData();
-            
-            // Setup alert highlighting for real-time alerts
-            addAlertHighlighting();
-            
-            // Add event listeners for form changes
-            document.querySelectorAll('select, input').forEach(el => {
-              el.addEventListener('change', function() {
-                checkAndHighlightAlert(this);
-                // Only show recommendations if the div exists
-                if (document.getElementById('recommendations')) {
-                  showRecommendations();
-                }
-              });
-            });
+                    // If starting time exists, show all tables with data
+        showAllTables();
+        document.getElementById("startingTimeRequirement").style.display = "none";
+        
+        // Generate the summary table with existing data
+        generateSummaryTable(existing);
+        
+        // Load plotting data from previous sessions
+        await loadPlotData();
+        
+        // Setup alert highlighting for real-time alerts
+        addAlertHighlighting();
+        
+        // Add event listeners for form changes
+        document.querySelectorAll('select, input').forEach(el => {
+          el.addEventListener('change', function() {
+            checkAndHighlightAlert(this);
+            // Only show recommendations if the div exists
+            if (document.getElementById('recommendations')) {
+              showRecommendations();
+            }
+          });
+        });
+        
+        // Lock time inputs if they already have values
+        checkAndLockTimeInputs();
+        
+        // Log lock status for debugging
+        setTimeout(() => {
+          logLockStatus();
+        }, 500);
             
           } else {
             // No starting time set, hide all tables and show requirement
@@ -1761,6 +1826,14 @@
       
       // Test if sticky positioning is supported
       testStickySupport();
+      
+      // Check and lock time inputs if they already have values
+      // This will run after the page loads and data is loaded
+      setTimeout(() => {
+        checkAndLockTimeInputs();
+        logLockStatus();
+        startLockMonitoring(); // Start periodic lock monitoring
+      }, 1000);
     });
     
     // Test if sticky positioning is supported
@@ -3281,6 +3354,9 @@
       // Save the second stage time
       saveSecondStageData();
       
+      // Lock the second stage time input
+      lockTimeInput("secondStageTime", "Second Stage Start Time");
+      
       // IMPORTANT: Don't regenerate tables - just update the colors!
       // The isSecondStageTime() function will handle the color changes
       updateSecondStageColors();
@@ -3366,6 +3442,9 @@
               document.getElementById('firstStageDuration').textContent = `${firstStageDuration} minutes`;
               document.getElementById('secondStageStartDisplay').textContent = secondStageStartTime;
             }
+            
+            // Lock the second stage time input
+            lockTimeInput("secondStageTime", "Second Stage Start Time");
           }
         }
       } catch (error) {
@@ -3817,6 +3896,257 @@
       if (requirementDiv) {
         requirementDiv.style.display = 'block';
       }
+    }
+
+    // Lock time input fields to prevent changes after initial input
+    function lockTimeInput(inputId, fieldName) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      
+      // Check if already locked
+      if (isInputLocked(inputId)) {
+        console.log(`🔒 ${fieldName} is already locked`);
+        return;
+      }
+      
+      // Disable the input
+      input.disabled = true;
+      input.readOnly = true;
+      
+      // Add visual styling to show it's locked
+      input.classList.add('locked-input');
+      input.style.backgroundColor = '#f8f9fa';
+      input.style.color = '#6c757d';
+      input.style.cursor = 'not-allowed';
+      
+      // Add a lock icon and "Locked" text
+      const lockIcon = document.createElement('div');
+      lockIcon.className = 'lock-indicator';
+      lockIcon.innerHTML = '<i class="fas fa-lock"></i> Locked';
+      lockIcon.style.cssText = `
+        position: absolute;
+        top: 50%;
+        right: 10px;
+        transform: translateY(-50%);
+        color: #6c757d;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 10;
+      `;
+      
+      // Make the parent container relative positioned if it isn't already
+      const parent = input.parentElement;
+      if (parent.style.position !== 'relative') {
+        parent.style.position = 'relative';
+      }
+      
+      // Remove any existing lock indicators
+      const existingLock = parent.querySelector('.lock-indicator');
+      if (existingLock) {
+        existingLock.remove();
+      }
+      
+      // Add the lock indicator
+      parent.appendChild(lockIcon);
+      
+      // Add a tooltip or help text
+      const helpText = document.createElement('small');
+      helpText.className = 'form-text text-muted mt-1';
+      helpText.innerHTML = `<i class="fas fa-info-circle"></i> ${fieldName} has been locked and cannot be changed. Contact administrator if correction is needed.`;
+      
+      // Insert help text after the input
+      input.parentNode.insertBefore(helpText, input.nextSibling);
+      
+      // Add a locked badge to the label if it exists
+      const label = input.parentElement.querySelector('label');
+      if (label) {
+        const lockedBadge = document.createElement('span');
+        lockedBadge.className = 'badge bg-secondary ms-2';
+        lockedBadge.innerHTML = '<i class="fas fa-lock"></i> Locked';
+        lockedBadge.style.fontSize = '0.75em';
+        label.appendChild(lockedBadge);
+      }
+      
+      // Add event listeners to prevent any changes
+      input.addEventListener('keydown', preventInput);
+      input.addEventListener('input', preventInput);
+      input.addEventListener('paste', preventInput);
+      input.addEventListener('drop', preventInput);
+      
+      // Prevent focus and selection
+      input.addEventListener('focus', preventFocus);
+      input.addEventListener('click', preventFocus);
+      
+      // Additional security: prevent context menu and selection
+      input.addEventListener('contextmenu', preventInput);
+      input.addEventListener('selectstart', preventInput);
+      
+      // Prevent drag and drop
+      input.draggable = false;
+      
+      // Set tabindex to -1 to prevent tab navigation
+      input.tabIndex = -1;
+      
+      console.log(`🔒 ${fieldName} has been locked`);
+    }
+    
+    // Prevent any input on locked fields
+    function preventInput(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Show a brief message that the field is locked
+      showLockedMessage(e.target);
+      
+      return false;
+    }
+    
+    // Show message when trying to modify locked input
+    function showLockedMessage(input) {
+      // Create or get existing message element
+      let messageDiv = document.getElementById('lockedMessage');
+      if (!messageDiv) {
+        messageDiv = document.createElement('div');
+        messageDiv.id = 'lockedMessage';
+        messageDiv.className = 'alert alert-warning alert-dismissible fade show';
+        messageDiv.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 9999;
+          max-width: 300px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        `;
+        messageDiv.innerHTML = `
+          <i class="fas fa-lock"></i>
+          <strong>Field Locked</strong><br>
+          This field has been locked and cannot be modified.
+          <button type="button" class="btn-close" onclick="this.parentElement.style.display='none'"></button>
+        `;
+        document.body.appendChild(messageDiv);
+        
+        // Add event listener for close button
+        const closeBtn = messageDiv.querySelector('.btn-close');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', function() {
+            messageDiv.style.display = 'none';
+          });
+        }
+      }
+      
+      // Show the message
+      messageDiv.style.display = 'block';
+      
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        if (messageDiv) {
+          messageDiv.style.display = 'none';
+        }
+      }, 3000);
+    }
+    
+    // Prevent focus on locked fields
+    function preventFocus(e) {
+      e.preventDefault();
+      e.target.blur();
+      return false;
+    }
+
+    // Check if time inputs should be locked on page load
+    function checkAndLockTimeInputs() {
+      // Check if starting time exists and lock it
+      if (activeFirstStageStartTime) {
+        lockTimeInput("startingTime", "Active First Stage Start Time");
+      }
+      
+      // Check if second stage time exists and lock it
+      if (secondStageStartTime && isSecondStageActive) {
+        lockTimeInput("secondStageTime", "Second Stage Start Time");
+      }
+    }
+    
+    // Check if an input is already locked
+    function isInputLocked(inputId) {
+      const input = document.getElementById(inputId);
+      return input && input.classList.contains('locked-input');
+    }
+    
+    // Unlock an input (for administrators only)
+    function unlockTimeInput(inputId, fieldName) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      
+      if (!isInputLocked(inputId)) {
+        console.log(`🔓 ${fieldName} is not locked`);
+        return;
+      }
+      
+      // Re-enable the input
+      input.disabled = false;
+      input.readOnly = false;
+      
+      // Remove locked styling
+      input.classList.remove('locked-input');
+      input.style.backgroundColor = '';
+      input.style.color = '';
+      input.style.cursor = '';
+      
+      // Remove lock indicator
+      const lockIndicator = input.parentElement.querySelector('.lock-indicator');
+      if (lockIndicator) {
+        lockIndicator.remove();
+      }
+      
+      // Remove help text
+      const helpText = input.parentElement.querySelector('.form-text');
+      if (helpText && helpText.textContent.includes('has been locked')) {
+        helpText.remove();
+      }
+      
+      // Remove locked badge from label
+      const label = input.parentElement.querySelector('label');
+      if (label) {
+        const lockedBadge = label.querySelector('.badge');
+        if (lockedBadge) {
+          lockedBadge.remove();
+        }
+      }
+      
+      // Remove event listeners
+      input.removeEventListener('keydown', preventInput);
+      input.removeEventListener('input', preventInput);
+      input.removeEventListener('paste', preventInput);
+      input.removeEventListener('drop', preventInput);
+      input.removeEventListener('focus', preventFocus);
+      input.removeEventListener('click', preventFocus);
+      
+      console.log(`🔓 ${fieldName} has been unlocked`);
+    }
+    
+    // Log current lock status for debugging
+    function logLockStatus() {
+      console.log('🔒 Current Lock Status:');
+      console.log(`  Starting Time: ${isInputLocked('startingTime') ? 'LOCKED' : 'UNLOCKED'}`);
+      console.log(`  Second Stage Time: ${isInputLocked('secondStageTime') ? 'LOCKED' : 'UNLOCKED'}`);
+      console.log(`  Active First Stage Start Time: ${activeFirstStageStartTime || 'NOT SET'}`);
+      console.log(`  Second Stage Start Time: ${secondStageStartTime || 'NOT SET'}`);
+      console.log(`  Is Second Stage Active: ${isSecondStageActive}`);
+    }
+    
+    // Periodic check to ensure inputs remain locked
+    function startLockMonitoring() {
+      setInterval(() => {
+        // Check if locked inputs are still properly locked
+        if (activeFirstStageStartTime && !isInputLocked('startingTime')) {
+          console.log('⚠️ Starting time input was unlocked, re-locking...');
+          lockTimeInput("startingTime", "Active First Stage Start Time");
+        }
+        
+        if (secondStageStartTime && isSecondStageActive && !isInputLocked('secondStageTime')) {
+          console.log('⚠️ Second stage time input was unlocked, re-locking...');
+          lockTimeInput("secondStageTime", "Second Stage Start Time");
+        }
+      }, 5000); // Check every 5 seconds
     }
 
 
