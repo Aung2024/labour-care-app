@@ -2639,6 +2639,15 @@
     function generateMedicationTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
+      // Add CSS class for second stage if active
+      if (secondStageStartTime && isSecondStageActive) {
+        table.classList.add('second-stage-active');
+        console.log('🟢 Medication table: Added second-stage-active class');
+      } else {
+        table.classList.remove('second-stage-active');
+        console.log('🔵 Medication table: Removed second-stage-active class');
+      }
+      
       // Create table header
       const thead = document.createElement("thead");
       const headerRow = document.createElement("tr");
@@ -2660,10 +2669,12 @@
           timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
           timeHeader.style.color = "#166534"; // Dark green text
           console.log(`🟢 Medication: Second stage highlighting applied to ${time}`);
+          console.log(`🔍 Style applied: backgroundColor=${timeHeader.style.backgroundColor}, color=${timeHeader.style.color}`);
         } else {
           timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
           timeHeader.style.color = "#1e40af"; // Dark blue text
           console.log(`🔵 Medication: First stage highlighting applied to ${time}`);
+          console.log(`🔍 Style applied: backgroundColor=${timeHeader.style.backgroundColor}, color=${timeHeader.style.color}`);
         }
         
         timeHeader.textContent = time;
@@ -2925,6 +2936,31 @@
       
       tbody.appendChild(ivFluidsRow);
       table.appendChild(tbody);
+      
+      // Debug: Check computed styles after table generation
+      setTimeout(() => {
+        console.log('🔍 Debugging medication table styles after generation:');
+        const timeHeaders = table.querySelectorAll('.time-header');
+        timeHeaders.forEach((header, index) => {
+          const computedStyle = window.getComputedStyle(header);
+          console.log(`Time header ${index}: "${header.textContent}"`);
+          console.log(`  Inline style: backgroundColor=${header.style.backgroundColor}, color=${header.style.color}`);
+          console.log(`  Computed style: backgroundColor=${computedStyle.backgroundColor}, color=${computedStyle.color}`);
+        });
+        
+        // Force re-application of second stage colors if needed
+        if (secondStageStartTime && isSecondStageActive) {
+          console.log('🔄 Force re-applying second stage colors to medication table');
+          timeHeaders.forEach((header, index) => {
+            const timeText = header.textContent;
+            if (isSecondStageTime(timeText)) {
+              header.style.setProperty('background-color', '#dcfce7', 'important');
+              header.style.setProperty('color', '#166534', 'important');
+              console.log(`✅ Force applied green to ${timeText}`);
+            }
+          });
+        }
+      }, 100);
     }
 
     // Helper function to generate Oxytocin cell content
@@ -3451,13 +3487,22 @@
       allTimeHeaders.forEach(header => {
         const timeText = header.textContent;
         if (isSecondStageTime(timeText)) {
-          header.style.backgroundColor = "#dcfce7"; // Light green for second stage
-          header.style.color = "#166534"; // Dark green text
+          header.style.setProperty('background-color', '#dcfce7', 'important'); // Light green for second stage
+          header.style.setProperty('color', '#166534', 'important'); // Dark green text
+          console.log(`🟢 Updated ${timeText} to second stage colors`);
         } else {
-          header.style.backgroundColor = "#dbeafe"; // Light blue for first stage
-          header.style.color = "#1e40af"; // Dark blue text
+          header.style.setProperty('background-color', '#dbeafe', 'important'); // Light blue for first stage
+          header.style.setProperty('color', '#1e40af', 'important'); // Dark blue text
+          console.log(`🔵 Updated ${timeText} to first stage colors`);
         }
       });
+      
+      // Also update the medication table CSS class
+      const medicationTable = document.getElementById('medicationTable');
+      if (medicationTable && secondStageStartTime && isSecondStageActive) {
+        medicationTable.classList.add('second-stage-active');
+        console.log('🟢 Added second-stage-active class to medication table');
+      }
       
       console.log('✅ Second stage colors updated without data loss');
     }
