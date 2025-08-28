@@ -1547,6 +1547,39 @@
           console.error('No patient ID found in URL');
           return;
         }
+        
+        // Safety check: Ensure all required variables are defined
+        if (!supportiveCareTimeCols || !babyBaselineTimeCols || !babyOtherTimeCols || 
+            !womanTimeCols || !contractionsTimeCols || !labourProgressPlotsTimeCols || 
+            !medicationTimeCols || !assessmentTimeCols || !planTimeCols || !initialsTimeCols) {
+          console.error('Time columns not initialized. Regenerating...');
+          generateDynamicTimeColumns();
+        }
+        
+        // Safety check: Ensure sections object is defined
+        if (!sections || typeof sections !== 'object') {
+          console.error('Sections object not defined');
+          throw new Error('Sections configuration is missing');
+        }
+        
+        // Helper function to safely save section data
+        const saveSectionData = (timeCols, sectionName, sectionFields) => {
+          if (timeCols && Array.isArray(timeCols) && sectionFields && Array.isArray(sectionFields)) {
+            timeCols.forEach(time => {
+              const timeKey = time.replace(':', '_');
+              sectionFields.forEach(field => {
+                const fieldName = field.replace(/\s+/g, '_');
+                const inputName = `${fieldName}_${timeKey}`;
+                const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+                if (input && input.value) {
+                  formData[inputName] = input.value;
+                }
+              });
+            });
+          } else {
+            console.warn(`Skipping ${sectionName} - time columns or fields not properly defined`);
+          }
+        };
 
         const base = firebase.firestore().collection("patients").doc(patientId);
 
@@ -1577,74 +1610,13 @@
         // Save all form data using time-based structure
         const formData = {};
         
-        // Save data for each time column in each section
-        // Supportive Care
-        supportiveCareTimeCols.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          sections["Supportive Care"].forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
-        });
-        
-        // Baby - use the correct variable names
-        babyBaselineTimeCols.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          // Only Baseline FHR and FHR deceleration use 30-min intervals
-          const baselineFields = ["Baseline FHR", "FHR deceleration"];
-          baselineFields.forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
-        });
-        
-        babyOtherTimeCols.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          // Other baby fields use 1-hour intervals
-          const otherFields = ["Amniotic fluid", "Fetal position", "Caput", "Moulding"];
-          otherFields.forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
-        });
-        
-        // Woman
-        womanTimeCols.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          sections["Woman"].forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
-        });
-        
-        // Contractions
-        contractionsTimeCols.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          sections["Labour Progress"].forEach(field => {
-            const fieldName = field.replace(/\s+/g, '_');
-            const inputName = `${fieldName}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
-        });
+        // Save data for each time column in each section using the helper function
+        saveSectionData(supportiveCareTimeCols, "Supportive Care", sections["Supportive Care"]);
+        saveSectionData(babyBaselineTimeCols, "FHR", sections["FHR"]);
+        saveSectionData(babyOtherTimeCols, "Baby", sections["Baby"]);
+        saveSectionData(womanTimeCols, "Woman", sections["Woman"]);
+        saveSectionData(contractionsTimeCols, "Contractions", sections["Contractions"]);
+        saveSectionData(labourProgressPlotsTimeCols, "Labour Progress Plots", sections["Labour Progress Plots"]);
         
         // Medication - Fix the data collection
         medicationTimeCols.forEach(time => {
@@ -3222,6 +3194,7 @@
     let contractionsTimeCols = [];
     let cervixPlotTimeCols = [];
     let descentPlotTimeCols = [];
+    let labourProgressPlotsTimeCols = [];
     let medicationTimeCols = [];
     let assessmentTimeCols = [];
     let planTimeCols = [];
@@ -3281,10 +3254,12 @@
       // Cervix & Descent Plot: +1 hour intervals for 12 hours
       cervixPlotTimeCols = [];
       descentPlotTimeCols = [];
+      labourProgressPlotsTimeCols = [];
       for (let i = 0; i <= 12; i++) {
         const hour = (startHour + i) % 24;
         cervixPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
         descentPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+        labourProgressPlotsTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
       }
       
       // Plan: +2 hour intervals for 12 hours
