@@ -98,8 +98,6 @@
             <small class="form-text text-muted">Click to confirm patient has entered second stage of labour</small>
           </div>
         </div>
-        
-      
       </div>
     </div>
 
@@ -174,21 +172,6 @@
         </div>
       </div>
 
-      <!-- FHR Table Section -->
-      <div class="section-table" id="fhrSection">
-        <div class="section-header" onclick="toggleSection('fhrSection')">
-          <h4><i class="fas fa-heartbeat"></i> FHR Monitoring</h4>
-          <div class="toggle-icon">
-            <i class="fas fa-chevron-down" id="fhrToggleIcon"></i>
-          </div>
-        </div>
-        <div class="table-wrapper">
-          <table class="summary-table" id="fhrTable">
-            <!-- Table content will be generated here -->
-          </table>
-        </div>
-      </div>
-
       <!-- Baby Table Section -->
       <div class="section-table" id="babySection">
         <div class="section-header" onclick="toggleSection('babySection')">
@@ -231,13 +214,6 @@
         <!-- Contractions Table -->
         <div class="table-wrapper">
           <table class="summary-table" id="contractionsTable">
-            <!-- Table content will be generated here -->
-          </table>
-        </div>
-        
-        <!-- Labour Progress Plots Table -->
-        <div class="table-wrapper">
-          <table class="summary-table" id="labourProgressPlotsTable">
             <!-- Table content will be generated here -->
           </table>
         </div>
@@ -359,11 +335,9 @@
         "Oral_fluids",
         "Mobility"
       ],
-      "FHR": [
-        "Baseline FHR",
-        "FHR deceleration"
-      ],
       "Baby": [
+        "Baseline FHR",
+        "FHR deceleration",
         "Amniotic fluid",
         "Fetal position",
         "Caput",
@@ -376,12 +350,14 @@
         "Temperature C",
         "Urine"
       ],
-      "Contractions": [
+      "Labour Progress": [
         "Contractions per 10 min",
         "Duration of contractions"
       ],
-      "Labour Progress Plots": [
-        "Cervix [Plot X]",
+      "Cervix Plot": [
+        "Cervix [Plot X]"
+      ],
+      "Descent Plot": [
         "Descent [Plot O]"
       ],
       "Medication": [
@@ -473,17 +449,7 @@
       "Systolic BP": "<90, >140",
       "Diastolic BP": ">90",
       "Temperature C": "<36, >37.5",
-      "Urine": "P++++, A++++",
-
-      // Add these missing fields:
-      "ASSESSMENT": "",
-      "PLAN": "",
-      "INITIALS": "",
-      "Oxytocin (U/L, drops/min)": "",
-      "Medicine": "",
-      "IV fluids": "",
-      "Cervix [Plot X]": "",
-      "Descent [Plot O]": ""
+      "Urine": "P++++, A++++"
     };
 
     // Check and highlight alert values
@@ -494,51 +460,44 @@
       // Remove existing alert highlighting
       element.classList.remove('alert-value');
       
-      // Extract the base field name from compound names (e.g., "Companion_08_00" -> "Companion")
-      const baseFieldName = fieldName.split('_').slice(0, -2).join('_');
-      
-      console.log(`🔍 Checking alert for: ${fieldName} (base: ${baseFieldName}), value: ${value}`);
-      console.log(`🔍 Available alert values for ${baseFieldName}:`, alertValues[baseFieldName]);
-      
       // Check if this field has alert values defined
-      if (alertValues[baseFieldName] && alertValues[baseFieldName].length > 0) {
-        console.log(`✅ Found alert values for ${baseFieldName}:`, alertValues[baseFieldName]);
+      if (alertValues[fieldName] && alertValues[fieldName].length > 0) {
         // Check if current value matches any alert value
-        if (alertValues[baseFieldName].includes(value)) {
+        if (alertValues[fieldName].includes(value)) {
           element.classList.add('alert-value');
-          console.log(`⚠️ Alert triggered for ${baseFieldName}: ${value}`);
-        } else {
-          console.log(`❌ Value ${value} not in alert values for ${baseFieldName}`);
         }
-      } else {
-        console.log(`❌ No alert values found for ${baseFieldName}`);
       }
       
       // Special handling for number inputs (Baseline FHR, Pulse, BP, Temperature)
       if (element.type === 'number') {
         const numValue = parseFloat(value);
         if (!isNaN(numValue)) {
-          // Check if the field name contains the specific field type
-          if (fieldName.includes('Baseline_FHR')) {
-            if (numValue < 110 || numValue > 160) {
-              element.classList.add('alert-value');
-            }
-          } else if (fieldName.includes('Pulse')) {
-            if (numValue < 60 || numValue > 120) {
-              element.classList.add('alert-value');
-            }
-          } else if (fieldName.includes('Systolic_BP')) {
-            if (numValue < 90 || numValue > 140) {
-              element.classList.add('alert-value');
-            }
-          } else if (fieldName.includes('Diastolic_BP')) {
-            if (numValue > 90) {
-              element.classList.add('alert-value');
-            }
-          } else if (fieldName.includes('Temperature_C')) {
-            if (numValue < 36 || numValue > 37.5) {
-              element.classList.add('alert-value');
-            }
+          switch(fieldName) {
+            case 'Baseline FHR':
+              if (numValue < 110 || numValue > 160) {
+                element.classList.add('alert-value');
+              }
+              break;
+            case 'Pulse':
+              if (numValue < 60 || numValue > 120) {
+                element.classList.add('alert-value');
+              }
+              break;
+            case 'Systolic BP':
+              if (numValue < 90 || numValue > 140) {
+                element.classList.add('alert-value');
+              }
+              break;
+            case 'Diastolic BP':
+              if (numValue > 90) {
+                element.classList.add('alert-value');
+              }
+              break;
+            case 'Temperature C':
+              if (numValue < 36 || numValue > 37.5) {
+                element.classList.add('alert-value');
+              }
+              break;
           }
         }
       }
@@ -551,61 +510,142 @@
       const allInputs = document.querySelectorAll('input');
       
       allSelects.forEach(select => {
-        // Remove existing event listeners to prevent duplicates
-        select.removeEventListener('change', select._changeHandler);
-        select.removeEventListener('input', select._inputHandler);
-        
-        // Create new event handler functions
-        select._changeHandler = function() {
+        select.addEventListener('change', function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        };
-        
-        select._inputHandler = function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        };
-        
-        // Add event listeners
-        select.addEventListener('change', select._changeHandler);
-        select.addEventListener('input', select._inputHandler);
+        });
       });
       
       allInputs.forEach(input => {
-        // Remove existing event listeners to prevent duplicates
-        input.removeEventListener('change', input._changeHandler);
-        input.removeEventListener('input', input._inputHandler);
-        
-        // Create new event handler functions
-        input._changeHandler = function() {
+        input.addEventListener('input', function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        };
-        
-        input._inputHandler = function() {
+        });
+        input.addEventListener('change', function() {
           checkAndHighlightAlert(this);
           // Only show recommendations if the div exists
           if (document.getElementById('recommendations')) {
             showRecommendations();
           }
-        };
-        
-        // Add event listeners
-        input.addEventListener('change', input._changeHandler);
-        input.addEventListener('input', input._inputHandler);
+        });
       });
     }
 
-
+    // Show clinical recommendations based on alert values
+    function showRecommendations() {
+      const recommendationsDiv = document.getElementById('recommendations');
+      if (!recommendationsDiv) {
+        console.log('Recommendations div not found yet');
+        return;
+      }
+      
+      const activeAlerts = new Set();
+      
+      // Check all form elements for alert values
+      const allInputs = document.querySelectorAll('input, select');
+      allInputs.forEach(input => {
+        if (input.value && input.value.trim() !== '') {
+          const fieldName = input.name;
+          const value = input.value;
+          
+          // Check if this value should trigger an alert
+          let shouldAlert = false;
+          let alertReason = '';
+          
+          // Check against WHO LCG alert values
+          if (fieldName.includes('FHR') || fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            if (fhr < 110 || fhr > 160) {
+              shouldAlert = true;
+              alertReason = `FHR ${fhr} is outside normal range (110-160)`;
+            }
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            if (pulse < 60 || pulse > 120) {
+              shouldAlert = true;
+              alertReason = `Pulse ${pulse} is outside normal range (60-120)`;
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            if (bp < 90 || bp > 140) {
+              shouldAlert = true;
+              alertReason = `Systolic BP ${bp} is outside normal range (90-140)`;
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            if (bp > 90) {
+              shouldAlert = true;
+              alertReason = `Diastolic BP ${bp} is above normal range (>90)`;
+            }
+          } else if (fieldName.includes('Temperature')) {
+            const temp = parseFloat(value);
+            if (temp < 36 || temp > 37.5) {
+              shouldAlert = true;
+              alertReason = `Temperature ${temp}°C is outside normal range (36-37.5)`;
+            }
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No pain relief provided';
+          } else if (fieldName.includes('Oral_fluids') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No oral fluids provided';
+          } else if (fieldName.includes('Mobility') && value === 'N') {
+            shouldAlert = true;
+            alertReason = 'No mobility encouraged';
+          }
+          
+          if (shouldAlert) {
+            // Extract field name for display
+            const displayName = fieldName.split('_').slice(0, -2).join(' ').replace(/_/g, ' ');
+            activeAlerts.add(`${displayName}: ${alertReason}`);
+          }
+        }
+      });
+      
+      // Generate recommendations HTML
+      if (activeAlerts.size > 0) {
+        let recommendationsHTML = '<div class="alert alert-warning"><strong>⚠️ Active Alerts:</strong><ul>';
+        activeAlerts.forEach(alert => {
+          recommendationsHTML += `<li>${alert}</li>`;
+        });
+        recommendationsHTML += '</ul></div>';
+        
+        // Add clinical recommendations
+        recommendationsHTML += '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
+        activeAlerts.forEach(alert => {
+          const [field, reason] = alert.split(': ');
+          
+          // Provide specific recommendations based on field type
+          let recommendation = '';
+          if (field.includes('FHR') || field.includes('Baseline')) {
+            recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+          } else if (field.includes('Pulse')) {
+            recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
+          } else if (field.includes('BP')) {
+            recommendation = 'Monitor blood pressure closely. Consider antihypertensive therapy if severe hypertension.';
+          } else if (field.includes('Temperature')) {
+            recommendation = 'Monitor for signs of infection. Consider antibiotics if infection suspected.';
+          } else if (field.includes('Pain') || field.includes('Mobility') || field.includes('Oral')) {
+            recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
+          } else {
+            recommendation = 'Monitor and document progress. Consider specialist consultation if needed.';
+          }
+          
+          recommendationsHTML += `<li><strong>${field}:</strong> ${recommendation}</li>`;
+        });
+        recommendationsHTML += '</ul></div>';
+        
+        recommendationsDiv.innerHTML = recommendationsHTML;
+      } else {
+        recommendationsDiv.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
+      }
+    }
 
     const recommendations = {
   "Companion": {
@@ -832,9 +872,6 @@
             showAllTables();
             document.getElementById("startingTimeRequirement").style.display = "none";
             
-            // Lock the starting time input since it's already set
-            lockTimeInput("startingTime", "Active First Stage Start Time");
-            
             // Generate the summary table with existing data
             generateSummaryTable(existing);
             
@@ -871,9 +908,6 @@
               document.getElementById("secondStageTime").value = secondStageStartTime;
               document.getElementById("secondStageCard").style.display = "block";
               
-              // Lock the second stage time input since it's already set
-              lockTimeInput("secondStageTime", "Second Stage Start Time");
-              
               // Calculate and display first stage duration
               if (activeFirstStageStartTime && secondStageStartTime) {
                 const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
@@ -896,21 +930,8 @@
 
         // Add event listeners for starting time changes
         document.getElementById("startingTime").addEventListener("change", function() {
-          // Check if input is already locked
-          if (isTimeInputLocked("startingTime")) {
-            console.log("Starting time input is locked, cannot change");
-            return;
-          }
-          
           const newStartingTime = this.value;
           if (newStartingTime) {
-            // Validate time format
-            if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newStartingTime)) {
-              alert('Please enter a valid time in HH:MM format (e.g., 08:00)');
-              this.value = '';
-              return;
-            }
-            
             const oldStartingTime = activeFirstStageStartTime;
             activeFirstStageStartTime = newStartingTime;
             
@@ -933,42 +954,7 @@
             generateSummaryTable({});
             
             // Show warning about data loss
-           
-          }
-        });
-
-        // Add event listener for second stage time input
-        document.getElementById("secondStageTime").addEventListener("change", function() {
-          // Check if input is already locked
-          if (isTimeInputLocked("secondStageTime")) {
-            console.log("Second stage time input is locked, cannot change");
-            return;
-          }
-          
-          const newSecondStageTime = this.value;
-          if (newSecondStageTime && activeFirstStageStartTime) {
-            // Validate time format
-            if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newSecondStageTime)) {
-              alert('Please enter a valid time in HH:MM format (e.g., 16:00)');
-              this.value = '';
-              return;
-            }
-            
-            // Validate that second stage is after first stage
-            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
-            const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
-            
-            if (secondTime <= firstTime) {
-              alert('Second Stage Start Time must be after the Active First Stage Start Time.');
-              this.value = '';
-              return;
-            }
-            
-            // Lock the second stage time input after first use
-            lockTimeInput("secondStageTime", "Second Stage Start Time");
-            
-            // Show the second stage controls
-            document.getElementById('secondStageControls').style.display = 'block';
+            showDataLossWarning();
           }
         });
 
@@ -1040,7 +1026,57 @@
           });
         });
 
+        // Add event listeners for starting time changes
+        document.getElementById("startingTime").addEventListener("change", function() {
+          const newStartingTime = this.value;
+          if (newStartingTime) {
+            const oldStartingTime = activeFirstStageStartTime;
+            activeFirstStageStartTime = newStartingTime;
+            
+            // Generate new time columns
+            generateDynamicTimeColumns();
+            
+            // Save the starting time
+            saveStartingTime();
+            
+            // Lock the starting time input after first use
+            lockTimeInput("startingTime", "Active First Stage Start Time");
+            
+            // Hide starting time requirement message
+            document.getElementById("startingTimeRequirement").style.display = "none";
+            
+            // Show all tables immediately
+            showAllTables();
+            
+            // Generate tables with empty data (clear all data since time intervals changed)
+            generateSummaryTable({});
+            
+            // Show warning about data loss
+            showDataLossWarning();
+          }
+        });
 
+        // Add event listener for second stage time input
+        document.getElementById("secondStageTime").addEventListener("change", function() {
+          const newSecondStageTime = this.value;
+          if (newSecondStageTime && activeFirstStageStartTime) {
+            // Validate that second stage is after first stage
+            const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+            const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
+            
+            if (secondTime <= firstTime) {
+              alert('Second stage must start after the active first stage start time.');
+              this.value = '';
+              return;
+            }
+            
+            // Lock the second stage time input after first use
+            lockTimeInput("secondStageTime", "Second Stage Start Time");
+            
+            // Show the second stage controls
+            document.getElementById('secondStageControls').style.display = 'block';
+          }
+        });
 
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1049,87 +1085,52 @@
     }
 
     function generateSummaryTable(existing) {
-      // Clear existing tables safely
-      safeClearTable("supportiveCareTable");
-      safeClearTable("fhrTable");
-      safeClearTable("babyTable");
-      safeClearTable("womanTable");
-      safeClearTable("contractionsTable");
-      safeClearTable("labourProgressPlotsTable");
-      safeClearTable("medicationTable");
-      safeClearTable("decisionMakingTable");
-      safeClearTable("initialsTable");
-
-      // Generate each section table with consistent styling
-      generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
-      generateSectionTable("FHR", sections["FHR"], "fhrTable", existing);
-      generateSectionTable("Baby", sections["Baby"], "babyTable", existing);
-      generateSectionTable("Woman", sections["Woman"], "womanTable", existing);
-      generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", existing);
-      generateSectionTable("Labour Progress Plots", sections["Labour Progress Plots"], "labourProgressPlotsTable", existing);
       
-      // Initialize plotting charts
+      // Clear existing tables
+      document.getElementById("supportiveCareTable").innerHTML = "";
+      document.getElementById("babyTable").innerHTML = "";
+      document.getElementById("womanTable").innerHTML = "";
+      document.getElementById("contractionsTable").innerHTML = "";
+      // Note: Plotting charts are handled separately
+      document.getElementById("medicationTable").innerHTML = "";
+      document.getElementById("decisionMakingTable").innerHTML = "";
+      document.getElementById("initialsTable").innerHTML = ""; // Clear initials table
+
+      // Generate each section table
+      generateSectionTable("Supportive Care", sections["Supportive Care"], "supportiveCareTable", existing);
+      generateBabyTable("babyTable", existing);
+      generateSectionTable("Woman", sections["Woman"], "womanTable", existing);
+      
+      // Generate Contractions table (keep as is)
+      generateContractionsTable("contractionsTable", existing);
+      
+      // Initialize plotting charts (replaces the old table generation)
       initializePlottingCharts();
       
-      // Generate Medication table
-      generateSectionTable("Medication", sections["Medication"], "medicationTable", existing);
+      // Generate Medication table with 1-hour intervals
+      generateMedicationTable("medicationTable", existing);
       
-      // Generate Shared Decision-Making table
-      generateSectionTable("Shared Decision-Making", sections["Shared Decision-Making"], "decisionMakingTable", existing);
+      // Generate Shared Decision-Making table with mixed time intervals
+      generateSharedDecisionTable("decisionMakingTable", existing);
       
-      // Generate Initials table
-      generateSectionTable("Initials", ["INITIALS"], "initialsTable", existing);
+      generateInitialsTable("initialsTable", existing); // Generate initials table
       
       // Add event listeners for form changes
       addFormEventListeners();
       
       // Highlight any existing alert values after tables are generated
       setTimeout(() => {
-        highlightAllExistingValues();
+        const allSelects = document.querySelectorAll('select');
+        const allNumberInputs = document.querySelectorAll('input[type="number"]');
         
+        allSelects.forEach(select => checkAndHighlightAlert(select));
+        allNumberInputs.forEach(input => checkAndHighlightAlert(input));
+        
+        // Show initial recommendations after tables are generated
         if (document.getElementById('recommendations')) {
           showRecommendations();
         }
-        
-        // Force sticky columns to work properly
-        forceStickyColumns();
       }, 100);
-    }
-
-    // Safely clear a table by ID
-    function safeClearTable(tableId) {
-      const table = document.getElementById(tableId);
-      if (table) {
-        table.innerHTML = "";
-      } else {
-        console.warn(`Table with ID '${tableId}' not found`);
-      }
-    }
-    
-    // Force sticky columns to work properly
-    function forceStickyColumns() {
-      const tables = document.querySelectorAll('.summary-table');
-      tables.forEach(table => {
-        const firstCells = table.querySelectorAll('th:first-child, td:first-child');
-        const secondCells = table.querySelectorAll('th:nth-child(2), td:nth-child(2)');
-        
-        firstCells.forEach(cell => {
-          cell.style.position = 'sticky';
-          cell.style.left = '0';
-          cell.style.zIndex = '100';
-          cell.style.background = 'white';
-        });
-        
-        secondCells.forEach(cell => {
-          cell.style.position = 'sticky';
-          cell.style.left = '120px';
-          cell.style.zIndex = '100';
-          cell.style.background = 'white';
-        });
-      });
-      
-      // Force a reflow to ensure sticky positioning is applied
-      document.body.offsetHeight;
     }
 
     // Generate a section table with dynamic time columns
@@ -1144,32 +1145,16 @@
       let timeColumns = [];
       switch (sectionName) {
         case "Supportive Care":
-          timeColumns = supportiveCareTimeCols; // 1-hour intervals
-          break;
-        case "FHR":
-          timeColumns = babyBaselineTimeCols; // 30-minute intervals
+          timeColumns = supportiveCareTimeCols;
           break;
         case "Baby":
-          timeColumns = supportiveCareTimeCols; // 1-hour intervals
+          // Baby section uses different time columns for different fields
+          // This will be handled by generateBabyTable function
+          timeColumns = babyBaselineTimeCols; // fallback
           break;
         case "Woman":
-          timeColumns = womanTimeCols; // 1-hour intervals
+          timeColumns = womanTimeCols;
           break;
-        case "Contractions":
-          timeColumns = contractionsTimeCols; // 30-minute intervals
-          break;
-        case "Labour Progress Plots":
-          timeColumns = supportiveCareTimeCols; // 1-hour intervals
-          break;
-          case "Medication":
-  timeColumns = medicationTimeCols; // 1-hour intervals
-  break;
-case "Shared Decision-Making":
-  timeColumns = assessmentTimeCols; // Mixed intervals
-  break;
-case "Initials":
-  timeColumns = initialsTimeCols; // Mixed intervals
-  break;
         default:
           timeColumns = supportiveCareTimeCols; // fallback
       }
@@ -1237,82 +1222,6 @@ case "Initials":
       
       tableHTML += '</tbody>';
       table.innerHTML = tableHTML;
-      
-      // Add event listeners to the newly generated table
-      addTableEventListeners(table);
-    }
-
-    // Add event listeners to a specific table
-    function addTableEventListeners(table) {
-      if (!table) return;
-      
-      // Add event listeners to all selects and inputs in this table
-      const selects = table.querySelectorAll('select');
-      const inputs = table.querySelectorAll('input');
-      
-      console.log(`🔗 Adding event listeners to table: ${selects.length} selects, ${inputs.length} inputs`);
-      
-      selects.forEach(select => {
-        // Remove existing event listeners to prevent duplicates
-        if (select._changeHandler) {
-          select.removeEventListener('change', select._changeHandler);
-        }
-        if (select._inputHandler) {
-          select.removeEventListener('input', select._inputHandler);
-        }
-        
-        // Create new event handler functions
-        select._changeHandler = function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        };
-        
-        select._inputHandler = function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        };
-        
-        // Add event listeners
-        select.addEventListener('change', select._changeHandler);
-        select.addEventListener('input', select._inputHandler);
-      });
-      
-      inputs.forEach(input => {
-        // Remove existing event listeners to prevent duplicates
-        if (input._changeHandler) {
-          input.removeEventListener('change', input._changeHandler);
-        }
-        if (input._inputHandler) {
-          input.removeEventListener('input', input._inputHandler);
-        }
-        
-        // Create new event handler functions
-        input._changeHandler = function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        };
-        
-        input._inputHandler = function() {
-          checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
-        };
-        
-        // Add event listeners
-        input.addEventListener('change', input._changeHandler);
-        input.addEventListener('input', input._inputHandler);
-      });
     }
 
     // Generate Contractions table (keep as is)
@@ -1453,49 +1362,29 @@ case "Initials":
       
       tbody.appendChild(durationRow);
       table.appendChild(tbody);
-      
-      // Add event listeners to the newly generated table
-      addTableEventListeners(table);
     }
 
 
 
     function getLatestValue(field) {
-      // Determine which time columns to use based on the field
-      let timeColumns = [];
-      
-      if (field.includes('FHR') || field.includes('Baseline')) {
-        timeColumns = babyBaselineTimeCols || [];
-      } else if (field.includes('Contractions') || field.includes('Duration')) {
-        timeColumns = contractionsTimeCols || [];
-      } else {
-        // Default to 1-hour intervals for most fields
-        timeColumns = supportiveCareTimeCols || [];
-      }
-      
-      // Go through time columns in reverse to find the latest non-empty value
-      for (let i = timeColumns.length - 1; i >= 0; i--) {
-        const timeKey = timeColumns[i].replace(':', '_');
-        const key = `${field.replace(/\s+/g, "_")}_${timeKey}`;
-        const el = document.getElementsByName(key)[0];
-        if (el && el.value) return el.value;
-      }
-      return "";
-    }
+  // Go through timeCols in reverse to find the latest non-empty value
+  for (let i = timeCols.length - 1; i >= 0; i--) {
+    const key = `${timeCols[i]}_${field.replace(/\s+/g, "_")}`;
+    const el = document.getElementsByName(key)[0];
+    if (el && el.value) return el.value;
+  }
+  return "";
+}
 
     function showRecommendations() {
-      console.log('📊 Generating recommendations...');
       const recs = new Set(); // Use Set to avoid duplicates
       
       // Check all section tables
-      console.log('🔍 Checking section tables...');
-      for (const fieldList of Object.values(sections)) {
-        for (const field of fieldList) {
-          const latestValue = getLatestValue(field);
-          console.log(`  Field: ${field}, Latest Value: ${latestValue}`);
-          if (recommendations[field] && recommendations[field][latestValue]) {
+  for (const fieldList of Object.values(sections)) {
+    for (const field of fieldList) {
+      const latestValue = getLatestValue(field);
+      if (recommendations[field] && recommendations[field][latestValue]) {
             recs.add(`${field} (${latestValue}): ${recommendations[field][latestValue]}`);
-            console.log(`  ✅ Added recommendation for ${field}`);
           }
         }
       }
@@ -1565,25 +1454,22 @@ case "Initials":
         }
       });
       
-  const recommendationsDiv = document.getElementById("recommendations");
-      if (recommendationsDiv) {
-        if (recs.size > 0) {
-          let recommendationsHTML = '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
-          recs.forEach(rec => {
-            const [field, reason] = rec.split(': ');
-            recommendationsHTML += `<li><strong>${field}:</strong> ${reason}</li>`;
-          });
-          recommendationsHTML += '</ul></div>';
-          
-          recommendationsDiv.innerHTML = recommendationsHTML;
-          console.log(`📋 Generated ${recs.size} recommendations`);
-        } else {
-          recommendationsDiv.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
-          console.log('✅ No recommendations needed');
-        }
-      } else {
-        console.log('❌ Recommendations div not found');
-      }
+  const box = document.getElementById("recommendationsBox");
+      if (recs.size > 0) {
+        box.innerHTML = `
+          <div class="recommendations-content">
+            <div class="recommendations-header">
+              <i class="fas fa-lightbulb"></i>
+              <span>Clinical Recommendations</span>
+            </div>
+            <div class="recommendations-list">
+              ${Array.from(recs).map(r => `<div class="recommendation-item">${r}</div>`).join("")}
+            </div>
+          </div>
+        `;
+  } else {
+    box.innerHTML = "";
+  }
 }
 
     async function saveData() {
@@ -1593,39 +1479,6 @@ case "Initials":
           console.error('No patient ID found in URL');
           return;
         }
-        
-        // Safety check: Ensure all required variables are defined
-        if (!supportiveCareTimeCols || !babyBaselineTimeCols || !babyOtherTimeCols || 
-            !womanTimeCols || !contractionsTimeCols || !labourProgressPlotsTimeCols || 
-            !medicationTimeCols || !assessmentTimeCols || !planTimeCols || !initialsTimeCols) {
-          console.error('Time columns not initialized. Regenerating...');
-          generateDynamicTimeColumns();
-        }
-        
-        // Safety check: Ensure sections object is defined
-        if (!sections || typeof sections !== 'object') {
-          console.error('Sections object not defined');
-          throw new Error('Sections configuration is missing');
-        }
-        
-        // Helper function to safely save section data
-        const saveSectionData = (timeCols, sectionName, sectionFields) => {
-          if (timeCols && Array.isArray(timeCols) && sectionFields && Array.isArray(sectionFields)) {
-            timeCols.forEach(time => {
-              const timeKey = time.replace(':', '_');
-              sectionFields.forEach(field => {
-                const fieldName = field.replace(/\s+/g, '_');
-                const inputName = `${fieldName}_${timeKey}`;
-                const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-                if (input && input.value) {
-                  formData[inputName] = input.value;
-                }
-              });
-            });
-          } else {
-            console.warn(`Skipping ${sectionName} - time columns or fields not properly defined`);
-          }
-        };
 
         const base = firebase.firestore().collection("patients").doc(patientId);
 
@@ -1656,13 +1509,74 @@ case "Initials":
         // Save all form data using time-based structure
         const formData = {};
         
-        // Save data for each time column in each section using the helper function
-        saveSectionData(supportiveCareTimeCols, "Supportive Care", sections["Supportive Care"]);
-        saveSectionData(babyBaselineTimeCols, "FHR", sections["FHR"]);
-        saveSectionData(babyOtherTimeCols, "Baby", sections["Baby"]);
-        saveSectionData(womanTimeCols, "Woman", sections["Woman"]);
-        saveSectionData(contractionsTimeCols, "Contractions", sections["Contractions"]);
-        saveSectionData(labourProgressPlotsTimeCols, "Labour Progress Plots", sections["Labour Progress Plots"]);
+        // Save data for each time column in each section
+        // Supportive Care
+        supportiveCareTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          sections["Supportive Care"].forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
+        
+        // Baby - use the correct variable names
+        babyBaselineTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          // Only Baseline FHR and FHR deceleration use 30-min intervals
+          const baselineFields = ["Baseline FHR", "FHR deceleration"];
+          baselineFields.forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
+        
+        babyOtherTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          // Other baby fields use 1-hour intervals
+          const otherFields = ["Amniotic fluid", "Fetal position", "Caput", "Moulding"];
+          otherFields.forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
+        
+        // Woman
+        womanTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          sections["Woman"].forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
+        
+        // Contractions
+        contractionsTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          sections["Labour Progress"].forEach(field => {
+            const fieldName = field.replace(/\s+/g, '_');
+            const inputName = `${fieldName}_${timeKey}`;
+            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
+            if (input && input.value) {
+              formData[inputName] = input.value;
+            }
+          });
+        });
         
         // Medication - Fix the data collection
         medicationTimeCols.forEach(time => {
@@ -1847,14 +1761,7 @@ case "Initials":
       
       // Test if sticky positioning is supported
       testStickySupport();
-      
-      // Set up protection for locked inputs
-      preventLockedInputModifications();
-      
-      
     });
-
-   
     
     // Test if sticky positioning is supported
     function testStickySupport() {
@@ -1930,7 +1837,7 @@ case "Initials":
       document.getElementById('toggleIcon').className = 'fas fa-chevron-right';
       
       // Start with all section tables folded
-      const sections = ['supportiveCareSection', 'fhrSection', 'babySection', 'womanSection', 'contractionsSection', 'labourProgressPlotsSection', 'medicationSection', 'decisionMakingSection', 'initialsSection'];
+      const sections = ['supportiveCareSection', 'babySection', 'womanSection', 'labourProgressSection', 'medicationSection', 'decisionMakingSection', 'initialsSection'];
       sections.forEach(sectionId => {
         const section = document.getElementById(sectionId);
         if (section) {
@@ -1947,7 +1854,77 @@ case "Initials":
       });
     }
 
-    
+    // Generate Initials table with dynamic time columns
+    function generateInitialsTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (1-hour intervals with second stage highlighting)
+      initialsTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Single row for initials
+      const initialsRow = document.createElement("tr");
+      
+      // Field cell
+      const initialsFieldCell = document.createElement("td");
+      initialsFieldCell.className = "field-cell sticky-field";
+      initialsFieldCell.textContent = "Initials";
+      initialsRow.appendChild(initialsFieldCell);
+      
+      // Time cells for initials
+      initialsTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `INITIALS_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "3 chars max";
+        input.maxLength = 3;
+        input.value = value;
+        timeCell.appendChild(input);
+        initialsRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(initialsRow);
+      table.appendChild(tbody);
+    }
+
     // Global variables for plotting
     let cervixChart = null;
     let descentChart = null;
@@ -2513,9 +2490,468 @@ case "Initials":
       updateChartStatus();
     }
 
-   
+    // Generate Medication table with dynamic time columns
+    function generateMedicationTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (1-hour intervals with second stage highlighting)
+      medicationTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Row 1: Oxytocin
+      const oxytocinRow = document.createElement("tr");
+      
+      // Field cell
+      const oxytocinFieldCell = document.createElement("td");
+      oxytocinFieldCell.className = "field-cell sticky-field";
+      oxytocinFieldCell.textContent = "Oxytocin";
+      oxytocinRow.appendChild(oxytocinFieldCell);
+      
+      // Time cells for oxytocin
+      medicationTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Medication_Oxytocin_${timeKey}`;
+        const value = existing[key] || "";
+        
+        // Create the main container for this cell
+        const cellContainer = document.createElement("div");
+        cellContainer.className = "medication-cell-container";
+        
+        if (value === "Y") {
+          // Show input fields when Y is selected
+          const detailsContainer = document.createElement("div");
+          detailsContainer.className = "oxytocin-details";
+          
+          const uLInput = document.createElement("input");
+          uLInput.name = `${key}_UL`;
+          uLInput.type = "number";
+          uLInput.className = "form-control form-control-sm mb-1";
+          uLInput.placeholder = "U/L";
+          uLInput.min = "0";
+          uLInput.step = "0.1";
+          uLInput.value = existing[`${key}_UL`] || "";
+          detailsContainer.appendChild(uLInput);
+          
+          const dropsInput = document.createElement("input");
+          dropsInput.name = `${key}_drops`;
+          dropsInput.type = "number";
+          dropsInput.className = "form-control form-control-sm";
+          dropsInput.placeholder = "drops/min";
+          dropsInput.min = "0";
+          dropsInput.step = "1";
+          dropsInput.value = existing[`${key}_drops`] || "";
+          detailsContainer.appendChild(dropsInput);
+          
+          // Add hidden input to store the Y value
+          const hiddenInput = document.createElement("input");
+          hiddenInput.type = "hidden";
+          hiddenInput.name = key;
+          hiddenInput.value = "Y";
+          detailsContainer.appendChild(hiddenInput);
+          
+          // Add change to N button
+          const changeButton = document.createElement("button");
+          changeButton.type = "button";
+          changeButton.className = "btn btn-sm btn-outline-secondary mt-1";
+          changeButton.textContent = "Change to N";
+          changeButton.onclick = function() {
+            // Clear the cell and regenerate with N selected
+            timeCell.innerHTML = "";
+            generateOxytocinCell(timeCell, time, { [key]: "N" });
+          };
+          detailsContainer.appendChild(changeButton);
+          
+          cellContainer.appendChild(detailsContainer);
+        } else {
+          // Show dropdown when N or empty
+          const select = document.createElement("select");
+          select.name = key;
+          select.className = "form-select form-select-sm";
+          
+          const blankOption = document.createElement("option");
+          blankOption.value = "";
+          blankOption.textContent = "";
+          select.appendChild(blankOption);
+          
+          const noOption = document.createElement("option");
+          noOption.value = "N";
+          noOption.textContent = "N";
+          select.appendChild(noOption);
+          
+          const yesOption = document.createElement("option");
+          yesOption.value = "Y";
+          yesOption.textContent = "Y";
+          select.appendChild(yesOption);
+          
+          select.value = value;
+          
+          // Add change event listener
+          select.addEventListener('change', function() {
+            if (this.value === "Y") {
+              // Clear the cell and regenerate with Y selected
+              timeCell.innerHTML = "";
+              generateOxytocinCell(timeCell, time, { [key]: "Y" });
+            }
+          });
+          
+          cellContainer.appendChild(select);
+        }
+        
+        timeCell.appendChild(cellContainer);
+        oxytocinRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(oxytocinRow);
+      
+      // Row 2: Medicine
+      const medicineRow = document.createElement("tr");
+      
+      // Field cell
+      const medicineFieldCell = document.createElement("td");
+      medicineFieldCell.className = "field-cell sticky-field";
+      medicineFieldCell.textContent = "Medicine";
+      medicineRow.appendChild(medicineFieldCell);
+      
+      // Time cells for medicine
+      medicationTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Medication_Medicine_${timeKey}`;
+        const value = existing[key] || "";
+        
+        // Create the main container for this cell
+        const cellContainer = document.createElement("div");
+        cellContainer.className = "medication-cell-container";
+        
+        if (value === "Y") {
+          // Show text input when Y is selected
+          const detailsContainer = document.createElement("div");
+          detailsContainer.className = "medicine-details";
+          
+          // Add hidden input to store the Y value
+          const hiddenInput = document.createElement("input");
+          hiddenInput.type = "hidden";
+          hiddenInput.name = key;
+          hiddenInput.value = "Y";
+          detailsContainer.appendChild(hiddenInput);
+          
+          // Create text input with a different name for the actual medicine text
+          const textInput = document.createElement("input");
+          textInput.name = `${key}_text`;
+          textInput.type = "text";
+          textInput.className = "form-control form-control-sm";
+          textInput.placeholder = "Medicine name";
+          textInput.value = existing[`${key}_text`] || "";
+          detailsContainer.appendChild(textInput);
+          
+          // Add change to N button
+          const changeButton = document.createElement("button");
+          changeButton.type = "button";
+          changeButton.className = "btn btn-sm btn-outline-secondary mt-1";
+          changeButton.textContent = "Change to N";
+          changeButton.onclick = function() {
+            // Clear the cell and regenerate with N selected
+            timeCell.innerHTML = "";
+            generateMedicineCell(timeCell, time, { [key]: "N" });
+          };
+          detailsContainer.appendChild(changeButton);
+          
+          cellContainer.appendChild(detailsContainer);
+        } else {
+          // Show dropdown when N or empty
+          const select = document.createElement("select");
+          select.name = key;
+          select.className = "form-select form-select-sm";
+          
+          const blankOption = document.createElement("option");
+          blankOption.value = "";
+          blankOption.textContent = "";
+          select.appendChild(blankOption);
+          
+          const noOption = document.createElement("option");
+          noOption.value = "N";
+          noOption.textContent = "N";
+          select.appendChild(noOption);
+          
+          const yesOption = document.createElement("option");
+          yesOption.value = "Y";
+          yesOption.textContent = "Y";
+          select.appendChild(yesOption);
+          
+          select.value = value;
+          
+          // Add change event listener
+          select.addEventListener('change', function() {
+            if (this.value === "Y") {
+              // Clear the cell and regenerate with Y selected
+              timeCell.innerHTML = "";
+              generateMedicineCell(timeCell, time, { [key]: "Y" });
+            }
+          });
+          
+          cellContainer.appendChild(select);
+        }
+        
+        timeCell.appendChild(cellContainer);
+        medicineRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(medicineRow);
+      
+      // Row 3: IV Fluids
+      const ivFluidsRow = document.createElement("tr");
+      
+      // Field cell
+      const ivFluidsFieldCell = document.createElement("td");
+      ivFluidsFieldCell.className = "field-cell sticky-field";
+      ivFluidsFieldCell.textContent = "IV Fluids";
+      ivFluidsRow.appendChild(ivFluidsFieldCell);
+      
+      // Time cells for IV fluids
+      medicationTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Medication_IV_Fluids_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        const noOption = document.createElement("option");
+        noOption.value = "N";
+        noOption.textContent = "N";
+        select.appendChild(noOption);
+        
+        const yesOption = document.createElement("option");
+        yesOption.value = "Y";
+        yesOption.textContent = "Y";
+        select.appendChild(yesOption);
+        
+        select.value = value;
+        timeCell.appendChild(select);
+        ivFluidsRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(ivFluidsRow);
+      table.appendChild(tbody);
+    }
+
+    // Helper function to generate Oxytocin cell content
+    function generateOxytocinCell(timeCell, time, existing) {
+      const timeKey = time.replace(':', '_');
+      const key = `Medication_Oxytocin_${timeKey}`;
+      
+      const cellContainer = document.createElement("div");
+      cellContainer.className = "medication-cell-container";
+      
+      if (existing[key] === "Y") {
+        // Show input fields when Y is selected
+        const detailsContainer = document.createElement("div");
+        detailsContainer.className = "oxytocin-details";
+        
+        const uLInput = document.createElement("input");
+        uLInput.name = `${key}_UL`;
+        uLInput.type = "number";
+        uLInput.className = "form-control form-control-sm mb-1";
+        uLInput.placeholder = "U/L";
+        uLInput.min = "0";
+        uLInput.step = "0.1";
+        uLInput.value = existing[`${key}_UL`] || "";
+        detailsContainer.appendChild(uLInput);
+        
+        const dropsInput = document.createElement("input");
+        dropsInput.name = `${key}_drops`;
+        dropsInput.type = "number";
+        dropsInput.className = "form-control form-control-sm";
+        dropsInput.placeholder = "drops/min";
+        dropsInput.min = "0";
+        dropsInput.step = "1";
+        dropsInput.value = existing[`${key}_drops`] || "";
+        detailsContainer.appendChild(dropsInput);
+        
+        // Add hidden input to store the Y value
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.name = key;
+        hiddenInput.value = "Y";
+        detailsContainer.appendChild(hiddenInput);
+        
+        // Add change to N button
+        const changeButton = document.createElement("button");
+        changeButton.type = "button";
+        changeButton.className = "btn btn-sm btn-outline-secondary mt-1";
+        changeButton.textContent = "Change to N";
+        changeButton.onclick = function() {
+          // Clear the cell and regenerate with N selected
+          timeCell.innerHTML = "";
+          generateOxytocinCell(timeCell, time, { [key]: "N" });
+        };
+        detailsContainer.appendChild(changeButton);
+        
+        cellContainer.appendChild(detailsContainer);
+      } else {
+        // Show dropdown when N or empty
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        const noOption = document.createElement("option");
+        noOption.value = "N";
+        noOption.textContent = "N";
+        select.appendChild(noOption);
+        
+        const yesOption = document.createElement("option");
+        yesOption.value = "Y";
+        yesOption.textContent = "Y";
+        select.appendChild(yesOption);
+        
+        select.value = existing[key] || "";
+        
+        // Add change event listener
+        select.addEventListener('change', function() {
+          if (this.value === "Y") {
+            // Clear the cell and regenerate with Y selected
+            timeCell.innerHTML = "";
+            generateOxytocinCell(timeCell, time, { [key]: "Y" });
+          }
+        });
+        
+        cellContainer.appendChild(select);
+      }
+      
+      timeCell.appendChild(cellContainer);
+    }
+
+    // Helper function to generate Medicine cell content
+    function generateMedicineCell(timeCell, time, existing) {
+      const timeKey = time.replace(':', '_');
+      const key = `Medication_Medicine_${timeKey}`;
+      
+      const cellContainer = document.createElement("div");
+      cellContainer.className = "medication-cell-container";
+      
+      if (existing[key] === "Y") {
+        // Show text input when Y is selected
+        const detailsContainer = document.createElement("div");
+        detailsContainer.className = "medicine-details";
+        
+        // Add hidden input to store the Y value
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.name = key;
+        hiddenInput.value = "Y";
+        detailsContainer.appendChild(hiddenInput);
+        
+        // Create text input with a different name for the actual medicine text
+        const textInput = document.createElement("input");
+        textInput.name = `${key}_text`;
+        textInput.type = "text";
+        textInput.className = "form-control form-control-sm";
+        textInput.placeholder = "Medicine name";
+        textInput.value = existing[`${key}_text`] || "";
+        detailsContainer.appendChild(textInput);
+        
+        // Add change to N button
+        const changeButton = document.createElement("button");
+        changeButton.type = "button";
+        changeButton.className = "btn btn-sm btn-outline-secondary mt-1";
+        changeButton.textContent = "Change to N";
+        changeButton.onclick = function() {
+          // Clear the cell and regenerate with N selected
+          timeCell.innerHTML = "";
+          generateMedicineCell(timeCell, time, { [key]: "N" });
+        };
+        detailsContainer.appendChild(changeButton);
+        
+        cellContainer.appendChild(detailsContainer);
+      } else {
+        // Show dropdown when N or empty
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        const noOption = document.createElement("option");
+        noOption.value = "N";
+        noOption.textContent = "N";
+        select.appendChild(noOption);
+        
+        const yesOption = document.createElement("option");
+        yesOption.value = "Y";
+        yesOption.textContent = "Y";
+        select.appendChild(yesOption);
+        
+        select.value = existing[key] || "";
+        
+        // Add change event listener
+        select.addEventListener('change', function() {
+          if (this.value === "Y") {
+            // Clear the cell and regenerate with Y selected
+            timeCell.innerHTML = "";
+            generateMedicineCell(timeCell, time, { [key]: "Y" });
+          }
+        });
+        
+        cellContainer.appendChild(select);
+      }
+      
+      timeCell.appendChild(cellContainer);
+    }
+
     // Shared Decision-Making Table - Following WHO LCG Guidelines
-  
+    function generateSharedDecisionTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
       // Create two separate mini-tables for better usability
@@ -2688,8 +3124,16 @@ case "Initials":
       table.appendChild(assessmentTable);
       table.appendChild(planTable);
       
-      // Add event listeners to the newly generated table
-      addTableEventListeners(table);
+      // Add event listeners for all inputs
+      const allInputs = table.querySelectorAll('input[type="text"]');
+      allInputs.forEach(input => {
+        input.addEventListener('change', function() {
+          showRecommendations();
+        });
+        input.addEventListener('input', function() {
+          showRecommendations();
+        });
+      });
     }
 
     // ===== DYNAMIC TIME MANAGEMENT =====
@@ -2705,7 +3149,6 @@ case "Initials":
     let contractionsTimeCols = [];
     let cervixPlotTimeCols = [];
     let descentPlotTimeCols = [];
-    let labourProgressPlotsTimeCols = [];
     let medicationTimeCols = [];
     let assessmentTimeCols = [];
     let planTimeCols = [];
@@ -2765,12 +3208,10 @@ case "Initials":
       // Cervix & Descent Plot: +1 hour intervals for 12 hours
       cervixPlotTimeCols = [];
       descentPlotTimeCols = [];
-      labourProgressPlotsTimeCols = [];
       for (let i = 0; i <= 12; i++) {
         const hour = (startHour + i) % 24;
         cervixPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
         descentPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
-        labourProgressPlotsTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
       }
       
       // Plan: +2 hour intervals for 12 hours
@@ -2839,9 +3280,6 @@ case "Initials":
       
       // Save the second stage time
       saveSecondStageData();
-      
-      // Lock the second stage time input after confirmation
-      lockTimeInput("secondStageTime", "Second Stage Start Time");
       
       // IMPORTANT: Don't regenerate tables - just update the colors!
       // The isSecondStageTime() function will handle the color changes
@@ -3013,11 +3451,8 @@ case "Initials":
       
       // Clear existing tables
       document.getElementById("supportiveCareTable").innerHTML = "";
-      document.getElementById("fhrTable").innerHTML = "";
       document.getElementById("babyTable").innerHTML = "";
-      document.getElementById("womanTable").innerHTML = "";
       document.getElementById("contractionsTable").innerHTML = "";
-      document.getElementById("labourProgressPlotsTable").innerHTML = "";
       document.getElementById("medicationTable").innerHTML = "";
       document.getElementById("decisionMakingTable").innerHTML = "";
       document.getElementById("initialsTable").innerHTML = "";
@@ -3039,11 +3474,11 @@ case "Initials":
     function regenerateAllTablesWithData(preservedData) {
       // Clear existing tables
       document.getElementById('supportiveCareTable').innerHTML = '';
-      document.getElementById('fhrTable').innerHTML = '';
       document.getElementById('babyTable').innerHTML = '';
       document.getElementById('womanTable').innerHTML = '';
       document.getElementById('contractionsTable').innerHTML = '';
-      document.getElementById('labourProgressPlotsTable').innerHTML = '';
+      document.getElementById('cervixPlotTable').innerHTML = '';
+      document.getElementById('descentPlotTable').innerHTML = '';
       document.getElementById('medicationTable').innerHTML = '';
       document.getElementById('decisionMakingTable').innerHTML = '';
       document.getElementById('initialsTable').innerHTML = '';
@@ -3052,14 +3487,281 @@ case "Initials":
       generateSummaryTable(preservedData);
     }
 
- 
-
+    // Special Baby table with two mini-tables
+    function generateBabyTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // ===== BASELINE FHR & FHR DECELERATION TABLE (30-min intervals) =====
+      const baselineTable = document.createElement("div");
+      baselineTable.className = "mini-table-container mb-4";
+      
+      const baselineTitle = document.createElement("h5");
+      baselineTitle.className = "mini-table-title";
+      baselineTitle.innerHTML = '<i class="fas fa-heartbeat"></i> Baseline FHR & Deceleration (30-min intervals)';
+      baselineTable.appendChild(baselineTitle);
+      
+      const baselineTableElement = document.createElement("table");
+      baselineTableElement.className = "summary-table mini-table";
+      
+      // Baseline table header
+      const baselineThead = document.createElement("thead");
+      const baselineHeaderRow = document.createElement("tr");
+      
+      // Field header
+      const baselineFieldHeader = document.createElement("th");
+      baselineFieldHeader.className = "field-header sticky-field";
+      baselineFieldHeader.textContent = "Field";
+      baselineHeaderRow.appendChild(baselineFieldHeader);
+      
+      // Alert header
+      const baselineAlertHeader = document.createElement("th");
+      baselineAlertHeader.className = "alert-header sticky-alert";
+      baselineAlertHeader.textContent = "Alert";
+      baselineHeaderRow.appendChild(baselineAlertHeader);
+      
+      // Time headers (30-min intervals with second stage highlighting)
+      babyBaselineTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        baselineHeaderRow.appendChild(timeHeader);
+      });
+      
+      baselineThead.appendChild(baselineHeaderRow);
+      baselineTableElement.appendChild(baselineThead);
+      
+      // Baseline table body
+      const baselineTbody = document.createElement("tbody");
+      
+      // Baseline FHR row
+      const baselineFHRRow = document.createElement("tr");
+      
+      // Field cell
+      const baselineFHRFieldCell = document.createElement("td");
+      baselineFHRFieldCell.className = "field-cell sticky-field";
+      baselineFHRFieldCell.textContent = "Baseline FHR";
+      baselineFHRRow.appendChild(baselineFHRFieldCell);
+      
+      // Alert cell
+      const baselineFHRAlertCell = document.createElement("td");
+      baselineFHRAlertCell.className = "alert-cell sticky-alert";
+      baselineFHRAlertCell.innerHTML = '<span class="alert-indicator">110-160</span>';
+      baselineFHRRow.appendChild(baselineFHRAlertCell);
+      
+      // Time cells for Baseline FHR
+      babyBaselineTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Baseline_FHR_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "number";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "FHR";
+        input.min = "60";
+        input.max = "200";
+        input.value = value;
+        timeCell.appendChild(input);
+        baselineFHRRow.appendChild(timeCell);
+      });
+      
+      baselineTbody.appendChild(baselineFHRRow);
+      
+      // FHR Deceleration row
+      const decelerationRow = document.createElement("tr");
+      
+      // Field cell
+      const decelerationFieldCell = document.createElement("td");
+      decelerationFieldCell.className = "field-cell sticky-field";
+      decelerationFieldCell.textContent = "FHR deceleration";
+      decelerationRow.appendChild(decelerationFieldCell);
+      
+      // Alert cell
+      const decelerationAlertCell = document.createElement("td");
+      decelerationAlertCell.className = "alert-cell sticky-alert";
+      decelerationAlertCell.innerHTML = '<span class="alert-indicator">L</span>';
+      decelerationRow.appendChild(decelerationAlertCell);
+      
+      // Time cells for FHR deceleration
+      babyBaselineTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `FHR_deceleration_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        ["N", "E", "L", "V"].forEach(option => {
+          const optionElement = document.createElement("option");
+          optionElement.value = option;
+          optionElement.textContent = option;
+          select.appendChild(optionElement);
+        });
+        
+        select.value = value;
+        timeCell.appendChild(select);
+        decelerationRow.appendChild(timeCell);
+      });
+      
+      baselineTbody.appendChild(decelerationRow);
+      baselineTableElement.appendChild(baselineTbody);
+      baselineTable.appendChild(baselineTableElement);
+      
+      // ===== OTHER BABY FIELDS TABLE (1-hour intervals) =====
+      const otherTable = document.createElement("div");
+      otherTable.className = "mini-table-container";
+      
+      const otherTitle = document.createElement("h5");
+      otherTitle.className = "mini-table-title";
+      otherTitle.innerHTML = '<i class="fas fa-baby"></i> Other Baby Parameters (1-hour intervals)';
+      otherTable.appendChild(otherTitle);
+      
+      const otherTableElement = document.createElement("table");
+      otherTableElement.className = "summary-table mini-table";
+      
+      // Other table header
+      const otherThead = document.createElement("thead");
+      const otherHeaderRow = document.createElement("tr");
+      
+      // Field header
+      const otherFieldHeader = document.createElement("th");
+      otherFieldHeader.className = "field-header sticky-field";
+      otherFieldHeader.textContent = "Field";
+      otherHeaderRow.appendChild(otherFieldHeader);
+      
+      // Alert header
+      const otherAlertHeader = document.createElement("th");
+      otherAlertHeader.className = "alert-header sticky-alert";
+      otherAlertHeader.textContent = "Alert";
+      otherHeaderRow.appendChild(otherAlertHeader);
+      
+      // Time headers (1-hour intervals with second stage highlighting)
+      babyOtherTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        otherHeaderRow.appendChild(timeHeader);
+      });
+      
+      otherThead.appendChild(otherHeaderRow);
+      otherTableElement.appendChild(otherThead);
+      
+      // Other table body
+      const otherTbody = document.createElement("tbody");
+      
+      // Other baby fields
+      const otherFields = ["Amniotic fluid", "Fetal position", "Caput", "Moulding"];
+      
+      otherFields.forEach(field => {
+        const row = document.createElement("tr");
+        
+        // Field cell
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.textContent = field;
+        row.appendChild(fieldCell);
+        
+        // Alert cell
+        const alertCell = document.createElement("td");
+        alertCell.className = "alert-cell sticky-alert";
+        const alertValue = whoAlertValues[field] || "";
+        alertCell.innerHTML = `<span class="alert-indicator">${alertValue}</span>`;
+        row.appendChild(alertCell);
+        
+        // Time cells
+        babyOtherTimeCols.forEach(time => {
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell";
+          
+          const timeKey = time.replace(':', '_');
+          const key = `${field.replace(/\s+/g, "_")}_${timeKey}`;
+          const value = existing[key] || "";
+          
+          const select = document.createElement("select");
+          select.name = key;
+          select.className = "form-select form-select-sm";
+          
+          const blankOption = document.createElement("option");
+          blankOption.value = "";
+          blankOption.textContent = "";
+          select.appendChild(blankOption);
+          
+          // Add options based on field
+          let options = [];
+          switch(field) {
+            case "Amniotic fluid":
+              options = ["I", "C", "M", "M+", "M++", "M+++", "B"];
+              break;
+            case "Fetal position":
+              options = ["A", "P", "T"];
+              break;
+            case "Caput":
+            case "Moulding":
+              options = ["0", "+", "++", "+++"];
+              break;
+          }
+          
+          options.forEach(option => {
+            const optionElement = document.createElement("option");
+            optionElement.value = option;
+            optionElement.textContent = option;
+            select.appendChild(optionElement);
+          });
+          
+          select.value = value;
+          timeCell.appendChild(select);
+          row.appendChild(timeCell);
+        });
+        
+        otherTbody.appendChild(row);
+      });
+      
+      otherTableElement.appendChild(otherTbody);
+      otherTable.appendChild(otherTableElement);
+      
+      // Add both tables to the main container
+      table.appendChild(baselineTable);
+      table.appendChild(otherTable);
+    }
 
     // Hide all tables initially
     function hideAllTables() {
       const allSections = [
-        'supportiveCareSection', 'fhrSection', 'babySection', 'womanSection', 'contractionsSection', 
-        'labourProgressPlotsSection', 'medicationSection', 'decisionMakingSection', 'initialsSection'
+        'supportiveCareSection', 'babySection', 'womanSection', 'labourProgressSection', 
+        'medicationSection', 'decisionMakingSection', 'initialsSection'
       ];
       
       allSections.forEach(sectionId => {
@@ -3084,8 +3786,8 @@ case "Initials":
     // Show all tables after starting time is set
     function showAllTables() {
       const allSections = [
-        'supportiveCareSection', 'fhrSection', 'babySection', 'womanSection', 'contractionsSection', 
-        'labourProgressPlotsSection', 'medicationSection', 'decisionMakingSection', 'initialsSection'
+        'supportiveCareSection', 'babySection', 'womanSection', 'labourProgressSection', 
+        'medicationSection', 'decisionMakingSection', 'initialsSection'
       ];
       
       allSections.forEach(sectionId => {
@@ -3103,9 +3805,6 @@ case "Initials":
       
       // Show initial recommendations after tables are displayed
       setTimeout(() => {
-        // Highlight any existing values that should trigger alerts
-        highlightAllExistingValues();
-        
         if (document.getElementById('recommendations')) {
           showRecommendations();
         }
@@ -3160,172 +3859,36 @@ case "Initials":
       }
     }
 
-    // Lock time input fields to prevent changes once set
-    function lockTimeInput(inputId, fieldName) {
-      const input = document.getElementById(inputId);
-      if (input) {
-        // Check if already locked to prevent duplicate elements
-        if (input.disabled && input.classList.contains('locked-input')) {
-          console.log(`🔒 ${fieldName} input is already locked`);
-          return;
+    // Show warning about data loss when starting time changes
+    function showDataLossWarning() {
+      // Create warning message if it doesn't exist
+      let warningDiv = document.getElementById('dataLossWarning');
+      if (!warningDiv) {
+        warningDiv = document.createElement('div');
+        warningDiv.id = 'dataLossWarning';
+        warningDiv.className = 'alert alert-warning';
+        warningDiv.innerHTML = `
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>Warning:</strong> You have changed the Active First Stage Start Time. 
+          All previously saved data has been cleared because the time intervals are now different. 
+          Please re-enter the patient data for the new time schedule.
+        `;
+        
+        // Insert after the starting time requirement div
+        const startingTimeRequirement = document.getElementById('startingTimeRequirement');
+        if (startingTimeRequirement) {
+          startingTimeRequirement.parentNode.insertBefore(warningDiv, startingTimeRequirement.nextSibling);
         }
-        
-        // Disable the input
-        input.disabled = true;
-        
-        // Add CSS class for locked styling
-        input.classList.add('locked-input');
-        
-        // Check if lock icon already exists
-        const existingLockIcon = input.parentNode.querySelector(`.lock-icon[data-field="${fieldName}"]`);
-        if (!existingLockIcon) {
-          // Add a lock icon and tooltip
-          const lockIcon = document.createElement('i');
-          lockIcon.className = 'fas fa-lock lock-icon';
-          lockIcon.setAttribute('data-field', fieldName);
-          lockIcon.title = `${fieldName} is locked and cannot be changed`;
-          
-          // Insert lock icon after the input
-          input.parentNode.insertBefore(lockIcon, input.nextSibling);
-        }
-        
-        // Check if lock note already exists
-        const existingLockNote = input.parentNode.querySelector(`.lock-note[data-field="${fieldName}"]`);
-        if (!existingLockNote) {
-          // Add a small note below the input
-          const lockNote = document.createElement('small');
-          lockNote.className = 'form-text lock-note';
-          lockNote.setAttribute('data-field', fieldName);
-          lockNote.innerHTML = `<i class="fas fa-info-circle"></i> ${fieldName} is now locked and cannot be modified`;
-          
-          // Insert note after the input
-          input.parentNode.insertBefore(lockNote, input.nextSibling);
-        }
-        
-        console.log(`🔒 ${fieldName} input locked successfully`);
-        
-        // Set up protection for the newly locked input
-        preventLockedInputModifications();
-        
-        // Show a brief success message
-        showLockSuccessMessage(fieldName);
-      } else {
-        console.error(`Input element with ID '${inputId}' not found`);
       }
-    }
-
-    // Show success message when input is locked
-    function showLockSuccessMessage(fieldName) {
-      // Create a temporary success message
-      const lockMessage = document.createElement('div');
-      lockMessage.className = 'alert alert-success lock-success-message';
-      lockMessage.style.position = 'fixed';
-      lockMessage.style.top = '20px';
-      lockMessage.style.right = '20px';
-      lockMessage.style.zIndex = '9999';
-      lockMessage.style.minWidth = '300px';
-      lockMessage.style.animation = 'slideInRight 0.5s ease-out';
-      lockMessage.innerHTML = `
-        <i class="fas fa-lock"></i>
-        <strong>${fieldName}</strong> has been locked successfully and cannot be modified.
-      `;
       
-      // Add to page
-      document.body.appendChild(lockMessage);
+      // Show the warning
+      warningDiv.style.display = 'block';
       
-      // Auto-remove after 3 seconds
+      // Auto-hide after 15 seconds (longer since it's important)
       setTimeout(() => {
-        lockMessage.style.animation = 'slideOutRight 0.5s ease-out';
-        setTimeout(() => {
-          if (lockMessage.parentNode) {
-            lockMessage.parentNode.removeChild(lockMessage);
-          }
-        }, 500);
-      }, 3000);
+        warningDiv.style.display = 'none';
+      }, 15000);
     }
-
-    // Unlock time input fields (for admin purposes)
-    function unlockTimeInput(inputId, fieldName) {
-      const input = document.getElementById(inputId);
-      if (input) {
-        // Enable the input
-        input.disabled = false;
-        
-        // Remove CSS class for locked styling
-        input.classList.remove('locked-input');
-        
-        // Remove lock icon
-        const existingLockIcon = input.parentNode.querySelector(`.lock-icon[data-field="${fieldName}"]`);
-        if (existingLockIcon) {
-          existingLockIcon.remove();
-        }
-        
-        // Remove lock note
-        const existingLockNote = input.parentNode.querySelector(`.lock-note[data-field="${fieldName}"]`);
-        if (existingLockNote) {
-          existingLockNote.remove();
-        }
-        
-        console.log(`🔓 ${fieldName} input unlocked successfully`);
-      } else {
-        console.error(`Input element with ID '${inputId}' not found`);
-      }
-    }
-
-    // Check if a time input is locked
-    function isTimeInputLocked(inputId) {
-      const input = document.getElementById(inputId);
-      return input && input.disabled && input.classList.contains('locked-input');
-    }
-
-    // Highlight all existing values that should trigger alerts
-    function highlightAllExistingValues() {
-      console.log('🎨 Highlighting all existing alert values...');
-      
-      // Check all form elements for alert values
-      const allInputs = document.querySelectorAll('input, select');
-      console.log(`🔍 Found ${allInputs.length} form elements to check for highlighting`);
-      
-      allInputs.forEach(input => {
-        if (input.value && input.value.trim() !== '') {
-          checkAndHighlightAlert(input);
-        }
-      });
-      
-      console.log('✅ Finished highlighting all existing values');
-    }
-
-    // Prevent any modifications to locked inputs
-    function preventLockedInputModifications() {
-      const lockedInputs = document.querySelectorAll('.locked-input');
-      lockedInputs.forEach(input => {
-        // Prevent any user input
-        input.addEventListener('keydown', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Prevent paste
-        input.addEventListener('paste', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Prevent drag and drop
-        input.addEventListener('drop', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Prevent context menu
-        input.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          return false;
-        });
-      });
-    }
-
-  
 
   </script>
 </body>
