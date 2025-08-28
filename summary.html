@@ -383,6 +383,11 @@
     <!-- Clinical Recommendations Section -->
     <div class="recommendations-section">
       <h4><i class="fas fa-stethoscope"></i> Clinical Recommendations</h4>
+      <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="testRecommendations()">
+          <i class="fas fa-test-tube"></i> Test Recommendations
+        </button>
+      </div>
       <div id="recommendations" class="recommendations-content">
         <!-- Recommendations will be populated here -->
       </div>
@@ -643,6 +648,12 @@
       });
     }
 
+    // Test function to manually trigger recommendations
+    function testRecommendations() {
+      console.log('Testing recommendations function...');
+      showRecommendations();
+    }
+
     // Show clinical recommendations based on alert values
     function showRecommendations() {
       console.log('showRecommendations() called');
@@ -657,43 +668,45 @@
       
       // Check all form elements for alert values
       const allInputs = document.querySelectorAll('input, select');
+      console.log('Found form elements:', allInputs.length);
       allInputs.forEach(input => {
         if (input.value && input.value.trim() !== '') {
           const fieldName = input.name;
           const value = input.value;
+          console.log('Checking field:', fieldName, 'with value:', value);
           
           // Check if this value should trigger an alert
           let shouldAlert = false;
           let alertReason = '';
           
           // Check against WHO LCG alert values
-          if (fieldName.includes('FHR') || fieldName.includes('Baseline_FHR')) {
+          if (fieldName.includes('Baseline_FHR')) {
             const fhr = parseInt(value);
-            if (fhr < 110 || fhr > 160) {
+            if (!isNaN(fhr) && (fhr < 110 || fhr > 160)) {
               shouldAlert = true;
               alertReason = `FHR ${fhr} is outside normal range (110-160)`;
             }
           } else if (fieldName.includes('Pulse')) {
             const pulse = parseInt(value);
-            if (pulse < 60 || pulse > 120) {
+            if (!isNaN(pulse) && (pulse < 60 || pulse > 120)) {
               shouldAlert = true;
               alertReason = `Pulse ${pulse} is outside normal range (60-120)`;
             }
           } else if (fieldName.includes('Systolic_BP')) {
             const bp = parseInt(value);
-            if (bp < 90 || bp > 140) {
+            if (!isNaN(bp) && (bp < 90 || bp > 140)) {
               shouldAlert = true;
               alertReason = `Systolic BP ${bp} is outside normal range (90-140)`;
             }
           } else if (fieldName.includes('Diastolic_BP')) {
             const bp = parseInt(value);
-            if (bp > 90) {
+            if (!isNaN(bp) && bp > 90) {
               shouldAlert = true;
               alertReason = `Diastolic BP ${bp} is above normal range (>90)`;
             }
-          } else if (fieldName.includes('Temperature')) {
+          } else if (fieldName.includes('Temperature_C')) {
             const temp = parseFloat(value);
-            if (temp < 36 || temp > 37.5) {
+            if (!isNaN(temp) && (temp < 36 || temp > 37.5)) {
               shouldAlert = true;
               alertReason = `Temperature ${temp}°C is outside normal range (36-37.5)`;
             }
@@ -703,15 +716,43 @@
           } else if (fieldName.includes('Oral_fluids') && value === 'N') {
             shouldAlert = true;
             alertReason = 'No oral fluids provided';
-          } else if (fieldName.includes('Mobility') && value === 'N') {
+          } else if (fieldName.includes('Mobility') && value === 'SP') {
             shouldAlert = true;
-            alertReason = 'No mobility encouraged';
+            alertReason = 'Patient in supine position - encourage mobility';
+          } else if (fieldName.includes('FHR_deceleration') && value === 'L') {
+            shouldAlert = true;
+            alertReason = 'Late FHR decelerations detected - assess fetal condition';
+          } else if (fieldName.includes('Amniotic_fluid') && (value === 'M+++' || value === 'B')) {
+            shouldAlert = true;
+            alertReason = `Amniotic fluid: ${value} - monitor for fetal distress`;
+          } else if (fieldName.includes('Fetal_position') && (value === 'P' || value === 'T')) {
+            shouldAlert = true;
+            alertReason = `Fetal position: ${value} - monitor labour progress`;
+          } else if (fieldName.includes('Caput') && value === '+++') {
+            shouldAlert = true;
+            alertReason = 'Severe caput detected - monitor for obstructed labour';
+          } else if (fieldName.includes('Moulding') && value === '+++') {
+            shouldAlert = true;
+            alertReason = 'Severe moulding detected - monitor for obstructed labour';
+          } else if (fieldName.includes('Contractions_per_10_min')) {
+            const contractions = parseInt(value);
+            if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
+              shouldAlert = true;
+              alertReason = `Contractions: ${contractions} per 10 min - outside normal range (2-5)`;
+            }
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const duration = parseInt(value);
+            if (!isNaN(duration) && (duration < 20 || duration > 40)) {
+              shouldAlert = true;
+              alertReason = `Contraction duration: ${duration}s - outside normal range (20-40s)`;
+            }
           }
           
           if (shouldAlert) {
             // Extract field name for display
             const displayName = fieldName.split('_').slice(0, -2).join(' ').replace(/_/g, ' ');
             activeAlerts.add(`${displayName}: ${alertReason}`);
+            console.log('Alert triggered for:', fieldName, 'with reason:', alertReason);
           }
         }
       });
@@ -1903,6 +1944,16 @@
         } else {
           console.log('View Summary button not found or patientId missing:', { viewSummaryBtn, currentPatientId });
         }
+        
+        // Test recommendations after a delay to ensure everything is loaded
+        setTimeout(() => {
+          console.log('Testing recommendations after page load...');
+          if (document.getElementById('recommendations')) {
+            showRecommendations();
+          } else {
+            console.log('Recommendations div not found after page load');
+          }
+        }, 2000);
       }
     });
 
