@@ -349,16 +349,31 @@
         </div>
       </div>
 
-      <!-- Shared Decision-Making Section -->
-      <div class="section-table" id="decisionMakingSection">
-        <div class="section-header" onclick="toggleSection('decisionMakingSection')">
-          <h4><i class="fas fa-comments"></i> Shared Decision-Making</h4>
+      <!-- Assessment Section -->
+      <div class="section-table" id="assessmentSection">
+        <div class="section-header" onclick="toggleSection('assessmentSection')">
+          <h4><i class="fas fa-clipboard-list"></i> Assessment</h4>
           <div class="toggle-icon">
-            <i class="fas fa-chevron-down" id="decisionMakingToggleIcon"></i>
+            <i class="fas fa-chevron-down" id="assessmentToggleIcon"></i>
           </div>
         </div>
         <div class="table-wrapper">
-          <table class="summary-table" id="decisionMakingTable">
+          <table class="summary-table" id="assessmentTable">
+            <!-- Table content will be generated here -->
+          </table>
+        </div>
+      </div>
+
+      <!-- Plan Section -->
+      <div class="section-table" id="planSection">
+        <div class="section-header" onclick="toggleSection('planSection')">
+          <h4><i class="fas fa-tasks"></i> Plan</h4>
+          <div class="toggle-icon">
+            <i class="fas fa-chevron-down" id="planToggleIcon"></i>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="summary-table" id="planTable">
             <!-- Table content will be generated here -->
           </table>
         </div>
@@ -1223,8 +1238,11 @@
       // Generate Medication table with 1-hour intervals
       generateMedicationTable("medicationTable", existing);
       
-      // Generate Shared Decision-Making table with mixed time intervals
-      generateSharedDecisionTable("decisionMakingTable", existing);
+      // Generate Assessment table with 1-hour intervals
+      generateAssessmentTable("assessmentTable", existing);
+      
+      // Generate Plan table with 2-hour intervals
+      generatePlanTable("planTable", existing);
       
       generateInitialsTable("initialsTable", existing); // Generate initials table
       
@@ -1765,18 +1783,14 @@
           }
         });
         
-        // Shared Decision Making - Assessment
-        const assessmentFields = ["Woman's condition", "Baby's condition", "Labour progress", "Other concerns"];
+        // Assessment - Single row
         assessmentTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
-          assessmentFields.forEach(field => {
-            const fieldKey = field.replace(/\s+/g, '_').replace("'", "");
-            const inputName = `ASSESSMENT_${fieldKey}_${timeKey}`;
-            const input = document.querySelector(`input[name="${inputName}"], select[name="${inputName}"]`);
-            if (input && input.value) {
-              formData[inputName] = input.value;
-            }
-          });
+          const inputName = `ASSESSMENT_${timeKey}`;
+          const input = document.querySelector(`input[name="${inputName}"]`);
+          if (input && input.value) {
+            formData[inputName] = input.value;
+          }
         });
         
         planTimeCols.forEach(time => {
@@ -3134,8 +3148,14 @@
       timeCell.appendChild(cellContainer);
     }
 
-    // Shared Decision-Making Table - Following WHO LCG Guidelines
+    // DEPRECATED: Shared Decision-Making Table - Following WHO LCG Guidelines
+    // This function is no longer used - replaced by separate generateAssessmentTable and generatePlanTable functions
+    /*
     function generateSharedDecisionTable(tableId, existing) {
+      // Function body commented out to avoid linter errors
+      return;
+    }
+    */
       const table = document.getElementById(tableId);
       
       // Create two separate mini-tables for better usability
@@ -3309,6 +3329,178 @@
       table.appendChild(planTable);
       
       // Add event listeners for all inputs
+      const allInputs = table.querySelectorAll('input[type="text"]');
+      allInputs.forEach(input => {
+        input.addEventListener('change', function() {
+          showRecommendations();
+        });
+        input.addEventListener('input', function() {
+          showRecommendations();
+        });
+      });
+    
+
+    // Assessment Table - Single row for assessment notes
+    function generateAssessmentTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      
+      // Clear existing content
+      table.innerHTML = '';
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (1-hour intervals from 01:00 to 15:00)
+      assessmentTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Single assessment row
+      const assessmentRow = document.createElement("tr");
+      
+      // Field cell
+      const fieldCell = document.createElement("td");
+      fieldCell.className = "field-cell sticky-field";
+      fieldCell.textContent = "Assessment";
+      assessmentRow.appendChild(fieldCell);
+      
+      // Time cells for assessment (1-hour intervals)
+      assessmentTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        timeCell.style.minWidth = "60px";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `ASSESSMENT_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "Brief note";
+        input.value = value;
+        timeCell.appendChild(input);
+        assessmentRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(assessmentRow);
+      table.appendChild(tbody);
+      
+      // Add event listeners
+      const allInputs = table.querySelectorAll('input[type="text"]');
+      allInputs.forEach(input => {
+        input.addEventListener('change', function() {
+          showRecommendations();
+        });
+        input.addEventListener('input', function() {
+          showRecommendations();
+        });
+      });
+    }
+
+    // Plan Table - Single row for plan notes
+    function generatePlanTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      
+      // Clear existing content
+      table.innerHTML = '';
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Field";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (2-hour intervals from 02:00 to 14:00)
+      planTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Single plan row
+      const planRow = document.createElement("tr");
+      
+      // Field cell
+      const fieldCell = document.createElement("td");
+      fieldCell.className = "field-cell sticky-field";
+      fieldCell.textContent = "Plan";
+      planRow.appendChild(fieldCell);
+      
+      // Time cells for plan (2-hour intervals)
+      planTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        timeCell.style.minWidth = "120px";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `PLAN_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const input = document.createElement("input");
+        input.name = key;
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.placeholder = "Detailed plan";
+        input.value = value;
+        timeCell.appendChild(input);
+        planRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(planRow);
+      table.appendChild(tbody);
+      
+      // Add event listeners
       const allInputs = table.querySelectorAll('input[type="text"]');
       allInputs.forEach(input => {
         input.addEventListener('change', function() {
@@ -3947,7 +4139,7 @@
     function hideAllTables() {
       const allSections = [
         'supportiveCareSection', 'fhrSection', 'babySection', 'womanSection', 'contractionsSection', 'labourProgressSection', 
-        'medicationSection', 'decisionMakingSection', 'initialsSection'
+        'medicationSection', 'assessmentSection', 'planSection', 'initialsSection'
       ];
       
       allSections.forEach(sectionId => {
@@ -3973,7 +4165,7 @@
     function showAllTables() {
       const allSections = [
         'supportiveCareSection', 'fhrSection', 'babySection', 'womanSection', 'contractionsSection', 'labourProgressSection', 
-        'medicationSection', 'decisionMakingSection', 'initialsSection'
+        'medicationSection', 'assessmentSection', 'planSection', 'initialsSection'
       ];
       
       allSections.forEach(sectionId => {
