@@ -1246,97 +1246,101 @@
           const startingTimeDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get();
           if (startingTimeDoc.exists) {
             const startingData = startingTimeDoc.data();
-            activeFirstStageStartTime = startingData.startingTime;
-            document.getElementById("startingTime").value = activeFirstStageStartTime;
+            const savedStartingTime = startingData.startingTime;
             
-            // Generate dynamic time columns based on starting time
-            generateDynamicTimeColumns();
-            
-            // Load existing records from the new structure
-            const recordsDoc = await firebase.firestore()
-              .collection("patients")
-              .doc(patientIdFromUrl)
-              .collection("records")
-              .doc("summary")
-              .get();
-            
-            if (recordsDoc.exists) {
-              const savedData = recordsDoc.data();
-              const savedStartingTime = savedData.startingTime;
+            // Only set activeFirstStageStartTime if there's actually a saved value
+            if (savedStartingTime && savedStartingTime.trim() !== '') {
+              activeFirstStageStartTime = savedStartingTime;
+              document.getElementById("startingTime").value = activeFirstStageStartTime;
               
-              // Only load data if the starting time matches (preserves data when starting time hasn't changed)
-              if (savedStartingTime === activeFirstStageStartTime) {
-                existing = savedData;
-                console.log('Loading existing data with matching starting time:', savedStartingTime);
-              } else {
-                console.log('Starting time changed, not loading old data. Old:', savedStartingTime, 'New:', activeFirstStageStartTime);
-                // Data will be cleared since starting time changed
-              }
-            }
-
-            // Load medication data
-            const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
-            medicationSnap.forEach(doc => {
-              const d = doc.data();
-              const time = d.time;
+              // Generate dynamic time columns based on starting time
+              generateDynamicTimeColumns();
               
-              // Store oxytocin data
-              if (d.oxytocin) {
-                existing[`Medication_Oxytocin_${time}`] = d.oxytocin;
-                if (d.oxytocin === "Yes") {
-                  existing[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
-                  existing[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
+              // Load existing records from the new structure
+              const recordsDoc = await firebase.firestore()
+                .collection("patients")
+                .doc(patientIdFromUrl)
+                .collection("records")
+                .doc("summary")
+                .get();
+              
+              if (recordsDoc.exists) {
+                const savedData = recordsDoc.data();
+                const savedStartingTimeFromSummary = savedData.startingTime;
+                
+                // Only load data if the starting time matches (preserves data when starting time hasn't changed)
+                if (savedStartingTimeFromSummary === activeFirstStageStartTime) {
+                  existing = savedData;
+                  console.log('Loading existing data with matching starting time:', savedStartingTimeFromSummary);
+                } else {
+                  console.log('Starting time changed, not loading old data. Old:', savedStartingTimeFromSummary, 'New:', activeFirstStageStartTime);
+                  // Data will be cleared since starting time changed
                 }
               }
-              
-              // Store medicine data
-              if (d.medicine) {
-                existing[`Medication_Medicine_${time}`] = d.medicine;
-              }
-              
-              // Store IV fluids data
-              if (d.iv_fluids) {
-                existing[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
-              }
-            });
 
-                    // If starting time exists, show all tables with data
-        showAllTables();
-        document.getElementById("startingTimeRequirement").style.display = "none";
-        
-        // Generate the summary table with existing data
-        generateSummaryTable(existing);
-        
-        // Load plotting data from previous sessions
-        await loadPlotData();
-        
-        // Setup alert highlighting for real-time alerts
-        addAlertHighlighting();
-        
-        // Add event listeners for form changes
-        document.querySelectorAll('select, input').forEach(el => {
-          el.addEventListener('change', function() {
-            checkAndHighlightAlert(this);
-            // Only show recommendations if the div exists
-            if (document.getElementById('recommendations')) {
-              showRecommendations();
+              // Load medication data
+              const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
+              medicationSnap.forEach(doc => {
+                const d = doc.data();
+                const time = d.time;
+                
+                // Store oxytocin data
+                if (d.oxytocin) {
+                  existing[`Medication_Oxytocin_${time}`] = d.oxytocin;
+                  if (d.oxytocin === "Yes") {
+                    existing[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
+                    existing[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
+                  }
+                }
+                
+                // Store medicine data
+                if (d.medicine) {
+                  existing[`Medication_Medicine_${time}`] = d.medicine;
+                }
+                
+                // Store IV fluids data
+                if (d.iv_fluids) {
+                  existing[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
+                }
+              });
+
+              // If starting time exists, show all tables with data
+              showAllTables();
+              document.getElementById("startingTimeRequirement").style.display = "none";
+              
+              // Generate the summary table with existing data
+              generateSummaryTable(existing);
+              
+              // Load plotting data from previous sessions
+              await loadPlotData();
+              
+              // Setup alert highlighting for real-time alerts
+              addAlertHighlighting();
+              
+              // Add event listeners for form changes
+              document.querySelectorAll('select, input').forEach(el => {
+                el.addEventListener('change', function() {
+                  checkAndHighlightAlert(this);
+                  // Only show recommendations if the div exists
+                  if (document.getElementById('recommendations')) {
+                    showRecommendations();
+                  }
+                });
+              });
+              
+              // Lock time inputs if they already have values
+              checkAndLockTimeInputs();
+              
+              // Log lock status for debugging
+              setTimeout(() => {
+                logLockStatus();
+              }, 500);
+              
+            } else {
+              // No starting time set, hide all tables and show requirement
+              hideAllTables();
+              showStartingTimeRequirement();
             }
-          });
-        });
-        
-        // Lock time inputs if they already have values
-        checkAndLockTimeInputs();
-        
-        // Log lock status for debugging
-        setTimeout(() => {
-          logLockStatus();
-        }, 500);
-            
-          } else {
-            // No starting time set, hide all tables and show requirement
-            hideAllTables();
-            showStartingTimeRequirement();
-          }
           
           const secondStageDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get();
           if (secondStageDoc.exists) {
@@ -4319,6 +4323,12 @@
       const input = document.getElementById(inputId);
       if (!input) return;
       
+      // Don't lock if the input is empty or has no meaningful value
+      if (!input.value || input.value.trim() === '') {
+        console.log(`⚠️ ${fieldName} has no value, not locking`);
+        return;
+      }
+      
       // Check if already locked
       if (isInputLocked(inputId)) {
         console.log(`🔒 ${fieldName} is already locked`);
@@ -4464,14 +4474,21 @@
 
     // Check if time inputs should be locked on page load
     function checkAndLockTimeInputs() {
-      // Check if starting time exists and lock it
-      if (activeFirstStageStartTime) {
-        lockTimeInput("startingTime", "Active First Stage Start Time");
+      // Only lock starting time if it has a saved value from Firestore
+      if (activeFirstStageStartTime && activeFirstStageStartTime !== '') {
+        // Check if this is actually a saved value, not just an empty string
+        const startingTimeInput = document.getElementById("startingTime");
+        if (startingTimeInput && startingTimeInput.value && startingTimeInput.value.trim() !== '') {
+          lockTimeInput("startingTime", "Active First Stage Start Time");
+        }
       }
       
-      // Check if second stage time exists and lock it
-      if (secondStageStartTime && isSecondStageActive) {
-        lockTimeInput("secondStageTime", "Second Stage Start Time");
+      // Only lock second stage time if it has a saved value from Firestore
+      if (secondStageStartTime && isSecondStageActive && secondStageStartTime !== '') {
+        const secondStageInput = document.getElementById("secondStageTime");
+        if (secondStageInput && secondStageInput.value && secondStageInput.value.trim() !== '') {
+          lockTimeInput("secondStageTime", "Second Stage Start Time");
+        }
       }
     }
     
@@ -4543,12 +4560,18 @@
     function startLockMonitoring() {
       setInterval(() => {
         // Check if locked inputs are still properly locked
-        if (activeFirstStageStartTime && !isInputLocked('startingTime')) {
+        const startingTimeInput = document.getElementById("startingTime");
+        if (activeFirstStageStartTime && activeFirstStageStartTime !== '' && 
+            startingTimeInput && startingTimeInput.value && startingTimeInput.value.trim() !== '' && 
+            !isInputLocked('startingTime')) {
           console.log('⚠️ Starting time input was unlocked, re-locking...');
           lockTimeInput("startingTime", "Active First Stage Start Time");
         }
         
-        if (secondStageStartTime && isSecondStageActive && !isInputLocked('secondStageTime')) {
+        const secondStageInput = document.getElementById("secondStageTime");
+        if (secondStageStartTime && isSecondStageActive && secondStageStartTime !== '' && 
+            secondStageInput && secondStageInput.value && secondStageInput.value.trim() !== '' && 
+            !isInputLocked('secondStageTime')) {
           console.log('⚠️ Second stage time input was unlocked, re-locking...');
           lockTimeInput("secondStageTime", "Second Stage Start Time");
         }
