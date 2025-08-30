@@ -6,6 +6,33 @@
   <title>Login - Labour Care</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  
+  <style>
+    .form-check-input:checked {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+    
+    .form-check-label {
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    .form-check-label:hover {
+      color: #0d6efd;
+    }
+    
+    .brand i {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    
+    .brand h4 {
+      color: #0d6efd;
+      margin-bottom: 0.5rem;
+    }
+  </style>
   
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
@@ -14,17 +41,37 @@
 </head>
 <body>
   <div class="login-card">
-    <div class="brand mb-3 text-center">Labour Care Login</div>
+    <div class="brand mb-3 text-center">
+      <i class="fas fa-heartbeat text-primary"></i>
+      <h4>Labour Care Guide</h4>
+      <p class="text-muted">Sign in to your account</p>
+    </div>
     <form id="loginForm">
       <div class="mb-3">
-        <label>Email</label>
-        <input type="email" id="email" class="form-control" required />
+        <label for="email" class="form-label">
+          <i class="fas fa-envelope"></i> Email Address
+        </label>
+        <input type="email" id="email" class="form-control" placeholder="Enter your email" required />
       </div>
       <div class="mb-3">
-        <label>Password</label>
-        <input type="password" id="password" class="form-control" required />
+        <label for="password" class="form-label">
+          <i class="fas fa-key"></i> Password
+        </label>
+        <input type="password" id="password" class="form-control" placeholder="Enter your password" required />
       </div>
-      <button type="submit" class="btn btn-primary w-100">Login</button>
+      <div class="mb-3 form-check">
+        <input type="checkbox" id="rememberMe" class="form-check-input">
+        <label class="form-check-label" for="rememberMe">
+          <i class="fas fa-lock"></i> Remember me for 30 days
+        </label>
+        <small class="form-text text-muted">
+          <i class="fas fa-info-circle"></i> 
+          When checked, you'll stay logged in even after closing your browser
+        </small>
+      </div>
+      <button type="submit" class="btn btn-primary w-100">
+        <i class="fas fa-sign-in-alt"></i> Sign In
+      </button>
       <a href="registration.html" class="btn btn-link w-100 mt-2">Register</a>
     </form>
     <form id="registerForm" style="display:none;">
@@ -53,11 +100,60 @@
     © 2025 Labour Care App &mdash; Designed for clinical excellence
   </footer>
   <script>
+    // Session management functions
+    function setRememberMe(enabled) {
+      if (enabled) {
+        // Set persistent session (30 days)
+        localStorage.setItem('rememberMe', 'true');
+        localStorage.setItem('sessionExpiry', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+      } else {
+        // Set session-only (browser closes)
+        localStorage.setItem('rememberMe', 'false');
+        localStorage.removeItem('sessionExpiry');
+      }
+    }
+
+    function checkSessionExpiry() {
+      const rememberMe = localStorage.getItem('rememberMe');
+      const sessionExpiry = localStorage.getItem('sessionExpiry');
+      
+      if (rememberMe === 'true' && sessionExpiry) {
+        const expiryDate = new Date(sessionExpiry);
+        const now = new Date();
+        
+        if (now > expiryDate) {
+          // Session expired, clear everything
+          clearSession();
+          return false;
+        }
+        return true;
+      }
+      return false;
+    }
+
+    function clearSession() {
+      localStorage.removeItem('rememberMe');
+      localStorage.removeItem('sessionExpiry');
+      localStorage.removeItem('role');
+      localStorage.removeItem('uid');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('userTownship');
+      localStorage.removeItem('userRegion');
+    }
+
+    // Global logout function that can be called from other pages
+    function logout() {
+      firebase.auth().signOut();
+      clearSession();
+      window.location.href = 'login.html';
+    }
+
     function showRegister() {
       document.getElementById('loginForm').style.display = 'none';
       document.getElementById('registerForm').style.display = '';
       document.getElementById('message').textContent = '';
     }
+    
     function showLogin() {
       document.getElementById('loginForm').style.display = '';
       document.getElementById('registerForm').style.display = 'none';
@@ -69,25 +165,69 @@
       e.preventDefault();
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
+      const rememberMe = document.getElementById("rememberMe").checked;
+      
       try {
+        // Set Firebase persistence based on "Remember Me" choice
+        if (rememberMe) {
+          await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        } else {
+          await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+        }
+        
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
+        
         // Get user document from Firestore
         const userDoc = await db.collection("users").doc(userCred.user.uid).get();
         if (!userDoc.exists) throw new Error("User role not found.");
+        
         const userData = userDoc.data();
-        if (!userData.approved) {
+        
+        // Check if user is approved (updated to use 'status' field)
+        if (userData.status !== 'approved') {
           await firebase.auth().signOut();
+          const message = document.getElementById('message');
           message.textContent = "Your account is pending approval by a super admin.";
           message.className = "mt-3 text-warning";
           return;
         }
+        
+        // Set session management
+        setRememberMe(rememberMe);
+        
+        // Store user data
         localStorage.setItem("role", userData.role);
         localStorage.setItem("uid", userCred.user.uid);
+        localStorage.setItem("userEmail", email);
+        localStorage.setItem("userTownship", userData.township || '');
+        localStorage.setItem("userRegion", userData.region || '');
+        
+        // Redirect to dashboard or index
         window.location.replace("index.html");
+        
       } catch (err) {
+        const message = document.getElementById('message');
         message.textContent = err.message;
         message.className = "mt-3 text-danger";
       }
+    });
+
+    // Check for existing session on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Check if user is already logged in
+      firebase.auth().onAuthStateChanged(function(user) {
+        if (user) {
+          // User is already authenticated, check session expiry
+          if (checkSessionExpiry()) {
+            // Valid session, redirect to dashboard
+            window.location.replace("index.html");
+          } else {
+            // Session expired, sign out
+            firebase.auth().signOut();
+            clearSession();
+          }
+        }
+      });
     });
 
     // Register
