@@ -64,10 +64,6 @@
         <label class="form-check-label" for="rememberMe">
           <i class="fas fa-lock"></i> Remember me for 30 days
         </label>
-        <small class="form-text text-muted">
-          <i class="fas fa-info-circle"></i> 
-          When checked, you'll stay logged in even after closing your browser
-        </small>
       </div>
       <button type="submit" class="btn btn-primary w-100">
         <i class="fas fa-sign-in-alt"></i> Sign In
@@ -168,23 +164,36 @@
       const rememberMe = document.getElementById("rememberMe").checked;
       
       try {
+        console.log('Starting login process...');
+        
         // Set Firebase persistence based on "Remember Me" choice
         if (rememberMe) {
+          console.log('Setting LOCAL persistence...');
           await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
         } else {
+          console.log('Setting SESSION persistence...');
           await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
         }
         
+        console.log('Attempting Firebase sign in...');
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
+        console.log('Firebase sign in successful:', userCred.user.uid);
         
         // Get user document from Firestore
+        console.log('Fetching user profile from Firestore...');
         const userDoc = await db.collection("users").doc(userCred.user.uid).get();
-        if (!userDoc.exists) throw new Error("User role not found.");
+        console.log('Firestore response:', userDoc.exists ? 'Document found' : 'Document not found');
+        
+        if (!userDoc.exists) throw new Error("User profile not found in database.");
         
         const userData = userDoc.data();
         
-        // Check if user is approved (updated to use 'status' field)
-        if (userData.status !== 'approved') {
+        // Debug: Log user data to console
+        console.log('User data from Firestore:', userData);
+        
+        // Check if user is approved (support both 'approved' and 'status' fields)
+        const isApproved = userData.approved === true || userData.status === 'approved';
+        if (!isApproved) {
           await firebase.auth().signOut();
           const message = document.getElementById('message');
           message.textContent = "Your account is pending approval by a super admin.";
@@ -207,22 +216,41 @@
         
       } catch (err) {
         const message = document.getElementById('message');
-        message.textContent = err.message;
+        
+        // Provide more user-friendly error messages
+        let errorMessage = err.message;
+        if (err.code === 'auth/user-not-found') {
+          errorMessage = 'No account found with this email address.';
+        } else if (err.code === 'auth/wrong-password') {
+          errorMessage = 'Incorrect password. Please try again.';
+        } else if (err.code === 'auth/invalid-email') {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (err.code === 'auth/too-many-requests') {
+          errorMessage = 'Too many failed attempts. Please try again later.';
+        }
+        
+        message.textContent = errorMessage;
         message.className = "mt-3 text-danger";
+        console.error('Login error:', err);
       }
     });
 
     // Check for existing session on page load
     document.addEventListener('DOMContentLoaded', function() {
+      console.log('DOM loaded, checking Firebase auth state...');
+      
       // Check if user is already logged in
       firebase.auth().onAuthStateChanged(function(user) {
+        console.log('Auth state changed:', user ? 'User logged in' : 'No user');
         if (user) {
           // User is already authenticated, check session expiry
           if (checkSessionExpiry()) {
             // Valid session, redirect to dashboard
+            console.log('Valid session found, redirecting...');
             window.location.replace("index.html");
           } else {
             // Session expired, sign out
+            console.log('Session expired, signing out...');
             firebase.auth().signOut();
             clearSession();
           }
