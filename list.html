@@ -21,6 +21,11 @@
               `Logged in as: ${user.email} (${doc.data().role})`;
             // Load patients after user is authenticated and role is fetched
             loadPatients();
+            
+            // If Super Admin, also migrate existing patients
+            if (doc.data().role === "Super Admin" || doc.data().role === "admin") {
+              migrateExistingPatients();
+            }
           }
         });
       }
@@ -110,12 +115,15 @@
             const statusClass = getStatusClass(status);
             const statusText = getStatusText(status);
             
+            // Format township display
+            const townshipDisplay = d.township ? d.township : '<span class="text-warning">⚠️ Not Set</span>';
+            
             tr.innerHTML = `
               <td>${serial++}</td>
               <td>${d.name || ""}</td>
               <td>${d.age || ""}</td>
               <td>${d.parity || ""}</td>
-              <td>${d.township || "N/A"}</td>
+              <td>${townshipDisplay}</td>
               <td><span class="badge ${statusClass}">${statusText}</span></td>
               <td>
                 <a href="summary.html?patient=${doc.id}" class="btn btn-sm btn-primary">Edit Summary</a>
@@ -218,6 +226,58 @@
         case 'active':
         default:
           return 'Active';
+      }
+    }
+    
+    // Check and migrate existing patients without township
+    async function migrateExistingPatients() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        const userDoc = await db.collection("users").doc(user.uid).get();
+        if (!userDoc.exists) return;
+        
+        const userData = userDoc.data();
+        
+        // Only Super Admin can migrate data
+        if (userData.role !== "Super Admin" && userData.role !== "admin") {
+          return;
+        }
+        
+        // Check for patients without township
+        const patientsWithoutTownship = await db.collection("patients")
+          .where("township", "==", null)
+          .limit(10)
+          .get();
+        
+        if (!patientsWithoutTownship.empty) {
+          console.log(`Found ${patientsWithoutTownship.size} patients without township`);
+          
+          // For each patient without township, try to get it from the creator
+          for (const doc of patientsWithoutTownship.docs) {
+            const patientData = doc.data();
+            if (patientData.createdBy) {
+              try {
+                const creatorDoc = await db.collection("users").doc(patientData.createdBy).get();
+                if (creatorDoc.exists) {
+                  const creatorData = creatorDoc.data();
+                  if (creatorData.township) {
+                    await doc.ref.update({
+                      township: creatorData.township,
+                      lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log(`Updated patient ${doc.id} with township: ${creatorData.township}`);
+                  }
+                }
+              } catch (error) {
+                console.error(`Error updating patient ${doc.id}:`, error);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error migrating patients:', error);
       }
     }
     

@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="css/style.css" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script> <!-- MISSING! -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -13,12 +14,46 @@
    <!-- THEN run your auth check -->
   <script>
     firebase.auth().onAuthStateChanged(function(user) {
-      if (!user) window.location.href = "login.html";
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        // Load and display user's township
+        loadUserTownship();
+      }
     });
+    
+    // Load user's township and display it
+    async function loadUserTownship() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        const userDoc = await db.collection("users").doc(user.uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          const township = userData.township || 'Not set';
+          
+          document.getElementById('userTownship').textContent = township;
+          document.getElementById('townshipDisplay').style.display = 'block';
+          
+          console.log('User township loaded:', township);
+        }
+      } catch (error) {
+        console.error('Error loading user township:', error);
+      }
+    }
   </script>
 </head>
 <body class="container my-4">
   <h3>Create New Patient Record</h3>
+  
+  <!-- Township Display -->
+  <div id="townshipDisplay" class="alert alert-info mb-3" style="display: none;">
+    <i class="fas fa-map-marker-alt"></i>
+    <strong>Township:</strong> <span id="userTownship">Loading...</span>
+    <br><small class="text-muted">This patient will automatically be assigned to your township.</small>
+  </div>
+  
   <form id="patientForm" class="mt-4">
     <div class="mb-2">
       <label>Patient Name</label>
@@ -69,15 +104,16 @@
         const userTownship = userDoc.exists ? userDoc.data().township : "";
         // Create patient with auto-generated ID
         const docRef = await db.collection("patients").add({
-          name: form.name.value,
-          age: form.age.value,
-          parity: form.parity.value,
-          rupturedMembranes: form.rupturedMembranes.value,
-          riskFactors: form.riskFactors.value,
-          labourOnset: form.labourOnset.value,
-          activeDiagnosis: form.activeDiagnosis.value,
+          name: data.name,
+          age: data.age,
+          parity: data.parity,
+          rupturedMembranes: data.rupturedMembranes,
+          riskFactors: data.riskFactors,
+          labourOnset: data.labourOnset,
+          activeDiagnosis: data.activeDiagnosis,
           createdBy: user.uid,
           township: userTownship,
+          treatmentStatus: 'active', // Default status for new patients
           createdAt: new Date().toISOString()
         });
         // Optionally update the document with its own ID for easy search
