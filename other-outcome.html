@@ -610,7 +610,7 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
-        // Save to Firestore
+        // Save outcome record to Firestore
         await firebase.firestore()
           .collection('patients')
           .doc(patientId)
@@ -618,11 +618,21 @@
           .doc('outcomeRecord')
           .set(formData);
 
+        // Update patient status to "other" in main patients collection
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            treatmentStatus: 'other',
+            outcomeRecordId: firebase.firestore().collection('patients').doc(patientId).collection('records').doc('outcomeRecord').id,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
         // Show success message
         document.getElementById('successMessage').style.display = 'block';
         document.getElementById('outcomeForm').style.display = 'none';
         
-        console.log('Outcome record saved successfully');
+        console.log('Outcome record saved successfully and patient status updated');
 
       } catch (error) {
         console.error('Error saving outcome record:', error);

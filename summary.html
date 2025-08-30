@@ -25,6 +25,20 @@
       box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
     }
     
+    /* Resume Treatment Button Styling */
+    .btn-resume-treatment {
+      background: linear-gradient(135deg, #059669, #047857);
+      color: white;
+      border: none;
+      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.3);
+    }
+    
+    .btn-resume-treatment:hover {
+      background: linear-gradient(135deg, #047857, #065f46);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+    }
+    
     /* End Treatment Modal Styling */
     .end-treatment-modal {
       display: none;
@@ -396,7 +410,7 @@
         <i class="fas fa-eye"></i>
         <span data-i18n="viewSummary">View Summary</span>
       </a>
-      <button class="floating-btn btn-end-treatment" onclick="showEndTreatmentModal()">
+      <button class="floating-btn btn-end-treatment" id="endTreatmentBtn" onclick="handleEndTreatmentClick()">
         <i class="fas fa-flag-checkered"></i>
         <span data-i18n="endTreatment">End Treatment</span>
       </button>
@@ -1430,6 +1444,14 @@
         
         // Load plotting data from previous sessions
         await loadPlotData();
+        
+        // Load treatment status
+        await loadTreatmentStatus();
+        
+        // Update patient status in main collection if treatment was ended
+        if (isTreatmentEnded && treatmentOutcome) {
+          await updatePatientStatusInMainCollection(treatmentOutcome);
+        }
         
         // Setup alert highlighting for real-time alerts
         addAlertHighlighting();
@@ -2748,6 +2770,34 @@
       } catch (error) {
         console.error('❌ Error saving plot data:', error);
         showSaveError(`Failed to save plot data: ${error.message}`);
+      }
+    }
+
+    // Load treatment status from Firestore
+    async function loadTreatmentStatus() {
+      try {
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        const endTreatmentDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('endTreatment')
+          .get();
+        
+        if (endTreatmentDoc.exists) {
+          const data = endTreatmentDoc.data();
+          isTreatmentEnded = true;
+          treatmentOutcome = data.outcome;
+          
+          // Update button state
+          updateEndTreatmentButton();
+          
+          console.log('Treatment status loaded:', treatmentOutcome);
+        }
+      } catch (error) {
+        console.error('Error loading treatment status:', error);
       }
     }
 
@@ -4555,6 +4605,117 @@
 
     // ===== END TREATMENT FUNCTIONS =====
     let selectedEndTreatmentOption = null;
+    let isTreatmentEnded = false;
+    let treatmentOutcome = null;
+
+    // Handle end treatment button click
+    function handleEndTreatmentClick() {
+      if (isTreatmentEnded) {
+        // Resume treatment
+        resumeTreatment();
+      } else {
+        // Show end treatment modal
+        showEndTreatmentModal();
+      }
+    }
+
+    // Resume treatment
+    function resumeTreatment() {
+      if (confirm('Are you sure you want to resume this treatment? This will clear the end treatment status.')) {
+        isTreatmentEnded = false;
+        treatmentOutcome = null;
+        
+        // Update button
+        updateEndTreatmentButton();
+        
+        // Clear end treatment data from Firestore
+        clearEndTreatmentData();
+        
+        // Show success message
+        showSaveSuccess();
+      }
+    }
+
+    // Update end treatment button state
+    function updateEndTreatmentButton() {
+      const btn = document.getElementById('endTreatmentBtn');
+      const icon = btn.querySelector('i');
+      const text = btn.querySelector('span');
+      
+      if (isTreatmentEnded) {
+        btn.className = 'floating-btn btn-resume-treatment';
+        icon.className = 'fas fa-play';
+        text.setAttribute('data-i18n', 'resumeTreatment');
+        text.textContent = languageManager ? languageManager.t('resumeTreatment') : 'Resume Treatment';
+      } else {
+        btn.className = 'floating-btn btn-end-treatment';
+        icon.className = 'fas fa-chevron-down';
+        icon.className = 'fas fa-flag-checkered';
+        text.setAttribute('data-i18n', 'endTreatment');
+        text.textContent = languageManager ? languageManager.t('endTreatment') : 'End Treatment';
+      }
+    }
+
+    // Clear end treatment data
+    async function clearEndTreatmentData() {
+      try {
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('endTreatment')
+          .delete();
+        
+        // Reset patient status in main collection
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            treatmentStatus: 'active',
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        
+        console.log('End treatment data cleared successfully and patient status reset to active');
+      } catch (error) {
+        console.error('Error clearing end treatment data:', error);
+      }
+    }
+    
+    // Update patient status in main collection
+    async function updatePatientStatusInMainCollection(outcome) {
+      try {
+        const patientId = getPatientIdFromUrl();
+        if (!patientId) return;
+        
+        let status = 'active';
+        switch(outcome) {
+          case 'birth':
+            status = 'birthed';
+            break;
+          case 'transfer':
+            status = 'transferred';
+            break;
+          case 'other':
+            status = 'other';
+            break;
+        }
+        
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            treatmentStatus: status,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        
+        console.log(`Patient status updated to: ${status}`);
+      } catch (error) {
+        console.error('Error updating patient status in main collection:', error);
+      }
+    }
 
     // Show end treatment modal
     function showEndTreatmentModal() {
@@ -4604,6 +4765,13 @@
         return;
       }
 
+      // Set treatment status
+      isTreatmentEnded = true;
+      treatmentOutcome = selectedEndTreatmentOption;
+      
+      // Update button state
+      updateEndTreatmentButton();
+      
       // Save end treatment data to Firestore
       saveEndTreatmentData(patientId, selectedEndTreatmentOption);
 

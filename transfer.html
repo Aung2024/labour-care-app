@@ -594,7 +594,7 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
-        // Save to Firestore
+        // Save transfer record to Firestore
         await firebase.firestore()
           .collection('patients')
           .doc(patientId)
@@ -602,11 +602,21 @@
           .doc('transferRecord')
           .set(formData);
 
+        // Update patient status to "transferred" in main patients collection
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            treatmentStatus: 'transferred',
+            transferRecordId: firebase.firestore().collection('patients').doc(patientId).collection('records').doc('transferRecord').id,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
         // Show success message
         document.getElementById('successMessage').style.display = 'block';
         document.getElementById('transferForm').style.display = 'none';
         
-        console.log('Transfer record saved successfully');
+        console.log('Transfer record saved successfully and patient status updated');
 
       } catch (error) {
         console.error('Error saving transfer record:', error);
