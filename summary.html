@@ -3960,34 +3960,41 @@
     }
     
     // Check if a time column should be highlighted for second stage
-    function isSecondStageTime(time) {
-      if (!secondStageStartTime || !isSecondStageActive) {
-        console.log(`🔍 isSecondStageTime(${time}): secondStageStartTime=${secondStageStartTime}, isSecondStageActive=${isSecondStageActive}`);
-        return false;
-      }
-      
-      // Convert time strings to minutes since midnight
-      const timeMinutes = timeToMinutes(time);
-      const secondStageMinutes = timeToMinutes(secondStageStartTime);
-      
-      // Handle midnight crossing - if second stage is earlier in the day, it means it's the next day
-      if (secondStageMinutes < timeMinutes) {
-        // Second stage is next day, so current time is first stage
-        console.log(`🔍 isSecondStageTime(${time}): ${time} (${timeMinutes}min) vs ${secondStageStartTime} (${secondStageMinutes}min) - Second stage is next day, so ${time} is FIRST stage`);
-        return false;
-      } else {
-        // Same day comparison
-        const isSecondStage = timeMinutes >= secondStageMinutes;
-        console.log(`🔍 isSecondStageTime(${time}): ${time} (${timeMinutes}min) vs ${secondStageStartTime} (${secondStageMinutes}min) = ${isSecondStage} (same day)`);
-        return isSecondStage;
-      }
-    }
-    
-    // Helper function to convert time string to minutes since midnight
-    function timeToMinutes(timeStr) {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      return hours * 60 + minutes;
-    }
+                function isSecondStageTime(time) {
+              if (!secondStageStartTime || !isSecondStageActive) {
+                console.log(`🔍 isSecondStageTime(${time}): secondStageStartTime=${secondStageStartTime}, isSecondStageActive=${isSecondStageActive}`);
+                return false;
+              }
+              
+              // Create Date objects for proper time comparison across midnight
+              const baseDate = new Date('2024-01-01'); // Use a common base date
+              const timeDate = createTimeDate(time, baseDate);
+              const secondStageDate = createTimeDate(secondStageStartTime, baseDate);
+              const activeFirstStageDate = createTimeDate(activeFirstStageStartTime, baseDate);
+              
+              // If second stage is earlier than first stage, it means it's the next day
+              if (secondStageDate < activeFirstStageDate) {
+                // Second stage is next day, so adjust second stage date
+                secondStageDate.setDate(secondStageDate.getDate() + 1);
+              }
+              
+              // If current time is earlier than first stage, it means it's the next day
+              if (timeDate < activeFirstStageDate) {
+                timeDate.setDate(timeDate.getDate() + 1);
+              }
+              
+              const isSecondStage = timeDate >= secondStageDate;
+              console.log(`🔍 isSecondStageTime(${time}): ${time} vs ${secondStageStartTime} = ${isSecondStage} (proper midnight handling)`);
+              return isSecondStage;
+            }
+            
+            // Helper function to create a Date object from time string
+            function createTimeDate(timeStr, baseDate) {
+              const [hours, minutes] = timeStr.split(':').map(Number);
+              const date = new Date(baseDate);
+              date.setHours(hours, minutes, 0, 0);
+              return date;
+            }
     
     // Generate hybrid time columns: 30-min before second stage, 15-min after
     function generateHybridTimeColumns() {
@@ -4027,57 +4034,60 @@
       
       console.log('🔄 Second stage active - generating hybrid intervals');
       
-      // Use the working timeToMinutes function for consistent time handling
-      const startTimeMinutes = timeToMinutes(activeFirstStageStartTime);
-      const secondStageMinutes = timeToMinutes(secondStageStartTime);
+      // Create Date objects for proper time comparison across midnight
+      const baseDate = new Date('2024-01-01');
+      const startTimeDate = createTimeDate(activeFirstStageStartTime, baseDate);
+      const secondStageDate = createTimeDate(secondStageStartTime, baseDate);
       
-      console.log(`  Start time in minutes: ${startTimeMinutes}`);
-      console.log(`  Second stage in minutes: ${secondStageMinutes}`);
+      // If second stage is earlier than first stage, it means it's the next day
+      if (secondStageDate < startTimeDate) {
+        secondStageDate.setDate(secondStageDate.getDate() + 1);
+      }
+      
+      console.log(`  Start time: ${startTimeDate.toTimeString().slice(0, 5)}`);
+      console.log(`  Second stage: ${secondStageDate.toTimeString().slice(0, 5)}`);
       
       // Generate hybrid contractions time columns
       contractionsTimeCols = [];
-      let currentTimeMinutes = startTimeMinutes;
-      const endTimeMinutes = startTimeMinutes + (12 * 60); // 12 hours
+      let currentTime = new Date(startTimeDate);
+      const endTime = new Date(startTimeDate);
+      endTime.setHours(endTime.getHours() + 12); // 12 hours
       
-      console.log(`  Generating from ${startTimeMinutes} to ${endTimeMinutes} minutes`);
+      console.log(`  Generating from ${startTimeDate.toTimeString().slice(0, 5)} to ${endTime.toTimeString().slice(0, 5)}`);
       
-      while (currentTimeMinutes <= endTimeMinutes) {
-        const hour = Math.floor(currentTimeMinutes / 60) % 24;
-        const minute = currentTimeMinutes % 60;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
         
         contractionsTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        if (currentTimeMinutes < secondStageMinutes) {
+        if (currentTime < secondStageDate) {
           // Before second stage: 30-minute intervals
-          currentTimeMinutes += 30;
+          currentTime.setMinutes(currentTime.getMinutes() + 30);
           console.log(`  Added ${timeStr} (30-min interval, before second stage)`);
         } else {
           // After second stage: 15-minute intervals
-          currentTimeMinutes += 15;
+          currentTime.setMinutes(currentTime.getMinutes() + 15);
           console.log(`  Added ${timeStr} (15-min interval, after second stage)`);
         }
       }
       
       // Generate hybrid FHR time columns
       babyBaselineTimeCols = [];
-      currentTimeMinutes = startTimeMinutes;
+      currentTime = new Date(startTimeDate);
       
-      while (currentTimeMinutes <= endTimeMinutes) {
-        const hour = Math.floor(currentTimeMinutes / 60) % 24;
-        const minute = currentTimeMinutes % 60;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
         
         babyBaselineTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        if (currentTimeMinutes < secondStageMinutes) {
+        if (currentTime < secondStageDate) {
           // Before second stage: 30-minute intervals
-          currentTimeMinutes += 30;
+          currentTime.setMinutes(currentTime.getMinutes() + 30);
         } else {
           // After second stage: 15-minute intervals
-          currentTimeMinutes += 15;
+          currentTime.setMinutes(currentTime.getMinutes() + 15);
         }
       }
       
@@ -4085,12 +4095,18 @@
       console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
       console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
       console.log(`  Second stage starts at: ${secondStageStartTime}`);
-      console.log(`  Start time minutes: ${startTimeMinutes}`);
-      console.log(`  Second stage minutes: ${secondStageMinutes}`);
+      console.log(`  Start time: ${startTimeDate.toTimeString().slice(0, 5)}`);
+      console.log(`  Second stage: ${secondStageDate.toTimeString().slice(0, 5)}`);
       
       // Verify the hybrid nature
-      const beforeSecondStage = contractionsTimeCols.filter(time => timeToMinutes(time) < secondStageMinutes);
-      const afterSecondStage = contractionsTimeCols.filter(time => timeToMinutes(time) >= secondStageMinutes);
+      const beforeSecondStage = contractionsTimeCols.filter(time => {
+        const timeDate = createTimeDate(time, baseDate);
+        return timeDate < secondStageDate;
+      });
+      const afterSecondStage = contractionsTimeCols.filter(time => {
+        const timeDate = createTimeDate(time, baseDate);
+        return timeDate >= secondStageDate;
+      });
       console.log(`  Before second stage: ${beforeSecondStage.length} columns (30-min intervals)`);
       console.log(`  After second stage: ${afterSecondStage.length} columns (15-min intervals)`);
     }
