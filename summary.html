@@ -611,6 +611,9 @@
         <button type="button" class="btn btn-sm btn-outline-info ms-2" onclick="testHybridTimeColumns()">
           <i class="fas fa-clock"></i> Test Hybrid Time Columns
         </button>
+        <button type="button" class="btn btn-sm btn-outline-warning ms-2" onclick="forceHybridGeneration()">
+          <i class="fas fa-magic"></i> Force Hybrid Generation
+        </button>
       </div>
       <div id="recommendations" class="recommendations-content">
         <!-- Recommendations will be populated here -->
@@ -969,6 +972,35 @@
           console.log(`  ${time}: ${isSecondStage ? '🟢 Second Stage' : '🔵 First Stage'}`);
         });
       }
+    }
+    
+    // Force hybrid generation for testing
+    function forceHybridGeneration() {
+      console.log('🔧 Force hybrid generation called');
+      
+      if (!activeFirstStageStartTime) {
+        alert('Please set Active First Stage Start Time first');
+        return;
+      }
+      
+      if (!secondStageStartTime) {
+        alert('Please set Second Stage Start Time first');
+        return;
+      }
+      
+      // Force second stage to be active
+      isSecondStageActive = true;
+      
+      console.log('🔄 Forcing hybrid time column generation...');
+      generateHybridTimeColumns();
+      
+      console.log('🔄 Regenerating tables...');
+      regenerateContractionsAndFHRTables();
+      
+      console.log('🎨 Updating colors...');
+      updateSecondStageColors();
+      
+      console.log('✅ Force hybrid generation completed');
     }
     
     // Function to clear recommendations and reset tracking
@@ -1521,11 +1553,15 @@
               showStartingTimeRequirement();
             }
           
+          console.log('🔄 Loading second stage data...');
+          
           const secondStageDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get();
           if (secondStageDoc.exists) {
             const secondStageData = secondStageDoc.data();
             secondStageStartTime = secondStageData.secondStageStartTime;
             isSecondStageActive = secondStageData.isSecondStageActive;
+            
+            console.log(`  Found second stage data: ${secondStageStartTime}, active: ${isSecondStageActive}`);
             
             if (isSecondStageActive) {
               document.getElementById("secondStageTime").value = secondStageStartTime;
@@ -1540,6 +1576,8 @@
                 document.getElementById("secondStageStartDisplay").textContent = secondStageStartTime;
               }
               
+              console.log('🔄 Generating hybrid time columns for existing second stage...');
+              
               // Generate hybrid time columns for second stage
               generateHybridTimeColumns();
               
@@ -1547,7 +1585,11 @@
               setTimeout(() => {
                 updateSecondStageColors();
               }, 100);
+            } else {
+              console.log('  Second stage not active');
             }
+          } else {
+            console.log('  No second stage data found');
           }
         } // Close the if (startingTimeDoc.exists) block
         } catch (error) {
@@ -1610,6 +1652,10 @@
           }
         });
 
+        console.log('🔄 About to generate summary table...');
+        console.log(`  contractionsTimeCols: ${contractionsTimeCols.length} columns`);
+        console.log(`  babyBaselineTimeCols: ${babyBaselineTimeCols.length} columns`);
+        
         // Generate the summary table
         generateSummaryTable(existing);
         
@@ -1762,6 +1808,8 @@
 
     // Generate a section table with dynamic time columns
     function generateSectionTable(sectionName, fields, tableId, existing) {
+      console.log(`🏗️ generateSectionTable() called for: ${sectionName}`);
+      
       const table = document.getElementById(tableId);
       if (!table) {
         console.error('Table not found:', tableId);
@@ -1791,6 +1839,8 @@
         default:
           timeColumns = supportiveCareTimeCols; // fallback
       }
+      
+      console.log(`  ${sectionName} table will use ${timeColumns.length} time columns`);
       
       // Create table header
       let tableHTML = '<thead><tr>';
@@ -3821,10 +3871,14 @@
     
     // Generate time columns based on starting time
     function generateDynamicTimeColumns() {
+      console.log('🚀 generateDynamicTimeColumns() called');
+      console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
+      
       if (!activeFirstStageStartTime) {
         // Default fallback - use current time as starting point
         const now = new Date();
         activeFirstStageStartTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        console.log(`  No starting time, using current time: ${activeFirstStageStartTime}`);
       }
       
       const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
@@ -3937,13 +3991,23 @@
     
     // Generate hybrid time columns: 30-min before second stage, 15-min after
     function generateHybridTimeColumns() {
-      if (!activeFirstStageStartTime) return;
+      console.log('🚀 generateHybridTimeColumns() called');
+      console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
+      console.log(`  secondStageStartTime: ${secondStageStartTime}`);
+      console.log(`  isSecondStageActive: ${isSecondStageActive}`);
+      
+      if (!activeFirstStageStartTime) {
+        console.log('❌ No activeFirstStageStartTime, returning early');
+        return;
+      }
       
       const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
+      console.log(`  Start time: ${startHour}:${startMinute}`);
       
       // If no second stage, use 30-minute intervals for full 12 hours
       if (!secondStageStartTime || !isSecondStageActive) {
+        console.log('📅 No second stage - generating 30-minute intervals only');
         // Keep original 30-minute intervals
         contractionsTimeCols = [];
         babyBaselineTimeCols = [];
@@ -3956,17 +4020,26 @@
           contractionsTimeCols.push(timeStr);
           babyBaselineTimeCols.push(timeStr);
         }
+        
+        console.log(`  Generated ${contractionsTimeCols.length} 30-minute intervals:`, contractionsTimeCols);
         return;
       }
+      
+      console.log('🔄 Second stage active - generating hybrid intervals');
       
       // Use the working timeToMinutes function for consistent time handling
       const startTimeMinutes = timeToMinutes(activeFirstStageStartTime);
       const secondStageMinutes = timeToMinutes(secondStageStartTime);
       
+      console.log(`  Start time in minutes: ${startTimeMinutes}`);
+      console.log(`  Second stage in minutes: ${secondStageMinutes}`);
+      
       // Generate hybrid contractions time columns
       contractionsTimeCols = [];
       let currentTimeMinutes = startTimeMinutes;
       const endTimeMinutes = startTimeMinutes + (12 * 60); // 12 hours
+      
+      console.log(`  Generating from ${startTimeMinutes} to ${endTimeMinutes} minutes`);
       
       while (currentTimeMinutes <= endTimeMinutes) {
         const hour = Math.floor(currentTimeMinutes / 60) % 24;
@@ -3979,9 +4052,11 @@
         if (currentTimeMinutes < secondStageMinutes) {
           // Before second stage: 30-minute intervals
           currentTimeMinutes += 30;
+          console.log(`  Added ${timeStr} (30-min interval, before second stage)`);
         } else {
           // After second stage: 15-minute intervals
           currentTimeMinutes += 15;
+          console.log(`  Added ${timeStr} (15-min interval, after second stage)`);
         }
       }
       
@@ -4006,20 +4081,29 @@
         }
       }
       
-      console.log('🔄 Generated hybrid time columns:');
-      console.log('  Contractions:', contractionsTimeCols.length, 'intervals');
-      console.log('  FHR:', babyBaselineTimeCols.length, 'intervals');
-      console.log('  Second stage starts at:', secondStageStartTime);
-      console.log('  Start time minutes:', startTimeMinutes);
-      console.log('  Second stage minutes:', secondStageMinutes);
-      console.log('  Contractions time columns:', contractionsTimeCols);
-      console.log('  FHR time columns:', babyBaselineTimeCols);
+      console.log('✅ Generated hybrid time columns:');
+      console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
+      console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
+      console.log(`  Second stage starts at: ${secondStageStartTime}`);
+      console.log(`  Start time minutes: ${startTimeMinutes}`);
+      console.log(`  Second stage minutes: ${secondStageMinutes}`);
+      
+      // Verify the hybrid nature
+      const beforeSecondStage = contractionsTimeCols.filter(time => timeToMinutes(time) < secondStageMinutes);
+      const afterSecondStage = contractionsTimeCols.filter(time => timeToMinutes(time) >= secondStageMinutes);
+      console.log(`  Before second stage: ${beforeSecondStage.length} columns (30-min intervals)`);
+      console.log(`  After second stage: ${afterSecondStage.length} columns (15-min intervals)`);
     }
     
     // Confirm second stage
     function confirmSecondStage() {
+      console.log('🚀 confirmSecondStage() called');
+      
       const secondStageInput = document.getElementById('secondStageTime');
       const secondStageTime = secondStageInput.value;
+      
+      console.log(`  Second stage time input: ${secondStageTime}`);
+      console.log(`  Active first stage time: ${activeFirstStageStartTime}`);
       
       if (!secondStageTime) {
         alert('Please enter the second stage start time first.');
@@ -4043,14 +4127,21 @@
         timeDiffMinutes += 24 * 60; // Add 24 hours (1440 minutes)
       }
       
+      console.log(`  Time difference: ${timeDiffMinutes} minutes`);
+      
       // Second stage must be at least 30 minutes after first stage
       if (timeDiffMinutes < 30) {
         alert('Second stage must start at least 30 minutes after the active first stage start time.');
         return;
       }
       
+      console.log('✅ Validation passed, setting second stage...');
+      
       secondStageStartTime = secondStageTime;
       isSecondStageActive = true;
+      
+      console.log(`  secondStageStartTime set to: ${secondStageStartTime}`);
+      console.log(`  isSecondStageActive set to: ${isSecondStageActive}`);
       
       // Show second stage card
       document.getElementById('secondStageCard').style.display = 'block';
@@ -4069,14 +4160,22 @@
       // Lock the second stage time input
       lockTimeInput("secondStageTime", "Second Stage Start Time");
       
+      console.log('🔄 Generating hybrid time columns...');
+      
       // Generate hybrid time columns (30-min before, 15-min after second stage)
       generateHybridTimeColumns();
+      
+      console.log('🔄 Regenerating contractions and FHR tables...');
       
       // Regenerate only contractions and FHR tables with hybrid time columns
       regenerateContractionsAndFHRTables();
       
+      console.log('🎨 Updating second stage colors...');
+      
       // Update colors for all tables (including the new hybrid columns)
       updateSecondStageColors();
+      
+      console.log('🔄 Force refreshing all tables...');
       
       // Force refresh of all tables to ensure hybrid columns are displayed
       setTimeout(() => {
