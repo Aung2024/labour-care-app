@@ -4057,18 +4057,30 @@
       
       while (currentTime <= endTime) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
-        
         contractionsTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        if (currentTime < secondStageDate) {
+        // Handle midnight crossing by converting to total minutes since start
+        const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
+        
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
+        
+        // Handle midnight crossing
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
-          console.log(`  Added ${timeStr} (30-min interval, before second stage)`);
+          console.log(`  Added ${timeStr} (30-min interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
-          console.log(`  Added ${timeStr} (15-min interval, after second stage)`);
+          console.log(`  Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         }
       }
       
@@ -4078,16 +4090,30 @@
       
       while (currentTime <= endTime) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
-        
         babyBaselineTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        if (currentTime < secondStageDate) {
+        // Handle midnight crossing by converting to total minutes since start
+        const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
+        
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
+        
+        // Handle midnight crossing
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
+          console.log(`  FHR: Added ${timeStr} (30-min interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
+          console.log(`  FHR: Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         }
       }
       
@@ -4100,12 +4126,40 @@
       
       // Verify the hybrid nature
       const beforeSecondStage = contractionsTimeCols.filter(time => {
-        const timeDate = createTimeDate(time, baseDate);
-        return timeDate < secondStageDate;
+        const [hours, minutes] = time.split(':').map(Number);
+        const timeMinutes = hours * 60 + minutes;
+        const [secondStageHours, secondStageMinutes] = secondStageStartTime.split(':').map(Number);
+        const secondStageTotalMinutes = secondStageHours * 60 + secondStageMinutes;
+        const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+        const startTotalMinutes = startHours * 60 + startMinutes;
+        
+        // Calculate relative minutes from start time
+        let timeRelativeMinutes = timeMinutes - startTotalMinutes;
+        let secondStageRelativeMinutes = secondStageTotalMinutes - startTotalMinutes;
+        
+        // Handle midnight crossing
+        if (timeRelativeMinutes < 0) timeRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        return timeRelativeMinutes < secondStageRelativeMinutes;
       });
       const afterSecondStage = contractionsTimeCols.filter(time => {
-        const timeDate = createTimeDate(time, baseDate);
-        return timeDate >= secondStageDate;
+        const [hours, minutes] = time.split(':').map(Number);
+        const timeMinutes = hours * 60 + minutes;
+        const [secondStageHours, secondStageMinutes] = secondStageStartTime.split(':').map(Number);
+        const secondStageTotalMinutes = secondStageHours * 60 + secondStageMinutes;
+        const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+        const startTotalMinutes = startHours * 60 + startMinutes;
+        
+        // Calculate relative minutes from start time
+        let timeRelativeMinutes = timeMinutes - startTotalMinutes;
+        let secondStageRelativeMinutes = secondStageTotalMinutes - startTotalMinutes;
+        
+        // Handle midnight crossing
+        if (timeRelativeMinutes < 0) timeRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        return timeRelativeMinutes >= secondStageRelativeMinutes;
       });
       console.log(`  Before second stage: ${beforeSecondStage.length} columns (30-min intervals)`);
       console.log(`  After second stage: ${afterSecondStage.length} columns (15-min intervals)`);
