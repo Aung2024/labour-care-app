@@ -892,10 +892,7 @@
         select.addEventListener('change', function() {
           console.log('Select changed:', this.name, 'value:', this.value);
           checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
+          // Recommendations will be shown when needed, not on every change
         });
       });
       
@@ -903,18 +900,12 @@
         input.addEventListener('input', function() {
           console.log('Input changed:', this.name, 'value:', this.value);
           checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
+          // Recommendations will be shown when needed, not on every change
         });
         input.addEventListener('change', function() {
           console.log('Input changed (change event):', this.name, 'value:', this.value);
           checkAndHighlightAlert(this);
-          // Only show recommendations if the div exists
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          }
+          // Recommendations will be shown when needed, not on every change
         });
       });
       
@@ -943,6 +934,7 @@
       // Clear previous recommendations and tracking before testing
       shownRecommendations.clear();
       isProcessingRecommendations = false;
+      lastRecommendationsCall = 0; // Reset debounce timer
       console.log('🔄 Reset recommendations tracking for testing');
       showRecommendations();
     }
@@ -954,6 +946,7 @@
         recommendationsDiv.innerHTML = '';
         shownRecommendations.clear();
         isProcessingRecommendations = false;
+        lastRecommendationsCall = 0; // Reset debounce timer
         console.log('✅ Recommendations cleared and tracking reset');
       }
     }
@@ -961,10 +954,19 @@
     // Global variable to track already shown recommendations
     let shownRecommendations = new Set();
     let isProcessingRecommendations = false; // Prevent multiple simultaneous calls
+    let lastRecommendationsCall = 0; // Track when recommendations were last called
     
     // Show clinical recommendations based on alert values
     function showRecommendations() {
       console.log('=== showRecommendations() called ===');
+      
+      // Debounce: prevent multiple calls within 500ms
+      const now = Date.now();
+      if (now - lastRecommendationsCall < 500) {
+        console.log('⏭️ Skipping recommendations call - too soon after last call');
+        return;
+      }
+      lastRecommendationsCall = now;
       
       // Prevent multiple simultaneous calls
       if (isProcessingRecommendations) {
@@ -984,15 +986,10 @@
       console.log('✅ Found recommendations div, checking for alerts...');
       console.log('Recommendations div content before:', recommendationsDiv.innerHTML);
       
-      // Only clear recommendations tracking if this is a fresh start
-      // Don't clear if we already have recommendations displayed
-      if (recommendationsDiv.innerHTML.trim() === '' || 
-          recommendationsDiv.innerHTML.includes('<!-- Recommendations will be populated here -->')) {
-        shownRecommendations.clear();
-        console.log('🔄 Cleared recommendations tracking for fresh start');
-      } else {
-        console.log('📋 Keeping existing recommendations tracking');
-      }
+      // Clear recommendations tracking for fresh start
+      // This ensures we always process alerts from scratch
+      shownRecommendations.clear();
+      console.log('🔄 Cleared recommendations tracking for fresh start');
       
       const activeAlerts = new Set();
       
@@ -1321,10 +1318,7 @@
               document.querySelectorAll('select, input').forEach(el => {
                 el.addEventListener('change', function() {
                   checkAndHighlightAlert(this);
-                  // Only show recommendations if the div exists
-                  if (document.getElementById('recommendations')) {
-                    showRecommendations();
-                  }
+                  // Recommendations will be shown when needed, not on every change
                 });
               });
               
@@ -1444,10 +1438,7 @@
         document.querySelectorAll('select, input').forEach(el => {
           el.addEventListener('change', function() {
             checkAndHighlightAlert(this);
-            // Only show recommendations if the div exists
-            if (document.getElementById('recommendations')) {
-              showRecommendations();
-            }
+            // Recommendations will be shown when needed, not on every change
           });
         });
 
@@ -2121,14 +2112,7 @@
         }
         
         // Test recommendations after a delay to ensure everything is loaded
-        setTimeout(() => {
-          console.log('Testing recommendations after page load...');
-          if (document.getElementById('recommendations')) {
-            showRecommendations();
-          } else {
-            console.log('Recommendations div not found after page load');
-          }
-        }, 2000);
+        // Recommendations will be shown when needed, not automatically
       }
     });
 
@@ -3601,10 +3585,10 @@
       const allInputs = table.querySelectorAll('input[type="text"]');
       allInputs.forEach(input => {
         input.addEventListener('change', function() {
-          showRecommendations();
+          // Recommendations will be shown when needed, not on every change
         });
         input.addEventListener('input', function() {
-          showRecommendations();
+          // Recommendations will be shown when needed, not on every change
         });
       });
     }
@@ -4278,12 +4262,7 @@
         recommendationsSection.style.display = 'block';
       }
       
-      // Show initial recommendations after tables are displayed
-      setTimeout(() => {
-        if (document.getElementById('recommendations')) {
-          showRecommendations();
-        }
-      }, 200);
+      // Recommendations will be shown when needed, not automatically
     }
 
     // Show starting time requirement message
