@@ -1507,6 +1507,9 @@
                 document.getElementById("firstStageDuration").textContent = `${firstStageDuration} minutes`;
                 document.getElementById("secondStageStartDisplay").textContent = secondStageStartTime;
               }
+              
+              // Generate hybrid time columns for second stage
+              generateHybridTimeColumns();
             }
           }
         } // Close the if (startingTimeDoc.exists) block
@@ -2035,10 +2038,10 @@
           });
         });
         
-        // Baby - use the correct variable names
+        // Baby - use the correct variable names (handle hybrid time columns)
         babyBaselineTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
-          // Only Baseline FHR and FHR deceleration use 30-min intervals
+          // Only Baseline FHR and FHR deceleration use hybrid intervals
           const baselineFields = ["Baseline FHR", "FHR deceleration"];
           baselineFields.forEach(field => {
             const fieldName = field.replace(/\s+/g, '_');
@@ -2077,7 +2080,7 @@
           });
         });
         
-        // Contractions
+        // Contractions (handle hybrid time columns)
         contractionsTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           sections["Contractions"].forEach(field => {
@@ -3764,6 +3767,10 @@
     let planTimeCols = [];
     let initialsTimeCols = [];
     
+    // Second stage time intervals (15-minute for contractions and FHR)
+    let contractionsTimeColsSecondStage = [];
+    let babyBaselineTimeColsSecondStage = [];
+    
     // Generate time columns based on starting time
     function generateDynamicTimeColumns() {
       if (!activeFirstStageStartTime) {
@@ -3782,13 +3789,22 @@
         supportiveCareTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
       }
       
-      // Baby Baseline & FHR: +30 minute intervals for 12 hours
+      // Baby Baseline & FHR: +30 minute intervals for 12 hours (FIRST STAGE)
       babyBaselineTimeCols = [];
       for (let i = 0; i <= 24; i++) {
         const totalMinutes = startHour * 60 + startMinute + (i * 30);
         const hour = Math.floor(totalMinutes / 60) % 24;
         const minute = totalMinutes % 60;
         babyBaselineTimeCols.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+      
+      // Baby Baseline & FHR: +15 minute intervals for 12 hours (SECOND STAGE)
+      babyBaselineTimeColsSecondStage = [];
+      for (let i = 0; i <= 48; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 15);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        babyBaselineTimeColsSecondStage.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
       }
       
       // Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals for 12 hours
@@ -3806,13 +3822,22 @@
         initialsTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
       }
       
-      // Contractions: +30 minute intervals for 12 hours
+      // Contractions: +30 minute intervals for 12 hours (FIRST STAGE)
       contractionsTimeCols = [];
       for (let i = 0; i <= 24; i++) {
         const totalMinutes = startHour * 60 + startMinute + (i * 30);
         const hour = Math.floor(totalMinutes / 60) % 24;
         const minute = totalMinutes % 60;
         contractionsTimeCols.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+      
+      // Contractions: +15 minute intervals for 12 hours (SECOND STAGE)
+      contractionsTimeColsSecondStage = [];
+      for (let i = 0; i <= 48; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 15);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        contractionsTimeColsSecondStage.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
       }
       
       // Cervix & Descent Plot: +1 hour intervals for 12 hours
@@ -3852,6 +3877,74 @@
       console.log(`🔍 isSecondStageTime(${time}): ${timeHour}:${timeMinute} (${timeMinutes}min) vs ${secondHour}:${secondMinute} (${secondMinutes}min) = ${isSecondStage}`);
       
       return isSecondStage;
+    }
+    
+    // Generate hybrid time columns: 30-min before second stage, 15-min after
+    function generateHybridTimeColumns() {
+      if (!activeFirstStageStartTime) return;
+      
+      const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
+      const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
+      
+      // If no second stage, use 30-minute intervals for full 12 hours
+      if (!secondStageStartTime || !isSecondStageActive) {
+        contractionsTimeCols = contractionsTimeCols; // Keep original 30-min
+        babyBaselineTimeCols = babyBaselineTimeCols; // Keep original 30-min
+        return;
+      }
+      
+      // Calculate second stage start time in minutes
+      const secondHour = parseInt(secondStageStartTime.split(':')[0]);
+      const secondMinute = parseInt(secondStageStartTime.split(':')[1]);
+      const secondStageMinutes = secondHour * 60 + secondMinute;
+      
+      // Generate hybrid contractions time columns
+      contractionsTimeCols = [];
+      let currentTime = startHour * 60 + startMinute;
+      const endTime = startHour * 60 + startMinute + (12 * 60); // 12 hours
+      
+      while (currentTime <= endTime) {
+        const hour = Math.floor(currentTime / 60) % 24;
+        const minute = currentTime % 60;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        
+        // Before second stage: 30-minute intervals
+        if (currentTime < secondStageMinutes) {
+          contractionsTimeCols.push(timeStr);
+          currentTime += 30; // Next 30-minute interval
+        } else {
+          // After second stage: 15-minute intervals
+          contractionsTimeCols.push(timeStr);
+          currentTime += 15; // Next 15-minute interval
+        }
+      }
+      
+      // Generate hybrid FHR time columns
+      babyBaselineTimeCols = [];
+      currentTime = startHour * 60 + startMinute;
+      
+      while (currentTime <= endTime) {
+        const hour = Math.floor(currentTime / 60) % 24;
+        const minute = currentTime % 60;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        
+        // Before second stage: 30-minute intervals
+        if (currentTime < secondStageMinutes) {
+          babyBaselineTimeCols.push(timeStr);
+          currentTime += 30; // Next 30-minute interval
+        } else {
+          // After second stage: 15-minute intervals
+          babyBaselineTimeCols.push(timeStr);
+          currentTime += 15; // Next 15-minute interval
+        }
+      }
+      
+      console.log('🔄 Generated hybrid time columns:');
+      console.log('  Contractions:', contractionsTimeCols.length, 'intervals');
+      console.log('  FHR:', babyBaselineTimeCols.length, 'intervals');
+      console.log('  Second stage starts at:', secondStageStartTime);
+      console.log('  Contractions time columns:', contractionsTimeCols);
+      console.log('  FHR time columns:', babyBaselineTimeCols);
     }
     
     // Confirm second stage
@@ -3898,12 +3991,19 @@
       // Lock the second stage time input
       lockTimeInput("secondStageTime", "Second Stage Start Time");
       
-      // IMPORTANT: Don't regenerate tables - just update the colors!
-      // The isSecondStageTime() function will handle the color changes
+      // Generate hybrid time columns (30-min before, 15-min after second stage)
+      generateHybridTimeColumns();
+      
+      // Regenerate only contractions and FHR tables with hybrid time columns
+      regenerateContractionsAndFHRTables();
+      
+      // Update colors for all tables (including the new hybrid columns)
       updateSecondStageColors();
       
       // Show success message
       showSaveSuccess();
+      
+      console.log('✅ Second stage confirmed with hybrid time columns');
     }
     
     // Update second stage colors without regenerating tables
@@ -3995,6 +4095,9 @@
             
             // Lock the second stage time input
             lockTimeInput("secondStageTime", "Second Stage Start Time");
+            
+            // Generate hybrid time columns for second stage
+            generateHybridTimeColumns();
           }
         }
       } catch (error) {
@@ -4070,6 +4173,24 @@
       });
       
       return mappedData;
+    }
+    
+    // Regenerate only contractions and FHR tables with hybrid time columns
+    function regenerateContractionsAndFHRTables() {
+      console.log('🔄 Regenerating contractions and FHR tables with hybrid time columns...');
+      
+      // Clear only contractions and FHR tables
+      document.getElementById("contractionsTable").innerHTML = "";
+      document.getElementById("fhrTable").innerHTML = "";
+      
+      // Generate tables with hybrid time columns
+      generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", {});
+      generateSectionTable("FHR", sections["FHR"], "fhrTable", {});
+      
+      // Add event listeners for the new tables
+      addFormEventListeners();
+      
+      console.log('✅ Contractions and FHR tables regenerated with hybrid time columns');
     }
     
     // Regenerate all tables (used when second stage is confirmed)
