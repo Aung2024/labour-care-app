@@ -605,6 +605,9 @@
         <button type="button" class="btn btn-sm btn-outline-primary" onclick="testRecommendations()">
           <i class="fas fa-test-tube"></i> <span data-i18n="testRecommendations">Test Recommendations</span>
         </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearRecommendations()">
+          <i class="fas fa-eraser"></i> <span data-i18n="clearRecommendations">Clear Recommendations</span>
+        </button>
       </div>
       <div id="recommendations" class="recommendations-content">
         <!-- Recommendations will be populated here -->
@@ -937,9 +940,24 @@
         console.log('Input with value:', input.name, '=', input.value);
       });
       
+      // Clear previous recommendations before testing
+      shownRecommendations.clear();
       showRecommendations();
     }
+    
+    // Function to clear recommendations and reset tracking
+    function clearRecommendations() {
+      const recommendationsDiv = document.getElementById('recommendations');
+      if (recommendationsDiv) {
+        recommendationsDiv.innerHTML = '';
+        shownRecommendations.clear();
+        console.log('✅ Recommendations cleared and tracking reset');
+      }
+    }
 
+    // Global variable to track already shown recommendations
+    let shownRecommendations = new Set();
+    
     // Show clinical recommendations based on alert values
     function showRecommendations() {
       console.log('=== showRecommendations() called ===');
@@ -951,6 +969,10 @@
       
       console.log('✅ Found recommendations div, checking for alerts...');
       console.log('Recommendations div content before:', recommendationsDiv.innerHTML);
+      
+      // Clear previous recommendations tracking
+      shownRecommendations.clear();
+      
       const activeAlerts = new Set();
       
       // Check all form elements for alert values
@@ -1041,10 +1063,18 @@
           }
           
           if (shouldAlert) {
-            // Extract field name for display
+            // Extract field name for display (remove time suffix)
             const displayName = fieldName.split('_').slice(0, -2).join(' ').replace(/_/g, ' ');
-            activeAlerts.add(`${displayName}: ${alertReason}`);
-            console.log('Alert triggered for:', fieldName, 'with reason:', alertReason);
+            const alertKey = `${displayName}: ${alertReason}`;
+            
+            // Only add if this exact alert hasn't been shown before
+            if (!shownRecommendations.has(alertKey)) {
+              activeAlerts.add(alertKey);
+              shownRecommendations.add(alertKey);
+              console.log('New alert triggered for:', fieldName, 'with reason:', alertReason);
+            } else {
+              console.log('Alert already shown, skipping duplicate:', alertKey);
+            }
           }
         }
       });
@@ -1502,6 +1532,8 @@
         
         // Show initial recommendations after tables are generated
         if (document.getElementById('recommendations')) {
+          // Clear previous recommendations tracking when tables are regenerated
+          shownRecommendations.clear();
           showRecommendations();
         }
       }, 100);
