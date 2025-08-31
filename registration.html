@@ -187,6 +187,22 @@
         return;
       }
       
+              // Additional validation for township
+        if (!data.township || data.township.trim() === '') {
+          document.getElementById("registerMsg").innerHTML = '<div class="alert alert-danger">Township cannot be empty.</div>';
+          return;
+        }
+        
+        // Ensure township is a valid string
+        if (typeof data.township !== 'string') {
+          document.getElementById("registerMsg").innerHTML = '<div class="alert alert-danger">Township must be a valid string.</div>';
+          return;
+        }
+        
+        console.log('Registration data:', data);
+        console.log('Township to save:', data.township);
+        console.log('Township validation passed');
+      
       if (data.password !== data.confirm) {
         document.getElementById("registerMsg").innerHTML = '<div class="alert alert-danger">Passwords do not match.</div>';
         return;
@@ -194,7 +210,7 @@
       try {
         // On registration form submit
         const cred = await firebase.auth().createUserWithEmailAndPassword(data.email, data.password);
-        await db.collection("users").doc(cred.user.uid).set({
+        const userData = {
           name: data.name,
           role: data.role,
           region: data.region,
@@ -204,12 +220,42 @@
           email: data.email,
           approved: false, // Use 'approved' field to match existing login logic
           createdAt: new Date().toISOString()
-        });
+        };
+        
+        console.log('Saving user data to Firestore:', userData);
+        console.log('Township being saved:', userData.township);
+        
+        await firebase.firestore().collection("users").doc(cred.user.uid).set(userData);
+        
+        console.log('User data saved successfully');
+        console.log('Verifying saved data...');
+        
+        // Verify the data was saved correctly
+        const savedDoc = await firebase.firestore().collection("users").doc(cred.user.uid).get();
+        if (savedDoc.exists) {
+          const savedData = savedDoc.data();
+          console.log('Verified saved data:', savedData);
+          console.log('Verified township:', savedData.township);
+        }
         await firebase.auth().signOut();
         window.location.href = "registration-success.html";
       } catch (err) {
         document.getElementById("registerMsg").innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
       }
+    };
+    
+    // Debug function to check form data (can be called from console)
+    window.debugFormData = function() {
+      const form = document.getElementById("registerForm");
+      const data = Object.fromEntries(new FormData(form));
+      console.log('=== DEBUG FORM DATA ===');
+      console.log('Form data:', data);
+      console.log('Region:', data.region);
+      console.log('Township:', data.township);
+      console.log('Township type:', typeof data.township);
+      console.log('Township length:', data.township ? data.township.length : 'N/A');
+      console.log('Township trimmed:', data.township ? data.township.trim() : 'N/A');
+      console.log('=== END DEBUG ===');
     };
   </script>
 </body>
