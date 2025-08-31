@@ -1581,6 +1581,11 @@
               // Generate hybrid time columns for second stage
               generateHybridTimeColumns();
               
+              console.log('🔄 Regenerating tables with hybrid time columns...');
+              
+              // Regenerate the summary table to use the new hybrid time columns
+              generateSummaryTable(existing);
+              
               // Update colors for all tables after generating hybrid columns
               setTimeout(() => {
                 updateSecondStageColors();
@@ -1680,6 +1685,24 @@
             // Recommendations will be shown when needed, not on every change
           });
         });
+        
+        // Final check: If there's second stage data, ensure hybrid time columns are properly applied
+        if (secondStageStartTime && isSecondStageActive) {
+          console.log('🔄 Final check: Ensuring hybrid time columns are properly applied...');
+          
+          // Generate hybrid time columns if not already done
+          if (contractionsTimeCols.length === 0 || babyBaselineTimeCols.length === 0) {
+            console.log('🔄 Hybrid time columns not found, generating them...');
+            generateHybridTimeColumns();
+          }
+          
+          // Ensure tables are using the hybrid time columns
+          setTimeout(() => {
+            console.log('🔄 Final regeneration of tables with hybrid time columns...');
+            generateSummaryTable(existing);
+            updateSecondStageColors();
+          }, 200);
+        }
 
         // Add event listeners for starting time changes
         document.getElementById("startingTime").addEventListener("change", function() {
@@ -1825,6 +1848,7 @@
         case "FHR":
           timeColumns = babyBaselineTimeCols; // Hybrid intervals for FHR
           console.log(`🔍 FHR table using ${timeColumns.length} time columns:`, timeColumns);
+          console.log(`🔍 FHR time columns:`, timeColumns);
           break;
         case "Baby":
           timeColumns = babyOtherTimeCols; // 1-hour intervals for other baby parameters
@@ -1832,6 +1856,7 @@
         case "Contractions":
           timeColumns = contractionsTimeCols; // Hybrid intervals for contractions
           console.log(`🔍 Contractions table using ${timeColumns.length} time columns:`, timeColumns);
+          console.log(`🔍 Contractions time columns:`, timeColumns);
           break;
         case "Woman":
           timeColumns = womanTimeCols;
@@ -4361,10 +4386,33 @@
             // Generate hybrid time columns for second stage
             generateHybridTimeColumns();
             
-            // Update colors for all tables after generating hybrid columns
-            setTimeout(() => {
-              updateSecondStageColors();
-            }, 100);
+            console.log('🔄 Regenerating tables with hybrid time columns in loadSecondStageData...');
+            
+            // Regenerate the summary table to use the new hybrid time columns
+            // We need to get the existing data first
+            try {
+              const recordsDoc = await firebase.firestore()
+                .collection("patients")
+                .doc(patientId)
+                .collection("records")
+                .doc("summary")
+                .get();
+              
+              let existingData = {};
+              if (recordsDoc.exists) {
+                existingData = recordsDoc.data();
+              }
+              
+              // Regenerate tables with existing data and hybrid time columns
+              generateSummaryTable(existingData);
+              
+              // Update colors for all tables after generating hybrid columns
+              setTimeout(() => {
+                updateSecondStageColors();
+              }, 100);
+            } catch (error) {
+              console.error('Error regenerating tables with hybrid time columns:', error);
+            }
           }
         }
       } catch (error) {
