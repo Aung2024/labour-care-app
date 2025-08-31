@@ -1581,15 +1581,9 @@
               // Generate hybrid time columns for second stage
               generateHybridTimeColumns();
               
-              console.log('🔄 Regenerating tables with hybrid time columns...');
+              console.log('🔄 Hybrid time columns generated for existing second stage...');
               
-              // Regenerate the summary table to use the new hybrid time columns
-              generateSummaryTable(existing);
-              
-              // Update colors for all tables after generating hybrid columns
-              setTimeout(() => {
-                updateSecondStageColors();
-              }, 100);
+              // Note: Tables will be generated in the main flow below
             } else {
               console.log('  Second stage not active');
             }
@@ -1604,7 +1598,7 @@
           showStartingTimeRequirement();
         }
 
-        // Generate dynamic time columns
+        // Generate dynamic time columns FIRST (this will be the base)
         generateDynamicTimeColumns();
 
         // Event listener for starting time changes is already added below in the try-catch block
@@ -1661,6 +1655,20 @@
         console.log(`  contractionsTimeCols: ${contractionsTimeCols.length} columns`);
         console.log(`  babyBaselineTimeCols: ${babyBaselineTimeCols.length} columns`);
         
+        // If we have second stage data, ensure hybrid time columns are used
+        if (secondStageStartTime && isSecondStageActive) {
+          console.log('🔄 Second stage active - ensuring hybrid time columns are used...');
+          
+          // Generate hybrid time columns if not already done
+          if (contractionsTimeCols.length === 0 || babyBaselineTimeCols.length === 0) {
+            console.log('🔄 Hybrid time columns not found, generating them...');
+            generateHybridTimeColumns();
+          }
+          
+          console.log(`  After hybrid generation - contractionsTimeCols: ${contractionsTimeCols.length} columns`);
+          console.log(`  After hybrid generation - babyBaselineTimeCols: ${babyBaselineTimeCols.length} columns`);
+        }
+        
         // Generate the summary table
         generateSummaryTable(existing);
         
@@ -1696,12 +1704,11 @@
             generateHybridTimeColumns();
           }
           
-          // Ensure tables are using the hybrid time columns
+          // Update colors for all tables
           setTimeout(() => {
-            console.log('🔄 Final regeneration of tables with hybrid time columns...');
-            generateSummaryTable(existing);
+            console.log('🔄 Final update of second stage colors...');
             updateSecondStageColors();
-          }, 200);
+          }, 100);
         }
 
         // Add event listeners for starting time changes
@@ -4027,6 +4034,8 @@
       console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
       console.log(`  secondStageStartTime: ${secondStageStartTime}`);
       console.log(`  isSecondStageActive: ${isSecondStageActive}`);
+      console.log(`  Current contractionsTimeCols length: ${contractionsTimeCols.length}`);
+      console.log(`  Current babyBaselineTimeCols length: ${babyBaselineTimeCols.length}`);
       
       if (!activeFirstStageStartTime) {
         console.log('❌ No activeFirstStageStartTime, returning early');
@@ -4148,6 +4157,12 @@
       console.log(`  Second stage starts at: ${secondStageStartTime}`);
       console.log(`  Start time: ${startTimeDate.toTimeString().slice(0, 5)}`);
       console.log(`  Second stage: ${secondStageDate.toTimeString().slice(0, 5)}`);
+      
+      // Verify the arrays are actually populated
+      console.log('🔍 Verification - contractionsTimeCols array:', contractionsTimeCols);
+      console.log('🔍 Verification - babyBaselineTimeCols array:', babyBaselineTimeCols);
+      console.log('🔍 Verification - contractionsTimeCols type:', typeof contractionsTimeCols);
+      console.log('🔍 Verification - babyBaselineTimeCols type:', typeof babyBaselineTimeCols);
       
       // Verify the hybrid nature
       const beforeSecondStage = contractionsTimeCols.filter(time => {
