@@ -923,7 +923,7 @@
 
     // Test function to manually trigger recommendations
     function testRecommendations() {
-      console.log('Testing recommendations function...');
+      console.log('🧪 Testing recommendations function...');
       
       // Check if recommendations div exists
       const recommendationsDiv = document.getElementById('recommendations');
@@ -940,8 +940,10 @@
         console.log('Input with value:', input.name, '=', input.value);
       });
       
-      // Clear previous recommendations before testing
+      // Clear previous recommendations and tracking before testing
       shownRecommendations.clear();
+      isProcessingRecommendations = false;
+      console.log('🔄 Reset recommendations tracking for testing');
       showRecommendations();
     }
     
@@ -951,27 +953,46 @@
       if (recommendationsDiv) {
         recommendationsDiv.innerHTML = '';
         shownRecommendations.clear();
+        isProcessingRecommendations = false;
         console.log('✅ Recommendations cleared and tracking reset');
       }
     }
 
     // Global variable to track already shown recommendations
     let shownRecommendations = new Set();
+    let isProcessingRecommendations = false; // Prevent multiple simultaneous calls
     
     // Show clinical recommendations based on alert values
     function showRecommendations() {
       console.log('=== showRecommendations() called ===');
+      
+      // Prevent multiple simultaneous calls
+      if (isProcessingRecommendations) {
+        console.log('⏳ Already processing recommendations, skipping...');
+        return;
+      }
+      
+      isProcessingRecommendations = true;
+      
       const recommendationsDiv = document.getElementById('recommendations');
       if (!recommendationsDiv) {
         console.log('❌ Recommendations div not found yet');
+        isProcessingRecommendations = false;
         return;
       }
       
       console.log('✅ Found recommendations div, checking for alerts...');
       console.log('Recommendations div content before:', recommendationsDiv.innerHTML);
       
-      // Clear previous recommendations tracking
-      shownRecommendations.clear();
+      // Only clear recommendations tracking if this is a fresh start
+      // Don't clear if we already have recommendations displayed
+      if (recommendationsDiv.innerHTML.trim() === '' || 
+          recommendationsDiv.innerHTML.includes('<!-- Recommendations will be populated here -->')) {
+        shownRecommendations.clear();
+        console.log('🔄 Cleared recommendations tracking for fresh start');
+      } else {
+        console.log('📋 Keeping existing recommendations tracking');
+      }
       
       const activeAlerts = new Set();
       
@@ -1071,16 +1092,20 @@
             if (!shownRecommendations.has(alertKey)) {
               activeAlerts.add(alertKey);
               shownRecommendations.add(alertKey);
-              console.log('New alert triggered for:', fieldName, 'with reason:', alertReason);
+              console.log('✅ New alert added:', alertKey);
             } else {
-              console.log('Alert already shown, skipping duplicate:', alertKey);
+              console.log('⏭️ Alert already shown, skipping duplicate:', alertKey);
             }
           }
         }
       });
       
       // Generate recommendations HTML
-      console.log('Active alerts found:', activeAlerts.size);
+      console.log('📊 Summary:');
+      console.log(`  - Total form elements checked: ${allInputs.length}`);
+      console.log(`  - Unique alerts found: ${activeAlerts.size}`);
+      console.log(`  - Recommendations tracking size: ${shownRecommendations.size}`);
+      
       if (activeAlerts.size > 0) {
         let recommendationsHTML = '';
         
@@ -1119,6 +1144,9 @@
       
       console.log('Final recommendations div content:', recommendationsDiv.innerHTML);
       console.log('=== showRecommendations() completed ===');
+      
+      // Reset processing flag
+      isProcessingRecommendations = false;
     }
 
     // REMOVED: Old recommendations object that was causing duplicates
