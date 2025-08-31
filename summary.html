@@ -3873,19 +3873,27 @@
         return false;
       }
       
-      // Convert time strings to comparable values
-      const timeHour = parseInt(time.split(':')[0]);
-      const timeMinute = parseInt(time.split(':')[1]);
-      const secondHour = parseInt(secondStageStartTime.split(':')[0]);
-      const secondMinute = parseInt(secondStageStartTime.split(':')[1]);
+      // Convert time strings to minutes since midnight
+      const timeMinutes = timeToMinutes(time);
+      const secondStageMinutes = timeToMinutes(secondStageStartTime);
       
-      const timeMinutes = timeHour * 60 + timeMinute;
-      const secondMinutes = secondHour * 60 + secondMinute;
-      
-      const isSecondStage = timeMinutes >= secondMinutes;
-      console.log(`🔍 isSecondStageTime(${time}): ${timeHour}:${timeMinute} (${timeMinutes}min) vs ${secondHour}:${secondMinute} (${secondMinutes}min) = ${isSecondStage}`);
-      
-      return isSecondStage;
+      // Handle midnight crossing - if second stage is earlier in the day, it means it's the next day
+      if (secondStageMinutes < timeMinutes) {
+        // Second stage is next day, so current time is first stage
+        console.log(`🔍 isSecondStageTime(${time}): ${time} (${timeMinutes}min) vs ${secondStageStartTime} (${secondStageMinutes}min) - Second stage is next day, so ${time} is FIRST stage`);
+        return false;
+      } else {
+        // Same day comparison
+        const isSecondStage = timeMinutes >= secondStageMinutes;
+        console.log(`🔍 isSecondStageTime(${time}): ${time} (${timeMinutes}min) vs ${secondStageStartTime} (${secondStageMinutes}min) = ${isSecondStage} (same day)`);
+        return isSecondStage;
+      }
+    }
+    
+    // Helper function to convert time string to minutes since midnight
+    function timeToMinutes(timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
     }
     
     // Generate hybrid time columns: 30-min before second stage, 15-min after
