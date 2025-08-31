@@ -96,6 +96,9 @@
     © 2025 Labour Care App &mdash; Designed for clinical excellence
   </footer>
   <script>
+    // Global variables
+    let isLoggingIn = false; // Flag to prevent session check during login
+    
     // Session management functions
     function setRememberMe(enabled) {
       if (enabled) {
@@ -113,18 +116,29 @@
       const rememberMe = localStorage.getItem('rememberMe');
       const sessionExpiry = localStorage.getItem('sessionExpiry');
       
+      console.log('Checking session expiry:', { rememberMe, sessionExpiry });
+      
       if (rememberMe === 'true' && sessionExpiry) {
         const expiryDate = new Date(sessionExpiry);
         const now = new Date();
         
+        console.log('Session expiry check:', { expiryDate, now, isExpired: now > expiryDate });
+        
         if (now > expiryDate) {
           // Session expired, clear everything
+          console.log('Session expired, clearing...');
           clearSession();
           return false;
         }
+        console.log('Session valid');
         return true;
       }
-      return false;
+      
+      // If no remember me, check if user has basic session data
+      const hasBasicSession = localStorage.getItem('uid') && localStorage.getItem('role');
+      console.log('No remember me, checking basic session:', hasBasicSession);
+      
+      return hasBasicSession;
     }
 
     function clearSession() {
@@ -165,6 +179,7 @@
       
       try {
         console.log('Starting login process...');
+        isLoggingIn = true; // Set flag to prevent session check
         
         // Set Firebase persistence based on "Remember Me" choice
         if (rememberMe) {
@@ -251,6 +266,9 @@
         localStorage.setItem("userTownship", userData.township || '');
         localStorage.setItem("userRegion", userData.region || '');
         
+        // Reset login flag
+        isLoggingIn = false;
+        
         // Redirect to dashboard or index
         window.location.replace("index.html");
         
@@ -272,6 +290,9 @@
         message.textContent = errorMessage;
         message.className = "mt-3 text-danger";
         console.error('Login error:', err);
+        
+        // Reset login flag on error
+        isLoggingIn = false;
       }
     });
 
@@ -284,18 +305,28 @@
         console.log('Auth state changed:', user ? 'User logged in' : 'No user');
         if (user) {
           // User is already authenticated, check session expiry
-          if (checkSessionExpiry()) {
-            // Valid session, redirect to dashboard
-            console.log('Valid session found, redirecting...');
-            window.location.replace("index.html");
-          } else {
-            // Session expired, sign out
-            console.log('Session expired, signing out...');
-            firebase.auth().signOut();
-            clearSession();
+          // Skip session check if user is currently logging in
+          if (isLoggingIn) {
+            console.log('User is logging in, skipping session check');
+            return;
           }
+          
+          // Add a small delay to avoid race condition with login process
+          setTimeout(() => {
+            if (checkSessionExpiry()) {
+              // Valid session, redirect to dashboard
+              console.log('Valid session found, redirecting...');
+              window.location.replace("index.html");
+            } else {
+              // Session expired, sign out
+              console.log('Session expired, signing out...');
+              firebase.auth().signOut();
+              clearSession();
+            }
+          }, 1000); // 1 second delay
         } else {
           console.log('No authenticated user, login form ready');
+          isLoggingIn = false; // Reset flag when no user
         }
       });
     });
