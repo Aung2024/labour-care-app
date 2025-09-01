@@ -516,39 +516,17 @@
         <!-- Cervix Plot Table -->
         <div class="table-wrapper">
           <h5><i class="fas fa-chart-area"></i> <span data-i18n="cervixPlot">Cervix Plot</span></h5>
-          <div class="plotting-container">
-            <canvas id="cervixChart" width="800" height="400"></canvas>
-            <div class="plot-controls">
-              <button type="button" class="btn btn-sm btn-primary" onclick="savePlotData()">
-                <i class="fas fa-save"></i> <span data-i18n="savePlot">Save Plot</span>
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearCervixChart()">
-                <i class="fas fa-eraser"></i> <span data-i18n="clearNewPoints">Clear New Points</span>
-              </button>
-              <button type="button" class="btn btn-sm btn-danger" onclick="clearAllCervixData()">
-                <i class="fas fa-trash"></i> <span data-i18n="clearAllPlot">Clear All Plot</span>
-              </button>
-            </div>
-          </div>
+          <table class="summary-table" id="cervixPlotTable">
+            <!-- Table content will be generated here -->
+          </table>
         </div>
         
         <!-- Descent Plot Table -->
         <div class="table-wrapper">
           <h5><i class="fas fa-chart-line"></i> <span data-i18n="descentPlot">Descent Plot</span></h5>
-          <div class="plotting-container">
-            <canvas id="descentChart" width="800" height="400"></canvas>
-            <div class="plot-controls">
-              <button type="button" class="btn btn-sm btn-primary" onclick="savePlotData()">
-                <i class="fas fa-save"></i> <span data-i18n="savePlot">Save Plot</span>
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearDescentChart()">
-                <i class="fas fa-eraser"></i> <span data-i18n="clearNewPoints">Clear New Points</span>
-              </button>
-              <button type="button" class="btn btn-sm btn-danger" onclick="clearAllDescentData()">
-                <i class="fas fa-trash"></i> <span data-i18n="clearAllPlot">Clear All Plot</span>
-              </button>
-            </div>
-          </div>
+          <table class="summary-table" id="descentPlotTable">
+            <!-- Table content will be generated here -->
+          </table>
         </div>
       </div>
 
@@ -1538,9 +1516,6 @@
               // Generate the summary table with existing data
               generateSummaryTable(existing);
               
-              // Load plotting data from previous sessions
-              await loadPlotData();
-              
               // Setup alert highlighting for real-time alerts
               addAlertHighlighting();
               
@@ -1685,9 +1660,6 @@
         // Generate the summary table
         generateSummaryTable(existing);
         
-        // Load plotting data from previous sessions
-        await loadPlotData();
-        
         // Load treatment status
         await loadTreatmentStatus();
         
@@ -1807,8 +1779,9 @@
       // Generate Contractions table with hybrid time columns
       generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", existing);
       
-      // Initialize plotting charts (replaces the old table generation)
-      initializePlottingCharts();
+      // Generate plotting tables (replaces the old canvas charts)
+      generateCervixPlotTable("cervixPlotTable", existing);
+      generateDescentPlotTable("descentPlotTable", existing);
       
       // Generate Medication table with 1-hour intervals
       generateMedicationTable("medicationTable", existing);
@@ -2294,6 +2267,26 @@
           });
         });
         
+        // Plotting data - Cervix Plot
+        cervixPlotTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const inputName = `Cervix_Plot_${timeKey}`;
+          const input = document.querySelector(`select[name="${inputName}"]`);
+          if (input && input.value) {
+            formData[inputName] = input.value;
+          }
+        });
+        
+        // Plotting data - Descent Plot
+        descentPlotTimeCols.forEach(time => {
+          const timeKey = time.replace(':', '_');
+          const inputName = `Descent_Plot_${timeKey}`;
+          const input = document.querySelector(`select[name="${inputName}"]`);
+          if (input && input.value) {
+            formData[inputName] = input.value;
+          }
+        });
+        
         planTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const inputName = `PLAN_${timeKey}`;
@@ -2432,7 +2425,6 @@
       populateTimeColumns();
       initializeFoldedSections(); // Initialize all sections as folded
       addAlertHighlighting(); // Add alert highlighting functionality
-      initializePlottingCharts(); // Initialize plotting charts
       
       // Test if sticky positioning is supported
       testStickySupport();
@@ -2608,33 +2600,7 @@
       table.appendChild(tbody);
     }
 
-    // Global variables for plotting
-    let cervixChart = null;
-    let descentChart = null;
-    let cervixData = [];
-    let descentData = [];
-    let unsavedCervixPoints = [];
-    let unsavedDescentPoints = [];
-
-    // Initialize plotting charts
-    function initializePlottingCharts() {
-      // Initialize Cervix Chart
-      const cervixCanvas = document.getElementById('cervixChart');
-      if (cervixCanvas) {
-        cervixChart = cervixCanvas.getContext('2d');
-        setupChart(cervixCanvas, 'cervix');
-      }
-      
-      // Initialize Descent Chart
-      const descentCanvas = document.getElementById('descentChart');
-      if (descentCanvas) {
-        descentChart = descentCanvas.getContext('2d');
-        setupChart(descentCanvas, 'descent');
-      }
-      
-      // Update initial status
-      updateChartStatus();
-    }
+    // Plotting data is now handled by table-based system
 
     // Setup chart with grid and labels
     function setupChart(canvas, type) {
@@ -3035,36 +3001,7 @@
         const patientId = getPatientIdFromUrl();
         if (!patientId) return;
         
-        const base = firebase.firestore().collection("patients").doc(patientId);
-        
-        // Load cervix data
-        const cervixDoc = await base.collection("plotData").doc("cervix").get();
-        if (cervixDoc.exists) {
-          cervixData = cervixDoc.data().data || [];
-          console.log('📊 Loaded cervix data:', cervixData.length, 'points');
-        }
-        
-        // Load descent data
-        const descentDoc = await base.collection("plotData").doc("descent").get();
-        if (descentDoc.exists) {
-          descentData = descentDoc.data().data || [];
-          console.log('📊 Loaded descent data:', descentData.length, 'points');
-        }
-        
-        console.log('✅ Plot data loaded successfully');
-        
-        // Update status indicators
-        updateChartStatus();
-        
-        // Redraw charts with loaded data after a short delay to ensure charts are ready
-        setTimeout(() => {
-          if (cervixChart && cervixData.length > 0) {
-            redrawChart('cervix');
-          }
-          if (descentChart && descentData.length > 0) {
-            redrawChart('descent');
-          }
-        }, 500);
+        console.log('✅ Plot data loading is now handled by the main data loading process');
         
       } catch (error) {
         console.error('❌ Error loading plot data:', error);
@@ -3172,33 +3109,6 @@
       const descentUnsavedElement = document.getElementById('descentUnsavedCount');
       if (descentSavedElement) descentSavedElement.textContent = descentData.length;
       if (descentUnsavedElement) descentUnsavedElement.textContent = unsavedDescentPoints.length;
-    }
-
-    // Redraw chart with existing data
-    function redrawChart(type) {
-      const canvas = document.getElementById(type === 'cervix' ? 'cervixChart' : 'descentChart');
-      if (!canvas) return;
-      
-      setupChart(canvas, type);
-      
-      // Redraw all saved points with saved point styling
-      const data = type === 'cervix' ? cervixData : descentData;
-      data.forEach(point => {
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = type === 'cervix' ? '#3b82f6' : '#10b981';
-        ctx.font = 'bold 24px Arial'; // Use saved point font size
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        if (type === 'cervix') {
-          ctx.fillText('X', point.x, point.y);
-        } else {
-          ctx.fillText('O', point.x, point.y);
-        }
-      });
-      
-      // Update status indicators after redrawing
-      updateChartStatus();
     }
 
     // Generate Medication table with dynamic time columns
@@ -4585,7 +4495,169 @@
       generateSummaryTable(preservedData);
     }
 
-    // DEPRECATED: Baby section with two separate tables - now using generateSectionTable for separate FHR and Baby sections
+    // Generate Cervix Plot table with dynamic time columns
+    function generateCervixPlotTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Cervical Dilation";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (1-hour intervals with second stage highlighting)
+      cervixPlotTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Single row for cervix dilation
+      const cervixRow = document.createElement("tr");
+      
+      // Field cell
+      const cervixFieldCell = document.createElement("td");
+      cervixFieldCell.className = "field-cell sticky-field";
+      cervixFieldCell.textContent = "Dilation (cm)";
+      cervixRow.appendChild(cervixFieldCell);
+      
+      // Time cells for cervix dilation
+      cervixPlotTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Cervix_Plot_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        // Cervix dilation options: 5cm to 10cm
+        ["5", "6", "7", "8", "9", "10"].forEach(option => {
+          const optionElement = document.createElement("option");
+          optionElement.value = option;
+          optionElement.textContent = option + " cm";
+          select.appendChild(optionElement);
+        });
+        
+        select.value = value;
+        timeCell.appendChild(select);
+        cervixRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(cervixRow);
+      table.appendChild(tbody);
+    }
+
+    // Generate Descent Plot table with dynamic time columns
+    function generateDescentPlotTable(tableId, existing) {
+      const table = document.getElementById(tableId);
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      
+      // Field header
+      const fieldHeader = document.createElement("th");
+      fieldHeader.className = "field-header sticky-field";
+      fieldHeader.textContent = "Fetal Descent";
+      headerRow.appendChild(fieldHeader);
+      
+      // Time headers (1-hour intervals with second stage highlighting)
+      descentPlotTimeCols.forEach(time => {
+        const timeHeader = document.createElement("th");
+        timeHeader.className = "time-header";
+        
+        // Apply second stage highlighting
+        if (isSecondStageTime(time)) {
+          timeHeader.style.backgroundColor = "#dcfce7"; // Light green for second stage
+          timeHeader.style.color = "#166534"; // Dark green text
+        } else {
+          timeHeader.style.backgroundColor = "#dbeafe"; // Light blue for first stage
+          timeHeader.style.color = "#1e40af"; // Dark blue text
+        }
+        
+        timeHeader.textContent = time;
+        headerRow.appendChild(timeHeader);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      // Single row for fetal descent
+      const descentRow = document.createElement("tr");
+      
+      // Field cell
+      const descentFieldCell = document.createElement("td");
+      descentFieldCell.className = "field-cell sticky-field";
+      descentFieldCell.textContent = "Station";
+      descentRow.appendChild(descentFieldCell);
+      
+      // Time cells for fetal descent
+      descentPlotTimeCols.forEach(time => {
+        const timeCell = document.createElement("td");
+        timeCell.className = "time-cell";
+        
+        const timeKey = time.replace(':', '_');
+        const key = `Descent_Plot_${timeKey}`;
+        const value = existing[key] || "";
+        
+        const select = document.createElement("select");
+        select.name = key;
+        select.className = "form-select form-select-sm";
+        
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "";
+        select.appendChild(blankOption);
+        
+        // Fetal descent station options: 0 to 5
+        ["0", "1", "2", "3", "4", "5"].forEach(option => {
+          const optionElement = document.createElement("option");
+          optionElement.value = option;
+          optionElement.textContent = option;
+          select.appendChild(optionElement);
+        });
+        
+        select.value = value;
+        timeCell.appendChild(select);
+        descentRow.appendChild(timeCell);
+      });
+      
+      tbody.appendChild(descentRow);
+      table.appendChild(tbody);
+    }
     // This function is kept for backward compatibility but is no longer used
     function generateBabyTable(tableId, existing) {
       const table = document.getElementById(tableId);
