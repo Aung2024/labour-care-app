@@ -2271,9 +2271,9 @@
         cervixPlotTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const inputName = `Cervix_Plot_${timeKey}`;
-          const input = document.querySelector(`select[name="${inputName}"]`);
-          if (input && input.value) {
-            formData[inputName] = input.value;
+          const checkbox = document.querySelector(`input[name="${inputName}"]:checked`);
+          if (checkbox && checkbox.value) {
+            formData[inputName] = checkbox.value;
           }
         });
         
@@ -2281,9 +2281,9 @@
         descentPlotTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const inputName = `Descent_Plot_${timeKey}`;
-          const input = document.querySelector(`select[name="${inputName}"]`);
-          if (input && input.value) {
-            formData[inputName] = input.value;
+          const checkbox = document.querySelector(`input[name="${inputName}"]:checked`);
+          if (checkbox && checkbox.value) {
+            formData[inputName] = checkbox.value;
           }
         });
         
@@ -4495,7 +4495,7 @@
       generateSummaryTable(preservedData);
     }
 
-    // Generate Cervix Plot table with dynamic time columns
+    // Generate Cervix Plot table with partograph structure
     function generateCervixPlotTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
@@ -4506,7 +4506,7 @@
       // Field header
       const fieldHeader = document.createElement("th");
       fieldHeader.className = "field-header sticky-field";
-      fieldHeader.textContent = "Cervical Dilation";
+      fieldHeader.textContent = "Cervix [Plot X]";
       headerRow.appendChild(fieldHeader);
       
       // Time headers (1-hour intervals with second stage highlighting)
@@ -4533,51 +4533,66 @@
       // Create table body
       const tbody = document.createElement("tbody");
       
-      // Single row for cervix dilation
-      const cervixRow = document.createElement("tr");
+      // Create rows for each cervix value (10cm to 5cm)
+      const cervixValues = ["10", "9", "8", "7", "6", "5"];
+      const timeThresholds = ["", "≥ 2h", "≥ 2.5h", "≥ 3h", "≥ 5h", "≥ 6h"];
       
-      // Field cell
-      const cervixFieldCell = document.createElement("td");
-      cervixFieldCell.className = "field-cell sticky-field";
-      cervixFieldCell.textContent = "Dilation (cm)";
-      cervixRow.appendChild(cervixFieldCell);
-      
-      // Time cells for cervix dilation
-      cervixPlotTimeCols.forEach(time => {
-        const timeCell = document.createElement("td");
-        timeCell.className = "time-cell";
+      cervixValues.forEach((value, index) => {
+        const row = document.createElement("tr");
         
-        const timeKey = time.replace(':', '_');
-        const key = `Cervix_Plot_${timeKey}`;
-        const value = existing[key] || "";
+        // Field cell with value and threshold
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.style.backgroundColor = "#f8f9fa"; // Light gray background
+        fieldCell.style.fontWeight = "bold";
+        fieldCell.innerHTML = `${value} ${timeThresholds[index] ? `<br><small>${timeThresholds[index]}</small>` : ''}`;
+        row.appendChild(fieldCell);
         
-        const select = document.createElement("select");
-        select.name = key;
-        select.className = "form-select form-select-sm";
-        
-        const blankOption = document.createElement("option");
-        blankOption.value = "";
-        blankOption.textContent = "";
-        select.appendChild(blankOption);
-        
-        // Cervix dilation options: 5cm to 10cm
-        ["5", "6", "7", "8", "9", "10"].forEach(option => {
-          const optionElement = document.createElement("option");
-          optionElement.value = option;
-          optionElement.textContent = option + " cm";
-          select.appendChild(optionElement);
+        // Time cells for this cervix value
+        cervixPlotTimeCols.forEach(time => {
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell";
+          timeCell.style.textAlign = "center";
+          
+          const timeKey = time.replace(':', '_');
+          const key = `Cervix_Plot_${timeKey}`;
+          const savedValue = existing[key] || "";
+          
+          // Create checkbox for this specific value
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = key;
+          checkbox.value = value;
+          checkbox.style.transform = "scale(1.5)";
+          
+          // Check if this value was saved for this time
+          if (savedValue === value) {
+            checkbox.checked = true;
+          }
+          
+          // Add change event listener
+          checkbox.addEventListener('change', function() {
+            // Uncheck other checkboxes in the same column
+            const timeCells = table.querySelectorAll(`td:nth-child(${cervixPlotTimeCols.indexOf(time) + 2})`);
+            timeCells.forEach(cell => {
+              const otherCheckbox = cell.querySelector('input[type="checkbox"]');
+              if (otherCheckbox && otherCheckbox !== this) {
+                otherCheckbox.checked = false;
+              }
+            });
+          });
+          
+          timeCell.appendChild(checkbox);
+          row.appendChild(timeCell);
         });
         
-        select.value = value;
-        timeCell.appendChild(select);
-        cervixRow.appendChild(timeCell);
+        tbody.appendChild(row);
       });
       
-      tbody.appendChild(cervixRow);
       table.appendChild(tbody);
     }
 
-    // Generate Descent Plot table with dynamic time columns
+    // Generate Descent Plot table with partograph structure
     function generateDescentPlotTable(tableId, existing) {
       const table = document.getElementById(tableId);
       
@@ -4588,7 +4603,7 @@
       // Field header
       const fieldHeader = document.createElement("th");
       fieldHeader.className = "field-header sticky-field";
-      fieldHeader.textContent = "Fetal Descent";
+      fieldHeader.textContent = "Descent [Plot O]";
       headerRow.appendChild(fieldHeader);
       
       // Time headers (1-hour intervals with second stage highlighting)
@@ -4615,47 +4630,61 @@
       // Create table body
       const tbody = document.createElement("tbody");
       
-      // Single row for fetal descent
-      const descentRow = document.createElement("tr");
+      // Create rows for each descent value (5 to 0)
+      const descentValues = ["5", "4", "3", "2", "1", "0"];
       
-      // Field cell
-      const descentFieldCell = document.createElement("td");
-      descentFieldCell.className = "field-cell sticky-field";
-      descentFieldCell.textContent = "Station";
-      descentRow.appendChild(descentFieldCell);
-      
-      // Time cells for fetal descent
-      descentPlotTimeCols.forEach(time => {
-        const timeCell = document.createElement("td");
-        timeCell.className = "time-cell";
+      descentValues.forEach((value) => {
+        const row = document.createElement("tr");
         
-        const timeKey = time.replace(':', '_');
-        const key = `Descent_Plot_${timeKey}`;
-        const value = existing[key] || "";
+        // Field cell with value
+        const fieldCell = document.createElement("td");
+        fieldCell.className = "field-cell sticky-field";
+        fieldCell.style.backgroundColor = "#f8f9fa"; // Light gray background
+        fieldCell.style.fontWeight = "bold";
+        fieldCell.textContent = value;
+        row.appendChild(fieldCell);
         
-        const select = document.createElement("select");
-        select.name = key;
-        select.className = "form-select form-select-sm";
-        
-        const blankOption = document.createElement("option");
-        blankOption.value = "";
-        blankOption.textContent = "";
-        select.appendChild(blankOption);
-        
-        // Fetal descent station options: 0 to 5
-        ["0", "1", "2", "3", "4", "5"].forEach(option => {
-          const optionElement = document.createElement("option");
-          optionElement.value = option;
-          optionElement.textContent = option;
-          select.appendChild(optionElement);
+        // Time cells for this descent value
+        descentPlotTimeCols.forEach(time => {
+          const timeCell = document.createElement("td");
+          timeCell.className = "time-cell";
+          timeCell.style.textAlign = "center";
+          
+          const timeKey = time.replace(':', '_');
+          const key = `Descent_Plot_${timeKey}`;
+          const savedValue = existing[key] || "";
+          
+          // Create checkbox for this specific value
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = key;
+          checkbox.value = value;
+          checkbox.style.transform = "scale(1.5)";
+          
+          // Check if this value was saved for this time
+          if (savedValue === value) {
+            checkbox.checked = true;
+          }
+          
+          // Add change event listener
+          checkbox.addEventListener('change', function() {
+            // Uncheck other checkboxes in the same column
+            const timeCells = table.querySelectorAll(`td:nth-child(${descentPlotTimeCols.indexOf(time) + 2})`);
+            timeCells.forEach(cell => {
+              const otherCheckbox = cell.querySelector('input[type="checkbox"]');
+              if (otherCheckbox && otherCheckbox !== this) {
+                otherCheckbox.checked = false;
+              }
+            });
+          });
+          
+          timeCell.appendChild(checkbox);
+          row.appendChild(timeCell);
         });
         
-        select.value = value;
-        timeCell.appendChild(select);
-        descentRow.appendChild(timeCell);
+        tbody.appendChild(row);
       });
       
-      tbody.appendChild(descentRow);
       table.appendChild(tbody);
     }
     // This function is kept for backward compatibility but is no longer used
