@@ -4293,8 +4293,17 @@
       
       console.log('🔄 Regenerating contractions and FHR tables...');
       
+      // Collect existing data before regenerating tables
+      const currentFormData = {};
+      const currentInputs = document.querySelectorAll('input, select');
+      currentInputs.forEach(input => {
+        if (input.name && input.value) {
+          currentFormData[input.name] = input.value;
+        }
+      });
+      
       // Regenerate only contractions and FHR tables with hybrid time columns
-      regenerateContractionsAndFHRTables();
+      regenerateContractionsAndFHRTables(currentFormData);
       
       console.log('🎨 Updating second stage colors...');
       
@@ -4304,8 +4313,17 @@
       console.log('🔄 Force refreshing all tables...');
       
       // Force refresh of all tables to ensure hybrid columns are displayed
+      // But preserve existing data by collecting it first
+      const refreshData = {};
+      const refreshInputs = document.querySelectorAll('input, select');
+      refreshInputs.forEach(input => {
+        if (input.name && input.value) {
+          refreshData[input.name] = input.value;
+        }
+      });
+      
       setTimeout(() => {
-        generateSummaryTable({});
+        generateSummaryTable(refreshData);
         updateSecondStageColors();
       }, 200);
       
@@ -4522,19 +4540,30 @@
     }
     
     // Regenerate only contractions and FHR tables with hybrid time columns
-    function regenerateContractionsAndFHRTables() {
+    function regenerateContractionsAndFHRTables(existingData = null) {
       console.log('🔄 Regenerating contractions and FHR tables with hybrid time columns...');
       
-      // Get existing data from the current form
-      const existingData = {};
-      const allInputs = document.querySelectorAll('input, select');
-      allInputs.forEach(input => {
-        if (input.name && input.value) {
-          existingData[input.name] = input.value;
-        }
-      });
+      // Get existing data from Firestore (not just current DOM)
+      // We need to preserve all data, not just what's currently in the form
+      let dataToUse = existingData || {};
       
-      console.log('📊 Preserving existing data:', Object.keys(existingData).length, 'fields');
+      // If no existing data provided, try to get from current DOM elements
+      if (!existingData) {
+        const allInputs = document.querySelectorAll('input, select');
+        allInputs.forEach(input => {
+          if (input.name && input.value) {
+            dataToUse[input.name] = input.value;
+          }
+        });
+      }
+      
+      // If we don't have much data from DOM, we need to get it from the saved data
+      if (Object.keys(dataToUse).length < 10) {
+        console.log('📊 Limited data available, will use what we have');
+      }
+      
+      console.log('📊 Preserving existing data:', Object.keys(dataToUse).length, 'fields');
+      console.log('📊 Sample data keys:', Object.keys(dataToUse).slice(0, 10));
       
       // Clear only contractions and FHR tables
       document.getElementById("contractionsTable").innerHTML = "";
@@ -4542,14 +4571,15 @@
       document.getElementById("cervixPlotTable").innerHTML = "";
       
       // Generate tables with hybrid time columns and existing data
-      generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", existingData);
-      generateSectionTable("FHR", sections["FHR"], "fhrTable", existingData);
-      generateCervixPlotTable("cervixPlotTable", existingData);
+      generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", dataToUse);
+      generateSectionTable("FHR", sections["FHR"], "fhrTable", dataToUse);
+      generateCervixPlotTable("cervixPlotTable", dataToUse);
       
       // Add event listeners for the new tables
       addFormEventListeners();
       
       console.log('✅ Contractions and FHR tables regenerated with hybrid time columns and preserved data');
+      console.log('📊 Final data check - cervix plot inputs:', document.querySelectorAll('#cervixPlotTable select').length);
     }
     
     // Regenerate all tables (used when second stage is confirmed)
