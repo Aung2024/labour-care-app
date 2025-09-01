@@ -3830,6 +3830,7 @@
     // Second stage time intervals (15-minute for contractions and FHR)
     let contractionsTimeColsSecondStage = [];
     let babyBaselineTimeColsSecondStage = [];
+    let cervixPlotTimeColsSecondStage = [];
     
     // Generate time columns based on starting time
     function generateDynamicTimeColumns() {
@@ -3911,6 +3912,15 @@
         const hour = (startHour + i) % 24;
         cervixPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
         descentPlotTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+      
+      // Cervix Plot: +15 minute intervals for 12 hours (SECOND STAGE)
+      cervixPlotTimeColsSecondStage = [];
+      for (let i = 0; i <= 48; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 15);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        cervixPlotTimeColsSecondStage.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
       }
       
       // Plan: +2 hour intervals for 12 hours
@@ -4081,9 +4091,43 @@
         }
       }
       
+      // Generate hybrid cervix plot time columns
+      cervixPlotTimeCols = [];
+      currentTime = new Date(startTimeDate);
+      
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
+        cervixPlotTimeCols.push(timeStr);
+        
+        // Determine interval based on whether we're before or after second stage
+        // Handle midnight crossing by converting to total minutes since start
+        const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
+        
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
+        
+        // Handle midnight crossing
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
+          // Before second stage: 1-hour intervals
+          currentTime.setHours(currentTime.getHours() + 1);
+          console.log(`  Cervix: Added ${timeStr} (1-hour interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
+        } else {
+          // After second stage: 15-minute intervals
+          currentTime.setMinutes(currentTime.getMinutes() + 15);
+          console.log(`  Cervix: Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
+        }
+      }
+      
       console.log('✅ Generated hybrid time columns:');
       console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
       console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
+      console.log(`  Cervix Plot: ${cervixPlotTimeCols.length} intervals:`, cervixPlotTimeCols);
       console.log(`  Second stage starts at: ${secondStageStartTime}`);
       console.log(`  Start time: ${startTimeDate.toTimeString().slice(0, 5)}`);
       console.log(`  Second stage: ${secondStageDate.toTimeString().slice(0, 5)}`);
@@ -4091,8 +4135,10 @@
       // Verify the arrays are actually populated
       console.log('🔍 Verification - contractionsTimeCols array:', contractionsTimeCols);
       console.log('🔍 Verification - babyBaselineTimeCols array:', babyBaselineTimeCols);
+      console.log('🔍 Verification - cervixPlotTimeCols array:', cervixPlotTimeCols);
       console.log('🔍 Verification - contractionsTimeCols type:', typeof contractionsTimeCols);
       console.log('🔍 Verification - babyBaselineTimeCols type:', typeof babyBaselineTimeCols);
+      console.log('🔍 Verification - cervixPlotTimeCols type:', typeof cervixPlotTimeCols);
       
       // Verify the hybrid nature
       const beforeSecondStage = contractionsTimeCols.filter(time => {
@@ -4133,6 +4179,46 @@
       });
       console.log(`  Before second stage: ${beforeSecondStage.length} columns (30-min intervals)`);
       console.log(`  After second stage: ${afterSecondStage.length} columns (15-min intervals)`);
+      
+      // Verify cervix plot hybrid nature
+      const cervixBeforeSecondStage = cervixPlotTimeCols.filter(time => {
+        const [hours, minutes] = time.split(':').map(Number);
+        const timeMinutes = hours * 60 + minutes;
+        const [secondStageHours, secondStageMinutes] = secondStageStartTime.split(':').map(Number);
+        const secondStageTotalMinutes = secondStageHours * 60 + secondStageMinutes;
+        const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+        const startTotalMinutes = startHours * 60 + startMinutes;
+        
+        // Calculate relative minutes from start time
+        let timeRelativeMinutes = timeMinutes - startTotalMinutes;
+        let secondStageRelativeMinutes = secondStageTotalMinutes - startTotalMinutes;
+        
+        // Handle midnight crossing
+        if (timeRelativeMinutes < 0) timeRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        return timeRelativeMinutes < secondStageRelativeMinutes;
+      });
+      const cervixAfterSecondStage = cervixPlotTimeCols.filter(time => {
+        const [hours, minutes] = time.split(':').map(Number);
+        const timeMinutes = hours * 60 + minutes;
+        const [secondStageHours, secondStageMinutes] = secondStageStartTime.split(':').map(Number);
+        const secondStageTotalMinutes = secondStageHours * 60 + secondStageMinutes;
+        const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+        const startTotalMinutes = startHours * 60 + startMinutes;
+        
+        // Calculate relative minutes from start time
+        let timeRelativeMinutes = timeMinutes - startTotalMinutes;
+        let secondStageRelativeMinutes = secondStageTotalMinutes - startTotalMinutes;
+        
+        // Handle midnight crossing
+        if (timeRelativeMinutes < 0) timeRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
+        
+        return timeRelativeMinutes >= secondStageRelativeMinutes;
+      });
+      console.log(`  Cervix Before second stage: ${cervixBeforeSecondStage.length} columns (1-hour intervals)`);
+      console.log(`  Cervix After second stage: ${cervixAfterSecondStage.length} columns (15-min intervals)`);
     }
     
     // Confirm second stage
@@ -4453,10 +4539,12 @@
       // Clear only contractions and FHR tables
       document.getElementById("contractionsTable").innerHTML = "";
       document.getElementById("fhrTable").innerHTML = "";
+      document.getElementById("cervixPlotTable").innerHTML = "";
       
       // Generate tables with hybrid time columns and existing data
       generateSectionTable("Contractions", sections["Contractions"], "contractionsTable", existingData);
       generateSectionTable("FHR", sections["FHR"], "fhrTable", existingData);
+      generateCervixPlotTable("cervixPlotTable", existingData);
       
       // Add event listeners for the new tables
       addFormEventListeners();
@@ -4584,7 +4672,7 @@
           const key = `Cervix_Plot_${value}_${timeKey}`;
           const savedValue = existing[key] || "";
           
-          // Create dropdown with "" and "X" options
+          // Create dropdown with "", "X", and "P" options
           const select = document.createElement("select");
           select.name = key;
           select.className = "form-select form-select-sm";
@@ -4598,6 +4686,11 @@
           xOption.value = "X";
           xOption.textContent = "X";
           select.appendChild(xOption);
+          
+          const pOption = document.createElement("option");
+          pOption.value = "P";
+          pOption.textContent = "P";
+          select.appendChild(pOption);
           
           select.value = savedValue;
           timeCell.appendChild(select);
