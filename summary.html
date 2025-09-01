@@ -3832,6 +3832,11 @@
     let babyBaselineTimeColsSecondStage = [];
     let cervixPlotTimeColsSecondStage = [];
     
+    // Store original time columns for data mapping
+    let originalContractionsTimeCols = [];
+    let originalBabyBaselineTimeCols = [];
+    let originalCervixPlotTimeCols = [];
+    
     // Generate time columns based on starting time
     function generateDynamicTimeColumns() {
       console.log('🚀 generateDynamicTimeColumns() called');
@@ -3985,6 +3990,16 @@
       const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
       console.log(`  Start time: ${startHour}:${startMinute}`);
+      
+      // Store original time columns before generating hybrid ones
+      originalContractionsTimeCols = [...contractionsTimeCols];
+      originalBabyBaselineTimeCols = [...babyBaselineTimeCols];
+      originalCervixPlotTimeCols = [...cervixPlotTimeCols];
+      
+      console.log('📊 Original time columns stored for data mapping:');
+      console.log(`  Contractions: ${originalContractionsTimeCols.length} columns`);
+      console.log(`  FHR: ${originalBabyBaselineTimeCols.length} columns`);
+      console.log(`  Cervix Plot: ${originalCervixPlotTimeCols.length} columns`);
       
       // If no second stage, use 30-minute intervals for full 12 hours
       if (!secondStageStartTime || !isSecondStageActive) {
@@ -4509,34 +4524,66 @@
       return existingData;
     }
     
-    // Map existing data to new time columns
-    function mapDataToNewTimes(existingData, oldStartTime, newStartTime) {
-      if (!oldStartTime || !newStartTime) return existingData;
+    // Map existing data to new time columns when intervals change
+    function mapDataToNewIntervals(existingData, oldTimeCols, newTimeCols, fieldPrefix) {
+      console.log(`🔄 Mapping data for ${fieldPrefix} from ${oldTimeCols.length} to ${newTimeCols.length} time columns`);
+      
+      if (oldTimeCols.length === 0) {
+        console.log(`⚠️ No old time columns for ${fieldPrefix}, skipping mapping`);
+        return existingData;
+      }
       
       const mappedData = {};
-      const oldHour = parseInt(oldStartTime.split(':')[0]);
-      const newHour = parseInt(newStartTime.split(':')[0]);
-      const hourDiff = newHour - oldHour;
       
-      Object.keys(existingData).forEach(key => {
-        // Extract time from key (e.g., "08:00_Field_Name" -> "08:00")
-        const timeMatch = key.match(/(\d{2}:\d{2})_/);
-        if (timeMatch) {
-          const oldTime = timeMatch[1];
-          const oldTimeHour = parseInt(oldTime.split(':')[0]);
-          const newTimeHour = (oldTimeHour + hourDiff + 24) % 24; // Handle day wrap
-          const newTime = `${newTimeHour.toString().padStart(2, '0')}:${oldTime.split(':')[1]}`;
+      // For each new time column, find the closest old time column
+      newTimeCols.forEach(newTime => {
+        const newTimeMinutes = convertTimeToMinutes(newTime);
+        
+        // Find the closest old time column
+        let closestOldTime = null;
+        let minDifference = Infinity;
+        
+        oldTimeCols.forEach(oldTime => {
+          const oldTimeMinutes = convertTimeToMinutes(oldTime);
+          const difference = Math.abs(newTimeMinutes - oldTimeMinutes);
           
-          // Create new key with new time
-          const newKey = key.replace(oldTime, newTime);
-          mappedData[newKey] = existingData[key];
-        } else {
-          // Keep non-time-based data as is
+          if (difference < minDifference) {
+            minDifference = difference;
+            closestOldTime = oldTime;
+          }
+        });
+        
+        // If we found a close match (within 30 minutes), map the data
+        if (closestOldTime && minDifference <= 30) {
+          console.log(`  Mapping ${fieldPrefix} data from ${closestOldTime} to ${newTime} (diff: ${minDifference}min)`);
+          
+          // Map all field values for this time
+          Object.keys(existingData).forEach(key => {
+            if (key.includes(fieldPrefix) && key.includes(closestOldTime.replace(':', '_'))) {
+              // Create new key with new time
+              const newKey = key.replace(closestOldTime.replace(':', '_'), newTime.replace(':', '_'));
+              mappedData[newKey] = existingData[key];
+              console.log(`    ${key} → ${newKey} = ${existingData[key]}`);
+            }
+          });
+        }
+      });
+      
+      // Also preserve any data that doesn't need mapping (non-time-based data)
+      Object.keys(existingData).forEach(key => {
+        if (!key.includes(fieldPrefix) || !key.includes('_')) {
           mappedData[key] = existingData[key];
         }
       });
       
+      console.log(`✅ Mapped ${Object.keys(mappedData).length} fields for ${fieldPrefix}`);
       return mappedData;
+    }
+    
+    // Helper function to convert time string to minutes since midnight
+    function convertTimeToMinutes(timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
     }
     
     // Regenerate only contractions and FHR tables with hybrid time columns
@@ -4564,6 +4611,23 @@
       
       console.log('📊 Preserving existing data:', Object.keys(dataToUse).length, 'fields');
       console.log('📊 Sample data keys:', Object.keys(dataToUse).slice(0, 10));
+      
+      // Map data to new time intervals if we're switching to hybrid columns
+      if (secondStageStartTime && isSecondStageActive) {
+        console.log('🔄 Second stage active - mapping data to hybrid intervals...');
+        
+        // Use the stored original time columns for mapping
+        console.log('📊 Using stored original time columns for mapping:');
+        console.log(`  Original Contractions: ${originalContractionsTimeCols.length} columns`);
+        console.log(`  Original FHR: ${originalBabyBaselineTimeCols.length} columns`);
+        console.log(`  Original Cervix Plot: ${originalCervixPlotTimeCols.length} columns`);
+        
+        // Map data for each section
+        dataToUse = mapDataToNewIntervals(dataToUse, originalContractionsTimeCols, contractionsTimeCols, 'Contractions');
+        dataToUse = mapDataToNewIntervals(dataToUse, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'Baseline_FHR');
+        dataToUse = mapDataToNewIntervals(dataToUse, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'FHR_deceleration');
+        dataToUse = mapDataToNewIntervals(dataToUse, originalCervixPlotTimeCols, cervixPlotTimeCols, 'Cervix_Plot');
+      }
       
       // Clear only contractions and FHR tables
       document.getElementById("contractionsTable").innerHTML = "";
