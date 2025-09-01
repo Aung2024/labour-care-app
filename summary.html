@@ -1591,7 +1591,14 @@
         }
 
         // Generate dynamic time columns FIRST (this will be the base)
-        generateDynamicTimeColumns();
+        // BUT if second stage is active, generate hybrid time columns first
+        if (secondStageStartTime && isSecondStageActive) {
+          console.log('🔄 Second stage active - generating hybrid time columns first...');
+          generateHybridTimeColumns();
+        } else {
+          console.log('🔄 First stage - generating dynamic time columns...');
+          generateDynamicTimeColumns();
+        }
 
         // Event listener for starting time changes is already added below in the try-catch block
 
@@ -1649,24 +1656,53 @@
         
         // If we have second stage data, ensure hybrid time columns are used
         if (secondStageStartTime && isSecondStageActive) {
-          console.log('🔄 Second stage active - ensuring hybrid time columns are used...');
+          console.log('🔄 Second stage active - hybrid time columns already generated...');
           
-          // Generate hybrid time columns if not already done
-          if (contractionsTimeCols.length === 0 || babyBaselineTimeCols.length === 0) {
-            console.log('🔄 Hybrid time columns not found, generating them...');
-            generateHybridTimeColumns();
-          }
+          console.log(`  Current contractionsTimeCols: ${contractionsTimeCols.length} columns`);
+          console.log(`  Current babyBaselineTimeCols: ${babyBaselineTimeCols.length} columns`);
           
-          console.log(`  After hybrid generation - contractionsTimeCols: ${contractionsTimeCols.length} columns`);
-          console.log(`  After hybrid generation - babyBaselineTimeCols: ${babyBaselineTimeCols.length} columns`);
+          // Debug: Check if original time columns are available
+          console.log('📊 Debug - Original time columns:');
+          console.log(`  originalContractionsTimeCols: ${originalContractionsTimeCols.length} columns:`, originalContractionsTimeCols);
+          console.log(`  originalBabyBaselineTimeCols: ${originalBabyBaselineTimeCols.length} columns:`, originalBabyBaselineTimeCols);
+          console.log(`  originalCervixPlotTimeCols: ${originalCervixPlotTimeCols.length} columns:`, originalCervixPlotTimeCols);
+          
+          // Debug: Check existing data keys
+          console.log('📊 Debug - Existing data keys:');
+          const existingKeys = Object.keys(existing);
+          console.log(`  Total existing keys: ${existingKeys.length}`);
+          console.log(`  Sample keys:`, existingKeys.slice(0, 10));
           
           // Map existing data to new hybrid time columns
           console.log('🔄 Mapping loaded data to hybrid time columns...');
-          existing = mapDataToNewIntervals(existing, originalContractionsTimeCols, contractionsTimeCols, 'Contractions');
-          existing = mapDataToNewIntervals(existing, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'Baseline_FHR');
-          existing = mapDataToNewIntervals(existing, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'FHR_deceleration');
-          existing = mapDataToNewIntervals(existing, originalCervixPlotTimeCols, cervixPlotTimeCols, 'Cervix_Plot');
+          
+          // Only map if we have original time columns to map from
+          if (originalContractionsTimeCols.length > 0) {
+            existing = mapDataToNewIntervals(existing, originalContractionsTimeCols, contractionsTimeCols, 'Contractions');
+          } else {
+            console.log('⚠️ No original contractions time columns available for mapping');
+          }
+          
+          if (originalBabyBaselineTimeCols.length > 0) {
+            existing = mapDataToNewIntervals(existing, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'Baseline_FHR');
+            existing = mapDataToNewIntervals(existing, originalBabyBaselineTimeCols, babyBaselineTimeCols, 'FHR_deceleration');
+          } else {
+            console.log('⚠️ No original FHR time columns available for mapping');
+          }
+          
+          if (originalCervixPlotTimeCols.length > 0) {
+            existing = mapDataToNewIntervals(existing, originalCervixPlotTimeCols, cervixPlotTimeCols, 'Cervix_Plot');
+          } else {
+            console.log('⚠️ No original cervix plot time columns available for mapping');
+          }
+          
           console.log('✅ Data mapping completed for page load');
+          
+          // Debug: Check mapped data
+          console.log('📊 Debug - After mapping:');
+          const mappedKeys = Object.keys(existing);
+          console.log(`  Total mapped keys: ${mappedKeys.length}`);
+          console.log(`  Sample mapped keys:`, mappedKeys.slice(0, 10));
         }
         
         // Generate the summary table
