@@ -820,7 +820,10 @@
         const data = doc.data();
         totalPatients++;
         
-        switch (data.treatmentStatus) {
+        // Handle cases where treatmentStatus might be undefined/null
+        const status = data.treatmentStatus || 'active'; // Default to active if no status
+        
+        switch (status) {
           case 'active':
             activePatients++;
             break;
@@ -832,6 +835,10 @@
             break;
           case 'other':
             otherOutcomes++;
+            break;
+          default:
+            // If status is unknown, count as active
+            activePatients++;
             break;
         }
       });
@@ -879,7 +886,10 @@
         const data = doc.data();
         totalPatients++;
         
-        switch (data.treatmentStatus) {
+        // Handle cases where treatmentStatus might be undefined/null
+        const status = data.treatmentStatus || 'active'; // Default to active if no status
+        
+        switch (status) {
           case 'active':
             activePatients++;
             break;
@@ -891,6 +901,10 @@
             break;
           case 'other':
             otherOutcomes++;
+            break;
+          default:
+            // If status is unknown, count as active
+            activePatients++;
             break;
         }
       });
@@ -928,7 +942,10 @@
         const data = doc.data();
         totalPatients++;
         
-        switch (data.treatmentStatus) {
+        // Handle cases where treatmentStatus might be undefined/null
+        const status = data.treatmentStatus || 'active'; // Default to active if no status
+        
+        switch (status) {
           case 'active':
             activePatients++;
             break;
@@ -940,6 +957,10 @@
             break;
           case 'other':
             otherOutcomes++;
+            break;
+          default:
+            // If status is unknown, count as active
+            activePatients++;
             break;
         }
       });
@@ -1293,23 +1314,66 @@
         }
 
         const babyData = [];
-        patientsSnap.forEach(doc => {
+        
+        // Process each patient to get baby information
+        for (const doc of patientsSnap.docs) {
           const data = doc.data();
+          console.log(`Patient ${doc.id}:`, data); // Debug log
+          
           if (data.treatmentStatus === 'birthed') {
-            babyData.push({
-              id: doc.id,
-              name: data.name || 'Unknown',
-              babyName: data.babyName || 'N/A',
-              fatherName: data.fatherName || 'N/A',
-              birthDate: data.birthDate || 'N/A',
-              birthTime: data.birthTime || 'N/A',
-              birthWeight: data.birthWeight || 'N/A',
-              gender: data.gender || 'N/A',
-              apgarScore: data.apgarScore || 'N/A',
-              complications: data.complications || 'None'
-            });
+            try {
+              // Try to get baby information from the baby subcollection
+              const babySnap = await firebase.firestore()
+                .collection('patients')
+                .doc(doc.id)
+                .collection('baby')
+                .get();
+              
+              let babyInfo = {};
+              if (!babySnap.empty) {
+                // Get the first baby document
+                const babyDoc = babySnap.docs[0];
+                babyInfo = babyDoc.data();
+              }
+              
+              // Also check if baby info is stored in the main patient document
+              const mainBabyInfo = {
+                babyName: data.babyName || data.baby_name || babyInfo.babyName || babyInfo.name || 'N/A',
+                fatherName: data.fatherName || data.father_name || babyInfo.fatherName || 'N/A',
+                birthDate: data.birthDate || data.birth_date || babyInfo.birthDate || 'N/A',
+                birthTime: data.birthTime || data.birth_time || babyInfo.birthTime || 'N/A',
+                birthWeight: data.birthWeight || data.birth_weight || babyInfo.birthWeight || 'N/A',
+                gender: data.gender || babyInfo.gender || 'N/A',
+                apgarScore: data.apgarScore || data.apgar_score || babyInfo.apgarScore || 'N/A',
+                complications: data.complications || babyInfo.complications || 'None'
+              };
+              
+              console.log(`Baby info for patient ${doc.id}:`, mainBabyInfo); // Debug log
+              
+              babyData.push({
+                id: doc.id,
+                name: data.name || 'Unknown',
+                ...mainBabyInfo
+              });
+              
+            } catch (babyError) {
+              console.warn(`Error loading baby info for patient ${doc.id}:`, babyError);
+              // Still add the patient with basic info
+              babyData.push({
+                id: doc.id,
+                name: data.name || 'Unknown',
+                babyName: data.babyName || data.baby_name || 'N/A',
+                fatherName: data.fatherName || data.father_name || 'N/A',
+                birthDate: data.birthDate || data.birth_date || 'N/A',
+                birthTime: data.birthTime || data.birth_time || 'N/A',
+                birthWeight: data.birthWeight || data.birth_weight || 'N/A',
+                gender: data.gender || 'N/A',
+                apgarScore: data.apgarScore || data.apgar_score || 'N/A',
+                complications: data.complications || 'None'
+              });
+            }
           }
-        });
+        }
 
         return babyData;
       } catch (error) {
@@ -1476,8 +1540,30 @@
           return;
         }
         
-        // Update patient document
+        // Update patient document with baby information
         await firebase.firestore().collection('patients').doc(currentEditingBabyId).update(formData);
+        
+        // Also try to save to baby subcollection if it exists
+        try {
+          const babyRef = firebase.firestore()
+            .collection('patients')
+            .doc(currentEditingBabyId)
+            .collection('baby');
+          
+          // Check if baby subcollection exists, if not create it
+          const babySnap = await babyRef.get();
+          if (babySnap.empty) {
+            // Create a new baby document
+            await babyRef.add(formData);
+          } else {
+            // Update existing baby document
+            const babyDoc = babySnap.docs[0];
+            await babyRef.doc(babyDoc.id).update(formData);
+          }
+        } catch (babyError) {
+          console.warn('Could not save to baby subcollection:', babyError);
+          // Main patient document update is sufficient
+        }
         
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('babyEditModal'));
