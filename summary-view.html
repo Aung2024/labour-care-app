@@ -443,14 +443,7 @@
       </table>
     </div>
 
-    <!-- Clinical Recommendations -->
-    <div class="section-header">
-      <i class="fas fa-stethoscope"></i>
-      Clinical Recommendations
-    </div>
-    <div id="recommendations" class="p-2 bg-light rounded" style="font-size: 9px;">
-      <!-- Recommendations will be populated here -->
-    </div>
+
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -507,6 +500,37 @@
           console.log('No summary document found');
         }
         
+        // Load medication data from separate collection
+        const medicationSnap = await base.collection("medication").get();
+        medicationSnap.forEach(doc => {
+          const d = doc.data();
+          const time = d.time;
+          
+          // Store oxytocin data
+          if (d.oxytocin) {
+            summaryData[`Medication_Oxytocin_${time}`] = d.oxytocin;
+            if (d.oxytocin === "Yes") {
+              summaryData[`Medication_Oxytocin_${time}_UL`] = d.oxytocin_UL || "";
+              summaryData[`Medication_Oxytocin_${time}_drops`] = d.oxytocin_drops || "";
+            }
+          }
+          
+          // Store medicine data
+          if (d.medicine) {
+            summaryData[`Medication_Medicine_${time}`] = d.medicine;
+            if (d.medicine === "Yes") {
+              summaryData[`Medication_Medicine_${time}_text`] = d.medicine_text || "";
+            }
+          }
+          
+          // Store IV fluids data
+          if (d.iv_fluids) {
+            summaryData[`Medication_IV_Fluids_${time}`] = d.iv_fluids;
+          }
+        });
+        
+        console.log('Medication data loaded and merged with summary data');
+        
         // Load starting time and generate time columns
         const startingTimeDoc = await base.collection("records").doc("startingTime").get();
         if (startingTimeDoc.exists) {
@@ -541,8 +565,7 @@
         console.log('Generating tables with timeColumns:', timeColumns);
         generateAllTables();
         
-        // Load recommendations
-        loadRecommendations();
+
         
       } catch (error) {
         console.error("Error loading summary data:", error);
@@ -1057,11 +1080,7 @@
       table.innerHTML = tableHTML;
     }
     
-    // Load clinical recommendations
-    function loadRecommendations() {
-      const recommendationsDiv = document.getElementById('recommendations');
-      recommendationsDiv.innerHTML = '<p class="text-muted" style="font-size: 9px; margin: 0;">Clinical recommendations will be displayed here based on the data entered.</p>';
-    }
+
     
     // Helper functions
     function getAlertValue(field) {
@@ -1226,17 +1245,65 @@
       // Medication section
       data.push(['', '']); // Empty row
       data.push(['MEDICATION', '']);
-      const medicationFields = ["Oxytocin", "Medicine", "IV_Fluids"];
-      medicationFields.forEach(field => {
-        const displayName = field.replace(/_/g, ' ');
-        const row = [displayName, ''];
-        timeColumns.hourly.forEach(time => {
-          const timeKey = time.replace(':', '_');
-          const key = `Medication_${field}_${timeKey}`;
-          row.push(summaryData[key] || '');
-        });
-        data.push(row);
+      
+      // Oxytocin with details
+      const oxytocinRow = ['Oxytocin', ''];
+      timeColumns.hourly.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const oxytocinKey = `Medication_Oxytocin_${timeKey}`;
+        const oxytocinValue = summaryData[oxytocinKey] || '';
+        
+        if (oxytocinValue === 'Y') {
+          const uLKey = `Medication_Oxytocin_${timeKey}_UL`;
+          const dropsKey = `Medication_Oxytocin_${timeKey}_drops`;
+          const uLValue = summaryData[uLKey] || '';
+          const dropsValue = summaryData[dropsKey] || '';
+          
+          if (uLValue && dropsValue) {
+            oxytocinRow.push(`${uLValue} U/L, ${dropsValue} drops/min`);
+          } else if (uLValue) {
+            oxytocinRow.push(`${uLValue} U/L`);
+          } else if (dropsValue) {
+            oxytocinRow.push(`${dropsValue} drops/min`);
+          } else {
+            oxytocinRow.push('Y');
+          }
+        } else {
+          oxytocinRow.push(oxytocinValue);
+        }
       });
+      data.push(oxytocinRow);
+      
+      // Medicine with details
+      const medicineRow = ['Medicine', ''];
+      timeColumns.hourly.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const medicineKey = `Medication_Medicine_${timeKey}`;
+        const medicineValue = summaryData[medicineKey] || '';
+        
+        if (medicineValue === 'Y') {
+          const textKey = `Medication_Medicine_${timeKey}_text`;
+          const textValue = summaryData[textKey] || '';
+          
+          if (textValue) {
+            medicineRow.push(textValue);
+          } else {
+            medicineRow.push('Y');
+          }
+        } else {
+          medicineRow.push(medicineValue);
+        }
+      });
+      data.push(medicineRow);
+      
+      // IV Fluids
+      const ivFluidsRow = ['IV Fluids', ''];
+      timeColumns.hourly.forEach(time => {
+        const timeKey = time.replace(':', '_');
+        const key = `Medication_IV_Fluids_${timeKey}`;
+        ivFluidsRow.push(summaryData[key] || '');
+      });
+      data.push(ivFluidsRow);
       
       // Shared Decision-Making section
       data.push(['', '']); // Empty row
