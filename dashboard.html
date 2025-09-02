@@ -1320,58 +1320,41 @@
           const data = doc.data();
           console.log(`Patient ${doc.id}:`, data); // Debug log
           
+          // Log all available fields for debugging
           if (data.treatmentStatus === 'birthed') {
-            try {
-              // Try to get baby information from the baby subcollection
-              const babySnap = await firebase.firestore()
-                .collection('patients')
-                .doc(doc.id)
-                .collection('baby')
-                .get();
-              
-              let babyInfo = {};
-              if (!babySnap.empty) {
-                // Get the first baby document
-                const babyDoc = babySnap.docs[0];
-                babyInfo = babyDoc.data();
-              }
-              
-              // Also check if baby info is stored in the main patient document
-              const mainBabyInfo = {
-                babyName: data.babyName || data.baby_name || babyInfo.babyName || babyInfo.name || 'N/A',
-                fatherName: data.fatherName || data.father_name || babyInfo.fatherName || 'N/A',
-                birthDate: data.birthDate || data.birth_date || babyInfo.birthDate || 'N/A',
-                birthTime: data.birthTime || data.birth_time || babyInfo.birthTime || 'N/A',
-                birthWeight: data.birthWeight || data.birth_weight || babyInfo.birthWeight || 'N/A',
-                gender: data.gender || babyInfo.gender || 'N/A',
-                apgarScore: data.apgarScore || data.apgar_score || babyInfo.apgarScore || 'N/A',
-                complications: data.complications || babyInfo.complications || 'None'
-              };
-              
-              console.log(`Baby info for patient ${doc.id}:`, mainBabyInfo); // Debug log
-              
-              babyData.push({
-                id: doc.id,
-                name: data.name || 'Unknown',
-                ...mainBabyInfo
-              });
-              
-            } catch (babyError) {
-              console.warn(`Error loading baby info for patient ${doc.id}:`, babyError);
-              // Still add the patient with basic info
-              babyData.push({
-                id: doc.id,
-                name: data.name || 'Unknown',
-                babyName: data.babyName || data.baby_name || 'N/A',
-                fatherName: data.fatherName || data.father_name || 'N/A',
-                birthDate: data.birthDate || data.birth_date || 'N/A',
-                birthTime: data.birthTime || data.birth_time || 'N/A',
-                birthWeight: data.birthWeight || data.birth_weight || 'N/A',
-                gender: data.gender || 'N/A',
-                apgarScore: data.apgarScore || data.apgar_score || 'N/A',
-                complications: data.complications || 'None'
-              });
-            }
+            console.log(`Available fields for birthed patient ${doc.id}:`, Object.keys(data));
+            console.log(`Baby-related fields:`, {
+              babyName: data.babyName,
+              baby_name: data.baby_name,
+              baby_name_my: data.baby_name_my,
+              babyNameMy: data.babyNameMy,
+              babyName_my: data.babyName_my,
+              fatherName: data.fatherName,
+              father_name: data.father_name,
+              father_name_my: data.father_name_my,
+              fatherNameMy: data.fatherNameMy,
+              fatherName_my: data.fatherName_my
+            });
+            // Get baby info from the main patient document only (no subcollection access)
+            // Check multiple possible field names and variations
+            const babyInfo = {
+              babyName: data.babyName || data.baby_name || data.baby_name_my || data.babyNameMy || data.babyName_my || 'N/A',
+              fatherName: data.fatherName || data.father_name || data.father_name_my || data.fatherNameMy || data.fatherName_my || 'N/A',
+              birthDate: data.birthDate || data.birth_date || data.birthDateMy || data.birth_date_my || 'N/A',
+              birthTime: data.birthTime || data.birth_time || data.birthTimeMy || data.birth_time_my || 'N/A',
+              birthWeight: data.birthWeight || data.birth_weight || data.birthWeightMy || data.birth_weight_my || 'N/A',
+              gender: data.gender || data.genderMy || data.gender_my || 'N/A',
+              apgarScore: data.apgarScore || data.apgar_score || data.apgarScoreMy || data.apgar_score_my || 'N/A',
+              complications: data.complications || data.complicationsMy || data.complications_my || 'None'
+            };
+            
+            console.log(`Baby info for patient ${doc.id}:`, babyInfo); // Debug log
+            
+            babyData.push({
+              id: doc.id,
+              name: data.name || 'Unknown',
+              ...babyInfo
+            });
           }
         }
 
@@ -1542,28 +1525,6 @@
         
         // Update patient document with baby information
         await firebase.firestore().collection('patients').doc(currentEditingBabyId).update(formData);
-        
-        // Also try to save to baby subcollection if it exists
-        try {
-          const babyRef = firebase.firestore()
-            .collection('patients')
-            .doc(currentEditingBabyId)
-            .collection('baby');
-          
-          // Check if baby subcollection exists, if not create it
-          const babySnap = await babyRef.get();
-          if (babySnap.empty) {
-            // Create a new baby document
-            await babyRef.add(formData);
-          } else {
-            // Update existing baby document
-            const babyDoc = babySnap.docs[0];
-            await babyRef.doc(babyDoc.id).update(formData);
-          }
-        } catch (babyError) {
-          console.warn('Could not save to baby subcollection:', babyError);
-          // Main patient document update is sufficient
-        }
         
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('babyEditModal'));
