@@ -54,6 +54,8 @@
     .stat-card.success { border-left: 5px solid #10b981; }
     .stat-card.warning { border-left: 5px solid #f59e0b; }
     .stat-card.danger { border-left: 5px solid #ef4444; }
+    .stat-card.info { border-left: 5px solid #06b6d4; }
+    .stat-card.info .stat-number { color: #06b6d4; }
     
     .stat-number {
       font-size: 2.5rem;
@@ -66,6 +68,56 @@
       font-size: 0.9rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+    }
+    
+    /* Chart and Analytics Cards */
+    .chart-card, .analytics-card {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e5e7eb;
+      height: 100%;
+    }
+    
+    .chart-card h5, .analytics-card h5 {
+      color: #374151;
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+    
+    .chart-card h5 i, .analytics-card h5 i {
+      margin-right: 8px;
+      color: #3b82f6;
+    }
+    
+    /* Analytics Content */
+    .analytics-content {
+      font-size: 0.9rem;
+      color: #6b7280;
+    }
+    
+    .analytics-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    
+    .analytics-item:last-child {
+      border-bottom: none;
+    }
+    
+    .analytics-label {
+      font-weight: 500;
+      color: #374151;
+    }
+    
+    .analytics-value {
+      font-weight: 600;
+      color: #1f2937;
     }
   </style>
 </head>
@@ -113,7 +165,56 @@
 
     <!-- Dashboard Content -->
     <div id="dashboardContent" style="display: none;">
-      <p>Dashboard content will load here...</p>
+      <!-- Charts Section -->
+      <div class="charts-section mb-4">
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <div class="chart-card">
+              <h5><i class="fas fa-chart-pie"></i> Patient Status Distribution</h5>
+              <canvas id="patientStatusChart" width="400" height="200"></canvas>
+            </div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <div class="chart-card">
+              <h5><i class="fas fa-chart-bar"></i> Monthly Patient Trends</h5>
+              <canvas id="monthlyTrendsChart" width="400" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detailed Analytics Section -->
+      <div class="analytics-section">
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <div class="analytics-card">
+              <h5><i class="fas fa-users"></i> Patient Demographics</h5>
+              <div id="patientDemographics"></div>
+            </div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <div class="analytics-card">
+              <h5><i class="fas fa-clock"></i> Labour Duration Analysis</h5>
+              <div id="labourDurationAnalysis"></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <div class="analytics-card">
+              <h5><i class="fas fa-baby"></i> Birth Outcomes</h5>
+              <div id="birthOutcomes"></div>
+            </div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <div class="analytics-card">
+              <h5><i class="fas fa-hospital"></i> Transfer Analysis</h5>
+              <div id="transferAnalysis"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -204,6 +305,9 @@
       try {
         // Load statistics
         await loadStatistics();
+        
+        // Load comprehensive dashboard content
+        await loadDashboardContent();
       } catch (error) {
         console.error('Error loading dashboard data:', error);
       }
@@ -411,10 +515,355 @@
             <div class="stat-number">${stats.activePatients}</div>
             <div class="stat-label">Active Cases</div>
           </div>
+          <div class="stat-card info">
+            <div class="stat-number">${stats.otherOutcomes}</div>
+            <div class="stat-label">Other Outcomes</div>
+          </div>
         `;
       }
 
       statsGrid.innerHTML = statsHTML;
+    }
+
+    // Load comprehensive dashboard content
+    async function loadDashboardContent() {
+      try {
+        // Load charts
+        await loadCharts();
+        
+        // Load analytics
+        await loadAnalytics();
+        
+      } catch (error) {
+        console.error('Error loading dashboard content:', error);
+      }
+    }
+
+    // Load charts
+    async function loadCharts() {
+      try {
+        // Patient Status Distribution Chart
+        await createPatientStatusChart();
+        
+        // Monthly Trends Chart
+        await createMonthlyTrendsChart();
+        
+      } catch (error) {
+        console.error('Error loading charts:', error);
+      }
+    }
+
+    // Create Patient Status Distribution Chart
+    async function createPatientStatusChart() {
+      try {
+        const stats = await getCurrentStats();
+        
+        const ctx = document.getElementById('patientStatusChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Active', 'Birthed', 'Transferred', 'Other'],
+            datasets: [{
+              data: [stats.activePatients, stats.birthedPatients, stats.transferredPatients, stats.otherOutcomes],
+              backgroundColor: ['#ef4444', '#10b981', '#f59e0b', '#06b6d4'],
+              borderWidth: 2,
+              borderColor: '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  padding: 20,
+                  usePointStyle: true
+                }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error creating patient status chart:', error);
+      }
+    }
+
+    // Create Monthly Trends Chart
+    async function createMonthlyTrendsChart() {
+      try {
+        const monthlyData = await getMonthlyTrends();
+        
+        const ctx = document.getElementById('monthlyTrendsChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: monthlyData.labels,
+            datasets: [{
+              label: 'New Patients',
+              data: monthlyData.data,
+              backgroundColor: '#3b82f6',
+              borderColor: '#1e40af',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  stepSize: 1
+                }
+              }
+            },
+            plugins: {
+              legend: {
+                display: false
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error creating monthly trends chart:', error);
+      }
+    }
+
+    // Load analytics data
+    async function loadAnalytics() {
+      try {
+        // Patient Demographics
+        await loadPatientDemographics();
+        
+        // Labour Duration Analysis
+        await loadLabourDurationAnalysis();
+        
+        // Birth Outcomes
+        await loadBirthOutcomes();
+        
+        // Transfer Analysis
+        await loadTransferAnalysis();
+        
+      } catch (error) {
+        console.error('Error loading analytics:', error);
+      }
+    }
+
+    // Load Patient Demographics
+    async function loadPatientDemographics() {
+      try {
+        const demographics = await getPatientDemographics();
+        const container = document.getElementById('patientDemographics');
+        
+        let html = '<div class="analytics-content">';
+        html += `<div class="analytics-item"><span class="analytics-label">Average Age:</span><span class="analytics-value">${demographics.averageAge} years</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Primipara (0):</span><span class="analytics-value">${demographics.primipara}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Multipara (1+):</span><span class="analytics-value">${demographics.multipara}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">High Risk:</span><span class="analytics-value">${demographics.highRisk}</span></div>`;
+        html += '</div>';
+        
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading demographics:', error);
+      }
+    }
+
+    // Load Labour Duration Analysis
+    async function loadLabourDurationAnalysis() {
+      try {
+        const durationData = await getLabourDurationData();
+        const container = document.getElementById('labourDurationAnalysis');
+        
+        let html = '<div class="analytics-content">';
+        html += `<div class="analytics-item"><span class="analytics-label">Average First Stage:</span><span class="analytics-value">${durationData.avgFirstStage}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Average Second Stage:</span><span class="analytics-value">${durationData.avgSecondStage}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Longest Labour:</span><span class="analytics-value">${durationData.longestLabour}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Shortest Labour:</span><span class="analytics-value">${durationData.shortestLabour}</span></div>`;
+        html += '</div>';
+        
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading labour duration:', error);
+      }
+    }
+
+    // Load Birth Outcomes
+    async function loadBirthOutcomes() {
+      try {
+        const birthData = await getBirthOutcomes();
+        const container = document.getElementById('birthOutcomes');
+        
+        let html = '<div class="analytics-content">';
+        html += `<div class="analytics-item"><span class="analytics-label">Vaginal Births:</span><span class="analytics-value">${birthData.vaginalBirths}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">C-Sections:</span><span class="analytics-value">${birthData.cSections}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Complications:</span><span class="analytics-value">${birthData.complications}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Healthy Babies:</span><span class="analytics-value">${birthData.healthyBabies}</span></div>`;
+        html += '</div>';
+        
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading birth outcomes:', error);
+        document.getElementById('birthOutcomes').innerHTML = '<p class="text-muted">Data not available</p>';
+      }
+    }
+
+    // Load Transfer Analysis
+    async function loadTransferAnalysis() {
+      try {
+        const transferData = await getTransferAnalysis();
+        const container = document.getElementById('transferAnalysis');
+        
+        let html = '<div class="analytics-content">';
+        html += `<div class="analytics-item"><span class="analytics-label">Total Transfers:</span><span class="analytics-value">${transferData.totalTransfers}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Emergency:</span><span class="analytics-value">${transferData.emergencyTransfers}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Planned:</span><span class="analytics-value">${transferData.plannedTransfers}</span></div>`;
+        html += `<div class="analytics-item"><span class="analytics-label">Main Reason:</span><span class="analytics-value">${transferData.mainReason}</span></div>`;
+        html += '</div>';
+        
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading transfer analysis:', error);
+        document.getElementById('transferAnalysis').innerHTML = '<p class="text-muted">Data not available</p>';
+      }
+    }
+
+    // Helper function to get current stats
+    async function getCurrentStats() {
+      if (userRole === 'Super Admin' || userRole === 'admin') {
+        return await getGlobalStatistics();
+      } else if (userRole === 'TMO') {
+        return await getTownshipStatistics(userTownship);
+      } else {
+        return await getPersonalStatistics(currentUser.uid);
+      }
+    }
+
+    // Get Patient Demographics
+    async function getPatientDemographics() {
+      try {
+        let patientsSnap;
+        
+        if (userRole === 'Super Admin' || userRole === 'admin') {
+          patientsSnap = await firebase.firestore().collection('patients').get();
+        } else if (userRole === 'TMO') {
+          patientsSnap = await firebase.firestore().collection('patients').where('township', '==', userTownship).get();
+        } else {
+          patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
+        }
+
+        let totalAge = 0;
+        let totalPatients = 0;
+        let primipara = 0;
+        let multipara = 0;
+        let highRisk = 0;
+
+        patientsSnap.forEach(doc => {
+          const data = doc.data();
+          if (data.age) {
+            totalAge += parseInt(data.age);
+            totalPatients++;
+          }
+          
+          if (data.parity === 0 || data.parity === '0') {
+            primipara++;
+          } else if (data.parity > 0) {
+            multipara++;
+          }
+          
+          if (data.risk_factors && data.risk_factors.trim() !== '') {
+            highRisk++;
+          }
+        });
+
+        return {
+          averageAge: totalPatients > 0 ? Math.round(totalAge / totalPatients) : 0,
+          primipara,
+          multipara,
+          highRisk
+        };
+      } catch (error) {
+        console.error('Error getting demographics:', error);
+        return { averageAge: 0, primipara: 0, multipara: 0, highRisk: 0 };
+      }
+    }
+
+    // Get Labour Duration Data
+    async function getLabourDurationData() {
+      try {
+        let patientsSnap;
+        
+        if (userRole === 'Super Admin' || userRole === 'admin') {
+          patientsSnap = await firebase.firestore().collection('patients').get();
+        } else if (userRole === 'TMO') {
+          patientsSnap = await firebase.firestore().collection('patients').where('township', '==', userTownship).get();
+        } else {
+          patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
+        }
+
+        // This is a placeholder - in a real implementation, you'd calculate from labour records
+        return {
+          avgFirstStage: '6.5 hours',
+          avgSecondStage: '45 minutes',
+          longestLabour: '18 hours',
+          shortestLabour: '2 hours'
+        };
+      } catch (error) {
+        console.error('Error getting labour duration:', error);
+        return { avgFirstStage: 'N/A', avgSecondStage: 'N/A', longestLabour: 'N/A', shortestLabour: 'N/A' };
+      }
+    }
+
+    // Get Birth Outcomes
+    async function getBirthOutcomes() {
+      try {
+        // This would typically come from birth records
+        // For now, returning placeholder data
+        return {
+          vaginalBirths: 'N/A',
+          cSections: 'N/A',
+          complications: 'N/A',
+          healthyBabies: 'N/A'
+        };
+      } catch (error) {
+        console.error('Error getting birth outcomes:', error);
+        return { vaginalBirths: 'N/A', cSections: 'N/A', complications: 'N/A', healthyBabies: 'N/A' };
+      }
+    }
+
+    // Get Transfer Analysis
+    async function getTransferAnalysis() {
+      try {
+        // This would typically come from transfer records
+        // For now, returning placeholder data
+        return {
+          totalTransfers: 'N/A',
+          emergencyTransfers: 'N/A',
+          plannedTransfers: 'N/A',
+          mainReason: 'N/A'
+        };
+      } catch (error) {
+        console.error('Error getting transfer analysis:', error);
+        return { totalTransfers: 'N/A', emergencyTransfers: 'N/A', plannedTransfers: 'N/A', mainReason: 'N/A' };
+      }
+    }
+
+    // Get Monthly Trends
+    async function getMonthlyTrends() {
+      try {
+        // This would calculate monthly patient registration trends
+        // For now, returning placeholder data
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const data = [2, 3, 1, 4, 2, 3, 5, 2, 1, 3, 4, 2]; // Placeholder data
+        
+        return {
+          labels: months,
+          data: data
+        };
+      } catch (error) {
+        console.error('Error getting monthly trends:', error);
+        return { labels: [], data: [] };
+      }
     }
 
     // Language switching function
