@@ -1335,26 +1335,69 @@
               fatherNameMy: data.fatherNameMy,
               fatherName_my: data.fatherName_my
             });
-            // Get baby info from the main patient document only (no subcollection access)
-            // Check multiple possible field names and variations
-            const babyInfo = {
-              babyName: data.babyName || data.baby_name || data.baby_name_my || data.babyNameMy || data.babyName_my || 'N/A',
-              fatherName: data.fatherName || data.father_name || data.father_name_my || data.fatherNameMy || data.fatherName_my || 'N/A',
-              birthDate: data.birthDate || data.birth_date || data.birthDateMy || data.birth_date_my || 'N/A',
-              birthTime: data.birthTime || data.birth_time || data.birthTimeMy || data.birth_time_my || 'N/A',
-              birthWeight: data.birthWeight || data.birth_weight || data.birthWeightMy || data.birth_weight_my || 'N/A',
-              gender: data.gender || data.genderMy || data.gender_my || 'N/A',
-              apgarScore: data.apgarScore || data.apgar_score || data.apgarScoreMy || data.apgar_score_my || 'N/A',
-              complications: data.complications || data.complicationsMy || data.complications_my || 'None'
-            };
-            
-            console.log(`Baby info for patient ${doc.id}:`, babyInfo); // Debug log
-            
-            babyData.push({
-              id: doc.id,
-              name: data.name || 'Unknown',
-              ...babyInfo
-            });
+            // Get baby info from the birthRecord subcollection
+            try {
+              const birthRecordSnap = await firebase.firestore()
+                .collection('patients')
+                .doc(doc.id)
+                .collection('records')
+                .doc('birthRecord')
+                .get();
+              
+              if (birthRecordSnap.exists) {
+                const birthData = birthRecordSnap.data();
+                console.log(`Birth record data for patient ${doc.id}:`, birthData);
+                
+                const babyInfo = {
+                  babyName: birthData.babyName || 'N/A',
+                  fatherName: birthData.fatherName || 'N/A',
+                  birthDate: birthData.birthTime ? new Date(birthData.birthTime).toLocaleDateString() : 'N/A',
+                  birthTime: birthData.birthTime ? new Date(birthData.birthTime).toLocaleTimeString() : 'N/A',
+                  birthWeight: birthData.birthWeight ? `${birthData.birthWeight}g` : 'N/A',
+                  gender: birthData.babyGender || 'N/A',
+                  apgarScore: birthData.apgarScore1min || birthData.apgarScore5min || 'N/A',
+                  complications: birthData.birthComplications || 'None'
+                };
+                
+                console.log(`Extracted baby info for patient ${doc.id}:`, babyInfo);
+                
+                babyData.push({
+                  id: doc.id,
+                  name: data.name || 'Unknown',
+                  ...babyInfo
+                });
+              } else {
+                console.log(`No birth record found for patient ${doc.id}`);
+                // Add patient with N/A values if no birth record exists
+                babyData.push({
+                  id: doc.id,
+                  name: data.name || 'Unknown',
+                  babyName: 'N/A',
+                  fatherName: 'N/A',
+                  birthDate: 'N/A',
+                  birthTime: 'N/A',
+                  birthWeight: 'N/A',
+                  gender: 'N/A',
+                  apgarScore: 'N/A',
+                  complications: 'None'
+                });
+              }
+            } catch (birthError) {
+              console.error(`Error loading birth record for patient ${doc.id}:`, birthError);
+              // Add patient with N/A values if birth record access fails
+              babyData.push({
+                id: doc.id,
+                name: data.name || 'Unknown',
+                babyName: 'N/A',
+                fatherName: 'N/A',
+                birthDate: 'N/A',
+                birthTime: 'N/A',
+                birthWeight: 'N/A',
+                gender: 'N/A',
+                apgarScore: 'N/A',
+                complications: 'None'
+              });
+            }
           }
         }
 
@@ -1468,24 +1511,39 @@
       try {
         currentEditingBabyId = patientId;
         
-        // Get patient data
-        const patientDoc = await firebase.firestore().collection('patients').doc(patientId).get();
-        if (!patientDoc.exists) {
-          alert('Patient not found');
+        // Get birthRecord data from subcollection
+        const birthRecordDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('birthRecord')
+          .get();
+        
+        if (!birthRecordDoc.exists) {
+          alert('Birth record not found for this patient');
           return;
         }
         
-        const data = patientDoc.data();
+        const data = birthRecordDoc.data();
+        console.log('Birth record data for editing:', data);
         
-        // Populate modal fields
+        // Populate modal fields from birthRecord data
         document.getElementById('babyName').value = data.babyName || '';
         document.getElementById('fatherName').value = data.fatherName || '';
-        document.getElementById('birthDate').value = data.birthDate || '';
-        document.getElementById('birthTime').value = data.birthTime || '';
+        
+        // Handle combined birthTime field (format: "2025-09-01T20:56")
+        if (data.birthTime) {
+          const birthDateTime = new Date(data.birthTime);
+          if (!isNaN(birthDateTime.getTime())) {
+            document.getElementById('birthDate').value = birthDateTime.toISOString().split('T')[0];
+            document.getElementById('birthTime').value = birthDateTime.toTimeString().slice(0, 5);
+          }
+        }
+        
         document.getElementById('birthWeight').value = data.birthWeight || '';
-        document.getElementById('gender').value = data.gender || '';
-        document.getElementById('apgarScore').value = data.apgarScore || '';
-        document.getElementById('complications').value = data.complications || '';
+        document.getElementById('gender').value = data.babyGender || '';
+        document.getElementById('apgarScore').value = data.apgarScore1min || data.apgarScore || '';
+        document.getElementById('complications').value = data.birthComplications || '';
         
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('babyEditModal'));
@@ -1504,16 +1562,15 @@
           return;
         }
         
-        // Get form data
+        // Get form data and map to database field names
         const formData = {
           babyName: document.getElementById('babyName').value,
           fatherName: document.getElementById('fatherName').value,
-          birthDate: document.getElementById('birthDate').value,
-          birthTime: document.getElementById('birthTime').value,
-          birthWeight: document.getElementById('birthWeight').value,
-          gender: document.getElementById('gender').value,
-          apgarScore: document.getElementById('apgarScore').value,
-          complications: document.getElementById('complications').value
+          birthTime: `${document.getElementById('birthDate').value}T${document.getElementById('birthTime').value}`, // Combine date and time
+          birthWeight: parseInt(document.getElementById('birthWeight').value) || 0,
+          babyGender: document.getElementById('gender').value,
+          apgarScore1min: parseInt(document.getElementById('apgarScore').value) || 0,
+          birthComplications: document.getElementById('complications').value
         };
         
         // Validate required fields
@@ -1523,8 +1580,23 @@
           return;
         }
         
-        // Update patient document with baby information
-        await firebase.firestore().collection('patients').doc(currentEditingBabyId).update(formData);
+        // Update birthRecord subcollection with baby information
+        const birthRecordRef = firebase.firestore()
+          .collection('patients')
+          .doc(currentEditingBabyId)
+          .collection('records')
+          .doc('birthRecord');
+        
+        // Check if birthRecord document exists
+        const birthRecordSnap = await birthRecordRef.get();
+        
+        if (birthRecordSnap.exists) {
+          // Update existing birth record
+          await birthRecordRef.update(formData);
+        } else {
+          // Create new birth record document
+          await birthRecordRef.set(formData);
+        }
         
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('babyEditModal'));
