@@ -691,6 +691,12 @@
           console.log('Second stage data:', secondStageData);
           if (secondStageData.isSecondStageActive) {
             document.getElementById('secondStageStart').textContent = secondStageData.secondStageStartTime || '-';
+            
+            // Generate hybrid time columns for second stage
+            if (activeFirstStageStartTime && secondStageData.secondStageStartTime) {
+              console.log('Generating hybrid time columns for second stage...');
+              generateHybridTimeColumns();
+            }
           }
         } else {
           console.log('No second stage document found');
@@ -749,6 +755,60 @@
       
       // Cervix and Descent Plot: +1 hour intervals
       timeColumns.plot = [...timeColumns.hourly];
+    }
+    
+    // Generate hybrid time columns: 30-min before second stage, 15-min after
+    function generateHybridTimeColumns() {
+      console.log('🚀 generateHybridTimeColumns() called');
+      console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
+      console.log(`  secondStageStartTime: ${secondStageData.secondStageStartTime}`);
+      console.log(`  isSecondStageActive: ${secondStageData.isSecondStageActive}`);
+      
+      if (!activeFirstStageStartTime) {
+        console.log('❌ No activeFirstStageStartTime, returning early');
+        return;
+      }
+      
+      const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
+      const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
+      console.log(`  Start time: ${startHour}:${startMinute}`);
+      
+      // Store original time columns before generating hybrid ones
+      const originalThirtyMin = [...timeColumns.thirtyMin];
+      
+      // Create Date objects for proper time comparison across midnight
+      const baseDate = new Date('2024-01-01');
+      const startTimeDate = createTimeDate(activeFirstStageStartTime, baseDate);
+      const secondStageDate = createTimeDate(secondStageData.secondStageStartTime, baseDate);
+      
+      // If second stage is earlier than first stage, it means it's the next day
+      if (secondStageDate < startTimeDate) {
+        secondStageDate.setDate(secondStageDate.getDate() + 1);
+      }
+      
+      // Generate hybrid time columns
+      const hybridTimeCols = [];
+      
+      // Add 30-minute intervals before second stage
+      let currentTime = new Date(startTimeDate);
+      while (currentTime < secondStageDate) {
+        const timeStr = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+        hybridTimeCols.push(timeStr);
+        currentTime.setMinutes(currentTime.getMinutes() + 30);
+      }
+      
+      // Add 15-minute intervals after second stage (for 2 hours)
+      currentTime = new Date(secondStageDate);
+      for (let i = 0; i < 8; i++) { // 8 * 15min = 2 hours
+        const timeStr = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+        hybridTimeCols.push(timeStr);
+        currentTime.setMinutes(currentTime.getMinutes() + 15);
+      }
+      
+      // Update the thirtyMin time columns with hybrid columns
+      timeColumns.thirtyMin = hybridTimeCols;
+      
+      console.log(`  Generated ${hybridTimeCols.length} hybrid time columns:`, hybridTimeCols);
     }
     
     // Generate default time columns if no starting time is available
