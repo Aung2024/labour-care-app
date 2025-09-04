@@ -133,27 +133,49 @@
       font-weight: 600;
       color: #856404;
       font-size: 6px;
-      width: 35px;
-      min-width: 35px;
+      width: 30px;
+      min-width: 30px;
+      max-width: 30px;
+      text-align: center;
+      padding: 1px 2px;
     }
     
-    /* Alert Value Highlighting - Same as summary.html */
+    /* Alert Value Highlighting - Clean A4 Professional Style */
     .alert-value,
     .alert-column .alert-value,
     td.alert-value,
     .alert-value * {
       background-color: #fef2f2 !important;
       color: #dc2626 !important;
-      border: 2px solid #dc2626 !important;
-      font-weight: 700 !important;
-      border-radius: 4px !important;
-      padding: 6px 10px !important;
-      box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2) !important;
-      font-size: 8px !important;
-      line-height: 1.2 !important;
+      border: 1px solid #fca5a5 !important;
+      font-weight: 600 !important;
+      border-radius: 2px !important;
+      padding: 1px 3px !important;
+      font-size: 7px !important;
+      line-height: 1.0 !important;
       display: inline-block !important;
-      min-width: 20px !important;
+      min-width: 8px !important;
       text-align: center !important;
+      white-space: nowrap !important;
+    }
+    
+    /* Alert column thresholds - very compact */
+    .alert-column .alert-value {
+      font-size: 6px !important;
+      padding: 0px 2px !important;
+      min-width: 6px !important;
+      max-width: 30px !important;
+      word-wrap: break-word !important;
+      white-space: normal !important;
+      line-height: 0.9 !important;
+    }
+    
+    /* Data cell alert values - minimal highlighting */
+    .data-cell.alert-value {
+      font-size: 7px !important;
+      padding: 0px 2px !important;
+      min-width: 6px !important;
+      max-width: 20px !important;
     }
     
     /* Ensure alert highlighting works for all alert values */
@@ -168,6 +190,18 @@
       font-weight: 600;
       font-size: 7px;
       width: 25px;
+      min-width: 25px;
+      padding: 2px 1px;
+      text-align: center;
+    }
+    
+    .summary-table .data-cell {
+      padding: 1px 0px !important;
+      text-align: center !important;
+      vertical-align: middle !important;
+      font-size: 7px !important;
+      line-height: 1.0 !important;
+      min-height: 12px !important;
     }
     
     .summary-table .time-column.second-stage {
@@ -770,15 +804,32 @@
         return false;
       }
       
-      const timeHour = parseInt(time.split(':')[0]);
-      const timeMinute = parseInt(time.split(':')[1]);
-      const secondHour = parseInt(secondStageData.secondStageStartTime.split(':')[0]);
-      const secondMinute = parseInt(secondStageData.secondStageStartTime.split(':')[1]);
+      // Create Date objects for proper time comparison across midnight
+      const baseDate = new Date('2024-01-01'); // Use a common base date
+      const timeDate = createTimeDate(time, baseDate);
+      const secondStageDate = createTimeDate(secondStageData.secondStageStartTime, baseDate);
+      const activeFirstStageDate = createTimeDate(activeFirstStageStartTime, baseDate);
       
-      const timeMinutes = timeHour * 60 + timeMinute;
-      const secondMinutes = secondHour * 60 + secondMinute;
+      // If second stage is earlier than first stage, it means it's the next day
+      if (secondStageDate < activeFirstStageDate) {
+        // Second stage is next day, so adjust second stage date
+        secondStageDate.setDate(secondStageDate.getDate() + 1);
+      }
       
-      return timeMinutes >= secondMinutes;
+      // If current time is earlier than first stage, it means it's the next day
+      if (timeDate < activeFirstStageDate) {
+        timeDate.setDate(timeDate.getDate() + 1);
+      }
+      
+      return timeDate >= secondStageDate;
+    }
+    
+    // Helper function to create a Date object from time string
+    function createTimeDate(timeStr, baseDate) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const date = new Date(baseDate);
+      date.setHours(hours, minutes, 0, 0);
+      return date;
     }
     
     // Generate Supportive Care table
