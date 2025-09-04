@@ -21,6 +21,16 @@
         <div id="pendingUsers">Loading...</div>
       </div>
     </div>
+    
+    <!-- Debug Section (remove in production) -->
+    <div class="card mb-4">
+      <div class="card-header">Debug Information</div>
+      <div class="card-body">
+        <button class="btn btn-info btn-sm mb-2" onclick="debugUsers()">Debug All Users</button>
+        <button class="btn btn-warning btn-sm mb-2" onclick="debugPendingUsers()">Debug Pending Users</button>
+        <div id="debugInfo" class="mt-2"></div>
+      </div>
+    </div>
     <!-- More analytics sections will go here -->
   </div>
   <footer class="footer text-center mt-4">
@@ -29,13 +39,37 @@
   <script>
     // Only allow superadmin/admin
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) return window.location = 'login.html';
-      const userDoc = await db.collection('users').doc(user.uid).get();
-      if (!userDoc.exists || !['Super Admin'].includes(userDoc.data().role)) {
+      if (!user) {
+        console.log('No authenticated user, redirecting to login');
+        return window.location = 'login.html';
+      }
+      
+      console.log('Authenticated user:', user.uid);
+      
+      try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('User data:', userData);
+          console.log('User role:', userData.role);
+          console.log('Is Super Admin?', userData.role === 'Super Admin');
+        }
+        
+        if (!userDoc.exists || !['Super Admin'].includes(userDoc.data().role)) {
+          console.log('User not authorized, signing out');
+          firebase.auth().signOut();
+          return window.location = 'login.html';
+        }
+        
+        console.log('User authorized as Super Admin, loading pending users');
+        loadPendingUsers();
+      } catch (error) {
+        console.error('Error checking user authorization:', error);
         firebase.auth().signOut();
         return window.location = 'login.html';
       }
-      loadPendingUsers();
     });
 
     async function loadPendingUsers() {
@@ -43,7 +77,20 @@
         const pendingDiv = document.getElementById('pendingUsers');
         pendingDiv.innerHTML = 'Loading...';
         
+        console.log('Loading pending users...');
+        
+        // First, let's check if we can access the users collection at all
+        const allUsersSnap = await db.collection('users').get();
+        console.log('Total users in collection:', allUsersSnap.size);
+        
+        // Log all users for debugging
+        allUsersSnap.forEach(doc => {
+          const userData = doc.data();
+          console.log('User:', doc.id, userData);
+        });
+        
         const snap = await db.collection('users').where('approved', '==', false).get();
+        console.log('Pending users found:', snap.size);
         
         if (snap.empty) {
           pendingDiv.innerHTML = '<div class="text-success">No pending users.</div>';
@@ -53,6 +100,7 @@
         let html = '<table class="table table-sm"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Township</th><th>Action</th></tr></thead><tbody>';
         snap.forEach(doc => {
           const d = doc.data();
+          console.log('Pending user data:', doc.id, d);
           html += `<tr><td>${d.name||''}</td><td>${d.email||''}</td><td>${d.role||''}</td><td>${d.township||'N/A'}</td><td><button class='btn btn-success btn-sm' onclick='approveUser("${doc.id}")'>Approve</button></td></tr>`;
         });
         html += '</tbody></table>';
@@ -73,6 +121,65 @@
         console.error("Error approving user:", error);
         document.getElementById('adminMsg').innerHTML = `<div class="alert alert-danger">Error approving user: ${error.message}</div>`;
         setTimeout(()=>{document.getElementById('adminMsg').innerHTML='';},5000);
+      }
+    }
+
+    // Debug functions
+    async function debugUsers() {
+      try {
+        const debugDiv = document.getElementById('debugInfo');
+        debugDiv.innerHTML = 'Loading all users...';
+        
+        const allUsersSnap = await db.collection('users').get();
+        let debugHtml = `<h6>All Users (${allUsersSnap.size} total):</h6><pre>`;
+        
+        allUsersSnap.forEach(doc => {
+          const userData = doc.data();
+          debugHtml += `ID: ${doc.id}\n`;
+          debugHtml += `Name: ${userData.name || 'N/A'}\n`;
+          debugHtml += `Email: ${userData.email || 'N/A'}\n`;
+          debugHtml += `Role: ${userData.role || 'N/A'}\n`;
+          debugHtml += `Approved: ${userData.approved}\n`;
+          debugHtml += `Township: ${userData.township || 'N/A'}\n`;
+          debugHtml += `Created: ${userData.createdAt || 'N/A'}\n`;
+          debugHtml += '---\n';
+        });
+        
+        debugHtml += '</pre>';
+        debugDiv.innerHTML = debugHtml;
+      } catch (error) {
+        document.getElementById('debugInfo').innerHTML = `<div class="alert alert-danger">Debug error: ${error.message}</div>`;
+      }
+    }
+
+    async function debugPendingUsers() {
+      try {
+        const debugDiv = document.getElementById('debugInfo');
+        debugDiv.innerHTML = 'Loading pending users...';
+        
+        const pendingSnap = await db.collection('users').where('approved', '==', false).get();
+        let debugHtml = `<h6>Pending Users (${pendingSnap.size} total):</h6><pre>`;
+        
+        if (pendingSnap.empty) {
+          debugHtml += 'No pending users found.\n';
+        } else {
+          pendingSnap.forEach(doc => {
+            const userData = doc.data();
+            debugHtml += `ID: ${doc.id}\n`;
+            debugHtml += `Name: ${userData.name || 'N/A'}\n`;
+            debugHtml += `Email: ${userData.email || 'N/A'}\n`;
+            debugHtml += `Role: ${userData.role || 'N/A'}\n`;
+            debugHtml += `Approved: ${userData.approved}\n`;
+            debugHtml += `Township: ${userData.township || 'N/A'}\n`;
+            debugHtml += `Created: ${userData.createdAt || 'N/A'}\n`;
+            debugHtml += '---\n';
+          });
+        }
+        
+        debugHtml += '</pre>';
+        debugDiv.innerHTML = debugHtml;
+      } catch (error) {
+        document.getElementById('debugInfo').innerHTML = `<div class="alert alert-danger">Debug error: ${error.message}</div>`;
       }
     }
   </script>

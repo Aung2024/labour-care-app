@@ -3,9 +3,13 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Users collection
     match /users/{userId} {
+      // Allow users to read/write their own data
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow Super Admin to read/write all user data
       allow read, write: if
         request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
     }
     
