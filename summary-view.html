@@ -501,9 +501,21 @@
     // Global variables
     let patientData = {};
     let summaryData = {};
-    let timeColumns = {};
     let secondStageData = {};
     let activeFirstStageStartTime = null;
+    
+    // Time column arrays (matching summary.html structure)
+    let supportiveCareTimeCols = [];
+    let babyBaselineTimeCols = [];
+    let babyOtherTimeCols = [];
+    let womanTimeCols = [];
+    let contractionsTimeCols = [];
+    let cervixPlotTimeCols = [];
+    let descentPlotTimeCols = [];
+    let medicationTimeCols = [];
+    let assessmentTimeCols = [];
+    let planTimeCols = [];
+    let initialsTimeCols = [];
     
     // Get patient ID from URL parameters
     function getPatientIdFromUrl() {
@@ -666,11 +678,11 @@
           console.log('Starting time data:', startingData);
           if (startingData.startingTime) {
             activeFirstStageStartTime = startingData.startingTime;
-            generateTimeColumns(startingData.startingTime);
-            console.log('Time columns generated from starting time:', timeColumns);
+            generateDynamicTimeColumns();
+            console.log('Dynamic time columns generated from starting time:', activeFirstStageStartTime);
           } else {
             generateDefaultTimeColumns();
-            console.log('Default time columns generated:', timeColumns);
+            console.log('Default time columns generated');
           }
         } else {
           console.log('No starting time document found, using defaults');
@@ -725,39 +737,82 @@
       document.getElementById('riskFactors').textContent = patientData.risk_factors || 'None identified';
     }
     
-    // Generate time columns based on starting time
-    function generateTimeColumns(startingTime) {
-      const startHour = parseInt(startingTime.split(':')[0]);
-      const startMinute = parseInt(startingTime.split(':')[1]);
+    // Generate dynamic time columns based on starting time (matching summary.html)
+    function generateDynamicTimeColumns() {
+      console.log('🚀 generateDynamicTimeColumns() called');
+      console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
       
-      // Supportive Care, Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals
-      timeColumns.hourly = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        timeColumns.hourly.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      if (!activeFirstStageStartTime) {
+        // Default fallback - use current time as starting point
+        const now = new Date();
+        activeFirstStageStartTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        console.log(`  No starting time, using current time: ${activeFirstStageStartTime}`);
       }
       
-      // Baby Baseline & FHR, Contractions: +30 minute intervals
-      timeColumns.thirtyMin = [];
+      const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
+      const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
+      
+      // Supportive Care: +1 hour intervals for 12 hours
+      supportiveCareTimeCols = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        supportiveCareTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+      
+      // Baby Baseline & FHR: +30 minute intervals for 12 hours (FIRST STAGE)
+      babyBaselineTimeCols = [];
       for (let i = 0; i <= 24; i++) {
         const totalMinutes = startHour * 60 + startMinute + (i * 30);
         const hour = Math.floor(totalMinutes / 60) % 24;
         const minute = totalMinutes % 60;
-        timeColumns.thirtyMin.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+        babyBaselineTimeCols.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
       }
       
-      // Plan: +2 hour intervals
-      timeColumns.twoHour = [];
-      for (let i = 0; i <= 6; i++) {
-        const hour = (startHour + (i * 2)) % 24;
-        timeColumns.twoHour.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      // Contractions: +30 minute intervals for 12 hours (FIRST STAGE)
+      contractionsTimeCols = [];
+      for (let i = 0; i <= 24; i++) {
+        const totalMinutes = startHour * 60 + startMinute + (i * 30);
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        contractionsTimeCols.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+      
+      // Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals for 12 hours
+      babyOtherTimeCols = [];
+      womanTimeCols = [];
+      medicationTimeCols = [];
+      assessmentTimeCols = [];
+      initialsTimeCols = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        babyOtherTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+        womanTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+        medicationTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+        assessmentTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+        initialsTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
       }
       
       // Cervix and Descent Plot: +1 hour intervals
-      timeColumns.plot = [...timeColumns.hourly];
+      cervixPlotTimeCols = [...supportiveCareTimeCols];
+      descentPlotTimeCols = [...supportiveCareTimeCols];
+      
+      // Plan: +2 hour intervals
+      planTimeCols = [];
+      for (let i = 0; i <= 6; i++) {
+        const hour = (startHour + (i * 2)) % 24;
+        planTimeCols.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
+      }
+      
+      console.log('Generated time columns:', {
+        supportiveCare: supportiveCareTimeCols.length,
+        babyBaseline: babyBaselineTimeCols.length,
+        contractions: contractionsTimeCols.length,
+        babyOther: babyOtherTimeCols.length,
+        woman: womanTimeCols.length
+      });
     }
     
-    // Generate hybrid time columns: 30-min before second stage, 15-min after
+    // Generate hybrid time columns: 30-min before second stage, 15-min after (matching summary.html)
     function generateHybridTimeColumns() {
       console.log('🚀 generateHybridTimeColumns() called');
       console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
@@ -773,9 +828,6 @@
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
       console.log(`  Start time: ${startHour}:${startMinute}`);
       
-      // Store original time columns before generating hybrid ones
-      const originalThirtyMin = [...timeColumns.thirtyMin];
-      
       // Create Date objects for proper time comparison across midnight
       const baseDate = new Date('2024-01-01');
       const startTimeDate = createTimeDate(activeFirstStageStartTime, baseDate);
@@ -786,62 +838,76 @@
         secondStageDate.setDate(secondStageDate.getDate() + 1);
       }
       
-      // Generate hybrid time columns
-      const hybridTimeCols = [];
-      
-      // Add 30-minute intervals before second stage
+      // Generate hybrid contractions time columns
+      contractionsTimeCols = [];
       let currentTime = new Date(startTimeDate);
-      while (currentTime < secondStageDate) {
-        const timeStr = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
-        hybridTimeCols.push(timeStr);
-        currentTime.setMinutes(currentTime.getMinutes() + 30);
+      const endTime = new Date(secondStageDate);
+      endTime.setHours(endTime.getHours() + 2); // 2 hours after second stage
+      
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
+        contractionsTimeCols.push(timeStr);
+        
+        // Determine interval based on whether we're before or after second stage
+        const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
+        
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60; // Handle midnight crossing
+        
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60; // Handle midnight crossing
+        
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
+          // Before second stage: 30-minute intervals
+          currentTime.setMinutes(currentTime.getMinutes() + 30);
+        } else {
+          // After second stage: 15-minute intervals
+          currentTime.setMinutes(currentTime.getMinutes() + 15);
+        }
       }
       
-      // Add 15-minute intervals after second stage (for 2 hours)
-      currentTime = new Date(secondStageDate);
-      for (let i = 0; i < 8; i++) { // 8 * 15min = 2 hours
-        const timeStr = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
-        hybridTimeCols.push(timeStr);
-        currentTime.setMinutes(currentTime.getMinutes() + 15);
+      // Generate hybrid FHR time columns
+      babyBaselineTimeCols = [];
+      currentTime = new Date(startTimeDate);
+      
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
+        babyBaselineTimeCols.push(timeStr);
+        
+        // Determine interval based on whether we're before or after second stage
+        const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
+        
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60; // Handle midnight crossing
+        
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60; // Handle midnight crossing
+        
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
+          // Before second stage: 30-minute intervals
+          currentTime.setMinutes(currentTime.getMinutes() + 30);
+        } else {
+          // After second stage: 15-minute intervals
+          currentTime.setMinutes(currentTime.getMinutes() + 15);
+        }
       }
       
-      // Update the thirtyMin time columns with hybrid columns
-      timeColumns.thirtyMin = hybridTimeCols;
-      
-      console.log(`  Generated ${hybridTimeCols.length} hybrid time columns:`, hybridTimeCols);
+      console.log('✅ Generated hybrid time columns:');
+      console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
+      console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
     }
     
     // Generate default time columns if no starting time is available
     function generateDefaultTimeColumns() {
       const now = new Date();
-      const startHour = now.getHours();
-      const startMinute = now.getMinutes();
-      
-      // Supportive Care, Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals
-      timeColumns.hourly = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        timeColumns.hourly.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
-      }
-      
-      // Baby Baseline & FHR, Contractions: +30 minute intervals
-      timeColumns.thirtyMin = [];
-      for (let i = 0; i <= 24; i++) {
-        const totalMinutes = startHour * 60 + startMinute + (i * 30);
-        const hour = Math.floor(totalMinutes / 60) % 24;
-        const minute = totalMinutes % 60;
-        timeColumns.thirtyMin.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-      }
-      
-      // Plan: +2 hour intervals
-      timeColumns.twoHour = [];
-      for (let i = 0; i <= 6; i++) {
-        const hour = (startHour + (i * 2)) % 24;
-        timeColumns.twoHour.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`);
-      }
-      
-      // Cervix and Descent Plot: +1 hour intervals
-      timeColumns.plot = [...timeColumns.hourly];
+      activeFirstStageStartTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      generateDynamicTimeColumns();
     }
     
     // Generate all tables
@@ -901,7 +967,7 @@
       tableHTML += '<th class="field-column">Field</th>';
       tableHTML += '<th class="alert-column">Alert</th>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -915,7 +981,7 @@
         tableHTML += `<td class="field-column">${displayName}</td>`;
         tableHTML += `<td class="alert-column">${getAlertValue(displayName)}</td>`;
         
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -945,7 +1011,7 @@
       tableHTML += '<th class="field-column">Field</th>';
       tableHTML += '<th class="alert-column">Alert</th>';
       
-      timeColumns.thirtyMin.forEach(time => {
+      babyBaselineTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -959,7 +1025,7 @@
         tableHTML += `<td class="field-column">${displayName}</td>`;
         tableHTML += `<td class="alert-column">${getAlertValue(displayName)}</td>`;
         
-        timeColumns.thirtyMin.forEach(time => {
+        babyBaselineTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -989,7 +1055,7 @@
       tableHTML += '<th class="field-column">Field</th>';
       tableHTML += '<th class="alert-column">Alert</th>';
       
-      timeColumns.hourly.forEach(time => {
+      babyOtherTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1003,7 +1069,7 @@
         tableHTML += `<td class="field-column">${displayName}</td>`;
         tableHTML += `<td class="alert-column">${getAlertValue(displayName)}</td>`;
         
-        timeColumns.hourly.forEach(time => {
+        babyOtherTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -1033,7 +1099,7 @@
       tableHTML += '<th class="field-column">Field</th>';
       tableHTML += '<th class="alert-column">Alert</th>';
       
-      timeColumns.hourly.forEach(time => {
+      womanTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1047,7 +1113,7 @@
         tableHTML += `<td class="field-column">${displayName}</td>`;
         tableHTML += `<td class="alert-column">${getAlertValue(displayName)}</td>`;
         
-        timeColumns.hourly.forEach(time => {
+        womanTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -1077,7 +1143,7 @@
       tableHTML += '<th class="field-column">Field</th>';
       tableHTML += '<th class="alert-column">Alert</th>';
       
-      timeColumns.thirtyMin.forEach(time => {
+      contractionsTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1091,7 +1157,7 @@
         tableHTML += `<td class="field-column">${displayName}</td>`;
         tableHTML += `<td class="alert-column">${getAlertValue(displayName)}</td>`;
         
-        timeColumns.thirtyMin.forEach(time => {
+        contractionsTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -1199,7 +1265,7 @@
       let tableHTML = '<thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1211,7 +1277,7 @@
         tableHTML += '<tr>';
         tableHTML += `<td class="field-column">${field.replace(/_/g, ' ')}</td>`;
         
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `Medication_${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -1239,7 +1305,7 @@
       let tableHTML = '<thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1254,7 +1320,7 @@
         tableHTML += '<tr>';
         tableHTML += `<td class="field-column">Assessment: ${displayName}</td>`;
         
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `ASSESSMENT_${field}_${timeKey}`;
           const value = summaryData[key] || '';
@@ -1275,7 +1341,7 @@
       tableHTML += '<tr>';
       tableHTML += '<td class="field-column">Plan</td>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `PLAN_${timeKey}`;
         const value = summaryData[key] || '';
@@ -1297,7 +1363,7 @@
       let tableHTML = '<thead><tr>';
       tableHTML += '<th class="field-column">Field</th>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const isSecondStage = isSecondStageTime(time);
         const headerClass = isSecondStage ? 'time-column second-stage' : 'time-column';
         tableHTML += `<th class="${headerClass}">${time}</th>`;
@@ -1307,7 +1373,7 @@
       tableHTML += '<tr>';
       tableHTML += '<td class="field-column">Initials</td>';
       
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `INITIALS_${timeKey}`;
         const value = summaryData[key] || '';
@@ -1394,7 +1460,7 @@
       
       // Header row
       const headerRow = ['Field', 'Alert'];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         headerRow.push(time);
       });
       data.push(headerRow);
@@ -1418,7 +1484,7 @@
       supportiveFields.forEach(field => {
         const displayName = field.replace(/_/g, ' ');
         const row = [displayName, getAlertValue(displayName)];
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           row.push(summaryData[key] || '');
@@ -1448,7 +1514,7 @@
       babyFields.forEach(field => {
         const displayName = field.replace(/_/g, ' ');
         const row = [displayName, getAlertValue(displayName)];
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           row.push(summaryData[key] || '');
@@ -1463,7 +1529,7 @@
       womanFields.forEach(field => {
         const displayName = field.replace(/_/g, ' ');
         const row = [displayName, getAlertValue(displayName)];
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `${field}_${timeKey}`;
           row.push(summaryData[key] || '');
@@ -1492,7 +1558,7 @@
       
       // Oxytocin with details
       const oxytocinRow = ['Oxytocin', ''];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const oxytocinKey = `Medication_Oxytocin_${timeKey}`;
         const oxytocinValue = summaryData[oxytocinKey] || '';
@@ -1520,7 +1586,7 @@
       
       // Medicine with details
       const medicineRow = ['Medicine', ''];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const medicineKey = `Medication_Medicine_${timeKey}`;
         const medicineValue = summaryData[medicineKey] || '';
@@ -1542,7 +1608,7 @@
       
       // IV Fluids
       const ivFluidsRow = ['IV Fluids', ''];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `Medication_IV_Fluids_${timeKey}`;
         ivFluidsRow.push(summaryData[key] || '');
@@ -1556,7 +1622,7 @@
       assessmentFields.forEach(field => {
         const displayName = field.replace(/_/g, ' ').replace('s condition', "'s condition");
         const row = [`Assessment: ${displayName}`, ''];
-        timeColumns.hourly.forEach(time => {
+        supportiveCareTimeCols.forEach(time => {
           const timeKey = time.replace(':', '_');
           const key = `ASSESSMENT_${field}_${timeKey}`;
           row.push(summaryData[key] || '');
@@ -1566,7 +1632,7 @@
       
       // Plan row
       const planRow = ['Plan', ''];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `PLAN_${timeKey}`;
         planRow.push(summaryData[key] || '');
@@ -1577,7 +1643,7 @@
       data.push(['', '']); // Empty row
       data.push(['INITIALS', '']);
       const initialsRow = ['Initials', ''];
-      timeColumns.hourly.forEach(time => {
+      supportiveCareTimeCols.forEach(time => {
         const timeKey = time.replace(':', '_');
         const key = `INITIALS_${timeKey}`;
         initialsRow.push(summaryData[key] || '');
