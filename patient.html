@@ -76,8 +76,14 @@
       <input type="number" name="age" class="form-control" required>
     </div>
     <div class="mb-2">
+      <label>Active Labour Diagnosis (Date)</label>
+      <input type="date" name="activeDiagnosis" id="activeDiagnosis" class="form-control">
+      <small class="text-muted">This date should be earlier than or equal to the rupture membrane date</small>
+    </div>
+    <div class="mb-2">
       <label>Ruptured membranes (Date and Time)</label>
-      <input type="datetime-local" name="rupturedMembranes" class="form-control">
+      <input type="datetime-local" name="rupturedMembranes" id="rupturedMembranes" class="form-control">
+      <small class="text-muted">This date should be later than or equal to the active labour diagnosis date</small>
     </div>
     <div class="mb-2">
       <label>Risk Factors</label>
@@ -95,19 +101,47 @@
         <option value="Induced">Induced</option>
       </select>
     </div>
-    <div class="mb-2">
-      <label>Active Labour Diagnosis (Date)</label>
-      <input type="date" name="activeDiagnosis" class="form-control">
-    </div>
     <button type="submit" class="btn btn-primary mt-3">Save</button>
   </form>
   <div id="message" class="mt-3"></div>
   <a href="index.html" class="btn btn-secondary mt-3">⬅️ Back to Home</a>
   <button class="btn btn-outline-danger" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
   <script>
+    // Date validation function
+    function validateDates() {
+      const activeDiagnosis = document.getElementById('activeDiagnosis').value;
+      const rupturedMembranes = document.getElementById('rupturedMembranes').value;
+      
+      if (activeDiagnosis && rupturedMembranes) {
+        const activeDate = new Date(activeDiagnosis);
+        const ruptureDate = new Date(rupturedMembranes);
+        
+        // Compare only the date part (ignore time)
+        const activeDateOnly = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate());
+        const ruptureDateOnly = new Date(ruptureDate.getFullYear(), ruptureDate.getMonth(), ruptureDate.getDate());
+        
+        if (activeDateOnly > ruptureDateOnly) {
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-danger">❌ Error: Active Labour Diagnosis Date must be earlier than or equal to Ruptured Membranes Date.</div>';
+          return false;
+        }
+      }
+      return true;
+    }
+    
+    // Add event listeners for real-time validation
+    document.getElementById('activeDiagnosis').addEventListener('change', validateDates);
+    document.getElementById('rupturedMembranes').addEventListener('change', validateDates);
+    
     const form = document.getElementById("patientForm");
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      
+      // Validate dates before submitting
+      if (!validateDates()) {
+        return;
+      }
+      
       const data = Object.fromEntries(new FormData(form));
       try {
         const user = firebase.auth().currentUser;
