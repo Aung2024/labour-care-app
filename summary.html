@@ -1018,6 +1018,44 @@
       "Duration of contractions": "<20, >60"
     };
 
+    // Check if a cervix plot value should be highlighted as an alert based on time thresholds
+    function checkCervixPlotAlert(cervixValue, timeValue, timeKey) {
+      if (!timeValue || timeValue !== 'X') return false;
+      
+      // Define time thresholds for each cervix value (in hours)
+      const timeThresholds = {
+        '10': 0,    // No threshold for 10cm
+        '9': 2,     // ≥ 2h
+        '8': 2.5,   // ≥ 2.5h  
+        '7': 3,     // ≥ 3h
+        '6': 5,     // ≥ 5h
+        '5': 6      // ≥ 6h
+      };
+      
+      const thresholdHours = timeThresholds[cervixValue];
+      if (!thresholdHours) return false; // No threshold for this cervix value
+      
+      // Get the current time from the timeKey (format: "HH_MM")
+      const [hours, minutes] = timeKey.split('_').map(Number);
+      const currentTime = hours * 60 + minutes; // Convert to minutes
+      
+      // Get the active first stage start time
+      if (!activeFirstStageStartTime) return false;
+      const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+      const startTime = startHours * 60 + startMinutes; // Convert to minutes
+      
+      // Calculate elapsed time in hours
+      let elapsedHours = (currentTime - startTime) / 60;
+      
+      // Handle midnight crossing
+      if (elapsedHours < 0) {
+        elapsedHours += 24;
+      }
+      
+      // Check if elapsed time exceeds threshold
+      return elapsedHours >= thresholdHours;
+    }
+
     // Check and highlight alert values
     function checkAndHighlightAlert(element) {
       const fieldName = element.name;
@@ -3326,8 +3364,21 @@
       // Remove any existing alert highlighting
       element.classList.remove('alert-value');
       
-      // Check for alert conditions based on field and value
-      if (fieldName.includes('Companion') && value === 'N') {
+      // Check for cervix plot alerts first
+      if (fieldName.includes('Cervix_Plot_')) {
+        // Extract cervix value and time key from field name
+        const parts = fieldName.split('_');
+        if (parts.length >= 4) {
+          const cervixValue = parts[2]; // e.g., "5", "6", "7", etc.
+          const timeKey = parts.slice(3).join('_'); // e.g., "20_49", "21_49", etc.
+          
+          if (checkCervixPlotAlert(cervixValue, value, timeKey)) {
+            element.classList.add('alert-value');
+          }
+        }
+      }
+      // Check for other alert conditions
+      else if (fieldName.includes('Companion') && value === 'N') {
         element.classList.add('alert-value');
       } else if (fieldName.includes('Mobility') && value === 'SP') {
         element.classList.add('alert-value');
@@ -5081,6 +5132,12 @@
           select.appendChild(pOption);
           
           select.value = savedValue;
+          
+          // Check if this cervix plot value should be highlighted as an alert based on time thresholds
+          if (checkCervixPlotAlert(value, savedValue, timeKey)) {
+            select.classList.add('alert-value');
+          }
+          
           timeCell.appendChild(select);
           row.appendChild(timeCell);
         });

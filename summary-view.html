@@ -555,6 +555,44 @@
       }
     });
     
+    // Check if a cervix plot value should be highlighted as an alert based on time thresholds
+    function checkCervixPlotAlert(cervixValue, timeValue, timeKey) {
+      if (!timeValue || timeValue !== 'X') return false;
+      
+      // Define time thresholds for each cervix value (in hours)
+      const timeThresholds = {
+        '10': 0,    // No threshold for 10cm
+        '9': 2,     // ≥ 2h
+        '8': 2.5,   // ≥ 2.5h  
+        '7': 3,     // ≥ 3h
+        '6': 5,     // ≥ 5h
+        '5': 6      // ≥ 6h
+      };
+      
+      const thresholdHours = timeThresholds[cervixValue];
+      if (!thresholdHours) return false; // No threshold for this cervix value
+      
+      // Get the current time from the timeKey (format: "HH_MM")
+      const [hours, minutes] = timeKey.split('_').map(Number);
+      const currentTime = hours * 60 + minutes; // Convert to minutes
+      
+      // Get the active first stage start time
+      if (!activeFirstStageStartTime) return false;
+      const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
+      const startTime = startHours * 60 + startMinutes; // Convert to minutes
+      
+      // Calculate elapsed time in hours
+      let elapsedHours = (currentTime - startTime) / 60;
+      
+      // Handle midnight crossing
+      if (elapsedHours < 0) {
+        elapsedHours += 24;
+      }
+      
+      // Check if elapsed time exceeds threshold
+      return elapsedHours >= thresholdHours;
+    }
+
     // Check if a value should be highlighted as an alert (same logic as summary.html)
     function checkAlertValue(fieldName, value) {
       if (!value) return false;
@@ -1223,8 +1261,8 @@
           const isSecondStage = isSecondStageTime(time);
           const cellClass = isSecondStage ? 'data-cell second-stage' : 'data-cell';
           
-          // Check if this value should be highlighted as an alert
-          const shouldHighlight = checkAlertValue('Cervix Plot', dataValue);
+          // Check if this cervix plot value should be highlighted as an alert based on time thresholds
+          const shouldHighlight = checkCervixPlotAlert(cervixValue, dataValue, timeKey);
           const alertClass = shouldHighlight ? ' alert-value' : '';
           
           tableHTML += `<td class="${cellClass}${alertClass}">${dataValue}</td>`;
