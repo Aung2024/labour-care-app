@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Postpartum Care - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #7c3aed;
+      --secondary-color: #6d28d9;
+      --accent-color: #a78bfa;
+      --light-bg: #faf5ff;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .patient-selector {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .care-modules {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .module-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      box-shadow: var(--card-shadow);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .module-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .module-icon {
+      font-size: 2.5rem;
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+    }
+
+    .module-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .module-description {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-postpartum {
+      background: #ede9fe;
+      color: #5b21b6;
+    }
+
+    .patient-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .patient-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .patient-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .patient-details {
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-postpartum {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .btn-postpartum:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+      color: white;
+    }
+
+    .recovery-stage {
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .recovery-immediate { background: #fef3c7; color: #92400e; }
+    .recovery-early { background: #dbeafe; color: #1e40af; }
+    .recovery-late { background: #d1fae5; color: #065f46; }
+  </style>
+  <script>
+    let currentUser = null;
+    let userRole = null;
+    let postpartumPatients = [];
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+        loadPostpartumPatients();
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          document.getElementById("userInfo").textContent = `${userData.email} (${userData.role})`;
+        }
+      });
+    }
+
+    function loadPostpartumPatients() {
+      // Load patients with postpartum status
+      db.collection("patients")
+        .where("status", "==", "postpartum")
+        .get()
+        .then(querySnapshot => {
+          postpartumPatients = [];
+          querySnapshot.forEach(doc => {
+            postpartumPatients.push({
+              id: doc.id,
+              ...doc.data()
+            });
+          });
+          displayPostpartumPatients();
+        })
+        .catch(error => {
+          console.error("Error loading postpartum patients:", error);
+        });
+    }
+
+    function getRecoveryStage(deliveryDate) {
+      if (!deliveryDate) return { stage: 'Unknown', class: '' };
+      
+      const delivery = new Date(deliveryDate.seconds * 1000);
+      const now = new Date();
+      const daysSinceDelivery = Math.floor((now - delivery) / (1000 * 60 * 60 * 24));
+      
+      if (daysSinceDelivery <= 1) {
+        return { stage: 'Immediate (0-1 days)', class: 'recovery-immediate' };
+      } else if (daysSinceDelivery <= 6) {
+        return { stage: 'Early (2-6 days)', class: 'recovery-early' };
+      } else {
+        return { stage: 'Late (7+ days)', class: 'recovery-late' };
+      }
+    }
+
+    function displayPostpartumPatients() {
+      const container = document.getElementById("patientsContainer");
+      
+      if (postpartumPatients.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-5">
+            <i class="fas fa-hands-holding-child fa-3x text-muted mb-3"></i>
+            <h4 class="text-muted">No Postpartum Patients</h4>
+            <p class="text-muted">No patients are currently in postpartum care.</p>
+            <a href="patient.html" class="btn btn-postpartum">
+              <i class="fas fa-plus me-2"></i>Register New Patient
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+      postpartumPatients.forEach(patient => {
+        const recoveryStage = getRecoveryStage(patient.deliveryDate);
+        const lastVisit = patient.lastPostpartumVisit ? 
+          new Date(patient.lastPostpartumVisit.seconds * 1000).toLocaleDateString() : 
+          'Never';
+        
+        html += `
+          <div class="patient-card">
+            <div class="patient-info">
+              <div>
+                <div class="patient-name">${patient.name}</div>
+                <div class="patient-details">
+                  Age: ${patient.age} | Delivery: ${patient.deliveryDate ? 
+                    new Date(patient.deliveryDate.seconds * 1000).toLocaleDateString() : 
+                    'Not recorded'} | Baby: ${patient.babyName || 'Not recorded'}
+                </div>
+              </div>
+              <div class="text-end">
+                <span class="status-badge status-postpartum">Postpartum</span>
+                <div class="recovery-stage ${recoveryStage.class} mt-2">${recoveryStage.stage}</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <small class="text-muted">Last Visit: ${lastVisit}</small>
+              </div>
+              <div class="col-md-6 text-end">
+                <div class="action-buttons">
+                  <button class="btn btn-postpartum btn-sm" onclick="startPostpartumCare('${patient.id}')">
+                    <i class="fas fa-heart me-1"></i>Start Care
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" onclick="viewPatientDetails('${patient.id}')">
+                    <i class="fas fa-eye me-1"></i>View
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function startPostpartumCare(patientId) {
+      // Redirect to postpartum care form for specific patient
+      window.location.href = `postpartum-form.html?patient=${patientId}`;
+    }
+
+    function viewPatientDetails(patientId) {
+      // Redirect to patient details page
+      window.location.href = `patient-details.html?patient=${patientId}`;
+    }
+
+    function selectPatient() {
+      const patientId = document.getElementById("patientSelect").value;
+      if (patientId) {
+        startPostpartumCare(patientId);
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-hands-holding-child me-3"></i>
+            Postpartum Care
+          </h1>
+          <p class="mb-0">Post-delivery care and recovery monitoring for mothers</p>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <span id="userInfo" class="text-white-50"></span>
+            <a href="testindex.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-home me-2"></i>Home
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i>Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Selector -->
+    <div class="patient-selector">
+      <h4 class="mb-3">
+        <i class="fas fa-user-plus me-2"></i>
+        Select Patient for Postpartum Care
+      </h4>
+      <div class="row">
+        <div class="col-md-8">
+          <select class="form-select" id="patientSelect">
+            <option value="">Choose a patient...</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-postpartum w-100" onclick="selectPatient()">
+            <i class="fas fa-heart me-2"></i>Start Postpartum Care
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Care Modules -->
+    <div class="care-modules">
+      <div class="module-card" onclick="loadPostpartumPatients()">
+        <div class="module-icon">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="module-title">All Postpartum Patients</div>
+        <div class="module-description">View and manage all patients in postpartum care</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='postpartum-recovery.html'">
+        <div class="module-icon">
+          <i class="fas fa-heartbeat"></i>
+        </div>
+        <div class="module-title">Recovery Monitoring</div>
+        <div class="module-description">Track physical recovery and healing progress</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='postpartum-mental-health.html'">
+        <div class="module-icon">
+          <i class="fas fa-brain"></i>
+        </div>
+        <div class="module-title">Mental Health</div>
+        <div class="module-description">Monitor emotional wellbeing and mental health</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='postpartum-feeding.html'">
+        <div class="module-icon">
+          <i class="fas fa-baby"></i>
+        </div>
+        <div class="module-title">Feeding Support</div>
+        <div class="module-description">Breastfeeding and feeding support guidance</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='postpartum-contraception.html'">
+        <div class="module-icon">
+          <i class="fas fa-shield-alt"></i>
+        </div>
+        <div class="module-title">Family Planning</div>
+        <div class="module-description">Contraception and family planning counseling</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='postpartum-followup.html'">
+        <div class="module-icon">
+          <i class="fas fa-calendar-check"></i>
+        </div>
+        <div class="module-title">Follow-up Care</div>
+        <div class="module-description">Schedule and manage follow-up appointments</div>
+      </div>
+    </div>
+
+    <!-- Patients List -->
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="fas fa-list me-2"></i>
+          Postpartum Patients
+        </h5>
+      </div>
+      <div class="card-body">
+        <div id="patientsContainer">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Load patients for dropdown
+    function loadPatientsForDropdown() {
+      db.collection("patients")
+        .where("status", "==", "postpartum")
+        .get()
+        .then(querySnapshot => {
+          const select = document.getElementById("patientSelect");
+          select.innerHTML = '<option value="">Choose a patient...</option>';
+          
+          querySnapshot.forEach(doc => {
+            const patient = doc.data();
+            const option = document.createElement("option");
+            option.value = doc.id;
+            option.textContent = `${patient.name} (Age: ${patient.age})`;
+            select.appendChild(option);
+          });
+        });
+    }
+
+    // Load patients for dropdown on page load
+    loadPatientsForDropdown();
+  </script>
+</body>
+</html>

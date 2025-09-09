@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Patient Registration - Maternal & Child Health Care System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #0891b2;
+      --secondary-color: #0e7490;
+      --accent-color: #22d3ee;
+      --light-bg: #f0f9ff;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-container {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 2rem;
+    }
+
+    .form-section {
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 15px;
+      background: #f9fafb;
+    }
+
+    .form-section h5 {
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-section h5 i {
+      font-size: 1.2rem;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-antenatal { background: #d1fae5; color: #065f46; }
+    .status-labour { background: #fee2e2; color: #991b1b; }
+    .status-postpartum { background: #ede9fe; color: #5b21b6; }
+    .status-baby { background: #fef3c7; color: #92400e; }
+    .status-other { background: #f3f4f6; color: #374151; }
+    .status-transferred { background: #dbeafe; color: #1e40af; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      padding: 0.75rem 2rem;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(8, 145, 178, 0.4);
+    }
+
+    .required-field::after {
+      content: " *";
+      color: #dc2626;
+    }
+
+    .help-text {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-top: 0.25rem;
+    }
+  </style>
+  <script>
+    // Load user's township and display it
+    async function loadUserTownship() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        console.log('Loading township for user:', user.uid);
+        
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('Full user data:', userData);
+          console.log('Township from user data:', userData.township);
+          
+          const township = userData.township || 'Not set';
+          console.log('Township to display:', township);
+          
+          document.getElementById('userTownship').textContent = township;
+          document.getElementById('townshipDisplay').style.display = 'block';
+          
+          // Check if township is properly set
+          if (!userData.township || userData.township.trim() === '') {
+            document.getElementById('townshipDisplay').innerHTML = `
+              <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> Your township is not set. 
+                <br><small class="text-muted">Patients created without a township may not display properly.</small>
+              </div>
+            `;
+            console.warn('User township is not set!');
+          }
+          
+          console.log('User township loaded and displayed:', township);
+        } else {
+          console.error('User document does not exist!');
+          document.getElementById('townshipDisplay').innerHTML = `
+            <div class="alert alert-danger">
+              <i class="fas fa-exclamation-circle"></i>
+              <strong>Error:</strong> User data not found. Please contact administrator.
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error('Error loading user township:', error);
+        document.getElementById('townshipDisplay').innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-circle"></i>
+            <strong>Error:</strong> Failed to load user data. Please refresh the page.
+          </div>
+        `;
+      }
+    }
+
+    // Date validation function
+    function validateDates() {
+      const activeDiagnosis = document.getElementById('activeDiagnosis').value;
+      const rupturedMembranes = document.getElementById('rupturedMembranes').value;
+      const lmp = document.getElementById('lmp').value;
+      
+      if (activeDiagnosis && rupturedMembranes) {
+        const activeDate = new Date(activeDiagnosis);
+        const ruptureDate = new Date(rupturedMembranes);
+        
+        // Compare only the date part (ignore time)
+        const activeDateOnly = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate());
+        const ruptureDateOnly = new Date(ruptureDate.getFullYear(), ruptureDate.getMonth(), ruptureDate.getDate());
+        
+        if (activeDateOnly > ruptureDateOnly) {
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-danger">❌ Error: Active Labour Diagnosis Date must be earlier than or equal to Ruptured Membranes Date.</div>';
+          return false;
+        }
+      }
+
+      // Calculate EDD from LMP
+      if (lmp) {
+        const lmpDate = new Date(lmp);
+        const edd = new Date(lmpDate);
+        edd.setDate(edd.getDate() + 280); // 40 weeks = 280 days
+        document.getElementById('edd').value = edd.toISOString().split('T')[0];
+      }
+      
+      return true;
+    }
+
+    // Calculate gestational age
+    function calculateGestationalAge() {
+      const lmp = document.getElementById('lmp').value;
+      if (lmp) {
+        const lmpDate = new Date(lmp);
+        const today = new Date();
+        const diffTime = today - lmpDate;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const weeks = Math.floor(diffDays / 7);
+        const days = diffDays % 7;
+        
+        document.getElementById('gestationalAge').value = `${weeks}w ${days}d`;
+      }
+    }
+
+    // Update status based on care type
+    function updateStatus() {
+      const careType = document.getElementById('careType').value;
+      const statusSelect = document.getElementById('status');
+      
+      // Set status based on care type
+      switch(careType) {
+        case 'antenatal':
+          statusSelect.value = 'antenatal';
+          break;
+        case 'labour':
+          statusSelect.value = 'labour';
+          break;
+        case 'postpartum':
+          statusSelect.value = 'postpartum';
+          break;
+        case 'baby':
+          statusSelect.value = 'baby';
+          break;
+        default:
+          statusSelect.value = 'antenatal';
+      }
+    }
+
+    // Show/hide relevant fields based on care type
+    function toggleFields() {
+      const careType = document.getElementById('careType').value;
+      
+      // Hide all conditional sections
+      document.querySelectorAll('.conditional-section').forEach(section => {
+        section.style.display = 'none';
+      });
+      
+      // Show relevant sections based on care type
+      if (careType === 'antenatal') {
+        document.getElementById('antenatalFields').style.display = 'block';
+      } else if (careType === 'labour') {
+        document.getElementById('labourFields').style.display = 'block';
+      } else if (careType === 'postpartum') {
+        document.getElementById('postpartumFields').style.display = 'block';
+      } else if (careType === 'baby') {
+        document.getElementById('babyFields').style.display = 'block';
+      }
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+      loadUserTownship();
+      
+      // Add event listeners
+      document.getElementById('activeDiagnosis').addEventListener('change', validateDates);
+      document.getElementById('rupturedMembranes').addEventListener('change', validateDates);
+      document.getElementById('lmp').addEventListener('change', function() {
+        validateDates();
+        calculateGestationalAge();
+      });
+      document.getElementById('careType').addEventListener('change', function() {
+        updateStatus();
+        toggleFields();
+      });
+    });
+
+    const form = document.getElementById("patientForm");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      // Validate dates before submitting
+      if (!validateDates()) {
+        return;
+      }
+      
+      const data = Object.fromEntries(new FormData(form));
+      try {
+        const user = firebase.auth().currentUser;
+        console.log('Current user:', user.uid);
+        
+        // Fetch the user's township from Firestore
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('User data:', userData);
+          console.log('User township from Firestore:', userData.township);
+        }
+        
+        // Add township and timestamp
+        data.township = userData.township || 'Unknown';
+        data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        data.createdBy = user.uid;
+        
+        // Convert field names to snake_case for consistency
+        const processedData = {
+          name: data.name,
+          age: parseInt(data.age),
+          township: data.township,
+          created_at: data.createdAt,
+          created_by: data.createdBy,
+          status: data.status || 'antenatal',
+          care_type: data.careType || 'antenatal',
+          
+          // Basic info
+          parity: data.parity ? parseInt(data.parity) : 0,
+          risk_factors: data.riskFactors || '',
+          
+          // Antenatal fields
+          lmp: data.lmp || null,
+          edd: data.edd || null,
+          gestational_age: data.gestationalAge || null,
+          gravida: data.gravida ? parseInt(data.gravida) : 1,
+          
+          // Labour fields
+          active_labour: data.activeDiagnosis || null,
+          ruptured_membrane: data.rupturedMembranes || null,
+          labour_onset: data.labourOnset || 'Spontaneous',
+          
+          // Postpartum fields
+          delivery_date: data.deliveryDate || null,
+          delivery_type: data.deliveryType || null,
+          birth_weight: data.birthWeight || null,
+          
+          // Baby fields
+          baby_name: data.babyName || null,
+          birth_date: data.birthDate || null,
+          gender: data.gender || null,
+          birth_weight_baby: data.birthWeightBaby || null,
+          birth_length: data.birthLength || null,
+          head_circumference: data.headCircumference || null,
+          
+          // Contact info
+          phone: data.phone || null,
+          address: data.address || null,
+          emergency_contact: data.emergencyContact || null,
+          emergency_phone: data.emergencyPhone || null
+        };
+        
+        console.log('Processed data to save:', processedData);
+        
+        const docRef = await firebase.firestore().collection("patients").add(processedData);
+        console.log("Document written with ID: ", docRef.id);
+        
+        // Log the saved data for verification
+        console.log('Saved patient data:', {
+          id: docRef.id,
+          name: processedData.name,
+          age: processedData.age,
+          township: processedData.township,
+          status: processedData.status,
+          care_type: processedData.care_type,
+          lmp: processedData.lmp,
+          edd: processedData.edd,
+          gestational_age: processedData.gestational_age
+        });
+        
+        document.getElementById("message").innerHTML = 
+          '<div class="alert alert-success">✅ Patient record created successfully! <a href="testindex.html" class="btn btn-sm btn-outline-success ms-2">Go to Home</a></div>';
+        
+        // Reset form
+        form.reset();
+        
+      } catch (error) {
+        console.error("Error adding document: ", error);
+        document.getElementById("message").innerHTML = 
+          '<div class="alert alert-danger">❌ Error creating patient record: ' + error.message + '</div>';
+      }
+    });
+  </script>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-user-plus me-3"></i>
+            Patient Registration
+          </h1>
+          <p class="mb-0">Register new patients for comprehensive maternal and child health care</p>
+        </div>
+        <div class="col-md-4 text-end">
+          <a href="testindex.html" class="btn btn-outline-light btn-sm me-2">
+            <i class="fas fa-home me-2"></i>Home
+          </a>
+          <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+            <i class="fas fa-sign-out-alt me-2"></i>Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Township Display -->
+    <div id="townshipDisplay" class="alert alert-info mb-3" style="display: none;">
+      <i class="fas fa-map-marker-alt"></i>
+      <strong>Township:</strong> <span id="userTownship">Loading...</span>
+      <br><small class="text-muted">This patient will automatically be assigned to your township.</small>
+    </div>
+
+    <form id="patientForm" class="form-container">
+      <!-- Basic Information -->
+      <div class="form-section">
+        <h5><i class="fas fa-user"></i>Basic Information</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="required-field">Patient Name</label>
+              <input type="text" name="name" class="form-control" required>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="required-field">Age</label>
+              <input type="number" name="age" class="form-control" required min="12" max="50">
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Phone Number</label>
+              <input type="tel" name="phone" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Address</label>
+              <input type="text" name="address" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Emergency Contact</label>
+              <input type="text" name="emergencyContact" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Emergency Phone</label>
+              <input type="tel" name="emergencyPhone" class="form-control">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Care Type and Status -->
+      <div class="form-section">
+        <h5><i class="fas fa-heartbeat"></i>Care Type and Status</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="required-field">Care Type</label>
+              <select name="careType" id="careType" class="form-control" required>
+                <option value="">Select care type...</option>
+                <option value="antenatal">Antenatal Care</option>
+                <option value="labour">Labour Care</option>
+                <option value="postpartum">Postpartum Care</option>
+                <option value="baby">Baby Care</option>
+              </select>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="required-field">Status</label>
+              <select name="status" id="status" class="form-control" required>
+                <option value="antenatal">Antenatal</option>
+                <option value="labour">Active Labour</option>
+                <option value="postpartum">Postpartum</option>
+                <option value="baby">Baby Care</option>
+                <option value="other">Other</option>
+                <option value="transferred">Transferred</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Parity</label>
+              <input type="number" name="parity" class="form-control" min="0">
+              <div class="help-text">Number of previous births</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Gravida</label>
+              <input type="number" name="gravida" class="form-control" min="1" value="1">
+              <div class="help-text">Total number of pregnancies</div>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label>Risk Factors</label>
+          <textarea name="riskFactors" class="form-control" rows="3" placeholder="Enter any risk factors or medical conditions..."></textarea>
+        </div>
+      </div>
+
+      <!-- Antenatal Fields -->
+      <div id="antenatalFields" class="form-section conditional-section" style="display: none;">
+        <h5><i class="fas fa-baby-carriage"></i>Antenatal Information</h5>
+        <div class="row">
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Last Menstrual Period (LMP)</label>
+              <input type="date" name="lmp" id="lmp" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Expected Due Date (EDD)</label>
+              <input type="date" name="edd" id="edd" class="form-control" readonly>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Gestational Age</label>
+              <input type="text" name="gestationalAge" id="gestationalAge" class="form-control" readonly>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Labour Fields -->
+      <div id="labourFields" class="form-section conditional-section" style="display: none;">
+        <h5><i class="fas fa-heartbeat"></i>Labour Information</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Active Labour Diagnosis (Date)</label>
+              <input type="date" name="activeDiagnosis" id="activeDiagnosis" class="form-control">
+              <div class="help-text">This date should be earlier than or equal to the rupture membrane date</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Ruptured Membranes (Date and Time)</label>
+              <input type="datetime-local" name="rupturedMembranes" id="rupturedMembranes" class="form-control">
+              <div class="help-text">This date should be later than or equal to the active labour diagnosis date</div>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Labour Onset</label>
+              <select name="labourOnset" class="form-control">
+                <option value="Spontaneous">Spontaneous</option>
+                <option value="Induced">Induced</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Postpartum Fields -->
+      <div id="postpartumFields" class="form-section conditional-section" style="display: none;">
+        <h5><i class="fas fa-hands-holding-child"></i>Postpartum Information</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Delivery Date</label>
+              <input type="date" name="deliveryDate" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Delivery Type</label>
+              <select name="deliveryType" class="form-control">
+                <option value="">Select...</option>
+                <option value="Normal">Normal Delivery</option>
+                <option value="Cesarean">Cesarean Section</option>
+                <option value="Assisted">Assisted Delivery</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Birth Weight (kg)</label>
+              <input type="number" name="birthWeight" class="form-control" step="0.1" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Baby Fields -->
+      <div id="babyFields" class="form-section conditional-section" style="display: none;">
+        <h5><i class="fas fa-baby"></i>Baby Information</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Baby Name</label>
+              <input type="text" name="babyName" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Birth Date</label>
+              <input type="date" name="birthDate" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Gender</label>
+              <select name="gender" class="form-control">
+                <option value="">Select...</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Birth Weight (kg)</label>
+              <input type="number" name="birthWeightBaby" class="form-control" step="0.1" min="0">
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="mb-3">
+              <label>Birth Length (cm)</label>
+              <input type="number" name="birthLength" class="form-control" step="0.1" min="0">
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Head Circumference (cm)</label>
+              <input type="number" name="headCircumference" class="form-control" step="0.1" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-center">
+        <button type="submit" class="btn btn-primary btn-lg">
+          <i class="fas fa-save me-2"></i>Create Patient Record
+        </button>
+      </div>
+    </form>
+
+    <div id="message" class="mt-3"></div>
+  </div>
+</body>
+</html>
