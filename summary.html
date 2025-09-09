@@ -4455,7 +4455,8 @@
       }
       
       console.log('🔄 Second stage active - generating hybrid intervals');
-      console.log(`  Using EXACT second stage time: ${secondStageStartTime} as the reference point`);
+      console.log(`  Starting from first stage time: ${activeFirstStageStartTime}`);
+      console.log(`  Switching to 15-min intervals at EXACT second stage time: ${secondStageStartTime}`);
       
       // Create Date objects for proper time comparison across midnight
       const baseDate = new Date('2024-01-01');
@@ -4473,16 +4474,13 @@
       // Generate hybrid contractions time columns
       contractionsTimeCols = [];
       
-      // Start from 2 hours before second stage (to ensure we have enough first stage data)
-      const startTime = new Date(secondStageDate);
-      startTime.setHours(startTime.getHours() - 2);
-      
-      // End 4 hours after second stage (to cover the full second stage period)
-      const endTime = new Date(secondStageDate);
-      endTime.setHours(endTime.getHours() + 4);
+      // Start from the first stage time and go for 12 hours total
+      const startTime = new Date(startTimeDate);
+      const endTime = new Date(startTimeDate);
+      endTime.setHours(endTime.getHours() + 12);
       
       console.log(`  Generating from ${startTime.toTimeString().slice(0, 5)} to ${endTime.toTimeString().slice(0, 5)}`);
-      console.log(`  Second stage starts at EXACT time: ${secondStageDate.toTimeString().slice(0, 5)}`);
+      console.log(`  Will switch to 15-min intervals at: ${secondStageDate.toTimeString().slice(0, 5)}`);
       
       let currentTime = new Date(startTime);
       
@@ -4491,24 +4489,26 @@
         contractionsTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        // Use the EXACT second stage time as the reference point
         const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
         
-        // Calculate relative minutes from second stage time
-        let currentRelativeMinutes = currentTimeMinutes - secondStageMinutes;
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
         
         // Handle midnight crossing
         if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
         
-        if (currentRelativeMinutes < 0) {
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
-          console.log(`  Added ${timeStr} (30-min interval, before second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  Added ${timeStr} (30-min interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
-          console.log(`  Added ${timeStr} (15-min interval, after second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         }
       }
       
@@ -4521,24 +4521,26 @@
         babyBaselineTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        // Use the EXACT second stage time as the reference point
         const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
         
-        // Calculate relative minutes from second stage time
-        let currentRelativeMinutes = currentTimeMinutes - secondStageMinutes;
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
         
         // Handle midnight crossing
         if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
         
-        if (currentRelativeMinutes < 0) {
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
-          console.log(`  FHR: Added ${timeStr} (30-min interval, before second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  FHR: Added ${timeStr} (30-min interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
-          console.log(`  FHR: Added ${timeStr} (15-min interval, after second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  FHR: Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         }
       }
       
@@ -4551,34 +4553,107 @@
         cervixPlotTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
-        // Use the EXACT second stage time as the reference point
         const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
+        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
         
-        // Calculate relative minutes from second stage time
-        let currentRelativeMinutes = currentTimeMinutes - secondStageMinutes;
+        // Calculate relative minutes from start time
+        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
+        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
         
         // Handle midnight crossing
         if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
+        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60;
         
-        if (currentRelativeMinutes < 0) {
+        if (currentRelativeMinutes < secondStageRelativeMinutes) {
           // Before second stage: 1-hour intervals
           currentTime.setHours(currentTime.getHours() + 1);
-          console.log(`  Cervix: Added ${timeStr} (1-hour interval, before second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  Cervix: Added ${timeStr} (1-hour interval, before second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
-          console.log(`  Cervix: Added ${timeStr} (15-min interval, after second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
+          console.log(`  Cervix: Added ${timeStr} (15-min interval, after second stage) - Current: ${currentRelativeMinutes}min, Second Stage: ${secondStageRelativeMinutes}min`);
         }
       }
+      
+      // Generate other time columns that DON'T switch to 15-minute intervals
+      // These should use the original generateDynamicTimeColumns logic
+      generateOtherTimeColumns();
       
       console.log('✅ Generated hybrid time columns:');
       console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
       console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
       console.log(`  Cervix Plot: ${cervixPlotTimeCols.length} intervals:`, cervixPlotTimeCols);
+      console.log(`  Other tables: Using original intervals (1-hour, 2-hour, 30-min)`);
       console.log(`  Second stage starts at: ${secondStageStartTime}`);
       console.log(`  Start time: ${startTimeDate.toTimeString().slice(0, 5)}`);
       console.log(`  Second stage: ${secondStageDate.toTimeString().slice(0, 5)}`);
+    }
+    
+    // Generate other time columns that DON'T switch to 15-minute intervals
+    function generateOtherTimeColumns() {
+      console.log('🚀 generateOtherTimeColumns() called');
+      console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
+      
+      if (!activeFirstStageStartTime) {
+        console.log('❌ No activeFirstStageStartTime, returning early');
+        return;
+      }
+      
+      const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
+      const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
+      console.log(`  Start time: ${startHour}:${startMinute}`);
+      
+      // Supportive Care: +1 hour intervals for 12 hours
+      supportiveCareTimeCols = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
+        supportiveCareTimeCols.push(timeStr);
+      }
+      
+      // Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals for 12 hours
+      babyOtherTimeCols = [];
+      womanTimeCols = [];
+      medicationTimeCols = [];
+      assessmentTimeCols = [];
+      initialsTimeCols = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
+        babyOtherTimeCols.push(timeStr);
+        womanTimeCols.push(timeStr);
+        medicationTimeCols.push(timeStr);
+        assessmentTimeCols.push(timeStr);
+        initialsTimeCols.push(timeStr);
+      }
+      
+      // Descent Plot: +1 hour intervals for 12 hours
+      descentPlotTimeCols = [];
+      for (let i = 0; i <= 12; i++) {
+        const hour = (startHour + i) % 24;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
+        descentPlotTimeCols.push(timeStr);
+      }
+      
+      // Plan: +2 hour intervals for 12 hours
+      planTimeCols = [];
+      for (let i = 0; i <= 6; i++) {
+        const hour = (startHour + (i * 2)) % 24;
+        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
+        planTimeCols.push(timeStr);
+      }
+      
+      console.log('✅ Generated other time columns:');
+      console.log(`  Supportive Care: ${supportiveCareTimeCols.length} intervals (1-hour)`);
+      console.log(`  Baby Other: ${babyOtherTimeCols.length} intervals (1-hour)`);
+      console.log(`  Woman: ${womanTimeCols.length} intervals (1-hour)`);
+      console.log(`  Medication: ${medicationTimeCols.length} intervals (1-hour)`);
+      console.log(`  Assessment: ${assessmentTimeCols.length} intervals (1-hour)`);
+      console.log(`  Initials: ${initialsTimeCols.length} intervals (1-hour)`);
+      console.log(`  Descent Plot: ${descentPlotTimeCols.length} intervals (1-hour)`);
+      console.log(`  Plan: ${planTimeCols.length} intervals (2-hour)`);
+    }
       
       // Verify the arrays are actually populated
       console.log('🔍 Verification - contractionsTimeCols array:', contractionsTimeCols);
@@ -4667,7 +4742,6 @@
       });
       console.log(`  Cervix Before second stage: ${cervixBeforeSecondStage.length} columns (1-hour intervals)`);
       console.log(`  Cervix After second stage: ${cervixAfterSecondStage.length} columns (15-min intervals)`);
-    }
     
     // Confirm second stage
     function confirmSecondStage() {
