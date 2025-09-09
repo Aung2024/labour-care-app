@@ -556,8 +556,8 @@
     });
     
     // Check if a cervix plot value should be highlighted as an alert based on time thresholds
-    function checkCervixPlotAlert(cervixValue, timeValue, timeKey) {
-      if (!timeValue || timeValue !== 'X') return false;
+    function checkCervixPlotAlert(cervixValue, dataValue, timeKey) {
+      if (!dataValue || dataValue !== 'X') return false;
       
       // Define time thresholds for each cervix value (in hours)
       const timeThresholds = {
@@ -935,6 +935,33 @@
         currentTime.setMinutes(currentTime.getMinutes() + 15);
       }
       
+      // Generate hybrid cervix plot time columns (same logic as contractions)
+      cervixPlotTimeCols = [];
+      
+      // Phase 1: Generate 1-hour intervals up to (but not including) second stage time
+      currentTime = new Date(startTimeDate);
+      while (currentTime < secondStageDate) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
+        cervixPlotTimeCols.push(timeStr);
+        console.log(`  Cervix: Added ${timeStr} (1-hour interval, before second stage)`);
+        currentTime.setHours(currentTime.getHours() + 1);
+      }
+      
+      // Phase 2: Add the EXACT second stage time
+      cervixPlotTimeCols.push(exactSecondStageTime);
+      console.log(`  Cervix: Added ${exactSecondStageTime} (EXACT second stage time)`);
+      
+      // Phase 3: Continue with 15-minute intervals for 4 hours after second stage
+      currentTime = new Date(secondStageDate);
+      currentTime.setMinutes(currentTime.getMinutes() + 15); // Start 15 minutes after second stage
+      
+      while (currentTime <= endTime) {
+        const timeStr = currentTime.toTimeString().slice(0, 5);
+        cervixPlotTimeCols.push(timeStr);
+        console.log(`  Cervix: Added ${timeStr} (15-min interval, after second stage)`);
+        currentTime.setMinutes(currentTime.getMinutes() + 15);
+      }
+      
       // Generate other time columns that DON'T switch to 15-minute intervals
       // These should use the original generateDynamicTimeColumns logic
       generateOtherTimeColumns();
@@ -942,6 +969,7 @@
       console.log('✅ Generated hybrid time columns:');
       console.log(`  Contractions: ${contractionsTimeCols.length} intervals:`, contractionsTimeCols);
       console.log(`  FHR: ${babyBaselineTimeCols.length} intervals:`, babyBaselineTimeCols);
+      console.log(`  Cervix Plot: ${cervixPlotTimeCols.length} intervals:`, cervixPlotTimeCols);
       console.log(`  Other tables: Using original intervals (1-hour, 2-hour, 30-min)`);
     }
     
@@ -990,6 +1018,8 @@
         const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
         descentPlotTimeCols.push(timeStr);
       }
+      
+      // Note: cervixPlotTimeCols is generated in generateHybridTimeColumns() for second stage
       
       // Plan: +2 hour intervals for 12 hours
       planTimeCols = [];
