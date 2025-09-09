@@ -857,15 +857,12 @@
       console.log(`  activeFirstStageStartTime: ${activeFirstStageStartTime}`);
       console.log(`  secondStageStartTime: ${secondStageData.secondStageStartTime}`);
       console.log(`  isSecondStageActive: ${secondStageData.isSecondStageActive}`);
+      console.log(`  Using EXACT second stage time: ${secondStageData.secondStageStartTime} as the reference point`);
       
       if (!activeFirstStageStartTime) {
         console.log('❌ No activeFirstStageStartTime, returning early');
         return;
       }
-      
-      const startHour = parseInt(activeFirstStageStartTime.split(':')[0]);
-      const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
-      console.log(`  Start time: ${startHour}:${startMinute}`);
       
       // Create Date objects for proper time comparison across midnight
       const baseDate = new Date('2024-01-01');
@@ -877,63 +874,78 @@
         secondStageDate.setDate(secondStageDate.getDate() + 1);
       }
       
+      console.log(`  First stage start: ${startTimeDate.toTimeString().slice(0, 5)}`);
+      console.log(`  Second stage start (EXACT): ${secondStageDate.toTimeString().slice(0, 5)}`);
+      
       // Generate hybrid contractions time columns
       contractionsTimeCols = [];
-      let currentTime = new Date(startTimeDate);
+      
+      // Start from 2 hours before second stage (to ensure we have enough first stage data)
+      const startTime = new Date(secondStageDate);
+      startTime.setHours(startTime.getHours() - 2);
+      
+      // End 4 hours after second stage (to cover the full second stage period)
       const endTime = new Date(secondStageDate);
-      endTime.setHours(endTime.getHours() + 2); // 2 hours after second stage
+      endTime.setHours(endTime.getHours() + 4);
+      
+      console.log(`  Generating from ${startTime.toTimeString().slice(0, 5)} to ${endTime.toTimeString().slice(0, 5)}`);
+      console.log(`  Second stage starts at EXACT time: ${secondStageDate.toTimeString().slice(0, 5)}`);
+      
+      let currentTime = new Date(startTime);
       
       while (currentTime <= endTime) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         contractionsTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
+        // Use the EXACT second stage time as the reference point
         const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
-        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
         
-        // Calculate relative minutes from start time
-        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
-        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60; // Handle midnight crossing
+        // Calculate relative minutes from second stage time
+        let currentRelativeMinutes = currentTimeMinutes - secondStageMinutes;
         
-        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
-        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60; // Handle midnight crossing
+        // Handle midnight crossing
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
         
-        if (currentRelativeMinutes < secondStageRelativeMinutes) {
+        if (currentRelativeMinutes < 0) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
+          console.log(`  Added ${timeStr} (30-min interval, before second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
+          console.log(`  Added ${timeStr} (15-min interval, after second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
         }
       }
       
-      // Generate hybrid FHR time columns
+      // Generate hybrid FHR time columns (same logic as contractions)
       babyBaselineTimeCols = [];
-      currentTime = new Date(startTimeDate);
+      currentTime = new Date(startTime); // Use the same start time as contractions
       
       while (currentTime <= endTime) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         babyBaselineTimeCols.push(timeStr);
         
         // Determine interval based on whether we're before or after second stage
+        // Use the EXACT second stage time as the reference point
         const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const secondStageMinutes = secondStageDate.getHours() * 60 + secondStageDate.getMinutes();
-        const startTimeMinutes = startTimeDate.getHours() * 60 + startTimeDate.getMinutes();
         
-        // Calculate relative minutes from start time
-        let currentRelativeMinutes = currentTimeMinutes - startTimeMinutes;
-        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60; // Handle midnight crossing
+        // Calculate relative minutes from second stage time
+        let currentRelativeMinutes = currentTimeMinutes - secondStageMinutes;
         
-        let secondStageRelativeMinutes = secondStageMinutes - startTimeMinutes;
-        if (secondStageRelativeMinutes < 0) secondStageRelativeMinutes += 24 * 60; // Handle midnight crossing
+        // Handle midnight crossing
+        if (currentRelativeMinutes < 0) currentRelativeMinutes += 24 * 60;
         
-        if (currentRelativeMinutes < secondStageRelativeMinutes) {
+        if (currentRelativeMinutes < 0) {
           // Before second stage: 30-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 30);
+          console.log(`  FHR: Added ${timeStr} (30-min interval, before second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
         } else {
           // After second stage: 15-minute intervals
           currentTime.setMinutes(currentTime.getMinutes() + 15);
+          console.log(`  FHR: Added ${timeStr} (15-min interval, after second stage) - Relative to second stage: ${currentRelativeMinutes}min`);
         }
       }
       
@@ -987,7 +999,9 @@
         timeDate.setDate(timeDate.getDate() + 1);
       }
       
-      return timeDate >= secondStageDate;
+      const isSecondStage = timeDate >= secondStageDate;
+      console.log(`🔍 isSecondStageTime(${time}): ${time} >= ${secondStageData.secondStageStartTime} = ${isSecondStage} (using EXACT second stage time)`);
+      return isSecondStage;
     }
     
     // Helper function to create a Date object from time string
