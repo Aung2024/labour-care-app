@@ -247,8 +247,17 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       
+      // Get button reference and show loading state
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Registering Patient...';
+      submitBtn.disabled = true;
+      
       // Validate dates before submitting
       if (!validateDates()) {
+        // Reset button state on validation error
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
         return;
       }
       
@@ -267,8 +276,23 @@
           console.log('User township from Firestore:', userData.township);
         }
         
+        const userTownship = userDoc.exists ? userDoc.data().township : "";
+        console.log('Township to assign to patient:', userTownship);
+        
+        // Validate township
+        if (!userTownship || userTownship.trim() === '') {
+          console.error('User township is empty or invalid:', userTownship);
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-warning">⚠️ Warning: Your township is not set. Please contact an administrator to set your township.</div>';
+          
+          // Reset button state on township validation error
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+          return;
+        }
+        
         // Add township and timestamp
-        data.township = userData.township || 'Unknown';
+        data.township = userTownship;
         data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
         data.createdBy = user.uid;
         
@@ -319,6 +343,7 @@
         
         const docRef = await firebase.firestore().collection("patients").add(processedData);
         console.log("Document written with ID: ", docRef.id);
+        console.log('Patient created with township:', userTownship);
         
         // Log the saved data for verification
         console.log('Saved patient data:', {
@@ -334,17 +359,57 @@
         });
         
         document.getElementById("message").innerHTML = 
-          '<div class="alert alert-success">✅ Patient record created successfully! <a href="testindex.html" class="btn btn-sm btn-outline-success ms-2">Go to Home</a></div>';
+          '<div class="alert alert-success">✅ Patient record created successfully! Redirecting to dashboard...</div>';
         
         // Reset form
         form.reset();
+        
+        // Auto-redirect to testindex.html after 2 seconds
+        setTimeout(() => {
+          window.location.href = 'testindex.html';
+        }, 2000);
         
       } catch (error) {
         console.error("Error adding document: ", error);
         document.getElementById("message").innerHTML = 
           '<div class="alert alert-danger">❌ Error creating patient record: ' + error.message + '</div>';
+        
+        // Reset button state on error
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
       }
     });
+    
+    // Debug function to check user township (can be called from console)
+    window.debugUserTownship = async function() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          console.log('No user logged in');
+          return;
+        }
+        
+        console.log('=== DEBUG USER TOWNSHIP ===');
+        console.log('User ID:', user.uid);
+        
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('Full user data:', userData);
+          console.log('Township field:', userData.township);
+          console.log('Township type:', typeof userData.township);
+          console.log('Township length:', userData.township ? userData.township.length : 'N/A');
+          console.log('Township trimmed:', userData.township ? userData.township.trim() : 'N/A');
+        } else {
+          console.log('User document does not exist!');
+        }
+        console.log('=== END DEBUG ===');
+      } catch (error) {
+        console.error('Debug error:', error);
+      }
+    };
   </script>
 </head>
 <body>
@@ -594,7 +659,7 @@
 
       <div class="text-center">
         <button type="submit" class="btn btn-primary btn-lg">
-          <i class="fas fa-save me-2"></i>Create Patient Record
+          <i class="fas fa-user-plus me-2"></i>Register Patient
         </button>
       </div>
     </form>
