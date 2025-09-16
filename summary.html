@@ -1671,7 +1671,8 @@
           }
         } else if (userData.role === "Midwife" || userData.role === "midwife") {
           // Midwife can access if they created the patient
-          if (d.createdBy === user.uid) {
+          // Check both field names for compatibility
+          if (d.created_by === user.uid || d.createdBy === user.uid) {
             allowed = true;
           }
         }
@@ -1682,7 +1683,7 @@
           if (userData.role === "TMO") {
             errorMessage = `Access Denied: You can only access patients in your township (${userData.township || 'undefined'}). This patient is in township: ${d.township || 'undefined'}.`;
           } else if (userData.role === "Midwife" || userData.role === "midwife") {
-            errorMessage = `Access Denied: You can only access patients you created. This patient was created by: ${d.createdBy || 'unknown'}.`;
+            errorMessage = `Access Denied: You can only access patients you created. This patient was created by: ${d.created_by || d.createdBy || 'unknown'}.`;
           } else {
             errorMessage = `Access Denied: You do not have permission to view this patient record. Please contact your administrator.`;
           }
@@ -2441,11 +2442,13 @@
 
         const base = firebase.firestore().collection("patients").doc(patientIdToSave);
 
-        // Fetch existing patient data to preserve createdBy
+        // Fetch existing patient data to preserve created_by field
         const patientDoc = await base.get();
         let createdBy = "";
-        if (patientDoc.exists && patientDoc.data().createdBy) {
-          createdBy = patientDoc.data().createdBy;
+        if (patientDoc.exists) {
+          const data = patientDoc.data();
+          // Check both field names for compatibility
+          createdBy = data.created_by || data.createdBy || "";
         }
 
         // Save patient info - use update() to preserve existing fields like township
@@ -2457,7 +2460,7 @@
           active_labour: document.getElementById("p_active").value,
           ruptured_membrane: document.getElementById("p_membrane").value,
           risk_factors: document.getElementById("p_risk").value,
-          createdBy
+          created_by: createdBy
         });
 
         // Save starting time if it exists
