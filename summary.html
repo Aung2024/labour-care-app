@@ -2021,6 +2021,9 @@
             const oldStartingTime = activeFirstStageStartTime;
             activeFirstStageStartTime = newStartingTime;
             
+            // Automatically change patient status to "labour" when first stage is started
+            updatePatientStatusToLabour();
+            
             // Generate new time columns
             generateDynamicTimeColumns();
             
@@ -6201,6 +6204,76 @@
       } catch (error) {
         console.error('Error loading medication data:', error);
       }
+    }
+
+    // Update patient status to "labour" when first stage is started
+    async function updatePatientStatusToLabour() {
+      try {
+        console.log('🔄 Updating patient status to Labour Care...');
+        
+        await firebase.firestore().collection("patients").doc(patientIdFromUrl).update({
+          status: "labour",
+          labour_started_at: firebase.firestore.FieldValue.serverTimestamp(),
+          last_updated: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log('✅ Patient status updated to Labour Care');
+        
+        // Show a brief notification to the user
+        showStatusChangeNotification();
+        
+      } catch (error) {
+        console.error('❌ Error updating patient status:', error);
+      }
+    }
+
+    // Show notification when status changes
+    function showStatusChangeNotification() {
+      // Create notification element
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #059669, #047857);
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        font-weight: 600;
+        animation: slideIn 0.3s ease-out;
+      `;
+      
+      notification.innerHTML = `
+        <i class="fas fa-heartbeat me-2"></i>
+        Patient status changed to <strong>Labour Care</strong>
+      `;
+      
+      // Add animation keyframes
+      if (!document.getElementById('statusChangeAnimation')) {
+        const style = document.createElement('style');
+        style.id = 'statusChangeAnimation';
+        style.textContent = `
+          @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      document.body.appendChild(notification);
+      
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notification.style.animation = 'slideIn 0.3s ease-out reverse';
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 300);
+      }, 3000);
     }
 
     // Show warning about data loss when starting time changes
