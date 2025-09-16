@@ -6149,6 +6149,7 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
+        // Save end treatment record to subcollection
         await firebase.firestore()
           .collection('patients')
           .doc(patientId)
@@ -6156,7 +6157,29 @@
           .doc('endTreatment')
           .set(endTreatmentData);
 
-        console.log('End treatment data saved successfully');
+        // Update main patient document status based on outcome
+        let newStatus = outcome;
+        if (outcome === 'birth') {
+          newStatus = 'baby'; // Change to baby care status
+        } else if (outcome === 'transfer') {
+          newStatus = 'transferred'; // Change to transferred status
+        } else if (outcome === 'other') {
+          newStatus = 'other'; // Change to other status
+        }
+
+        // Update patient status in main document
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            status: newStatus,
+            treatment_ended_at: firebase.firestore.FieldValue.serverTimestamp(),
+            treatment_outcome: outcome,
+            last_updated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+        console.log(`✅ End treatment data saved successfully - Status changed to: ${newStatus}`);
+        
       } catch (error) {
         console.error('Error saving end treatment data:', error);
         // Continue with redirect even if save fails
