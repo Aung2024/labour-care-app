@@ -274,7 +274,19 @@
       const data = Object.fromEntries(new FormData(form));
       try {
         const user = firebase.auth().currentUser;
-        console.log('Current user:', user.uid);
+        console.log('Current user object:', user);
+        console.log('Current user UID:', user?.uid);
+        
+        if (!user) {
+          console.error('❌ No authenticated user found!');
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-danger">❌ Error: You must be logged in to register patients.</div>';
+          
+          // Reset button state
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+          return;
+        }
         
         // Fetch the user's township from Firestore
         const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
@@ -307,6 +319,8 @@
         data.createdBy = user.uid;
         
         console.log('Setting created_by field:', user.uid);
+        console.log('data.createdBy after assignment:', data.createdBy);
+        console.log('Type of data.createdBy:', typeof data.createdBy);
         
         // Convert field names to snake_case for consistency
         const processedData = {
@@ -358,6 +372,17 @@
         console.log("Document written with ID: ", docRef.id);
         console.log('Patient created with township:', userTownship);
         console.log('Patient created by:', processedData.created_by);
+        
+        // Verify what was actually saved to Firestore
+        const savedDoc = await docRef.get();
+        if (savedDoc.exists) {
+          const savedData = savedDoc.data();
+          console.log('✅ Verification - Document saved successfully');
+          console.log('✅ Verification - created_by field in saved document:', savedData.created_by);
+          console.log('✅ Verification - Full saved document:', savedData);
+        } else {
+          console.error('❌ Verification failed - Document not found after creation');
+        }
         
         // Log the saved data for verification
         console.log('Saved patient data:', {
