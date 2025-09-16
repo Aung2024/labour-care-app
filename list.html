@@ -380,10 +380,12 @@
   <script>
     async function loadPatients() {
       try {
+        console.log('Loading patients for user:', currentUser?.uid, 'Role:', userRole, 'Township:', userTownship);
         const tableBody = document.querySelector("#patientsTable tbody");
         tableBody.innerHTML = "";
         
         if (!currentUser) {
+          console.log('No current user, returning');
           return;
         }
         
@@ -395,7 +397,7 @@
         } else if (userRole === "TMO") {
           snap = await db.collection("patients").where("township", "==", userTownship).get({ source: "server" });
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          snap = await db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: "server" });
+          snap = await db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: "server" });
         } else {
           // fallback: no access
           snap = { forEach: () => {} };
@@ -411,6 +413,11 @@
           patients.push({ id: doc.id, data: doc.data() });
         });
         
+        console.log(`Found ${patients.length} patients total`);
+        if (patients.length > 0) {
+          console.log('Sample patient data:', patients[0]);
+        }
+        
         // Sort by creation date (newest first)
         patients.sort((a, b) => {
           const dateA = a.data.created_at ? (a.data.created_at.toDate ? a.data.created_at.toDate() : new Date(a.data.created_at)) : new Date(0);
@@ -418,17 +425,19 @@
           return dateB - dateA; // Descending order (newest first)
         });
         
+        let displayedCount = 0;
         patients.forEach(patient => {
           const d = patient.data;
           
           // Check if patient matches search criteria
-          if (
-            !search ||
+          const matchesSearch = !search ||
             (d.name && d.name.toLowerCase().includes(search)) ||
             (d.township && d.township.toLowerCase().includes(search)) ||
             (d.age && String(d.age).includes(search)) ||
-            (d.status && d.status.toLowerCase().includes(search))
-          ) {
+            (d.status && d.status.toLowerCase().includes(search));
+          
+          if (matchesSearch) {
+            displayedCount++;
             const tr = document.createElement("tr");
             
             // Get status - check both new 'status' field and old 'treatmentStatus' field
@@ -475,6 +484,9 @@
             tableBody.appendChild(tr);
           }
         });
+        
+        console.log(`Displayed ${displayedCount} patients out of ${patients.length} total`);
+        console.log('Final stats:', stats);
         
         // Update statistics display
         updateStatsDisplay(stats);
@@ -532,7 +544,7 @@
         if (userData.role === "TMO") {
           canDelete = patientData.township === userData.township;
         } else if (userData.role === "Midwife" || userData.role === "midwife") {
-          canDelete = patientData.createdBy === user.uid;
+          canDelete = patientData.created_by === user.uid;
         }
         
         if (!canDelete) {
@@ -625,9 +637,9 @@
           // For each patient without township, try to get it from the creator
           for (const doc of patientsWithoutTownship.docs) {
             const patientData = doc.data();
-            if (patientData.createdBy) {
+            if (patientData.created_by) {
               try {
-                const creatorDoc = await db.collection("users").doc(patientData.createdBy).get();
+                const creatorDoc = await db.collection("users").doc(patientData.created_by).get();
                 if (creatorDoc.exists) {
                   const creatorData = creatorDoc.data();
                   if (creatorData.township) {
