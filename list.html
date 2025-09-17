@@ -393,11 +393,34 @@
         
         // Determine access level based on user role
         if (userRole === "Super Admin" || userRole === "admin") {
-          snap = await db.collection("patients").orderBy("created_at", "desc").get({ source: "server" });
+          // For Super Admin, get all patients and sort client-side to handle missing created_at field
+          snap = await db.collection("patients").get({ source: "server" });
         } else if (userRole === "TMO") {
           snap = await db.collection("patients").where("township", "==", userTownship).get({ source: "server" });
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          snap = await db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: "server" });
+          // For Midwives, get patients created by them using both field names for compatibility
+          const snapNew = await db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: "server" });
+          const snapOld = await db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: "server" });
+          
+          // Combine both snapshots and remove duplicates
+          const combinedDocs = new Map();
+          
+          snapNew.forEach(doc => {
+            combinedDocs.set(doc.id, doc);
+          });
+          
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          // Create a combined snapshot-like object
+          snap = {
+            forEach: (callback) => {
+              combinedDocs.forEach(callback);
+            }
+          };
         } else {
           // fallback: no access
           snap = { forEach: () => {} };
@@ -410,7 +433,21 @@
         // Convert snapshot to array and sort by creation date (newest first)
         const patients = [];
         snap.forEach(doc => {
-          patients.push({ id: doc.id, data: doc.data() });
+          const data = doc.data();
+          
+          // Add migration support for old patients
+          if (data.createdBy && !data.created_by) {
+            data.created_by = data.createdBy;
+          }
+          if (data.treatmentStatus && !data.status) {
+            data.status = data.treatmentStatus === 'active' ? 'antenatal' : data.treatmentStatus;
+          }
+          if (!data.created_at) {
+            // For old patients without created_at, use a default timestamp
+            data.created_at = new Date('2024-01-01'); // Default old date
+          }
+          
+          patients.push({ id: doc.id, data: data });
         });
         
         console.log(`Found ${patients.length} patients total`);
@@ -544,7 +581,8 @@
         if (userData.role === "TMO") {
           canDelete = patientData.township === userData.township;
         } else if (userData.role === "Midwife" || userData.role === "midwife") {
-          canDelete = patientData.created_by === user.uid;
+          // Check both new and old field names for compatibility
+          canDelete = patientData.created_by === user.uid || patientData.createdBy === user.uid;
         }
         
         if (!canDelete) {
@@ -637,9 +675,10 @@
           // For each patient without township, try to get it from the creator
           for (const doc of patientsWithoutTownship.docs) {
             const patientData = doc.data();
-            if (patientData.created_by) {
+            const creatorId = patientData.created_by || patientData.createdBy;
+            if (creatorId) {
               try {
-                const creatorDoc = await db.collection("users").doc(patientData.created_by).get();
+                const creatorDoc = await db.collection("users").doc(creatorId).get();
                 if (creatorDoc.exists) {
                   const creatorData = creatorDoc.data();
                   if (creatorData.township) {
