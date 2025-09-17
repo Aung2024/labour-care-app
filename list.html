@@ -428,7 +428,7 @@
         
         const search = document.getElementById("searchInput").value.trim().toLowerCase();
         let serial = 1;
-        let stats = { total: 0, antenatal: 0, labour: 0, postpartum: 0, baby: 0, other: 0, transferred: 0 };
+        let stats = { total: 0, antenatal: 0, labour: 0, postpartum: 0 };
         
         // Convert snapshot to array and sort by creation date (newest first)
         const patients = [];
@@ -482,13 +482,20 @@
             const statusClass = getStatusClass(status);
             const statusText = getStatusText(status);
             
-            // Update statistics
+            // Update statistics - map to 3 main statuses
             stats.total++;
-            if (stats[status] !== undefined) {
-              stats[status]++;
-            } else {
-              stats.other++;
+            
+            // Map status to one of the 3 main statuses
+            let mappedStatus = 'antenatal'; // default
+            if (status === 'antenatal' || status === 'active') {
+              mappedStatus = 'antenatal';
+            } else if (status === 'labour' || status === 'labour care') {
+              mappedStatus = 'labour';
+            } else if (status === 'postpartum' || status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed') {
+              mappedStatus = 'postpartum';
             }
+            
+            stats[mappedStatus]++;
             
             // Format township display
             const townshipDisplay = d.township ? d.township : '<span class="text-warning">⚠️ Not Set</span>';
@@ -605,20 +612,17 @@
     function getStatusClass(status) {
       switch(status) {
         case 'antenatal':
+        case 'active': // Old treatmentStatus value
           return 'status-antenatal';
         case 'labour':
+        case 'labour care': // Handle variations
           return 'status-labour';
         case 'postpartum':
+        case 'baby': // Legacy status - treat as postpartum
+        case 'transferred': // Legacy status - treat as postpartum
+        case 'other': // Legacy status - treat as postpartum
+        case 'birthed': // Legacy status - treat as postpartum
           return 'status-postpartum';
-        case 'baby':
-          return 'status-baby';
-        case 'transferred':
-          return 'status-transferred';
-        case 'other':
-          return 'status-other';
-        case 'birthed':
-          return 'status-baby';
-        case 'active':
         default:
           return 'status-antenatal';
       }
@@ -628,20 +632,17 @@
     function getStatusText(status) {
       switch(status) {
         case 'antenatal':
+        case 'active': // Old treatmentStatus value
           return 'Antenatal';
         case 'labour':
+        case 'labour care': // Handle variations
           return 'Labour Care';
         case 'postpartum':
-          return 'Postpartum';
-        case 'baby':
-          return 'Baby Care';
-        case 'transferred':
-          return 'Transferred';
-        case 'other':
-          return 'Other';
-        case 'birthed':
-          return 'Baby Care';
-        case 'active':
+        case 'baby': // Legacy status - treat as postpartum
+        case 'transferred': // Legacy status - treat as postpartum
+        case 'other': // Legacy status - treat as postpartum
+        case 'birthed': // Legacy status - treat as postpartum
+          return 'Postpartum Care';
         default:
           return 'Antenatal';
       }

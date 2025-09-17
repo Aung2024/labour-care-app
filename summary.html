@@ -6039,28 +6039,19 @@
         const patientId = getPatientIdFromUrl();
         if (!patientId) return;
         
-        let status = 'active';
-        switch(outcome) {
-          case 'birth':
-            status = 'birthed';
-            break;
-          case 'transfer':
-            status = 'transferred';
-            break;
-          case 'other':
-            status = 'other';
-            break;
-        }
+        // ALL outcomes lead to Postpartum Care status
+        const status = 'postpartum';
         
         await firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .update({
-            treatmentStatus: status,
-            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            status: status,
+            treatment_outcome: outcome,
+            last_updated: firebase.firestore.FieldValue.serverTimestamp()
           });
         
-        console.log(`Patient status updated to: ${status}`);
+        console.log(`Patient status updated to: ${status} (outcome: ${outcome})`);
       } catch (error) {
         console.error('Error updating patient status in main collection:', error);
       }
@@ -6159,15 +6150,8 @@
           .doc('endTreatment')
           .set(endTreatmentData);
 
-        // Update main patient document status based on outcome
-        let newStatus = outcome;
-        if (outcome === 'birth') {
-          newStatus = 'baby'; // Change to baby care status
-        } else if (outcome === 'transfer') {
-          newStatus = 'transferred'; // Change to transferred status
-        } else if (outcome === 'other') {
-          newStatus = 'other'; // Change to other status
-        }
+        // Update main patient document status - ALL outcomes lead to Postpartum Care
+        const newStatus = 'postpartum';
 
         // Update patient status in main document
         await firebase.firestore()
@@ -6180,7 +6164,7 @@
             last_updated: firebase.firestore.FieldValue.serverTimestamp()
           });
 
-        console.log(`✅ End treatment data saved successfully - Status changed to: ${newStatus}`);
+        console.log(`✅ End treatment data saved successfully - Status changed to: ${newStatus} (outcome: ${outcome})`);
         
       } catch (error) {
         console.error('Error saving end treatment data:', error);
