@@ -306,7 +306,6 @@
       } else {
         currentUser = user;
         loadUserData();
-        loadPatientStats();
       }
     });
 
@@ -324,40 +323,116 @@
           if (userRole === "Super Admin" && adminCard) {
             adminCard.style.display = "block";
           }
+          
+          // Load patient stats after user role is loaded
+          loadPatientStats();
         }
       });
     }
 
-    function loadPatientStats() {
-      // Load patient statistics based on status
-      db.collection("patients").get().then(querySnapshot => {
+    async function loadPatientStats() {
+      try {
+        // Reset stats
         patientStats = {
           antenatal: 0,
           labour: 0,
           postpartum: 0,
           baby: 0,
           other: 0,
-          transferred: 0
+          transferred: 0,
+          total: 0
         };
 
+        if (!currentUser || !userRole) {
+          console.log('User not loaded yet, skipping stats');
+          return;
+        }
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        let querySnapshot;
+        
+        // Load patient statistics based on user role
+        if (userRole === "Super Admin" || userRole === "admin") {
+          // Super Admin sees all patients
+          querySnapshot = await db.collection("patients").get();
+        } else if (userRole === "TMO") {
+          // TMO sees patients from their township
+          querySnapshot = await db.collection("patients").where("township", "==", userTownship).get();
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          // Midwife sees only patients they created
+          const snapNew = await db.collection("patients").where("created_by", "==", currentUser.uid).get();
+          const snapOld = await db.collection("patients").where("createdBy", "==", currentUser.uid).get();
+          
+          // Combine both snapshots
+          const combinedDocs = new Map();
+          snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          // Process combined results
+          combinedDocs.forEach(doc => {
+            const data = doc.data();
+            // Map legacy statuses to new 3-status system
+            let status = data.status || data.treatmentStatus || 'antenatal';
+            if (status === 'active') status = 'antenatal';
+            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed') {
+              status = 'postpartum';
+            }
+            
+            if (patientStats.hasOwnProperty(status)) {
+              patientStats[status]++;
+            }
+            patientStats.total++;
+          });
+          
+          updateStatsDisplay();
+          return;
+        } else {
+          // No access for other roles
+          updateStatsDisplay();
+          return;
+        }
+
+        // Process query results for Super Admin and TMO
         querySnapshot.forEach(doc => {
           const data = doc.data();
-          const status = data.status || 'antenatal'; // Default to antenatal for new patients
+          // Map legacy statuses to new 3-status system
+          let status = data.status || data.treatmentStatus || 'antenatal';
+          if (status === 'active') status = 'antenatal';
+          if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed') {
+            status = 'postpartum';
+          }
           
           if (patientStats.hasOwnProperty(status)) {
             patientStats[status]++;
           }
+          patientStats.total++;
         });
 
         updateStatsDisplay();
-      });
+      } catch (error) {
+        console.error('Error loading patient stats:', error);
+      }
     }
 
     function updateStatsDisplay() {
       // Update stats in each care card
       document.querySelectorAll('.stat-number').forEach(stat => {
         const type = stat.getAttribute('data-type');
-        if (patientStats[type] !== undefined) {
+        if (type === 'total') {
+          stat.textContent = patientStats.total || 0;
+        } else if (patientStats[type] !== undefined) {
           stat.textContent = patientStats[type];
         }
       });

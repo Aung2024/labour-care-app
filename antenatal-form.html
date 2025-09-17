@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Antenatal Care Visit - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --accent-color: #34d399;
+      --light-bg: #f0fdf4;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-section {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .section-title {
+      color: var(--primary-color);
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+    }
+
+    .patient-info-banner {
+      background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .btn-save {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.75rem 2rem;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .btn-save:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      color: white;
+    }
+
+    .alert-calculation {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      color: #92400e;
+    }
+
+    .visit-counter {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-weight: 600;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+
+    .form-floating label {
+      color: #6b7280;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+    }
+
+    .quick-fill-btn {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      color: #374151;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+      cursor: pointer;
+    }
+
+    .quick-fill-btn:hover {
+      background: #e5e7eb;
+    }
+
+    .calculation-result {
+      background: #ecfdf5;
+      border: 1px solid #10b981;
+      color: #065f46;
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-stethoscope me-3"></i>
+            Antenatal Care Visit
+          </h1>
+          <p class="mb-0">Record comprehensive antenatal care data</p>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <span id="userInfo" class="text-white-50"></span>
+            <a href="antenatal-care.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-arrow-left me-2"></i>Back to Patients
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i>Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Information Banner -->
+    <div class="patient-info-banner" id="patientBanner">
+      <div class="row">
+        <div class="col-md-8">
+          <h4 id="patientName">Loading patient...</h4>
+          <div class="row">
+            <div class="col-md-4">
+              <small><strong>Age:</strong> <span id="patientAge">-</span></small>
+            </div>
+            <div class="col-md-4">
+              <small><strong>LMP:</strong> <span id="patientLMP">-</span></small>
+            </div>
+            <div class="col-md-4">
+              <small><strong>EDD:</strong> <span id="patientEDD">-</span></small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="visit-counter" id="visitCounter">
+            Visit #<span id="visitNumber">1</span>
+          </div>
+          <div class="calculation-result" id="gestationalAge">
+            GA: Calculating...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Antenatal Care Form -->
+    <form id="antenatalForm">
+      <!-- Basic Visit Information -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-calendar-alt me-2"></i>Visit Information
+        </h5>
+        <div class="row">
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="date" class="form-control" id="visitDate" name="visitDate" required>
+              <label>Visit Date</label>
+              <button type="button" class="quick-fill-btn" onclick="setToday('visitDate')">Today</button>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="number" class="form-control" id="gestationWeeks" name="gestationWeeks" step="0.1" min="0" max="42">
+              <label>Gestation at Age (weeks)</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="number" class="form-control" id="weight" name="weight" step="0.1" min="0" max="200">
+              <label>Weight (kg)</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="text" class="form-control" id="bloodPressure" name="bloodPressure" placeholder="120/80">
+              <label>Blood Pressure (mmHg)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clinical Measurements -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-ruler me-2"></i>Clinical Measurements
+        </h5>
+        <div class="row">
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="text" class="form-control" id="urineTest" name="urineTest">
+              <label>Urine Test (Albumin/Sugar)</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="number" class="form-control" id="fundalHeight" name="fundalHeight" step="0.1" min="0" max="50">
+              <label>Fundal Height (cm)</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <select class="form-select" id="fetalPresentation" name="fetalPresentation">
+                <option value="">Select presentation</option>
+                <option value="Cephalic">Cephalic</option>
+                <option value="Breech">Breech</option>
+                <option value="Transverse">Transverse</option>
+                <option value="Oblique">Oblique</option>
+              </select>
+              <label>Fetal Presentation/Position</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="number" class="form-control" id="fetalHeartRate" name="fetalHeartRate" min="100" max="180">
+              <label>Fetal Heart Rate (per min)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Health Screening -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-shield-alt me-2"></i>Health Screening
+        </h5>
+        <div class="row">
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <select class="form-select" id="edema" name="edema">
+                <option value="">Select option</option>
+                <option value="None">None</option>
+                <option value="Mild">Mild</option>
+                <option value="Moderate">Moderate</option>
+                <option value="Severe">Severe</option>
+              </select>
+              <label>Edema</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <select class="form-select" id="ironFolicAcid" name="ironFolicAcid">
+                <option value="">Select option</option>
+                <option value="Given">Given</option>
+                <option value="Not Given">Not Given</option>
+                <option value="Contraindicated">Contraindicated</option>
+              </select>
+              <label>Iron/Folic Acid Supplement</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <select class="form-select" id="tetanusToxoid" name="tetanusToxoid">
+                <option value="">Select option</option>
+                <option value="TT1">TT1</option>
+                <option value="TT2">TT2</option>
+                <option value="TT3">TT3</option>
+                <option value="TT4">TT4</option>
+                <option value="TT5">TT5</option>
+                <option value="Not Given">Not Given</option>
+              </select>
+              <label>Tetanus Toxoid Injection</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-floating mb-3">
+              <input type="text" class="form-control" id="otherFindings" name="otherFindings">
+              <label>Other Findings/Remarks</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Next Appointment & Midwife -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-calendar-plus me-2"></i>Follow-up & Care Provider
+        </h5>
+        <div class="row">
+          <div class="col-md-4">
+            <div class="form-floating mb-3">
+              <input type="date" class="form-control" id="nextAppointment" name="nextAppointment">
+              <label>Next Appointment Date</label>
+              <button type="button" class="quick-fill-btn" onclick="setNextMonth('nextAppointment')">+4 weeks</button>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="form-floating mb-3">
+              <input type="text" class="form-control" id="midwifeName" name="midwifeName">
+              <label>Midwife Signature/Name</label>
+              <button type="button" class="quick-fill-btn" onclick="fillCurrentUser('midwifeName')">Me</button>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="form-floating mb-3">
+              <select class="form-select" id="visitType" name="visitType">
+                <option value="Routine">Routine Visit</option>
+                <option value="Follow-up">Follow-up Visit</option>
+                <option value="Emergency">Emergency Visit</option>
+                <option value="Referral">Referral Visit</option>
+              </select>
+              <label>Visit Type</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Additional Notes -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-notes-medical me-2"></i>Clinical Notes & Recommendations
+        </h5>
+        <div class="row">
+          <div class="col-12">
+            <div class="form-floating mb-3">
+              <textarea class="form-control" id="clinicalNotes" name="clinicalNotes" style="height: 100px"></textarea>
+              <label>Clinical Notes & Recommendations</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-section text-center">
+        <button type="button" class="btn btn-outline-secondary me-3" onclick="loadPreviousVisit()">
+          <i class="fas fa-history me-2"></i>Load Previous Visit
+        </button>
+        <button type="submit" class="btn btn-save me-3">
+          <i class="fas fa-save me-2"></i>Save Visit Data
+        </button>
+        <button type="button" class="btn btn-outline-info" onclick="showVisitHistory()">
+          <i class="fas fa-list me-2"></i>View All Visits
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let patientId = null;
+    let visitCount = 1;
+
+    // Get patient ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+        if (patientId) {
+          loadPatientData();
+          loadVisitCount();
+        } else {
+          alert("No patient ID provided. Redirecting to patient selection.");
+          window.location.href = "antenatal-care.html";
+        }
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
+        }
+      });
+    }
+
+    async function loadPatientData() {
+      try {
+        const patientDoc = await db.collection("patients").doc(patientId).get();
+        if (patientDoc.exists) {
+          currentPatient = patientDoc.data();
+          
+          // Update patient banner
+          document.getElementById("patientName").textContent = currentPatient.name || 'Unknown Patient';
+          document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
+          document.getElementById("patientLMP").textContent = currentPatient.lmp || 'Not set';
+          document.getElementById("patientEDD").textContent = currentPatient.edd || 'Not calculated';
+          
+          // Calculate and display gestational age
+          calculateGestationalAge();
+          
+          // Auto-fill today's date
+          setToday('visitDate');
+          
+          // Auto-fill current user as midwife
+          fillCurrentUser('midwifeName');
+        } else {
+          alert("Patient not found!");
+          window.location.href = "antenatal-care.html";
+        }
+      } catch (error) {
+        console.error("Error loading patient data:", error);
+        alert("Error loading patient data: " + error.message);
+      }
+    }
+
+    async function loadVisitCount() {
+      try {
+        const visitsSnapshot = await db.collection("patients")
+          .doc(patientId)
+          .collection("antenatal_visits")
+          .get();
+        
+        visitCount = visitsSnapshot.size + 1;
+        document.getElementById("visitNumber").textContent = visitCount;
+      } catch (error) {
+        console.error("Error loading visit count:", error);
+      }
+    }
+
+    function calculateGestationalAge() {
+      if (currentPatient && currentPatient.lmp) {
+        const lmpDate = new Date(currentPatient.lmp);
+        const today = new Date();
+        const diffTime = today - lmpDate;
+        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        
+        document.getElementById("gestationalAge").textContent = `GA: ${diffWeeks}w ${diffDays}d`;
+        document.getElementById("gestationWeeks").value = (diffWeeks + diffDays/7).toFixed(1);
+      }
+    }
+
+    function setToday(fieldId) {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById(fieldId).value = today;
+    }
+
+    function setNextMonth(fieldId) {
+      const nextMonth = new Date();
+      nextMonth.setDate(nextMonth.getDate() + 28); // 4 weeks
+      document.getElementById(fieldId).value = nextMonth.toISOString().split('T')[0];
+    }
+
+    function fillCurrentUser(fieldId) {
+      if (currentUser) {
+        document.getElementById(fieldId).value = currentUser.email;
+      }
+    }
+
+    async function loadPreviousVisit() {
+      try {
+        const visitsSnapshot = await db.collection("patients")
+          .doc(patientId)
+          .collection("antenatal_visits")
+          .orderBy("visit_date", "desc")
+          .limit(1)
+          .get();
+
+        if (!visitsSnapshot.empty) {
+          const lastVisit = visitsSnapshot.docs[0].data();
+          
+          // Fill form with previous visit data (except date and visit-specific fields)
+          const fieldsToSkip = ['visitDate', 'clinicalNotes', 'nextAppointment'];
+          
+          Object.keys(lastVisit).forEach(key => {
+            if (!fieldsToSkip.includes(key) && document.getElementById(key)) {
+              document.getElementById(key).value = lastVisit[key] || '';
+            }
+          });
+          
+          alert("Previous visit data loaded successfully!");
+        } else {
+          alert("No previous visits found for this patient.");
+        }
+      } catch (error) {
+        console.error("Error loading previous visit:", error);
+        alert("Error loading previous visit: " + error.message);
+      }
+    }
+
+    async function showVisitHistory() {
+      window.location.href = `antenatal-care.html`;
+    }
+
+    // Form submission
+    document.getElementById("antenatalForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      
+      try {
+        const formData = new FormData(e.target);
+        const visitData = {};
+        
+        // Convert form data to object
+        for (let [key, value] of formData.entries()) {
+          visitData[key] = value;
+        }
+        
+        // Add metadata
+        visitData.visit_date = firebase.firestore.Timestamp.fromDate(new Date(visitData.visitDate));
+        visitData.visit_number = visitCount;
+        visitData.recorded_by = currentUser.uid;
+        visitData.recorded_at = firebase.firestore.FieldValue.serverTimestamp();
+        visitData.patient_id = patientId;
+        
+        // Save to Firestore
+        await db.collection("patients")
+          .doc(patientId)
+          .collection("antenatal_visits")
+          .add(visitData);
+        
+        // Update patient's last visit date
+        await db.collection("patients")
+          .doc(patientId)
+          .update({
+            lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
+            last_updated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        
+        alert("Antenatal visit data saved successfully!");
+        
+        // Ask if user wants to add another visit or go back
+        const addAnother = confirm("Visit saved successfully! Would you like to add another visit for this patient?");
+        if (addAnother) {
+          // Reset form and increment visit counter
+          e.target.reset();
+          visitCount++;
+          document.getElementById("visitNumber").textContent = visitCount;
+          setToday('visitDate');
+          fillCurrentUser('midwifeName');
+        } else {
+          window.location.href = "antenatal-care.html";
+        }
+        
+      } catch (error) {
+        console.error("Error saving visit data:", error);
+        alert("Error saving visit data: " + error.message);
+      }
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+</body>
+</html>
