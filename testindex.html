@@ -381,7 +381,7 @@
           });
           
           // Process combined results
-          combinedDocs.forEach(doc => {
+          await Promise.all(Array.from(combinedDocs.values()).map(async (doc) => {
             const data = doc.data();
             // Map legacy statuses to new 3-status system
             let status = data.status || data.treatmentStatus || 'antenatal';
@@ -393,8 +393,26 @@
             if (patientStats.hasOwnProperty(status)) {
               patientStats[status]++;
             }
+            
+            // Check if this postpartum patient has a birth record (counts as baby)
+            if (status === 'postpartum') {
+              try {
+                const birthRecord = await db.collection("patients")
+                  .doc(doc.id)
+                  .collection("records")
+                  .doc("birthRecord")
+                  .get();
+                
+                if (birthRecord.exists) {
+                  patientStats.baby++;
+                }
+              } catch (error) {
+                console.log('No birth record for patient:', doc.id);
+              }
+            }
+            
             patientStats.total++;
-          });
+          }));
           
           updateStatsDisplay();
           return;
@@ -405,7 +423,7 @@
         }
 
         // Process query results for Super Admin and TMO
-        querySnapshot.forEach(doc => {
+        await Promise.all(querySnapshot.docs.map(async (doc) => {
           const data = doc.data();
           // Map legacy statuses to new 3-status system
           let status = data.status || data.treatmentStatus || 'antenatal';
@@ -417,8 +435,26 @@
           if (patientStats.hasOwnProperty(status)) {
             patientStats[status]++;
           }
+          
+          // Check if this postpartum patient has a birth record (counts as baby)
+          if (status === 'postpartum') {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(doc.id)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                patientStats.baby++;
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', doc.id);
+            }
+          }
+          
           patientStats.total++;
-        });
+        }));
 
         updateStatsDisplay();
       } catch (error) {

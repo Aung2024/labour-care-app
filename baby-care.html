@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
@@ -33,69 +34,6 @@
       margin-bottom: 2rem;
     }
 
-    .patient-selector {
-      background: white;
-      border-radius: 15px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      box-shadow: var(--card-shadow);
-    }
-
-    .care-modules {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .module-card {
-      background: white;
-      border-radius: 15px;
-      padding: 1.5rem;
-      box-shadow: var(--card-shadow);
-      transition: all 0.3s ease;
-      cursor: pointer;
-      border-left: 4px solid var(--primary-color);
-    }
-
-    .module-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-
-    .module-icon {
-      font-size: 2.5rem;
-      color: var(--primary-color);
-      margin-bottom: 1rem;
-    }
-
-    .module-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: #1f2937;
-      margin-bottom: 0.5rem;
-    }
-
-    .module-description {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1rem;
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .status-baby {
-      background: #fef3c7;
-      color: #92400e;
-    }
-
     .baby-card {
       background: white;
       border-radius: 15px;
@@ -103,6 +41,12 @@
       margin-bottom: 1rem;
       box-shadow: var(--card-shadow);
       border-left: 4px solid var(--primary-color);
+      transition: all 0.3s ease;
+    }
+
+    .baby-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(245, 158, 11, 0.15);
     }
 
     .baby-info {
@@ -116,11 +60,15 @@
       font-size: 1.25rem;
       font-weight: 600;
       color: #1f2937;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
     .baby-details {
       color: #6b7280;
       font-size: 0.9rem;
+      margin-top: 0.5rem;
     }
 
     .action-buttons {
@@ -144,224 +92,59 @@
       color: white;
     }
 
-    .age-stage {
-      background: #f3f4f6;
-      border-radius: 8px;
-      padding: 0.5rem 1rem;
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: #374151;
+    .baby-stats {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
     }
 
-    .age-newborn { background: #fef3c7; color: #92400e; }
-    .age-infant { background: #dbeafe; color: #1e40af; }
-    .age-toddler { background: #d1fae5; color: #065f46; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+    }
 
-    .vaccine-reminder {
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      border-radius: 8px;
-      padding: 0.75rem;
+    .stat-card {
+      text-align: center;
+      padding: 1rem;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    .stat-label {
+      font-size: 0.9rem;
+      color: #6b7280;
       margin-top: 0.5rem;
-      font-size: 0.8rem;
-      color: #991b1b;
     }
 
-    .vaccine-due {
-      background: #fef3c7;
-      border: 1px solid #fde68a;
-      color: #92400e;
+    .gender-icon {
+      color: var(--primary-color);
+    }
+
+    .gender-male { color: #3b82f6; }
+    .gender-female { color: #ec4899; }
+
+    .no-babies {
+      text-align: center;
+      padding: 3rem;
+      color: #6b7280;
+    }
+
+    .no-babies i {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
     }
   </style>
-  <script>
-    let currentUser = null;
-    let userRole = null;
-    let babyPatients = [];
-
-    firebase.auth().onAuthStateChanged(function(user) {
-      if (!user) {
-        window.location.href = "login.html";
-      } else {
-        currentUser = user;
-        loadUserData();
-        loadBabyPatients();
-      }
-    });
-
-    function loadUserData() {
-      db.collection("users").doc(currentUser.uid).get().then(doc => {
-        if (doc.exists) {
-          const userData = doc.data();
-          userRole = userData.role;
-          document.getElementById("userInfo").textContent = `${userData.email} (${userData.role})`;
-        }
-      });
-    }
-
-    function loadBabyPatients() {
-      // Load patients with baby status
-      db.collection("patients")
-        .where("status", "==", "baby")
-        .get()
-        .then(querySnapshot => {
-          babyPatients = [];
-          querySnapshot.forEach(doc => {
-            babyPatients.push({
-              id: doc.id,
-              ...doc.data()
-            });
-          });
-          displayBabyPatients();
-        })
-        .catch(error => {
-          console.error("Error loading baby patients:", error);
-        });
-    }
-
-    function getAgeStage(birthDate) {
-      if (!birthDate) return { stage: 'Unknown', class: '' };
-      
-      const birth = new Date(birthDate.seconds * 1000);
-      const now = new Date();
-      const ageInDays = Math.floor((now - birth) / (1000 * 60 * 60 * 24));
-      
-      if (ageInDays <= 28) {
-        return { stage: 'Newborn (0-28 days)', class: 'age-newborn' };
-      } else if (ageInDays <= 365) {
-        const months = Math.floor(ageInDays / 30);
-        return { stage: `Infant (${months} months)`, class: 'age-infant' };
-      } else {
-        const years = Math.floor(ageInDays / 365);
-        return { stage: `Toddler (${years} years)`, class: 'age-toddler' };
-      }
-    }
-
-    function getVaccineReminders(birthDate) {
-      if (!birthDate) return [];
-      
-      const birth = new Date(birthDate.seconds * 1000);
-      const now = new Date();
-      const ageInDays = Math.floor((now - birth) / (1000 * 60 * 60 * 24));
-      
-      const reminders = [];
-      
-      // BCG - at birth
-      if (ageInDays >= 0 && ageInDays <= 7) {
-        reminders.push({ name: 'BCG', due: 'At birth', urgent: ageInDays > 3 });
-      }
-      
-      // DPT, OPV, Hepatitis B - 6 weeks
-      if (ageInDays >= 42 && ageInDays <= 70) {
-        reminders.push({ name: 'DPT1, OPV1, HepB1', due: '6 weeks', urgent: ageInDays > 56 });
-      }
-      
-      // DPT, OPV, Hepatitis B - 10 weeks
-      if (ageInDays >= 70 && ageInDays <= 98) {
-        reminders.push({ name: 'DPT2, OPV2, HepB2', due: '10 weeks', urgent: ageInDays > 84 });
-      }
-      
-      // DPT, OPV, Hepatitis B - 14 weeks
-      if (ageInDays >= 98 && ageInDays <= 126) {
-        reminders.push({ name: 'DPT3, OPV3, HepB3', due: '14 weeks', urgent: ageInDays > 112 });
-      }
-      
-      return reminders;
-    }
-
-    function displayBabyPatients() {
-      const container = document.getElementById("patientsContainer");
-      
-      if (babyPatients.length === 0) {
-        container.innerHTML = `
-          <div class="text-center py-5">
-            <i class="fas fa-baby fa-3x text-muted mb-3"></i>
-            <h4 class="text-muted">No Baby Care Patients</h4>
-            <p class="text-muted">No babies are currently in care.</p>
-            <a href="patient.html" class="btn btn-baby">
-              <i class="fas fa-plus me-2"></i>Register New Baby
-            </a>
-          </div>
-        `;
-        return;
-      }
-
-      let html = '';
-      babyPatients.forEach(patient => {
-        const ageStage = getAgeStage(patient.birthDate);
-        const vaccineReminders = getVaccineReminders(patient.birthDate);
-        const lastVisit = patient.lastBabyVisit ? 
-          new Date(patient.lastBabyVisit.seconds * 1000).toLocaleDateString() : 
-          'Never';
-        
-        html += `
-          <div class="baby-card">
-            <div class="baby-info">
-              <div>
-                <div class="baby-name">${patient.babyName || patient.name + "'s Baby"}</div>
-                <div class="baby-details">
-                  Birth: ${patient.birthDate ? 
-                    new Date(patient.birthDate.seconds * 1000).toLocaleDateString() : 
-                    'Not recorded'} | Weight: ${patient.birthWeight || 'Not recorded'} | 
-                  Mother: ${patient.name}
-                </div>
-              </div>
-              <div class="text-end">
-                <span class="status-badge status-baby">Baby Care</span>
-                <div class="age-stage ${ageStage.class} mt-2">${ageStage.stage}</div>
-              </div>
-            </div>
-            
-            ${vaccineReminders.length > 0 ? `
-              <div class="vaccine-reminder ${vaccineReminders.some(r => r.urgent) ? 'vaccine-due' : ''}">
-                <i class="fas fa-syringe me-2"></i>
-                <strong>Vaccine Reminders:</strong> 
-                ${vaccineReminders.map(r => `${r.name} (${r.due})`).join(', ')}
-              </div>
-            ` : ''}
-            
-            <div class="row mt-2">
-              <div class="col-md-6">
-                <small class="text-muted">Last Visit: ${lastVisit}</small>
-              </div>
-              <div class="col-md-6 text-end">
-                <div class="action-buttons">
-                  <button class="btn btn-baby btn-sm" onclick="startBabyCare('${patient.id}')">
-                    <i class="fas fa-child me-1"></i>Start Care
-                  </button>
-                  <button class="btn btn-outline-secondary btn-sm" onclick="viewBabyDetails('${patient.id}')">
-                    <i class="fas fa-eye me-1"></i>View
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      });
-
-      container.innerHTML = html;
-    }
-
-    function startBabyCare(patientId) {
-      // Redirect to baby care form for specific patient
-      window.location.href = `baby-form.html?patient=${patientId}`;
-    }
-
-    function viewBabyDetails(patientId) {
-      // Redirect to baby details page
-      window.location.href = `baby-details.html?patient=${patientId}`;
-    }
-
-    function selectPatient() {
-      const patientId = document.getElementById("patientSelect").value;
-      if (patientId) {
-        startBabyCare(patientId);
-      }
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js');
-    }
-  </script>
 </head>
 <body>
   <!-- Header -->
@@ -371,9 +154,9 @@
         <div class="col-md-8">
           <h1 class="mb-2">
             <i class="fas fa-baby me-3"></i>
-            Baby Care
+            Baby Care Management
           </h1>
-          <p class="mb-0">Newborn and infant care management with growth tracking and vaccination schedules</p>
+          <p class="mb-0">Newborn care tracking and management system</p>
         </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
@@ -391,119 +174,355 @@
   </div>
 
   <div class="container">
-    <!-- Patient Selector -->
-    <div class="patient-selector">
+    <!-- Baby Statistics -->
+    <div class="baby-stats">
       <h4 class="mb-3">
-        <i class="fas fa-user-plus me-2"></i>
-        Select Baby for Care
+        <i class="fas fa-chart-bar me-2"></i>Baby Care Statistics
       </h4>
-      <div class="row">
-        <div class="col-md-8">
-          <select class="form-select" id="patientSelect">
-            <option value="">Choose a baby...</option>
-          </select>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="totalBabies">0</div>
+          <div class="stat-label">Total Babies</div>
         </div>
-        <div class="col-md-4">
-          <button class="btn btn-baby w-100" onclick="selectPatient()">
-            <i class="fas fa-child me-2"></i>Start Baby Care
-          </button>
+        <div class="stat-card">
+          <div class="stat-number" id="maleBabies">0</div>
+          <div class="stat-label">Male</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="femaleBabies">0</div>
+          <div class="stat-label">Female</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="avgWeight">0</div>
+          <div class="stat-label">Avg Weight (Lb)</div>
         </div>
       </div>
     </div>
 
-    <!-- Care Modules -->
-    <div class="care-modules">
-      <div class="module-card" onclick="loadBabyPatients()">
-        <div class="module-icon">
-          <i class="fas fa-users"></i>
+    <!-- Search and Filter -->
+    <div class="row mb-4">
+      <div class="col-md-8">
+        <div class="input-group">
+          <span class="input-group-text"><i class="fas fa-search"></i></span>
+          <input type="text" class="form-control" id="searchInput" placeholder="Search babies by name, mother name, or gender...">
         </div>
-        <div class="module-title">All Babies</div>
-        <div class="module-description">View and manage all babies in care</div>
       </div>
-
-      <div class="module-card" onclick="window.location.href='baby-growth.html'">
-        <div class="module-icon">
-          <i class="fas fa-chart-line"></i>
-        </div>
-        <div class="module-title">Growth Tracking</div>
-        <div class="module-description">Monitor weight, height, and head circumference</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='baby-vaccines.html'">
-        <div class="module-icon">
-          <i class="fas fa-syringe"></i>
-        </div>
-        <div class="module-title">Vaccination Schedule</div>
-        <div class="module-description">Track and manage vaccination schedules</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='baby-development.html'">
-        <div class="module-icon">
-          <i class="fas fa-baby-carriage"></i>
-        </div>
-        <div class="module-title">Development Milestones</div>
-        <div class="module-description">Track developmental progress and milestones</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='baby-feeding.html'">
-        <div class="module-icon">
-          <i class="fas fa-utensils"></i>
-        </div>
-        <div class="module-title">Feeding & Nutrition</div>
-        <div class="module-description">Monitor feeding patterns and nutrition</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='baby-health.html'">
-        <div class="module-icon">
-          <i class="fas fa-heartbeat"></i>
-        </div>
-        <div class="module-title">Health Monitoring</div>
-        <div class="module-description">Track health indicators and concerns</div>
+      <div class="col-md-4">
+        <button class="btn btn-outline-primary w-100" onclick="loadBabies()">
+          <i class="fas fa-sync me-2"></i>Refresh List
+        </button>
       </div>
     </div>
 
     <!-- Babies List -->
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">
-          <i class="fas fa-list me-2"></i>
-          Baby Care Patients
-        </h5>
-      </div>
-      <div class="card-body">
-        <div id="patientsContainer">
-          <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div id="babiesContainer">
+      <!-- Babies will be populated here -->
     </div>
   </div>
 
   <script>
-    // Load patients for dropdown
-    function loadPatientsForDropdown() {
-      db.collection("patients")
-        .where("status", "==", "baby")
-        .get()
-        .then(querySnapshot => {
-          const select = document.getElementById("patientSelect");
-          select.innerHTML = '<option value="">Choose a baby...</option>';
+    let currentUser = null;
+    let userRole = null;
+    let babies = [];
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
           
-          querySnapshot.forEach(doc => {
-            const patient = doc.data();
-            const option = document.createElement("option");
-            option.value = doc.id;
-            option.textContent = `${patient.babyName || patient.name + "'s Baby"} (${patient.name})`;
-            select.appendChild(option);
-          });
-        });
+          // Load babies after user role is loaded
+          loadBabies();
+        }
+      });
     }
 
-    // Load patients for dropdown on page load
-    loadPatientsForDropdown();
+    async function loadBabies() {
+      try {
+        if (!currentUser || !userRole) {
+          console.log('User not loaded yet, skipping baby load');
+          return;
+        }
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        babies = [];
+
+        // Load patients with birth records based on user role
+        let patientsQuery;
+        
+        if (userRole === "Super Admin" || userRole === "admin") {
+          // Super Admin sees all patients
+          patientsQuery = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .get();
+        } else if (userRole === "TMO") {
+          // TMO sees patients from their township
+          patientsQuery = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("township", "==", userTownship)
+            .get();
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          // Midwife sees only patients they created
+          const snapNew = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapOld = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+
+          // Combine both snapshots and remove duplicates
+          const combinedDocs = new Map();
+          
+          snapNew.forEach(doc => {
+            combinedDocs.set(doc.id, doc);
+          });
+          
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          // Check each patient for birth records
+          for (const [patientId, patientDoc] of combinedDocs) {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(patientId)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                babies.push({
+                  id: patientId,
+                  patient: patientDoc.data(),
+                  birthRecord: birthRecord.data()
+                });
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', patientId);
+            }
+          }
+          
+          displayBabies();
+          updateStatistics();
+          return;
+        }
+
+        // For Super Admin and TMO, check each patient for birth records
+        if (patientsQuery) {
+          for (const patientDoc of patientsQuery.docs) {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(patientDoc.id)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                babies.push({
+                  id: patientDoc.id,
+                  patient: patientDoc.data(),
+                  birthRecord: birthRecord.data()
+                });
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', patientDoc.id);
+            }
+          }
+        }
+
+        // Sort by birth time (newest first)
+        babies.sort((a, b) => {
+          const aTime = a.birthRecord.birthTime ? new Date(a.birthRecord.birthTime) : new Date(0);
+          const bTime = b.birthRecord.birthTime ? new Date(b.birthRecord.birthTime) : new Date(0);
+          return bTime - aTime;
+        });
+        
+        displayBabies();
+        updateStatistics();
+
+      } catch (error) {
+        console.error("Error loading babies:", error);
+        document.getElementById("babiesContainer").innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Error loading babies: ${error.message}
+          </div>
+        `;
+      }
+    }
+
+    function displayBabies() {
+      const container = document.getElementById("babiesContainer");
+      
+      if (babies.length === 0) {
+        container.innerHTML = `
+          <div class="no-babies">
+            <i class="fas fa-baby"></i>
+            <h4>No Babies Found</h4>
+            <p>No birth records found for your patients.</p>
+            <a href="testindex.html" class="btn btn-baby">
+              <i class="fas fa-home me-2"></i>Back to Dashboard
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <div class="row mb-3">
+          <div class="col-md-8">
+            <h5><i class="fas fa-baby me-2"></i>Birth Records (${babies.length})</h5>
+          </div>
+          <div class="col-md-4 text-end">
+            <button class="btn btn-outline-primary btn-sm" onclick="loadBabies()">
+              <i class="fas fa-sync me-1"></i>Refresh
+            </button>
+          </div>
+        </div>
+      `;
+      
+      babies.forEach(baby => {
+        const birthRecord = baby.birthRecord;
+        const patient = baby.patient;
+        
+        // Calculate age in days
+        const birthTime = birthRecord.birthTime ? new Date(birthRecord.birthTime) : null;
+        const ageInDays = birthTime ? Math.floor((new Date() - birthTime) / (1000 * 60 * 60 * 24)) : 'Unknown';
+        
+        // Gender icon
+        const genderIcon = birthRecord.babyGender === 'Male' ? 
+          '<i class="fas fa-mars gender-male"></i>' : 
+          birthRecord.babyGender === 'Female' ? 
+          '<i class="fas fa-venus gender-female"></i>' : 
+          '<i class="fas fa-question gender-icon"></i>';
+        
+        html += `
+          <div class="baby-card">
+            <div class="baby-info">
+              <div>
+                <div class="baby-name">
+                  <i class="fas fa-baby me-2 gender-icon"></i>
+                  ${birthRecord.babyName || 'Unnamed Baby'} ${genderIcon}
+                </div>
+                <div class="baby-details">
+                  <div class="row">
+                    <div class="col-md-6">
+                      <small><strong>Mother:</strong> ${patient.name || birthRecord.motherName || 'Unknown'}</small><br>
+                      <small><strong>Birth Date:</strong> ${birthTime ? birthTime.toLocaleDateString() : 'Unknown'}</small><br>
+                      <small><strong>Age:</strong> ${ageInDays} day(s)</small>
+                    </div>
+                    <div class="col-md-6">
+                      <small><strong>Weight:</strong> ${birthRecord.birthWeight || 'N/A'} Lb</small><br>
+                      <small><strong>Length:</strong> ${birthRecord.birthLength || 'N/A'} cm</small><br>
+                      <small><strong>APGAR:</strong> ${birthRecord.apgarScore1min || 'N/A'}/${birthRecord.apgarScore5min || 'N/A'}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="text-end">
+                <div class="action-buttons">
+                  <button class="btn btn-baby btn-sm" onclick="editBabyRecord('${baby.id}')">
+                    <i class="fas fa-edit me-1"></i>Edit
+                  </button>
+                  <button class="btn btn-outline-info btn-sm" onclick="viewBabyDetails('${baby.id}')">
+                    <i class="fas fa-eye me-1"></i>View
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function updateStatistics() {
+      const stats = {
+        total: babies.length,
+        male: 0,
+        female: 0,
+        totalWeight: 0,
+        weightCount: 0
+      };
+
+      babies.forEach(baby => {
+        const birthRecord = baby.birthRecord;
+        
+        if (birthRecord.babyGender === 'Male') {
+          stats.male++;
+        } else if (birthRecord.babyGender === 'Female') {
+          stats.female++;
+        }
+        
+        if (birthRecord.birthWeight) {
+          stats.totalWeight += parseFloat(birthRecord.birthWeight);
+          stats.weightCount++;
+        }
+      });
+
+      document.getElementById('totalBabies').textContent = stats.total;
+      document.getElementById('maleBabies').textContent = stats.male;
+      document.getElementById('femaleBabies').textContent = stats.female;
+      document.getElementById('avgWeight').textContent = 
+        stats.weightCount > 0 ? (stats.totalWeight / stats.weightCount).toFixed(1) : '0';
+    }
+
+    function editBabyRecord(patientId) {
+      // Redirect to baby.html for editing
+      window.location.href = `baby.html?patient=${patientId}&edit=true`;
+    }
+
+    function viewBabyDetails(patientId) {
+      // Redirect to summary view
+      window.location.href = `summary-view.html?patient=${patientId}`;
+    }
+
+    // Search functionality
+    document.getElementById('searchInput').addEventListener('input', function() {
+      const searchTerm = this.value.toLowerCase();
+      const filteredBabies = babies.filter(baby => {
+        const babyName = (baby.birthRecord.babyName || '').toLowerCase();
+        const motherName = (baby.patient.name || baby.birthRecord.motherName || '').toLowerCase();
+        const gender = (baby.birthRecord.babyGender || '').toLowerCase();
+        
+        return babyName.includes(searchTerm) || 
+               motherName.includes(searchTerm) || 
+               gender.includes(searchTerm);
+      });
+      
+      // Temporarily replace babies array for display
+      const originalBabies = babies;
+      babies = filteredBabies;
+      displayBabies();
+      babies = originalBabies; // Restore original array
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
   </script>
 </body>
 </html>
