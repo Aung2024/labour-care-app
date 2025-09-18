@@ -97,6 +97,11 @@
       color: #991b1b;
     }
 
+    .status-antenatal {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
     .patient-card {
       background: white;
       border-radius: 15px;
@@ -322,45 +327,76 @@
 
         labourPatients = [];
 
-        // Load labour patients based on user role
+        // Load both antenatal and labour patients based on user role (for proper workflow)
         if (userRole === "Super Admin" || userRole === "admin") {
-          // Super Admin sees all labour patients
-          const querySnapshot = await db.collection("patients")
+          // Super Admin sees all antenatal and labour patients
+          const antenatalSnapshot = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .get();
+          const labourSnapshot = await db.collection("patients")
             .where("status", "==", "labour")
             .get();
-          querySnapshot.forEach(doc => {
-            labourPatients.push({
-              id: doc.id,
-              ...doc.data()
+          
+          [antenatalSnapshot, labourSnapshot].forEach(snapshot => {
+            snapshot.forEach(doc => {
+              labourPatients.push({
+                id: doc.id,
+                ...doc.data()
+              });
             });
           });
         } else if (userRole === "TMO") {
-          // TMO sees labour patients from their township
-          const querySnapshot = await db.collection("patients")
+          // TMO sees antenatal and labour patients from their township
+          const antenatalSnapshot = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("township", "==", userTownship)
+            .get();
+          const labourSnapshot = await db.collection("patients")
             .where("status", "==", "labour")
             .where("township", "==", userTownship)
             .get();
-          querySnapshot.forEach(doc => {
-            labourPatients.push({
-              id: doc.id,
-              ...doc.data()
+          
+          [antenatalSnapshot, labourSnapshot].forEach(snapshot => {
+            snapshot.forEach(doc => {
+              labourPatients.push({
+                id: doc.id,
+                ...doc.data()
+              });
             });
           });
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only labour patients they created
-          const snapNew = await db.collection("patients")
+          // Midwife sees antenatal and labour patients they created
+          const snapAntenatalNew = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapAntenatalOld = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+          const snapLabourNew = await db.collection("patients")
             .where("status", "==", "labour")
             .where("created_by", "==", currentUser.uid)
             .get();
-          const snapOld = await db.collection("patients")
+          const snapLabourOld = await db.collection("patients")
             .where("status", "==", "labour")
             .where("createdBy", "==", currentUser.uid)
             .get();
+          
+          // Also check for old 'active' status patients (legacy)
+          const snapLegacy = await db.collection("patients")
+            .where("treatmentStatus", "==", "active")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapLegacyOld = await db.collection("patients")
+            .where("treatmentStatus", "==", "active")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
 
-          // Combine both snapshots and remove duplicates
+          // Combine all snapshots and remove duplicates
           const combinedDocs = new Map();
           
-          [snapNew, snapOld].forEach(snap => {
+          [snapAntenatalNew, snapAntenatalOld, snapLabourNew, snapLabourOld, snapLegacy, snapLegacyOld].forEach(snap => {
             snap.forEach(doc => {
               if (!combinedDocs.has(doc.id)) {
                 combinedDocs.set(doc.id, {
@@ -397,20 +433,28 @@
         container.innerHTML = `
           <div class="text-center py-5">
             <i class="fas fa-heartbeat fa-3x text-muted mb-3"></i>
-            <h4 class="text-muted">No Labour Patients</h4>
-            <p class="text-muted">No patients are currently in active labour.</p>
+            <h4 class="text-muted">No Patients Available</h4>
+            <p class="text-muted">No antenatal or labour patients found.</p>
             <a href="antenatal-care.html" class="btn btn-labour">
-              <i class="fas fa-baby-carriage me-2"></i>View Antenatal Patients
+              <i class="fas fa-baby-carriage me-2"></i>View Antenatal Care
             </a>
           </div>
         `;
         return;
       }
 
+      // Count patients by status
+      const antenatalCount = labourPatients.filter(p => (p.status || p.treatmentStatus) === 'antenatal' || p.treatmentStatus === 'active').length;
+      const labourCount = labourPatients.filter(p => (p.status || p.treatmentStatus) === 'labour').length;
+
       let html = `
         <div class="row mb-3">
           <div class="col-md-8">
-            <h5><i class="fas fa-heartbeat me-2"></i>Active Labour Patients (${labourPatients.length})</h5>
+            <h5><i class="fas fa-heartbeat me-2"></i>Labour Care Patients (${labourPatients.length} total)</h5>
+            <small class="text-muted">
+              <span class="badge bg-success me-2">${antenatalCount} Antenatal</span>
+              <span class="badge bg-danger">${labourCount} Active Labour</span>
+            </small>
           </div>
           <div class="col-md-4 text-end">
             <button class="btn btn-outline-primary btn-sm" onclick="loadLabourPatients()">
@@ -420,21 +464,26 @@
         </div>
       `;
 
-      // Add urgent alert if there are patients in labour
-      if (labourPatients.length > 0) {
+      // Add urgent alert if there are patients in active labour
+      if (labourCount > 0) {
         html += `
           <div class="labour-alert">
             <i class="fas fa-exclamation-triangle"></i>
             <strong>Active Labour Monitoring Required</strong>
-            <p>${labourPatients.length} patient(s) in active labour need continuous monitoring</p>
+            <p>${labourCount} patient(s) in active labour need continuous monitoring</p>
           </div>
         `;
       }
       
       labourPatients.forEach(patient => {
-        // Calculate time since labour started
-        let labourDuration = 'Unknown';
-        if (patient.labour_started_at) {
+        // Determine current status
+        const currentStatus = patient.status || patient.treatmentStatus || 'antenatal';
+        const isInLabour = currentStatus === 'labour';
+        const isAntenatal = currentStatus === 'antenatal' || currentStatus === 'active';
+        
+        // Calculate time since labour started (only for labour patients)
+        let labourDuration = '';
+        if (isInLabour && patient.labour_started_at) {
           const labourStart = new Date(patient.labour_started_at.seconds * 1000);
           const now = new Date();
           const durationHours = Math.floor((now - labourStart) / (1000 * 60 * 60));
@@ -453,20 +502,27 @@
           gestationalInfo = `${diffWeeks}w ${diffDays}d`;
         }
         
+        // Determine status badge and urgency
+        const statusBadge = isInLabour ? 'status-labour' : 'status-antenatal';
+        const statusText = isInLabour ? 'Labour Care' : 'Antenatal';
+        const urgencyBadge = isInLabour ? '<span class="badge bg-danger ms-2">URGENT</span>' : '';
+        const actionButtonText = isInLabour ? 'Continue Care' : 'Start Labour Care';
+        const actionButtonIcon = isInLabour ? 'fa-play' : 'fa-heartbeat';
+        
         html += `
           <div class="patient-card">
             <div class="patient-info">
               <div>
                 <div class="patient-name">
                   <i class="fas fa-user me-2"></i>${patient.name || 'Unknown'}
-                  <span class="badge bg-danger ms-2">URGENT</span>
+                  ${urgencyBadge}
                 </div>
                 <div class="patient-details">
                   <div class="row">
                     <div class="col-md-6">
                       <small><strong>Age:</strong> ${patient.age || 'N/A'}</small><br>
                       <small><strong>Parity:</strong> ${patient.parity || 'N/A'}</small><br>
-                      <small><strong>Labour Duration:</strong> ${labourDuration}</small>
+                      ${isInLabour ? `<small><strong>Labour Duration:</strong> ${labourDuration}</small>` : '<small><strong>Status:</strong> Ready for labour care</small>'}
                     </div>
                     <div class="col-md-6">
                       <small><strong>LMP:</strong> ${patient.lmp || 'Not set'}</small><br>
@@ -477,19 +533,19 @@
                 </div>
               </div>
               <div class="text-end">
-                <span class="status-badge status-labour">Labour Care</span>
+                <span class="status-badge ${statusBadge}">${statusText}</span>
               </div>
             </div>
             <div class="row mt-2">
               <div class="col-md-6">
                 <small class="text-muted">
-                  <i class="fas fa-clock me-1"></i>Labour Started: ${patient.labour_started_at ? new Date(patient.labour_started_at.seconds * 1000).toLocaleString() : 'Unknown'}
+                  <i class="fas fa-clock me-1"></i>${isInLabour ? `Labour Started: ${patient.labour_started_at ? new Date(patient.labour_started_at.seconds * 1000).toLocaleString() : 'Unknown'}` : 'Ready to start labour care'}
                 </small>
               </div>
               <div class="col-md-6 text-end">
                 <div class="action-buttons">
                   <button class="btn btn-labour btn-sm" onclick="continueLabourCare('${patient.id}')">
-                    <i class="fas fa-play me-1"></i>Continue Care
+                    <i class="fas ${actionButtonIcon} me-1"></i>${actionButtonText}
                   </button>
                   <button class="btn btn-outline-info btn-sm" onclick="viewLabourHistory('${patient.id}')">
                     <i class="fas fa-chart-line me-1"></i>Labour Care Report
