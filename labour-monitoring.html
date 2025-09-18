@@ -108,6 +108,26 @@
   </div>
 
   <div class="container">
+    <!-- Patient Selector -->
+    <div class="monitoring-card">
+      <h4 class="mb-3">
+        <i class="fas fa-user-check me-2"></i>
+        Select Labour Patient for Monitoring
+      </h4>
+      <div class="row">
+        <div class="col-md-8">
+          <select class="form-select" id="patientSelect">
+            <option value="">Choose a labour patient...</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-monitoring w-100" onclick="openSelectedPatientCare()">
+            <i class="fas fa-chart-line me-2"></i>Open Labour Care
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Monitoring Tools -->
     <div class="monitoring-card">
       <h3 class="protocol-title">
@@ -117,11 +137,11 @@
       
       <div class="row">
         <div class="col-md-6">
-          <div class="tool-card" onclick="openPartograph()">
+          <div class="tool-card" onclick="selectPatientForPartograph()">
             <div class="tool-icon">
               <i class="fas fa-chart-line"></i>
             </div>
-            <div class="tool-title">WHO Partograph</div>
+            <div class="tool-title">Labour Care</div>
             <div class="tool-description">
               Complete partograph charting available in the Labour Care Summary
             </div>
@@ -223,27 +243,134 @@
   </div>
 
   <script>
-    function openPartograph() {
-      // Redirect to labour care to select patient
-      alert('Please select a labour patient from the Labour Care section to access the partograph.');
-      window.location.href = 'labour-care.html';
-    }
-
-    function openSummaryView() {
-      // Redirect to labour care to select patient
-      alert('Please select a labour patient from the Labour Care section to view charts.');
-      window.location.href = 'labour-care.html';
-    }
+    let currentUser = null;
+    let userRole = null;
 
     firebase.auth().onAuthStateChanged(function(user) {
       if (!user) {
         window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
       }
     });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          loadLabourPatientsForDropdown();
+        }
+      });
+    }
+
+    async function loadLabourPatientsForDropdown() {
+      try {
+        const selector = document.getElementById("patientSelect");
+        selector.innerHTML = '<option value="">Choose a labour patient...</option>';
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        let querySnapshot;
+
+        // Load labour patients based on user role
+        if (userRole === "Super Admin" || userRole === "admin") {
+          querySnapshot = await db.collection("patients").where("status", "==", "labour").get();
+        } else if (userRole === "TMO") {
+          querySnapshot = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("township", "==", userTownship)
+            .get();
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          const snapNew = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapOld = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+
+          // Combine results
+          const combinedDocs = new Map();
+          snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+
+          combinedDocs.forEach((doc, id) => {
+            const patient = doc.data();
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}`;
+            selector.appendChild(option);
+          });
+          return;
+        }
+
+        if (querySnapshot) {
+          querySnapshot.forEach(doc => {
+            const patient = doc.data();
+            const option = document.createElement('option');
+            option.value = doc.id;
+            option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}`;
+            selector.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error("Error loading labour patients:", error);
+      }
+    }
+
+    function selectPatientForPartograph() {
+      const patientId = document.getElementById("patientSelect").value;
+      if (patientId) {
+        window.location.href = `summary.html?patient=${patientId}`;
+      } else {
+        alert('Please select a labour patient first.');
+      }
+    }
+
+    function openSelectedPatientCare() {
+      const patientId = document.getElementById("patientSelect").value;
+      if (patientId) {
+        window.location.href = `summary.html?patient=${patientId}`;
+      } else {
+        alert('Please select a labour patient first.');
+      }
+    }
+
+    function openSummaryView() {
+      const patientId = document.getElementById("patientSelect").value;
+      if (patientId) {
+        window.location.href = `summary-view.html?patient=${patientId}`;
+      } else {
+        alert('Please select a labour patient first to view charts.');
+      }
+    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('service-worker.js');
     }
   </script>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        © 2025 Maternal & Child Health Care System — Designed for clinical excellence - Powered by Jhpiego Myanmar
+      </p>
+    </div>
+  </footer>
 </body>
 </html>
