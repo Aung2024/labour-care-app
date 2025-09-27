@@ -190,6 +190,17 @@
     }
 
     // Calculate gestational age
+    // Calculate EDD from LMP using the formula: EDD = LMP + 280 days
+    function calculateEDD() {
+      const lmp = document.getElementById('lmp').value;
+      if (lmp) {
+        const lmpDate = new Date(lmp);
+        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000)); // Add 280 days
+        document.getElementById('edd').value = eddDate.toISOString().split('T')[0];
+      }
+    }
+
+    // Calculate GA from LMP using the formula: GA = (Current Date - LMP) / 7
     function calculateGestationalAge() {
       const lmp = document.getElementById('lmp').value;
       if (lmp) {
@@ -202,6 +213,40 @@
         
         document.getElementById('gestationalAge').value = `${weeks}w ${days}d`;
       }
+    }
+
+    // Toggle between LMP known/unknown fields
+    function toggleLMPFields() {
+      const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked').value;
+      const lmpKnownFields = document.getElementById('lmpKnownFields');
+      const lmpUnknownFields = document.getElementById('lmpUnknownFields');
+      
+      if (lmpStatus === 'known') {
+        lmpKnownFields.style.display = 'block';
+        lmpUnknownFields.style.display = 'none';
+      } else {
+        lmpKnownFields.style.display = 'none';
+        lmpUnknownFields.style.display = 'block';
+      }
+    }
+
+    // Toggle high risk details
+    function toggleHighRiskDetails() {
+      const highRisk = document.querySelector('input[name="highRisk"]:checked').value;
+      const highRiskDetails = document.getElementById('highRiskDetails');
+      
+      if (highRisk === 'yes') {
+        highRiskDetails.style.display = 'block';
+      } else {
+        highRiskDetails.style.display = 'none';
+      }
+    }
+
+    // Set registration date to today
+    function setRegistrationDate() {
+      const today = new Date();
+      const todayString = today.toISOString().split('T')[0];
+      document.getElementById('registration_date').value = todayString;
     }
 
     // Show/hide relevant fields based on status
@@ -226,6 +271,7 @@
     // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
       loadUserTownship();
+      setRegistrationDate();
       
       // Set default status and show appropriate section
       document.getElementById('status').value = 'antenatal';
@@ -236,10 +282,21 @@
       document.getElementById('rupturedMembranes').addEventListener('change', validateDates);
       document.getElementById('lmp').addEventListener('change', function() {
         validateDates();
+        calculateEDD();
         calculateGestationalAge();
       });
       document.getElementById('status').addEventListener('change', function() {
         toggleFields();
+      });
+      
+      // LMP status toggle
+      document.querySelectorAll('input[name="lmpStatus"]').forEach(radio => {
+        radio.addEventListener('change', toggleLMPFields);
+      });
+      
+      // High risk toggle
+      document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
+        radio.addEventListener('change', toggleHighRiskDetails);
       });
       
       // Add form submission listener
@@ -333,12 +390,23 @@
           
           // Basic info
           parity: data.parity || '',
-          risk_factors: data.riskFactors || '',
+          registration_date: data.registration_date || null,
           
-          // Antenatal fields
+          // Antenatal fields - LMP known/unknown
+          lmp_status: data.lmpStatus || 'known',
           lmp: data.lmp || null,
           edd: data.edd || null,
           gestational_age: data.gestationalAge || null,
+          
+          // Manual GA/EDD from ultrasound (when LMP unknown)
+          manual_gestational_age: data.manualGestationalAge || null,
+          manual_edd: data.manualEdd || null,
+          ultrasound_date: data.ultrasoundDate || null,
+          
+          // High risk pregnancy assessment
+          high_risk: data.highRisk || 'no',
+          risk_factors: data.riskFactors ? Array.isArray(data.riskFactors) ? data.riskFactors : [data.riskFactors] : [],
+          risk_notes: data.riskNotes || null,
           
           // Labour fields
           active_labour: data.activeDiagnosis || null,
@@ -530,6 +598,15 @@
             </div>
           </div>
         </div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label>Date of Registration</label>
+              <input type="date" name="registration_date" id="registration_date" class="form-control" readonly>
+              <small class="text-muted">Automatically set to today's date</small>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Patient Status -->
@@ -562,23 +639,140 @@
       <!-- Antenatal Fields -->
       <div id="antenatalFields" class="form-section conditional-section" style="display: block;">
         <h5><i class="fas fa-baby-carriage"></i>Antenatal Information</h5>
-        <div class="row">
-          <div class="col-md-4">
+        
+        <!-- LMP Known/Unknown Selection -->
+        <div class="row mb-3">
+          <div class="col-md-12">
             <div class="mb-3">
               <label>Last Menstrual Period (LMP)</label>
-              <input type="date" name="lmp" id="lmp" class="form-control">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="lmpStatus" id="lmpKnown" value="known" checked>
+                <label class="form-check-label" for="lmpKnown">
+                  LMP is known
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="lmpStatus" id="lmpUnknown" value="unknown">
+                <label class="form-check-label" for="lmpUnknown">
+                  LMP is unknown (use ultrasound data)
+                </label>
+              </div>
             </div>
           </div>
-          <div class="col-md-4">
-            <div class="mb-3">
-              <label>Expected Due Date (EDD)</label>
-              <input type="date" name="edd" id="edd" class="form-control" readonly>
+        </div>
+
+        <!-- LMP Known Fields -->
+        <div id="lmpKnownFields">
+          <div class="row">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Last Menstrual Period (LMP)</label>
+                <input type="date" name="lmp" id="lmp" class="form-control">
+                <small class="text-muted">Formula: EDD = LMP + 280 days</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Expected Due Date (EDD)</label>
+                <input type="date" name="edd" id="edd" class="form-control" readonly>
+                <small class="text-muted">Auto-calculated from LMP</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Gestational Age</label>
+                <input type="text" name="gestationalAge" id="gestationalAge" class="form-control" readonly>
+                <small class="text-muted">Formula: GA = (Current Date - LMP) / 7</small>
+              </div>
             </div>
           </div>
-          <div class="col-md-4">
+        </div>
+
+        <!-- LMP Unknown Fields (Manual Input) -->
+        <div id="lmpUnknownFields" style="display: none;">
+          <div class="row">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Gestational Age (from ultrasound)</label>
+                <input type="text" name="manualGestationalAge" id="manualGestationalAge" class="form-control" placeholder="e.g., 28w 3d">
+                <small class="text-muted">Enter as weeks and days (e.g., 28w 3d)</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Expected Due Date (from ultrasound)</label>
+                <input type="date" name="manualEdd" id="manualEdd" class="form-control">
+                <small class="text-muted">Enter EDD from ultrasound scan</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label>Ultrasound Date</label>
+                <input type="date" name="ultrasoundDate" id="ultrasoundDate" class="form-control">
+                <small class="text-muted">Date of ultrasound scan</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- High Risk Pregnancy Assessment -->
+        <div class="row mt-3">
+          <div class="col-md-12">
             <div class="mb-3">
-              <label>Gestational Age</label>
-              <input type="text" name="gestationalAge" id="gestationalAge" class="form-control" readonly>
+              <label>High Risk Pregnancy Assessment</label>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="highRisk" id="highRiskNo" value="no" checked>
+                <label class="form-check-label" for="highRiskNo">
+                  No - Standard risk pregnancy
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="highRisk" id="highRiskYes" value="yes">
+                <label class="form-check-label" for="highRiskYes">
+                  Yes - High risk pregnancy
+                </label>
+              </div>
+              <div id="highRiskDetails" style="display: none;" class="mt-2">
+                <label>High Risk Factors (select all that apply):</label>
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskAge" value="maternal_age">
+                      <label class="form-check-label" for="riskAge">Maternal age ≥35 years</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskDiabetes" value="diabetes">
+                      <label class="form-check-label" for="riskDiabetes">Diabetes (pre-existing or gestational)</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskHypertension" value="hypertension">
+                      <label class="form-check-label" for="riskHypertension">Hypertension</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPrevious" value="previous_complications">
+                      <label class="form-check-label" for="riskPrevious">Previous pregnancy complications</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskMultiple" value="multiple_pregnancy">
+                      <label class="form-check-label" for="riskMultiple">Multiple pregnancy</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPlacenta" value="placenta_issues">
+                      <label class="form-check-label" for="riskPlacenta">Placenta previa/abruption</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOther" value="other">
+                      <label class="form-check-label" for="riskOther">Other medical conditions</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <label>Additional Notes:</label>
+                  <textarea name="riskNotes" id="riskNotes" class="form-control" rows="2" placeholder="Describe any other risk factors or concerns"></textarea>
+                </div>
+              </div>
             </div>
           </div>
         </div>
