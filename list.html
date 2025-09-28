@@ -514,7 +514,12 @@
               <td><span class="status-badge ${statusClass}">${statusText}</span></td>
               <td><small class="text-muted">${formattedDate}</small></td>
               <td>
-                <div class="btn-group" role="group">
+                <div class="d-flex gap-1">
+                  <select class="form-select form-select-sm" style="width: 120px;" onchange="updatePatientStatus('${patient.id}', this.value)" title="Change Patient Status">
+                    <option value="antenatal" ${currentStatus === 'antenatal' || currentStatus === 'active' ? 'selected' : ''}>Antenatal Care</option>
+                    <option value="labour" ${currentStatus === 'labour' ? 'selected' : ''}>Labour Care</option>
+                    <option value="postnatal" ${currentStatus === 'postnatal' || currentStatus === 'postpartum' || currentStatus === 'baby' || currentStatus === 'transferred' || currentStatus === 'other' ? 'selected' : ''}>Postnatal Care</option>
+                  </select>
                   <a href="edit-patient.html?patient=${patient.id}" class="btn btn-sm btn-primary" title="Edit Patient Data">
                     <i class="fas fa-user-edit"></i>
                   </a>
@@ -698,6 +703,56 @@
       } catch (error) {
         console.error('Error migrating patients:', error);
       }
+    }
+
+    // Update patient status manually
+    async function updatePatientStatus(patientId, newStatus) {
+      try {
+        // Show loading state
+        const selectElement = event.target;
+        const originalValue = selectElement.value;
+        selectElement.disabled = true;
+        
+        // Update patient status in Firestore
+        await db.collection("patients").doc(patientId).update({
+          status: newStatus,
+          last_updated: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Show success message
+        showNotification(`Patient status updated to ${newStatus === 'antenatal' ? 'Antenatal Care' : newStatus === 'labour' ? 'Labour Care' : 'Postnatal Care'}`, 'success');
+        
+        // Reload the patient list to reflect changes
+        loadPatients();
+        
+      } catch (error) {
+        console.error('Error updating patient status:', error);
+        showNotification('Error updating patient status: ' + error.message, 'error');
+        
+        // Reset select value on error
+        event.target.value = originalValue;
+        event.target.disabled = false;
+      }
+    }
+
+    // Show notification
+    function showNotification(message, type = 'info') {
+      const notification = document.createElement('div');
+      notification.className = `alert alert-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} alert-dismissible fade show position-fixed`;
+      notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+      notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      
+      document.body.appendChild(notification);
+      
+      // Auto-remove after 3 seconds
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 3000);
     }
     
     // loadPatients(); // Removed - now called in auth callback

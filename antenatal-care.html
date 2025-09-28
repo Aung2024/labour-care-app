@@ -202,11 +202,10 @@
 
         antenatalPatients = [];
 
-        // Load antenatal patients based on user role
+        // Load all patients based on user role (no status filtering)
         if (userRole === "Super Admin" || userRole === "admin") {
-          // Super Admin sees all antenatal patients
+          // Super Admin sees all patients
           const querySnapshot = await db.collection("patients")
-            .where("status", "==", "antenatal")
             .get();
           querySnapshot.forEach(doc => {
             antenatalPatients.push({
@@ -215,9 +214,8 @@
             });
           });
         } else if (userRole === "TMO") {
-          // TMO sees antenatal patients from their township
+          // TMO sees all patients from their township
           const querySnapshot = await db.collection("patients")
-            .where("status", "==", "antenatal")
             .where("township", "==", userTownship)
             .get();
           querySnapshot.forEach(doc => {
@@ -227,30 +225,18 @@
             });
           });
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only antenatal patients they created
+          // Midwife sees all patients they created
           const snapNew = await db.collection("patients")
-            .where("status", "==", "antenatal")
             .where("created_by", "==", currentUser.uid)
             .get();
           const snapOld = await db.collection("patients")
-            .where("status", "==", "antenatal")  
             .where("createdBy", "==", currentUser.uid)
             .get();
 
-          // Also check for old 'active' status patients (legacy)
-          const snapLegacy = await db.collection("patients")
-            .where("treatmentStatus", "==", "active")
-            .where("created_by", "==", currentUser.uid)
-            .get();
-          const snapLegacyOld = await db.collection("patients")
-            .where("treatmentStatus", "==", "active")
-            .where("createdBy", "==", currentUser.uid)
-            .get();
-
-          // Combine all snapshots and remove duplicates
+          // Combine both snapshots and remove duplicates
           const combinedDocs = new Map();
           
-          [snapNew, snapOld, snapLegacy, snapLegacyOld].forEach(snap => {
+          [snapNew, snapOld].forEach(snap => {
             snap.forEach(doc => {
               if (!combinedDocs.has(doc.id)) {
                 combinedDocs.set(doc.id, {
