@@ -236,6 +236,12 @@
       text-align: center;
     }
 
+    /* Risk badges styling */
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.375rem 0.75rem;
+    }
+
     /* Responsive action buttons */
     @media (max-width: 768px) {
       .d-flex.flex-wrap {
@@ -383,7 +389,7 @@
         <div class="col-md-8">
           <div class="input-group">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
-            <input type="text" id="searchInput" class="form-control" placeholder="Search by name, township, age, or status...">
+            <input type="text" id="searchInput" class="form-control" placeholder="Search by name, age, parity, risk, EDD, GA, or status...">
             <button class="btn btn-primary" onclick="loadPatients()">
               <i class="fas fa-search me-2"></i>Search
             </button>
@@ -410,9 +416,10 @@
               <th><i class="fas fa-user me-2"></i>Name</th>
               <th><i class="fas fa-calendar me-2"></i>Age</th>
               <th><i class="fas fa-baby me-2"></i>Parity</th>
-              <th><i class="fas fa-home me-2"></i>Address</th>
+              <th><i class="fas fa-exclamation-triangle me-2"></i>Risk</th>
+              <th><i class="fas fa-calendar-check me-2"></i>EDD</th>
+              <th><i class="fas fa-clock me-2"></i>GA</th>
               <th><i class="fas fa-heartbeat me-2"></i>Status</th>
-              <th><i class="fas fa-calendar-plus me-2"></i>Created</th>
               <th><i class="fas fa-cogs me-2"></i>Patient Management</th>
             </tr>
           </thead>
@@ -515,9 +522,13 @@
           // Check if patient matches search criteria
           const matchesSearch = !search ||
             (d.name && d.name.toLowerCase().includes(search)) ||
-            (d.patient_address && d.patient_address.toLowerCase().includes(search)) ||
-            (d.patientAddress && d.patientAddress.toLowerCase().includes(search)) ||
             (d.age && String(d.age).includes(search)) ||
+            (d.parity && d.parity.toLowerCase().includes(search)) ||
+            (d.high_risk && d.high_risk.toLowerCase().includes(search)) ||
+            (d.edd && d.edd.toString().toLowerCase().includes(search)) ||
+            (d.manual_edd && d.manual_edd.toString().toLowerCase().includes(search)) ||
+            (d.gestational_age && String(d.gestational_age).includes(search)) ||
+            (d.manual_gestational_age && String(d.manual_gestational_age).includes(search)) ||
             (d.status && d.status.toLowerCase().includes(search));
           
           if (matchesSearch) {
@@ -544,21 +555,33 @@
             
             stats[mappedStatus]++;
             
-            // Format patient address display
-            const addressDisplay = d.patient_address || d.patientAddress || '<span class="text-muted">Not provided</span>';
+            // Format risk display
+            const riskDisplay = d.high_risk === 'yes' ? '<span class="badge bg-danger">High Risk</span>' : '<span class="badge bg-success">Standard</span>';
             
-            // Format registration date (prefer registration_date, fallback to created_at)
-            const registrationDate = d.registration_date || d.created_at;
-            const formattedDate = registrationDate ? new Date(registrationDate.toDate ? registrationDate.toDate() : registrationDate).toLocaleDateString() : 'Unknown';
+            // Format EDD display
+            let eddDisplay = d.edd || d.manual_edd || '<span class="text-muted">Not set</span>';
+            if (eddDisplay !== '<span class="text-muted">Not set</span>' && typeof eddDisplay === 'string') {
+              const eddDate = new Date(eddDisplay);
+              if (!isNaN(eddDate.getTime())) {
+                eddDisplay = eddDate.toLocaleDateString();
+              }
+            }
+            
+            // Format GA display
+            let gaDisplay = d.gestational_age || d.manual_gestational_age || '<span class="text-muted">Not calculated</span>';
+            if (gaDisplay !== '<span class="text-muted">Not calculated</span>' && typeof gaDisplay === 'number') {
+              gaDisplay = `${gaDisplay}w`;
+            }
             
             tr.innerHTML = `
               <td>${serial++}</td>
               <td><strong>${d.name || ""}</strong></td>
               <td>${d.age || ""}</td>
               <td>${d.parity || ""}</td>
-              <td>${addressDisplay}</td>
+              <td>${riskDisplay}</td>
+              <td><small>${eddDisplay}</small></td>
+              <td><small>${gaDisplay}</small></td>
               <td><span class="status-badge ${statusClass}">${statusText}</span></td>
-              <td><small class="text-muted">${formattedDate}</small></td>
               <td>
                 <div class="d-flex flex-wrap gap-1">
                   <!-- Status Change -->
@@ -568,16 +591,17 @@
                     <option value="postnatal" ${status === 'postnatal' || status === 'postpartum' || status === 'baby' || status === 'transferred' || status === 'other' ? 'selected' : ''}>Postnatal Care</option>
                   </select>
                   
+                  <!-- Edit Patient Info Button -->
+                  <a href="edit-patient.html?patient=${patient.id}" class="btn btn-sm btn-outline-primary" title="Edit Patient Info">
+                    <i class="fas fa-user-edit me-1"></i>Edit
+                  </a>
+                  
                   <!-- Care Actions Dropdown -->
                   <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Care Actions">
+                    <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Care Actions">
                       <i class="fas fa-stethoscope me-1"></i>Care
                     </button>
                     <ul class="dropdown-menu">
-                      <li><a class="dropdown-item" href="edit-patient.html?patient=${patient.id}">
-                        <i class="fas fa-user-edit me-2"></i>Edit Patient Info
-                      </a></li>
-                      <li><hr class="dropdown-divider"></li>
                       <li><a class="dropdown-item" href="antenatal-form.html?patient=${patient.id}">
                         <i class="fas fa-baby-carriage me-2"></i>Antenatal Care
                       </a></li>
