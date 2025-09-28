@@ -313,6 +313,72 @@
             </div>
           </div>
         </div>
+        
+        <!-- Additional Antenatal Fields -->
+        <div class="row mt-3">
+          <div class="col-md-3">
+            <div class="mb-3">
+              <label class="form-label">Registration Date</label>
+              <input type="date" name="registration_date" id="registration_date" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="mb-3">
+              <label class="form-label">Manual GA (weeks)</label>
+              <input type="number" name="manual_gestational_age" id="manual_gestational_age" class="form-control" step="0.1" min="0" max="42">
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="mb-3">
+              <label class="form-label">Manual EDD</label>
+              <input type="date" name="manual_edd" id="manual_edd" class="form-control">
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="mb-3">
+              <label class="form-label">UltraSound Date</label>
+              <input type="date" name="ultrasound_date" id="ultrasound_date" class="form-control">
+            </div>
+          </div>
+        </div>
+        
+        <!-- High Risk Assessment -->
+        <div class="row mt-3">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="form-label">High Risk Assessment</label>
+              <select name="high_risk" id="high_risk" class="form-control">
+                <option value="no">No - Standard risk pregnancy</option>
+                <option value="yes">Yes - High risk pregnancy</option>
+              </select>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="form-label">Risk Notes</label>
+              <textarea name="risk_notes" id="risk_notes" class="form-control" rows="2" placeholder="Additional risk factor notes"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Early ANC Visit -->
+        <div class="row mt-3">
+          <div class="col-md-12">
+            <div class="mb-3">
+              <label class="form-label">Early ANC Visit</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="early_anc_visit" id="early_anc_visit" onchange="toggleEarlyAncNumberEdit()">
+                <label class="form-check-label" for="early_anc_visit">
+                  Patient had early ANC visit (before 12 weeks)
+                </label>
+              </div>
+              <div id="earlyAncNumberFieldEdit" style="display: none;" class="mt-2">
+                <label class="form-label" for="early_anc_number">Number of Early ANC Visits:</label>
+                <input type="number" name="early_anc_number" id="early_anc_number" class="form-control" min="1" max="10" placeholder="Enter number of early visits">
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Delivery Information (for postpartum patients) -->
@@ -439,7 +505,9 @@
         'name', 'age', 'phone', 'patient_address', 'emergency_contact', 
         'emergency_phone', 'parity', 'status', 'risk_factors', 'labour_onset',
         'ruptured_membrane', 'lmp', 'edd', 'gestational_age', 'active_labour',
-        'delivery_date', 'delivery_type', 'birth_weight', 'treatment_outcome'
+        'delivery_date', 'delivery_type', 'birth_weight', 'treatment_outcome',
+        'early_anc_number', 'registration_date', 'manual_gestational_age', 
+        'manual_edd', 'ultrasound_date', 'high_risk', 'risk_notes'
       ];
 
       fields.forEach(field => {
@@ -448,6 +516,13 @@
           element.value = currentPatient[field] || '';
         }
       });
+
+      // Special handling for Early ANC checkbox
+      const earlyAncVisitCheckbox = document.getElementById('early_anc_visit');
+      if (earlyAncVisitCheckbox) {
+        earlyAncVisitCheckbox.checked = currentPatient.early_anc_visit === true;
+        toggleEarlyAncNumberEdit(); // Show/hide number field based on checkbox
+      }
 
       // Show/hide delivery section based on status
       toggleDeliverySection();
@@ -533,6 +608,19 @@
       }
     }
 
+    // Toggle Early ANC number field in edit form
+    function toggleEarlyAncNumberEdit() {
+      const earlyAncVisit = document.getElementById('early_anc_visit').checked;
+      const earlyAncNumberField = document.getElementById('earlyAncNumberFieldEdit');
+      
+      if (earlyAncVisit) {
+        earlyAncNumberField.style.display = 'block';
+      } else {
+        earlyAncNumberField.style.display = 'none';
+        document.getElementById('early_anc_number').value = '';
+      }
+    }
+
     function resetForm() {
       if (confirm("Are you sure you want to reset all changes? This will restore the original patient data.")) {
         populateForm();
@@ -556,6 +644,10 @@
         for (let [key, value] of formData.entries()) {
           updatedData[key] = value || null;
         }
+        
+        // Special handling for Early ANC checkbox
+        const earlyAncVisitCheckbox = document.getElementById('early_anc_visit');
+        updatedData.early_anc_visit = earlyAncVisitCheckbox ? earlyAncVisitCheckbox.checked : false;
         
         // Add metadata
         updatedData.last_updated = firebase.firestore.FieldValue.serverTimestamp();
