@@ -584,36 +584,26 @@
               <td><small>${gaDisplay}</small></td>
               <td><span class="status-badge ${statusClass}">${statusText}</span></td>
               <td>
-                <div class="d-flex flex-wrap gap-1">
-                  <!-- Status Change -->
-                  <select class="form-select form-select-sm" style="width: 140px;" onchange="updatePatientStatus('${patient.id}', this.value, this)" title="Change Patient Status">
-                    <option value="antenatal" ${status === 'antenatal' || status === 'active' ? 'selected' : ''}>Antenatal Care</option>
-                    <option value="labour" ${status === 'labour' ? 'selected' : ''}>Labour Care</option>
-                    <option value="postnatal" ${status === 'postnatal' || status === 'postpartum' || status === 'baby' || status === 'transferred' || status === 'other' ? 'selected' : ''}>Postnatal Care</option>
-                  </select>
-                  
+                <div class="d-flex flex-wrap gap-1 align-items-center">
                   <!-- Edit Patient Info Button -->
                   <a href="edit-patient.html?patient=${patient.id}" class="btn btn-sm btn-outline-primary" title="Edit Patient Info">
                     <i class="fas fa-user-edit me-1"></i>Edit
                   </a>
                   
-                  <!-- Care Actions Dropdown -->
-                  <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Care Actions">
-                      <i class="fas fa-stethoscope me-1"></i>Care
-                    </button>
-                    <ul class="dropdown-menu">
-                      <li><a class="dropdown-item" href="antenatal-form.html?patient=${patient.id}">
-                        <i class="fas fa-baby-carriage me-2"></i>Antenatal Care
-                      </a></li>
-                      <li><a class="dropdown-item" href="summary.html?patient=${patient.id}">
-                        <i class="fas fa-heartbeat me-2"></i>Labour Care
-                      </a></li>
-                      <li><a class="dropdown-item" href="baby.html?patient=${patient.id}">
-                        <i class="fas fa-hands-holding-child me-2"></i>Postnatal Care
-                      </a></li>
-                    </ul>
-                  </div>
+                  <!-- Antenatal Care Button -->
+                  <a href="antenatal-form.html?patient=${patient.id}" class="btn btn-sm btn-success" title="Antenatal Care">
+                    <i class="fas fa-baby-carriage me-1"></i>ANC
+                  </a>
+                  
+                  <!-- Labour Care Button -->
+                  <a href="summary.html?patient=${patient.id}" class="btn btn-sm btn-danger" title="Labour Care">
+                    <i class="fas fa-heartbeat me-1"></i>Labour
+                  </a>
+                  
+                  <!-- Postnatal Care Button -->
+                  <a href="baby.html?patient=${patient.id}" class="btn btn-sm btn-warning" title="Postnatal Care">
+                    <i class="fas fa-hands-holding-child me-1"></i>PNC
+                  </a>
                   
                   <!-- Reports Dropdown -->
                   <div class="btn-group">
@@ -621,6 +611,9 @@
                       <i class="fas fa-file-alt me-1"></i>Reports
                     </button>
                     <ul class="dropdown-menu">
+                      <li><a class="dropdown-item" href="patient-info-report.html?patient=${patient.id}">
+                        <i class="fas fa-user me-2"></i>Patient Info Report
+                      </a></li>
                       <li><a class="dropdown-item" href="antenatal-report.html?patient=${patient.id}">
                         <i class="fas fa-chart-line me-2"></i>Antenatal Report
                       </a></li>
@@ -816,42 +809,6 @@
       }
     }
 
-    // Update patient status manually
-    async function updatePatientStatus(patientId, newStatus, selectElement) {
-      try {
-        // Show loading state
-        const originalValue = selectElement.value;
-        selectElement.disabled = true;
-        
-        // Update patient status in Firestore
-        await db.collection("patients").doc(patientId).update({
-          status: newStatus,
-          last_updated: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        
-        // Show success message
-        showNotification(`Patient status updated to ${newStatus === 'antenatal' ? 'Antenatal Care' : newStatus === 'labour' ? 'Labour Care' : 'Postnatal Care'}`, 'success');
-        
-        // Update the status badge in the table immediately
-        const row = selectElement.closest('tr');
-        const statusBadge = row.querySelector('.badge');
-        if (statusBadge) {
-          statusBadge.textContent = newStatus === 'antenatal' ? 'ANTENATAL' : newStatus === 'labour' ? 'LABOUR CARE' : 'POSTNATAL';
-          statusBadge.className = `badge ${getStatusClass(newStatus)}`;
-        }
-        
-        // Re-enable select
-        selectElement.disabled = false;
-        
-      } catch (error) {
-        console.error('Error updating patient status:', error);
-        showNotification('Error updating patient status: ' + error.message, 'error');
-        
-        // Reset select value on error
-        selectElement.value = originalValue;
-        selectElement.disabled = false;
-      }
-    }
 
     // Show notification
     function showNotification(message, type = 'info') {
