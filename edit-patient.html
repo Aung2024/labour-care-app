@@ -342,21 +342,64 @@
           </div>
         </div>
         
-        <!-- High Risk Assessment -->
+        <!-- High Risk Pregnancy Assessment -->
         <div class="row mt-3">
-          <div class="col-md-6">
+          <div class="col-md-12">
             <div class="mb-3">
-              <label class="form-label">High Risk Assessment</label>
-              <select name="high_risk" id="high_risk" class="form-control">
-                <option value="no">No - Standard risk pregnancy</option>
-                <option value="yes">Yes - High risk pregnancy</option>
-              </select>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="mb-3">
-              <label class="form-label">Risk Notes</label>
-              <textarea name="risk_notes" id="risk_notes" class="form-control" rows="2" placeholder="Additional risk factor notes"></textarea>
+              <label class="form-label">High Risk Pregnancy Assessment</label>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="high_risk" id="highRiskNo" value="no">
+                <label class="form-check-label" for="highRiskNo">
+                  No - Standard risk pregnancy
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="high_risk" id="highRiskYes" value="yes">
+                <label class="form-check-label" for="highRiskYes">
+                  Yes - High risk pregnancy
+                </label>
+              </div>
+              <div id="highRiskDetails" style="display: none;" class="mt-2">
+                <label>High Risk Factors (select all that apply):</label>
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskAge" value="maternal_age">
+                      <label class="form-check-label" for="riskAge">Maternal age ≥35 years</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskDiabetes" value="diabetes">
+                      <label class="form-check-label" for="riskDiabetes">Diabetes (pre-existing or gestational)</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskHypertension" value="hypertension">
+                      <label class="form-check-label" for="riskHypertension">Hypertension</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPrevious" value="previous_complications">
+                      <label class="form-check-label" for="riskPrevious">Previous pregnancy complications</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskMultiple" value="multiple_pregnancy">
+                      <label class="form-check-label" for="riskMultiple">Multiple pregnancy</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPlacenta" value="placenta_issues">
+                      <label class="form-check-label" for="riskPlacenta">Placenta previa/abruption</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOther" value="other">
+                      <label class="form-check-label" for="riskOther">Other medical conditions</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <label>Additional Notes:</label>
+                  <textarea name="risk_notes" id="risk_notes" class="form-control" rows="2" placeholder="Describe any other risk factors or concerns"></textarea>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -524,12 +567,35 @@
         toggleEarlyAncNumberEdit(); // Show/hide number field based on checkbox
       }
 
+      // Special handling for High Risk assessment
+      if (currentPatient.high_risk === 'yes') {
+        document.getElementById('highRiskYes').checked = true;
+        document.getElementById('highRiskNo').checked = false;
+        toggleHighRiskDetailsEdit(); // Show risk factors
+        
+        // Populate risk factors checkboxes
+        if (currentPatient.risk_factors && Array.isArray(currentPatient.risk_factors)) {
+          currentPatient.risk_factors.forEach(factor => {
+            const checkbox = document.querySelector(`input[name="riskFactors"][value="${factor}"]`);
+            if (checkbox) {
+              checkbox.checked = true;
+            }
+          });
+        }
+      } else {
+        document.getElementById('highRiskNo').checked = true;
+        document.getElementById('highRiskYes').checked = false;
+        toggleHighRiskDetailsEdit(); // Hide risk factors
+      }
+
       // Show/hide delivery section based on status
       toggleDeliverySection();
       
       // Add event listeners
       document.getElementById('status').addEventListener('change', toggleDeliverySection);
       document.getElementById('lmp').addEventListener('change', calculateGestationalAge);
+      document.getElementById('highRiskYes').addEventListener('change', toggleHighRiskDetailsEdit);
+      document.getElementById('highRiskNo').addEventListener('change', toggleHighRiskDetailsEdit);
       
       // Calculate gestational age on load
       calculateGestationalAge();
@@ -595,6 +661,7 @@
     function calculateGestationalAge() {
       const lmpInput = document.getElementById('lmp');
       const gestationalAgeInput = document.getElementById('gestational_age');
+      const eddInput = document.getElementById('edd');
       
       if (lmpInput.value) {
         const lmpDate = new Date(lmpInput.value);
@@ -605,6 +672,11 @@
         if (gestationalWeeks > 0 && gestationalWeeks < 50) {
           gestationalAgeInput.value = gestationalWeeks.toFixed(1);
         }
+        
+        // Calculate EDD (LMP + 280 days)
+        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
+        const eddFormatted = eddDate.toISOString().split('T')[0];
+        eddInput.value = eddFormatted;
       }
     }
 
@@ -618,6 +690,21 @@
       } else {
         earlyAncNumberField.style.display = 'none';
         document.getElementById('early_anc_number').value = '';
+      }
+    }
+
+    // Toggle High Risk details in edit form
+    function toggleHighRiskDetailsEdit() {
+      const highRiskYes = document.getElementById('highRiskYes').checked;
+      const highRiskDetails = document.getElementById('highRiskDetails');
+      
+      if (highRiskYes) {
+        highRiskDetails.style.display = 'block';
+      } else {
+        highRiskDetails.style.display = 'none';
+        // Clear all checkboxes when hiding
+        const checkboxes = highRiskDetails.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => checkbox.checked = false);
       }
     }
 
@@ -648,6 +735,11 @@
         // Special handling for Early ANC checkbox
         const earlyAncVisitCheckbox = document.getElementById('early_anc_visit');
         updatedData.early_anc_visit = earlyAncVisitCheckbox ? earlyAncVisitCheckbox.checked : false;
+        
+        // Special handling for High Risk factors
+        const riskFactorCheckboxes = document.querySelectorAll('input[name="riskFactors"]:checked');
+        const riskFactors = Array.from(riskFactorCheckboxes).map(checkbox => checkbox.value);
+        updatedData.risk_factors = riskFactors;
         
         // Add metadata
         updatedData.last_updated = firebase.firestore.FieldValue.serverTimestamp();
