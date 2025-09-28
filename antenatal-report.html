@@ -258,19 +258,23 @@
           <tr>
             <th rowspan="2">Visit No</th>
             <th rowspan="2">Date</th>
-            <th rowspan="2">GA<br>(weeks)</th>
+            <th rowspan="2">Health<br>Facility</th>
             <th rowspan="2">Weight<br>(kg)</th>
-            <th rowspan="2">BP<br>(mmHg)</th>
-            <th rowspan="2">Urine Test<br>(Albumin/<br>Sugar)</th>
+            <th rowspan="2">Blood<br>Pressure<br>(mmHg)</th>
+            <th rowspan="2">Gestational<br>Age<br>(weeks)</th>
             <th rowspan="2">Fundal<br>Height<br>(cm)</th>
-            <th rowspan="2">Fetal<br>Presentation/<br>Position</th>
-            <th rowspan="2">FHR<br>(per min)</th>
-            <th rowspan="2">Edema</th>
-            <th rowspan="2">Iron/Folic<br>Acid<br>Supplement</th>
-            <th rowspan="2">Tetanus<br>Toxoid<br>Injection</th>
-            <th rowspan="2">Other<br>Findings/<br>Remarks</th>
-            <th rowspan="2">Next<br>Appointment<br>Date</th>
-            <th rowspan="2">Midwife<br>Signature</th>
+            <th rowspan="2">Fetal<br>Presentation</th>
+            <th rowspan="2">Fetal Heart<br>Rate<br>(bpm)</th>
+            <th rowspan="2">Urine<br>Protein/<br>Sugar</th>
+            <th rowspan="2">Deworming<br>(Yes/Blank)</th>
+            <th rowspan="2">TB<br>Symptoms</th>
+            <th rowspan="2">Iron & Folic<br>Acid Tablet<br>(Given/Not given)</th>
+            <th rowspan="2">Tetanus<br>Toxoid/<br>Tetanus<br>Diphtheria</th>
+            <th rowspan="2">Treatment<br>Given</th>
+            <th rowspan="2">Follow-up<br>Date</th>
+            <th rowspan="2">Referral<br>+/-</th>
+            <th rowspan="2">Initial</th>
+            <th rowspan="2">Danger<br>Signs</th>
           </tr>
         </thead>
         <tbody id="visitsTableBody">
@@ -289,6 +293,10 @@
             <h6>Labour Information:</h6>
             <p><strong>Onset:</strong> <span id="labourOnset">-</span></p>
             <p><strong>Membranes:</strong> <span id="rupturedMembranes">-</span></p>
+            
+            <h6>Danger Signs:</h6>
+            <p><strong>Recorded:</strong> <span id="dangerSignsSummary">-</span></p>
+            <p><strong>TT/TD Completion:</strong> <span id="ttTdCompletionStatus">-</span></p>
           </div>
           <div class="col-md-6">
             <h6>Visit Statistics:</h6>
@@ -423,7 +431,7 @@
       if (antenatalVisits.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="15" class="text-center">No antenatal visits recorded</td>
+            <td colspan="19" class="text-center">No antenatal visits recorded</td>
           </tr>
         `;
         return;
@@ -433,25 +441,46 @@
       antenatalVisits.forEach((visit, index) => {
         const visitDate = visit.visit_date ? 
           new Date(visit.visit_date.seconds * 1000).toLocaleDateString() : 
-          'N/A';
+          visit.visitDate || 'N/A';
+        
+        // Format danger signs if present
+        let dangerSignsText = '';
+        if (visit.dangerSignsPresent === 'Yes' && visit.dangerSigns) {
+          const dangerSignsList = [];
+          if (visit.dangerSigns.vaginal_bleeding) dangerSignsList.push('Vaginal bleeding');
+          if (visit.dangerSigns.convulsions) dangerSignsList.push('Convulsions');
+          if (visit.dangerSigns.severe_headache) dangerSignsList.push('Severe headache');
+          if (visit.dangerSigns.blurred_vision) dangerSignsList.push('Blurred vision');
+          if (visit.dangerSigns.severe_abdominal_pain) dangerSignsList.push('Severe abdominal pain');
+          if (visit.dangerSigns.fever) dangerSignsList.push('Fever');
+          if (visit.dangerSigns.puffiness) dangerSignsList.push('Puffiness');
+          if (visit.dangerSigns.reduced_fetal_movement) dangerSignsList.push('Reduced fetal movement');
+          dangerSignsText = dangerSignsList.join(', ') || 'Present';
+        } else if (visit.dangerSignsPresent === 'No') {
+          dangerSignsText = 'None';
+        }
         
         tableHTML += `
           <tr>
-            <td class="visit-number">${index + 1}</td>
+            <td class="visit-number">${visit.visitNumber || index + 1}</td>
             <td>${visitDate}</td>
-            <td>${visit.gestationWeeks || '-'}</td>
+            <td>${visit.healthFacility || '-'}</td>
             <td>${visit.weight || '-'}</td>
             <td>${visit.bloodPressure || '-'}</td>
-            <td>${visit.urineTest || '-'}</td>
+            <td>${visit.gestationalAge || visit.gestationWeeks || '-'}</td>
             <td>${visit.fundalHeight || '-'}</td>
             <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
-            <td>${visit.edema || '-'}</td>
+            <td>${visit.urineTest || '-'}</td>
+            <td>${visit.deworming || '-'}</td>
+            <td>${visit.tbSymptoms || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
             <td>${visit.tetanusToxoid || '-'}</td>
-            <td>${visit.otherFindings || '-'}</td>
-            <td>${visit.nextAppointment ? new Date(visit.nextAppointment).toLocaleDateString() : '-'}</td>
+            <td>${visit.treatmentGiven || '-'}</td>
+            <td>${visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : (visit.nextAppointment ? new Date(visit.nextAppointment).toLocaleDateString() : '-')}</td>
+            <td>${visit.referral || '-'}</td>
             <td>${visit.midwifeName || '-'}</td>
+            <td>${dangerSignsText}</td>
           </tr>
         `;
       });
@@ -464,6 +493,7 @@
             <td class="visit-number">${antenatalVisits.length + i + 1}</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
           </tr>
         `;
       }
@@ -481,6 +511,23 @@
         currentPatient.labour_onset || 'Not specified';
       document.getElementById("rupturedMembranes").textContent = 
         currentPatient.ruptured_membrane || 'Not recorded';
+      
+      // Danger signs summary
+      let dangerSignsCount = 0;
+      let ttTdCompletion = 'Not recorded';
+      
+      antenatalVisits.forEach(visit => {
+        if (visit.dangerSignsPresent === 'Yes') {
+          dangerSignsCount++;
+        }
+        if (visit.ttTdCompletion) {
+          ttTdCompletion = visit.ttTdCompletion;
+        }
+      });
+      
+      document.getElementById("dangerSignsSummary").textContent = 
+        dangerSignsCount > 0 ? `${dangerSignsCount} visits with danger signs` : 'No danger signs recorded';
+      document.getElementById("ttTdCompletionStatus").textContent = ttTdCompletion;
       
       // Visit statistics
       if (antenatalVisits.length > 0) {
