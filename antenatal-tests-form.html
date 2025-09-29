@@ -543,6 +543,7 @@
   <script>
     let currentUser = null;
     let currentPatient = null;
+    let allPatients = [];
     let isEditMode = false;
     let currentTestId = null;
 
@@ -574,8 +575,8 @@
         const testId = urlParams.get('test');
         
         if (!patientId) {
-          alert('No patient selected. Redirecting to test selection.');
-          window.location.href = 'antenatal-tests.html';
+          // Instead of redirecting, load all patients and show a selector
+          await loadAllPatientsForSelection();
           return;
         }
 
@@ -585,7 +586,7 @@
         
         if (!patientDoc.exists) {
           alert('Patient not found.');
-          window.location.href = 'antenatal-tests.html';
+          await loadAllPatientsForSelection();
           return;
         }
         
@@ -608,6 +609,138 @@
         alert('Error loading patient data: ' + error.message);
       } finally {
         showLoading(false);
+      }
+    }
+
+    // Load all patients for selection
+    async function loadAllPatientsForSelection() {
+      try {
+        const db = firebase.firestore();
+        let query = db.collection('patients');
+        
+        // Check user role and filter patients accordingly
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          
+          if (userData.role === 'Midwife') {
+            // For Midwives, get patients created by them using both field names for compatibility
+            const snapNew = await db.collection('patients').where('created_by', '==', currentUser.uid).get();
+            const snapOld = await db.collection('patients').where('createdBy', '==', currentUser.uid).get();
+            
+            // Combine both snapshots and remove duplicates
+            const combinedDocs = new Map();
+            
+            snapNew.forEach(doc => {
+              combinedDocs.set(doc.id, doc);
+            });
+            
+            snapOld.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, doc);
+              }
+            });
+            
+            allPatients = [];
+            combinedDocs.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+            
+          } else if (userData.role === 'TMO') {
+            // TMOs can see patients from their township
+            const snapshot = await query.where('township', '==', userData.township).get();
+            allPatients = [];
+            snapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+          } else {
+            // Super Admin can see all patients
+            const snapshot = await query.get();
+            allPatients = [];
+            snapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+          }
+        } else {
+          // Fallback: load all patients
+          const snapshot = await query.get();
+          allPatients = [];
+          snapshot.forEach(doc => {
+            allPatients.push({ id: doc.id, ...doc.data() });
+          });
+        }
+        
+        // Sort patients by name
+        allPatients.sort((a, b) => {
+          const nameA = a.name || '';
+          const nameB = b.name || '';
+          return nameA.localeCompare(nameB);
+        });
+        
+        showPatientSelector();
+        
+      } catch (error) {
+        console.error('Error loading patients:', error);
+        alert('Error loading patients: ' + error.message);
+      }
+    }
+
+    // Show patient selector
+    function showPatientSelector() {
+      const patientInfo = document.getElementById('patientInfo');
+      patientInfo.innerHTML = `
+        <h5><i class="fas fa-user me-2"></i>Select Patient</h5>
+        <div class="row">
+          <div class="col-md-8">
+            <select class="form-select" id="patientSelector">
+              <option value="">Choose a patient...</option>
+              ${allPatients.map(patient => 
+                `<option value="${patient.id}">${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary" onclick="selectPatient()">
+              <i class="fas fa-check me-1"></i>Select Patient
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Select patient from dropdown
+    function selectPatient() {
+      const patientId = document.getElementById('patientSelector').value;
+      if (!patientId) {
+        alert('Please select a patient first.');
+        return;
+      }
+      
+      currentPatient = allPatients.find(p => p.id === patientId);
+      if (currentPatient) {
+        populatePatientInfo();
+        setCurrentDate();
+        calculateCurrentGA();
+        
+        // Hide the selector and show the form
+        document.getElementById('patientInfo').innerHTML = `
+          <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+          <div class="row">
+            <div class="col-md-3">
+              <strong>Name:</strong> <span id="patientName">${currentPatient.name || 'Unknown'}</span>
+            </div>
+            <div class="col-md-3">
+              <strong>Age:</strong> <span id="patientAge">${currentPatient.age || 'N/A'}</span>
+            </div>
+            <div class="col-md-3">
+              <strong>LMP:</strong> <span id="patientLMP">${currentPatient.lmp || 'Not recorded'}</span>
+            </div>
+            <div class="col-md-3">
+              <strong>Current GA:</strong> <span id="currentGA">-</span>
+            </div>
+          </div>
+        `;
+        calculateCurrentGA();
       }
     }
 

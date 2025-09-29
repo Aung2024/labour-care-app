@@ -189,6 +189,17 @@
       color: white;
     }
 
+    .btn-success-action {
+      background: #10b981;
+      border: none;
+      color: white;
+    }
+
+    .btn-success-action:hover {
+      background: #059669;
+      color: white;
+    }
+
     .loading-spinner {
       display: none;
       text-align: center;
@@ -290,16 +301,14 @@
   <div class="container">
     <!-- Patient Selector -->
     <div class="patient-selector">
-      <h5 class="mb-3"><i class="fas fa-user-plus me-2"></i>Select Patient for Lab Tests</h5>
+      <h5 class="mb-3"><i class="fas fa-user-plus me-2"></i>All Patients - Lab Test Actions</h5>
       <div class="row">
-        <div class="col-md-6">
-          <select class="form-select" id="patientSelector">
-            <option value="">Choose a patient...</option>
-          </select>
+        <div class="col-md-8">
+          <input type="text" class="form-control" id="searchInput" placeholder="Search patients by name, age, or status..." onkeyup="filterPatients()">
         </div>
-        <div class="col-md-6">
-          <button class="btn btn-primary-action" onclick="loadSelectedPatient()">
-            <i class="fas fa-search me-1"></i>Load Patient
+        <div class="col-md-4">
+          <button class="btn btn-primary-action" onclick="loadPatients()">
+            <i class="fas fa-sync-alt me-1"></i>Refresh
           </button>
         </div>
       </div>
@@ -345,17 +354,17 @@
     </div>
 
     <!-- Patients Table -->
-    <div class="patients-table" id="patientsTable" style="display: none;">
-      <h5 class="mb-3"><i class="fas fa-users me-2"></i>Patient Test Records</h5>
+    <div class="patients-table" id="patientsTable">
+      <h5 class="mb-3"><i class="fas fa-users me-2"></i>All Patients - Lab Test Actions</h5>
       <div class="table-responsive">
         <table class="table">
           <thead>
             <tr>
               <th>Patient</th>
-              <th>Test Date</th>
-              <th>Gestational Age</th>
-              <th>Tests Done</th>
+              <th>Age</th>
               <th>Status</th>
+              <th>Last Test</th>
+              <th>Total Tests</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -503,7 +512,7 @@
           return nameA.localeCompare(nameB);
         });
         
-        populatePatientSelector();
+        displayAllPatients();
         updateTestCounts();
         
         if (allPatients.length === 0) {
@@ -519,121 +528,118 @@
       }
     }
 
-    // Populate patient selector dropdown
-    function populatePatientSelector() {
-      const selector = document.getElementById('patientSelector');
-      selector.innerHTML = '<option value="">Choose a patient...</option>';
-      
-      allPatients.forEach(patient => {
-        const option = document.createElement('option');
-        option.value = patient.id;
-        option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}`;
-        selector.appendChild(option);
-      });
-    }
-
-    // Load selected patient
-    async function loadSelectedPatient() {
-      const patientId = document.getElementById('patientSelector').value;
-      if (!patientId) {
-        alert('Please select a patient first.');
-        return;
-      }
-      
-      currentPatient = allPatients.find(p => p.id === patientId);
-      if (currentPatient) {
-        await loadPatientTestRecords();
-        document.getElementById('patientsTable').style.display = 'block';
-      }
-    }
-
-    // Load patient test records
-    async function loadPatientTestRecords() {
-      try {
-        showLoading(true);
-        
-        const db = firebase.firestore();
-        const testRecords = await db.collection('patients')
-          .doc(currentPatient.id)
-          .collection('testRecords')
-          .orderBy('testDate', 'desc')
-          .get();
-        
-        displayPatientTestRecords(testRecords.docs);
-        
-      } catch (error) {
-        console.error('Error loading test records:', error);
-        alert('Error loading test records: ' + error.message);
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    // Display patient test records in table
-    function displayPatientTestRecords(testDocs) {
+    // Display all patients with test actions
+    async function displayAllPatients() {
       const tbody = document.getElementById('patientsTableBody');
       tbody.innerHTML = '';
       
-      if (testDocs.length === 0) {
+      if (allPatients.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="6" class="text-center text-muted">
-              <i class="fas fa-flask me-2"></i>No test records found for this patient
+              <i class="fas fa-user me-2"></i>No patients found
             </td>
           </tr>
         `;
         return;
       }
       
-      testDocs.forEach(doc => {
-        const testData = doc.data();
-        const testDate = testData.testDate ? 
-          new Date(testData.testDate).toLocaleDateString() : 'Not recorded';
+      // Load test counts for each patient
+      for (const patient of allPatients) {
+        const testCount = await getPatientTestCount(patient.id);
+        const lastTestDate = await getLastTestDate(patient.id);
         
-        const gestationalAge = testData.gestationalAge || 'Not recorded';
-        
-        // Count tests done
-        const testsDone = [];
-        if (testData.hivTest) testsDone.push('HIV');
-        if (testData.malariaTest) testsDone.push('Malaria');
-        if (testData.syphilisTest) testsDone.push('Syphilis');
-        if (testData.hepatitisB) testsDone.push('Hep B');
-        if (testData.hepatitisC) testsDone.push('Hep C');
-        if (testData.urineTest) testsDone.push('Urine');
-        if (testData.hemoglobinTest) testsDone.push('Hb');
-        
-        const statusClass = getStatusClass(currentPatient.status);
+        const statusClass = getStatusClass(patient.status);
         
         tbody.innerHTML += `
           <tr>
             <td>
-              <strong>${currentPatient.name || 'Unknown'}</strong><br>
-              <small class="text-muted">Age: ${currentPatient.age || 'N/A'}</small>
+              <strong>${patient.name || 'Unknown'}</strong><br>
+              <small class="text-muted">Phone: ${patient.phone || 'Not provided'}</small>
             </td>
-            <td>${testDate}</td>
-            <td>${gestationalAge} weeks</td>
+            <td>${patient.age || 'N/A'}</td>
             <td>
-              ${testsDone.length > 0 ? testsDone.join(', ') : 'No tests recorded'}
-            </td>
-            <td>
-              <span class="status-badge status-${currentPatient.status?.toLowerCase().replace(' ', '-') || 'unknown'}">
-                ${currentPatient.status || 'Unknown'}
+              <span class="status-badge status-${patient.status?.toLowerCase().replace(' ', '-') || 'unknown'}">
+                ${patient.status || 'Unknown'}
               </span>
             </td>
+            <td>${lastTestDate || 'No tests'}</td>
+            <td>${testCount}</td>
             <td>
-              <button class="btn btn-primary-action btn-sm" onclick="editTestRecord('${doc.id}')" title="Edit Test Record">
-                <i class="fas fa-edit me-1"></i>Edit
+              <button class="btn btn-primary-action btn-sm" onclick="recordNewTest('${patient.id}')" title="Record New Test">
+                <i class="fas fa-plus me-1"></i>New Test
               </button>
-              <button class="btn btn-secondary-action btn-sm" onclick="generatePatientLabReport('${currentPatient.id}')" title="Generate Report">
+              <button class="btn btn-secondary-action btn-sm" onclick="viewTestHistory('${patient.id}')" title="View Test History">
+                <i class="fas fa-history me-1"></i>History
+              </button>
+              <button class="btn btn-success-action btn-sm" onclick="generatePatientLabReport('${patient.id}')" title="Generate Report">
                 <i class="fas fa-file-medical-alt me-1"></i>Report
-              </button>
-              <button class="btn btn-danger-action btn-sm" onclick="deleteTestRecord('${doc.id}', '${currentPatient.name}')" title="Delete Record">
-                <i class="fas fa-trash me-1"></i>Delete
               </button>
             </td>
           </tr>
         `;
+      }
+    }
+
+    // Get patient test count
+    async function getPatientTestCount(patientId) {
+      try {
+        const db = firebase.firestore();
+        const snapshot = await db.collection('patients')
+          .doc(patientId)
+          .collection('testRecords')
+          .get();
+        return snapshot.size;
+      } catch (error) {
+        console.error('Error getting test count:', error);
+        return 0;
+      }
+    }
+
+    // Get last test date for patient
+    async function getLastTestDate(patientId) {
+      try {
+        const db = firebase.firestore();
+        const snapshot = await db.collection('patients')
+          .doc(patientId)
+          .collection('testRecords')
+          .orderBy('testDate', 'desc')
+          .limit(1)
+          .get();
+        
+        if (snapshot.empty) return null;
+        
+        const lastTest = snapshot.docs[0].data();
+        return lastTest.testDate ? new Date(lastTest.testDate).toLocaleDateString() : null;
+      } catch (error) {
+        console.error('Error getting last test date:', error);
+        return null;
+      }
+    }
+
+    // Filter patients based on search input
+    function filterPatients() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      const rows = document.querySelectorAll('#patientsTableBody tr');
+      
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(searchTerm)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
       });
+    }
+
+    // Record new test for patient
+    function recordNewTest(patientId) {
+      window.open(`antenatal-tests-form.html?patient=${patientId}`, '_blank');
+    }
+
+    // View test history for patient
+    function viewTestHistory(patientId) {
+      window.open(`antenatal-tests-list.html?patient=${patientId}`, '_blank');
     }
 
     // Get status class for styling
@@ -669,46 +675,9 @@
       }
     }
 
-    // Generate lab report
-    function generateLabReport() {
-      if (!currentPatient) {
-        alert('Please select a patient first to generate a lab report.');
-        return;
-      }
-      window.open(`lab-report.html?patient=${currentPatient.id}`, '_blank');
-    }
-
     // Generate patient-specific lab report
     function generatePatientLabReport(patientId) {
       window.open(`lab-report.html?patient=${patientId}`, '_blank');
-    }
-
-    // Edit test record
-    function editTestRecord(testId) {
-      window.open(`antenatal-tests-form.html?patient=${currentPatient.id}&test=${testId}`, '_blank');
-    }
-
-    // Delete test record
-    async function deleteTestRecord(testId, patientName) {
-      if (!confirm(`Are you sure you want to delete this test record for ${patientName}?`)) {
-        return;
-      }
-      
-      try {
-        const db = firebase.firestore();
-        await db.collection('patients')
-          .doc(currentPatient.id)
-          .collection('testRecords')
-          .doc(testId)
-          .delete();
-        
-        alert('Test record deleted successfully.');
-        await loadPatientTestRecords();
-        
-      } catch (error) {
-        console.error('Error deleting test record:', error);
-        alert('Error deleting test record: ' + error.message);
-      }
     }
 
     // Show/hide loading spinner
