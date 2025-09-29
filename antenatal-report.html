@@ -102,6 +102,30 @@
       font-weight: bold;
     }
 
+    .treatment-section {
+      margin-top: 20px;
+      border-top: 1px solid #dee2e6;
+      padding-top: 15px;
+    }
+
+    .treatment-item {
+      background-color: #f8f9fa;
+      border-left: 4px solid #28a745;
+      padding: 15px;
+      border-radius: 5px;
+    }
+
+    .treatment-header {
+      font-weight: 600;
+      color: #495057;
+      margin-bottom: 8px;
+    }
+
+    .treatment-content {
+      color: #6c757d;
+      line-height: 1.5;
+    }
+
     .summary-section {
       margin-top: 20px;
       border-top: 1px solid #dee2e6;
@@ -280,7 +304,6 @@
           <tr>
             <th>No</th>
             <th>Date</th>
-            <th>Health Facility</th>
             <th>Weight</th>
             <th>BP</th>
             <th>GA</th>
@@ -288,10 +311,10 @@
             <th>Fetal Pres</th>
             <th>FHR</th>
             <th>Urine</th>
+            <th>Danger Signs</th>
             <th>Deworm</th>
             <th>IFA</th>
             <th>TT/TD</th>
-            <th>Treatment</th>
             <th>Follow-up</th>
             <th>Referral</th>
             <th>Initial</th>
@@ -302,23 +325,19 @@
         </tbody>
       </table>
 
-      <!-- Summary Section -->
+      <!-- Treatment Information Section -->
+      <div class="treatment-section mt-4">
+        <h5><i class="fas fa-pills me-2"></i>Treatment Information</h5>
+        <div id="treatmentInfo" class="treatment-info">
+          <!-- Treatment information will be populated here -->
+        </div>
+      </div>
+
+      <!-- Visit Statistics Section -->
       <div class="summary-section">
-        <div class="summary-title">Clinical Summary</div>
+        <div class="summary-title">Visit Statistics</div>
         <div class="row">
-          <div class="col-md-6">
-            <h6>Risk Factors:</h6>
-            <p id="riskFactors">None recorded</p>
-            
-            <h6>Labour Information:</h6>
-            <p><strong>Onset:</strong> <span id="labourOnset">-</span></p>
-            <p><strong>Membranes:</strong> <span id="rupturedMembranes">-</span></p>
-            
-            <h6>Danger Signs:</h6>
-            <p><strong>Recorded:</strong> <span id="dangerSignsSummary">-</span></p>
-            <p><strong>TT/TD Completion:</strong> <span id="ttTdCompletionStatus">-</span></p>
-          </div>
-          <div class="col-md-6">
+          <div class="col-md-12">
             <h6>Visit Statistics:</h6>
             <p><strong>First Visit:</strong> <span id="firstVisitDate">-</span></p>
             <p><strong>Last Visit:</strong> <span id="lastVisitDate">-</span></p>
@@ -501,7 +520,6 @@
           <tr>
             <td class="visit-number">${visitNumber}</td>
             <td>${visitDate}</td>
-            <td>${visit.healthFacility || '-'}</td>
             <td>${visit.weight || '-'}</td>
             <td>${visit.bloodPressure || '-'}</td>
             <td>${visit.gestationalAge || visit.gestationWeeks || '-'}</td>
@@ -509,13 +527,13 @@
             <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
             <td>${visit.urineTest || '-'}</td>
+            <td>${dangerSignsText}</td>
             <td>${visit.deworming || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
             <td>${visit.tetanusToxoid || '-'}</td>
-            <td>${visit.treatment || '-'}</td>
             <td>${visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : (visit.nextAppointment ? new Date(visit.nextAppointment).toLocaleDateString() : '-')}</td>
             <td>${visit.referral || '-'}</td>
-            <td>${visit.midwifeName || '-'}</td>
+            <td>${visit.initial || '-'}</td>
           </tr>
         `;
       });
@@ -526,45 +544,57 @@
         tableHTML += `
           <tr>
             <td class="visit-number">${antenatalVisits.length + i + 1}</td>
-            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td>
           </tr>
         `;
       }
 
       tableBody.innerHTML = tableHTML;
+      
+      // Populate treatment information
+      populateTreatmentInfo();
+    }
+
+    function populateTreatmentInfo() {
+      const treatmentContainer = document.getElementById('treatmentInfo');
+      
+      if (antenatalVisits.length === 0) {
+        treatmentContainer.innerHTML = '<p class="text-muted">No treatment information recorded.</p>';
+        return;
+      }
+
+      let treatmentHTML = '';
+      antenatalVisits.forEach((visit, index) => {
+        const visitNumber = index + 1;
+        const visitDate = visit.visitDate ? 
+          new Date(visit.visitDate).toLocaleDateString() : 
+          'N/A';
+        
+        if (visit.treatment && visit.treatment.trim() !== '') {
+          treatmentHTML += `
+            <div class="treatment-item mb-3">
+              <div class="treatment-header">
+                <strong>Visit ${visitNumber}</strong> - ${visitDate}
+              </div>
+              <div class="treatment-content">
+                ${visit.treatment}
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      if (treatmentHTML === '') {
+        treatmentHTML = '<p class="text-muted">No specific treatments recorded.</p>';
+      }
+
+      treatmentContainer.innerHTML = treatmentHTML;
     }
 
     function populateSummary() {
-      // Risk factors
-      document.getElementById("riskFactors").textContent = 
-        currentPatient.risk_factors || 'None recorded';
-      
-      // Labour information
-      document.getElementById("labourOnset").textContent = 
-        currentPatient.labour_onset || 'Not specified';
-      document.getElementById("rupturedMembranes").textContent = 
-        currentPatient.ruptured_membrane || 'Not recorded';
-      
-      // Danger signs summary
-      let dangerSignsCount = 0;
-      let ttTdCompletion = 'Not recorded';
-      
-      antenatalVisits.forEach(visit => {
-        if (visit.dangerSignsPresent === 'Yes') {
-          dangerSignsCount++;
-        }
-        if (visit.ttTdCompletion) {
-          ttTdCompletion = visit.ttTdCompletion;
-        }
-      });
-      
-      document.getElementById("dangerSignsSummary").textContent = 
-        dangerSignsCount > 0 ? `${dangerSignsCount} visits with danger signs` : 'No danger signs recorded';
-      document.getElementById("ttTdCompletionStatus").textContent = ttTdCompletion;
-      
-      // Visit statistics
+      // Visit statistics only
       if (antenatalVisits.length > 0) {
         const firstVisit = new Date(antenatalVisits[0].visitDate);
         const lastVisit = new Date(antenatalVisits[antenatalVisits.length - 1].visitDate);
