@@ -126,6 +126,45 @@
       line-height: 1.5;
     }
 
+    .danger-signs-section {
+      margin-top: 20px;
+      border-top: 1px solid #dee2e6;
+      padding-top: 15px;
+    }
+
+    .danger-signs-item {
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+
+    .danger-signs-header {
+      font-weight: 600;
+      color: #856404;
+      margin-bottom: 8px;
+    }
+
+    .danger-signs-content {
+      color: #856404;
+      line-height: 1.5;
+    }
+
+    .danger-signs-list {
+      list-style-type: none;
+      padding-left: 0;
+    }
+
+    .danger-signs-list li {
+      padding: 5px 0;
+      border-bottom: 1px solid #ffeaa7;
+    }
+
+    .danger-signs-list li:last-child {
+      border-bottom: none;
+    }
+
     .summary-section {
       margin-top: 20px;
       border-top: 1px solid #dee2e6;
@@ -311,7 +350,6 @@
             <th>Fetal Pres</th>
             <th>FHR</th>
             <th>Urine</th>
-            <th>Danger Signs</th>
             <th>Deworm</th>
             <th>IFA</th>
             <th>TT/TD</th>
@@ -330,6 +368,14 @@
         <h5><i class="fas fa-pills me-2"></i>Treatment Information</h5>
         <div id="treatmentInfo" class="treatment-info">
           <!-- Treatment information will be populated here -->
+        </div>
+      </div>
+
+      <!-- Danger Signs Section -->
+      <div class="danger-signs-section mt-4">
+        <h5><i class="fas fa-exclamation-triangle me-2"></i>Danger Signs Assessment</h5>
+        <div id="dangerSignsInfo" class="danger-signs-info">
+          <!-- Danger signs information will be populated here -->
         </div>
       </div>
 
@@ -465,6 +511,12 @@
       
       // Total visits = early ANC visits + recorded visits
       const totalVisits = earlyAncVisits + antenatalVisits.length;
+      console.log('Report calculation:', {
+        earlyAncVisits: earlyAncVisits,
+        antenatalVisitsLength: antenatalVisits.length,
+        totalVisits: totalVisits,
+        antenatalVisits: antenatalVisits
+      });
       document.getElementById("totalVisits").textContent = totalVisits;
       
       // Calculate current gestational age
@@ -486,7 +538,7 @@
       if (antenatalVisits.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="17" class="text-center">No antenatal visits recorded</td>
+            <td colspan="16" class="text-center">No antenatal visits recorded</td>
           </tr>
         `;
         return;
@@ -527,7 +579,6 @@
             <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
             <td>${visit.urineTest || '-'}</td>
-            <td>${dangerSignsText}</td>
             <td>${visit.deworming || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
             <td>${visit.tetanusToxoid || '-'}</td>
@@ -546,7 +597,7 @@
             <td class="visit-number">${antenatalVisits.length + i + 1}</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td>
           </tr>
         `;
       }
@@ -555,6 +606,9 @@
       
       // Populate treatment information
       populateTreatmentInfo();
+      
+      // Populate danger signs information
+      populateDangerSignsInfo();
     }
 
     function populateTreatmentInfo() {
@@ -572,14 +626,14 @@
           new Date(visit.visitDate).toLocaleDateString() : 
           'N/A';
         
-        if (visit.treatment && visit.treatment.trim() !== '') {
+        if (visit.treatmentGiven && visit.treatmentGiven.trim() !== '') {
           treatmentHTML += `
             <div class="treatment-item mb-3">
               <div class="treatment-header">
                 <strong>Visit ${visitNumber}</strong> - ${visitDate}
               </div>
               <div class="treatment-content">
-                ${visit.treatment}
+                ${visit.treatmentGiven}
               </div>
             </div>
           `;
@@ -591,6 +645,67 @@
       }
 
       treatmentContainer.innerHTML = treatmentHTML;
+    }
+
+    function populateDangerSignsInfo() {
+      const dangerSignsContainer = document.getElementById('dangerSignsInfo');
+      
+      if (antenatalVisits.length === 0) {
+        dangerSignsContainer.innerHTML = '<p class="text-muted">No danger signs assessments recorded.</p>';
+        return;
+      }
+
+      let dangerSignsHTML = '';
+      antenatalVisits.forEach((visit, index) => {
+        const visitNumber = index + 1;
+        const visitDate = visit.visitDate ? 
+          new Date(visit.visitDate).toLocaleDateString() : 
+          'N/A';
+        
+        if (visit.dangerSignsPresent === 'Yes' && visit.dangerSigns) {
+          const dangerSignsList = [];
+          if (visit.dangerSigns.vaginal_bleeding) dangerSignsList.push('Vaginal bleeding');
+          if (visit.dangerSigns.convulsions) dangerSignsList.push('Convulsions');
+          if (visit.dangerSigns.severe_headache) dangerSignsList.push('Severe headache');
+          if (visit.dangerSigns.blurred_vision) dangerSignsList.push('Blurred vision');
+          if (visit.dangerSigns.severe_abdominal_pain) dangerSignsList.push('Severe abdominal pain');
+          if (visit.dangerSigns.fever) dangerSignsList.push('Fever');
+          if (visit.dangerSigns.puffiness) dangerSignsList.push('Puffiness');
+          if (visit.dangerSigns.reduced_fetal_movement) dangerSignsList.push('Reduced fetal movement');
+          
+          if (dangerSignsList.length > 0) {
+            dangerSignsHTML += `
+              <div class="danger-signs-item">
+                <div class="danger-signs-header">
+                  <strong>Visit ${visitNumber}</strong> - ${visitDate}
+                </div>
+                <div class="danger-signs-content">
+                  <ul class="danger-signs-list">
+                    ${dangerSignsList.map(sign => `<li>${sign}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            `;
+          }
+        } else if (visit.dangerSignsPresent === 'No') {
+          dangerSignsHTML += `
+            <div class="danger-signs-item">
+              <div class="danger-signs-header">
+                <strong>Visit ${visitNumber}</strong> - ${visitDate}
+              </div>
+              <div class="danger-signs-content">
+                No danger signs present
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      if (dangerSignsHTML === '') {
+        dangerSignsHTML = '<p class="text-muted">No danger signs assessments recorded.</p>';
+      }
+
+      dangerSignsContainer.innerHTML = dangerSignsHTML;
     }
 
     function populateSummary() {
