@@ -42,66 +42,6 @@
       box-shadow: var(--card-shadow);
     }
 
-    .care-modules {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .module-card {
-      background: white;
-      border-radius: 15px;
-      padding: 2rem;
-      box-shadow: var(--card-shadow);
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-      cursor: pointer;
-      border: 2px solid transparent;
-    }
-
-    .module-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-      border-color: var(--accent-color);
-    }
-
-    .module-icon {
-      width: 60px;
-      height: 60px;
-      background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1rem;
-      color: white;
-      font-size: 1.5rem;
-    }
-
-    .module-title {
-      color: var(--secondary-color);
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      text-align: center;
-    }
-
-    .module-description {
-      color: #6b7280;
-      text-align: center;
-      font-size: 0.9rem;
-      margin-bottom: 1rem;
-    }
-
-    .patient-count {
-      background: var(--light-bg);
-      color: var(--primary-color);
-      padding: 0.5rem 1rem;
-      border-radius: 20px;
-      font-weight: 600;
-      text-align: center;
-      display: inline-block;
-      width: 100%;
-    }
 
     .patients-table {
       background: white;
@@ -243,15 +183,6 @@
         margin: 0 1rem 1rem;
       }
       
-      .care-modules {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-        margin: 0 1rem 1rem;
-      }
-      
-      .module-card {
-        padding: 1.5rem;
-      }
       
       .btn-action {
         display: block;
@@ -299,58 +230,31 @@
   </div>
 
   <div class="container">
-    <!-- Patient Selector -->
+    <!-- Patient Search -->
     <div class="patient-selector">
-      <h5 class="mb-3"><i class="fas fa-user-plus me-2"></i>All Patients - Lab Test Actions</h5>
+      <h5 class="mb-3"><i class="fas fa-search me-2"></i>Search Patients</h5>
       <div class="row">
         <div class="col-md-8">
           <input type="text" class="form-control" id="searchInput" placeholder="Search patients by name, age, or status..." onkeyup="filterPatients()">
         </div>
-        <div class="col-md-4">
-          <button class="btn btn-primary-action" onclick="loadPatients()">
+        <div class="col-md-2">
+          <button class="btn btn-primary-action w-100" onclick="filterPatients()">
+            <i class="fas fa-search me-1"></i>Search
+          </button>
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-primary w-100" onclick="loadPatients()">
             <i class="fas fa-sync-alt me-1"></i>Refresh
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Care Modules -->
-    <div class="care-modules">
-      <div class="module-card" onclick="window.location.href='antenatal-tests-form.html'">
-        <div class="module-icon">
-          <i class="fas fa-flask"></i>
-        </div>
-        <h5 class="module-title">Record Lab Tests</h5>
-        <p class="module-description">Record new laboratory test results and diagnostic data</p>
-        <div class="patient-count" id="totalTestsCount">0 Tests Recorded</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='antenatal-tests-list.html'">
-        <div class="module-icon">
-          <i class="fas fa-list-alt"></i>
-        </div>
-        <h5 class="module-title">Test History</h5>
-        <p class="module-description">View and manage all recorded test results</p>
-        <div class="patient-count" id="testHistoryCount">0 Test Records</div>
-      </div>
-
-      <div class="module-card" onclick="generateLabReport()">
-        <div class="module-icon">
-          <i class="fas fa-file-medical-alt"></i>
-        </div>
-        <h5 class="module-title">Generate Lab Report</h5>
-        <p class="module-description">Generate comprehensive laboratory test report</p>
-        <div class="patient-count" id="reportCount">Print Report</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='antenatal-care.html'">
-        <div class="module-icon">
-          <i class="fas fa-arrow-left"></i>
-        </div>
-        <h5 class="module-title">Back to Antenatal Care</h5>
-        <p class="module-description">Return to main antenatal care dashboard</p>
-        <div class="patient-count">Navigate</div>
-      </div>
+    <!-- Back Navigation -->
+    <div class="text-center mb-4">
+      <a href="antenatal-care.html" class="btn btn-outline-primary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Antenatal Care
+      </a>
     </div>
 
     <!-- Patients Table -->
@@ -461,7 +365,6 @@
             
             console.log('Total patients loaded for Midwife:', allPatients.length);
             displayAllPatients();
-            updateTestCounts();
             return; // Exit early since we handled midwife case
             
           } else if (userData.role === 'TMO') {
@@ -513,7 +416,6 @@
         });
         
         displayAllPatients();
-        updateTestCounts();
         
         if (allPatients.length === 0) {
           console.log('No patients found for this user');
@@ -648,32 +550,6 @@
       return status.toLowerCase().replace(' ', '-');
     }
 
-    // Update test counts
-    async function updateTestCounts() {
-      try {
-        const db = firebase.firestore();
-        
-        // Count test records for the current user's patients only
-        let totalTests = 0;
-        
-        // For each patient the user has access to, count their test records
-        for (const patient of allPatients) {
-          const testSnapshot = await db.collection('patients')
-            .doc(patient.id)
-            .collection('testRecords')
-            .get();
-          totalTests += testSnapshot.size;
-        }
-        
-        document.getElementById('totalTestsCount').textContent = `${totalTests} Tests Recorded`;
-        document.getElementById('testHistoryCount').textContent = `${totalTests} Test Records`;
-        
-      } catch (error) {
-        console.error('Error updating test counts:', error);
-        document.getElementById('totalTestsCount').textContent = '0 Tests Recorded';
-        document.getElementById('testHistoryCount').textContent = '0 Test Records';
-      }
-    }
 
     // Generate patient-specific lab report
     function generatePatientLabReport(patientId) {
