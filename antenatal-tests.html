@@ -423,11 +423,18 @@
           // Super Admin can see all patients (no additional filter)
         }
         
-        const snapshot = await query.orderBy('name').get();
+        const snapshot = await query.get();
         allPatients = [];
         
         snapshot.forEach(doc => {
           allPatients.push({ id: doc.id, ...doc.data() });
+        });
+        
+        // Sort patients by name on the client side to avoid Firestore indexing issues
+        allPatients.sort((a, b) => {
+          const nameA = a.name || '';
+          const nameB = b.name || '';
+          return nameA.localeCompare(nameB);
         });
         
         populatePatientSelector();
@@ -569,30 +576,17 @@
       try {
         const db = firebase.firestore();
         
-        // Count total test records
-        let totalTestsQuery = db.collectionGroup('testRecords');
+        // Count test records for the current user's patients only
+        let totalTests = 0;
         
-        // Filter by user role
-        const userDoc = await db.collection('users').doc(currentUser.uid).get();
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          
-          if (userData.role === 'Midwife') {
-            // For midwives, count tests from their patients only
-            const patientIds = allPatients.map(p => p.id);
-            if (patientIds.length > 0) {
-              // Note: Firestore doesn't support 'in' queries with more than 10 items
-              // For now, we'll show all tests (this could be optimized)
-            }
-          } else if (userData.role === 'TMO') {
-            // For TMOs, count tests from their township patients
-            const patientIds = allPatients.map(p => p.id);
-            // Similar limitation as above
-          }
+        // For each patient the user has access to, count their test records
+        for (const patient of allPatients) {
+          const testSnapshot = await db.collection('patients')
+            .doc(patient.id)
+            .collection('testRecords')
+            .get();
+          totalTests += testSnapshot.size;
         }
-        
-        const totalTestsSnapshot = await totalTestsQuery.get();
-        const totalTests = totalTestsSnapshot.size;
         
         document.getElementById('totalTestsCount').textContent = `${totalTests} Tests Recorded`;
         document.getElementById('testHistoryCount').textContent = `${totalTests} Test Records`;
