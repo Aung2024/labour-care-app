@@ -510,17 +510,61 @@
       document.getElementById("earlyAncVisits").textContent = earlyAncVisits;
       
       // Total visits = early ANC visits + recorded visits (only count visits with actual data)
-      const actualVisits = antenatalVisits.filter(visit => visit.visitDate && visit.visitDate.trim() !== '');
-      const totalVisits = earlyAncVisits + actualVisits.length;
-      
-      // Debug logging
-      console.log('Visit calculation debug:', {
-        earlyAncVisits: earlyAncVisits,
-        allVisits: antenatalVisits.length,
-        actualVisits: actualVisits.length,
-        totalVisits: totalVisits,
-        allVisitsData: antenatalVisits.map(v => ({ date: v.visitDate, number: v.visitNumber }))
+      // More robust filtering to handle corrupted data
+      const actualVisits = antenatalVisits.filter(visit => {
+        // Must have a valid visit date
+        if (!visit.visitDate || visit.visitDate.trim() === '') return false;
+        
+        // Must have a valid visit number
+        if (!visit.visitNumber || visit.visitNumber <= 0) return false;
+        
+        // Must have some actual medical data (not just empty records)
+        const hasMedicalData = visit.weight || visit.bloodPressure || visit.gestationalAge || 
+                              visit.fundalHeight || visit.fetalPresentation || visit.fetalHeartRate;
+        
+        return hasMedicalData;
       });
+      
+      // Remove duplicates based on visit date and number
+      const uniqueVisits = [];
+      const seenVisits = new Set();
+      
+      actualVisits.forEach(visit => {
+        const key = `${visit.visitDate}-${visit.visitNumber}`;
+        if (!seenVisits.has(key)) {
+          seenVisits.add(key);
+          uniqueVisits.push(visit);
+        }
+      });
+      
+      const totalVisits = earlyAncVisits + uniqueVisits.length;
+      
+      // Debug logging - more detailed
+      console.log('=== VISIT COUNT DEBUG ===');
+      console.log('Early ANC visits:', earlyAncVisits);
+      console.log('All visits count:', antenatalVisits.length);
+      console.log('Actual visits count (after filtering):', actualVisits.length);
+      console.log('Unique visits count (after deduplication):', uniqueVisits.length);
+      console.log('Total visits (final):', totalVisits);
+      console.log('All visits data:', antenatalVisits);
+      console.log('Actual visits data (filtered):', actualVisits);
+      console.log('Unique visits data (deduplicated):', uniqueVisits);
+      
+      // Check for duplicates or issues
+      const visitDates = antenatalVisits.map(v => v.visitDate);
+      const uniqueDates = [...new Set(visitDates)];
+      console.log('Unique visit dates:', uniqueDates);
+      console.log('Duplicate dates found:', visitDates.length !== uniqueDates.length);
+      
+      // Show what was filtered out
+      const filteredOut = antenatalVisits.filter(visit => {
+        if (!visit.visitDate || visit.visitDate.trim() === '') return true;
+        if (!visit.visitNumber || visit.visitNumber <= 0) return true;
+        const hasMedicalData = visit.weight || visit.bloodPressure || visit.gestationalAge || 
+                              visit.fundalHeight || visit.fetalPresentation || visit.fetalHeartRate;
+        return !hasMedicalData;
+      });
+      console.log('Filtered out visits (corrupted/empty):', filteredOut.length, filteredOut);
       
       document.getElementById("totalVisits").textContent = totalVisits;
       
@@ -549,8 +593,11 @@
         return;
       }
 
+      // Use the filtered and deduplicated visits for the table
+      const visitsToShow = uniqueVisits.length > 0 ? uniqueVisits : antenatalVisits;
+      
       let tableHTML = '';
-      antenatalVisits.forEach((visit, index) => {
+      visitsToShow.forEach((visit, index) => {
         const visitNumber = index + 1; // Sequential numbering
         const visitDate = visit.visitDate ? 
           new Date(visit.visitDate).toLocaleDateString() : 
@@ -609,7 +656,7 @@
       });
 
       // Always show all 12 rows for the report
-      for (let i = antenatalVisits.length; i < 12; i++) {
+      for (let i = visitsToShow.length; i < 12; i++) {
         tableHTML += `
           <tr>
             <td class="visit-number">${i + 1}</td>
