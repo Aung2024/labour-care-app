@@ -758,10 +758,11 @@
       // Check all danger sign checkboxes
       const dangerSigns = [
         'ds_vaginal_bleeding', 'ds_convulsions', 'ds_loss_consciousness', 'ds_severe_headache',
-        'ds_blurred_vision', 'ds_severe_abdominal_pain', 'ds_fever', 'ds_puffiness',
-        'ds_oliguria', 'ds_excessive_vomiting', 'ds_abdominal_pain', 'ds_reduced_fetal_movement',
+        'ds_blurred_vision', 'ds_vomiting', 'ds_severe_abdominal_pain', 'ds_fever', 'ds_fatigue',
+        'ds_fast_breathing', 'ds_difficulty_breathing', 'ds_puffiness', 'ds_oliguria', 
+        'ds_excessive_vomiting', 'ds_abdominal_pain', 'ds_reduced_fetal_movement',
         'ds_no_labour_pain', 'ds_no_delivery', 'ds_postpartum_hemorrhage', 'ds_no_placenta',
-        'ds_very_small_baby', 'ds_difficulty_breathing_baby', 'ds_birth_injury_baby'
+        'ds_very_small_baby', 'ds_difficulty_breathing_baby'
       ];
       
       for (let checkboxId of dangerSigns) {
@@ -793,6 +794,13 @@
 
     async function saveVisitData(event) {
       event.preventDefault();
+      
+      // Prevent double submission
+      const submitButton = event.target.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+      }
       
       try {
         // Collect all form data
@@ -860,12 +868,16 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
+        console.log('Saving visit data:', visitData);
+        
         // Save visit data to Firestore
         const visitRef = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('antenatal_visits')
           .add(visitData);
+
+        console.log('Visit saved with ID:', visitRef.id);
 
         // Update patient's last antenatal visit
         await firebase.firestore()
@@ -876,12 +888,23 @@
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
           });
 
+        console.log('Patient record updated');
+
         alert('Visit data saved successfully!');
         console.log('Visit data saved:', visitRef.id);
+        
+        // Redirect to antenatal care main page
+        window.location.href = 'antenatal-care.html';
 
       } catch (error) {
         console.error('Error saving visit data:', error);
         alert(`Error saving visit data: ${error.message}`);
+        
+        // Reset button state on error
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = '<i class="fas fa-save me-2"></i>Save Visit Data';
+        }
       }
     }
 
