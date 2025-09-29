@@ -423,20 +423,8 @@
           <i class="fas fa-exclamation-triangle me-2"></i>Danger Signs Assessment
         </h5>
         
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <div class="form-floating">
-              <select class="form-select" id="dangerSignsPresent" name="dangerSignsPresent" onchange="showDangerSignsDetails()">
-                <option value="">Select</option>
-                <option value="Yes">Danger Signs Present</option>
-                <option value="No">No Danger Signs</option>
-              </select>
-              <label>Danger Signs!</label>
-            </div>
-          </div>
-        </div>
         
-        <div id="dangerSignsDetails" style="display: none;">
+        <div id="dangerSignsDetails">
           <!-- Danger Signs in Pregnancy -->
           <div class="row">
             <div class="col-md-6">
@@ -673,6 +661,9 @@
           calculateGestationalAge();
         }
 
+        // Load existing visit data if available
+        await loadExistingVisitData();
+
       } catch (error) {
         console.error('Error loading patient info:', error);
         alert(`Error loading patient information: ${error.message}`);
@@ -687,11 +678,50 @@
           .collection('antenatal_visits')
           .orderBy('visit_date', 'desc')
           .get();
-
+        
         visitCount = visitsSnapshot.size + 1;
       } catch (error) {
         console.error('Error loading visit count:', error);
         visitCount = 1;
+      }
+    }
+
+    async function loadExistingVisitData() {
+      try {
+        // Load the most recent visit data to populate the form
+        const visitsSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visit_date', 'desc')
+          .limit(1)
+          .get();
+        
+        if (!visitsSnapshot.empty) {
+          const latestVisit = visitsSnapshot.docs[0].data();
+          
+          // Populate form fields with latest visit data
+          if (latestVisit.weight) document.getElementById('weight').value = latestVisit.weight;
+          if (latestVisit.bloodPressure) document.getElementById('bloodPressure').value = latestVisit.bloodPressure;
+          if (latestVisit.fundalHeight) document.getElementById('fundalHeight').value = latestVisit.fundalHeight;
+          if (latestVisit.fetalHeartRate) document.getElementById('fetalHeartRate').value = latestVisit.fetalHeartRate;
+          if (latestVisit.urineTest) document.getElementById('urineTest').value = latestVisit.urineTest;
+          if (latestVisit.ironFolicAcid) document.getElementById('ironFolicAcid').value = latestVisit.ironFolicAcid;
+          if (latestVisit.tetanusToxoid) document.getElementById('tetanusToxoid').value = latestVisit.tetanusToxoid;
+          if (latestVisit.followUpDate) document.getElementById('followUpDate').value = latestVisit.followUpDate;
+          
+          // Load danger signs checkboxes
+          if (latestVisit.dangerSigns) {
+            Object.keys(latestVisit.dangerSigns).forEach(sign => {
+              const checkbox = document.getElementById(`ds_${sign}`);
+              if (checkbox) {
+                checkbox.checked = latestVisit.dangerSigns[sign];
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing visit data:', error);
       }
     }
 
@@ -724,15 +754,22 @@
       }
     }
 
-    function showDangerSignsDetails() {
-      const dangerSignsPresent = document.getElementById('dangerSignsPresent').value;
-      const dangerSignsDetails = document.getElementById('dangerSignsDetails');
+    function checkDangerSignsPresent() {
+      // Check all danger sign checkboxes
+      const dangerSigns = [
+        'ds_vaginal_bleeding', 'ds_convulsions', 'ds_loss_consciousness', 'ds_severe_headache',
+        'ds_blurred_vision', 'ds_severe_abdominal_pain', 'ds_fever', 'ds_puffiness',
+        'ds_oliguria', 'ds_excessive_vomiting', 'ds_abdominal_pain', 'ds_reduced_fetal_movement',
+        'ds_no_labour_pain', 'ds_no_delivery', 'ds_postpartum_hemorrhage', 'ds_no_placenta',
+        'ds_very_small_baby', 'ds_difficulty_breathing_baby', 'ds_birth_injury_baby'
+      ];
       
-      if (dangerSignsPresent === 'Yes') {
-        dangerSignsDetails.style.display = 'block';
-      } else {
-        dangerSignsDetails.style.display = 'none';
+      for (let checkboxId of dangerSigns) {
+        if (document.getElementById(checkboxId) && document.getElementById(checkboxId).checked) {
+          return 'Yes';
+        }
       }
+      return 'No';
     }
 
     function calculateTTCompletion() {
@@ -789,8 +826,8 @@
           ttTdCompletion: document.getElementById('ttTdCompletion').value || '',
           ttTdDoses: parseInt(document.getElementById('ttTdDoses').value) || 0,
           
-          // Danger signs
-          dangerSignsPresent: document.getElementById('dangerSignsPresent').value || '',
+          // Danger signs - determine if any are present
+          dangerSignsPresent: checkDangerSignsPresent(),
           dangerSigns: {
             vaginal_bleeding: document.getElementById('ds_vaginal_bleeding').checked,
             convulsions: document.getElementById('ds_convulsions').checked,

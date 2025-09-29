@@ -153,11 +153,24 @@
 
     .compact-table td {
       padding: 2px;
-      font-size: 10px;
+      font-size: 9px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 60px;
+      max-width: 50px;
+      text-align: center;
+    }
+    
+    .compact-table td:first-child {
+      max-width: 30px;
+    }
+    
+    .compact-table td:nth-child(2) {
+      max-width: 70px;
+    }
+    
+    .compact-table td:nth-child(3) {
+      max-width: 80px;
     }
 
     .compact-table .visit-number {
@@ -256,6 +269,7 @@
             <h6>Contact Information</h6>
             <div><strong>Phone:</strong> <span id="patientPhone">-</span></div>
             <div><strong>Township:</strong> <span id="patientTownship">-</span></div>
+            <div><strong>Early ANC Visits:</strong> <span id="earlyAncVisits" class="summary-value">0</span></div>
             <div><strong>Total Visits:</strong> <span id="totalVisits" class="summary-value">0</span></div>
           </div>
         </div>
@@ -265,18 +279,22 @@
       <table class="visits-table compact-table">
         <thead>
           <tr>
-            <th>Visit</th>
+            <th>No</th>
             <th>Date</th>
-            <th>GA</th>
+            <th>Health Facility</th>
             <th>Weight</th>
             <th>BP</th>
+            <th>GA</th>
             <th>FH</th>
+            <th>Fetal Pres</th>
             <th>FHR</th>
             <th>Urine</th>
+            <th>Deworm</th>
             <th>IFA</th>
             <th>TT/TD</th>
+            <th>Treatment</th>
             <th>Follow-up</th>
-            <th>Danger Signs</th>
+            <th>Referral</th>
             <th>Initial</th>
           </tr>
         </thead>
@@ -413,7 +431,13 @@
       document.getElementById("patientEDD").textContent = currentPatient.edd || 'Not calculated';
       document.getElementById("patientPhone").textContent = currentPatient.phone || 'Not provided';
       document.getElementById("patientTownship").textContent = currentPatient.township || 'Not set';
-      document.getElementById("totalVisits").textContent = antenatalVisits.length;
+      // Calculate early ANC visits
+      const earlyAncVisits = currentPatient.early_anc_visits || 0;
+      document.getElementById("earlyAncVisits").textContent = earlyAncVisits;
+      
+      // Total visits = early ANC visits + recorded visits
+      const totalVisits = earlyAncVisits + antenatalVisits.length;
+      document.getElementById("totalVisits").textContent = totalVisits;
       
       // Calculate current gestational age
       if (currentPatient.lmp) {
@@ -434,7 +458,7 @@
       if (antenatalVisits.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="13" class="text-center">No antenatal visits recorded</td>
+            <td colspan="17" class="text-center">No antenatal visits recorded</td>
           </tr>
         `;
         return;
@@ -467,16 +491,20 @@
           <tr>
             <td class="visit-number">${visit.visitNumber || index + 1}</td>
             <td>${visitDate}</td>
-            <td>${visit.gestationalAge || visit.gestationWeeks || '-'}</td>
+            <td>${visit.healthFacility || '-'}</td>
             <td>${visit.weight || '-'}</td>
             <td>${visit.bloodPressure || '-'}</td>
+            <td>${visit.gestationalAge || visit.gestationWeeks || '-'}</td>
             <td>${visit.fundalHeight || '-'}</td>
+            <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
             <td>${visit.urineTest || '-'}</td>
+            <td>${visit.deworming || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
             <td>${visit.tetanusToxoid || '-'}</td>
+            <td>${visit.treatment || '-'}</td>
             <td>${visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : (visit.nextAppointment ? new Date(visit.nextAppointment).toLocaleDateString() : '-')}</td>
-            <td>${dangerSignsText}</td>
+            <td>${visit.referral || '-'}</td>
             <td>${visit.midwifeName || '-'}</td>
           </tr>
         `;
@@ -489,7 +517,8 @@
           <tr>
             <td class="visit-number">${antenatalVisits.length + i + 1}</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td>
           </tr>
         `;
       }
