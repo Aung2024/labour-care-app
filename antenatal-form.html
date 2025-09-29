@@ -266,14 +266,14 @@
           </div>
           <div class="col-md-3">
             <div class="form-floating mb-3">
-              <input type="text" class="form-control" id="healthFacility" name="healthFacility" placeholder="Health Facility Name">
-              <label>Health Facility</label>
+              <input type="number" class="form-control" id="totalAncVisits" name="totalAncVisits" readonly>
+              <label>Total Previous Visits</label>
             </div>
           </div>
           <div class="col-md-3">
             <div class="form-floating mb-3">
-              <input type="number" class="form-control" id="totalAncVisits" name="totalAncVisits" readonly>
-              <label>Total No. of ANC Visits (Previous)</label>
+              <input type="number" class="form-control" id="earlyAncVisits" name="earlyAncVisits" readonly>
+              <label>Early ANC Visits</label>
             </div>
           </div>
         </div>
@@ -655,6 +655,10 @@
         await loadVisitCount();
         document.getElementById('visitNumber').value = visitCount;
         document.getElementById('totalAncVisits').value = visitCount - 1;
+        
+        // Load early ANC visits from patient data
+        const earlyAncVisits = currentPatient.early_anc_visits || 0;
+        document.getElementById('earlyAncVisits').value = earlyAncVisits;
 
         // Auto-calculate gestational age if LMP is available
         if (currentPatient.lmp) {
@@ -672,14 +676,20 @@
 
     async function loadVisitCount() {
       try {
+        console.log('Loading visit count for patient:', patientId);
+        
         const visitsSnapshot = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('antenatal_visits')
-          .orderBy('visit_date', 'desc')
+          .orderBy('timestamp', 'desc')
           .get();
         
+        console.log('Found visits:', visitsSnapshot.size);
+        console.log('Visit documents:', visitsSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+        
         visitCount = visitsSnapshot.size + 1;
+        console.log('Calculated visit count:', visitCount);
       } catch (error) {
         console.error('Error loading visit count:', error);
         visitCount = 1;
@@ -688,14 +698,18 @@
 
     async function loadExistingVisitData() {
       try {
+        console.log('Loading existing visit data for patient:', patientId);
+        
         // Load the most recent visit data to populate the form
         const visitsSnapshot = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('antenatal_visits')
-          .orderBy('visit_date', 'desc')
+          .orderBy('timestamp', 'desc')
           .limit(1)
           .get();
+        
+        console.log('Found existing visits:', visitsSnapshot.size);
         
         if (!visitsSnapshot.empty) {
           const latestVisit = visitsSnapshot.docs[0].data();
@@ -807,7 +821,7 @@
         const visitData = {
           visitNumber: parseInt(document.getElementById('visitNumber').value),
           visitDate: document.getElementById('visitDate').value,
-          healthFacility: document.getElementById('healthFacility').value,
+          healthFacility: currentPatient.township || 'Unknown Facility',
           totalAncVisits: parseInt(document.getElementById('totalAncVisits').value),
           
           // Main table data
@@ -884,11 +898,15 @@
           .collection('patients')
           .doc(patientId)
           .update({
-            lastAntenatalVisit: visitData.timestamp,
+            lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
           });
 
         console.log('Patient record updated');
+
+        // Refresh the visit count to ensure accuracy
+        await loadVisitCount();
+        console.log('Visit count refreshed:', visitCount);
 
         alert('Visit data saved successfully!');
         console.log('Visit data saved:', visitRef.id);
