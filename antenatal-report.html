@@ -387,12 +387,23 @@
         
         currentPatient = patientDoc.data();
         
-        // Load antenatal visits
-        const visitsSnapshot = await db.collection("patients")
-          .doc(patientId)
-          .collection("antenatal_visits")
-          .orderBy("visitDate", "asc")
-          .get();
+        // Load antenatal visits - try visitDate first, fallback to timestamp
+        let visitsSnapshot;
+        try {
+          visitsSnapshot = await db.collection("patients")
+            .doc(patientId)
+            .collection("antenatal_visits")
+            .orderBy("visitDate", "asc")
+            .get();
+        } catch (error) {
+          // Fallback to timestamp if visitDate ordering fails
+          console.log("visitDate ordering failed, using timestamp:", error);
+          visitsSnapshot = await db.collection("patients")
+            .doc(patientId)
+            .collection("antenatal_visits")
+            .orderBy("timestamp", "asc")
+            .get();
+        }
 
         antenatalVisits = [];
         visitsSnapshot.forEach(doc => {
@@ -464,6 +475,7 @@
 
       let tableHTML = '';
       antenatalVisits.forEach((visit, index) => {
+        const visitNumber = index + 1; // Sequential numbering
         const visitDate = visit.visitDate ? 
           new Date(visit.visitDate).toLocaleDateString() : 
           'N/A';
@@ -487,7 +499,7 @@
         
         tableHTML += `
           <tr>
-            <td class="visit-number">${visit.visitNumber || index + 1}</td>
+            <td class="visit-number">${visitNumber}</td>
             <td>${visitDate}</td>
             <td>${visit.healthFacility || '-'}</td>
             <td>${visit.weight || '-'}</td>

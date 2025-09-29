@@ -202,6 +202,12 @@
         flex-direction: column;
         gap: 0.25rem !important;
       }
+      
+      /* Stack buttons vertically on mobile */
+      .btn-sm {
+        margin-bottom: 0.25rem;
+        width: 100%;
+      }
     }
   </style>
   <script>
@@ -416,6 +422,9 @@
                 <button class="btn btn-outline-primary btn-sm" onclick="generateAntenatalReport('${patient.id}')" title="Generate ANC Report">
                   <i class="fas fa-file-alt me-1"></i>Generate Report
                 </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="deleteAllVisitRecords('${patient.id}', '${patient.name || 'Unknown'}')" title="Delete All Visit Records">
+                  <i class="fas fa-trash me-1"></i>Delete All Visits
+                </button>
               </div>
             </td>
           </tr>
@@ -452,6 +461,66 @@
     function generateAntenatalReport(patientId) {
       // Open antenatal report in new tab
       window.open(`antenatal-report.html?patient=${patientId}`, '_blank');
+    }
+
+    async function deleteAllVisitRecords(patientId, patientName) {
+      // Confirm deletion
+      const confirmed = confirm(`Are you sure you want to delete ALL antenatal visit records for ${patientName}?\n\nThis action cannot be undone.\n\nNote: Patient registration data will NOT be affected.`);
+      
+      if (!confirmed) return;
+
+      try {
+        // Show loading state
+        const originalButton = event.target;
+        const originalText = originalButton.innerHTML;
+        originalButton.disabled = true;
+        originalButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Deleting...';
+
+        // Get all visit records
+        const visitsSnapshot = await db.collection("patients")
+          .doc(patientId)
+          .collection("antenatal_visits")
+          .get();
+
+        if (visitsSnapshot.empty) {
+          alert('No visit records found for this patient.');
+          return;
+        }
+
+        // Delete all visit records
+        const batch = db.batch();
+        visitsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        // Update patient record to clear last antenatal visit
+        await db.collection("patients")
+          .doc(patientId)
+          .update({
+            lastAntenatalVisit: null,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+        // Reset button state
+        originalButton.disabled = false;
+        originalButton.innerHTML = originalText;
+
+        alert(`Successfully deleted ${visitsSnapshot.size} visit record(s) for ${patientName}.`);
+        
+        // Refresh the patient list
+        loadAntenatalPatients();
+
+      } catch (error) {
+        console.error('Error deleting visit records:', error);
+        alert(`Error deleting visit records: ${error.message}`);
+        
+        // Reset button state on error
+        const originalButton = event.target;
+        originalButton.disabled = false;
+        originalButton.innerHTML = '<i class="fas fa-trash me-1"></i>Delete All Visits';
+      }
     }
 
 
