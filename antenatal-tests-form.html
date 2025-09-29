@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Record Lab Tests - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --accent-color: #34d399;
+      --light-bg: #f0fdf4;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-container {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .patient-info {
+      background: var(--light-bg);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .test-section {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid #e5e7eb;
+    }
+
+    .test-section h5 {
+      color: var(--secondary-color);
+      border-bottom: 2px solid var(--accent-color);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      font-weight: 600;
+      color: var(--secondary-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-control, .form-select {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.75rem;
+      transition: border-color 0.3s ease;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+    }
+
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .test-item {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .test-item h6 {
+      color: var(--secondary-color);
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+      background: var(--secondary-color);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    .hemoglobin-table {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .hemoglobin-table table {
+      width: 100%;
+      margin: 0;
+    }
+
+    .hemoglobin-table th,
+    .hemoglobin-table td {
+      padding: 0.5rem;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+    }
+
+    .hemoglobin-table th {
+      background: var(--light-bg);
+      color: var(--secondary-color);
+      font-weight: 600;
+    }
+
+    .diagnosis-result {
+      background: var(--light-bg);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .loading-spinner {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .footer {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      text-align: center;
+      padding: 2rem 0;
+      margin-top: 3rem;
+    }
+
+    .footer-content {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+
+    .footer p {
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+
+    .footer .copyright {
+      font-weight: 500;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    @media (max-width: 768px) {
+      .header-section {
+        padding: 1.5rem 0;
+      }
+      
+      .form-container,
+      .test-section {
+        padding: 1rem;
+        margin: 0 1rem 1rem;
+      }
+      
+      .test-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+      
+      .btn-primary,
+      .btn-secondary {
+        width: 100%;
+        margin: 0.5rem 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Section -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2"><i class="fas fa-flask me-2"></i>Record Laboratory Tests</h1>
+          <p class="mb-0">Enter laboratory test results and diagnostic data</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+          <a href="antenatal-tests.html" class="btn btn-outline-light me-2">
+            <i class="fas fa-arrow-left me-1"></i>Back to Tests
+          </a>
+          <button class="btn btn-outline-light" onclick="logout()">
+            <i class="fas fa-sign-out-alt me-1"></i>Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Information -->
+    <div class="patient-info" id="patientInfo">
+      <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+      <div class="row">
+        <div class="col-md-3">
+          <strong>Name:</strong> <span id="patientName">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>Age:</strong> <span id="patientAge">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>LMP:</strong> <span id="patientLMP">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>Current GA:</strong> <span id="currentGA">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Results Form -->
+    <form id="testForm">
+      <!-- Basic Test Information -->
+      <div class="test-section">
+        <h5><i class="fas fa-calendar-alt me-2"></i>Test Information</h5>
+        <div class="test-grid">
+          <div class="form-group">
+            <label class="form-label">Date of Result</label>
+            <input type="date" class="form-control" id="testDate" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gestational Age (weeks)</label>
+            <input type="number" class="form-control" id="gestationalAge" min="0" max="45" step="0.1" required>
+          </div>
+        </div>
+      </div>
+
+      <!-- Laboratory Tests -->
+      <div class="test-section">
+        <h5><i class="fas fa-vial me-2"></i>Laboratory Test Results</h5>
+        
+        <!-- HIV Test -->
+        <div class="test-item">
+          <h6>HIV Test</h6>
+          <div class="row">
+            <div class="col-md-3">
+              <label class="form-label">Test Done (Y/N)</label>
+              <select class="form-select" id="hivDone">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hivResult">
+                <option value="">Select Result</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+                <option value="Indeterminate">Indeterminate</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Malaria Test -->
+        <div class="test-item">
+          <h6>Malaria Test (RDT)</h6>
+          <div class="row">
+            <div class="col-md-3">
+              <label class="form-label">Endemic Area (Y/N)</label>
+              <select class="form-select" id="malariaEndemic">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Test Done (Y/N)</label>
+              <select class="form-select" id="malariaDone">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="malariaResult">
+                <option value="">Select Result</option>
+                <option value="Positive">Positive</option>
+                <option value="Negative">Negative</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Syphilis Test -->
+        <div class="test-item">
+          <h6>Syphilis Test</h6>
+          <div class="row">
+            <div class="col-md-3">
+              <label class="form-label">Test Done (Y/N)</label>
+              <select class="form-select" id="syphilisDone">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="syphilisResult">
+                <option value="">Select Result</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hepatitis B Test -->
+        <div class="test-item">
+          <h6>Hepatitis B</h6>
+          <div class="row">
+            <div class="col-md-3">
+              <label class="form-label">Test Done (Y/N)</label>
+              <select class="form-select" id="hepatitisBDone">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hepatitisBResult">
+                <option value="">Select Result</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hepatitis C Test -->
+        <div class="test-item">
+          <h6>Hepatitis C</h6>
+          <div class="row">
+            <div class="col-md-3">
+              <label class="form-label">Test Done (Y/N)</label>
+              <select class="form-select" id="hepatitisCDone">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hepatitisCResult">
+                <option value="">Select Result</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Urine RE Test -->
+        <div class="test-item">
+          <h6>Urine RE (Protein, Sugar)</h6>
+          <div class="row">
+            <div class="col-md-6">
+              <label class="form-label">Protein Result</label>
+              <select class="form-select" id="urineProtein">
+                <option value="">Select Result</option>
+                <option value="Absent">Absent</option>
+                <option value="Trace">Trace</option>
+                <option value="Present (+)">Present (+)</option>
+                <option value="Present (++)">Present (++)</option>
+                <option value="Present (+++)">Present (+++)</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Sugar Result</label>
+              <select class="form-select" id="urineSugar">
+                <option value="">Select Result</option>
+                <option value="Absent">Absent</option>
+                <option value="Trace">Trace</option>
+                <option value="Present (+)">Present (+)</option>
+                <option value="Present (++)">Present (++)</option>
+                <option value="Present (+++)">Present (+++)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hemoglobin Test -->
+        <div class="test-item">
+          <h6>Hemoglobin (Hb) Test</h6>
+          <div class="row">
+            <div class="col-md-4">
+              <label class="form-label">Hb Result (g/dl)</label>
+              <input type="number" class="form-control" id="hemoglobinResult" min="0" max="20" step="0.1" placeholder="e.g., 12.5">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Treatment Given (Y/N)</label>
+              <select class="form-select" id="hemoglobinTreatment">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <div class="diagnosis-result" id="hemoglobinDiagnosis" style="display: none;">
+                <strong>Diagnosis:</strong> <span id="diagnosisText">-</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Hemoglobin Range Table -->
+          <div class="hemoglobin-table">
+            <h6>Hemoglobin Range Reference</h6>
+            <table>
+              <thead>
+                <tr>
+                  <th>Hemoglobin Result (g/dl)</th>
+                  <th>Diagnosis</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>≥ 11 g/dl</td>
+                  <td>No anemia</td>
+                </tr>
+                <tr>
+                  <td>7-11 g/dl</td>
+                  <td>Mild anemia</td>
+                </tr>
+                <tr>
+                  <td>&lt; 7 g/dl</td>
+                  <td>Severe anemia</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Referral Information -->
+      <div class="test-section">
+        <h5><i class="fas fa-user-md me-2"></i>Referral Information</h5>
+        <div class="row">
+          <div class="col-md-6">
+            <label class="form-label">Referral Given (Y/N)</label>
+            <select class="form-select" id="referralGiven">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Specify Service</label>
+            <input type="text" class="form-control" id="referralService" placeholder="e.g., Obstetrician, Hematologist">
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="test-section text-center">
+        <button type="submit" class="btn btn-primary me-3">
+          <i class="fas fa-save me-2"></i>Save Test Results
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='antenatal-tests.html'">
+          <i class="fas fa-times me-2"></i>Cancel
+        </button>
+      </div>
+    </form>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading patient data...</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-content">
+      <p><strong>Maternal & Child Health Care System</strong></p>
+      <p>Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+      <p class="copyright">© 2025 Maternal & Child Health Care System — Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let isEditMode = false;
+    let currentTestId = null;
+
+    // Initialize Firebase and load data
+    document.addEventListener('DOMContentLoaded', function() {
+      firebase.auth().onAuthStateChanged(function(user) {
+        if (user) {
+          currentUser = user;
+          loadPatientFromURL();
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+
+      // Auto-calculate hemoglobin diagnosis
+      document.getElementById('hemoglobinResult').addEventListener('input', calculateHemoglobinDiagnosis);
+      
+      // Form submission
+      document.getElementById('testForm').addEventListener('submit', saveTestResults);
+    });
+
+    // Load patient from URL parameters
+    async function loadPatientFromURL() {
+      try {
+        showLoading(true);
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const patientId = urlParams.get('patient');
+        const testId = urlParams.get('test');
+        
+        if (!patientId) {
+          alert('No patient selected. Redirecting to test selection.');
+          window.location.href = 'antenatal-tests.html';
+          return;
+        }
+
+        // Load patient data
+        const db = firebase.firestore();
+        const patientDoc = await db.collection('patients').doc(patientId).get();
+        
+        if (!patientDoc.exists) {
+          alert('Patient not found.');
+          window.location.href = 'antenatal-tests.html';
+          return;
+        }
+        
+        currentPatient = { id: patientDoc.id, ...patientDoc.data() };
+        populatePatientInfo();
+        
+        // If editing existing test
+        if (testId) {
+          isEditMode = true;
+          currentTestId = testId;
+          await loadExistingTestData(testId);
+        } else {
+          // Set current date and calculate GA
+          setCurrentDate();
+          calculateCurrentGA();
+        }
+        
+      } catch (error) {
+        console.error('Error loading patient:', error);
+        alert('Error loading patient data: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Populate patient information
+    function populatePatientInfo() {
+      document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+      document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+      document.getElementById('patientLMP').textContent = currentPatient.lmp || 'Not recorded';
+      
+      if (currentPatient.lmp) {
+        const lmpDate = new Date(currentPatient.lmp);
+        const today = new Date();
+        const diffTime = Math.abs(today - lmpDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const currentGA = Math.floor(diffDays / 7);
+        document.getElementById('currentGA').textContent = `${currentGA} weeks`;
+      } else {
+        document.getElementById('currentGA').textContent = 'Not calculated';
+      }
+    }
+
+    // Set current date
+    function setCurrentDate() {
+      const today = new Date();
+      const dateString = today.toISOString().split('T')[0];
+      document.getElementById('testDate').value = dateString;
+    }
+
+    // Calculate current gestational age
+    function calculateCurrentGA() {
+      if (currentPatient.lmp) {
+        const lmpDate = new Date(currentPatient.lmp);
+        const today = new Date();
+        const diffTime = Math.abs(today - lmpDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const currentGA = Math.floor(diffDays / 7);
+        document.getElementById('gestationalAge').value = currentGA;
+      }
+    }
+
+    // Calculate hemoglobin diagnosis
+    function calculateHemoglobinDiagnosis() {
+      const hbValue = parseFloat(document.getElementById('hemoglobinResult').value);
+      const diagnosisDiv = document.getElementById('hemoglobinDiagnosis');
+      const diagnosisText = document.getElementById('diagnosisText');
+      
+      if (hbValue && !isNaN(hbValue)) {
+        let diagnosis = '';
+        if (hbValue >= 11) {
+          diagnosis = 'No anemia';
+        } else if (hbValue >= 7) {
+          diagnosis = 'Mild anemia';
+        } else {
+          diagnosis = 'Severe anemia';
+        }
+        
+        diagnosisText.textContent = diagnosis;
+        diagnosisDiv.style.display = 'block';
+      } else {
+        diagnosisDiv.style.display = 'none';
+      }
+    }
+
+    // Load existing test data for editing
+    async function loadExistingTestData(testId) {
+      try {
+        const db = firebase.firestore();
+        const testDoc = await db.collection('patients')
+          .doc(currentPatient.id)
+          .collection('testRecords')
+          .doc(testId)
+          .get();
+        
+        if (!testDoc.exists) {
+          alert('Test record not found.');
+          return;
+        }
+        
+        const testData = testDoc.data();
+        
+        // Populate form fields
+        document.getElementById('testDate').value = testData.testDate || '';
+        document.getElementById('gestationalAge').value = testData.gestationalAge || '';
+        
+        // HIV Test
+        document.getElementById('hivDone').value = testData.hivDone || '';
+        document.getElementById('hivResult').value = testData.hivResult || '';
+        
+        // Malaria Test
+        document.getElementById('malariaEndemic').value = testData.malariaEndemic || '';
+        document.getElementById('malariaDone').value = testData.malariaDone || '';
+        document.getElementById('malariaResult').value = testData.malariaResult || '';
+        
+        // Syphilis Test
+        document.getElementById('syphilisDone').value = testData.syphilisDone || '';
+        document.getElementById('syphilisResult').value = testData.syphilisResult || '';
+        
+        // Hepatitis B Test
+        document.getElementById('hepatitisBDone').value = testData.hepatitisBDone || '';
+        document.getElementById('hepatitisBResult').value = testData.hepatitisBResult || '';
+        
+        // Hepatitis C Test
+        document.getElementById('hepatitisCDone').value = testData.hepatitisCDone || '';
+        document.getElementById('hepatitisCResult').value = testData.hepatitisCResult || '';
+        
+        // Urine Test
+        document.getElementById('urineProtein').value = testData.urineProtein || '';
+        document.getElementById('urineSugar').value = testData.urineSugar || '';
+        
+        // Hemoglobin Test
+        document.getElementById('hemoglobinResult').value = testData.hemoglobinResult || '';
+        document.getElementById('hemoglobinTreatment').value = testData.hemoglobinTreatment || '';
+        
+        // Referral
+        document.getElementById('referralGiven').value = testData.referralGiven || '';
+        document.getElementById('referralService').value = testData.referralService || '';
+        
+        // Calculate hemoglobin diagnosis if value exists
+        if (testData.hemoglobinResult) {
+          calculateHemoglobinDiagnosis();
+        }
+        
+      } catch (error) {
+        console.error('Error loading test data:', error);
+        alert('Error loading test data: ' + error.message);
+      }
+    }
+
+    // Save test results
+    async function saveTestResults(event) {
+      event.preventDefault();
+      
+      try {
+        showLoading(true);
+        
+        const testData = {
+          testDate: document.getElementById('testDate').value,
+          gestationalAge: parseFloat(document.getElementById('gestationalAge').value),
+          
+          // HIV Test
+          hivDone: document.getElementById('hivDone').value,
+          hivResult: document.getElementById('hivResult').value,
+          
+          // Malaria Test
+          malariaEndemic: document.getElementById('malariaEndemic').value,
+          malariaDone: document.getElementById('malariaDone').value,
+          malariaResult: document.getElementById('malariaResult').value,
+          
+          // Syphilis Test
+          syphilisDone: document.getElementById('syphilisDone').value,
+          syphilisResult: document.getElementById('syphilisResult').value,
+          
+          // Hepatitis B Test
+          hepatitisBDone: document.getElementById('hepatitisBDone').value,
+          hepatitisBResult: document.getElementById('hepatitisBResult').value,
+          
+          // Hepatitis C Test
+          hepatitisCDone: document.getElementById('hepatitisCDone').value,
+          hepatitisCResult: document.getElementById('hepatitisCResult').value,
+          
+          // Urine Test
+          urineProtein: document.getElementById('urineProtein').value,
+          urineSugar: document.getElementById('urineSugar').value,
+          
+          // Hemoglobin Test
+          hemoglobinResult: parseFloat(document.getElementById('hemoglobinResult').value) || null,
+          hemoglobinTreatment: document.getElementById('hemoglobinTreatment').value,
+          
+          // Referral
+          referralGiven: document.getElementById('referralGiven').value,
+          referralService: document.getElementById('referralService').value,
+          
+          // Metadata
+          patientId: currentPatient.id,
+          patientName: currentPatient.name,
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        
+        const db = firebase.firestore();
+        
+        if (isEditMode) {
+          // Update existing test record
+          await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('testRecords')
+            .doc(currentTestId)
+            .update(testData);
+          
+          alert('Test results updated successfully!');
+        } else {
+          // Create new test record
+          await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('testRecords')
+            .add(testData);
+          
+          alert('Test results saved successfully!');
+        }
+        
+        // Redirect back to tests page
+        window.location.href = 'antenatal-tests.html';
+        
+      } catch (error) {
+        console.error('Error saving test results:', error);
+        alert('Error saving test results: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Show/hide loading spinner
+    function showLoading(show) {
+      document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
+    }
+
+    // Logout function
+    function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        firebase.auth().signOut().then(() => {
+          window.location.href = 'login.html';
+        }).catch(error => {
+          console.error('Logout error:', error);
+          alert('Error logging out: ' + error.message);
+        });
+      }
+    }
+  </script>
+</body>
+</html>
