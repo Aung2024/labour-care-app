@@ -404,31 +404,97 @@
     async function loadPatients() {
       try {
         showLoading(true);
+        console.log('Loading patients for user:', currentUser.uid);
         
         const db = firebase.firestore();
         let query = db.collection('patients');
         
         // Check user role and filter patients accordingly
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
         if (userDoc.exists) {
           const userData = userDoc.data();
+          console.log('User data:', userData);
           
           if (userData.role === 'Midwife') {
-            // Midwives can only see their own patients
-            query = query.where('createdBy', '==', currentUser.uid);
+            console.log('Loading patients for Midwife');
+            // For Midwives, get patients created by them using both field names for compatibility
+            const snapNew = await db.collection('patients').where('created_by', '==', currentUser.uid).get();
+            const snapOld = await db.collection('patients').where('createdBy', '==', currentUser.uid).get();
+            
+            // Combine both snapshots and remove duplicates
+            const combinedDocs = new Map();
+            
+            snapNew.forEach(doc => {
+              combinedDocs.set(doc.id, doc);
+            });
+            
+            snapOld.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, doc);
+              }
+            });
+            
+            // Create a combined snapshot-like object
+            const combinedSnapshot = {
+              forEach: (callback) => {
+                combinedDocs.forEach(callback);
+              }
+            };
+            
+            allPatients = [];
+            combinedSnapshot.forEach(doc => {
+              const patientData = { id: doc.id, ...doc.data() };
+              console.log('Found patient:', patientData.name, 'createdBy:', patientData.createdBy || patientData.created_by);
+              allPatients.push(patientData);
+            });
+            
+            console.log('Total patients loaded for Midwife:', allPatients.length);
+            populatePatientSelector();
+            updateTestCounts();
+            return; // Exit early since we handled midwife case
+            
           } else if (userData.role === 'TMO') {
+            console.log('Loading patients for TMO, township:', userData.township);
             // TMOs can see patients from their township
             query = query.where('township', '==', userData.township);
+          } else {
+            console.log('Loading all patients for Super Admin');
+            // Super Admin can see all patients (no additional filter)
           }
-          // Super Admin can see all patients (no additional filter)
+        } else {
+          console.log('User document does not exist, loading all patients');
         }
         
+        console.log('Executing query...');
         const snapshot = await query.get();
+        console.log('Query result size:', snapshot.size);
+        
         allPatients = [];
         
         snapshot.forEach(doc => {
-          allPatients.push({ id: doc.id, ...doc.data() });
+          const patientData = { id: doc.id, ...doc.data() };
+          console.log('Found patient:', patientData.name, 'createdBy:', patientData.createdBy);
+          allPatients.push(patientData);
         });
+        
+        console.log('Total patients loaded:', allPatients.length);
+        
+        // If no patients found with role-based filtering, try loading all patients as fallback
+        if (allPatients.length === 0) {
+          console.log('No patients found with role-based filtering, trying to load all patients...');
+          const allSnapshot = await db.collection('patients').get();
+          console.log('All patients query result size:', allSnapshot.size);
+          
+          allSnapshot.forEach(doc => {
+            const patientData = { id: doc.id, ...doc.data() };
+            console.log('Found all patient:', patientData.name, 'createdBy:', patientData.createdBy);
+            allPatients.push(patientData);
+          });
+          
+          console.log('Total patients loaded (fallback):', allPatients.length);
+        }
         
         // Sort patients by name on the client side to avoid Firestore indexing issues
         allPatients.sort((a, b) => {
@@ -439,6 +505,11 @@
         
         populatePatientSelector();
         updateTestCounts();
+        
+        if (allPatients.length === 0) {
+          console.log('No patients found for this user');
+          alert('No patients found for your account. Please check your user role and patient data.');
+        }
         
       } catch (error) {
         console.error('Error loading patients:', error);
