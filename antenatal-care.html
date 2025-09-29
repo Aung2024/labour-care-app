@@ -156,6 +156,53 @@
       border: 1px solid rgba(255, 255, 255, 0.2);
       box-shadow: var(--card-shadow);
     }
+
+    /* Table styling for better mobile responsiveness */
+    .table-responsive {
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: var(--card-shadow);
+    }
+
+    .table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #374151;
+      border: none;
+      padding: 1rem 0.75rem;
+    }
+
+    .table td {
+      padding: 1rem 0.75rem;
+      vertical-align: middle;
+      border-color: #e5e7eb;
+    }
+
+    .table tbody tr:hover {
+      background-color: #f8f9fa;
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      .table-responsive {
+        font-size: 0.875rem;
+      }
+      
+      .table th,
+      .table td {
+        padding: 0.5rem 0.25rem;
+      }
+      
+      .btn-sm {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+      }
+      
+      .d-flex.gap-2 {
+        flex-direction: column;
+        gap: 0.25rem !important;
+      }
+    }
   </style>
   <script>
     let currentUser = null;
@@ -294,6 +341,18 @@
             </button>
           </div>
         </div>
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Patient</th>
+                <th>Pregnancy Details</th>
+                <th>Contact & Last Visit</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
       `;
       
       antenatalPatients.forEach(patient => {
@@ -321,51 +380,53 @@
         }
         
         html += `
-          <div class="patient-card">
-            <div class="patient-info">
+          <tr>
+            <td>
+              <div class="d-flex align-items-center">
+                <i class="fas fa-user me-2 text-primary"></i>
+                <div>
+                  <div class="fw-bold">${patient.name || 'Unknown'}</div>
+                  <small class="text-muted">Age: ${patient.age || 'N/A'}</small>
+                </div>
+              </div>
+            </td>
+            <td>
               <div>
-                <div class="patient-name">
-                  <i class="fas fa-user me-2"></i>${patient.name || 'Unknown'}
-                </div>
-                <div class="patient-details">
-                  <div class="row">
-                    <div class="col-md-6">
-                      <small><strong>Age:</strong> ${patient.age || 'N/A'}</small><br>
-                      <small><strong>Phone:</strong> ${patient.phone || 'Not provided'}</small><br>
-                      <small><strong>Township:</strong> ${patient.township || 'Not set'}</small>
-                    </div>
-                    <div class="col-md-6">
-                      <small><strong>LMP:</strong> ${patient.lmp || 'Not set'}</small><br>
-                      <small><strong>EDD:</strong> ${eddInfo}</small><br>
-                      <small><strong>GA:</strong> ${gestationalInfo || 'Not calculated'}</small>
-                    </div>
-                  </div>
-                </div>
+                <div><strong>LMP:</strong> ${patient.lmp || 'Not set'}</div>
+                <div><strong>EDD:</strong> ${eddInfo}</div>
+                <div><strong>GA:</strong> ${gestationalInfo || 'Not calculated'}</div>
               </div>
-              <div class="text-end">
-                <span class="status-badge status-antenatal">Antenatal</span>
-              </div>
-            </div>
-            <div class="row mt-2">
-              <div class="col-md-6">
-                <small class="text-muted">
+            </td>
+            <td>
+              <div>
+                <div><strong>Phone:</strong> ${patient.phone || 'Not provided'}</div>
+                <div class="text-muted">
                   <i class="fas fa-calendar me-1"></i>Last Visit: ${lastVisit}
-                </small>
-              </div>
-              <div class="col-md-6 text-end">
-                <div class="action-buttons">
-                  <button class="btn btn-antenatal btn-sm" onclick="startAntenatalCare('${patient.id}')">
-                    <i class="fas fa-stethoscope me-1"></i>Start Care
-                  </button>
-                  <button class="btn btn-outline-info btn-sm" onclick="viewPatientHistory('${patient.id}')">
-                    <i class="fas fa-history me-1"></i>History
-                  </button>
                 </div>
               </div>
-            </div>
-          </div>
+            </td>
+            <td>
+              <span class="badge bg-success">Antenatal</span>
+            </td>
+            <td>
+              <div class="d-flex gap-2">
+                <button class="btn btn-success btn-sm" onclick="startAntenatalCare('${patient.id}')" title="New ANC Visit">
+                  <i class="fas fa-plus me-1"></i>New ANC Visit
+                </button>
+                <button class="btn btn-outline-primary btn-sm" onclick="generateAntenatalReport('${patient.id}')" title="Generate ANC Report">
+                  <i class="fas fa-file-alt me-1"></i>Generate Report
+                </button>
+              </div>
+            </td>
+          </tr>
         `;
       });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
 
       container.innerHTML = html;
     }
@@ -377,7 +438,7 @@
       antenatalPatients.forEach(patient => {
         const option = document.createElement('option');
         option.value = patient.id;
-        option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'} (${patient.township || 'No township'})`;
+        option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}`;
         selector.appendChild(option);
       });
     }
@@ -388,106 +449,13 @@
       window.location.href = `antenatal-form.html?patient=${patientId}`;
     }
 
-
-    function viewPatientHistory(patientId) {
-      // Show antenatal visit history
-      showPatientHistory(patientId);
+    function generateAntenatalReport(patientId) {
+      // Open antenatal report in new tab
+      window.open(`antenatal-report.html?patient=${patientId}`, '_blank');
     }
 
-    async function showPatientHistory(patientId) {
-      try {
-        // Load antenatal visit history from Firestore
-        const visitsSnapshot = await db.collection("patients")
-          .doc(patientId)
-          .collection("antenatal_visits")
-          .orderBy("visit_date", "desc")
-          .get();
 
-        const visits = [];
-        visitsSnapshot.forEach(doc => {
-          visits.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
 
-        // Create modal to show history
-        let historyHtml = `
-          <div class="modal fade" id="historyModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-              <div class="modal-content">
-                <div class="modal-header">
-                  <h5 class="modal-title">
-                    <i class="fas fa-history me-2"></i>Antenatal Visit History
-                  </h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-        `;
-
-        if (visits.length === 0) {
-          historyHtml += `
-            <div class="text-center py-4">
-              <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
-              <h5 class="text-muted">No Previous Visits</h5>
-              <p class="text-muted">This patient has no recorded antenatal visits yet.</p>
-            </div>
-          `;
-        } else {
-          visits.forEach((visit, index) => {
-            const visitDate = visit.visit_date ? new Date(visit.visit_date.seconds * 1000).toLocaleDateString() : 'Unknown date';
-            historyHtml += `
-              <div class="card mb-3">
-                <div class="card-header">
-                  <strong>Visit ${visits.length - index}</strong> - ${visitDate}
-                </div>
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col-md-6">
-                      <small><strong>Weight:</strong> ${visit.weight || 'Not recorded'} kg</small><br>
-                      <small><strong>BP:</strong> ${visit.blood_pressure || 'Not recorded'}</small><br>
-                      <small><strong>Fundal Height:</strong> ${visit.fundal_height || 'Not recorded'} cm</small>
-                    </div>
-                    <div class="col-md-6">
-                      <small><strong>Fetal Heart Rate:</strong> ${visit.fetal_heart_rate || 'Not recorded'} bpm</small><br>
-                      <small><strong>Presentation:</strong> ${visit.fetal_presentation || 'Not recorded'}</small><br>
-                      <small><strong>Next Appointment:</strong> ${visit.next_appointment || 'Not scheduled'}</small>
-                    </div>
-                  </div>
-                  ${visit.notes ? `<div class="mt-2"><small><strong>Notes:</strong> ${visit.notes}</small></div>` : ''}
-                </div>
-              </div>
-            `;
-          });
-        }
-
-        historyHtml += `
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-
-        // Remove existing modal and add new one
-        const existingModal = document.getElementById('historyModal');
-        if (existingModal) {
-          existingModal.remove();
-        }
-        
-        document.body.insertAdjacentHTML('beforeend', historyHtml);
-        
-        // Show modal
-        const modal = new bootstrap.Modal(document.getElementById('historyModal'));
-        modal.show();
-
-      } catch (error) {
-        console.error("Error loading patient history:", error);
-        alert("Error loading patient history: " + error.message);
-      }
-    }
 
     function scrollToPatients() {
       // Scroll to patients list and refresh data
