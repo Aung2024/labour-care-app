@@ -353,8 +353,8 @@
               ${getStatusText(patient.status || patient.treatmentStatus)}
             </span>
           </td>
-          <td>${patient.deliveryDate ? new Date(patient.deliveryDate).toLocaleDateString() : 'Not recorded'}</td>
-          <td>${patient.lastPostpartumVisit ? new Date(patient.lastPostpartumVisit).toLocaleDateString() : 'No visits'}</td>
+          <td>${formatDate(patient.deliveryDate) || 'Not recorded'}</td>
+          <td>${formatDate(patient.lastPostpartumVisit) || 'No visits'}</td>
           <td>
             <div class="btn-group" role="group">
               <button class="btn btn-success-action" onclick="recordNewVisit('${patient.id}')" title="New Postpartum Visit">
@@ -436,6 +436,41 @@
       if (statusLower.includes('postnatal') || statusLower.includes('postpartum') || statusLower.includes('baby') || statusLower.includes('transferred') || statusLower.includes('other') || statusLower.includes('birthed')) return 'Postnatal';
       
       return 'Unknown';
+    }
+
+    // Format date safely
+    function formatDate(dateValue) {
+      if (!dateValue) return null;
+      
+      try {
+        // Handle Firestore timestamp
+        if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+          return dateValue.toDate().toLocaleDateString();
+        }
+        
+        // Handle regular Date object
+        if (dateValue instanceof Date) {
+          return dateValue.toLocaleDateString();
+        }
+        
+        // Handle timestamp (number)
+        if (typeof dateValue === 'number') {
+          return new Date(dateValue).toLocaleDateString();
+        }
+        
+        // Handle string date
+        if (typeof dateValue === 'string') {
+          const date = new Date(dateValue);
+          if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString();
+          }
+        }
+        
+        return null;
+      } catch (error) {
+        console.error('Error formatting date:', error, dateValue);
+        return null;
+      }
     }
 
     // Action functions
