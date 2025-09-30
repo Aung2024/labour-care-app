@@ -535,14 +535,20 @@
     // Initialize dashboard
     async function initializeDashboard() {
       try {
+        console.log('Initializing dashboard...');
+        
         // Get current user
         currentUser = firebase.auth().currentUser;
+        console.log('Current user:', currentUser ? currentUser.uid : 'No user');
+        
         if (!currentUser) {
+          console.log('No user found, redirecting to login');
           window.location.href = 'login.html';
           return;
         }
 
         // Load user profile
+        console.log('Loading user profile...');
         const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
         if (!userDoc.exists) {
           throw new Error('User profile not found');
@@ -551,16 +557,22 @@
         const userData = userDoc.data();
         userRole = userData.role;
         userTownship = userData.township;
+        
+        console.log('User role:', userRole);
+        console.log('User township:', userTownship);
 
         // Update dashboard title and subtitle
         updateDashboardHeader();
 
         // Load dashboard data based on role
+        console.log('Loading dashboard data...');
         await loadDashboardData();
 
         // Hide loading, show content
         document.getElementById('loadingState').style.display = 'none';
         document.getElementById('dashboardContent').style.display = 'block';
+        
+        console.log('Dashboard initialization complete');
 
       } catch (error) {
         console.error('Error initializing dashboard:', error);
@@ -636,38 +648,54 @@
 
     // Get global statistics (Super Admin)
     async function getGlobalStatistics() {
-      const patientsSnap = await firebase.firestore().collection('patients').get();
+      try {
+        console.log('Loading global statistics...');
+        const patientsSnap = await firebase.firestore().collection('patients').get();
+        console.log('Patients found:', patientsSnap.size);
 
-      let totalPatients = 0;
-      let antenatalPatients = 0;
-      let labourPatients = 0;
-      let postnatalPatients = 0;
+        let totalPatients = 0;
+        let antenatalPatients = 0;
+        let labourPatients = 0;
+        let postnatalPatients = 0;
 
-      patientsSnap.forEach(doc => {
-        const data = doc.data();
-        totalPatients++;
+        patientsSnap.forEach(doc => {
+          const data = doc.data();
+          totalPatients++;
+          
+          // Handle new status system
+          const status = data.status || data.treatmentStatus || 'Antenatal Care';
+          console.log(`Patient ${doc.id}: status = "${status}"`);
+          
+          if (status.toLowerCase().includes('antenatal')) {
+            antenatalPatients++;
+          } else if (status.toLowerCase().includes('labour')) {
+            labourPatients++;
+          } else if (status.toLowerCase().includes('postnatal') || status.toLowerCase().includes('postpartum')) {
+            postnatalPatients++;
+          } else {
+            // Default to antenatal for unknown statuses
+            antenatalPatients++;
+          }
+        });
+
+        const stats = {
+          totalPatients,
+          antenatalPatients,
+          labourPatients,
+          postnatalPatients
+        };
         
-        // Handle new status system
-        const status = data.status || data.treatmentStatus || 'Antenatal Care';
-        
-        if (status.toLowerCase().includes('antenatal')) {
-          antenatalPatients++;
-        } else if (status.toLowerCase().includes('labour')) {
-          labourPatients++;
-        } else if (status.toLowerCase().includes('postnatal') || status.toLowerCase().includes('postpartum')) {
-          postnatalPatients++;
-        } else {
-          // Default to antenatal for unknown statuses
-          antenatalPatients++;
-        }
-      });
-
-      return {
-        totalPatients,
-        antenatalPatients,
-        labourPatients,
-        postnatalPatients
-      };
+        console.log('Calculated stats:', stats);
+        return stats;
+      } catch (error) {
+        console.error('Error in getGlobalStatistics:', error);
+        return {
+          totalPatients: 0,
+          antenatalPatients: 0,
+          labourPatients: 0,
+          postnatalPatients: 0
+        };
+      }
     }
 
     // Get township statistics (TMO)
@@ -859,6 +887,7 @@
     // Get ANC Analysis Data
     async function getANCAnalysis() {
       try {
+        console.log('Loading ANC analysis...');
         let patientsSnap;
         
         if (userRole === 'Super Admin' || userRole === 'admin') {
@@ -868,6 +897,8 @@
         } else {
           patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
         }
+        
+        console.log('Patients for ANC analysis:', patientsSnap.size);
 
         let earlyANC = 0;
         let atLeast4ANC = 0;
