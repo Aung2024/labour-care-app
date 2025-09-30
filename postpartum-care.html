@@ -41,269 +41,87 @@
       box-shadow: var(--card-shadow);
     }
 
-    .care-modules {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .module-card {
+    .patients-table {
       background: white;
       border-radius: 15px;
-      padding: 1.5rem;
+      padding: 2rem;
       box-shadow: var(--card-shadow);
-      transition: all 0.3s ease;
-      cursor: pointer;
-      border-left: 4px solid var(--primary-color);
     }
 
-    .module-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-
-    .module-icon {
-      font-size: 2.5rem;
-      color: var(--primary-color);
-      margin-bottom: 1rem;
-    }
-
-    .module-title {
-      font-size: 1.25rem;
+    .btn-primary-action {
+      background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+      border: none;
+      color: white;
       font-weight: 600;
-      color: #1f2937;
-      margin-bottom: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      transition: all 0.3s ease;
     }
 
-    .module-description {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1rem;
+    .btn-primary-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+      color: white;
+    }
+
+    .btn-success-action {
+      background: linear-gradient(135deg, #10b981, #059669);
+      border: none;
+      color: white;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      transition: all 0.3s ease;
+    }
+
+    .btn-success-action:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+      color: white;
     }
 
     .status-badge {
-      display: inline-block;
       padding: 0.25rem 0.75rem;
       border-radius: 20px;
       font-size: 0.75rem;
       font-weight: 600;
       text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
-    .status-postpartum {
-      background: #ede9fe;
-      color: #5b21b6;
+    .status-antenatal { background: #d1fae5; color: #065f46; }
+    .status-labour { background: #fee2e2; color: #991b1b; }
+    .status-postnatal { background: #ede9fe; color: #5b21b6; }
+    .status-unknown { background: #f3f4f6; color: #374151; }
+
+    .loading-spinner {
+      text-align: center;
+      padding: 3rem;
+      color: var(--primary-color);
     }
 
-    .patient-card {
-      background: white;
-      border-radius: 15px;
-      padding: 1.5rem;
-      margin-bottom: 1rem;
-      box-shadow: var(--card-shadow);
-      border-left: 4px solid var(--primary-color);
+    @media (max-width: 768px) {
+      .header-section {
+        padding: 1.5rem 0;
+      }
+      
+      .patient-selector,
+      .patients-table {
+        padding: 1rem;
+        margin: 0 1rem 1rem;
+      }
+      
+      .btn-action {
+        display: block;
+        width: 100%;
+        margin: 0.25rem 0;
+      }
     }
-
-    .patient-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-
-    .patient-name {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: #1f2937;
-    }
-
-    .patient-details {
-      color: #6b7280;
-      font-size: 0.9rem;
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 0.5rem;
-    }
-
-    .btn-postpartum {
-      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-      border: none;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-
-    .btn-postpartum:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
-      color: white;
-    }
-
-    .recovery-stage {
-      background: #f3f4f6;
-      border-radius: 8px;
-      padding: 0.5rem 1rem;
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: #374151;
-    }
-
-    .recovery-immediate { background: #fef3c7; color: #92400e; }
-    .recovery-early { background: #dbeafe; color: #1e40af; }
-    .recovery-late { background: #d1fae5; color: #065f46; }
   </style>
-  <script>
-    let currentUser = null;
-    let userRole = null;
-    let postpartumPatients = [];
-
-    firebase.auth().onAuthStateChanged(function(user) {
-      if (!user) {
-        window.location.href = "login.html";
-      } else {
-        currentUser = user;
-        loadUserData();
-        loadPostpartumPatients();
-      }
-    });
-
-    function loadUserData() {
-      db.collection("users").doc(currentUser.uid).get().then(doc => {
-        if (doc.exists) {
-          const userData = doc.data();
-          userRole = userData.role;
-          document.getElementById("userInfo").textContent = `${userData.email} (${userData.role})`;
-        }
-      });
-    }
-
-    function loadPostpartumPatients() {
-      // Load patients with postpartum status
-      db.collection("patients")
-        .where("status", "==", "postpartum")
-        .get()
-        .then(querySnapshot => {
-          postpartumPatients = [];
-          querySnapshot.forEach(doc => {
-            postpartumPatients.push({
-              id: doc.id,
-              ...doc.data()
-            });
-          });
-          displayPostpartumPatients();
-        })
-        .catch(error => {
-          console.error("Error loading postpartum patients:", error);
-        });
-    }
-
-    function getRecoveryStage(deliveryDate) {
-      if (!deliveryDate) return { stage: 'Unknown', class: '' };
-      
-      const delivery = new Date(deliveryDate.seconds * 1000);
-      const now = new Date();
-      const daysSinceDelivery = Math.floor((now - delivery) / (1000 * 60 * 60 * 24));
-      
-      if (daysSinceDelivery <= 1) {
-        return { stage: 'Immediate (0-1 days)', class: 'recovery-immediate' };
-      } else if (daysSinceDelivery <= 6) {
-        return { stage: 'Early (2-6 days)', class: 'recovery-early' };
-      } else {
-        return { stage: 'Late (7+ days)', class: 'recovery-late' };
-      }
-    }
-
-    function displayPostpartumPatients() {
-      const container = document.getElementById("patientsContainer");
-      
-      if (postpartumPatients.length === 0) {
-        container.innerHTML = `
-          <div class="text-center py-5">
-            <i class="fas fa-hands-holding-child fa-3x text-muted mb-3"></i>
-            <h4 class="text-muted">No Postpartum Patients</h4>
-            <p class="text-muted">No patients are currently in postpartum care.</p>
-            <a href="patient.html" class="btn btn-postpartum">
-              <i class="fas fa-plus me-2"></i>Register New Patient
-            </a>
-          </div>
-        `;
-        return;
-      }
-
-      let html = '';
-      postpartumPatients.forEach(patient => {
-        const recoveryStage = getRecoveryStage(patient.deliveryDate);
-        const lastVisit = patient.lastPostpartumVisit ? 
-          new Date(patient.lastPostpartumVisit.seconds * 1000).toLocaleDateString() : 
-          'Never';
-        
-        html += `
-          <div class="patient-card">
-            <div class="patient-info">
-              <div>
-                <div class="patient-name">${patient.name}</div>
-                <div class="patient-details">
-                  Age: ${patient.age} | Delivery: ${patient.deliveryDate ? 
-                    new Date(patient.deliveryDate.seconds * 1000).toLocaleDateString() : 
-                    'Not recorded'} | Baby: ${patient.babyName || 'Not recorded'}
-                </div>
-              </div>
-              <div class="text-end">
-                <span class="status-badge status-postpartum">Postpartum</span>
-                <div class="recovery-stage ${recoveryStage.class} mt-2">${recoveryStage.stage}</div>
-              </div>
-            </div>
-            <div class="row">
-              <div class="col-md-6">
-                <small class="text-muted">Last Visit: ${lastVisit}</small>
-              </div>
-              <div class="col-md-6 text-end">
-                <div class="action-buttons">
-                  <button class="btn btn-postpartum btn-sm" onclick="startPostpartumCare('${patient.id}')">
-                    <i class="fas fa-heart me-1"></i>Start Care
-                  </button>
-                  <button class="btn btn-outline-secondary btn-sm" onclick="viewPatientDetails('${patient.id}')">
-                    <i class="fas fa-eye me-1"></i>View
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      });
-
-      container.innerHTML = html;
-    }
-
-    function startPostpartumCare(patientId) {
-      // Redirect to postpartum care form for specific patient
-      window.location.href = `postpartum-form.html?patient=${patientId}`;
-    }
-
-    function viewPatientDetails(patientId) {
-      // Redirect to patient details page
-      window.location.href = `patient-details.html?patient=${patientId}`;
-    }
-
-    function selectPatient() {
-      const patientId = document.getElementById("patientSelect").value;
-      if (patientId) {
-        startPostpartumCare(patientId);
-      }
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js');
-    }
-  </script>
 </head>
 <body>
-  <!-- Header -->
+  <!-- Header Section -->
   <div class="header-section">
     <div class="container">
       <div class="row align-items-center">
@@ -312,137 +130,327 @@
             <i class="fas fa-hands-holding-child me-3"></i>
             Postpartum Care
           </h1>
-          <p class="mb-0">Post-delivery care and recovery monitoring for mothers</p>
+          <p class="mb-0 opacity-75">
+            Post-delivery care and recovery monitoring for mothers
+          </p>
         </div>
-        <div class="col-md-4 text-end">
-          <div class="d-flex align-items-center justify-content-end gap-3">
-            <span id="userInfo" class="text-white-50"></span>
-            <a href="testindex.html" class="btn btn-outline-light btn-sm">
-              <i class="fas fa-home me-2"></i>Home
-            </a>
-            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
-              <i class="fas fa-sign-out-alt me-2"></i>Logout
-            </button>
-          </div>
+        <div class="col-md-4 text-md-end">
+          <a href="testindex.html" class="btn btn-outline-light">
+            <i class="fas fa-home me-2"></i>Dashboard
+          </a>
         </div>
       </div>
     </div>
   </div>
 
   <div class="container">
-    <!-- Patient Selector -->
+    <!-- Patient Search -->
     <div class="patient-selector">
-      <h4 class="mb-3">
-        <i class="fas fa-user-plus me-2"></i>
-        Select Patient for Postpartum Care
-      </h4>
+      <h5 class="mb-3"><i class="fas fa-search me-2"></i>Search Patients</h5>
       <div class="row">
         <div class="col-md-8">
-          <select class="form-select" id="patientSelect">
-            <option value="">Choose a patient...</option>
-          </select>
+          <input type="text" class="form-control" id="searchInput" placeholder="Search patients by name, age, or status..." onkeyup="filterPatients()">
         </div>
-        <div class="col-md-4">
-          <button class="btn btn-postpartum w-100" onclick="selectPatient()">
-            <i class="fas fa-heart me-2"></i>Start Postpartum Care
+        <div class="col-md-2">
+          <button class="btn btn-primary-action w-100" onclick="filterPatients()">
+            <i class="fas fa-search me-1"></i>Search
+          </button>
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-primary w-100" onclick="loadPatients()">
+            <i class="fas fa-sync-alt me-1"></i>Refresh
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Care Modules -->
-    <div class="care-modules">
-      <div class="module-card" onclick="loadPostpartumPatients()">
-        <div class="module-icon">
-          <i class="fas fa-users"></i>
-        </div>
-        <div class="module-title">All Postpartum Patients</div>
-        <div class="module-description">View and manage all patients in postpartum care</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='postpartum-recovery.html'">
-        <div class="module-icon">
-          <i class="fas fa-heartbeat"></i>
-        </div>
-        <div class="module-title">Recovery Monitoring</div>
-        <div class="module-description">Track physical recovery and healing progress</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='postpartum-mental-health.html'">
-        <div class="module-icon">
-          <i class="fas fa-brain"></i>
-        </div>
-        <div class="module-title">Mental Health</div>
-        <div class="module-description">Monitor emotional wellbeing and mental health</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='postpartum-feeding.html'">
-        <div class="module-icon">
-          <i class="fas fa-baby"></i>
-        </div>
-        <div class="module-title">Feeding Support</div>
-        <div class="module-description">Breastfeeding and feeding support guidance</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='postpartum-contraception.html'">
-        <div class="module-icon">
-          <i class="fas fa-shield-alt"></i>
-        </div>
-        <div class="module-title">Family Planning</div>
-        <div class="module-description">Contraception and family planning counseling</div>
-      </div>
-
-      <div class="module-card" onclick="window.location.href='postpartum-followup.html'">
-        <div class="module-icon">
-          <i class="fas fa-calendar-check"></i>
-        </div>
-        <div class="module-title">Follow-up Care</div>
-        <div class="module-description">Schedule and manage follow-up appointments</div>
+    <!-- Patients Table -->
+    <div class="patients-table" id="patientsTable">
+      <h5 class="mb-3"><i class="fas fa-users me-2"></i>All Patients - Postpartum Care Actions</h5>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Patient</th>
+              <th>Age</th>
+              <th>Status</th>
+              <th>Delivery Date</th>
+              <th>Last Visit</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="patientsTableBody">
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Patients List -->
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">
-          <i class="fas fa-list me-2"></i>
-          Postpartum Patients
-        </h5>
+    <!-- Back Navigation -->
+    <div class="text-center mb-4">
+      <a href="testindex.html" class="btn btn-outline-primary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+      </a>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
       </div>
-      <div class="card-body">
-        <div id="patientsContainer">
-          <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <p class="mt-2">Loading patient data...</p>
     </div>
   </div>
 
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <p><strong>Maternal & Child Health Care System</strong></p>
+      <p>Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+      <p class="copyright">© 2025 Maternal & Child Health Care System — Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+    </div>
+  </footer>
+
   <script>
-    // Load patients for dropdown
-    function loadPatientsForDropdown() {
-      db.collection("patients")
-        .where("status", "==", "postpartum")
-        .get()
-        .then(querySnapshot => {
-          const select = document.getElementById("patientSelect");
-          select.innerHTML = '<option value="">Choose a patient...</option>';
-          
-          querySnapshot.forEach(doc => {
-            const patient = doc.data();
-            const option = document.createElement("option");
-            option.value = doc.id;
-            option.textContent = `${patient.name} (Age: ${patient.age})`;
-            select.appendChild(option);
-          });
-        });
+    let currentUser = null;
+    let currentPatient = null;
+    let allPatients = [];
+
+    // Initialize Firebase and load data
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (user) {
+        currentUser = user;
+        await loadUserData();
+        await loadPatients();
+      } else {
+        window.location.href = 'login.html';
+      }
+    });
+
+    // Load user data
+    async function loadUserData() {
+      try {
+        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('User data loaded:', userData);
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+      }
     }
 
-    // Load patients for dropdown on page load
-    loadPatientsForDropdown();
+    // Load patients based on user role
+    async function loadPatients() {
+      try {
+        showLoading(true);
+        
+        const db = firebase.firestore();
+        let query = db.collection('patients');
+        
+        // Get user data to determine access level
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        const userData = userDoc.data();
+        
+        if (userData.role === 'Midwife') {
+          console.log('Loading patients for Midwife');
+          // Load patients created by this midwife (support both field names)
+          const snapNew = await db.collection('patients').where('created_by', '==', currentUser.uid).get();
+          const snapOld = await db.collection('patients').where('createdBy', '==', currentUser.uid).get();
+          
+          const combinedDocs = new Map();
+          snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          const combinedSnapshot = {
+            forEach: (callback) => {
+              combinedDocs.forEach(callback);
+            }
+          };
+          
+          allPatients = [];
+          combinedSnapshot.forEach(doc => {
+            const patientData = { id: doc.id, ...doc.data() };
+            console.log('Found patient:', patientData.name, 'createdBy:', patientData.createdBy || patientData.created_by);
+            allPatients.push(patientData);
+          });
+          
+          console.log('Total patients loaded for Midwife:', allPatients.length);
+          displayAllPatients();
+          return; // Exit early since we handled midwife case
+          
+        } else if (userData.role === 'TMO') {
+          console.log('Loading patients for TMO, township:', userData.township);
+          // TMOs can see patients from their township
+          query = query.where('township', '==', userData.township);
+        } else if (userData.role === 'Super Admin') {
+          console.log('Loading all patients for Super Admin');
+          // Super Admin can see all patients
+        } else {
+          console.log('Unknown role, loading all patients');
+        }
+        
+        const snapshot = await query.get();
+        allPatients = [];
+        
+        snapshot.forEach(doc => {
+          const patientData = { id: doc.id, ...doc.data() };
+          allPatients.push(patientData);
+        });
+        
+        // Sort patients by name
+        allPatients.sort((a, b) => {
+          const nameA = a.name || '';
+          const nameB = b.name || '';
+          return nameA.localeCompare(nameB);
+        });
+        
+        displayAllPatients();
+        
+        if (allPatients.length === 0) {
+          console.log('No patients found for this user');
+          alert('No patients found for your account. Please check your user role and patient data.');
+        }
+        
+      } catch (error) {
+        console.error('Error loading patients:', error);
+        alert('Error loading patients: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Display all patients in table format
+    function displayAllPatients() {
+      const tbody = document.getElementById('patientsTableBody');
+      
+      if (allPatients.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              <i class="fas fa-user-slash fa-2x mb-2"></i>
+              <p class="mb-0">No patients found</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = allPatients.map(patient => `
+        <tr>
+          <td>
+            <div>
+              <strong>${patient.name || 'Unknown'}</strong>
+              <br>
+              <small class="text-muted">${patient.phone || 'No phone'}</small>
+            </div>
+          </td>
+          <td>${patient.age || 'N/A'}</td>
+          <td>
+            <span class="status-badge ${getStatusClass(patient.status || patient.treatmentStatus)}">
+              ${getStatusText(patient.status || patient.treatmentStatus)}
+            </span>
+          </td>
+          <td>${patient.deliveryDate ? new Date(patient.deliveryDate).toLocaleDateString() : 'Not recorded'}</td>
+          <td>${patient.lastPostpartumVisit ? new Date(patient.lastPostpartumVisit).toLocaleDateString() : 'No visits'}</td>
+          <td>
+            <div class="btn-group" role="group">
+              <button class="btn btn-success-action" onclick="recordNewVisit('${patient.id}')" title="New Postpartum Visit">
+                <i class="fas fa-plus me-1"></i>New Visit
+              </button>
+              <button class="btn btn-success-action" onclick="viewVisitHistory('${patient.id}')" title="Visit History">
+                <i class="fas fa-history me-1"></i>History
+              </button>
+              <button class="btn btn-success-action" onclick="generatePostpartumReport('${patient.id}')" title="Generate Report">
+                <i class="fas fa-file-alt me-1"></i>Report
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Filter patients based on search input
+    function filterPatients() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      
+      if (!searchTerm) {
+        displayAllPatients();
+        return;
+      }
+      
+      const filteredPatients = allPatients.filter(patient => {
+        const name = (patient.name || '').toLowerCase();
+        const age = (patient.age || '').toString();
+        const status = getStatusText(patient.status || patient.treatmentStatus).toLowerCase();
+        const phone = (patient.phone || '').toLowerCase();
+        
+        return name.includes(searchTerm) || 
+               age.includes(searchTerm) || 
+               status.includes(searchTerm) ||
+               phone.includes(searchTerm);
+      });
+      
+      // Temporarily replace allPatients with filtered results
+      const originalPatients = allPatients;
+      allPatients = filteredPatients;
+      displayAllPatients();
+      allPatients = originalPatients;
+    }
+
+    // Show/hide loading spinner
+    function showLoading(show) {
+      const spinner = document.getElementById('loadingSpinner');
+      const table = document.getElementById('patientsTable');
+      
+      if (show) {
+        spinner.style.display = 'block';
+        table.style.display = 'none';
+      } else {
+        spinner.style.display = 'none';
+        table.style.display = 'block';
+      }
+    }
+
+    // Get status class for styling
+    function getStatusClass(status) {
+      if (!status) return 'status-unknown';
+      
+      const statusLower = status.toLowerCase();
+      if (statusLower.includes('antenatal') || statusLower.includes('active')) return 'status-antenatal';
+      if (statusLower.includes('labour') || statusLower.includes('labor')) return 'status-labour';
+      if (statusLower.includes('postnatal') || statusLower.includes('postpartum') || statusLower.includes('baby') || statusLower.includes('transferred') || statusLower.includes('other') || statusLower.includes('birthed')) return 'status-postnatal';
+      
+      return 'status-unknown';
+    }
+
+    // Get status text for display
+    function getStatusText(status) {
+      if (!status) return 'Unknown';
+      
+      const statusLower = status.toLowerCase();
+      if (statusLower.includes('antenatal') || statusLower.includes('active')) return 'Antenatal';
+      if (statusLower.includes('labour') || statusLower.includes('labor')) return 'Labour';
+      if (statusLower.includes('postnatal') || statusLower.includes('postpartum') || statusLower.includes('baby') || statusLower.includes('transferred') || statusLower.includes('other') || statusLower.includes('birthed')) return 'Postnatal';
+      
+      return 'Unknown';
+    }
+
+    // Action functions
+    function recordNewVisit(patientId) {
+      window.location.href = `postpartum-form.html?patient=${patientId}`;
+    }
+
+    function viewVisitHistory(patientId) {
+      window.location.href = `postpartum-history.html?patient=${patientId}`;
+    }
+
+    function generatePostpartumReport(patientId) {
+      window.location.href = `postpartum-report.html?patient=${patientId}`;
+    }
   </script>
 </body>
 </html>

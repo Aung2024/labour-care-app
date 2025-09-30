@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Postpartum Care Report - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #7c3aed;
+      --secondary-color: #6d28d9;
+      --accent-color: #a78bfa;
+      --light-bg: #faf5ff;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .report-container {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 2rem;
+    }
+
+    .patient-info {
+      background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+      border: 1px solid #0ea5e9;
+      padding: 1.5rem;
+      border-radius: 10px;
+      margin-bottom: 2rem;
+    }
+
+    .patient-info h4 {
+      color: #0369a1;
+      margin-bottom: 1rem;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .info-label {
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .info-value {
+      color: #6b7280;
+    }
+
+    .visits-table {
+      margin-bottom: 2rem;
+    }
+
+    .visits-table table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0;
+    }
+
+    .visits-table th,
+    .visits-table td {
+      border: 1px solid #e5e7eb;
+      padding: 0.75rem;
+      text-align: left;
+    }
+
+    .visits-table th {
+      background: var(--light-bg);
+      color: var(--secondary-color);
+      font-weight: 600;
+    }
+
+    .danger-signs-present {
+      background: #fef2f2;
+      border-left: 4px solid #dc2626;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .danger-signs-present h5 {
+      color: #dc2626;
+      margin-bottom: 0.5rem;
+    }
+
+    .danger-signs-none {
+      background: #f0fdf4;
+      border-left: 4px solid #16a34a;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .danger-signs-none h5 {
+      color: #16a34a;
+      margin-bottom: 0.5rem;
+    }
+
+    .btn-group {
+      margin-bottom: 2rem;
+    }
+
+    .btn-primary-action {
+      background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+      border: none;
+      color: white;
+      font-weight: 600;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+      color: white;
+    }
+
+    .loading-spinner {
+      text-align: center;
+      padding: 3rem;
+      color: var(--primary-color);
+    }
+
+    /* A4 Print Styling */
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+        font-size: 12pt;
+        line-height: 1.4;
+        color: #000;
+        background: white;
+      }
+      
+      .btn-group {
+        display: none;
+      }
+      
+      .report-container {
+        max-width: 210mm;
+        margin: 0;
+        padding: 10mm;
+        box-shadow: none;
+        border-radius: 0;
+        background: white;
+      }
+      
+      .header-section {
+        background: white !important;
+        color: #000 !important;
+        padding: 5mm 0;
+        margin-bottom: 5mm;
+        border-bottom: 2px solid #000;
+      }
+      
+      .header-section h1 {
+        font-size: 18pt;
+        margin: 0;
+        color: #000;
+      }
+      
+      .patient-info {
+        background: white !important;
+        border: 1px solid #000;
+        padding: 5mm;
+        margin-bottom: 5mm;
+        page-break-inside: avoid;
+      }
+      
+      .patient-info h4 {
+        font-size: 14pt;
+        margin-bottom: 3mm;
+        color: #000;
+      }
+      
+      .info-row {
+        margin-bottom: 2mm;
+        display: flex;
+        justify-content: space-between;
+      }
+      
+      .info-label {
+        font-weight: bold;
+        color: #000;
+      }
+      
+      .info-value {
+        color: #000;
+      }
+      
+      .visits-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 5mm;
+        page-break-inside: avoid;
+        overflow: visible;
+      }
+      
+      .visits-table table {
+        width: 100%;
+        min-width: auto;
+        border-collapse: collapse;
+        font-size: 10pt;
+      }
+      
+      .visits-table th,
+      .visits-table td {
+        border: 1px solid #000;
+        padding: 2mm;
+        text-align: left;
+        white-space: nowrap;
+      }
+      
+      .visits-table th {
+        background: #f0f0f0 !important;
+        color: #000 !important;
+        font-weight: bold;
+      }
+      
+      .visits-table td {
+        background: white !important;
+        color: #000 !important;
+      }
+      
+      .danger-signs-present {
+        background: #ffebee !important;
+        border-left: 3mm solid #c62828 !important;
+        color: #c62828 !important;
+        page-break-inside: avoid;
+      }
+      
+      .danger-signs-none {
+        background: #e8f5e8 !important;
+        border-left: 3mm solid #2e7d32 !important;
+        color: #2e7d32 !important;
+        page-break-inside: avoid;
+      }
+      
+      .danger-signs-present h5,
+      .danger-signs-none h5 {
+        font-size: 12pt;
+        margin-bottom: 2mm;
+        color: #000;
+      }
+      
+      /* Page breaks */
+      .page-break {
+        page-break-before: always;
+      }
+      
+      /* Ensure proper spacing and colors */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .header-section {
+        padding: 1.5rem 0;
+      }
+      
+      .report-container {
+        padding: 1rem;
+        margin: 0 1rem 1rem;
+      }
+      
+      .visits-table {
+        font-size: 0.8rem;
+      }
+      
+      .visits-table th,
+      .visits-table td {
+        padding: 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Section -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-file-medical-alt me-3"></i>
+            Postpartum Care Report
+          </h1>
+          <p class="mb-0 opacity-75">
+            Comprehensive postpartum care visit summary
+          </p>
+        </div>
+        <div class="col-md-4 text-md-end">
+          <div class="btn-group">
+            <button class="btn btn-primary-action" onclick="window.print()">
+              <i class="fas fa-print me-2"></i>Print Report
+            </button>
+            <a href="postpartum-care.html" class="btn btn-outline-light">
+              <i class="fas fa-times me-2"></i>Close
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Information -->
+    <div class="patient-info">
+      <h4><i class="fas fa-user me-2"></i>Patient Information</h4>
+      <div class="info-row">
+        <span class="info-label">Name:</span>
+        <span class="info-value" id="patientName">Loading...</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Age:</span>
+        <span class="info-value" id="patientAge">Loading...</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Phone:</span>
+        <span class="info-value" id="patientPhone">Loading...</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Delivery Date:</span>
+        <span class="info-value" id="deliveryDate">Not recorded</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Report Date:</span>
+        <span class="info-value" id="reportDate">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Postpartum Visits Table -->
+    <div class="report-container">
+      <h4 class="mb-3"><i class="fas fa-table me-2"></i>Postpartum Visit Records</h4>
+      <div class="visits-table">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Visit #</th>
+              <th>Date</th>
+              <th>Temp (°C)</th>
+              <th>BP</th>
+              <th>Hb (g/dl)</th>
+              <th>Nipple</th>
+              <th>Uterus</th>
+              <th>Lochia</th>
+              <th>Episiotomy</th>
+              <th>Danger Signs</th>
+              <th>Referral</th>
+            </tr>
+          </thead>
+          <tbody id="visitsTableBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Danger Signs Summary -->
+    <div id="dangerSignsSummary">
+      <!-- Will be populated by JavaScript -->
+    </div>
+
+    <!-- Treatment Summary -->
+    <div class="report-container">
+      <h4 class="mb-3"><i class="fas fa-pills me-2"></i>Treatment Summary</h4>
+      <div id="treatmentSummary">
+        <!-- Will be populated by JavaScript -->
+      </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading report data...</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <p><strong>Maternal & Child Health Care System</strong></p>
+      <p>Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+      <p class="copyright">© 2025 Maternal & Child Health Care System — Designed for clinical excellence - Powered by Jhpiego Myanmar</p>
+    </div>
+  </footer>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let postpartumVisits = [];
+
+    // Initialize Firebase and load data
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (user) {
+        currentUser = user;
+        await loadReportData();
+      } else {
+        window.location.href = 'login.html';
+      }
+    });
+
+    // Load report data
+    async function loadReportData() {
+      try {
+        showLoading(true);
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const patientId = urlParams.get('patient');
+        
+        if (!patientId) {
+          alert('No patient ID provided');
+          window.location.href = 'postpartum-care.html';
+          return;
+        }
+        
+        const db = firebase.firestore();
+        
+        // Load patient data
+        const patientDoc = await db.collection('patients').doc(patientId).get();
+        if (!patientDoc.exists) {
+          alert('Patient not found');
+          window.location.href = 'postpartum-care.html';
+          return;
+        }
+        
+        currentPatient = { id: patientDoc.id, ...patientDoc.data() };
+        
+        // Load postpartum visits
+        const visitsSnapshot = await db.collection('patients')
+          .doc(patientId)
+          .collection('postpartum_visits')
+          .orderBy('visitDate', 'asc')
+          .get();
+        
+        postpartumVisits = [];
+        visitsSnapshot.forEach(doc => {
+          postpartumVisits.push({ id: doc.id, ...doc.data() });
+        });
+        
+        // Populate report
+        populatePatientInfo();
+        populateVisitsTable();
+        populateDangerSignsSummary();
+        populateTreatmentSummary();
+        
+        showLoading(false);
+        
+      } catch (error) {
+        console.error('Error loading report data:', error);
+        alert('Error loading report data: ' + error.message);
+        showLoading(false);
+      }
+    }
+
+    // Populate patient information
+    function populatePatientInfo() {
+      document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+      document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+      document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
+      
+      if (currentPatient.deliveryDate) {
+        document.getElementById('deliveryDate').textContent = new Date(currentPatient.deliveryDate).toLocaleDateString();
+      }
+      
+      // Set report date
+      const today = new Date();
+      document.getElementById('reportDate').textContent = today.toLocaleDateString();
+    }
+
+    // Populate visits table
+    function populateVisitsTable() {
+      const tbody = document.getElementById('visitsTableBody');
+      
+      if (postpartumVisits.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="11" class="text-center text-muted py-4">
+              <i class="fas fa-clipboard-list fa-2x mb-2"></i>
+              <p class="mb-0">No postpartum visits recorded</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = postpartumVisits.map(visit => {
+        const bp = visit.systolicBP && visit.diastolicBP ? `${visit.systolicBP}/${visit.diastolicBP}` : '-';
+        const dangerSigns = getDangerSignsText(visit.dangerSigns);
+        const referral = visit.referralGiven === 'Yes' ? 'Yes' : 'No';
+        
+        return `
+          <tr>
+            <td>${visit.visitNumber || '-'}</td>
+            <td>${visit.visitDate ? new Date(visit.visitDate).toLocaleDateString() : '-'}</td>
+            <td>${visit.temperature || '-'}</td>
+            <td>${bp}</td>
+            <td>${visit.hemoglobin || '-'}</td>
+            <td>${visit.nippleCondition || '-'}</td>
+            <td>${visit.uterusInvolution || '-'}</td>
+            <td>${visit.vaginalBleeding || '-'}</td>
+            <td>${visit.episiotomyHealing || '-'}</td>
+            <td>${dangerSigns}</td>
+            <td>${referral}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Get danger signs text
+    function getDangerSignsText(dangerSigns) {
+      if (!dangerSigns) return 'None';
+      
+      const signs = [];
+      if (dangerSigns.heavyBleeding) signs.push('Heavy bleeding');
+      if (dangerSigns.severeHeadache) signs.push('Severe headache');
+      if (dangerSigns.convulsions) signs.push('Convulsions');
+      if (dangerSigns.breathingProblems) signs.push('Breathing problems');
+      if (dangerSigns.feverFatigue) signs.push('Fever/Fatigue');
+      if (dangerSigns.breastEngorgement) signs.push('Breast engorgement');
+      if (dangerSigns.urinaryProblems) signs.push('Urinary problems');
+      if (dangerSigns.woundInflammation) signs.push('Wound inflammation');
+      if (dangerSigns.foulDischarge) signs.push('Foul discharge');
+      
+      return signs.length > 0 ? signs.join(', ') : 'None';
+    }
+
+    // Populate danger signs summary
+    function populateDangerSignsSummary() {
+      const container = document.getElementById('dangerSignsSummary');
+      
+      // Check if any visits have danger signs
+      const visitsWithDangerSigns = postpartumVisits.filter(visit => {
+        if (!visit.dangerSigns) return false;
+        return Object.values(visit.dangerSigns).some(sign => sign === true);
+      });
+      
+      if (visitsWithDangerSigns.length > 0) {
+        const allDangerSigns = new Set();
+        visitsWithDangerSigns.forEach(visit => {
+          Object.entries(visit.dangerSigns).forEach(([key, value]) => {
+            if (value) {
+              allDangerSigns.add(key);
+            }
+          });
+        });
+        
+        const dangerSignsList = Array.from(allDangerSigns).map(key => {
+          const labels = {
+            heavyBleeding: 'Heavy vaginal bleeding',
+            severeHeadache: 'Severe headache, Blurred vision',
+            convulsions: 'Convulsions',
+            breathingProblems: 'Fast breathing, Difficulty in breathing',
+            feverFatigue: 'Fever, Fatigue',
+            breastEngorgement: 'Breast engorgement/ Nipple inflammation',
+            urinaryProblems: 'Difficulty in micturition, Urinary incontinence',
+            woundInflammation: 'Episiotomy wound inflammation',
+            foulDischarge: 'Foul smelling vaginal discharge'
+          };
+          return labels[key] || key;
+        });
+        
+        container.innerHTML = `
+          <div class="danger-signs-present">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Danger Signs Detected</h5>
+            <p><strong>Visits with danger signs:</strong> ${visitsWithDangerSigns.length} out of ${postpartumVisits.length}</p>
+            <p><strong>Danger signs identified:</strong></p>
+            <ul>
+              ${dangerSignsList.map(sign => `<li>${sign}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="danger-signs-none">
+            <h5><i class="fas fa-check-circle me-2"></i>No Danger Signs Detected</h5>
+            <p>All ${postpartumVisits.length} postpartum visits showed no danger signs.</p>
+          </div>
+        `;
+      }
+    }
+
+    // Populate treatment summary
+    function populateTreatmentSummary() {
+      const container = document.getElementById('treatmentSummary');
+      
+      if (postpartumVisits.length === 0) {
+        container.innerHTML = '<p class="text-muted">No treatment data available.</p>';
+        return;
+      }
+      
+      // Count treatments given
+      const treatments = {
+        vitaminB1: 0,
+        vitaminA: 0,
+        ironFolic: 0,
+        contraception: 0,
+        referrals: 0
+      };
+      
+      postpartumVisits.forEach(visit => {
+        if (visit.vitaminB1) treatments.vitaminB1++;
+        if (visit.vitaminA) treatments.vitaminA++;
+        if (visit.ironFolic) treatments.ironFolic++;
+        if (visit.contraception) treatments.contraception++;
+        if (visit.referralGiven === 'Yes') treatments.referrals++;
+      });
+      
+      container.innerHTML = `
+        <div class="row">
+          <div class="col-md-6">
+            <h6>Supplements Given:</h6>
+            <ul>
+              <li>Vitamin B1: ${treatments.vitaminB1} visits</li>
+              <li>Vitamin A: ${treatments.vitaminA} visits</li>
+              <li>Iron & Folic Acid: ${treatments.ironFolic} visits</li>
+              <li>Contraception counseling: ${treatments.contraception} visits</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h6>Referrals:</h6>
+            <p><strong>Total referrals:</strong> ${treatments.referrals} out of ${postpartumVisits.length} visits</p>
+            ${treatments.referrals > 0 ? `
+              <h6>Referral reasons:</h6>
+              <ul>
+                ${postpartumVisits
+                  .filter(visit => visit.referralGiven === 'Yes' && visit.referralReason)
+                  .map(visit => `<li>${visit.referralReason}</li>`)
+                  .join('')}
+              </ul>
+            ` : '<p class="text-muted">No referrals made.</p>'}
+          </div>
+        </div>
+      `;
+    }
+
+    // Show/hide loading spinner
+    function showLoading(show) {
+      const spinner = document.getElementById('loadingSpinner');
+      const container = document.querySelector('.container');
+      
+      if (show) {
+        spinner.style.display = 'block';
+        container.style.display = 'none';
+      } else {
+        spinner.style.display = 'none';
+        container.style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>
