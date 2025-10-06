@@ -1000,6 +1000,8 @@
         const midwifeFilter = document.getElementById('midwifeFilter');
         midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
         
+        console.log('Loading midwives for township:', userTownship);
+        
         // Get all midwives in the township
         const midwivesSnap = await firebase.firestore()
           .collection('users')
@@ -1007,19 +1009,30 @@
           .where('township', '==', userTownship)
           .get();
         
+        console.log('Found midwives:', midwivesSnap.size);
+        
         midwivesSnap.forEach(doc => {
           const userData = doc.data();
+          console.log('Adding midwife:', userData.name || userData.email);
+          
           const option = document.createElement('option');
           option.value = doc.id;
-          option.textContent = userData.name || userData.email;
+          option.textContent = userData.name || userData.email || 'Unknown Midwife';
           midwifeFilter.appendChild(option);
         });
         
+        // Remove existing event listeners to prevent duplicates
+        const newMidwifeFilter = midwifeFilter.cloneNode(true);
+        midwifeFilter.parentNode.replaceChild(newMidwifeFilter, midwifeFilter);
+        
         // Add event listener for filtering
-        midwifeFilter.addEventListener('change', loadTMOAnalytics);
+        newMidwifeFilter.addEventListener('change', loadTMOAnalytics);
+        
+        console.log('Midwife filter loaded with', newMidwifeFilter.options.length, 'options');
         
       } catch (error) {
         console.error('Error loading midwife filter:', error);
+        console.error('Error details:', error.message);
       }
     }
 
@@ -1038,11 +1051,27 @@
             .where('township', '==', userTownship)
             .get();
         } else {
-          // Get patients for specific midwife
-          patientsSnap = await firebase.firestore()
-            .collection('patients')
-            .where('createdBy', '==', selectedMidwife)
-            .get();
+          // Get patients for specific midwife - try both field names
+          try {
+            patientsSnap = await firebase.firestore()
+              .collection('patients')
+              .where('createdBy', '==', selectedMidwife)
+              .get();
+            
+            // If no results with createdBy, try created_by
+            if (patientsSnap.empty) {
+              patientsSnap = await firebase.firestore()
+                .collection('patients')
+                .where('created_by', '==', selectedMidwife)
+                .get();
+            }
+          } catch (error) {
+            console.log('Trying alternative field name for midwife filter');
+            patientsSnap = await firebase.firestore()
+              .collection('patients')
+              .where('created_by', '==', selectedMidwife)
+              .get();
+          }
         }
         
         console.log('Patients found for TMO analytics:', patientsSnap.size);
