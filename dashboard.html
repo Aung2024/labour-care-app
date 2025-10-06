@@ -1625,16 +1625,21 @@
             .get();
           
           let hasPPH = false;
-          babySnap.forEach(baby => {
-            const babyData = baby.data();
-            // Check for PPH based on actual data structure from baby.html
-            // PPH is detected if: manualPPH is true OR postpartumHemorrhage is true OR totalBloodLoss >= 300
-            if (babyData.manualPPH === true || 
-                babyData.postpartumHemorrhage === true ||
-                (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
-              hasPPH = true;
-            }
-          });
+          if (!babySnap.empty) {
+            babySnap.forEach(baby => {
+              const babyData = baby.data();
+              console.log('PPH Debug - Baby data:', babyData); // Debug log
+              
+              // Check for PPH based on actual data structure from baby.html
+              // PPH is detected if: manualPPH is true OR postpartumHemorrhage is true OR totalBloodLoss >= 300
+              if (babyData.manualPPH === true || 
+                  babyData.postpartumHemorrhage === true ||
+                  (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
+                hasPPH = true;
+                console.log('PPH detected for patient:', doc.id, 'manualPPH:', babyData.manualPPH, 'postpartumHemorrhage:', babyData.postpartumHemorrhage, 'totalBloodLoss:', babyData.totalBloodLoss);
+              }
+            });
+          }
           
           if (hasPPH) {
             pphCases++;
@@ -1642,6 +1647,8 @@
             noPPH++;
           }
         }
+        
+        console.log('PPH Chart Results:', { pphCases, noPPH, totalPatients });
         
         const ctx = document.getElementById('pphChart').getContext('2d');
         chartInstances['pphChart'] = new Chart(ctx, {
@@ -1682,6 +1689,7 @@
         let successfulBirths = 0;
         let transfers = 0;
         let otherOutcomes = 0;
+        let noLabour = 0;
         let totalPatients = 0;
         
         for (const doc of patientsSnap.docs) {
@@ -1719,7 +1727,19 @@
             if (!babySnap.empty) {
               successfulBirths++;
             } else {
-              otherOutcomes++; // No outcome recorded
+              // Check if patient has any labour care records (summary data)
+              const summaryDoc = await firebase.firestore()
+                .collection('patients')
+                .doc(doc.id)
+                .collection('records')
+                .doc('summary')
+                .get();
+              
+              if (summaryDoc.exists) {
+                otherOutcomes++; // Has labour care but no outcome recorded
+              } else {
+                noLabour++; // No labour care yet
+              }
             }
           }
         }
@@ -1728,10 +1748,10 @@
         chartInstances['newbornRateChart'] = new Chart(ctx, {
           type: 'doughnut',
           data: {
-            labels: ['Successful Births', 'Transfers', 'Other Outcomes'],
+            labels: ['Successful Births', 'Transfers', 'Other Outcomes', 'No Labour'],
             datasets: [{
-              data: [successfulBirths, transfers, otherOutcomes],
-              backgroundColor: ['#10b981', '#f59e0b', '#6b7280'],
+              data: [successfulBirths, transfers, otherOutcomes, noLabour],
+              backgroundColor: ['#10b981', '#f59e0b', '#6b7280', '#e5e7eb'],
               borderWidth: 2,
               borderColor: '#ffffff'
             }]
@@ -1751,6 +1771,7 @@
           <div class="detail-item"><span class="detail-label">Successful Births:</span><span class="detail-value">${successfulBirths} (${Math.round((successfulBirths / totalPatients) * 100)}%)</span></div>
           <div class="detail-item"><span class="detail-label">Transfers:</span><span class="detail-value">${transfers} (${Math.round((transfers / totalPatients) * 100)}%)</span></div>
           <div class="detail-item"><span class="detail-label">Other Outcomes:</span><span class="detail-value">${otherOutcomes} (${Math.round((otherOutcomes / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">No Labour Care:</span><span class="detail-value">${noLabour} (${Math.round((noLabour / totalPatients) * 100)}%)</span></div>
         `;
         
       } catch (error) {
