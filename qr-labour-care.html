@@ -325,6 +325,15 @@
       
       currentUser = user;
       await loadPatients();
+      
+      // Test QRCode library availability
+      setTimeout(() => {
+        if (typeof QRCode === 'undefined') {
+          console.warn('QRCode library not loaded. QR generation may fail.');
+        } else {
+          console.log('QRCode library loaded successfully.');
+        }
+      }, 1000);
     });
 
     // Load patients for the current user
@@ -417,13 +426,35 @@
         
         // Generate QR code
         const canvas = document.getElementById('qrCanvas');
+        
+        // Wait for QRCode library to load
+        await new Promise((resolve, reject) => {
+          const checkQRCode = () => {
+            if (typeof QRCode !== 'undefined') {
+              resolve();
+            } else {
+              setTimeout(checkQRCode, 100);
+            }
+          };
+          checkQRCode();
+          
+          // Timeout after 5 seconds
+          setTimeout(() => {
+            if (typeof QRCode === 'undefined') {
+              reject(new Error('QRCode library failed to load. Please refresh the page.'));
+            }
+          }, 5000);
+        });
+        
+        // Generate QR code using QRCode library
         await QRCode.toCanvas(canvas, qrLink, {
           width: 300,
           margin: 2,
           color: {
             dark: '#000000',
             light: '#FFFFFF'
-          }
+          },
+          errorCorrectionLevel: 'M'
         });
         
         // Display QR code
@@ -450,8 +481,44 @@
       } catch (error) {
         console.error('Error generating QR code:', error);
         document.getElementById('loadingSpinner').style.display = 'none';
-        alert('Error generating QR code: ' + error.message);
+        
+        // Fallback: Create a simple text-based QR alternative
+        try {
+          await generateFallbackQR(qrLink);
+          document.getElementById('qrLink').value = qrLink;
+          document.getElementById('qrCodeContainer').style.display = 'block';
+        } catch (fallbackError) {
+          console.error('Fallback QR generation failed:', fallbackError);
+          alert('Error generating QR code: ' + error.message + '\n\nPlease try refreshing the page or contact support.');
+        }
       }
+    }
+
+    // Fallback QR generation using Google Charts API
+    async function generateFallbackQR(qrLink) {
+      const canvas = document.getElementById('qrCanvas');
+      
+      // Create a simple QR code using Google Charts API as fallback
+      const qrUrl = `https://chart.googleapis.com/chart?chs=300x300&chld=M|0&cht=qr&chl=${encodeURIComponent(qrLink)}`;
+      
+      // Create an image element
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      return new Promise((resolve, reject) => {
+        img.onload = function() {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, 300, 300);
+          ctx.drawImage(img, 0, 0, 300, 300);
+          resolve();
+        };
+        
+        img.onerror = function() {
+          reject(new Error('Failed to load QR code image'));
+        };
+        
+        img.src = qrUrl;
+      });
     }
 
     // Copy QR link to clipboard
