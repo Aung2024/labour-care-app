@@ -1617,6 +1617,7 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
+          // Check baby_records collection for PPH data (as saved from baby.html)
           const babySnap = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
@@ -1627,6 +1628,7 @@
           babySnap.forEach(baby => {
             const babyData = baby.data();
             // Check for PPH based on actual data structure from baby.html
+            // PPH is detected if: manualPPH is true OR postpartumHemorrhage is true OR totalBloodLoss >= 300
             if (babyData.manualPPH === true || 
                 babyData.postpartumHemorrhage === true ||
                 (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
@@ -1685,32 +1687,29 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
-          // Check for birth outcomes in records collection
-          const recordsSnap = await firebase.firestore()
+          // Check End Treatment data from summary.html (saved in records/endTreatment)
+          const endTreatmentDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
             .collection('records')
-            .where('outcome', '!=', null)
+            .doc('endTreatment')
             .get();
           
-          let hasOutcome = false;
-          
-          if (!recordsSnap.empty) {
-            const latestRecord = recordsSnap.docs[recordsSnap.docs.length - 1];
-            const outcome = latestRecord.data().outcome;
-            hasOutcome = true;
+          if (endTreatmentDoc.exists) {
+            const endTreatmentData = endTreatmentDoc.data();
+            const outcome = endTreatmentData.outcome;
             
-            if (outcome === 'Baby Born' || outcome === 'Normal Delivery' || outcome === 'Cesarean') {
+            if (outcome === 'birth') {
               successfulBirths++;
-            } else if (outcome === 'Transfer' || outcome === 'Referred') {
+            } else if (outcome === 'transfer') {
               transfers++;
+            } else if (outcome === 'other') {
+              otherOutcomes++;
             } else {
               otherOutcomes++;
             }
-          }
-          
-          // If no outcome recorded, check if there's a baby record (indicating successful birth)
-          if (!hasOutcome) {
+          } else {
+            // If no End Treatment recorded, check if there's a baby record (indicating successful birth)
             const babySnap = await firebase.firestore()
               .collection('patients')
               .doc(doc.id)
@@ -1788,15 +1787,15 @@
             }
           });
           
-          // Check labour transfers
-          const labourSnap = await firebase.firestore()
+          // Check labour transfers from End Treatment data (summary.html)
+          const endTreatmentDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
             .collection('records')
-            .where('outcome', '==', 'Transfer')
+            .doc('endTreatment')
             .get();
           
-          if (!labourSnap.empty) {
+          if (endTreatmentDoc.exists && endTreatmentDoc.data().outcome === 'transfer') {
             labourTransfers++;
             hasAnyReferral = true;
           }
@@ -1820,7 +1819,7 @@
           const labSnap = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
-            .collection('test_records')
+            .collection('testRecords')
             .get();
           
           labSnap.forEach(test => {
