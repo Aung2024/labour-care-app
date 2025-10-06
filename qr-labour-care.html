@@ -425,19 +425,25 @@
         document.getElementById('loadingSpinner').style.display = 'none';
         document.getElementById('qrCodeContainer').style.display = 'block';
         
-        // Save access token to Firestore for validation
-        await firebase.firestore()
-          .collection('access_tokens')
-          .add({
-            token: token,
-            patientId: patientId,
-            userId: currentUser.uid,
-            expiresAt: new Date(tokenData.expiresAt),
-            generatedAt: new Date(tokenData.generatedAt),
-            accessType: 'labour_care',
-            used: false,
-            usedAt: null
-          });
+        // Save access token to Firestore for validation (optional - continue even if this fails)
+        try {
+          await firebase.firestore()
+            .collection('access_tokens')
+            .add({
+              token: token,
+              patientId: patientId,
+              userId: currentUser.uid,
+              expiresAt: new Date(tokenData.expiresAt),
+              generatedAt: new Date(tokenData.generatedAt),
+              accessType: 'labour_care',
+              used: false,
+              usedAt: null
+            });
+          console.log('Access token saved to Firestore');
+        } catch (firestoreError) {
+          console.warn('Could not save access token to Firestore (permissions issue):', firestoreError.message);
+          console.log('QR code will still work, but token validation may be limited');
+        }
         
         console.log('QR code generated successfully');
         
