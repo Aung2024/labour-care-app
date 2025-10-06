@@ -1114,7 +1114,7 @@
     // ANC Visits Chart
     async function loadANCVisitsChart(patientsSnap) {
       try {
-        let visitCounts = { '0': 0, '1': 0, '2': 0, '3': 0, '4+': 0, '8+': 0 };
+        let visitCounts = { '0': 0, '1-3': 0, '4+': 0, '8+': 0 };
         let totalPatients = 0;
         
         for (const doc of patientsSnap.docs) {
@@ -1129,22 +1129,25 @@
           
           const visitCount = visitsSnap.size;
           
-          if (visitCount === 0) visitCounts['0']++;
-          else if (visitCount === 1) visitCounts['1']++;
-          else if (visitCount === 2) visitCounts['2']++;
-          else if (visitCount === 3) visitCounts['3']++;
-          else if (visitCount >= 8) visitCounts['8+']++;
-          else if (visitCount >= 4) visitCounts['4+']++;
+          if (visitCount === 0) {
+            visitCounts['0']++;
+          } else if (visitCount >= 8) {
+            visitCounts['8+']++;
+          } else if (visitCount >= 4) {
+            visitCounts['4+']++;
+          } else {
+            visitCounts['1-3']++;
+          }
         }
         
         const ctx = document.getElementById('ancVisitsChart').getContext('2d');
         chartInstances['ancVisitsChart'] = new Chart(ctx, {
           type: 'doughnut',
           data: {
-            labels: ['0 visits', '1 visit', '2 visits', '3 visits', '4+ visits', '8+ visits'],
+            labels: ['Zero visits', '1-3 visits', '4+ visits', '8+ visits'],
             datasets: [{
-              data: [visitCounts['0'], visitCounts['1'], visitCounts['2'], visitCounts['3'], visitCounts['4+'], visitCounts['8+']],
-              backgroundColor: ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'],
+              data: [visitCounts['0'], visitCounts['1-3'], visitCounts['4+'], visitCounts['8+']],
+              backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
               borderWidth: 2,
               borderColor: '#ffffff'
             }]
@@ -1275,18 +1278,27 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
-          // Check oxytocin usage in summary records
-          const summarySnap = await firebase.firestore()
+          // Check oxytocin usage in records/summary document
+          const summaryDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
             .collection('records')
-            .where('oxytocin', '!=', null)
+            .doc('summary')
             .get();
           
-          if (!summarySnap.empty) {
-            const hasOxytocin = summarySnap.docs.some(record => 
-              record.data().oxytocin === 'Yes' || record.data().oxytocin === true
-            );
+          if (summaryDoc.exists) {
+            const data = summaryDoc.data();
+            let hasOxytocin = false;
+            
+            // Check all medication oxytocin fields (they are saved as Medication_Oxytocin_XX_XX)
+            Object.keys(data).forEach(key => {
+              if (key.startsWith('Medication_Oxytocin_') && !key.includes('_UL') && !key.includes('_drops')) {
+                if (data[key] === 'Y' || data[key] === 'Yes') {
+                  hasOxytocin = true;
+                }
+              }
+            });
+            
             if (hasOxytocin) {
               oxytocinYes++;
             } else {
@@ -1540,7 +1552,7 @@
           const testsSnap = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
-            .collection('test_records')
+            .collection('testRecords')
             .get();
           
           let hasHIV = false;
@@ -1548,8 +1560,9 @@
           
           testsSnap.forEach(test => {
             const testData = test.data();
-            if (testData.hiv === 'Positive') hasHIV = true;
-            if (testData.syphilis === 'Positive') hasSyphilis = true;
+            // Based on actual field names from antenatal-tests-form.html
+            if (testData.hivDone === 'Yes' && testData.hivResult === 'Reactive') hasHIV = true;
+            if (testData.syphilisDone === 'Yes' && testData.syphilisResult === 'Reactive') hasSyphilis = true;
           });
           
           if (hasHIV || hasSyphilis) {
@@ -1613,8 +1626,10 @@
           let hasPPH = false;
           babySnap.forEach(baby => {
             const babyData = baby.data();
-            if (babyData.pph === 'Yes' || babyData.pph === true ||
-                (babyData.bloodLoss && parseInt(babyData.bloodLoss) >= 300)) {
+            // Check for PPH based on actual data structure from baby.html
+            if (babyData.manualPPH === true || 
+                babyData.postpartumHemorrhage === true ||
+                (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
               hasPPH = true;
             }
           });
@@ -1670,16 +1685,20 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
-          const summarySnap = await firebase.firestore()
+          // Check for birth outcomes in records collection
+          const recordsSnap = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
             .collection('records')
             .where('outcome', '!=', null)
             .get();
           
-          if (!summarySnap.empty) {
-            const latestRecord = summarySnap.docs[summarySnap.docs.length - 1];
+          let hasOutcome = false;
+          
+          if (!recordsSnap.empty) {
+            const latestRecord = recordsSnap.docs[recordsSnap.docs.length - 1];
             const outcome = latestRecord.data().outcome;
+            hasOutcome = true;
             
             if (outcome === 'Baby Born' || outcome === 'Normal Delivery' || outcome === 'Cesarean') {
               successfulBirths++;
@@ -1688,7 +1707,10 @@
             } else {
               otherOutcomes++;
             }
-          } else {
+          }
+          
+          // If no outcome recorded, check if there's a baby record (indicating successful birth)
+          if (!hasOutcome) {
             const babySnap = await firebase.firestore()
               .collection('patients')
               .doc(doc.id)
@@ -1697,6 +1719,8 @@
             
             if (!babySnap.empty) {
               successfulBirths++;
+            } else {
+              otherOutcomes++; // No outcome recorded
             }
           }
         }
