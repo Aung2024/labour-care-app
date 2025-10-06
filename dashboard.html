@@ -1617,28 +1617,35 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
-          // Check baby_records collection for PPH data (as saved from baby.html)
-          const babySnap = await firebase.firestore()
+          // Check records/birthRecord document for PPH data (as saved from baby.html)
+          const birthRecordDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
-            .collection('baby_records')
+            .collection('records')
+            .doc('birthRecord')
             .get();
           
           let hasPPH = false;
-          if (!babySnap.empty) {
-            babySnap.forEach(baby => {
-              const babyData = baby.data();
-              console.log('PPH Debug - Baby data:', babyData); // Debug log
-              
-              // Check for PPH based on actual data structure from baby.html
-              // PPH is detected if: manualPPH is true OR postpartumHemorrhage is true OR totalBloodLoss >= 300
-              if (babyData.manualPPH === true || 
-                  babyData.postpartumHemorrhage === true ||
-                  (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
-                hasPPH = true;
-                console.log('PPH detected for patient:', doc.id, 'manualPPH:', babyData.manualPPH, 'postpartumHemorrhage:', babyData.postpartumHemorrhage, 'totalBloodLoss:', babyData.totalBloodLoss);
-              }
-            });
+          if (birthRecordDoc.exists) {
+            const babyData = birthRecordDoc.data();
+            console.log('PPH Debug - Baby data:', babyData); // Debug log
+            
+            // Check for PPH based on actual data structure from baby.html
+            // PPH is detected if: manualPPH is true OR pphDetected is true OR pphAutoDetected is true OR totalBloodLoss >= 300
+            if (babyData.manualPPH === true || 
+                babyData.pphDetected === true ||
+                babyData.pphAutoDetected === true ||
+                babyData.postpartumHemorrhage === true ||
+                (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
+              hasPPH = true;
+              console.log('PPH detected for patient:', doc.id, {
+                manualPPH: babyData.manualPPH,
+                pphDetected: babyData.pphDetected,
+                pphAutoDetected: babyData.pphAutoDetected,
+                postpartumHemorrhage: babyData.postpartumHemorrhage,
+                totalBloodLoss: babyData.totalBloodLoss
+              });
+            }
           }
           
           if (hasPPH) {
@@ -1717,14 +1724,15 @@
               otherOutcomes++;
             }
           } else {
-            // If no End Treatment recorded, check if there's a baby record (indicating successful birth)
-            const babySnap = await firebase.firestore()
+            // If no End Treatment recorded, check if there's a birth record (indicating successful birth)
+            const birthRecordDoc = await firebase.firestore()
               .collection('patients')
               .doc(doc.id)
-              .collection('baby_records')
+              .collection('records')
+              .doc('birthRecord')
               .get();
             
-            if (!babySnap.empty) {
+            if (birthRecordDoc.exists) {
               successfulBirths++;
             } else {
               // Check if patient has any labour care records (summary data)
