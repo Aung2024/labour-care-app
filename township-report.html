@@ -214,6 +214,8 @@
       padding: 20px;
       background: #f8fafc;
       border-radius: 12px;
+      position: relative;
+      z-index: 10;
     }
 
     .btn-generate {
@@ -228,10 +230,15 @@
       box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
     }
 
-    .btn-generate:hover {
+    .btn-generate:hover:not(:disabled) {
       background: linear-gradient(135deg, var(--secondary-color), #1e3a8a);
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-generate:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     .btn-print {
@@ -250,6 +257,22 @@
       transform: translateY(-2px);
     }
 
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+      transform: translateY(-2px);
+    }
+
     .loading-spinner {
       display: none;
       text-align: center;
@@ -260,6 +283,29 @@
       width: 3rem;
       height: 3rem;
       border-width: 0.3em;
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      .action-buttons {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .btn-generate,
+      .btn-print,
+      .btn-secondary {
+        width: 100%;
+        text-align: center;
+      }
+
+      .insights-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-wrapper {
+        height: 250px;
+      }
     }
 
     /* Print Styles */
@@ -283,7 +329,7 @@
       .report-header {
         background: #2563eb !important;
         -webkit-print-color-adjust: exact;
-        color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       .chart-container {
@@ -538,11 +584,14 @@
 
         <!-- Action Buttons -->
         <div class="action-buttons">
-          <button class="btn-generate" onclick="generateReport()">
-            <i class="fas fa-sync-alt"></i> Generate Report
+          <button class="btn-generate" id="generateBtn" onclick="generateReport()">
+            <i class="fas fa-sync-alt"></i> Regenerate Report
           </button>
           <button class="btn-print" onclick="printReport()">
             <i class="fas fa-print"></i> Print Report
+          </button>
+          <button class="btn btn-secondary" onclick="window.location.href='index.html'">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
           </button>
         </div>
       </div>
@@ -590,6 +639,8 @@
       
       userTownship = userDoc.data().township;
       
+      console.log('Township Report initialized for:', userTownship);
+      
       // Auto-generate report
       await generateReport();
     });
@@ -597,6 +648,15 @@
     // Generate comprehensive township report
     async function generateReport() {
       try {
+        console.log('Generate Report button clicked');
+        
+        // Disable button during generation
+        let generateBtn = document.getElementById('generateBtn');
+        if (generateBtn) {
+          generateBtn.disabled = true;
+          generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+        }
+        
         // Show loading spinner
         document.getElementById('loadingSpinner').style.display = 'block';
         document.getElementById('reportSections').style.display = 'none';
@@ -620,11 +680,26 @@
         document.getElementById('loadingSpinner').style.display = 'none';
         document.getElementById('reportSections').style.display = 'block';
         
+        // Re-enable button
+        generateBtn = document.getElementById('generateBtn');
+        if (generateBtn) {
+          generateBtn.disabled = false;
+          generateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Regenerate Report';
+        }
+        
         console.log('Township report generated successfully');
         
       } catch (error) {
         console.error('Error generating report:', error);
         document.getElementById('loadingSpinner').style.display = 'none';
+        
+        // Re-enable button on error
+        let generateBtn = document.getElementById('generateBtn');
+        if (generateBtn) {
+          generateBtn.disabled = false;
+          generateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Regenerate Report';
+        }
+        
         alert('Error generating report: ' + error.message);
       }
     }
@@ -1220,7 +1295,7 @@
           priority: 'Medium',
           category: 'Testing',
           title: 'Improve HIV/Syphilis Testing Coverage',
-          description: Only ${Math.round((testedCount / totalPatients) * 100)}% of patients have been tested. Strengthen testing protocols and follow-up procedures.`
+          description: `Only ${Math.round((testedCount / totalPatients) * 100)}% of patients have been tested. Strengthen testing protocols and follow-up procedures.`
         });
       }
       
