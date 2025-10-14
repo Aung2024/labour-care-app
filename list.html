@@ -171,7 +171,7 @@
     /* Patient Cards Grid */
     .patients-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 1.5rem;
       margin-bottom: 2rem;
     }
@@ -179,7 +179,7 @@
     .patient-card {
       background: white;
       border-radius: 15px;
-      padding: 1.5rem;
+      padding: 1.25rem;
       box-shadow: var(--card-shadow);
       transition: all 0.3s ease;
       cursor: pointer;
@@ -233,10 +233,15 @@
       color: #5b21b6;
     }
 
+    .status-badge.registered {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
     .patient-details {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
+      gap: 0.5rem;
       margin-bottom: 1rem;
     }
 
@@ -422,11 +427,11 @@
         <div class="page-subtitle">Choose a patient to access comprehensive care management</div>
       </div>
       <div class="header-right">
-        <button class="btn btn-outline-light btn-sm" onclick="window.location.href='index.html'">
-          <i class="fas fa-home"></i> Home
-        </button>
+        <a href="index.html" class="btn btn-outline-light btn-sm me-2">
+          <i class="fas fa-home me-2"></i>Home
+        </a>
         <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); sessionStorage.clear(); window.location='login.html';">
-          <i class="fas fa-sign-out-alt"></i> Logout
+          <i class="fas fa-sign-out-alt me-2"></i>Logout
         </button>
       </div>
     </div>
@@ -441,7 +446,7 @@
           type="text" 
           id="searchInput" 
           class="search-input" 
-          placeholder="Search by name, phone number, or patient ID..." 
+          placeholder="Search by name, phone, address, or patient ID..." 
           oninput="filterPatients()"
         >
       </div>
@@ -449,13 +454,16 @@
         <div class="filter-chip active" data-filter="all" onclick="setStatusFilter('all')">
           <i class="fas fa-users me-1"></i> All Patients
         </div>
-        <div class="filter-chip" data-filter="Antenatal" onclick="setStatusFilter('Antenatal')">
+        <div class="filter-chip" data-filter="registered" onclick="setStatusFilter('registered')">
+          <i class="fas fa-user-plus me-1"></i> Registered
+        </div>
+        <div class="filter-chip" data-filter="antenatal" onclick="setStatusFilter('antenatal')">
           <i class="fas fa-baby-carriage me-1"></i> Antenatal
         </div>
-        <div class="filter-chip" data-filter="Labour Care" onclick="setStatusFilter('Labour Care')">
+        <div class="filter-chip" data-filter="labour care" onclick="setStatusFilter('labour care')">
           <i class="fas fa-heartbeat me-1"></i> Labour Care
         </div>
-        <div class="filter-chip" data-filter="Postnatal" onclick="setStatusFilter('Postnatal')">
+        <div class="filter-chip" data-filter="postnatal" onclick="setStatusFilter('postnatal')">
           <i class="fas fa-hands-holding-child me-1"></i> Postnatal
         </div>
       </div>
@@ -638,10 +646,24 @@
       card.className = 'patient-card';
       card.onclick = () => selectPatient(patient);
       
-      const status = patient.status || 'Antenatal';
-      const statusClass = status.toLowerCase().replace(' ', '-');
+      const status = patient.status || 'registered';
+      let statusClass = status.toLowerCase();
       
-      const isHighRisk = patient.high_risk_pregnancy === 'Yes' || patient.high_risk_pregnancy === true;
+      // Normalize status for display
+      let displayStatus = status;
+      if (status === 'registered') displayStatus = 'Registered';
+      else if (status === 'antenatal_care') displayStatus = 'Antenatal Care';
+      else if (status === 'labour_care') displayStatus = 'Labour Care';
+      else if (status === 'postnatal_care') displayStatus = 'Postnatal Care';
+      
+      // Map status to CSS classes
+      if (statusClass.includes('antenatal')) statusClass = 'antenatal';
+      else if (statusClass.includes('labour')) statusClass = 'labour';
+      else if (statusClass.includes('postnatal')) statusClass = 'postnatal';
+      else if (statusClass === 'registered') statusClass = 'registered';
+      else statusClass = 'antenatal'; // fallback
+      
+      const isHighRisk = patient.high_risk === 'yes' || patient.high_risk === true;
       const riskBadge = isHighRisk ? 
         '<span class="risk-badge high">High Risk</span>' : 
         '<span class="risk-badge normal">Normal</span>';
@@ -667,7 +689,7 @@
             <div class="patient-name">${patient.name || 'Unknown'}</div>
             <div class="patient-id">ID: ${patient.id.substring(0, 8)}...</div>
           </div>
-          <span class="status-badge ${statusClass}">${status}</span>
+          <span class="status-badge ${statusClass}">${displayStatus}</span>
         </div>
         <div class="patient-details">
           <div class="detail-item">
@@ -675,24 +697,16 @@
             <span class="detail-value">${patient.age || '-'} years</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">Phone</span>
-            <span class="detail-value">${patient.phone_number || patient.phone || '-'}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">GA</span>
-            <span class="detail-value">${gaDisplay}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">EDD</span>
-            <span class="detail-value">${eddDisplay}</span>
+            <span class="detail-label">Address</span>
+            <span class="detail-value">${patient.patient_address || patient.patientAddress || '-'}</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">Risk Level</span>
             <span class="detail-value">${riskBadge}</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">Address</span>
-            <span class="detail-value">${patient.patient_address || patient.patientAddress || '-'}</span>
+            <span class="detail-label">Status</span>
+            <span class="detail-value">${status}</span>
           </div>
         </div>
         <div class="patient-actions">
@@ -751,22 +765,33 @@
 
     // Filter patients by search and status
     function filterPatients() {
-      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
       
       filteredPatients = allPatients.filter(patient => {
         // Status filter
         if (currentStatusFilter !== 'all') {
-          const patientStatus = patient.status || 'Antenatal';
-          if (patientStatus !== currentStatusFilter) return false;
+          const patientStatus = patient.status || 'registered';
+          // Handle different status formats
+          let normalizedStatus = patientStatus.toLowerCase();
+          if (normalizedStatus === 'antenatal_care') normalizedStatus = 'antenatal';
+          if (normalizedStatus === 'labour_care') normalizedStatus = 'labour care';
+          if (normalizedStatus === 'postnatal_care') normalizedStatus = 'postnatal';
+          
+          const normalizedFilter = currentStatusFilter.toLowerCase();
+          if (normalizedStatus !== normalizedFilter) return false;
         }
         
         // Search filter
         if (searchTerm) {
           const name = (patient.name || '').toLowerCase();
-          const phone = (patient.phone_number || patient.phone || '').toLowerCase();
+          const phone = (patient.phone || '').toLowerCase();
+          const address = (patient.patient_address || patient.patientAddress || '').toLowerCase();
           const id = patient.id.toLowerCase();
           
-          if (!name.includes(searchTerm) && !phone.includes(searchTerm) && !id.includes(searchTerm)) {
+          if (!name.includes(searchTerm) && 
+              !phone.includes(searchTerm) && 
+              !address.includes(searchTerm) &&
+              !id.includes(searchTerm)) {
             return false;
           }
         }
