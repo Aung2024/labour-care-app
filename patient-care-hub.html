@@ -711,23 +711,43 @@
       try {
         const patientId = selectedPatient.id;
         
-        // Load ANC visits
+        // Load ANC visits - check multiple possible field names
         const ancVisitsSnap = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('antenatal_visits')
-          .orderBy('visit_date', 'desc')
+          .orderBy('timestamp', 'desc')
           .get();
         
         const ancCount = ancVisitsSnap.size;
         document.getElementById('ancVisits').textContent = ancCount;
         
+        // Update ANC action button text based on visit count
+        const ancActionBtn = document.querySelector('.care-card.antenatal .care-action');
         if (ancCount > 0) {
+          if (ancActionBtn) {
+            ancActionBtn.innerHTML = '<i class="fas fa-plus me-2"></i>Add ANC Visit';
+          }
+          
           const lastVisit = ancVisitsSnap.docs[0].data();
-          document.getElementById('lastANCVisit').textContent = formatDateShort(lastVisit.visit_date);
+          // Try multiple possible date fields
+          const lastVisitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
+          if (lastVisitDate) {
+            const dateToFormat = lastVisitDate.seconds ? 
+              new Date(lastVisitDate.seconds * 1000) : 
+              new Date(lastVisitDate);
+            document.getElementById('lastANCVisit').textContent = formatDateShort(dateToFormat);
+          }
+        } else {
+          if (ancActionBtn) {
+            ancActionBtn.innerHTML = '<i class="fas fa-stethoscope me-2"></i>Start ANC Visit';
+          }
         }
         
-        // Load Labour status
+        // Load Labour status - check patient's current status and summary data
+        const currentStatus = selectedPatient.status || 'registered';
+        
+        // Check if patient has summary record (labour care data)
         const summaryDoc = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
@@ -736,27 +756,97 @@
           .get();
         
         if (summaryDoc.exists) {
-          document.getElementById('labourStatus').textContent = 'In Progress';
           const summaryData = summaryDoc.data();
-          if (summaryData.activeFirstStage_Time) {
-            document.getElementById('lastLabourUpdate').textContent = formatDateShort(summaryData.activeFirstStage_Time);
+          
+          // Determine labour status based on patient's current status and summary data
+          if (currentStatus === 'postnatal_care' || currentStatus === 'postpartum') {
+            // Patient has completed labour care and moved to postnatal
+            document.getElementById('labourStatus').textContent = 'Labour Care Done';
+            document.getElementById('labourStatus').style.color = '#059669'; // Green color for completed
+            
+            // Update action button text
+            const labourActionBtn = document.querySelector('.care-card.labour .care-action');
+            if (labourActionBtn) {
+              labourActionBtn.innerHTML = '<i class="fas fa-eye me-2"></i>View Labour Record';
+            }
+            
+            // Show completion date (second stage time or delivery time)
+            const completionDate = summaryData.secondStage_Time || summaryData.deliveryTime || summaryData.timestamp;
+            if (completionDate) {
+              const dateToFormat = completionDate.seconds ? 
+                new Date(completionDate.seconds * 1000) : 
+                new Date(completionDate);
+              document.getElementById('lastLabourUpdate').textContent = formatDateShort(dateToFormat);
+            }
+          } else if (currentStatus === 'labour_care') {
+            // Patient is currently in labour care
+            document.getElementById('labourStatus').textContent = 'In Progress';
+            document.getElementById('labourStatus').style.color = '#dc2626'; // Red color for in progress
+            
+            // Update action button text
+            const labourActionBtn = document.querySelector('.care-card.labour .care-action');
+            if (labourActionBtn) {
+              labourActionBtn.innerHTML = '<i class="fas fa-edit me-2"></i>Continue Labour Care';
+            }
+            
+            // Show when labour started (active first stage time)
+            const startDate = summaryData.activeFirstStage_Time || summaryData.timestamp;
+            if (startDate) {
+              const dateToFormat = startDate.seconds ? 
+                new Date(startDate.seconds * 1000) : 
+                new Date(startDate);
+              document.getElementById('lastLabourUpdate').textContent = formatDateShort(dateToFormat);
+            }
+          } else {
+            // Patient has labour data but status is not labour/postnatal (shouldn't happen)
+            document.getElementById('labourStatus').textContent = 'Data Available';
+            document.getElementById('labourStatus').style.color = '#6b7280';
+            
+            // Update action button text
+            const labourActionBtn = document.querySelector('.care-card.labour .care-action');
+            if (labourActionBtn) {
+              labourActionBtn.innerHTML = '<i class="fas fa-eye me-2"></i>View Labour Data';
+            }
           }
+        } else {
+          // No labour care data yet
+          document.getElementById('labourStatus').textContent = 'Not Started';
+          document.getElementById('labourStatus').style.color = '#6b7280';
         }
         
-        // Load PNC visits
-        const pncVisitsSnap = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('postpartum_visits')
-          .orderBy('visit_date', 'desc')
-          .get();
+        // Load PNC visits - check multiple possible collection names
+        let pncCount = 0;
+        let lastPNCDate = null;
         
-        const pncCount = pncVisitsSnap.size;
+        try {
+          // Try postpartum_visits collection first
+          const pncVisitsSnap = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('postpartum_visits')
+            .orderBy('timestamp', 'desc')
+            .get();
+          
+          pncCount = pncVisitsSnap.size;
+          
+          if (pncCount > 0) {
+            const lastVisit = pncVisitsSnap.docs[0].data();
+            // Try multiple possible date fields
+            const visitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
+            if (visitDate) {
+              lastPNCDate = visitDate.seconds ? 
+                new Date(visitDate.seconds * 1000) : 
+                new Date(visitDate);
+            }
+          }
+        } catch (error) {
+          console.log('No postpartum_visits collection found, trying alternative...');
+        }
+        
         document.getElementById('pncVisits').textContent = pncCount;
         
-        if (pncCount > 0) {
-          const lastVisit = pncVisitsSnap.docs[0].data();
-          document.getElementById('lastPNCVisit').textContent = formatDateShort(lastVisit.visit_date);
+        if (lastPNCDate) {
+          document.getElementById('lastPNCVisit').textContent = formatDateShort(lastPNCDate);
         }
         
         // Load Baby record
