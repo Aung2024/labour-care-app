@@ -238,234 +238,28 @@
         if (doc.exists) {
           const userData = doc.data();
           userRole = userData.role;
-          document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
           
-          // Load antenatal patients after user role is loaded
-          loadAntenatalPatients();
+          // No need to load all patients anymore
         }
       });
     }
 
-    async function loadAntenatalPatients() {
-      try {
-        if (!currentUser || !userRole) {
-          console.log('User not loaded yet, skipping patient load');
-          return;
-        }
-
-        // Get user's township for TMO role
-        let userTownship = null;
-        if (userRole === "TMO") {
-          const userDoc = await db.collection("users").doc(currentUser.uid).get();
-          if (userDoc.exists) {
-            userTownship = userDoc.data().township;
-          }
-        }
-
-        antenatalPatients = [];
-
-        // Load all patients based on user role (no status filtering)
-        if (userRole === "Super Admin" || userRole === "admin") {
-          // Super Admin sees all patients
-          const querySnapshot = await db.collection("patients")
-            .get();
-          querySnapshot.forEach(doc => {
-            antenatalPatients.push({
-              id: doc.id,
-              ...doc.data()
-            });
-          });
-        } else if (userRole === "TMO") {
-          // TMO sees all patients from their township
-          const querySnapshot = await db.collection("patients")
-            .where("township", "==", userTownship)
-            .get();
-          querySnapshot.forEach(doc => {
-            antenatalPatients.push({
-              id: doc.id,
-              ...doc.data()
-            });
-          });
-        } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees all patients they created
-          const snapNew = await db.collection("patients")
-            .where("created_by", "==", currentUser.uid)
-            .get();
-          const snapOld = await db.collection("patients")
-            .where("createdBy", "==", currentUser.uid)
-            .get();
-
-          // Combine both snapshots and remove duplicates
-          const combinedDocs = new Map();
-          
-          [snapNew, snapOld].forEach(snap => {
-            snap.forEach(doc => {
-              if (!combinedDocs.has(doc.id)) {
-                combinedDocs.set(doc.id, {
-                  id: doc.id,
-                  ...doc.data()
-                });
-              }
-            });
-          });
-          
-          antenatalPatients = Array.from(combinedDocs.values());
-        }
-
-        // Sort by name for better user experience
-        antenatalPatients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-        
-        displayAntenatalPatients();
-        populatePatientSelector();
-      } catch (error) {
-        console.error("Error loading antenatal patients:", error);
-        document.getElementById("patientsContainer").innerHTML = `
-          <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            Error loading patients: ${error.message}
-          </div>
-        `;
-      }
-    }
-
-    function displayAntenatalPatients() {
-      const container = document.getElementById("patientsContainer");
+    function startNewAncVisit() {
+      // Get selected patient from session
+      const patientId = sessionStorage.getItem('selectedPatientId');
       
-      if (antenatalPatients.length === 0) {
-        container.innerHTML = `
-          <div class="text-center py-5">
-            <i class="fas fa-baby-carriage fa-3x text-muted mb-3"></i>
-            <h4 class="text-muted">No Antenatal Patients</h4>
-            <p class="text-muted">No patients are currently in antenatal care.</p>
-            <a href="patient-enhanced.html" class="btn btn-antenatal">
-              <i class="fas fa-plus me-2"></i>Register New Patient
-            </a>
-          </div>
-        `;
+      if (!patientId) {
+        alert('No patient selected. Please select a patient first.');
+        window.location.href = 'list.html';
         return;
       }
-
-      let html = `
-        <div class="row mb-3">
-          <div class="col-md-8">
-            <h5><i class="fas fa-users me-2"></i>Antenatal Patients (${antenatalPatients.length})</h5>
-          </div>
-          <div class="col-md-4 text-end">
-            <button class="btn btn-outline-primary btn-sm" onclick="loadAntenatalPatients()">
-              <i class="fas fa-sync me-1"></i>Refresh
-            </button>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-hover">
-            <thead class="table-light">
-              <tr>
-                <th>Patient</th>
-                <th>Pregnancy Details</th>
-                <th>Contact & Last Visit</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
       
-      antenatalPatients.forEach(patient => {
-        const lastVisit = patient.lastAntenatalVisit ? 
-          new Date(patient.lastAntenatalVisit.seconds * 1000).toLocaleDateString() : 
-          'No visits yet';
-          
-        // Calculate gestational age if LMP is available
-        let gestationalInfo = '';
-        if (patient.lmp) {
-          const lmpDate = new Date(patient.lmp);
-          const today = new Date();
-          const diffTime = today - lmpDate;
-          const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-          const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-          gestationalInfo = `${diffWeeks}w ${diffDays}d`;
-        }
-        
-        // Calculate EDD if LMP is available
-        let eddInfo = patient.edd || 'Not calculated';
-        if (patient.lmp && !patient.edd) {
-          const lmpDate = new Date(patient.lmp);
-          const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000)); // Add 280 days
-          eddInfo = eddDate.toLocaleDateString();
-        }
-        
-        html += `
-          <tr>
-            <td>
-              <div class="d-flex align-items-center">
-                <i class="fas fa-user me-2 text-primary"></i>
-                <div>
-                  <div class="fw-bold">${patient.name || 'Unknown'}</div>
-                  <small class="text-muted">Age: ${patient.age || 'N/A'}</small>
-                </div>
-              </div>
-            </td>
-            <td>
-              <div>
-                <div><strong>LMP:</strong> ${patient.lmp || 'Not set'}</div>
-                <div><strong>EDD:</strong> ${eddInfo}</div>
-                <div><strong>GA:</strong> ${gestationalInfo || 'Not calculated'}</div>
-              </div>
-            </td>
-            <td>
-              <div>
-                <div><strong>Phone:</strong> ${patient.phone || 'Not provided'}</div>
-                <div class="text-muted">
-                  <i class="fas fa-calendar me-1"></i>Last Visit: ${lastVisit}
-                </div>
-              </div>
-            </td>
-            <td>
-              <span class="badge bg-success">Antenatal</span>
-            </td>
-            <td>
-              <div class="d-flex gap-2">
-                <button class="btn btn-success btn-sm" onclick="startAntenatalCare('${patient.id}')" title="New ANC Visit">
-                  <i class="fas fa-plus me-1"></i>New ANC Visit
-                </button>
-                <button class="btn btn-outline-primary btn-sm" onclick="generateAntenatalReport('${patient.id}')" title="Generate ANC Report">
-                  <i class="fas fa-file-alt me-1"></i>Generate Report
-                </button>
-                <button class="btn btn-outline-danger btn-sm" onclick="deleteAllVisitRecords('${patient.id}', '${patient.name || 'Unknown'}')" title="Delete All Visit Records">
-                  <i class="fas fa-trash me-1"></i>Delete All Visits
-                </button>
-              </div>
-            </td>
-          </tr>
-        `;
-      });
-
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-
-      container.innerHTML = html;
-    }
-
-    function populatePatientSelector() {
-      const selector = document.getElementById("patientSelect");
-      selector.innerHTML = '<option value="">Choose a patient...</option>';
-      
-      antenatalPatients.forEach(patient => {
-        const option = document.createElement('option');
-        option.value = patient.id;
-        option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}`;
-        selector.appendChild(option);
-      });
-    }
-
-    function startAntenatalCare(patientId) {
-      // For now, redirect to a comprehensive antenatal form
-      // Later we can create a dedicated antenatal-form.html
+      // Navigate to antenatal form for the selected patient
       window.location.href = `antenatal-form.html?patient=${patientId}`;
     }
+
+
+
 
     function generateAntenatalReport(patientId) {
       // Open antenatal report in new tab
@@ -535,23 +329,7 @@
 
 
 
-    function scrollToPatients() {
-      // Scroll to patients list and refresh data
-      loadAntenatalPatients();
-      document.getElementById('patientsContainer').scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'start'
-      });
-    }
 
-    function selectPatient() {
-      const patientId = document.getElementById("patientSelect").value;
-      if (patientId) {
-        startAntenatalCare(patientId);
-      } else {
-        alert("Please select a patient first.");
-      }
-    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('service-worker.js');
@@ -568,11 +346,9 @@
             <i class="fas fa-baby-carriage me-3"></i>
             Antenatal Care
           </h1>
-          <p class="mb-0">Comprehensive prenatal care management and monitoring</p>
         </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
-            <span id="userInfo" class="text-white-50"></span>
             <a href="index.html" class="btn btn-outline-light btn-sm">
               <i class="fas fa-home me-2"></i>Home
             </a>
@@ -591,12 +367,12 @@
 
     <!-- Care Modules -->
     <div class="care-modules">
-      <div class="module-card" onclick="scrollToPatients()">
+      <div class="module-card" onclick="startNewAncVisit()">
         <div class="module-icon">
-          <i class="fas fa-users"></i>
+          <i class="fas fa-plus-circle"></i>
         </div>
-        <div class="module-title">All Antenatal Patients</div>
-        <div class="module-description">View and manage all patients in antenatal care</div>
+        <div class="module-title">New ANC Visit</div>
+        <div class="module-description">Record new antenatal care visit for the selected patient</div>
       </div>
 
       <div class="module-card" onclick="window.location.href='antenatal-appointments.html'">
@@ -624,49 +400,8 @@
       </div>
     </div>
 
-    <!-- Patients List -->
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">
-          <i class="fas fa-list me-2"></i>
-          Antenatal Patients
-        </h5>
-      </div>
-      <div class="card-body">
-        <div id="patientsContainer">
-          <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 
-  <script>
-    // Load patients for dropdown
-    function loadPatientsForDropdown() {
-      db.collection("patients")
-        .where("status", "==", "antenatal")
-        .get()
-        .then(querySnapshot => {
-          const select = document.getElementById("patientSelect");
-          select.innerHTML = '<option value="">Choose a patient...</option>';
-          
-          querySnapshot.forEach(doc => {
-            const patient = doc.data();
-            const option = document.createElement("option");
-            option.value = doc.id;
-            option.textContent = `${patient.name} (Age: ${patient.age})`;
-            select.appendChild(option);
-          });
-        });
-    }
-
-    // Load patients for dropdown on page load
-    loadPatientsForDropdown();
-  </script>
 
   <footer class="footer">
     <div class="container">

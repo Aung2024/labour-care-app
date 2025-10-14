@@ -413,6 +413,52 @@
         </div>
       </div>
 
+      <!-- Pregnancy Information -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-heart me-2"></i>
+          Pregnancy Information
+        </h5>
+        
+        <!-- LMP and EDD Fields -->
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label for="lmp" class="form-label">Last Menstrual Period (LMP)</label>
+            <input type="date" id="lmp" name="lmp" class="form-control" onchange="calculateGestationalAgeAndEDD()">
+          </div>
+          <div class="col-md-6">
+            <label for="edd" class="form-label">Expected Due Date (EDD)</label>
+            <input type="date" id="edd" name="edd" class="form-control" readonly>
+          </div>
+        </div>
+        
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">LMP Status</label>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="lmpStatus" id="lmpKnown" value="known" checked onchange="toggleLMPFields()">
+              <label class="form-check-label" for="lmpKnown">
+                LMP Known
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="lmpStatus" id="lmpUnknown" value="unknown" onchange="toggleLMPFields()">
+              <label class="form-check-label" for="lmpUnknown">
+                LMP Unknown (Ultrasound-based)
+              </label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div id="manualGAEDDSection" style="display: none;">
+              <label for="manualGestationalAge" class="form-label">Gestational Age (weeks)</label>
+              <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA()">
+              <label for="manualEdd" class="form-label mt-2">Expected Due Date (EDD)</label>
+              <input type="date" id="manualEdd" name="manualEdd" class="form-control">
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Danger Signs Section -->
       <div class="form-section">
         <h5 class="section-title">
@@ -738,6 +784,52 @@
       }
     }
 
+    function calculateGestationalAgeAndEDD() {
+      const lmpInput = document.getElementById('lmp');
+      const eddInput = document.getElementById('edd');
+      
+      if (lmpInput.value) {
+        const lmpDate = new Date(lmpInput.value);
+        
+        // Calculate EDD (LMP + 280 days)
+        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
+        eddInput.value = eddDate.toISOString().split('T')[0];
+        
+        // Update gestational age in the table
+        calculateGestationalAge();
+      }
+    }
+
+    function calculateEDDFromGA() {
+      const gaInput = document.getElementById('manualGestationalAge');
+      const eddInput = document.getElementById('manualEdd');
+      
+      if (gaInput.value) {
+        const today = new Date();
+        const weeksFromNow = 40 - parseFloat(gaInput.value); // Assuming 40 weeks full term
+        const eddDate = new Date(today.getTime() + (weeksFromNow * 7 * 24 * 60 * 60 * 1000));
+        eddInput.value = eddDate.toISOString().split('T')[0];
+      }
+    }
+
+    function toggleLMPFields() {
+      const lmpKnown = document.getElementById('lmpKnown').checked;
+      const lmpUnknown = document.getElementById('lmpUnknown').checked;
+      const manualSection = document.getElementById('manualGAEDDSection');
+      const lmpInput = document.getElementById('lmp');
+      const eddInput = document.getElementById('edd');
+      
+      if (lmpUnknown) {
+        manualSection.style.display = 'block';
+        lmpInput.disabled = true;
+        lmpInput.value = '';
+        eddInput.value = '';
+      } else {
+        manualSection.style.display = 'none';
+        lmpInput.disabled = false;
+      }
+    }
+
     function setToday(fieldId) {
       const today = new Date().toISOString().split('T')[0];
       document.getElementById(fieldId).value = today;
@@ -863,6 +955,13 @@
           },
           
           clinicalNotes: document.getElementById('clinicalNotes').value || '',
+          
+          // Pregnancy Information
+          lmp: document.getElementById('lmp').value || null,
+          edd: document.getElementById('edd').value || null,
+          lmpStatus: document.querySelector('input[name="lmpStatus"]:checked').value || 'known',
+          manualGestationalAge: parseFloat(document.getElementById('manualGestationalAge').value) || null,
+          manualEdd: document.getElementById('manualEdd').value || null,
           
           patientId: patientId,
           recordedBy: currentUser.uid,
