@@ -80,6 +80,7 @@
     .header-right {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 1rem;
     }
 
@@ -87,7 +88,7 @@
     .patient-info-bar {
       background: white;
       border-radius: 15px;
-      padding: 1.5rem;
+      padding: 1.25rem;
       margin: 1.5rem auto;
       max-width: 1200px;
       box-shadow: var(--card-shadow);
@@ -96,8 +97,8 @@
 
     .patient-info-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
       margin-bottom: 1rem;
     }
 
@@ -145,6 +146,11 @@
     .status-badge.postnatal {
       background: linear-gradient(135deg, #ede9fe, #ddd6fe);
       color: #5b21b6;
+    }
+
+    .status-badge.registered {
+      background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+      color: #374151;
     }
 
     .risk-badge {
@@ -349,6 +355,11 @@
       .header-content {
         flex-direction: column;
         align-items: flex-start;
+        gap: 1rem;
+      }
+
+      .header-right {
+        align-self: flex-end;
       }
 
       .patient-info-grid {
@@ -424,11 +435,11 @@
         <div class="page-subtitle">Comprehensive care management for your patient</div>
       </div>
       <div class="header-right">
-        <button class="btn btn-outline-light btn-sm" onclick="window.location.href='index.html'">
-          <i class="fas fa-home"></i> Home
-        </button>
+        <a href="index.html" class="btn btn-outline-light btn-sm me-2">
+          <i class="fas fa-home me-2"></i>Home
+        </a>
         <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); sessionStorage.clear(); window.location='login.html';">
-          <i class="fas fa-sign-out-alt"></i> Logout
+          <i class="fas fa-sign-out-alt me-2"></i>Logout
         </button>
       </div>
     </div>
@@ -471,20 +482,8 @@
           <span class="info-value" id="patientStatus">-</span>
         </div>
         <div class="info-item">
-          <span class="info-label">Gestational Age</span>
-          <span class="info-value" id="patientGA">-</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">Expected Due Date</span>
-          <span class="info-value" id="patientEDD">-</span>
-        </div>
-        <div class="info-item">
           <span class="info-label">Risk Level</span>
           <span class="info-value" id="patientRisk">-</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">Phone</span>
-          <span class="info-value" id="patientPhone">-</span>
         </div>
       </div>
       <div class="text-center mt-3">
@@ -676,32 +675,31 @@
     function displayPatientInfo() {
       document.getElementById('patientName').textContent = selectedPatient.name || 'Unknown';
       document.getElementById('patientAge').textContent = selectedPatient.age ? `${selectedPatient.age} years` : '-';
-      document.getElementById('patientPhone').textContent = selectedPatient.phone_number || selectedPatient.phone || '-';
       
-      // Status badge
-      const status = selectedPatient.status || 'Antenatal';
-      const statusBadge = `<span class="status-badge ${status.toLowerCase()}">${status}</span>`;
+      // Status badge with proper normalization
+      const status = selectedPatient.status || 'registered';
+      let displayStatus = status;
+      let statusClass = status.toLowerCase();
+      
+      // Normalize status for display
+      if (status === 'registered') displayStatus = 'Registered';
+      else if (status === 'antenatal_care') displayStatus = 'Antenatal Care';
+      else if (status === 'labour_care') displayStatus = 'Labour Care';
+      else if (status === 'postnatal_care' || status === 'postpartum') displayStatus = 'Postnatal Care';
+      
+      // Map status to CSS classes
+      if (statusClass.includes('antenatal')) statusClass = 'antenatal';
+      else if (statusClass.includes('labour')) statusClass = 'labour';
+      else if (statusClass.includes('postnatal') || statusClass.includes('postpartum')) statusClass = 'postnatal';
+      else if (statusClass === 'registered') statusClass = 'registered';
+      else statusClass = 'antenatal'; // fallback
+      
+      const statusBadge = `<span class="status-badge ${statusClass}">${displayStatus}</span>`;
       document.getElementById('patientStatus').innerHTML = statusBadge;
       
-      // Gestational Age
-      if (selectedPatient.gestational_age) {
-        document.getElementById('patientGA').textContent = `${selectedPatient.gestational_age} weeks`;
-      } else if (selectedPatient.lmp && selectedPatient.lmp !== 'unknown') {
-        const ga = calculateGA(selectedPatient.lmp);
-        document.getElementById('patientGA').textContent = ga ? `${ga} weeks` : '-';
-      } else {
-        document.getElementById('patientGA').textContent = '-';
-      }
-      
-      // EDD
-      if (selectedPatient.edd) {
-        document.getElementById('patientEDD').textContent = formatDate(selectedPatient.edd);
-      } else {
-        document.getElementById('patientEDD').textContent = '-';
-      }
       
       // Risk level
-      const isHighRisk = selectedPatient.high_risk_pregnancy === 'Yes' || selectedPatient.high_risk_pregnancy === true;
+      const isHighRisk = selectedPatient.high_risk === 'yes' || selectedPatient.high_risk === true;
       const riskBadge = isHighRisk ? 
         '<span class="risk-badge high">High Risk</span>' : 
         '<span class="risk-badge normal">Normal</span>';
