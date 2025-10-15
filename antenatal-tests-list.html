@@ -367,6 +367,35 @@
         selectedPatient = patientDoc.data();
         selectedPatient.id = patientId;
 
+        // Try to get latest LMP and GA from antenatal visits for accurate calculations
+        try {
+          const latestVisitSnapshot = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('antenatal_visits')
+            .orderBy('visit_date', 'desc')
+            .limit(1)
+            .get();
+          
+          if (!latestVisitSnapshot.empty) {
+            const latestVisit = latestVisitSnapshot.docs[0].data();
+            
+            // Update selectedPatient with latest visit data for GA calculation
+            if (latestVisit.lmp) selectedPatient.lmp = latestVisit.lmp;
+            if (latestVisit.lmp_status) selectedPatient.lmp_status = latestVisit.lmp_status;
+            if (latestVisit.gestational_age) selectedPatient.gestational_age = latestVisit.gestational_age;
+            
+            console.log('Loaded latest visit data for GA calculation:', {
+              lmp: latestVisit.lmp,
+              lmp_status: latestVisit.lmp_status,
+              gestational_age: latestVisit.gestational_age
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching latest visit:', error);
+          // Continue with registration data
+        }
+
         // Display patient name
         document.getElementById('patientNameDisplay').textContent = 
           patientName || selectedPatient.name || 'Unknown Patient';
@@ -431,8 +460,29 @@
         const testDate = test.testDate ? 
           new Date(test.testDate).toLocaleDateString() : 'Not recorded';
         
-        const gestationalAge = test.gestationalAge ? 
-          `${test.gestationalAge} weeks` : 'Not recorded';
+        // Calculate GA based on LMP and test date
+        let gestationalAge = 'Not calculated';
+        
+        if (test.gestationalAge) {
+          // Use stored GA if available
+          gestationalAge = `${test.gestationalAge} weeks`;
+        } else if (selectedPatient.lmp && selectedPatient.lmp !== 'unknown' && test.testDate) {
+          // Calculate GA from LMP and test date
+          try {
+            const lmpDate = new Date(selectedPatient.lmp);
+            const testDateObj = new Date(test.testDate);
+            const diffTime = testDateObj - lmpDate;
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const weeks = Math.floor(diffDays / 7);
+            gestationalAge = `${weeks} weeks`;
+          } catch (error) {
+            console.error('Error calculating GA from LMP:', error);
+            gestationalAge = 'Not calculated';
+          }
+        } else if (selectedPatient.lmp_status === 'unknown' && selectedPatient.gestational_age) {
+          // Use manual GA from registration if LMP is unknown
+          gestationalAge = `${selectedPatient.gestational_age} weeks`;
+        }
         
         html += `
           <div class="test-card">

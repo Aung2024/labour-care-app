@@ -81,7 +81,7 @@ function initializePatientSessionUI() {
 }
 
 // Display patient info banner
-function displayPatientBanner(containerId = 'patientBanner') {
+async function displayPatientBanner(containerId = 'patientBanner') {
   const patient = getSelectedPatient();
   if (!patient) return;
   
@@ -93,16 +93,56 @@ function displayPatientBanner(containerId = 'patientBanner') {
     return;
   }
   
-  const status = data.status || 'Antenatal';
-  const statusClass = status.toLowerCase().replace(' ', '-');
-  
-  // Calculate GA
+  // Calculate GA properly - prioritize latest antenatal visit data
   let gaDisplay = '-';
-  if (data.gestational_age) {
-    gaDisplay = `${data.gestational_age} wks`;
-  } else if (data.lmp && data.lmp !== 'unknown') {
-    // Simple GA calculation (you may want to use the one from patient-care-hub)
-    gaDisplay = 'N/A';
+  let lmpToUse = data.lmp;
+  let lmpStatusToUse = data.lmp_status;
+  let manualGAToUse = data.gestational_age;
+  
+  // Try to get LMP and GA from latest antenatal visit for most accurate calculation
+  try {
+    const latestVisitSnapshot = await firebase.firestore()
+      .collection('patients')
+      .doc(patient.id)
+      .collection('antenatal_visits')
+      .orderBy('visit_date', 'desc')
+      .limit(1)
+      .get();
+    
+    if (!latestVisitSnapshot.empty) {
+      const latestVisit = latestVisitSnapshot.docs[0].data();
+      
+      // Use visit data if available
+      if (latestVisit.lmp) lmpToUse = latestVisit.lmp;
+      if (latestVisit.lmp_status) lmpStatusToUse = latestVisit.lmp_status;
+      if (latestVisit.gestational_age) manualGAToUse = latestVisit.gestational_age;
+    }
+  } catch (error) {
+    console.error('Error fetching latest visit for GA:', error);
+    // Continue with registration data
+  }
+  
+  // Check if LMP is unknown
+  if (lmpStatusToUse === 'unknown' || lmpToUse === 'unknown') {
+    // Use manual GA
+    if (manualGAToUse) {
+      gaDisplay = `${manualGAToUse} wks`;
+    } else {
+      gaDisplay = 'LMP Unknown';
+    }
+  } else if (lmpToUse && lmpToUse.trim() !== '') {
+    // Calculate GA from LMP
+    try {
+      const lmpDate = new Date(lmpToUse);
+      const today = new Date();
+      const diffTime = today - lmpDate;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const weeks = Math.floor(diffDays / 7);
+      gaDisplay = `${weeks} wks`;
+    } catch (error) {
+      console.error('Error calculating GA:', error);
+      gaDisplay = 'Error';
+    }
   }
   
   container.innerHTML = `
@@ -112,7 +152,7 @@ function displayPatientBanner(containerId = 'patientBanner') {
           ${data.name || 'Unknown Patient'}
         </div>
         <div style="font-size: 0.9rem; opacity: 0.9;">
-          Age: ${data.age || '-'} | GA: ${gaDisplay} | Status: ${status}
+          Age: ${data.age || '-'} | GA: ${gaDisplay}
         </div>
       </div>
       <div>
