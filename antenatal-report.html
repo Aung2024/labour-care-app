@@ -501,9 +501,8 @@
       document.getElementById("patientName").textContent = currentPatient.name || 'Unknown';
       document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
       document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
-      document.getElementById("patientLMP").textContent = currentPatient.lmp || 'Not recorded';
-      document.getElementById("patientEDD").textContent = currentPatient.edd || 'Not calculated';
       document.getElementById("patientPhone").textContent = currentPatient.phone || 'Not provided';
+      
       // Display early ANC visit status from registration
       const earlyAncVisitStatus = currentPatient.early_anc_visit ? 'Yes' : 'No';
       document.getElementById("earlyAncVisit").textContent = earlyAncVisitStatus;
@@ -511,16 +510,36 @@
       // Calculate total ANC visits from database
       document.getElementById("totalAncVisits").textContent = antenatalVisits.length;
       
-      // Calculate current gestational age
-      if (currentPatient.lmp) {
-        const lmpDate = new Date(currentPatient.lmp);
+      // Get pregnancy details from the latest antenatal visit
+      let latestVisit = null;
+      if (antenatalVisits.length > 0) {
+        // Get the most recent visit (last in the array since they're ordered by date)
+        latestVisit = antenatalVisits[antenatalVisits.length - 1];
+      }
+      
+      // Load LMP and EDD from latest visit, fallback to patient data if no visits
+      const lmp = latestVisit?.lmp || currentPatient.lmp || 'Not recorded';
+      const edd = latestVisit?.edd || currentPatient.edd || 'Not calculated';
+      
+      document.getElementById("patientLMP").textContent = lmp;
+      document.getElementById("patientEDD").textContent = edd;
+      
+      // Calculate current gestational age from LMP
+      if (lmp && lmp !== 'Not recorded') {
+        const lmpDate = new Date(lmp);
         const today = new Date();
         const diffTime = today - lmpDate;
         const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
         const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
         document.getElementById("currentGA").textContent = `${diffWeeks}w ${diffDays}d`;
       } else {
-        document.getElementById("currentGA").textContent = 'Not calculated';
+        // Try to get GA from latest visit if LMP is not available
+        const latestGA = latestVisit?.gestationalAge;
+        if (latestGA) {
+          document.getElementById("currentGA").textContent = `${latestGA} weeks`;
+        } else {
+          document.getElementById("currentGA").textContent = 'Not calculated';
+        }
       }
     }
 
