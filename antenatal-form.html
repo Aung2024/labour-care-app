@@ -351,17 +351,6 @@
           </div>
         </div>
         
-        <!-- Early ANC Visit -->
-        <div class="row mb-3">
-          <div class="col-12">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="earlyAncVisit" name="earlyAncVisit">
-              <label class="form-check-label" for="earlyAncVisit">
-                Early ANC Visit (Yes/No)
-              </label>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Visit Information -->
@@ -501,7 +490,8 @@
               <label for="referral" class="form-label">Referral +/-</label>
               <select id="referral" name="referral" class="form-control">
                 <option value="">Select</option>
-                <option value="Yes">Yes</option>
+                <option value="Transfer">Transfer</option>
+                <option value="Joint Care">Joint Care</option>
                 <option value="No">No</option>
               </select>
             </div>
@@ -701,9 +691,6 @@
         await loadVisitCount();
         document.getElementById('visitNumber').value = visitCount;
         
-        // Load early ANC visit status from patient data
-        const earlyAncVisit = currentPatient.early_anc_visit || false;
-        document.getElementById('earlyAncVisit').checked = earlyAncVisit;
 
         // Auto-calculate gestational age if LMP is available
         if (currentPatient.lmp) {
@@ -772,7 +759,6 @@
           // Load ANC information from latest visit
           if (latestVisit.lmp) document.getElementById('lmp').value = latestVisit.lmp;
           if (latestVisit.edd) document.getElementById('edd').value = latestVisit.edd;
-          if (latestVisit.earlyAncVisit !== undefined) document.getElementById('earlyAncVisit').checked = latestVisit.earlyAncVisit;
           
           // Load LMP status
           if (latestVisit.lmpStatus) {
@@ -836,8 +822,20 @@
         const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
         eddInput.value = eddDate.toISOString().split('T')[0];
         
-        // Update gestational age in the table
-        calculateGestationalAge();
+        // Update gestational age display
+        calculateGestationalAgeFromLMP(lmpInput.value);
+      }
+    }
+
+    function calculateGestationalAgeFromLMP(lmpValue) {
+      if (lmpValue) {
+        const lmpDate = new Date(lmpValue);
+        const today = new Date();
+        const diffTime = today - lmpDate;
+        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        const gestationalAge = diffWeeks + (diffDays / 7);
+        document.getElementById('gestationalAgeDisplay').value = gestationalAge.toFixed(1);
       }
     }
 
@@ -997,7 +995,6 @@
           lmpStatus: document.querySelector('input[name="lmpStatus"]:checked').value || 'known',
           manualGestationalAge: parseFloat(document.getElementById('manualGestationalAge').value) || null,
           manualEdd: document.getElementById('manualEdd').value || null,
-          earlyAncVisit: document.getElementById('earlyAncVisit').checked,
           
           patientId: patientId,
           recordedBy: currentUser.uid,
