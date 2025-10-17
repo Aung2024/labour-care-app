@@ -648,6 +648,8 @@
 
     // Create patient card element
     function createPatientCard(patient) {
+      console.log('Creating card for patient:', patient.name, 'ID:', patient.id);
+      
       const card = document.createElement('div');
       card.className = 'patient-card';
       card.onclick = () => selectPatient(patient);
@@ -712,16 +714,46 @@
           </div>
         </div>
         <div class="patient-actions">
-          <button class="btn-select" onclick="event.stopPropagation(); selectPatient(${JSON.stringify(patient).replace(/"/g, '&quot;')})">
+          <button class="btn-select" data-patient='${JSON.stringify(patient)}' onclick="event.stopPropagation(); handleSelectPatient(this)">
             <i class="fas fa-check-circle"></i> Select Patient
           </button>
-          <button class="btn-edit" onclick="event.stopPropagation(); editPatient('${patient.id}')" title="Edit Patient Info">
+          <button class="btn-edit" data-patient-id="${patient.id}" onclick="event.stopPropagation(); handleEditPatient(this)" title="Edit Patient Info">
             <i class="fas fa-edit"></i>
           </button>
         </div>
       `;
       
       return card;
+    }
+
+    // Handle select patient button click
+    function handleSelectPatient(button) {
+      try {
+        const patientData = button.getAttribute('data-patient');
+        const patient = JSON.parse(patientData);
+        selectPatient(patient);
+      } catch (error) {
+        console.error('Error parsing patient data:', error);
+        alert('Error selecting patient: ' + error.message);
+      }
+    }
+
+    // Handle edit patient button click
+    function handleEditPatient(button) {
+      try {
+        const patientId = button.getAttribute('data-patient-id');
+        console.log('Edit patient clicked, patientId:', patientId);
+        
+        if (!patientId || patientId === 'undefined' || patientId === 'null') {
+          alert('No patient ID found. Please try again.');
+          return;
+        }
+        
+        window.location.href = `edit-patient.html?id=${patientId}`;
+      } catch (error) {
+        console.error('Error navigating to edit patient:', error);
+        alert('Error opening patient edit page: ' + error.message);
+      }
     }
 
     // Select patient and save to session
@@ -739,10 +771,14 @@
       window.location.href = 'patient-care-hub.html';
     }
 
-    // Edit patient
+    // Edit patient (legacy function for backward compatibility)
     function editPatient(patientId) {
       console.log('Edit patient clicked, patientId:', patientId);
       try {
+        if (!patientId || patientId === 'undefined' || patientId === 'null') {
+          alert('No patient ID found. Please try again.');
+          return;
+        }
         window.location.href = `edit-patient.html?id=${patientId}`;
       } catch (error) {
         console.error('Error navigating to edit patient:', error);
