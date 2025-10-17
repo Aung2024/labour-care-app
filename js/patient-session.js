@@ -99,6 +99,7 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   let lmpStatusToUse = data.lmp_status;
   let manualGAToUse = data.gestational_age;
   
+  console.log('Patient data from session:', data);
   console.log('Initial GA calculation data:', {
     lmp: lmpToUse,
     lmp_status: lmpStatusToUse,
@@ -107,23 +108,55 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   
   // Try to get LMP and GA from latest antenatal visit for most accurate calculation
   try {
-    const latestVisitSnapshot = await firebase.firestore()
-      .collection('patients')
-      .doc(patient.id)
-      .collection('antenatal_visits')
-      .orderBy('visit_date', 'desc')
-      .limit(1)
-      .get();
+    console.log('Querying antenatal visits for patient:', patient.id);
+    
+    let latestVisitSnapshot;
+    try {
+      // Try with visitDate first (camelCase)
+      latestVisitSnapshot = await firebase.firestore()
+        .collection('patients')
+        .doc(patient.id)
+        .collection('antenatal_visits')
+        .orderBy('visitDate', 'desc')
+        .limit(1)
+        .get();
+    } catch (error) {
+      console.log('visitDate ordering failed, trying visit_date:', error);
+      try {
+        // Fallback to visit_date (snake_case)
+        latestVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patient.id)
+          .collection('antenatal_visits')
+          .orderBy('visit_date', 'desc')
+          .limit(1)
+          .get();
+      } catch (error2) {
+        console.log('visit_date ordering failed, trying timestamp:', error2);
+        // Fallback to timestamp
+        latestVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patient.id)
+          .collection('antenatal_visits')
+          .orderBy('timestamp', 'desc')
+          .limit(1)
+          .get();
+      }
+    }
+    
+    console.log('Visit snapshot size:', latestVisitSnapshot.size);
+    console.log('Visit snapshot empty:', latestVisitSnapshot.empty);
     
     if (!latestVisitSnapshot.empty) {
       const latestVisit = latestVisitSnapshot.docs[0].data();
       
+      console.log('Latest visit document ID:', latestVisitSnapshot.docs[0].id);
       console.log('Latest visit data:', latestVisit);
       
       // Use visit data if available
       if (latestVisit.lmp) lmpToUse = latestVisit.lmp;
       if (latestVisit.lmp_status) lmpStatusToUse = latestVisit.lmp_status;
-      if (latestVisit.gestational_age) manualGAToUse = latestVisit.gestational_age;
+      if (latestVisit.gestationalAge) manualGAToUse = latestVisit.gestationalAge;
       
       console.log('Updated GA calculation data:', {
         lmp: lmpToUse,
@@ -132,6 +165,18 @@ async function displayPatientBanner(containerId = 'patientBanner') {
       });
     } else {
       console.log('No antenatal visits found, using registration data');
+      
+      // Let's also try to get all visits to see what's there
+      const allVisitsSnapshot = await firebase.firestore()
+        .collection('patients')
+        .doc(patient.id)
+        .collection('antenatal_visits')
+        .get();
+      
+      console.log('Total visits found:', allVisitsSnapshot.size);
+      if (allVisitsSnapshot.size > 0) {
+        console.log('All visits:', allVisitsSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+      }
     }
   } catch (error) {
     console.error('Error fetching latest visit for GA:', error);
