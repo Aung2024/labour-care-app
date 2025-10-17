@@ -99,6 +99,12 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   let lmpStatusToUse = data.lmp_status;
   let manualGAToUse = data.gestational_age;
   
+  console.log('Initial GA calculation data:', {
+    lmp: lmpToUse,
+    lmp_status: lmpStatusToUse,
+    gestational_age: manualGAToUse
+  });
+  
   // Try to get LMP and GA from latest antenatal visit for most accurate calculation
   try {
     const latestVisitSnapshot = await firebase.firestore()
@@ -112,10 +118,20 @@ async function displayPatientBanner(containerId = 'patientBanner') {
     if (!latestVisitSnapshot.empty) {
       const latestVisit = latestVisitSnapshot.docs[0].data();
       
+      console.log('Latest visit data:', latestVisit);
+      
       // Use visit data if available
       if (latestVisit.lmp) lmpToUse = latestVisit.lmp;
       if (latestVisit.lmp_status) lmpStatusToUse = latestVisit.lmp_status;
       if (latestVisit.gestational_age) manualGAToUse = latestVisit.gestational_age;
+      
+      console.log('Updated GA calculation data:', {
+        lmp: lmpToUse,
+        lmp_status: lmpStatusToUse,
+        gestational_age: manualGAToUse
+      });
+    } else {
+      console.log('No antenatal visits found, using registration data');
     }
   } catch (error) {
     console.error('Error fetching latest visit for GA:', error);
@@ -125,6 +141,7 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   // Check if LMP is unknown
   if (lmpStatusToUse === 'unknown' || lmpToUse === 'unknown') {
     // Use manual GA
+    console.log('LMP is unknown, using manual GA:', manualGAToUse);
     if (manualGAToUse) {
       gaDisplay = `${manualGAToUse} wks`;
     } else {
@@ -133,17 +150,56 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   } else if (lmpToUse && lmpToUse.trim() !== '') {
     // Calculate GA from LMP
     try {
-      const lmpDate = new Date(lmpToUse);
+      console.log('Calculating GA from LMP:', lmpToUse);
+      
+      // Handle different date formats
+      let lmpDate;
+      if (lmpToUse.includes('T')) {
+        // ISO format with time
+        lmpDate = new Date(lmpToUse);
+      } else if (lmpToUse.includes('-')) {
+        // Date format YYYY-MM-DD
+        lmpDate = new Date(lmpToUse + 'T00:00:00');
+      } else {
+        // Try parsing as is
+        lmpDate = new Date(lmpToUse);
+      }
+      
+      // Validate the date
+      if (isNaN(lmpDate.getTime())) {
+        throw new Error('Invalid date format');
+      }
+      
       const today = new Date();
       const diffTime = today - lmpDate;
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       const weeks = Math.floor(diffDays / 7);
-      gaDisplay = `${weeks} wks`;
+      
+      // Ensure weeks is not negative
+      if (weeks < 0) {
+        gaDisplay = '0 wks';
+      } else if (weeks > 42) {
+        gaDisplay = '42+ wks';
+      } else {
+        gaDisplay = `${weeks} wks`;
+      }
+      
+      console.log('GA calculation result:', { 
+        lmpDate: lmpDate.toISOString(), 
+        today: today.toISOString(),
+        diffDays, 
+        weeks, 
+        gaDisplay 
+      });
     } catch (error) {
       console.error('Error calculating GA:', error);
       gaDisplay = 'Error';
     }
+  } else {
+    console.log('No valid LMP found, GA display will be dash');
   }
+  
+  console.log('Final GA display:', gaDisplay);
   
   container.innerHTML = `
     <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
