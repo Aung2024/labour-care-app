@@ -223,6 +223,18 @@
       color: white;
     }
 
+    .btn-delete {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: white;
+    }
+
+    .btn-delete:hover {
+      background: linear-gradient(135deg, #b91c1c, #991b1b);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+      color: white;
+    }
+
     /* Desktop layout */
     @media (min-width: 768px) {
       .action-buttons-container {
@@ -498,6 +510,10 @@
             <i class="fas fa-save"></i>
             <span>Update Patient Data</span>
           </button>
+          <button type="button" class="btn-action btn-delete" onclick="deletePatient()">
+            <i class="fas fa-trash-alt"></i>
+            <span>Delete Patient</span>
+          </button>
           <a href="list.html" class="btn-action btn-cancel">
             <i class="fas fa-times"></i>
             <span>Cancel</span>
@@ -710,6 +726,70 @@
     function resetForm() {
       if (confirm("Are you sure you want to reset all changes? This will restore the original patient data.")) {
         populateForm();
+      }
+    }
+
+    async function deletePatient() {
+      // Double confirmation for delete action
+      const firstConfirm = confirm("⚠️ WARNING: This will permanently delete the patient record and ALL associated data (ANC visits, lab tests, labour care records, etc.).\n\nAre you sure you want to continue?");
+      
+      if (!firstConfirm) return;
+      
+      const secondConfirm = confirm("🔴 FINAL WARNING: This action cannot be undone!\n\nType 'DELETE' to confirm permanent deletion of patient record.");
+      
+      if (!secondConfirm) return;
+      
+      const userInput = prompt("To confirm deletion, please type 'DELETE' exactly:");
+      
+      if (userInput !== 'DELETE') {
+        alert("Deletion cancelled. Patient record remains intact.");
+        return;
+      }
+
+      try {
+        // Show loading state
+        const deleteButton = document.querySelector('.btn-delete');
+        const originalText = deleteButton.innerHTML;
+        deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Deleting...</span>';
+        deleteButton.disabled = true;
+
+        // Delete the main patient document
+        await db.collection("patients").doc(patientId).delete();
+        
+        // Delete all subcollections (ANC visits, lab tests, etc.)
+        const subcollections = ['antenatal_visits', 'lab_tests', 'labour_care', 'postpartum_visits', 'baby_records'];
+        
+        for (const subcollection of subcollections) {
+          try {
+            const snapshot = await db.collection("patients").doc(patientId).collection(subcollection).get();
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+              batch.delete(doc.ref);
+            });
+            if (!snapshot.empty) {
+              await batch.commit();
+            }
+          } catch (error) {
+            console.log(`Subcollection ${subcollection} may not exist or already deleted:`, error);
+          }
+        }
+
+        // Success message
+        alert("✅ Patient record and all associated data have been permanently deleted.");
+        
+        // Redirect to patient list
+        window.location.href = "list.html";
+        
+      } catch (error) {
+        console.error("Error deleting patient:", error);
+        alert("❌ Error deleting patient: " + error.message);
+        
+        // Reset button state
+        const deleteButton = document.querySelector('.btn-delete');
+        if (deleteButton) {
+          deleteButton.innerHTML = originalText;
+          deleteButton.disabled = false;
+        }
       }
     }
 
