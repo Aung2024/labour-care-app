@@ -507,6 +507,7 @@
 
     // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
+      console.log('DOM Content Loaded - Initializing patient registration page');
       loadUserTownship();
       
       // Add event listeners
@@ -515,29 +516,67 @@
         radio.addEventListener('change', toggleHighRiskDetails);
       });
       
-      // Add form submission listener
-      const form = document.getElementById("patientForm");
-      console.log('Form found:', form);
+      // Add form submission listener with delay to ensure DOM is ready
+      setTimeout(() => {
+        const form = document.getElementById("patientForm");
+        console.log('Form found:', form);
+      
+      // Debug form structure
+      console.log('Form element:', form);
+      console.log('All buttons in form:', form.querySelectorAll('button'));
       
       // Add click listener to button as backup
-      const submitBtn = form.querySelector('button[type="submit"]');
+      let submitBtn = form.querySelector('button[type="submit"]');
       console.log('Submit button found:', submitBtn);
-      submitBtn.addEventListener('click', function(e) {
-        console.log('Button clicked!');
-      });
+      
+      // Try alternative selectors if first one fails
+      if (!submitBtn) {
+        submitBtn = form.querySelector('.btn-primary');
+        console.log('Alternative button found:', submitBtn);
+      }
+      
+      // Last resort - search entire document
+      if (!submitBtn) {
+        submitBtn = document.querySelector('button[type="submit"]');
+        console.log('Document-wide submit button found:', submitBtn);
+      }
+      
+      if (submitBtn) {
+        submitBtn.addEventListener('click', function(e) {
+          console.log('Button clicked!');
+        });
+      } else {
+        console.error('Submit button not found anywhere!');
+        console.log('Available buttons:', document.querySelectorAll('button'));
+      }
       
       form.addEventListener("submit", async (e) => {
       console.log('Form submit event triggered');
       e.preventDefault();
       
       // Get button reference and show loading state
-      const submitBtn = form.querySelector('button[type="submit"]');
+      let submitBtn = form.querySelector('button[type="submit"]');
+      
+      // Fallback to alternative selectors if first one fails
+      if (!submitBtn) {
+        submitBtn = form.querySelector('.btn-primary');
+      }
+      
+      // Last resort - search entire document
+      if (!submitBtn) {
+        submitBtn = document.querySelector('button[type="submit"]');
+      }
+      
+      console.log('Form submission - Submit button found:', submitBtn);
+      
       const messageDiv = document.getElementById('message');
-      const originalText = submitBtn.innerHTML;
+      const originalText = submitBtn ? submitBtn.innerHTML : '';
       
       // Show loading state
-      submitBtn.innerHTML = '<div class="loading"></div> Registering Patient...';
-      submitBtn.disabled = true;
+      if (submitBtn) {
+        submitBtn.innerHTML = '<div class="loading"></div> Registering Patient...';
+        submitBtn.disabled = true;
+      }
       
       // Clear previous messages
       messageDiv.textContent = '';
@@ -549,8 +588,10 @@
       if (!data.name || !data.age || !data.registration_date) {
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please fill in all required fields (Name, Age, Registration Date).</div>';
         // Reset button state on validation error
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
+        if (submitBtn) {
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+        }
         return;
       }
       try {
@@ -664,8 +705,10 @@
         messageDiv.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i>Patient record created successfully! Redirecting to dashboard...</div>';
         
         // Reset button
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
+        if (submitBtn) {
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+        }
         
         // Reset form
         form.reset();
@@ -679,13 +722,16 @@
         console.error("Error adding document: ", error);
         
         // Reset button state on error
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
+        if (submitBtn) {
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+        }
         
         // Show error message
         messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error creating patient record: ${error.message}</div>`;
       }
       });
+      }, 100); // 100ms delay to ensure DOM is ready
     });
     
     // Debug function to check user township (can be called from console)
