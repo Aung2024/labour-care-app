@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10b981">
+  <title>PWA Installation Test</title>
+  <link rel="manifest" href="./manifest.json">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 3rem;
+      max-width: 600px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 1rem;
+      font-size: 2rem;
+    }
+
+    .status-item {
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 10px;
+      border-left: 4px solid;
+    }
+
+    .status-success {
+      background: #d1fae5;
+      border-color: #10b981;
+      color: #065f46;
+    }
+
+    .status-error {
+      background: #fee2e2;
+      border-color: #dc2626;
+      color: #991b1b;
+    }
+
+    .status-info {
+      background: #dbeafe;
+      border-color: #3b82f6;
+      color: #1e40af;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border: none;
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .code {
+      background: #f3f4f6;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      margin: 0.5rem 0;
+      word-break: break-all;
+    }
+
+    #installButton {
+      display: none;
+    }
+
+    .icon {
+      font-size: 3rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🏥</div>
+    <h1>PWA Installation Test</h1>
+    
+    <div id="statusContainer"></div>
+    
+    <button id="installButton" class="btn">
+      📥 Install App Now
+    </button>
+    
+    <button onclick="window.location.href='./index.html'" class="btn" style="background: #6b7280; margin-top: 0.5rem;">
+      🏠 Go to Main App
+    </button>
+  </div>
+
+  <script>
+    let deferredPrompt;
+    const statusContainer = document.getElementById('statusContainer');
+    const installButton = document.getElementById('installButton');
+
+    function addStatus(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = `status-item status-${type}`;
+      div.innerHTML = message;
+      statusContainer.appendChild(div);
+    }
+
+    // Check PWA requirements
+    function checkPWARequirements() {
+      // Check HTTPS
+      if (window.location.protocol === 'https:' || window.location.hostname === 'localhost') {
+        addStatus('✅ <strong>HTTPS:</strong> Secure connection detected', 'success');
+      } else {
+        addStatus('❌ <strong>HTTPS:</strong> App must be served over HTTPS', 'error');
+      }
+
+      // Check Service Worker support
+      if ('serviceWorker' in navigator) {
+        addStatus('✅ <strong>Service Worker:</strong> Supported by browser', 'success');
+        
+        // Check if service worker is registered
+        navigator.serviceWorker.getRegistration().then(registration => {
+          if (registration) {
+            addStatus(`✅ <strong>Service Worker:</strong> Registered and active<br><span class="code">${registration.scope}</span>`, 'success');
+          } else {
+            addStatus('⚠️ <strong>Service Worker:</strong> Not registered yet. Please visit main app first.', 'info');
+          }
+        });
+      } else {
+        addStatus('❌ <strong>Service Worker:</strong> Not supported by this browser', 'error');
+      }
+
+      // Check manifest
+      const manifestLink = document.querySelector('link[rel="manifest"]');
+      if (manifestLink) {
+        fetch(manifestLink.href)
+          .then(response => response.json())
+          .then(manifest => {
+            addStatus(`✅ <strong>Manifest:</strong> Found and valid<br><span class="code">Name: ${manifest.name}</span>`, 'success');
+          })
+          .catch(() => {
+            addStatus('❌ <strong>Manifest:</strong> File not found or invalid', 'error');
+          });
+      } else {
+        addStatus('❌ <strong>Manifest:</strong> Not linked in HTML', 'error');
+      }
+
+      // Check if standalone (already installed)
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+        addStatus('✅ <strong>Installation:</strong> App is already installed and running in standalone mode!', 'success');
+      } else {
+        addStatus('ℹ️ <strong>Installation:</strong> App is not yet installed. Click the install button when it appears.', 'info');
+      }
+
+      // Check browser
+      const userAgent = navigator.userAgent;
+      let browserInfo = 'Unknown browser';
+      if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) {
+        browserInfo = '✅ Chrome (Best support)';
+      } else if (userAgent.includes('Edg')) {
+        browserInfo = '✅ Edge (Full support)';
+      } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+        browserInfo = '⚠️ Safari (Limited support - iOS only for install)';
+      } else if (userAgent.includes('Firefox')) {
+        browserInfo = '⚠️ Firefox (Limited PWA support)';
+      }
+      addStatus(`<strong>Browser:</strong> ${browserInfo}`, 'info');
+    }
+
+    // Listen for beforeinstallprompt event
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installButton.style.display = 'block';
+      addStatus('🎉 <strong>Ready to Install:</strong> Click the "Install App Now" button below!', 'success');
+    });
+
+    // Handle install button click
+    installButton.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        return;
+      }
+
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        addStatus('✅ <strong>Installation:</strong> User accepted the install prompt', 'success');
+      } else {
+        addStatus('❌ <strong>Installation:</strong> User dismissed the install prompt', 'error');
+      }
+      
+      deferredPrompt = null;
+      installButton.style.display = 'none';
+    });
+
+    // Listen for app installed event
+    window.addEventListener('appinstalled', () => {
+      addStatus('🎊 <strong>Success:</strong> App installed successfully!', 'success');
+      deferredPrompt = null;
+    });
+
+    // Run checks on page load
+    window.addEventListener('load', () => {
+      checkPWARequirements();
+    });
+
+    // Register service worker if not already registered
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js')
+        .then(() => {
+          console.log('Service Worker registered from test page');
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    }
+  </script>
+</body>
+</html>
+
