@@ -60,8 +60,9 @@
     .tab-content { padding: 1.5rem; min-height: 300px; }
     .form-field { margin-bottom: 1.25rem; }
     .form-label { display: block; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem; }
-    input, select { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; transition: all 0.2s; }
-    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
+    input, select, textarea { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; transition: all 0.2s; font-family: inherit; }
+    textarea { min-height: 100px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
     
     /* Footer */
     .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 1rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); z-index: 100; }
@@ -126,6 +127,8 @@
         <button class="tab" onclick="switchTab('woman')">Woman</button>
         <button class="tab" onclick="switchTab('baby')">Baby</button>
         <button class="tab" onclick="switchTab('contractions')">Contractions</button>
+        <button class="tab" onclick="switchTab('cervix')">Cervix Plot</button>
+        <button class="tab" onclick="switchTab('descent')">Descent Plot</button>
         <button class="tab" onclick="switchTab('meds')">Meds</button>
         <button class="tab" onclick="switchTab('sdm')">SDM</button>
       </div>
@@ -208,6 +211,38 @@
         { key: 'Fetal_position', label: 'Fetal Position', type: 'select', options: [['C','Cephalic'],['B','Breech'],['T','Transverse'],['P','Posterior']] },
         { key: 'Caput', label: 'Caput', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] },
         { key: 'Moulding', label: 'Moulding', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] }
+      ],
+      contractions: [
+        { key: 'Contractions_per_10_min', label: 'Contractions per 10 min', type: 'number', min: 0, max: 10 },
+        { key: 'Duration_of_contractions', label: 'Duration of contractions (sec)', type: 'number', min: 0, max: 120 }
+      ],
+      meds: [
+        { key: 'Oxytocin_U_L_drops_min', label: 'Oxytocin (U/L, drops/min)', type: 'text', placeholder: 'e.g. 5 U/L, 20 drops/min' },
+        { key: 'Medicine', label: 'Medicine', type: 'text', placeholder: 'Enter medicine name' },
+        { key: 'IV_fluids', label: 'IV Fluids', type: 'text', placeholder: 'e.g. NS 500ml' }
+      ],
+      sdm: [
+        { key: 'Assessment_Woman_condition', label: 'Woman\'s condition', type: 'textarea', placeholder: 'Assessment notes...' },
+        { key: 'Assessment_Baby_condition', label: 'Baby\'s condition', type: 'textarea', placeholder: 'Assessment notes...' },
+        { key: 'Assessment_Labour_progress', label: 'Labour progress', type: 'textarea', placeholder: 'Assessment notes...' },
+        { key: 'Plan', label: 'Plan', type: 'textarea', placeholder: 'Management plan...' },
+        { key: 'Initials', label: 'Initials', type: 'text', placeholder: 'Your initials' }
+      ],
+      cervix: [
+        { key: 'Cervix_Plot_10', label: 'Cervix 10cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_9', label: 'Cervix 9cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_8', label: 'Cervix 8cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_7', label: 'Cervix 7cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_6', label: 'Cervix 6cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_5', label: 'Cervix 5cm', type: 'checkbox', options: [['X','Mark']] }
+      ],
+      descent: [
+        { key: 'Descent_Plot_5', label: 'Descent -5', type: 'checkbox', options: [['O','Mark']] },
+        { key: 'Descent_Plot_4', label: 'Descent -4', type: 'checkbox', options: [['O','Mark']] },
+        { key: 'Descent_Plot_3', label: 'Descent -3', type: 'checkbox', options: [['O','Mark']] },
+        { key: 'Descent_Plot_2', label: 'Descent -2', type: 'checkbox', options: [['O','Mark']] },
+        { key: 'Descent_Plot_1', label: 'Descent -1', type: 'checkbox', options: [['O','Mark']] },
+        { key: 'Descent_Plot_0', label: 'Descent 0', type: 'checkbox', options: [['O','Mark']] }
       ]
     };
 
@@ -223,7 +258,9 @@
       'Systolic_BP': { min: 80, max: 140 },
       'Diastolic_BP': { min: null, max: 90 },
       'Temperature_C': { min: 35.0, max: 37.5 },
-      'Amniotic_fluid': ['M+++', 'B']
+      'Amniotic_fluid': ['M+++', 'B'],
+      'Contractions_per_10_min': { min: 2.1, max: 5 },
+      'Duration_of_contractions': { min: 20, max: 60 }
     };
 
     // ============================================================================
@@ -295,21 +332,45 @@
           return `
             <div class="form-field">
               <label class="form-label">${f.label} ${alertInfo}</label>
-              <select name="${inputName}" class="form-input" onchange="updateValue('${inputName}', this.value)">
+              <select name="${inputName}" class="form-input" onchange="updateValue('${inputName}', this.value); autoSave()">
                 <option value="">Select...</option>
                 ${f.options.map(([v,l]) => `<option value="${v}" ${storedValue === v ? 'selected' : ''}>${l}</option>`).join('')}
               </select>
             </div>
           `;
+        } else if (f.type === 'checkbox') {
+          const isChecked = storedValue === 'X' || storedValue === 'O';
+          return `
+            <div class="form-field">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="${inputName}" value="X" ${isChecked ? 'checked' : ''} 
+                  onchange="updateValue('${inputName}', this.checked ? 'X' : ''); autoSave()" 
+                  style="width: 20px; height: 20px;">
+                <span>${f.label}</span>
+              </label>
+            </div>
+          `;
+        } else if (f.type === 'textarea') {
+          return `
+            <div class="form-field">
+              <label class="form-label">${f.label} ${alertInfo}</label>
+              <textarea name="${inputName}" class="form-input" placeholder="${f.placeholder || ''}" 
+                onblur="updateValue('${inputName}', this.value); autoSave()"
+                onchange="updateValue('${inputName}', this.value); autoSave()">${storedValue}</textarea>
+            </div>
+          `;
         } else {
           const attrs = f.min ? `min="${f.min}" max="${f.max || ''}"` : '';
           const extraAttrs = f.step ? `step="${f.step}"` : '';
+          const placeholder = f.placeholder ? `placeholder="${f.placeholder}"` : '';
           return `
             <div class="form-field">
               <label class="form-label">${f.label} ${alertInfo}</label>
               <input type="${f.type}" name="${inputName}" class="form-input ${isAlertValue(f.key, storedValue) ? 'alert-value' : ''}" 
-                value="${storedValue}" ${attrs} ${extraAttrs} 
-                onchange="updateValue('${inputName}', this.value)" oninput="updateValue('${inputName}', this.value)">
+                value="${storedValue}" ${attrs} ${extraAttrs} ${placeholder}
+                onblur="updateValue('${inputName}', this.value); autoSave()"
+                onchange="updateValue('${inputName}', this.value); autoSave()" 
+                oninput="updateValue('${inputName}', this.value)">
             </div>
           `;
         }
@@ -349,6 +410,7 @@
     // ============================================================================
     function prevTimepoint() { 
       if (currentIndex > 0) {
+        saveData(); // Save before navigating
         currentIndex--;
         state.activeTimepoint = state.timepoints[currentIndex];
         updateUI();
@@ -358,6 +420,7 @@
     
     function nextTimepoint() { 
       if (currentIndex < state.timepoints.length - 1) {
+        saveData(); // Save before navigating
         currentIndex++;
         state.activeTimepoint = state.timepoints[currentIndex];
         updateUI();
@@ -385,15 +448,22 @@
     // DATA MANAGEMENT
     // ============================================================================
     function updateValue(key, value) {
-      if (value) {
-        state.data[key] = value;
-        checkAlerts();
-      }
+      state.data[key] = value;
+      checkAlerts();
     }
 
-    async function saveData() {
+    // Auto-save with debounce
+    let autoSaveTimeout = null;
+    async function autoSave() {
+      clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = setTimeout(async () => {
+        await saveData(true); // silent save
+      }, 1000); // Wait 1 second after last change
+    }
+
+    async function saveData(silent = false) {
       if (!state.patientId) {
-        alert('No patient ID');
+        if (!silent) alert('No patient ID');
         return;
       }
       
@@ -406,11 +476,22 @@
           secondStageTime: state.secondStageTime
         }, { merge: true });
         
-        alert('Saved!');
+        if (!silent) {
+          showToast('✓ Saved');
+        }
       } catch (error) {
         console.error('Save error:', error);
-        alert('Error saving: ' + error.message);
+        if (!silent) alert('Error saving: ' + error.message);
       }
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
     }
 
     async function loadData() {
@@ -433,8 +514,12 @@
             generateTimepoints(state.startTime, state.secondStageTime);
             state.activeTimepoint = state.timepoints[0];
             currentIndex = 0;
+            updateTimepointSelector();
             updateUI();
             renderTab();
+            console.log('✅ Loaded data with', state.timepoints.length, 'timepoints');
+          } else {
+            console.log('⚠️ No start time found in data');
           }
         }
       } catch (error) {
@@ -498,12 +583,72 @@
       await loadData();
     });
 
+    // Select timepoint from dropdown
+    function selectTimepoint(timepoint) {
+      if (!timepoint) return;
+      const idx = state.timepoints.indexOf(timepoint);
+      if (idx >= 0) {
+        currentIndex = idx;
+        state.activeTimepoint = timepoint;
+        updateUI();
+        updateTimepointSelector();
+        renderTab();
+      }
+    }
+
+    // Update timepoint selector dropdown
+    function updateTimepointSelector() {
+      const select = document.getElementById('timepointSelect');
+      if (!select) return;
+      select.innerHTML = '<option value="">Select timepoint...</option>';
+      state.timepoints.forEach(tp => {
+        const opt = document.createElement('option');
+        opt.value = tp;
+        opt.textContent = tp;
+        if (tp === state.activeTimepoint) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    // Add current timepoint
+    function addCurrentTimepoint() {
+      const now = new Date();
+      const h = now.getHours().toString().padStart(2, '0');
+      const m = now.getMinutes().toString().padStart(2, '0');
+      const timepoint = `${h}:${m}`;
+      
+      if (!state.timepoints.includes(timepoint)) {
+        state.timepoints.push(timepoint);
+        state.timepoints.sort();
+        updateTimepointSelector();
+        selectTimepoint(timepoint);
+      }
+    }
+
+    // Open alerts drawer
+    function openAlertsDrawer() {
+      const drawer = document.getElementById('alertsDrawer');
+      const backdrop = document.querySelector('.backdrop');
+      if (drawer) drawer.classList.add('open');
+      if (backdrop) backdrop.classList.add('active');
+    }
+
+    // Close alerts drawer
+    function closeAlertsDrawer() {
+      const drawer = document.getElementById('alertsDrawer');
+      const backdrop = document.querySelector('.backdrop');
+      if (drawer) drawer.classList.remove('open');
+      if (backdrop) backdrop.classList.remove('active');
+    }
+
     // Initialize with demo data for testing
     if (!state.startTime) {
       generateTimepoints('08:00');
       state.activeTimepoint = state.timepoints[0];
       currentIndex = 0;
+      updateTimepointSelector();
       renderTab();
+      console.log('🔧 Demo mode initialized with timepoints:', state.timepoints);
     }
   </script>
 </body>
