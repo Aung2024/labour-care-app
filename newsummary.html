@@ -720,7 +720,7 @@
     </div>
 
     <!-- Labour Care Summary Table -->
-    <div class="summary-container">
+    <div class="summary-container" id="summaryContainer">
       <div class="table-header">
         <h3><i class="fas fa-clipboard-list"></i> <span data-i18n="labourCareSummary">Labour Care Summary</span></h3>
         <p class="table-subtitle" data-i18n="completeFormBelow">Complete the form below for each time interval during active labour</p>
@@ -933,34 +933,70 @@
 
     // View switching functions
     function switchView(view) {
+      console.log('Switching to view:', view);
       currentView = view;
       
       // Update active button
       document.querySelectorAll('.view-btn').forEach(btn => {
         btn.classList.remove('active');
       });
-      document.querySelector(`[data-view="${view}"]`).classList.add('active');
+      const activeBtn = document.querySelector(`[data-view="${view}"]`);
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+        console.log('Active button updated for view:', view);
+      } else {
+        console.error('Active button not found for view:', view);
+      }
       
-      // Hide all views
-      document.getElementById('summaryContainer').style.display = 'none';
-      document.getElementById('singleEntryView').style.display = 'none';
-      document.getElementById('simpleView').style.display = 'none';
+      // Hide all views with null checks
+      const summaryContainer = document.getElementById('summaryContainer');
+      const singleEntryView = document.getElementById('singleEntryView');
+      const simpleView = document.getElementById('simpleView');
+      
+      console.log('Elements found:', {
+        summaryContainer: !!summaryContainer,
+        singleEntryView: !!singleEntryView,
+        simpleView: !!simpleView
+      });
+      
+      if (summaryContainer) summaryContainer.style.display = 'none';
+      if (singleEntryView) singleEntryView.style.display = 'none';
+      if (simpleView) simpleView.style.display = 'none';
       
       // Show selected view
       if (view === 'classic') {
-        document.getElementById('summaryContainer').style.display = 'block';
+        if (summaryContainer) {
+          summaryContainer.style.display = 'block';
+          console.log('Classic view shown');
+        } else {
+          console.error('Summary container not found');
+        }
       } else if (view === 'single') {
-        document.getElementById('singleEntryView').style.display = 'block';
-        generateSingleEntryView();
+        if (singleEntryView) {
+          singleEntryView.style.display = 'block';
+          generateSingleEntryView();
+          console.log('Single entry view shown');
+        } else {
+          console.error('Single entry view container not found');
+        }
       } else if (view === 'simple') {
-        document.getElementById('simpleView').style.display = 'block';
-        generateSimpleView();
+        if (simpleView) {
+          simpleView.style.display = 'block';
+          generateSimpleView();
+          console.log('Simple view shown');
+        } else {
+          console.error('Simple view container not found');
+        }
       }
     }
 
     // Generate Single Entry View (3 columns with collapsible functionality)
     function generateSingleEntryView() {
       const container = document.getElementById('timeColumnsContainer');
+      if (!container) {
+        console.error('timeColumnsContainer not found');
+        return;
+      }
       container.innerHTML = '';
       
       // Get time intervals from existing logic
@@ -1008,6 +1044,8 @@
         const container = document.getElementById(`${section}Intervals`);
         if (container) {
           container.innerHTML = generateSimpleSectionContent(section);
+        } else {
+          console.warn(`Container ${section}Intervals not found`);
         }
       });
     }
@@ -1016,6 +1054,11 @@
     function toggleColumn(index) {
       const columns = document.querySelectorAll('.time-column');
       const column = columns[index];
+      
+      if (!column) {
+        console.error(`Column at index ${index} not found`);
+        return;
+      }
       
       if (collapsedColumns.has(index)) {
         collapsedColumns.delete(index);
@@ -1030,6 +1073,11 @@
     function toggleSimpleSection(section) {
       const content = document.getElementById(`${section}Content`);
       const icon = document.getElementById(`${section}Icon`);
+      
+      if (!content || !icon) {
+        console.error(`Elements for section ${section} not found`);
+        return;
+      }
       
       if (content.classList.contains('active')) {
         content.classList.remove('active');
@@ -3210,8 +3258,10 @@
 
     // Call this after DOM is loaded
     document.addEventListener('DOMContentLoaded', function() {
-      // Initialize view switcher
-      switchView('classic'); // Start with classic view
+      // Initialize view switcher with a small delay to ensure all elements are loaded
+      setTimeout(() => {
+        switchView('classic'); // Start with classic view
+      }, 100);
       
       // Set the View Summary button href immediately
       updateViewSummaryLink();
