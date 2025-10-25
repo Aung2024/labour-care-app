@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Labour Care Entry - Mobile Carousel</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root { --primary: #10b981; --secondary: #059669; --danger: #dc2626; }
+    body { font-family: 'Inter', sans-serif; background: #f0fdf4; margin: 0; padding-bottom: 80px; }
+    .header { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; padding: 1rem; position: sticky; top: 0; z-index: 100; }
+    .mode-toggle { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .mode-btn { flex: 1; padding: 0.5rem; border: none; background: rgba(255,255,255,0.2); color: white; border-radius: 8px; font-weight: 600; }
+    .mode-btn.active { background: white; color: var(--primary); }
+    .entry-card { background: white; margin: 1rem; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .tabs { display: flex; overflow-x: auto; background: #f8f9fa; border-bottom: 1px solid #e5e7eb; }
+    .tab { padding: 1rem 1.5rem; border: none; background: transparent; border-bottom: 3px solid transparent; font-weight: 600; white-space: nowrap; }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); background: white; }
+    .tab-content { padding: 1.5rem; display: none; }
+    .tab-content.active { display: block; }
+    .form-field { margin-bottom: 1.25rem; }
+    .form-label { display: block; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem; }
+    input, select { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; }
+    .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 1rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); }
+    .footer-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+    .btn { padding: 0.75rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .alert-value { background: #fef2f2 !important; color: #dc2626 !important; border-color: #dc2626 !important; font-weight: 600 !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>Labour Care Entry</div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" onclick="setMode('entry')">Entry</button>
+      <button class="mode-btn" onclick="setMode('review')">Review</button>
+    </div>
+  </div>
+  
+  <div class="entry-card">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('support')">Support</button>
+      <button class="tab" onclick="switchTab('fhr')">FHR</button>
+      <button class="tab" onclick="switchTab('woman')">Woman</button>
+      <button class="tab" onclick="switchTab('baby')">Baby</button>
+    </div>
+    <div id="tabContent" class="tab-content active">
+      <p style="padding: 2rem; text-align: center; color: #6b7280;">Select a timepoint to begin</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-btns">
+      <button class="btn" onclick="prevTimepoint()">Prev</button>
+      <button class="btn" onclick="saveData()">Save</button>
+      <button class="btn" onclick="nextTimepoint()">Next</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script>
+    // ============================================================================
+    // STATE MANAGEMENT
+    // ============================================================================
+    const state = {
+      patientId: null,
+      startTime: null,
+      secondStageTime: null,
+      activeTimepoint: null,
+      timepoints: [],
+      mode: 'entry',
+      activeTab: 'support',
+      data: {},
+      isSecondStageActive: false
+    };
+
+    let currentIndex = 0;
+
+    // ============================================================================
+    // SECTION CONFIGS (from summary.html)
+    // ============================================================================
+    const sections = {
+      support: [
+        { key: 'Companion', label: 'Companion', type: 'select', options: [['Y','Yes'],['N','No'],['D','Deferred']] },
+        { key: 'Pain_Relief', label: 'Pain Relief', type: 'select', options: [['Y','Yes'],['N','No'],['D','Deferred']] },
+        { key: 'Oral_fluids', label: 'Oral Fluids', type: 'select', options: [['Y','Yes'],['N','No'],['D','Deferred']] },
+        { key: 'Mobility', label: 'Mobility', type: 'select', options: [['M','Mobile'],['SP','Supine Position']] }
+      ],
+      fhr: [
+        { key: 'Baseline_FHR', label: 'Baseline FHR (bpm)', type: 'number', min: 60, max: 200 },
+        { key: 'FHR_deceleration', label: 'FHR Deceleration', type: 'select', options: [['N','None'],['E','Early'],['L','Late'],['V','Variable']] }
+      ],
+      woman: [
+        { key: 'Pulse', label: 'Pulse (bpm)', type: 'number', min: 40, max: 200 },
+        { key: 'Systolic_BP', label: 'Systolic BP', type: 'number', min: 60, max: 200 },
+        { key: 'Diastolic_BP', label: 'Diastolic BP', type: 'number', min: 40, max: 120 },
+        { key: 'Temperature_C', label: 'Temperature (°C)', type: 'number', step: 0.1 },
+        { key: 'Urine', label: 'Urine', type: 'select', options: [['Y','Present'],['N','Absent']] }
+      ],
+      baby: [
+        { key: 'Amniotic_fluid', label: 'Amniotic Fluid', type: 'select', options: [['C','Clear'],['M','Meconium'],['B','Blood']] },
+        { key: 'Fetal_position', label: 'Fetal Position', type: 'select', options: [['C','Cephalic'],['B','Breech'],['T','Transverse'],['P','Posterior']] },
+        { key: 'Caput', label: 'Caput', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] },
+        { key: 'Moulding', label: 'Moulding', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] }
+      ]
+    };
+
+    // Alert thresholds (from summary.html)
+    const alertThresholds = {
+      'Companion': ['N'],
+      'Pain_Relief': ['N'],
+      'Oral_fluids': ['N'],
+      'Mobility': ['SP'],
+      'Baseline_FHR': { min: 110, max: 160 },
+      'FHR_deceleration': ['L'],
+      'Pulse': { min: 60, max: 120 },
+      'Systolic_BP': { min: 80, max: 140 },
+      'Diastolic_BP': { min: null, max: 90 },
+      'Temperature_C': { min: 35.0, max: 37.5 },
+      'Amniotic_fluid': ['M+++', 'B']
+    };
+
+    // ============================================================================
+    // TIMEPOINT GENERATION (Pure Functions)
+    // ============================================================================
+    function generateTimepoints(start, secondStage = null) {
+      console.log('🕐 generateTimepoints:', { start, secondStage });
+      if (!start) return [];
+
+      const [sh, sm] = start.split(':').map(Number);
+      const result = [];
+      const horizonMinutes = 12 * 60; // 12 hours
+      
+      // Generate 30-min intervals for 12h
+      for (let i = 0; i <= horizonMinutes; i += 30) {
+        const totalMin = (sh * 60 + sm + i) % (24 * 60);
+        const h = Math.floor(totalMin / 60);
+        const m = totalMin % 60;
+        result.push(`${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`);
+      }
+      
+      state.timepoints = result;
+      state.isSecondStageActive = secondStage !== null;
+      
+      console.log('✅ Generated', result.length, 'timepoints');
+      return result;
+    }
+
+    // ============================================================================
+    // MODE & TAB SWITCHING
+    // ============================================================================
+    function setMode(m) { 
+      state.mode = m; 
+      document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active')); 
+      event.target.classList.add('active'); 
+      
+      if (m === 'review') {
+        renderReviewTimeline();
+      } else {
+        renderTab();
+      }
+    }
+    
+    function switchTab(t) {
+      state.activeTab = t;
+      document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      renderTab();
+    }
+
+    // ============================================================================
+    // RENDER FUNCTIONS
+    // ============================================================================
+    function renderTab() {
+      if (!state.activeTimepoint) {
+        document.getElementById('tabContent').innerHTML = '<p style="padding: 2rem; text-align: center; color: #6b7280;">Select a timepoint to begin</p>';
+        return;
+      }
+
+      const config = sections[state.activeTab];
+      const timeKey = state.activeTimepoint.replace(':', '_');
+      
+      const html = config.map(f => {
+        const inputName = `${f.key}_${timeKey}`;
+        const storedValue = state.data[inputName] || '';
+        const alertInfo = getAlertInfo(f.key, storedValue);
+        
+        if (f.type === 'select') {
+          return `
+            <div class="form-field">
+              <label class="form-label">${f.label} ${alertInfo}</label>
+              <select name="${inputName}" class="form-input" onchange="updateValue('${inputName}', this.value)">
+                <option value="">Select...</option>
+                ${f.options.map(([v,l]) => `<option value="${v}" ${storedValue === v ? 'selected' : ''}>${l}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        } else {
+          const attrs = f.min ? `min="${f.min}" max="${f.max || ''}"` : '';
+          const extraAttrs = f.step ? `step="${f.step}"` : '';
+          return `
+            <div class="form-field">
+              <label class="form-label">${f.label} ${alertInfo}</label>
+              <input type="${f.type}" name="${inputName}" class="form-input ${isAlertValue(f.key, storedValue) ? 'alert-value' : ''}" 
+                value="${storedValue}" ${attrs} ${extraAttrs} 
+                onchange="updateValue('${inputName}', this.value)" oninput="updateValue('${inputName}', this.value)">
+            </div>
+          `;
+        }
+      }).join('');
+      
+      document.getElementById('tabContent').innerHTML = html;
+    }
+
+    function renderReviewTimeline() {
+      const container = document.getElementById('reviewMode');
+      if (!container) return;
+      
+      if (state.timepoints.length === 0) {
+        container.innerHTML = '<p style="padding: 2rem;">No data available</p>';
+        return;
+      }
+      
+      container.innerHTML = state.timepoints.map((tp, idx) => {
+        const timeKey = tp.replace(':', '_');
+        const hasData = Object.keys(state.data).some(k => k.endsWith(timeKey));
+        
+        if (!hasData && idx > 0) return ''; // Skip empty timepoints except first
+        
+        return `
+          <div style="background: white; padding: 1rem; margin: 0.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="font-weight: 700; margin-bottom: 0.5rem;">${tp}</div>
+            <button class="btn" onclick="jumpToTimepoint(${idx})" style="width: 100%; background: var(--primary); color: white; border: none; padding: 0.75rem; border-radius: 8px; cursor: pointer;">
+              Open in Entry
+            </button>
+          </div>
+        `;
+      }).filter(h => h).join('');
+    }
+
+    // ============================================================================
+    // NAVIGATION
+    // ============================================================================
+    function prevTimepoint() { 
+      if (currentIndex > 0) {
+        currentIndex--;
+        state.activeTimepoint = state.timepoints[currentIndex];
+        updateUI();
+        renderTab();
+      }
+    }
+    
+    function nextTimepoint() { 
+      if (currentIndex < state.timepoints.length - 1) {
+        currentIndex++;
+        state.activeTimepoint = state.timepoints[currentIndex];
+        updateUI();
+        renderTab();
+      }
+    }
+
+    function jumpToTimepoint(idx) {
+      currentIndex = idx;
+      state.activeTimepoint = state.timepoints[idx];
+      setMode('entry');
+      document.getElementById('entryModeBtn').click();
+      updateUI();
+      renderTab();
+    }
+
+    function updateUI() {
+      const prevBtn = document.querySelector('.btn-footer.btn-prev');
+      const nextBtn = document.querySelector('.btn-footer.btn-next');
+      if (prevBtn) prevBtn.disabled = currentIndex === 0;
+      if (nextBtn) nextBtn.disabled = currentIndex >= state.timepoints.length - 1;
+    }
+
+    // ============================================================================
+    // DATA MANAGEMENT
+    // ============================================================================
+    function updateValue(key, value) {
+      if (value) {
+        state.data[key] = value;
+        checkAlerts();
+      }
+    }
+
+    async function saveData() {
+      if (!state.patientId) {
+        alert('No patient ID');
+        return;
+      }
+      
+      try {
+        const base = firebase.firestore().collection("patients").doc(state.patientId);
+        await base.collection("records").doc("summary").set({
+          ...state.data,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          startingTime: state.startTime,
+          secondStageTime: state.secondStageTime
+        }, { merge: true });
+        
+        alert('Saved!');
+      } catch (error) {
+        console.error('Save error:', error);
+        alert('Error saving: ' + error.message);
+      }
+    }
+
+    async function loadData() {
+      const patientId = getPatientIdFromUrl();
+      if (!patientId) return;
+      
+      state.patientId = patientId;
+      
+      try {
+        const base = firebase.firestore().collection("patients").doc(patientId);
+        const doc = await base.collection("records").doc("summary").get();
+        
+        if (doc.exists) {
+          const data = doc.data();
+          state.data = data;
+          state.startTime = data.startingTime;
+          state.secondStageTime = data.secondStageTime;
+          
+          if (state.startTime) {
+            generateTimepoints(state.startTime, state.secondStageTime);
+            state.activeTimepoint = state.timepoints[0];
+            currentIndex = 0;
+            updateUI();
+            renderTab();
+          }
+        }
+      } catch (error) {
+        console.error('Load error:', error);
+      }
+    }
+
+    // ============================================================================
+    // ALERTS
+    // ============================================================================
+    function isAlertValue(fieldKey, value) {
+      const alert = alertThresholds[fieldKey];
+      if (!alert) return false;
+      
+      if (Array.isArray(alert)) {
+        return alert.includes(value);
+      } else if (typeof alert === 'object') {
+        const num = parseFloat(value);
+        if (isNaN(num)) return false;
+        if (alert.min !== null && num < alert.min) return true;
+        if (alert.max !== null && num > alert.max) return true;
+      }
+      return false;
+    }
+
+    function getAlertInfo(fieldKey, value) {
+      const alert = alertThresholds[fieldKey];
+      if (!alert) return '';
+      
+      if (Array.isArray(alert)) {
+        return isAlertValue(fieldKey, value) ? '<span style="color: #dc2626;">⚠</span>' : '';
+      } else {
+        return isAlertValue(fieldKey, value) ? '<span style="color: #dc2626;">⚠</span>' : '';
+      }
+    }
+
+    function checkAlerts() {
+      // Update alerts chip
+      const alertCount = Object.keys(state.data).filter(k => {
+        const [fieldKey] = k.split('_');
+        return isAlertValue(fieldKey, state.data[k]);
+      }).length;
+      
+      // Add alert chip update logic here
+    }
+
+    function getPatientIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('patient');
+    }
+
+    // ============================================================================
+    // INITIALIZATION
+    // ============================================================================
+    firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+        return;
+      }
+      
+      await loadData();
+    });
+
+    // Initialize with demo data for testing
+    if (!state.startTime) {
+      generateTimepoints('08:00');
+      state.activeTimepoint = state.timepoints[0];
+      currentIndex = 0;
+      renderTab();
+    }
+  </script>
+</body>
+</html>
