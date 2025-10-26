@@ -337,16 +337,32 @@
     // ============================================================================
     function generateTimepoints(start, secondStage = null) {
       console.log('🕐 generateTimepoints:', { start, secondStage });
-      if (!start) return [];
-
+      
+      // Validate input
+      if (!start) {
+        console.error('❌ No start time provided');
+        return [];
+      }
+      
       const [sh, sm] = start.split(':').map(Number);
+      
+      // Validate parsed values
+      if (isNaN(sh) || isNaN(sm) || sh < 0 || sh > 23 || sm < 0 || sm > 59) {
+        console.error('❌ Invalid start time format:', start);
+        return [];
+      }
+      
       const result = [];
       
       // Parse second stage time if provided
       let secondStageMin = null;
       if (secondStage) {
         const [ssh, ssm] = secondStage.split(':').map(Number);
-        secondStageMin = ssh * 60 + ssm;
+        if (!isNaN(ssh) && !isNaN(ssm) && ssh >= 0 && ssh <= 23 && ssm >= 0 && ssm <= 59) {
+          secondStageMin = ssh * 60 + ssm;
+        } else {
+          console.error('❌ Invalid second stage time format:', secondStage);
+        }
       }
       
       const startMin = sh * 60 + sm;
@@ -662,11 +678,48 @@
             }
             console.log('✅ Loaded data with', state.timepoints.length, 'timepoints');
           } else {
-            console.log('⚠️ No start time found in data');
+            console.log('⚠️ No start time found in data, initializing with demo');
+            // Demo initialization
+            generateTimepoints('08:00');
+            state.startTime = '08:00';
+            if (state.timepoints.length > 0) {
+              state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+              currentIndex = 0;
+              updateUI();
+              renderTimePills();
+              renderTab();
+            }
+          }
+        } else {
+          console.log('⚠️ No summary data found, initializing with demo');
+          // Demo initialization
+          generateTimepoints('08:00');
+          state.startTime = '08:00';
+          if (state.timepoints.length > 0) {
+            state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+            currentIndex = 0;
+            updateUI();
+            renderTimePills();
+            renderTab();
           }
         }
       } catch (error) {
         console.error('Load error:', error);
+        console.log('⚠️ Error loading data, initializing with demo');
+        // Fallback to demo
+        try {
+          generateTimepoints('08:00');
+          state.startTime = '08:00';
+          if (state.timepoints.length > 0) {
+            state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+            currentIndex = 0;
+            updateUI();
+            renderTimePills();
+            renderTab();
+          }
+        } catch (demoError) {
+          console.error('Demo initialization error:', demoError);
+        }
       }
     }
 
@@ -828,17 +881,8 @@
       if (backdrop) backdrop.classList.remove('active');
     }
 
-    // Initialize with demo data for testing
-    if (!state.startTime) {
-      generateTimepoints('08:00');
-      if (state.timepoints.length > 0) {
-        state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
-        currentIndex = 0;
-        renderTimePills();
-        renderTab();
-      }
-      console.log('🔧 Demo mode initialized with timepoints:', state.timepoints);
-    }
+    // Note: Demo initialization is now handled in loadData() if no data exists
+    // Don't initialize here to avoid conflicts with async loading
   </script>
 </body>
 </html>
