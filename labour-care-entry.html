@@ -43,9 +43,47 @@
     .stage-pill.second-stage { background: #34d399; }
     
     .header-controls { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
-    .timepoint-select { flex: 1; padding: 0.5rem; border-radius: 8px; border: none; font-weight: 600; }
-    .btn-add-now { background: var(--warning); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
-    .alerts-chip { background: var(--danger); color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: 700; }
+    .time-pills-container { flex: 1; position: relative; }
+    .time-pills-nav { display: flex; gap: 0.5rem; align-items: center; justify-content: center; }
+    .time-pills-wrapper { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; display: flex; gap: 0.5rem; }
+    .time-pills-wrapper::-webkit-scrollbar { display: none; }
+    .time-pill { 
+      background: rgba(255,255,255,0.2); 
+      color: white; 
+      border: 2px solid transparent;
+      padding: 0.5rem 0.75rem; 
+      border-radius: 20px; 
+      font-weight: 600; 
+      font-size: 0.875rem; 
+      cursor: pointer; 
+      white-space: nowrap; 
+      transition: all 0.2s;
+      min-width: 60px;
+      text-align: center;
+    }
+    .time-pill:hover { background: rgba(255,255,255,0.3); }
+    .time-pill.active { background: white; color: var(--primary); border-color: white; }
+    .time-pill.second-stage { background: #34d399; color: white; border-color: #34d399; }
+    .time-pill.second-stage.active { background: #34d399; color: white; border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+    .time-pill-nav { 
+      background: rgba(255,255,255,0.2); 
+      border: none; 
+      color: white; 
+      width: 32px; 
+      height: 32px; 
+      border-radius: 50%; 
+      cursor: pointer; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .time-pill-nav:hover { background: rgba(255,255,255,0.3); }
+    .time-pill-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+    
+    .btn-add-now { background: var(--warning); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .alerts-chip { background: var(--danger); color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: 700; flex-shrink: 0; }
     
     .mode-toggle { display: flex; gap: 0.5rem; }
     .mode-btn { flex: 1; padding: 0.5rem; border: none; background: rgba(255,255,255,0.2); color: white; border-radius: 8px; font-weight: 600; cursor: pointer; }
@@ -105,9 +143,13 @@
     </div>
     
     <div class="header-controls">
-      <select id="timepointSelect" class="timepoint-select" onchange="selectTimepoint(this.value)">
-        <option>Select timepoint...</option>
-      </select>
+      <div class="time-pills-container">
+        <div class="time-pills-nav">
+          <button class="time-pill-nav" id="timePillsPrev" onclick="scrollTimePills('prev')">‹</button>
+          <div class="time-pills-wrapper" id="timePillsWrapper"></div>
+          <button class="time-pill-nav" id="timePillsNext" onclick="scrollTimePills('next')">›</button>
+        </div>
+      </div>
       <button class="btn-add-now" onclick="addCurrentTimepoint()">+ Now</button>
       <div class="alerts-chip" id="alertsChip" onclick="openAlertsDrawer()">⚠</div>
     </div>
@@ -274,16 +316,42 @@
       const result = [];
       const horizonMinutes = 12 * 60; // 12 hours
       
-      // Generate 30-min intervals for 12h
-      for (let i = 0; i <= horizonMinutes; i += 30) {
-        const totalMin = (sh * 60 + sm + i) % (24 * 60);
-        const h = Math.floor(totalMin / 60);
-        const m = totalMin % 60;
-        result.push(`${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`);
+      // Parse second stage time if provided
+      let secondStageMin = null;
+      if (secondStage) {
+        const [ssh, ssm] = secondStage.split(':').map(Number);
+        secondStageMin = ssh * 60 + ssm;
+      }
+      
+      const startMin = sh * 60 + sm;
+      
+      // Generate timepoints based on stage
+      let currentMin = startMin;
+      const endMin = startMin + horizonMinutes;
+      
+      while (currentMin <= endMin) {
+        const h = Math.floor(currentMin / 60) % 24;
+        const m = currentMin % 60;
+        const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+        
+        result.push({
+          time: timeStr,
+          isSecondStage: secondStageMin !== null && currentMin >= secondStageMin && currentMin <= secondStageMin + 90
+        });
+        
+        // Determine interval based on stage
+        if (secondStageMin !== null && currentMin >= secondStageMin) {
+          // Second stage: 15-min intervals (max 6 intervals = 1.5 hours)
+          currentMin += 15;
+          if (currentMin > secondStageMin + 90) break; // Stop after 6 intervals
+        } else {
+          // First stage: 30-min intervals
+          currentMin += 30;
+        }
       }
       
       state.timepoints = result;
-      state.isSecondStageActive = secondStage !== null;
+      state.isSecondStageActive = secondStageMin !== null;
       
       console.log('✅ Generated', result.length, 'timepoints');
       return result;
@@ -512,11 +580,13 @@
           
           if (state.startTime) {
             generateTimepoints(state.startTime, state.secondStageTime);
-            state.activeTimepoint = state.timepoints[0];
-            currentIndex = 0;
-            updateTimepointSelector();
-            updateUI();
-            renderTab();
+            if (state.timepoints.length > 0) {
+              state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+              currentIndex = 0;
+              updateUI();
+              renderTimePills();
+              renderTab();
+            }
             console.log('✅ Loaded data with', state.timepoints.length, 'timepoints');
           } else {
             console.log('⚠️ No start time found in data');
@@ -581,33 +651,73 @@
       }
       
       await loadData();
+      renderTimePills(); // Initial render
     });
 
-    // Select timepoint from dropdown
-    function selectTimepoint(timepoint) {
-      if (!timepoint) return;
-      const idx = state.timepoints.indexOf(timepoint);
+    // State for time pills pagination
+    let currentPillPage = 0;
+    const pillsPerPage = 5;
+    
+    // Select timepoint from pills
+    function selectTimepoint(timeStr) {
+      const idx = state.timepoints.findIndex(tp => tp.time === timeStr || tp === timeStr);
       if (idx >= 0) {
         currentIndex = idx;
-        state.activeTimepoint = timepoint;
+        state.activeTimepoint = state.timepoints[idx].time || state.timepoints[idx];
         updateUI();
-        updateTimepointSelector();
+        renderTimePills();
         renderTab();
       }
     }
 
-    // Update timepoint selector dropdown
-    function updateTimepointSelector() {
-      const select = document.getElementById('timepointSelect');
-      if (!select) return;
-      select.innerHTML = '<option value="">Select timepoint...</option>';
-      state.timepoints.forEach(tp => {
-        const opt = document.createElement('option');
-        opt.value = tp;
-        opt.textContent = tp;
-        if (tp === state.activeTimepoint) opt.selected = true;
-        select.appendChild(opt);
+    // Render time pills
+    function renderTimePills() {
+      const wrapper = document.getElementById('timePillsWrapper');
+      if (!wrapper) return;
+      
+      wrapper.innerHTML = '';
+      
+      const allTimepoints = state.timepoints;
+      const totalPages = Math.ceil(allTimepoints.length / pillsPerPage);
+      
+      // Show 5 pills centered around current index
+      const startIdx = Math.max(0, currentIndex - 2);
+      const endIdx = Math.min(allTimepoints.length, currentIndex + 3);
+      
+      const visibleTimepoints = allTimepoints.slice(startIdx, endIdx);
+      
+      visibleTimepoints.forEach((tp, idx) => {
+        const actualIdx = startIdx + idx;
+        const timeStr = tp.time || tp;
+        const isSecondStage = tp.isSecondStage || false;
+        const isActive = actualIdx === currentIndex;
+        
+        const pill = document.createElement('button');
+        pill.className = `time-pill ${isSecondStage ? 'second-stage' : ''} ${isActive ? 'active' : ''}`;
+        pill.textContent = timeStr;
+        pill.onclick = () => selectTimepoint(timeStr);
+        
+        wrapper.appendChild(pill);
       });
+      
+      // Update nav buttons
+      const prevBtn = document.getElementById('timePillsPrev');
+      const nextBtn = document.getElementById('timePillsNext');
+      if (prevBtn) prevBtn.disabled = currentIndex === 0;
+      if (nextBtn) nextBtn.disabled = currentIndex >= allTimepoints.length - 1;
+    }
+
+    // Scroll time pills
+    function scrollTimePills(direction) {
+      const maxIndex = state.timepoints.length - 1;
+      
+      if (direction === 'prev' && currentIndex > 0) {
+        currentIndex--;
+        selectTimepoint(state.timepoints[currentIndex].time || state.timepoints[currentIndex]);
+      } else if (direction === 'next' && currentIndex < maxIndex) {
+        currentIndex++;
+        selectTimepoint(state.timepoints[currentIndex].time || state.timepoints[currentIndex]);
+      }
     }
 
     // Add current timepoint
@@ -617,11 +727,15 @@
       const m = now.getMinutes().toString().padStart(2, '0');
       const timepoint = `${h}:${m}`;
       
-      if (!state.timepoints.includes(timepoint)) {
-        state.timepoints.push(timepoint);
-        state.timepoints.sort();
-        updateTimepointSelector();
-        selectTimepoint(timepoint);
+      // Try to find closest existing timepoint
+      const closestIdx = state.timepoints.findIndex(tp => {
+        const tpTime = tp.time || tp;
+        return tpTime >= timepoint;
+      });
+      
+      if (closestIdx >= 0) {
+        currentIndex = closestIdx;
+        selectTimepoint(state.timepoints[closestIdx].time || state.timepoints[closestIdx]);
       }
     }
 
@@ -644,10 +758,12 @@
     // Initialize with demo data for testing
     if (!state.startTime) {
       generateTimepoints('08:00');
-      state.activeTimepoint = state.timepoints[0];
-      currentIndex = 0;
-      updateTimepointSelector();
-      renderTab();
+      if (state.timepoints.length > 0) {
+        state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+        currentIndex = 0;
+        renderTimePills();
+        renderTab();
+      }
       console.log('🔧 Demo mode initialized with timepoints:', state.timepoints);
     }
   </script>
