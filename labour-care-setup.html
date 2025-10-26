@@ -136,24 +136,39 @@
     }
     
     .btn-back {
-      position: absolute;
-      top: 1rem;
-      left: 1rem;
-      background: rgba(255,255,255,0.2);
-      border: 1px solid rgba(255,255,255,0.3);
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--primary);
+      border: none;
       color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      border-radius: 50px;
       cursor: pointer;
       transition: all 0.2s;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
+      box-shadow: 0 4px 12px rgba(16,185,129,0.4);
+      z-index: 1000;
+      font-weight: 600;
     }
     
     .btn-back:hover {
-      background: rgba(255,255,255,0.3);
+      background: var(--secondary);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(16,185,129,0.5);
+    }
+    
+    /* Sticky back button for mobile */
+    @media (max-width: 768px) {
+      .btn-back {
+        bottom: 1.5rem;
+        right: 1.5rem;
+        padding: 0.875rem 1.25rem;
+        font-size: 0.9rem;
+      }
     }
     
     .time-input-wrapper {
@@ -185,10 +200,7 @@
 <body>
 
 <div class="setup-card">
-  <div class="card-header" style="position: relative;">
-    <a href="list.html" class="btn-back">
-      <i class="fas fa-arrow-left"></i> Back
-    </a>
+  <div class="card-header">
     <h2><i class="fas fa-baby"></i> Labour Care Setup</h2>
     <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Configure labour care entry for patient</p>
   </div>
@@ -261,6 +273,11 @@
   </div>
 </div>
 
+<!-- Sticky Back Button -->
+<a href="list.html" class="btn-back">
+  <i class="fas fa-arrow-left"></i> Back
+</a>
+
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -285,6 +302,7 @@
     }
 
     try {
+      // Load patient document
       const patientDoc = await firebase.firestore()
         .collection('patients')
         .doc(patientId)
@@ -303,9 +321,34 @@
       document.getElementById('patientAge').textContent = currentPatientData.age || '-';
       document.getElementById('patientParity').textContent = currentPatientData.parity || '-';
       
-      // Load LMP and EDD from patient doc (anc data)
-      document.getElementById('patientLMP').textContent = currentPatientData.lmp || '-';
-      document.getElementById('patientEDD').textContent = currentPatientData.edd || '-';
+      // Try to get LMP and EDD from patient document first
+      let lmp = currentPatientData.lmp || null;
+      let edd = currentPatientData.edd || null;
+      
+      // If not in patient doc, try to get from latest ANC visit
+      if (!lmp || !edd) {
+        try {
+          const ancVisitsSnapshot = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('antenatal_visits')
+            .orderBy('visitDate', 'desc')
+            .limit(1)
+            .get();
+          
+          if (!ancVisitsSnapshot.empty) {
+            const latestVisit = ancVisitsSnapshot.docs[0].data();
+            lmp = latestVisit.lmp || lmp;
+            edd = latestVisit.edd || edd;
+          }
+        } catch (ancError) {
+          console.log('Could not load ANC data:', ancError);
+        }
+      }
+      
+      // Display LMP and EDD
+      document.getElementById('patientLMP').textContent = lmp || '-';
+      document.getElementById('patientEDD').textContent = edd || '-';
 
     } catch (error) {
       console.error('Error loading patient:', error);
