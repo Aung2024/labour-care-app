@@ -51,13 +51,20 @@
       display: flex; 
       gap: 0.5rem; 
       align-items: center; 
+      position: relative;
     }
-    
-    .header-controls { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
-    .time-pills-container { flex: 1; position: relative; }
     .time-pills-nav { display: flex; gap: 0.5rem; align-items: center; justify-content: center; }
-    .time-pills-wrapper { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; display: flex; gap: 0.5rem; }
+    .time-pills-wrapper { 
+      overflow-x: auto; 
+      scrollbar-width: none; 
+      -ms-overflow-style: none; 
+      display: flex; 
+      gap: 0.5rem; 
+      scroll-behavior: smooth;
+      scroll-snap-type: x mandatory;
+    }
     .time-pills-wrapper::-webkit-scrollbar { display: none; }
+    .time-pill { scroll-snap-align: center; }
     .time-pill { 
       background: #f3f4f6; 
       color: #374151; 
@@ -68,9 +75,14 @@
       font-size: 0.875rem; 
       cursor: pointer; 
       white-space: nowrap; 
-      transition: all 0.2s;
+      transition: all 0.3s ease;
       min-width: 60px;
       text-align: center;
+      transform: scale(1);
+    }
+    .time-pill.active { 
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(16,185,129,0.3);
     }
     .time-pill:hover { background: #e5e7eb; border-color: var(--primary); }
     .time-pill.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -329,7 +341,6 @@
 
       const [sh, sm] = start.split(':').map(Number);
       const result = [];
-      const horizonMinutes = 12 * 60; // 12 hours
       
       // Parse second stage time if provided
       let secondStageMin = null;
@@ -340,28 +351,49 @@
       
       const startMin = sh * 60 + sm;
       
-      // Generate timepoints based on stage
+      // Generate first stage timepoints (30-min intervals)
       let currentMin = startMin;
-      const endMin = startMin + horizonMinutes;
       
-      while (currentMin <= endMin) {
-        const h = Math.floor(currentMin / 60) % 24;
-        const m = currentMin % 60;
-        const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
-        
-        result.push({
-          time: timeStr,
-          isSecondStage: secondStageMin !== null && currentMin >= secondStageMin && currentMin <= secondStageMin + 90
-        });
-        
-        // Determine interval based on stage
-        if (secondStageMin !== null && currentMin >= secondStageMin) {
-          // Second stage: 15-min intervals (max 6 intervals = 1.5 hours)
-          currentMin += 15;
-          if (currentMin > secondStageMin + 90) break; // Stop after 6 intervals
-        } else {
-          // First stage: 30-min intervals
+      if (secondStageMin !== null && secondStageMin <= currentMin) {
+        // If second stage is before or at start, skip first stage
+      } else {
+        // Generate first stage timepoints up to (but not including) second stage
+        while (secondStageMin === null || currentMin < secondStageMin - 30) {
+          const h = Math.floor(currentMin / 60) % 24;
+          const m = currentMin % 60;
+          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          
+          result.push({
+            time: timeStr,
+            isSecondStage: false
+          });
+          
+          // Skip to next potential timepoint
           currentMin += 30;
+          
+          // Stop if we'd hit the second stage time (or are close enough)
+          if (secondStageMin !== null && currentMin >= secondStageMin) {
+            break;
+          }
+        }
+      }
+      
+      // Generate second stage timepoints if applicable
+      if (secondStageMin !== null) {
+        // Start exactly at second stage time
+        const endSecondStageMin = secondStageMin + (15 * 6); // 6 intervals of 15 min = 90 min
+        
+        while (currentMin <= endSecondStageMin) {
+          const h = Math.floor(currentMin / 60) % 24;
+          const m = currentMin % 60;
+          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          
+          result.push({
+            time: timeStr,
+            isSecondStage: true
+          });
+          
+          currentMin += 15;
         }
       }
       
@@ -369,6 +401,7 @@
       state.isSecondStageActive = secondStageMin !== null;
       
       console.log('✅ Generated', result.length, 'timepoints');
+      console.log('📅 Timepoints:', result.map(tp => `${tp.time}${tp.isSecondStage ? ' (2nd)' : ''}`));
       return result;
     }
 
@@ -493,20 +526,20 @@
     // ============================================================================
     function prevTimepoint() { 
       if (currentIndex > 0) {
-        saveData(); // Save before navigating
         currentIndex--;
-        state.activeTimepoint = state.timepoints[currentIndex];
+        state.activeTimepoint = state.timepoints[currentIndex].time || state.timepoints[currentIndex];
         updateUI();
+        renderTimePills();
         renderTab();
       }
     }
     
     function nextTimepoint() { 
       if (currentIndex < state.timepoints.length - 1) {
-        saveData(); // Save before navigating
         currentIndex++;
-        state.activeTimepoint = state.timepoints[currentIndex];
+        state.activeTimepoint = state.timepoints[currentIndex].time || state.timepoints[currentIndex];
         updateUI();
+        renderTimePills();
         renderTab();
       }
     }
