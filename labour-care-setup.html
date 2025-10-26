@@ -134,12 +134,61 @@
     .required {
       color: var(--danger);
     }
+    
+    .btn-back {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .btn-back:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    .time-input-wrapper {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    
+    .time-input-wrapper input {
+      flex: 1;
+    }
+    
+    .btn-ok {
+      padding: 0.75rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    
+    .btn-ok:hover {
+      background: var(--secondary);
+    }
   </style>
 </head>
 <body>
 
 <div class="setup-card">
-  <div class="card-header">
+  <div class="card-header" style="position: relative;">
+    <a href="list.html" class="btn-back">
+      <i class="fas fa-arrow-left"></i> Back
+    </a>
     <h2><i class="fas fa-baby"></i> Labour Care Setup</h2>
     <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Configure labour care entry for patient</p>
   </div>
@@ -156,21 +205,21 @@
       </div>
     </div>
     
-    <div class="info-box">
-      <i class="fas fa-info-circle"></i> <strong>Instructions:</strong> Enter the times below to generate timepoints for labour care monitoring. Timepoints will be created automatically based on WHO LCG guidelines.
-    </div>
-    
     <!-- Patient Info Input (like summary.html) -->
     <div class="form-group">
       <label class="form-label">
-        Labour Onset <span class="required">*</span>
+        Labour Onset
       </label>
-      <input type="datetime-local" id="labourOnset" class="form-control">
+      <select id="labourOnset" class="form-control">
+        <option value="">Select onset type...</option>
+        <option value="Spontaneous">Spontaneous</option>
+        <option value="Induced">Induced</option>
+      </select>
     </div>
     
     <div class="form-group">
       <label class="form-label">
-        Active Labour Diagnosis <span class="required">*</span>
+        Active Labour Diagnosis
       </label>
       <input type="datetime-local" id="activeLabour" class="form-control">
     </div>
@@ -186,7 +235,11 @@
       <label class="form-label">
         Active First Stage Start Time <span class="required">*</span>
       </label>
-      <input type="time" id="firstStageStart" class="form-control" required>
+      <div class="time-input-wrapper">
+        <input type="time" id="firstStageStart" class="form-control" required>
+        <button class="btn-ok" onclick="confirmTime('firstStageStart', 'firstStageDisplay')">OK</button>
+      </div>
+      <div id="firstStageDisplay" style="margin-top: 0.5rem; font-weight: 600; color: var(--primary);"></div>
       <small style="color: #6b7280;">Time when active first stage of labour began</small>
     </div>
     
@@ -194,15 +247,12 @@
       <label class="form-label">
         Second Stage Start Time (Optional)
       </label>
-      <input type="time" id="secondStageStart" class="form-control">
+      <div class="time-input-wrapper">
+        <input type="time" id="secondStageStart" class="form-control">
+        <button class="btn-ok" onclick="confirmTime('secondStageStart', 'secondStageDisplay')">OK</button>
+      </div>
+      <div id="secondStageDisplay" style="margin-top: 0.5rem; font-weight: 600; color: var(--primary);"></div>
       <small style="color: #6b7280;">Leave empty if second stage has not started yet</small>
-    </div>
-    
-    <div class="form-group">
-      <label class="form-label">
-        Risk Factors
-      </label>
-      <textarea id="riskFactors" class="form-control" rows="3" placeholder="Enter any relevant risk factors..."></textarea>
     </div>
     
     <button class="btn-primary" onclick="startLabourCare()">
@@ -252,6 +302,8 @@
       document.getElementById('patientName').textContent = currentPatientData.name || 'Unknown';
       document.getElementById('patientAge').textContent = currentPatientData.age || '-';
       document.getElementById('patientParity').textContent = currentPatientData.parity || '-';
+      
+      // Load LMP and EDD from patient doc (anc data)
       document.getElementById('patientLMP').textContent = currentPatientData.lmp || '-';
       document.getElementById('patientEDD').textContent = currentPatientData.edd || '-';
 
@@ -261,6 +313,28 @@
     }
   }
 
+  // Confirm time selection
+  function confirmTime(inputId, displayId) {
+    const input = document.getElementById(inputId);
+    const display = document.getElementById(displayId);
+    
+    if (input && input.value) {
+      const [hours, minutes] = input.value.split(':');
+      const time12h = convertTo12Hour(hours, minutes);
+      display.textContent = `Selected: ${time12h}`;
+      display.style.display = 'block';
+    }
+  }
+
+  // Convert 24-hour to 12-hour format
+  function convertTo12Hour(hours, minutes) {
+    const h = parseInt(hours);
+    const m = minutes;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${m} ${ampm}`;
+  }
+
   // Start Labour Care Entry
   async function startLabourCare() {
     const firstStageStart = document.getElementById('firstStageStart').value;
@@ -268,21 +342,10 @@
     const activeLabour = document.getElementById('activeLabour').value;
     const rupturedMembrane = document.getElementById('rupturedMembrane').value;
     const secondStageStart = document.getElementById('secondStageStart').value;
-    const riskFactors = document.getElementById('riskFactors').value;
 
-    // Validation
+    // Only validate first stage start time (required)
     if (!firstStageStart) {
       alert('Please enter Active First Stage Start Time');
-      return;
-    }
-
-    if (!labourOnset) {
-      alert('Please enter Labour Onset time');
-      return;
-    }
-
-    if (!activeLabour) {
-      alert('Please enter Active Labour Diagnosis time');
       return;
     }
 
@@ -294,10 +357,9 @@
         .collection('patients')
         .doc(patientId)
         .update({
-          labour_onset: labourOnset,
-          active_labour: activeLabour,
-          ruptured_membrane: rupturedMembrane || null,
-          risk_factors: riskFactors || null
+          labour_onset: labourOnset || null,
+          active_labour: activeLabour || null,
+          ruptured_membrane: rupturedMembrane || null
         });
 
       // Save time configuration (this will be used by labour-care-entry.html)

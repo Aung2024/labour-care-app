@@ -155,73 +155,7 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
-    /* Column Visibility Control */
-    .column-visibility-control {
-      background: #f8f9fa;
-      border: 1px solid #dee2e6;
-      border-radius: 10px;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-    }
 
-    .column-visibility-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-      cursor: pointer;
-    }
-
-    .column-visibility-header h5 {
-      margin: 0;
-      color: var(--primary-color);
-      font-weight: 600;
-    }
-
-    .column-visibility-control.collapsed .column-checkboxes {
-      display: none;
-    }
-
-    .column-checkboxes {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .column-checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: white;
-      padding: 0.5rem 1rem;
-      border: 1px solid #dee2e6;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-
-    .column-checkbox-item:hover {
-      border-color: var(--primary-color);
-      background: #f0fdf4;
-    }
-
-    .column-checkbox-item input[type="checkbox"] {
-      cursor: pointer;
-      width: 18px;
-      height: 18px;
-    }
-
-    .column-checkbox-item label {
-      cursor: pointer;
-      margin: 0;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-
-    /* Hidden column class */
-    .hidden-column {
-      display: none !important;
-    }
   </style>
   
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -382,17 +316,6 @@
       <div class="table-header">
         <h3><i class="fas fa-clipboard-list"></i> <span data-i18n="labourCareSummary">Labour Care Summary</span></h3>
         <p class="table-subtitle" data-i18n="completeFormBelow">Complete the form below for each time interval during active labour</p>
-      </div>
-      
-      <!-- Column Visibility Control -->
-      <div class="column-visibility-control" id="columnVisibilityControl">
-        <div class="column-visibility-header" onclick="toggleColumnVisibilityControl()">
-          <h5><i class="fas fa-columns"></i> Show/Hide Time Columns</h5>
-          <i class="fas fa-chevron-down" id="columnVisibilityToggleIcon"></i>
-        </div>
-        <div class="column-checkboxes" id="columnCheckboxes">
-          <!-- Checkboxes will be generated here -->
-        </div>
       </div>
       
       <!-- Supportive Care Table -->
@@ -571,133 +494,6 @@
   </footer>
 
   <script>
-    // Column Visibility Management
-    let columnVisibilityState = {}; // Store visibility state for each column
-    
-    // Toggle column visibility control
-    function toggleColumnVisibilityControl() {
-      const control = document.getElementById('columnVisibilityControl');
-      const icon = document.getElementById('columnVisibilityToggleIcon');
-      
-      if (control && icon) {
-        control.classList.toggle('collapsed');
-        if (control.classList.contains('collapsed')) {
-          icon.classList.remove('fa-chevron-up');
-          icon.classList.add('fa-chevron-down');
-        } else {
-          icon.classList.remove('fa-chevron-down');
-          icon.classList.add('fa-chevron-up');
-        }
-      }
-    }
-    
-    // Show/hide a specific time column
-    function toggleTimeColumn(columnId, checked) {
-      columnVisibilityState[columnId] = checked;
-      
-      // Hide/show all cells in this column across all tables
-      const allTables = document.querySelectorAll('.summary-table');
-      allTables.forEach(table => {
-        // Find column by index
-        const columnCells = table.querySelectorAll(`td:nth-child(${getColumnIndex(columnId) + 1}), th:nth-child(${getColumnIndex(columnId) + 1})`);
-        columnCells.forEach(cell => {
-          const row = cell.closest('tr');
-          // Get the column identifier from the cell
-          const cellColumnId = getCellColumnId(cell);
-          if (cellColumnId === columnId) {
-            if (checked) {
-              cell.classList.remove('hidden-column');
-            } else {
-              cell.classList.add('hidden-column');
-            }
-          }
-        });
-      });
-      
-      // Also handle header cells
-      const headers = document.querySelectorAll(`th[data-column-id="${columnId}"]`);
-      headers.forEach(header => {
-        if (checked) {
-          header.classList.remove('hidden-column');
-        } else {
-          header.classList.add('hidden-column');
-        }
-      });
-    }
-    
-    // Get column index from column ID
-    function getColumnIndex(columnId) {
-      const match = columnId.match(/T(\d+)/);
-      return match ? parseInt(match[1]) - 1 : -1;
-    }
-    
-    // Get column ID from cell
-    function getCellColumnId(cell) {
-      // Try to get from data attribute first
-      if (cell.hasAttribute('data-column-id')) {
-        return cell.getAttribute('data-column-id');
-      }
-      
-      // Try to get from parent row
-      const row = cell.closest('tr');
-      if (row) {
-        const cells = Array.from(row.children);
-        const index = cells.indexOf(cell);
-        // First column is usually the field name, so subtract 2 (1 for field, 1 for alert)
-        const columnIndex = index - 2;
-        if (columnIndex >= 0) {
-          return `T${columnIndex + 1}`;
-        }
-      }
-      
-      return null;
-    }
-    
-    // Generate column checkboxes
-    function generateColumnCheckboxes() {
-      const checkboxContainer = document.getElementById('columnCheckboxes');
-      if (!checkboxContainer) return;
-      
-      // Get all time columns from the first table (assuming all tables have same columns)
-      const firstTable = document.querySelector('.summary-table');
-      if (!firstTable) return;
-      
-      const headers = firstTable.querySelectorAll('th');
-      const timeColumns = [];
-      
-      headers.forEach((header, index) => {
-        // Skip first two columns (Field and Alert)
-        if (index >= 2) {
-          const text = header.textContent.trim();
-          const columnId = `T${index - 1}`;
-          if (text && !text.includes('Field') && !text.includes('Alert')) {
-            timeColumns.push({
-              id: columnId,
-              label: text
-            });
-          }
-        }
-      });
-      
-      // Generate checkboxes
-      checkboxContainer.innerHTML = '';
-      timeColumns.forEach(column => {
-        const isVisible = columnVisibilityState[column.id] !== false; // Default to visible
-        
-        const checkboxItem = document.createElement('div');
-        checkboxItem.className = 'column-checkbox-item';
-        checkboxItem.innerHTML = `
-          <input type="checkbox" id="col-${column.id}" ${isVisible ? 'checked' : ''} 
-                 onchange="toggleTimeColumn('${column.id}', this.checked)">
-          <label for="col-${column.id}">${column.label}</label>
-        `;
-        checkboxContainer.appendChild(checkboxItem);
-        
-        // Set initial visibility state
-        columnVisibilityState[column.id] = isVisible;
-      });
-    }
-    
     // Get patient ID from URL parameters
     function getPatientIdFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -2016,9 +1812,6 @@
           shownRecommendations.clear();
           showRecommendations();
         }
-        
-        // Generate column visibility checkboxes
-        generateColumnCheckboxes();
       }, 100);
     }
 
