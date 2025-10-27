@@ -435,28 +435,35 @@
         
         // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
         currentMin = startMin;
+        let hourCount = 0;
         while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin)) {
           const totalMins = currentMin % (24 * 60);
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
           const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
           
-          // Only add if not already in result (avoid duplicates at exact hours)
-          const alreadyExists = result.some(tp => tp.time === timeStr);
-          if (!alreadyExists) {
-            result.push({
-              time: timeStr,
-              isSecondStage: false,
-              interval: '60min'
-            });
-          }
+          result.push({
+            time: timeStr,
+            isSecondStage: false,
+            interval: '60min'
+          });
+          
+          hourCount++;
+          console.log(`  📅 Added 1-hour timepoint: ${timeStr} (count: ${hourCount})`);
           
           currentMin += 60;
           
           if (secondStageMin !== null && currentMin >= secondStageMin) {
             break;
           }
+          
+          if (hourCount > 50) {
+            console.error('❌ Too many 1-hour timepoints, breaking loop');
+            break;
+          }
         }
+        
+        console.log(`✅ Generated ${hourCount} 1-hour interval timepoints`);
       }
       
       // Generate second stage timepoints if applicable
@@ -485,7 +492,7 @@
       state.isSecondStageActive = secondStageMin !== null;
       
       console.log('✅ Generated', result.length, 'timepoints');
-      console.log('📅 Timepoints:', result.map(tp => `${tp.time}${tp.isSecondStage ? ' (2nd)' : ''}`));
+      console.log('📅 Timepoints:', result.map(tp => `${tp.time}${tp.interval ? ` (${tp.interval})` : ''}${tp.isSecondStage ? ' [2nd]' : ''}`));
       return result;
     }
 
@@ -497,19 +504,20 @@
     function getIntervalForTimepoint(timepoint) {
       if (!timepoint) return 'unknown';
       
-      // Find the timepoint in state.timepoints to get its interval property
-      const tp = state.timepoints.find(t => t.time === timepoint || t === timepoint);
+      // Find ALL timepoints with this time (can have multiple intervals)
+      const tps = state.timepoints.filter(t => t.time === timepoint || t === timepoint);
       
-      if (tp && tp.interval) {
-        return tp.interval; // Use the interval property directly
+      if (tps.length > 0) {
+        // Check if this time has a 60-min interval (for Support, Woman, Baby, etc.)
+        const has60min = tps.some(tp => tp.interval === '60min');
+        if (has60min) {
+          return '60min'; // Prefer 60-min if available for full field display
+        }
+        
+        // Otherwise return the interval (30min or 15min)
+        return tps[0].interval || (tps[0].isSecondStage ? '15min' : '30min');
       }
       
-      // Fallback: check isSecondStage flag for backwards compatibility
-      if (tp && tp.isSecondStage) {
-        return '15min';
-      } else if (tp && !tp.isSecondStage) {
-        return '30min';
-      }
       return 'unknown';
     }
     
