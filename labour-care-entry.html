@@ -711,6 +711,12 @@
       if (container.children.length > 0) {
         container.children[0].classList.add('expanded');
       }
+      
+      // Check alerts and highlight fields after rendering
+      setTimeout(() => {
+        checkAlerts();
+        highlightAlertFields();
+      }, 100);
     }
     
     function toggleSection(sectionKey) {
@@ -876,8 +882,42 @@
         const fieldName = input.name || input.id;
         const value = input.value;
         
-        if (fieldName && value) {
-          if (isAlertValue(fieldName, value)) {
+        if (fieldName && value && value.toString().trim() !== '') {
+          let isAlert = false;
+          
+          // Use the same alert checking logic as checkAlerts()
+          if (fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            isAlert = !isNaN(fhr) && (fhr < 110 || fhr >= 160);
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            isAlert = !isNaN(pulse) && (pulse < 60 || pulse >= 120);
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            isAlert = !isNaN(bp) && (bp < 80 || bp >= 140);
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            isAlert = !isNaN(bp) && bp >= 90;
+          } else if (fieldName.includes('Temperature_C')) {
+            const temp = parseFloat(value);
+            isAlert = !isNaN(temp) && (temp < 35.0 || temp >= 37.5);
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            isAlert = true;
+          } else if (fieldName.includes('Mobility') && value === 'SP') {
+            isAlert = true;
+          } else if (fieldName.includes('Companion') && value === 'N') {
+            isAlert = true;
+          } else if (fieldName.includes('FHR_deceleration') && (value === 'L' || value === 'V' || value === 'E')) {
+            isAlert = true;
+          } else if (fieldName.includes('Contractions_per_10_min')) {
+            const contractions = parseInt(value);
+            isAlert = !isNaN(contractions) && (contractions < 2 || contractions > 5);
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const duration = parseInt(value);
+            isAlert = !isNaN(duration) && (duration < 20 || duration > 60);
+          }
+          
+          if (isAlert) {
             input.classList.add('alert-input');
           }
         }
