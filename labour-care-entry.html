@@ -470,6 +470,34 @@
     // ============================================================================
     // RENDER FUNCTIONS
     // ============================================================================
+    
+    // Determine which sections to show based on timepoint interval
+    function getIntervalForTimepoint(timepoint) {
+      if (!timepoint) return 'unknown';
+      
+      // Find the timepoint in state.timepoints to check if it's second stage
+      const tp = state.timepoints.find(t => t.time === timepoint || t === timepoint);
+      
+      if (tp && tp.isSecondStage) {
+        return '15min'; // Second stage has 15-minute intervals
+      } else if (tp && !tp.isSecondStage) {
+        return '30min'; // First stage has 30-minute intervals
+      }
+      return 'unknown';
+    }
+    
+    // Check if a section should be shown for the current interval
+    function shouldShowSection(sectionKey, interval) {
+      // Mapping of which sections to show for each interval
+      const sectionRules = {
+        '15min': ['fhr', 'contractions', 'cervix'], // Show FHR, Contractions, Cervix Plot
+        '30min': ['fhr', 'contractions'], // Show FHR and Contractions only
+        '60min': ['support', 'fhr', 'woman', 'baby', 'contractions', 'cervix', 'descent', 'meds', 'sdm'] // Show all sections
+      };
+      
+      return sectionRules[interval]?.includes(sectionKey) || false;
+    }
+    
     function renderSections() {
       if (!state.activeTimepoint) {
         document.getElementById('sectionsContainer').innerHTML = '<p style="padding: 2rem; text-align: center; color: #6b7280;">Select a timepoint to begin</p>';
@@ -478,6 +506,11 @@
 
       const container = document.getElementById('sectionsContainer');
       const timeKey = state.activeTimepoint.replace(':', '_');
+      
+      // Determine the interval for current timepoint
+      const interval = getIntervalForTimepoint(state.activeTimepoint);
+      console.log(`🔍 Current timepoint interval: ${interval}`);
+      
       const sectionNames = {
         'support': 'Support',
         'fhr': 'FHR',
@@ -493,6 +526,12 @@
       let html = '';
       
       Object.entries(sections).forEach(([key, fields]) => {
+        // Check if this section should be shown for current interval
+        if (!shouldShowSection(key, interval)) {
+          console.log(`⏭️ Skipping section "${key}" for interval ${interval}`);
+          return; // Skip this section
+        }
+        
         const sectionName = sectionNames[key];
         const sectionHtml = fields.map(f => {
           const inputName = `${f.key}_${timeKey}`;
