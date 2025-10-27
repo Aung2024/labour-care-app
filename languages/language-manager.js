@@ -14,7 +14,10 @@ class LanguageManager {
   async init() {
     try {
       await this.loadLanguage(this.currentLanguage);
-      this.createLanguageSwitcher();
+      // Only create switcher if not disabled
+      if (!window.noLanguageSwitcher) {
+        this.createLanguageSwitcher();
+      }
       this.applyLanguage();
       this.isInitialized = true;
       console.log(`🌍 Language Manager initialized with: ${this.currentLanguage}`);
