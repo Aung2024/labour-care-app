@@ -477,7 +477,7 @@
           ruptured_membrane: rupturedMembrane || null
         });
 
-      // Save time configuration (this will be used by labour-care-entry.html)
+      // Save time configuration to summary (for carousel entry page)
       await firebase.firestore()
         .collection('patients')
         .doc(patientId)
@@ -488,6 +488,31 @@
           secondStageTime: secondStageStart || null,
           setupCompleted: true
         }, { merge: true });
+
+      // Also save to startingTime document (for Classic LCG compatibility)
+      await firebase.firestore()
+        .collection('patients')
+        .doc(patientId)
+        .collection('records')
+        .doc('startingTime')
+        .set({
+          startingTime: firstStageStart,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+      // Save second stage if provided (for Classic LCG compatibility)
+      if (secondStageStart) {
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('records')
+          .doc('secondStage')
+          .set({
+            secondStageStartTime: secondStageStart,
+            isSecondStageActive: true,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+      }
 
       // Navigate to labour care entry carousel
       window.location.href = `labour-care-entry.html?patient=${patientId}`;

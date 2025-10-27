@@ -712,12 +712,31 @@
       
       try {
         const base = firebase.firestore().collection("patients").doc(state.patientId);
+        
+        // Save to summary document (for carousel entry page)
         await base.collection("records").doc("summary").set({
           ...state.data,
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           startingTime: state.startTime,
           secondStageTime: state.secondStageTime
         }, { merge: true });
+
+        // Also save to startingTime document (for Classic LCG compatibility)
+        if (state.startTime) {
+          await base.collection("records").doc("startingTime").set({
+            startingTime: state.startTime,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+
+        // Save second stage if exists (for Classic LCG compatibility)
+        if (state.secondStageTime) {
+          await base.collection("records").doc("secondStage").set({
+            secondStageStartTime: state.secondStageTime,
+            isSecondStageActive: true,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
         
         if (!silent) {
           showToast('✓ Saved');
@@ -760,11 +779,28 @@
         const base = firebase.firestore().collection("patients").doc(patientId);
         const doc = await base.collection("records").doc("summary").get();
         
-        if (doc.exists) {
-          const data = doc.data();
+        // Also try loading from startingTime and secondStage documents (Classic LCG saves here)
+        const startingTimeDoc = await base.collection("records").doc("startingTime").get();
+        const secondStageDoc = await base.collection("records").doc("secondStage").get();
+        
+        if (doc.exists || startingTimeDoc.exists || secondStageDoc.exists) {
+          const data = doc.exists ? doc.data() : {};
           state.data = data;
-          state.startTime = data.startingTime;
-          state.secondStageTime = data.secondStageTime;
+          
+          // Try multiple sources and field name variations for first stage time
+          let loadedStartTime = data.startingTime || data.activeFirstStage_Time;
+          if (!loadedStartTime && startingTimeDoc.exists) {
+            loadedStartTime = startingTimeDoc.data().startingTime;
+          }
+          state.startTime = loadedStartTime;
+          
+          // Try multiple sources and field name variations for second stage time
+          let loadedSecondStageTime = data.secondStageTime || data.secondStage_Time;
+          if (!loadedSecondStageTime && secondStageDoc.exists) {
+            const secondStageData = secondStageDoc.data();
+            loadedSecondStageTime = secondStageData.secondStageStartTime;
+          }
+          state.secondStageTime = loadedSecondStageTime;
           
           // Display stage times in header
           document.getElementById('firstStageTime').textContent = state.startTime || '-';
