@@ -1725,7 +1725,9 @@
         for (const doc of patientsSnap.docs) {
           totalPatients++;
           
-          // Check Treatment Outcome from endTreatment document
+          let outcomeFound = false;
+          
+          // Check Treatment Outcome from endTreatment document (new method)
           const endTreatmentDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
@@ -1737,14 +1739,60 @@
             const outcome = endTreatmentDoc.data().outcome;
             if (outcome === 'birth') {
               births++;
+              outcomeFound = true;
             } else if (outcome === 'transfer') {
               transfers++;
+              outcomeFound = true;
             } else if (outcome === 'other') {
               other++;
-            } else {
-              noOutcome++;
+              outcomeFound = true;
             }
-          } else {
+          }
+          
+          // If no endTreatment document, check for older records (backward compatibility)
+          if (!outcomeFound) {
+            // Check for birth record
+            const birthRecordDoc = await firebase.firestore()
+              .collection('patients')
+              .doc(doc.id)
+              .collection('records')
+              .doc('birthRecord')
+              .get();
+            
+            if (birthRecordDoc.exists) {
+              births++;
+              outcomeFound = true;
+            } else {
+              // Check for transfer record
+              const transferRecordDoc = await firebase.firestore()
+                .collection('patients')
+                .doc(doc.id)
+                .collection('records')
+                .doc('transferRecord')
+                .get();
+              
+              if (transferRecordDoc.exists) {
+                transfers++;
+                outcomeFound = true;
+              } else {
+                // Check for outcome record
+                const outcomeRecordDoc = await firebase.firestore()
+                  .collection('patients')
+                  .doc(doc.id)
+                  .collection('records')
+                  .doc('outcomeRecord')
+                  .get();
+                
+                if (outcomeRecordDoc.exists) {
+                  other++;
+                  outcomeFound = true;
+                }
+              }
+            }
+          }
+          
+          // If no outcome found at all
+          if (!outcomeFound) {
             noOutcome++;
           }
         }
