@@ -305,13 +305,13 @@
         { key: 'Systolic_BP', label: 'Systolic BP', type: 'number', min: 60, max: 200 },
         { key: 'Diastolic_BP', label: 'Diastolic BP', type: 'number', min: 40, max: 120 },
         { key: 'Temperature_C', label: 'Temperature (°C)', type: 'number', step: 0.1 },
-        { key: 'Urine', label: 'Urine', type: 'select', options: [['Y','Present'],['N','Absent']] }
+        { key: 'Urine', label: 'Urine', type: 'select', options: [['-/-','-/-'],['P-','P-'],['P Trace','P Trace'],['P+','P+'],['P++','P++'],['A-','A-'],['A Trace','A Trace'],['A+','A+'],['A++','A++']] }
       ],
       baby: [
-        { key: 'Amniotic_fluid', label: 'Amniotic Fluid', type: 'select', options: [['C','Clear'],['M','Meconium'],['B','Blood']] },
-        { key: 'Fetal_position', label: 'Fetal Position', type: 'select', options: [['C','Cephalic'],['B','Breech'],['T','Transverse'],['P','Posterior']] },
-        { key: 'Caput', label: 'Caput', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] },
-        { key: 'Moulding', label: 'Moulding', type: 'select', options: [['N','None'],['+','+'],['++','++'],['+++','+++']] }
+        { key: 'Amniotic_fluid', label: 'Amniotic Fluid', type: 'select', options: [['I','I'],['C','C'],['M','M'],['M+','M+'],['M++','M++'],['M+++','M+++'],['B','B']] },
+        { key: 'Fetal_position', label: 'Fetal Position', type: 'select', options: [['A','A'],['P','P'],['T','T']] },
+        { key: 'Caput', label: 'Caput', type: 'select', options: [['0','0'],['+','+'],['++','++'],['+++','+++']] },
+        { key: 'Moulding', label: 'Moulding', type: 'select', options: [['0','0'],['+','+'],['++','++'],['+++','+++']] }
       ],
       contractions: [
         { key: 'Contractions_per_10_min', label: 'Contractions per 10 min', type: 'number', min: 0, max: 10 },
@@ -935,13 +935,155 @@
     }
 
     function checkAlerts() {
-      // Update alerts chip
+      // Count alerts across all timepoints
       const alertCount = Object.keys(state.data).filter(k => {
         const [fieldKey] = k.split('_');
         return isAlertValue(fieldKey, state.data[k]);
       }).length;
       
-      // Add alert chip update logic here
+      // Update alerts chip
+      const alertsChip = document.getElementById('alertsChip');
+      if (alertsChip) {
+        alertsChip.textContent = alertCount > 0 ? alertCount : '⚠';
+        alertsChip.style.backgroundColor = alertCount > 0 ? '#dc2626' : '#6b7280';
+      }
+    }
+    
+    function showRecommendations() {
+      console.log('=== showRecommendations() called ===');
+      
+      const drawerContent = document.getElementById('drawerContent');
+      if (!drawerContent) {
+        console.log('❌ Drawer content not found');
+        return;
+      }
+      
+      console.log('✅ Found drawer content, checking for alerts...');
+      
+      // Use a Map to track unique alerts by field type
+      const alertMap = new Map();
+      
+      // Check all data for alert values
+      Object.keys(state.data).forEach(fieldName => {
+        const value = state.data[fieldName];
+        
+        if (value && value.toString().trim() !== '') {
+          // Check if this value should trigger an alert
+          let shouldAlert = false;
+          let alertType = '';
+          
+          // Check against WHO LCG alert values
+          if (fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            if (!isNaN(fhr) && (fhr < 110 || fhr >= 160)) {
+              shouldAlert = true;
+              alertType = 'FHR';
+            }
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            if (!isNaN(pulse) && (pulse < 60 || pulse >= 120)) {
+              shouldAlert = true;
+              alertType = 'Pulse';
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && (bp < 80 || bp >= 140)) {
+              shouldAlert = true;
+              alertType = 'Systolic BP';
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && bp >= 90) {
+              shouldAlert = true;
+              alertType = 'Diastolic BP';
+            }
+          } else if (fieldName.includes('Temperature_C')) {
+            const temp = parseFloat(value);
+            if (!isNaN(temp) && (temp < 35.0 || temp >= 37.5)) {
+              shouldAlert = true;
+              alertType = 'Temperature C';
+            }
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            shouldAlert = true;
+            alertType = 'Pain Relief';
+          } else if (fieldName.includes('Mobility') && value === 'SP') {
+            shouldAlert = true;
+            alertType = 'Mobility';
+          } else if (fieldName.includes('FHR_deceleration') && (value === 'L' || value === 'V' || value === 'E')) {
+            shouldAlert = true;
+            alertType = 'FHR deceleration';
+          } else if (fieldName.includes('Contractions_per_10_min')) {
+            const contractions = parseInt(value);
+            if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
+              shouldAlert = true;
+              alertType = 'Contractions per 10 min';
+            }
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const duration = parseInt(value);
+            if (!isNaN(duration) && (duration < 20 || duration > 50)) {
+              shouldAlert = true;
+              alertType = 'Duration of contractions';
+            }
+          }
+          
+          if (shouldAlert) {
+            alertMap.set(alertType, true);
+          }
+        }
+      });
+      
+      // Generate recommendations HTML
+      console.log(`📊 Unique alert types found: ${alertMap.size}`);
+      
+      if (alertMap.size > 0) {
+        let recommendationsHTML = '<div class="alert alert-info"><strong>🏥 Clinical Recommendations:</strong><ul>';
+        
+        const sortedAlertTypes = Array.from(alertMap.keys()).sort();
+        
+        sortedAlertTypes.forEach(alertType => {
+          let recommendation = '';
+          
+          switch (alertType) {
+            case 'Pain Relief':
+              recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
+              break;
+            case 'Mobility':
+              recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
+              break;
+            case 'FHR deceleration':
+              recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+              break;
+            case 'FHR':
+              recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+              break;
+            case 'Pulse':
+              recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
+              break;
+            case 'Systolic BP':
+            case 'Diastolic BP':
+              recommendation = 'Monitor blood pressure closely. Consider antihypertensive therapy if severe hypertension.';
+              break;
+            case 'Temperature C':
+              recommendation = 'Monitor for signs of infection. Consider antibiotics if infection suspected.';
+              break;
+            case 'Contractions per 10 min':
+            case 'Duration of contractions':
+              recommendation = 'Monitor and document progress. Consider specialist consultation if needed.';
+              break;
+            default:
+              recommendation = 'Monitor closely and document findings. Consider specialist consultation if needed.';
+          }
+          
+          recommendationsHTML += `<li><strong>${alertType}:</strong> ${recommendation}</li>`;
+        });
+        
+        recommendationsHTML += '</ul></div>';
+        drawerContent.innerHTML = recommendationsHTML;
+      } else {
+        drawerContent.innerHTML = '<div class="alert alert-success">✅ No active alerts. All parameters within normal ranges.</div>';
+      }
+      
+      console.log('=== showRecommendations() completed ===');
     }
 
     function getPatientIdFromUrl() {
@@ -1053,6 +1195,9 @@
       const backdrop = document.querySelector('.backdrop');
       if (drawer) drawer.classList.add('open');
       if (backdrop) backdrop.classList.add('active');
+      
+      // Show recommendations when drawer opens
+      showRecommendations();
     }
 
     // Close alerts drawer
