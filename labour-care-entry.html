@@ -399,7 +399,7 @@
       
       const startMin = sh * 60 + sm;
       
-      // Generate first stage timepoints (30-min intervals for 12 hours)
+      // Generate first stage timepoints with BOTH 30-min and 1-hour intervals
       let currentMin = startMin;
       const endMin = startMin + (12 * 60); // 12 hours
       
@@ -407,7 +407,8 @@
         // If second stage is before or at start, skip first stage
         console.log('⚠️ Second stage is at or before start time, skipping first stage');
       } else {
-        // Generate first stage timepoints
+        // Generate 30-minute intervals (for FHR and Contractions)
+        currentMin = startMin;
         while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin - 30)) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
@@ -416,23 +417,43 @@
           
           result.push({
             time: timeStr,
-            isSecondStage: false
+            isSecondStage: false,
+            interval: '30min'
           });
           
-          console.log(`  📍 Added first stage timepoint: ${timeStr} (currentMin: ${currentMin})`);
-          
-          // Skip to next potential timepoint
           currentMin += 30;
           
-          // Stop if we'd hit the second stage time (or are close enough)
           if (secondStageMin !== null && currentMin >= secondStageMin) {
-            console.log(`  🛑 Stopping first stage generation (approaching second stage at ${secondStageMin})`);
             break;
           }
           
-          // Safety check to prevent infinite loop
           if (result.length > 100) {
             console.error('❌ Too many timepoints generated, breaking loop');
+            break;
+          }
+        }
+        
+        // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
+        currentMin = startMin;
+        while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin)) {
+          const totalMins = currentMin % (24 * 60);
+          const h = Math.floor(totalMins / 60);
+          const m = totalMins % 60;
+          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          
+          // Only add if not already in result (avoid duplicates at exact hours)
+          const alreadyExists = result.some(tp => tp.time === timeStr);
+          if (!alreadyExists) {
+            result.push({
+              time: timeStr,
+              isSecondStage: false,
+              interval: '60min'
+            });
+          }
+          
+          currentMin += 60;
+          
+          if (secondStageMin !== null && currentMin >= secondStageMin) {
             break;
           }
         }
@@ -452,7 +473,8 @@
           
           result.push({
             time: timeStr,
-            isSecondStage: true
+            isSecondStage: true,
+            interval: '15min'
           });
           
           currentMin += 15;
@@ -475,13 +497,18 @@
     function getIntervalForTimepoint(timepoint) {
       if (!timepoint) return 'unknown';
       
-      // Find the timepoint in state.timepoints to check if it's second stage
+      // Find the timepoint in state.timepoints to get its interval property
       const tp = state.timepoints.find(t => t.time === timepoint || t === timepoint);
       
+      if (tp && tp.interval) {
+        return tp.interval; // Use the interval property directly
+      }
+      
+      // Fallback: check isSecondStage flag for backwards compatibility
       if (tp && tp.isSecondStage) {
-        return '15min'; // Second stage has 15-minute intervals
+        return '15min';
       } else if (tp && !tp.isSecondStage) {
-        return '30min'; // First stage has 30-minute intervals
+        return '30min';
       }
       return 'unknown';
     }
