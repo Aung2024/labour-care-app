@@ -429,7 +429,7 @@
       console.log('🕐 generateTimepoints:', { start, secondStage });
       
       // Validate input
-      if (!start) {
+      if (!start || start.trim() === '') {
         console.error('❌ No start time provided');
         return [];
       }
@@ -444,9 +444,9 @@
       
       const result = [];
       
-      // Parse second stage time if provided
+      // Parse second stage time if provided and valid
       let secondStageMin = null;
-      if (secondStage) {
+      if (secondStage && secondStage.trim() !== '' && secondStage !== 'null' && secondStage !== 'undefined') {
         const [ssh, ssm] = secondStage.split(':').map(Number);
         if (!isNaN(ssh) && !isNaN(ssm) && ssh >= 0 && ssh <= 23 && ssm >= 0 && ssm <= 59) {
           secondStageMin = ssh * 60 + ssm;
@@ -868,13 +868,28 @@
       try {
         const base = firebase.firestore().collection("patients").doc(state.patientId);
         
-        // Save to summary document (for carousel entry page)
-        await base.collection("records").doc("summary").set({
-          ...state.data,
+        // Clean state.data to remove any undefined values
+        const cleanedData = {};
+        Object.keys(state.data).forEach(key => {
+          if (state.data[key] !== undefined) {
+            cleanedData[key] = state.data[key];
+          }
+        });
+        
+        // Build the data object to save
+        const summaryData = {
+          ...cleanedData,
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          startingTime: state.startTime,
-          secondStageTime: state.secondStageTime
-        }, { merge: true });
+          startingTime: state.startTime
+        };
+        
+        // Only include secondStageTime if it exists, is not null, and is not empty
+        if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
+          summaryData.secondStageTime = state.secondStageTime;
+        }
+        
+        // Save to summary document (for carousel entry page)
+        await base.collection("records").doc("summary").set(summaryData, { merge: true });
 
         // Also save to startingTime document (for Classic LCG compatibility)
         if (state.startTime) {
@@ -885,7 +900,7 @@
         }
 
         // Save second stage if exists (for Classic LCG compatibility)
-        if (state.secondStageTime) {
+        if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
           await base.collection("records").doc("secondStage").set({
             secondStageStartTime: state.secondStageTime,
             isSecondStageActive: true,
@@ -964,7 +979,8 @@
             }
           }
           
-          state.secondStageTime = loadedSecondStageTime;
+          // Ensure secondStageTime is null if not found (not undefined)
+          state.secondStageTime = loadedSecondStageTime || null;
           
           console.log('🔍 Time loading debug:');
           console.log('  First Stage:', state.startTime);
