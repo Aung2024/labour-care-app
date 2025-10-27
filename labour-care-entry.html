@@ -517,31 +517,38 @@
       
       // Generate second stage timepoints if applicable
       if (secondStageMin !== null) {
+        console.log('🎯 Starting second stage timepoint generation at:', secondStageMin);
         // Start exactly at second stage time
         currentMin = secondStageMin;
         const endSecondStageMin = secondStageMin + (15 * 6); // 6 intervals of 15 min = 90 min
         
+        let secondStageCount = 0;
         while (currentMin <= endSecondStageMin) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
           const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
           
-          result.push({
+          const tp = {
             time: timeStr,
             isSecondStage: true,
             interval: '15min'
-          });
+          };
+          
+          result.push(tp);
+          secondStageCount++;
+          console.log(`  ✅ Added second stage pill: ${timeStr} (count: ${secondStageCount})`);
           
           currentMin += 15;
         }
+        console.log(`✅ Generated ${secondStageCount} second stage timepoints`);
       }
       
       state.timepoints = result;
       state.isSecondStageActive = secondStageMin !== null;
       
-      console.log('✅ Generated', result.length, 'timepoints');
-      console.log('📅 Timepoints:', result.map(tp => `${tp.time}${tp.interval ? ` (${tp.interval})` : ''}${tp.isSecondStage ? ' [2nd]' : ''}`));
+      console.log('📊 Total timepoints generated:', result.length);
+      console.log('📅 All timepoints:', result.map(tp => `${tp.time}${tp.interval ? ` (${tp.interval})` : ''}${tp.isSecondStage ? ' [2nd]' : ''}`));
       return result;
     }
 
@@ -1303,6 +1310,10 @@
       const allTimepoints = state.timepoints;
       console.log(`🔍 Rendering ${allTimepoints.length} timepoints, currentIndex: ${currentIndex}`);
       
+      // Debug: Check for second stage timepoints
+      const secondStageTimepoints = allTimepoints.filter(tp => tp.isSecondStage || tp.interval === '15min');
+      console.log(`🎯 Found ${secondStageTimepoints.length} second stage timepoints:`, secondStageTimepoints.map(tp => tp.time || tp));
+      
       // Show ALL timepoints (no more 5-pill limit)
       // Use scroll to see all
       allTimepoints.forEach((tp, idx) => {
@@ -1310,6 +1321,11 @@
         // Check if second stage using multiple methods
         const isSecondStage = tp.isSecondStage || (tp.interval === '15min');
         const isActive = idx === currentIndex;
+        
+        // Debug for second stage pills
+        if (isSecondStage) {
+          console.log(`  🔵 Second stage pill ${idx}: ${timeStr}, isSecondStage: ${tp.isSecondStage}, interval: ${tp.interval || 'unknown'}`);
+        }
         
         if (idx === 0 || idx === 7 || idx === 14 || idx === allTimepoints.length - 1) {
           console.log(`  Pill ${idx}: ${timeStr}, isSecondStage: ${isSecondStage}, interval: ${tp.interval || 'unknown'}, isActive: ${isActive}`);
