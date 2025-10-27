@@ -351,6 +351,91 @@
           </div>
         </div>
         
+        <!-- Early ANC Visit -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <label class="form-label">
+              <i class="fas fa-calendar-plus"></i>Early ANC Visit
+            </label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="earlyAncVisit" id="earlyAncVisit" value="yes">
+              <label class="form-check-label" for="earlyAncVisit">
+                Patient had early ANC visit (before 14 weeks)
+              </label>
+            </div>
+          </div>
+        </div>
+        
+        <!-- High Risk Pregnancy Assessment -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <label class="form-label">
+              <i class="fas fa-exclamation-triangle"></i>High Risk Pregnancy Assessment
+            </label>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="highRisk" id="highRiskNo" value="no" checked>
+              <label class="form-check-label" for="highRiskNo">
+                No - Standard risk pregnancy
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="highRisk" id="highRiskYes" value="yes">
+              <label class="form-check-label" for="highRiskYes">
+                Yes - High risk pregnancy
+              </label>
+            </div>
+          </div>
+        </div>
+        
+        <!-- High Risk Details -->
+        <div id="highRiskDetails" style="display: none;" class="row mb-3">
+          <div class="col-md-12">
+            <label class="form-label">
+              <i class="fas fa-list-check"></i>High Risk Factors (select all that apply):
+            </label>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskAge" value="maternal_age">
+                  <label class="form-check-label" for="riskAge">Maternal age ≥35 years</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskDiabetes" value="diabetes">
+                  <label class="form-check-label" for="riskDiabetes">Diabetes (pre-existing or gestational)</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskHypertension" value="hypertension">
+                  <label class="form-check-label" for="riskHypertension">Hypertension</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPrevious" value="previous_complications">
+                  <label class="form-check-label" for="riskPrevious">Previous pregnancy complications</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskMultiple" value="multiple_pregnancy">
+                  <label class="form-check-label" for="riskMultiple">Multiple pregnancy</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPlacenta" value="placenta_issues">
+                  <label class="form-check-label" for="riskPlacenta">Placenta previa/abruption</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOther" value="other">
+                  <label class="form-check-label" for="riskOther">Other medical conditions</label>
+                </div>
+              </div>
+            </div>
+            <div class="mt-2">
+              <label class="form-label">
+                <i class="fas fa-comment-alt"></i>Additional Notes:
+              </label>
+              <textarea name="riskNotes" id="riskNotes" class="form-control" rows="2" placeholder="Describe any other risk factors or concerns"></textarea>
+            </div>
+          </div>
+        </div>
+        
       </div>
 
       <!-- Visit Information -->
@@ -764,6 +849,35 @@
               }
             });
           }
+          
+          // Load Early ANC Visit checkbox
+          if (latestVisit.early_anc_visit) {
+            document.getElementById('earlyAncVisit').checked = latestVisit.early_anc_visit;
+          }
+          
+          // Load High Risk Assessment
+          if (latestVisit.high_risk) {
+            const highRiskRadio = document.querySelector(`input[name="highRisk"][value="${latestVisit.high_risk}"]`);
+            if (highRiskRadio) {
+              highRiskRadio.checked = true;
+              toggleHighRiskDetails(); // Show/hide risk factors section
+            }
+          }
+          
+          // Load High Risk Factors checkboxes
+          if (latestVisit.risk_factors && Array.isArray(latestVisit.risk_factors)) {
+            latestVisit.risk_factors.forEach(riskFactor => {
+              const checkbox = document.querySelector(`input[name="riskFactors"][value="${riskFactor}"]`);
+              if (checkbox) {
+                checkbox.checked = true;
+              }
+            });
+          }
+          
+          // Load Risk Notes
+          if (latestVisit.risk_notes) {
+            document.getElementById('riskNotes').value = latestVisit.risk_notes;
+          }
         }
       } catch (error) {
         console.error('Error loading existing visit data:', error);
@@ -858,6 +972,26 @@
       const today = new Date().toISOString().split('T')[0];
       document.getElementById(fieldId).value = today;
     }
+    
+    // Toggle high risk details
+    function toggleHighRiskDetails() {
+      const highRisk = document.querySelector('input[name="highRisk"]:checked');
+      const highRiskDetails = document.getElementById('highRiskDetails');
+      
+      if (highRisk && highRisk.value === 'yes') {
+        highRiskDetails.style.display = 'block';
+      } else {
+        highRiskDetails.style.display = 'none';
+      }
+    }
+    
+    // Initialize high risk toggle on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Add event listeners to high risk radios
+      document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
+        radio.addEventListener('change', toggleHighRiskDetails);
+      });
+    });
 
     function setNextMonth(fieldId) {
       const today = new Date();
@@ -957,6 +1091,14 @@
           lmpStatus: document.querySelector('input[name="lmpStatus"]:checked').value || 'known',
           manualGestationalAge: parseFloat(document.getElementById('manualGestationalAge').value) || null,
           manualEdd: document.getElementById('manualEdd').value || null,
+          
+          // Early ANC Visit
+          early_anc_visit: document.getElementById('earlyAncVisit').checked,
+          
+          // High risk pregnancy assessment
+          high_risk: document.querySelector('input[name="highRisk"]:checked') ? document.querySelector('input[name="highRisk"]:checked').value : 'no',
+          risk_factors: Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value),
+          risk_notes: document.getElementById('riskNotes').value || null,
           
           patientId: patientId,
           recordedBy: currentUser.uid,
