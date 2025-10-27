@@ -602,7 +602,7 @@
           </div>
           <div class="col-md-12 mb-3">
             <div class="analytics-card">
-              <h5><i class="fas fa-ambulance"></i> Transfer/Referral Cases</h5>
+              <h5><i class="fas fa-check-circle"></i> Treatment Outcomes</h5>
               <div class="chart-container">
                 <canvas id="transferChart"></canvas>
               </div>
@@ -1716,35 +1716,16 @@
     // Transfer Chart
     async function loadTransferChart(patientsSnap) {
       try {
-        let antenatalReferrals = 0;
-        let labourTransfers = 0;
-        let labourBirths = 0;
-        let labourOther = 0;
-        let postnatalReferrals = 0;
-        let labReferrals = 0;
-        let noReferralsOrTransfers = 0;
+        let births = 0;
+        let transfers = 0;
+        let other = 0;
+        let noOutcome = 0;
         let totalPatients = 0;
         
         for (const doc of patientsSnap.docs) {
           totalPatients++;
-          let hasAnyReferralOrTransfer = false;
           
-          // Check antenatal referrals
-          const ancVisitsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('antenatal_visits')
-            .get();
-          
-          ancVisitsSnap.forEach(visit => {
-            const visitData = visit.data();
-            if (visitData.referral === 'Yes') {
-              antenatalReferrals++;
-              hasAnyReferralOrTransfer = true;
-            }
-          });
-          
-          // Check labour outcome from End Treatment data (summary.html)
+          // Check Treatment Outcome from endTreatment document
           const endTreatmentDoc = await firebase.firestore()
             .collection('patients')
             .doc(doc.id)
@@ -1754,50 +1735,17 @@
           
           if (endTreatmentDoc.exists) {
             const outcome = endTreatmentDoc.data().outcome;
-            if (outcome === 'transfer') {
-              labourTransfers++;
-              hasAnyReferralOrTransfer = true;
-            } else if (outcome === 'birth') {
-              labourBirths++;
-              // Birth is not a transfer, just for tracking
+            if (outcome === 'birth') {
+              births++;
+            } else if (outcome === 'transfer') {
+              transfers++;
             } else if (outcome === 'other') {
-              labourOther++;
-              // Other outcome is not a transfer, just for tracking
+              other++;
+            } else {
+              noOutcome++;
             }
-          }
-          
-          // Check postnatal referrals
-          const postnatalSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('postpartum_visits')
-            .get();
-          
-          postnatalSnap.forEach(visit => {
-            const visitData = visit.data();
-            if (visitData.referral === 'Yes') {
-              postnatalReferrals++;
-              hasAnyReferralOrTransfer = true;
-            }
-          });
-          
-          // Check lab referrals
-          const labSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('testRecords')
-            .get();
-          
-          labSnap.forEach(test => {
-            const testData = test.data();
-            if (testData.referral === 'Yes') {
-              labReferrals++;
-              hasAnyReferralOrTransfer = true;
-            }
-          });
-          
-          if (!hasAnyReferralOrTransfer) {
-            noReferralsOrTransfers++;
+          } else {
+            noOutcome++;
           }
         }
         
@@ -1805,10 +1753,10 @@
         chartInstances['transferChart'] = new Chart(ctx, {
           type: 'doughnut',
           data: {
-            labels: ['Antenatal Referrals', 'Labour Transfers', 'Postnatal Referrals', 'Lab Referrals', 'No Referrals'],
+            labels: ['Birth', 'Transfer', 'Other', 'No Outcome'],
             datasets: [{
-              data: [antenatalReferrals, labourTransfers, postnatalReferrals, labReferrals, noReferralsOrTransfers],
-              backgroundColor: ['#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6', '#10b981'],
+              data: [births, transfers, other, noOutcome],
+              backgroundColor: ['#10b981', '#ef4444', '#6b7280', '#e5e7eb'],
               borderWidth: 2,
               borderColor: '#ffffff'
             }]
@@ -1818,24 +1766,21 @@
             maintainAspectRatio: false,
             plugins: {
               legend: { position: 'bottom', labels: { padding: 20, usePointStyle: true } },
-              title: { display: true, text: `Transfer/Referral Cases (${totalPatients} patients)`, font: { size: 14, weight: 'bold' } }
+              title: { display: true, text: `Treatment Outcomes (${totalPatients} patients)`, font: { size: 14, weight: 'bold' } }
             }
           }
         });
         
         document.getElementById('transferDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">Antenatal Referrals:</span><span class="detail-value">${antenatalReferrals}</span></div>
-          <div class="detail-item"><span class="detail-label">Labour Transfers:</span><span class="detail-value">${labourTransfers}</span></div>
-          <div class="detail-item"><span class="detail-label">Postnatal Referrals:</span><span class="detail-value">${postnatalReferrals}</span></div>
-          <div class="detail-item"><span class="detail-label">Lab Referrals:</span><span class="detail-value">${labReferrals}</span></div>
-          <div class="detail-item"><span class="detail-label">Labour Births:</span><span class="detail-value">${labourBirths}</span></div>
-          <div class="detail-item"><span class="detail-label">Labour Other:</span><span class="detail-value">${labourOther}</span></div>
-          <div class="detail-item"><span class="detail-label">No Referrals:</span><span class="detail-value">${noReferralsOrTransfers} (${totalPatients > 0 ? Math.round((noReferralsOrTransfers / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Birth:</span><span class="detail-value">${births} (${totalPatients > 0 ? Math.round((births / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Transfer:</span><span class="detail-value">${transfers} (${totalPatients > 0 ? Math.round((transfers / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Other:</span><span class="detail-value">${other} (${totalPatients > 0 ? Math.round((other / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">No Outcome:</span><span class="detail-value">${noOutcome} (${totalPatients > 0 ? Math.round((noOutcome / totalPatients) * 100) : 0}%)</span></div>
         `;
         
       } catch (error) {
-        console.error('Error loading Transfer chart:', error);
+        console.error('Error loading Outcomes chart:', error);
       }
     }
 
