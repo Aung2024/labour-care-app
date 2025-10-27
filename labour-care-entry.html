@@ -115,6 +115,47 @@
     
     /* Entry Card */
     .entry-card { background: white; margin: 1rem; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    
+    /* Section Cards */
+    .section-card { 
+      border-bottom: 1px solid #e5e7eb; 
+      margin-bottom: 0.5rem;
+    }
+    .section-card:last-child { border-bottom: none; }
+    
+    .section-header { 
+      padding: 1rem; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      cursor: pointer;
+      background: #f8f9fa;
+      transition: all 0.2s;
+    }
+    .section-header:hover { background: #f3f4f6; }
+    .section-header h4 { 
+      margin: 0; 
+      font-size: 1rem; 
+      font-weight: 600; 
+      color: #1f2937;
+    }
+    .collapse-icon { 
+      transition: transform 0.2s; 
+      color: #6b7280;
+    }
+    .section-card.expanded .collapse-icon { transform: rotate(180deg); }
+    
+    .section-content { 
+      max-height: 0; 
+      overflow: hidden; 
+      transition: max-height 0.3s ease;
+      padding: 0 1rem;
+    }
+    .section-card.expanded .section-content { 
+      max-height: 2000px; 
+      padding: 1rem;
+    }
+    
     .tabs { display: flex; overflow-x: auto; background: #f8f9fa; border-bottom: 1px solid #e5e7eb; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
     .tab { padding: 1rem 1.25rem; border: none; background: transparent; border-bottom: 3px solid transparent; font-weight: 600; white-space: nowrap; cursor: pointer; font-size: 0.875rem; }
@@ -123,16 +164,17 @@
     .form-field { margin-bottom: 1.25rem; }
     .form-label { display: block; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem; }
     input, select, textarea { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; transition: all 0.2s; font-family: inherit; }
+    .form-input { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; transition: all 0.2s; font-family: inherit; }
     textarea { min-height: 100px; resize: vertical; }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
+    input:focus, select:focus, textarea:focus, .form-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
     
     /* Footer */
     .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 1rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.1); z-index: 100; }
     .footer-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
     .btn-footer { padding: 0.75rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-    .btn-prev { background: #f3f4f6; color: #374151; }
     .btn-save { background: var(--primary); color: white; }
-    .btn-next { background: var(--secondary); color: white; }
+    .btn-summary { background: #6366f1; color: white; }
+    .btn-back-footer { background: #6b7280; color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; }
     .btn-footer:disabled { opacity: 0.5; cursor: not-allowed; }
     
     /* Alerts */
@@ -190,18 +232,8 @@
   <!-- Entry Mode -->
   <div id="entryMode" class="entry-content">
     <div class="entry-card">
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab('support')">Support</button>
-        <button class="tab" onclick="switchTab('fhr')">FHR</button>
-        <button class="tab" onclick="switchTab('woman')">Woman</button>
-        <button class="tab" onclick="switchTab('baby')">Baby</button>
-        <button class="tab" onclick="switchTab('contractions')">Contractions</button>
-        <button class="tab" onclick="switchTab('cervix')">Cervix Plot</button>
-        <button class="tab" onclick="switchTab('descent')">Descent Plot</button>
-        <button class="tab" onclick="switchTab('meds')">Meds</button>
-        <button class="tab" onclick="switchTab('sdm')">SDM</button>
-      </div>
-      <div id="tabContent" class="tab-content"></div>
+      <!-- Sections will be rendered here as vertical foldable cards -->
+      <div id="sectionsContainer"></div>
     </div>
   </div>
   
@@ -211,9 +243,9 @@
   <!-- Footer -->
   <div class="footer">
     <div class="footer-btns">
-      <button class="btn-footer btn-prev" onclick="prevTimepoint()">Prev</button>
       <button class="btn-footer btn-save" onclick="saveData()">Save</button>
-      <button class="btn-footer btn-next" onclick="nextTimepoint()">Next</button>
+      <button class="btn-footer btn-summary" onclick="openViewSummary()">Summary</button>
+      <a href="list.html" class="btn-footer btn-back-footer">Back</a>
     </div>
   </div>
 
@@ -425,30 +457,106 @@
     }
 
     // ============================================================================
-    // MODE & TAB SWITCHING
+    // RENDER FUNCTIONS
     // ============================================================================
-    function setMode(m) { 
-      state.mode = m; 
-      document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active')); 
-      event.target.classList.add('active'); 
+    function renderSections() {
+      if (!state.activeTimepoint) {
+        document.getElementById('sectionsContainer').innerHTML = '<p style="padding: 2rem; text-align: center; color: #6b7280;">Select a timepoint to begin</p>';
+        return;
+      }
+
+      const container = document.getElementById('sectionsContainer');
+      const timeKey = state.activeTimepoint.replace(':', '_');
+      const sectionNames = {
+        'support': 'Support',
+        'fhr': 'FHR',
+        'woman': 'Woman',
+        'baby': 'Baby',
+        'contractions': 'Contractions',
+        'cervix': 'Cervix Plot',
+        'descent': 'Descent Plot',
+        'meds': 'Meds',
+        'sdm': 'SDM'
+      };
+
+      let html = '';
       
-      if (m === 'review') {
-        renderReviewTimeline();
-      } else {
-        renderTab();
+      Object.entries(sections).forEach(([key, fields]) => {
+        const sectionName = sectionNames[key];
+        const sectionHtml = fields.map(f => {
+          const inputName = `${f.key}_${timeKey}`;
+          const storedValue = state.data[inputName] || '';
+          const alertInfo = getAlertInfo(f.key, storedValue);
+          
+          if (f.type === 'select') {
+            return `
+              <div class="form-field">
+                <label class="form-label">${f.label} ${alertInfo}</label>
+                <select name="${inputName}" class="form-input" onchange="updateValue('${inputName}', this.value); autoSave()">
+                  <option value="">Select...</option>
+                  ${f.options.map(([v,l]) => `<option value="${v}" ${storedValue === v ? 'selected' : ''}>${l}</option>`).join('')}
+                </select>
+              </div>
+            `;
+          } else if (f.type === 'checkbox') {
+            const isChecked = storedValue === 'X' || storedValue === 'O';
+            return `
+              <div class="form-field">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                  <input type="checkbox" name="${inputName}" value="X" ${isChecked ? 'checked' : ''} 
+                    onchange="updateValue('${inputName}', this.checked ? 'X' : ''); autoSave()" 
+                    style="width: 20px; height: 20px;">
+                  <span>${f.label}</span>
+                </label>
+              </div>
+            `;
+          } else if (f.type === 'textarea') {
+            return `
+              <div class="form-field">
+                <label class="form-label">${f.label}</label>
+                <textarea name="${inputName}" class="form-input" placeholder="${f.placeholder || ''}" onchange="updateValue('${inputName}', this.value); autoSave()">${storedValue}</textarea>
+              </div>
+            `;
+          } else {
+            return `
+              <div class="form-field">
+                <label class="form-label">${f.label} ${alertInfo}</label>
+                <input type="${f.type}" name="${inputName}" class="form-input" value="${storedValue}" 
+                  ${f.min ? `min="${f.min}"` : ''} ${f.max ? `max="${f.max}"` : ''} ${f.step ? `step="${f.step}"` : ''} 
+                  placeholder="${f.placeholder || ''}" onchange="updateValue('${inputName}', this.value); autoSave()">
+              </div>
+            `;
+          }
+        }).join('');
+        
+        html += `
+          <div class="section-card" data-section="${key}">
+            <div class="section-header" onclick="toggleSection('${key}')">
+              <h4>${sectionName}</h4>
+              <i class="fas fa-chevron-down collapse-icon"></i>
+            </div>
+            <div class="section-content">
+              ${sectionHtml}
+            </div>
+          </div>
+        `;
+      });
+      
+      container.innerHTML = html;
+      
+      // Expand first section by default
+      if (container.children.length > 0) {
+        container.children[0].classList.add('expanded');
       }
     }
     
-    function switchTab(t) {
-      state.activeTab = t;
-      document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
-      renderTab();
+    function toggleSection(sectionKey) {
+      const section = document.querySelector(`.section-card[data-section="${sectionKey}"]`);
+      if (section) {
+        section.classList.toggle('expanded');
+      }
     }
-
-    // ============================================================================
-    // RENDER FUNCTIONS
-    // ============================================================================
+    
     function renderTab() {
       if (!state.activeTimepoint) {
         document.getElementById('tabContent').innerHTML = '<p style="padding: 2rem; text-align: center; color: #6b7280;">Select a timepoint to begin</p>';
@@ -549,7 +657,7 @@
         state.activeTimepoint = state.timepoints[currentIndex].time || state.timepoints[currentIndex];
         updateUI();
         renderTimePills();
-        renderTab();
+        renderSections();
       }
     }
     
@@ -559,7 +667,7 @@
         state.activeTimepoint = state.timepoints[currentIndex].time || state.timepoints[currentIndex];
         updateUI();
         renderTimePills();
-        renderTab();
+        renderSections();
       }
     }
 
@@ -569,7 +677,7 @@
       setMode('entry');
       document.getElementById('entryModeBtn').click();
       updateUI();
-      renderTab();
+      renderSections();
     }
 
     function updateUI() {
@@ -674,7 +782,7 @@
               currentIndex = 0;
               updateUI();
               renderTimePills();
-              renderTab();
+              renderSections();
             }
             console.log('✅ Loaded data with', state.timepoints.length, 'timepoints');
           } else {
@@ -687,7 +795,7 @@
               currentIndex = 0;
               updateUI();
               renderTimePills();
-              renderTab();
+              renderSections();
             }
           }
         } else {
@@ -700,7 +808,7 @@
             currentIndex = 0;
             updateUI();
             renderTimePills();
-            renderTab();
+            renderSections();
           }
         }
       } catch (error) {
@@ -715,7 +823,7 @@
             currentIndex = 0;
             updateUI();
             renderTimePills();
-            renderTab();
+            renderSections();
           }
         } catch (demoError) {
           console.error('Demo initialization error:', demoError);
@@ -792,7 +900,7 @@
         state.activeTimepoint = state.timepoints[idx].time || state.timepoints[idx];
         updateUI();
         renderTimePills();
-        renderTab();
+        renderSections();
       }
     }
 
@@ -879,6 +987,16 @@
       const backdrop = document.querySelector('.backdrop');
       if (drawer) drawer.classList.remove('open');
       if (backdrop) backdrop.classList.remove('active');
+    }
+    
+    // Open view summary (like summary.html)
+    function openViewSummary() {
+      const patientId = getPatientIdFromUrl();
+      if (patientId) {
+        window.open(`summary-view.html?patient=${patientId}`, '_blank');
+      } else {
+        alert('No patient ID found');
+      }
     }
 
     // Note: Demo initialization is now handled in loadData() if no data exists
