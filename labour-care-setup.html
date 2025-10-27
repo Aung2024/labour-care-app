@@ -274,7 +274,7 @@
 </div>
 
 <!-- Sticky Back Button -->
-<a href="list.html" class="btn-back">
+<a href="patient-care-hub.html" class="btn-back">
   <i class="fas fa-arrow-left"></i> Back
 </a>
 
@@ -349,10 +349,82 @@
       // Display LMP and EDD
       document.getElementById('patientLMP').textContent = lmp || '-';
       document.getElementById('patientEDD').textContent = edd || '-';
+      
+      // Load existing labour care data from Classic LCG (if exists)
+      await loadExistingLabourData(patientId);
 
     } catch (error) {
       console.error('Error loading patient:', error);
       alert('Error loading patient data');
+    }
+  }
+  
+  // Load existing labour care data from Classic LCG
+  async function loadExistingLabourData(patientId) {
+    try {
+      // Load from summary records (Classic LCG saves here)
+      const summaryDoc = await firebase.firestore()
+        .collection('patients')
+        .doc(patientId)
+        .collection('records')
+        .doc('summary')
+        .get();
+      
+      if (summaryDoc.exists) {
+        const data = summaryDoc.data();
+        
+        // Load labour onset
+        if (data.labour_onset || currentPatientData.labour_onset) {
+          const labourOnsetSelect = document.getElementById('labourOnset');
+          if (labourOnsetSelect) {
+            labourOnsetSelect.value = data.labour_onset || currentPatientData.labour_onset;
+          }
+        }
+        
+        // Load active labour diagnosis
+        if (data.active_labour || currentPatientData.active_labour) {
+          const activeLabourInput = document.getElementById('activeLabour');
+          if (activeLabourInput) {
+            activeLabourInput.value = data.active_labour || currentPatientData.active_labour;
+          }
+        }
+        
+        // Load ruptured membrane
+        if (data.ruptured_membrane || currentPatientData.ruptured_membrane) {
+          const rupturedMembraneInput = document.getElementById('rupturedMembrane');
+          if (rupturedMembraneInput) {
+            rupturedMembraneInput.value = data.ruptured_membrane || currentPatientData.ruptured_membrane;
+          }
+        }
+        
+        // Load active first stage time
+        if (data.startingTime || data.activeFirstStage_Time) {
+          const firstStageInput = document.getElementById('firstStageStart');
+          if (firstStageInput) {
+            firstStageInput.value = data.startingTime || data.activeFirstStage_Time;
+            // Trigger display update
+            if (firstStageInput.value) {
+              confirmTime('firstStageStart', 'firstStageDisplay');
+            }
+          }
+        }
+        
+        // Load second stage time
+        if (data.secondStageTime || data.secondStage_Time) {
+          const secondStageInput = document.getElementById('secondStageStart');
+          if (secondStageInput) {
+            secondStageInput.value = data.secondStageTime || data.secondStage_Time;
+            // Trigger display update
+            if (secondStageInput.value) {
+              confirmTime('secondStageStart', 'secondStageDisplay');
+            }
+          }
+        }
+        
+        console.log('✅ Loaded existing labour care data from Classic LCG');
+      }
+    } catch (error) {
+      console.log('No existing labour care data found (this is normal for new entries):', error);
     }
   }
 
