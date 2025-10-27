@@ -399,14 +399,16 @@
       
       const startMin = sh * 60 + sm;
       
-      // Generate first stage timepoints (30-min intervals)
+      // Generate first stage timepoints (30-min intervals for 12 hours)
       let currentMin = startMin;
+      const endMin = startMin + (12 * 60); // 12 hours
       
       if (secondStageMin !== null && secondStageMin <= currentMin) {
         // If second stage is before or at start, skip first stage
+        console.log('⚠️ Second stage is at or before start time, skipping first stage');
       } else {
-        // Generate first stage timepoints up to (but not including) second stage
-        while (secondStageMin === null || currentMin < secondStageMin - 30) {
+        // Generate first stage timepoints
+        while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin - 30)) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
@@ -417,11 +419,20 @@
             isSecondStage: false
           });
           
+          console.log(`  📍 Added first stage timepoint: ${timeStr} (currentMin: ${currentMin})`);
+          
           // Skip to next potential timepoint
           currentMin += 30;
           
           // Stop if we'd hit the second stage time (or are close enough)
           if (secondStageMin !== null && currentMin >= secondStageMin) {
+            console.log(`  🛑 Stopping first stage generation (approaching second stage at ${secondStageMin})`);
+            break;
+          }
+          
+          // Safety check to prevent infinite loop
+          if (result.length > 100) {
+            console.error('❌ Too many timepoints generated, breaking loop');
             break;
           }
         }
