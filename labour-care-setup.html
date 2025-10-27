@@ -401,10 +401,12 @@
         if (data.startingTime || data.activeFirstStage_Time) {
           const firstStageInput = document.getElementById('firstStageStart');
           if (firstStageInput) {
-            firstStageInput.value = data.startingTime || data.activeFirstStage_Time;
-            // Trigger display update
+            const timeValue = data.startingTime || data.activeFirstStage_Time;
+            firstStageInput.value = timeValue;
+            // Trigger display update and lock
             if (firstStageInput.value) {
               confirmTime('firstStageStart', 'firstStageDisplay');
+              console.log('🔒 Locking first stage time (loaded from existing data):', timeValue);
             }
           }
         }
@@ -413,10 +415,12 @@
         if (data.secondStageTime || data.secondStage_Time) {
           const secondStageInput = document.getElementById('secondStageStart');
           if (secondStageInput) {
-            secondStageInput.value = data.secondStageTime || data.secondStage_Time;
-            // Trigger display update
+            const timeValue = data.secondStageTime || data.secondStage_Time;
+            secondStageInput.value = timeValue;
+            // Trigger display update and lock
             if (secondStageInput.value) {
               confirmTime('secondStageStart', 'secondStageDisplay');
+              console.log('🔒 Locking second stage time (loaded from existing data):', timeValue);
             }
           }
         }
@@ -428,16 +432,55 @@
     }
   }
 
-  // Confirm time selection
+  // Confirm time selection and lock the input
   function confirmTime(inputId, displayId) {
     const input = document.getElementById(inputId);
     const display = document.getElementById(displayId);
+    const okButton = input?.parentElement?.querySelector('.btn-ok');
     
     if (input && input.value) {
       const [hours, minutes] = input.value.split(':');
       const time12h = convertTo12Hour(hours, minutes);
-      display.textContent = `Selected: ${time12h}`;
+      display.textContent = `Locked: ${time12h}`;
       display.style.display = 'block';
+      display.style.color = '#dc2626';
+      display.style.fontWeight = '600';
+      
+      // Lock the input
+      input.disabled = true;
+      input.style.backgroundColor = '#f3f4f6';
+      input.style.cursor = 'not-allowed';
+      
+      // Hide the OK button
+      if (okButton) {
+        okButton.style.display = 'none';
+      }
+      
+      console.log(`🔒 Locked ${inputId} with value: ${input.value}`);
+    }
+  }
+  
+  // Unlock time input (for re-editing if needed)
+  function unlockTime(inputId) {
+    const input = document.getElementById(inputId);
+    const display = input?.parentElement?.querySelector('[id*="Display"]');
+    const okButton = input?.parentElement?.querySelector('.btn-ok');
+    
+    if (input) {
+      input.disabled = false;
+      input.style.backgroundColor = '';
+      input.style.cursor = '';
+      
+      if (display) {
+        display.textContent = '';
+        display.style.display = 'none';
+      }
+      
+      if (okButton) {
+        okButton.style.display = '';
+      }
+      
+      console.log(`🔓 Unlocked ${inputId}`);
     }
   }
 
@@ -452,16 +495,27 @@
 
   // Start Labour Care Entry
   async function startLabourCare() {
-    const firstStageStart = document.getElementById('firstStageStart').value;
+    const firstStageStartInput = document.getElementById('firstStageStart');
+    const secondStageStartInput = document.getElementById('secondStageStart');
+    
+    const firstStageStart = firstStageStartInput.value;
     const labourOnset = document.getElementById('labourOnset').value;
     const activeLabour = document.getElementById('activeLabour').value;
     const rupturedMembrane = document.getElementById('rupturedMembrane').value;
-    const secondStageStart = document.getElementById('secondStageStart').value;
+    const secondStageStart = secondStageStartInput.value;
 
     // Only validate first stage start time (required)
     if (!firstStageStart) {
       alert('Please enter Active First Stage Start Time');
       return;
+    }
+    
+    // Check if times are locked (disabled inputs mean they're locked)
+    if (firstStageStartInput.disabled) {
+      console.log('🔒 First stage time is locked, proceeding with existing data');
+    }
+    if (secondStageStartInput.disabled) {
+      console.log('🔒 Second stage time is locked, proceeding with existing data');
     }
 
     const patientId = getPatientIdFromUrl();
