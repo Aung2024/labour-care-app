@@ -4253,37 +4253,54 @@
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
       console.log(`  Start time: ${startHour}:${startMinute}`);
       
-      // Supportive Care: +1 hour intervals for 12 hours
-      supportiveCareTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        supportiveCareTimeCols.push(timeStr);
-      }
+      // Helper function to generate time columns with exact second stage time included
+      const generateWithSecondStage = () => {
+        const timeCols = [];
+        const startTimeDate = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+        const endTimeDate = new Date(startTimeDate);
+        endTimeDate.setHours(endTimeDate.getHours() + 12); // 12-hour horizon
+        
+        let currentTime = new Date(startTimeDate);
+        
+        // Add exact second stage time if it exists
+        if (secondStageStartTime && isSecondStageActive) {
+          const secondStageDate = new Date(`2000-01-01T${secondStageStartTime}:00`);
+          const exactSecondStageTime = secondStageStartTime;
+          
+          // Generate 1-hour intervals up to (but not including) second stage
+          while (currentTime < secondStageDate) {
+            const timeStr = currentTime.toTimeString().slice(0, 5);
+            timeCols.push(timeStr);
+            currentTime.setHours(currentTime.getHours() + 1);
+          }
+          
+          // Add the EXACT second stage time
+          timeCols.push(exactSecondStageTime);
+          console.log(`  Added ${exactSecondStageTime} (EXACT second stage time)`);
+          
+          // Continue 1-hour intervals after second stage
+          currentTime = new Date(secondStageDate);
+          currentTime.setHours(currentTime.getHours() + 1);
+        }
+        
+        // Generate remaining 1-hour intervals
+        while (currentTime <= endTimeDate) {
+          const timeStr = currentTime.toTimeString().slice(0, 5);
+          timeCols.push(timeStr);
+          currentTime.setHours(currentTime.getHours() + 1);
+        }
+        
+        return timeCols;
+      };
       
-      // Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals for 12 hours
-      babyOtherTimeCols = [];
-      womanTimeCols = [];
-      medicationTimeCols = [];
-      assessmentTimeCols = [];
-      initialsTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        babyOtherTimeCols.push(timeStr);
-        womanTimeCols.push(timeStr);
-        medicationTimeCols.push(timeStr);
-        assessmentTimeCols.push(timeStr);
-        initialsTimeCols.push(timeStr);
-      }
-      
-      // Descent Plot: +1 hour intervals for 12 hours
-      descentPlotTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        descentPlotTimeCols.push(timeStr);
-      }
+      // Generate time columns with second stage support
+      supportiveCareTimeCols = generateWithSecondStage();
+      babyOtherTimeCols = generateWithSecondStage();
+      womanTimeCols = generateWithSecondStage();
+      medicationTimeCols = generateWithSecondStage();
+      assessmentTimeCols = generateWithSecondStage();
+      initialsTimeCols = generateWithSecondStage();
+      descentPlotTimeCols = generateWithSecondStage();
       
       // Plan: +2 hour intervals for 12 hours
       planTimeCols = [];
