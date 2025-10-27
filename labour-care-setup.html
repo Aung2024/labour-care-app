@@ -412,15 +412,35 @@
         }
         
         // Load second stage time
-        if (data.secondStageTime || data.secondStage_Time) {
+        let secondStageTime = data.secondStageTime || data.secondStage_Time;
+        
+        // Also try loading from secondStage document (Classic LCG saves here)
+        if (!secondStageTime) {
+          const secondStageDoc = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('records')
+            .doc('secondStage')
+            .get();
+          
+          if (secondStageDoc.exists) {
+            const secondStageData = secondStageDoc.data();
+            // Only use if isSecondStageActive is true
+            if (secondStageData.isSecondStageActive && secondStageData.secondStageStartTime) {
+              secondStageTime = secondStageData.secondStageStartTime;
+              console.log('📥 Loaded second stage time from secondStage document:', secondStageTime);
+            }
+          }
+        }
+        
+        if (secondStageTime) {
           const secondStageInput = document.getElementById('secondStageStart');
           if (secondStageInput) {
-            const timeValue = data.secondStageTime || data.secondStage_Time;
-            secondStageInput.value = timeValue;
+            secondStageInput.value = secondStageTime;
             // Trigger display update and lock
             if (secondStageInput.value) {
               confirmTime('secondStageStart', 'secondStageDisplay');
-              console.log('🔒 Locking second stage time (loaded from existing data):', timeValue);
+              console.log('🔒 Locking second stage time (loaded from existing data):', secondStageTime);
             }
           }
         }
