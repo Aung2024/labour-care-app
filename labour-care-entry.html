@@ -1058,11 +1058,60 @@
     }
 
     function checkAlerts() {
-      // Count alerts across all timepoints
-      const alertCount = Object.keys(state.data).filter(k => {
-        const [fieldKey] = k.split('_');
-        return isAlertValue(fieldKey, state.data[k]);
-      }).length;
+      // Count alerts across all timepoints by checking field values
+      let alertCount = 0;
+      
+      Object.keys(state.data).forEach(fieldName => {
+        const value = state.data[fieldName];
+        
+        if (value && value.toString().trim() !== '') {
+          // Check against WHO LCG alert values
+          if (fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            if (!isNaN(fhr) && (fhr < 110 || fhr >= 160)) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            if (!isNaN(pulse) && (pulse < 60 || pulse >= 120)) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && (bp < 80 || bp >= 140)) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && bp >= 90) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Temperature_C')) {
+            const temp = parseFloat(value);
+            if (!isNaN(temp) && (temp < 35.0 || temp >= 37.5)) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            alertCount++;
+          } else if (fieldName.includes('Mobility') && value === 'SP') {
+            alertCount++;
+          } else if (fieldName.includes('Companion') && value === 'N') {
+            alertCount++;
+          } else if (fieldName.includes('FHR_deceleration') && (value === 'L' || value === 'V' || value === 'E')) {
+            alertCount++;
+          } else if (fieldName.includes('Contractions_per_10_min')) {
+            const contractions = parseInt(value);
+            if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
+              alertCount++;
+            }
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const duration = parseInt(value);
+            if (!isNaN(duration) && (duration < 20 || duration > 60)) {
+              alertCount++;
+            }
+          }
+        }
+      });
       
       // Update alerts chip
       const alertsChip = document.getElementById('alertsChip');
@@ -1070,6 +1119,8 @@
         alertsChip.textContent = alertCount > 0 ? alertCount : '⚠';
         alertsChip.style.backgroundColor = alertCount > 0 ? '#dc2626' : '#6b7280';
       }
+      
+      console.log(`🔔 Alert count: ${alertCount}`);
     }
     
     function showRecommendations() {

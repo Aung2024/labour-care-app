@@ -502,6 +502,15 @@
       </table>
     </div>
 
+    <!-- Clinical Recommendations Section -->
+    <div class="section-header" style="background: #dc2626; margin-top: 30px;">
+      <i class="fas fa-stethoscope"></i>
+      Clinical Recommendations & Alerts
+    </div>
+    <div id="recommendationsSection" style="background: #fff; padding: 20px; border: 2px solid #f0f0f0; border-radius: 8px; margin-bottom: 20px;">
+      <!-- Recommendations will be populated here -->
+    </div>
+
 
   </div>
 
@@ -757,7 +766,8 @@
         });
         generateAllTables();
         
-
+        // Show clinical recommendations
+        showRecommendations();
         
       } catch (error) {
         console.error("Error loading summary data:", error);
@@ -1935,6 +1945,158 @@
         textArea.remove();
         alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
       });
+    }
+    
+    // Show clinical recommendations based on alert values
+    function showRecommendations() {
+      console.log('=== showRecommendations() called ===');
+      
+      const recommendationsSection = document.getElementById('recommendationsSection');
+      if (!recommendationsSection) {
+        console.log('❌ Recommendations section not found');
+        return;
+      }
+      
+      console.log('✅ Found recommendations section, checking for alerts...');
+      
+      // Use a Map to track unique alerts by field type
+      const alertMap = new Map();
+      
+      // Check all summaryData for alert values
+      Object.keys(summaryData).forEach(fieldName => {
+        const value = summaryData[fieldName];
+        
+        if (value && value.toString().trim() !== '') {
+          // Check if this value should trigger an alert
+          let shouldAlert = false;
+          let alertType = '';
+          
+          // Check against WHO LCG alert values (same as summary.html)
+          if (fieldName.includes('Baseline_FHR')) {
+            const fhr = parseInt(value);
+            if (!isNaN(fhr) && (fhr < 110 || fhr >= 160)) {
+              shouldAlert = true;
+              alertType = 'FHR';
+            }
+          } else if (fieldName.includes('Pulse')) {
+            const pulse = parseInt(value);
+            if (!isNaN(pulse) && (pulse < 60 || pulse >= 120)) {
+              shouldAlert = true;
+              alertType = 'Pulse';
+            }
+          } else if (fieldName.includes('Systolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && (bp < 80 || bp >= 140)) {
+              shouldAlert = true;
+              alertType = 'Systolic BP';
+            }
+          } else if (fieldName.includes('Diastolic_BP')) {
+            const bp = parseInt(value);
+            if (!isNaN(bp) && bp >= 90) {
+              shouldAlert = true;
+              alertType = 'Diastolic BP';
+            }
+          } else if (fieldName.includes('Temperature_C')) {
+            const temp = parseFloat(value);
+            if (!isNaN(temp) && (temp < 35.0 || temp >= 37.5)) {
+              shouldAlert = true;
+              alertType = 'Temperature C';
+            }
+          } else if (fieldName.includes('Pain_Relief') && value === 'N') {
+            shouldAlert = true;
+            alertType = 'Pain Relief';
+          } else if (fieldName.includes('Mobility') && value === 'SP') {
+            shouldAlert = true;
+            alertType = 'Mobility';
+          } else if (fieldName.includes('FHR_deceleration') && (value === 'L' || value === 'V' || value === 'E')) {
+            shouldAlert = true;
+            alertType = 'FHR deceleration';
+          } else if (fieldName.includes('Companion') && value === 'N') {
+            shouldAlert = true;
+            alertType = 'Companion';
+          } else if (fieldName.includes('Contractions_per_10_min')) {
+            const contractions = parseInt(value);
+            if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
+              shouldAlert = true;
+              alertType = 'Contractions per 10 min';
+            }
+          } else if (fieldName.includes('Duration_of_contractions')) {
+            const duration = parseInt(value);
+            if (!isNaN(duration) && (duration < 20 || duration > 60)) {
+              shouldAlert = true;
+              alertType = 'Duration of contractions';
+            }
+          }
+          
+          if (shouldAlert) {
+            // Store alert by type, not by individual field values
+            alertMap.set(alertType, true);
+          }
+        }
+      });
+      
+      // Generate recommendations HTML
+      console.log(`📊 Unique alert types found: ${alertMap.size}`);
+      
+      if (alertMap.size > 0) {
+        // Create recommendations HTML
+        let recommendationsHTML = '<div style="padding: 0;"><h5 style="margin-bottom: 15px; color: #dc2626;"><i class="fas fa-exclamation-triangle"></i> Clinical Recommendations:</h5><ul style="margin-left: 20px; line-height: 1.8;">';
+        
+        // Convert Map keys to Array and sort for consistent display
+        const sortedAlertTypes = Array.from(alertMap.keys()).sort();
+        
+        sortedAlertTypes.forEach(alertType => {
+          let recommendation = '';
+          
+          // Generate specific recommendations based on alert type
+          switch (alertType) {
+            case 'Pain Relief':
+              recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
+              break;
+            case 'Mobility':
+              recommendation = 'Review supportive care measures. Ensure adequate pain relief, mobility, and hydration.';
+              break;
+            case 'FHR deceleration':
+              recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+              break;
+            case 'FHR':
+              recommendation = 'Monitor fetal heart rate closely. Consider fetal assessment and continuous monitoring if pattern persists.';
+              break;
+            case 'Pulse':
+              recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
+              break;
+            case 'Systolic BP':
+            case 'Diastolic BP':
+              recommendation = 'Monitor blood pressure closely. Consider antihypertensive therapy if severe hypertension.';
+              break;
+            case 'Temperature C':
+              recommendation = 'Monitor for signs of infection. Consider antibiotics if infection suspected.';
+              break;
+            case 'Contractions per 10 min':
+            case 'Duration of contractions':
+              recommendation = 'Monitor and document progress. Consider specialist consultation if needed.';
+              break;
+            case 'Companion':
+              recommendation = 'Review supportive care measures. Ensure adequate companion presence.';
+              break;
+            default:
+              recommendation = 'Monitor closely and document findings. Consider specialist consultation if needed.';
+          }
+          
+          recommendationsHTML += `<li style="margin-bottom: 10px;"><strong style="color: #2c3e50;">${alertType}:</strong> ${recommendation}</li>`;
+        });
+        
+        recommendationsHTML += '</ul></div>';
+        
+        recommendationsSection.innerHTML = recommendationsHTML;
+        console.log('✅ Recommendations HTML set with alerts');
+      } else {
+        // No alerts found
+        recommendationsSection.innerHTML = '<p style="color: #059669; text-align: center; padding: 20px;"><i class="fas fa-check-circle"></i> No active alerts. All parameters within normal ranges.</p>';
+        console.log('✅ Recommendations HTML set with no alerts message');
+      }
+      
+      console.log('=== showRecommendations() completed ===');
     }
   </script>
 </body>
