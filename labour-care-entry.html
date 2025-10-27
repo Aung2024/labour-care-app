@@ -32,32 +32,6 @@
       z-index: 100; 
     }
     
-    .language-switcher-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 0.5rem;
-      margin-bottom: 0.5rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    }
-    
-    .language-switcher-top button {
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 0.4rem 0.8rem;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 0.85rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    
-    .language-switcher-top button:hover {
-      background: rgba(255, 255, 255, 0.25);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-    
     .patient-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
     .patient-name { font-weight: 700; font-size: 1.125rem; }
     
@@ -278,17 +252,14 @@
 </head>
 <body>
   <div class="header">
-    <!-- Language Switcher -->
-    <div class="language-switcher-top">
-      <button onclick="toggleLanguage()">
-        <span id="languageToggle">EN</span>
-      </button>
-      <span style="font-size: 0.85rem; opacity: 0.9;" data-i18n="labourCareSummary">Labour Care Entry</span>
-    </div>
-    
     <div class="patient-info">
       <span class="patient-name" id="patientName">Patient</span>
-      <div class="alerts-chip" id="alertsChip" onclick="openAlertsDrawer()">⚠</div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button onclick="toggleLanguage()" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; padding: 0.4rem 0.8rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">
+          <span id="languageToggle">EN</span>
+        </button>
+        <div class="alerts-chip" id="alertsChip" onclick="openAlertsDrawer()">⚠</div>
+      </div>
     </div>
     
     <div class="stage-info" id="stageInfo">
@@ -639,15 +610,15 @@
       console.log(`🔍 Current timepoint interval: ${interval}`);
       
       const sectionNames = {
-        'support': 'Supportive Care',
-        'fhr': 'FHR',
-        'baby': 'Baby',
-        'woman': 'Woman',
-        'contractions': 'Contractions',
-        'cervix': 'Cervix Plot X',
-        'descent': 'Descent Plot O',
-        'meds': 'Medication',
-        'sdm': 'Shared Decision-Making'
+        'support': languageManager && languageManager.t ? languageManager.t('supportiveCare', 'Supportive Care') : 'Supportive Care',
+        'fhr': languageManager && languageManager.t ? languageManager.t('fhr', 'FHR') : 'FHR',
+        'baby': languageManager && languageManager.t ? languageManager.t('baby', 'Baby') : 'Baby',
+        'woman': languageManager && languageManager.t ? languageManager.t('woman', 'Woman') : 'Woman',
+        'contractions': languageManager && languageManager.t ? languageManager.t('contractions', 'Contractions') : 'Contractions',
+        'cervix': languageManager && languageManager.t ? languageManager.t('cervixPlot', 'Cervix Plot X') : 'Cervix Plot X',
+        'descent': languageManager && languageManager.t ? languageManager.t('descentPlot', 'Descent Plot O') : 'Descent Plot O',
+        'meds': languageManager && languageManager.t ? languageManager.t('medication', 'Medication') : 'Medication',
+        'sdm': languageManager && languageManager.t ? languageManager.t('sharedDecisionMaking', 'Shared Decision-Making') : 'Shared Decision-Making'
       };
 
       let html = '';
@@ -665,12 +636,15 @@
           const storedValue = state.data[inputName] || '';
           const alertInfo = getAlertInfo(f.key, storedValue);
           
+          // Translate field label using languageManager
+          const translatedLabel = languageManager && languageManager.t ? languageManager.t(f.key, f.label) : f.label;
+          
           if (f.type === 'select') {
             return `
               <div class="form-field">
-                <label class="form-label">${f.label} ${alertInfo}</label>
+                <label class="form-label">${translatedLabel} ${alertInfo}</label>
                 <select name="${inputName}" class="form-input" onchange="updateValue('${inputName}', this.value); autoSave()">
-                  <option value="">Select...</option>
+                  <option value="">${languageManager && languageManager.t ? languageManager.t('formLabels.select', 'Select...') : 'Select...'}</option>
                   ${f.options.map(([v,l]) => `<option value="${v}" ${storedValue === v ? 'selected' : ''}>${l}</option>`).join('')}
                 </select>
               </div>
@@ -684,21 +658,21 @@
                   <input type="checkbox" name="${inputName}" value="${markerValue}" ${isChecked ? 'checked' : ''} 
                     onchange="updateValue('${inputName}', this.checked ? '${markerValue}' : ''); autoSave()" 
                     style="width: 20px; height: 20px;">
-                  <span>${f.label}</span>
+                  <span>${translatedLabel}</span>
                 </label>
               </div>
             `;
           } else if (f.type === 'textarea') {
             return `
               <div class="form-field">
-                <label class="form-label">${f.label}</label>
+                <label class="form-label">${translatedLabel}</label>
                 <textarea name="${inputName}" class="form-input" placeholder="${f.placeholder || ''}" onchange="updateValue('${inputName}', this.value); autoSave()">${storedValue}</textarea>
               </div>
             `;
           } else {
             return `
               <div class="form-field">
-                <label class="form-label">${f.label} ${alertInfo}</label>
+                <label class="form-label">${translatedLabel} ${alertInfo}</label>
                 <input type="${f.type}" name="${inputName}" class="form-input" value="${storedValue}" 
                   ${f.min ? `min="${f.min}"` : ''} ${f.max ? `max="${f.max}"` : ''} ${f.step ? `step="${f.step}"` : ''} 
                   placeholder="${f.placeholder || ''}" onchange="updateValue('${inputName}', this.value); autoSave()">
@@ -1320,8 +1294,13 @@
       }
       const currentLang = localStorage.getItem('preferredLanguage') || 'en';
       const newLang = currentLang === 'en' ? 'my' : 'en';
-      languageManager.setLanguage(newLang);
-      document.getElementById('languageToggle').textContent = newLang.toUpperCase();
+      languageManager.switchLanguage(newLang);
+      
+      // Update button text and re-render sections
+      setTimeout(() => {
+        document.getElementById('languageToggle').textContent = newLang.toUpperCase();
+        renderSections(); // Re-render to apply new translations
+      }, 100);
     }
     
     // Update language toggle button on load
