@@ -301,11 +301,21 @@
         <div class="form-row">
           <div class="form-group">
             <label for="startingTime"><strong data-i18n="activeFirstStageStartTime">Active First Stage Start Time:</strong></label>
-            <input type="time" id="startingTime" class="form-control" data-i18n-placeholder="formLabels.enterTime" placeholder="08:00">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="time" id="startingTime" class="form-control" data-i18n-placeholder="formLabels.enterTime" placeholder="08:00" style="flex: 1;">
+              <button type="button" class="btn btn-success btn-sm" id="confirmStartTimeBtn" onclick="confirmStartTime()" style="white-space: nowrap;">
+                <i class="fas fa-check"></i> OK
+              </button>
+            </div>
           </div>
           <div class="form-group">
             <label for="secondStageTime"><strong data-i18n="secondStageStartTime">Second Stage Start Time:</strong></label>
-            <input type="time" id="secondStageTime" class="form-control" data-i18n-placeholder="formLabels.enterTime" placeholder="16:00">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="time" id="secondStageTime" class="form-control" data-i18n-placeholder="formLabels.enterTime" placeholder="16:00" style="flex: 1;">
+              <button type="button" class="btn btn-success btn-sm" id="confirmSecondTimeBtn" onclick="confirmSecondTime()" style="white-space: nowrap;">
+                <i class="fas fa-check"></i> OK
+              </button>
+            </div>
           </div>
         </div>
         <div class="form-row" id="secondStageControls" style="display: none;">
@@ -530,10 +540,10 @@
         <i class="fas fa-save"></i>
         <span data-i18n="saveProgress">Save Progress</span>
       </button>
-      <a href="summary-view.html?patient=" class="floating-btn btn-view" target="_blank" id="viewSummaryBtn" onclick="openViewSummary(event)">
+      <button class="floating-btn btn-view" id="viewSummaryBtn" onclick="openViewSummary()">
         <i class="fas fa-eye"></i>
         <span data-i18n="viewSummary">View Summary</span>
-      </a>
+      </button>
     </div>
     
     <div class="container">
@@ -1741,70 +1751,88 @@
           }, 500);
         }
 
-        // Add event listeners for starting time changes
-        document.getElementById("startingTime").addEventListener("change", function() {
-          console.log('🕐 Starting time changed:', this.value);
-          const newStartingTime = this.value;
-          if (newStartingTime) {
-            const oldStartingTime = activeFirstStageStartTime;
-            activeFirstStageStartTime = newStartingTime;
-            
-            console.log('🕐 Starting time changed:', this.value);
-            // Note: Patient status is now manually controlled by midwives in list.html
-            
-            // Generate new time columns
-            generateDynamicTimeColumns();
-            
-            // Save the starting time
-            saveStartingTime();
-            
-            // Lock the starting time input after first use
-            lockTimeInput("startingTime", "Active First Stage Start Time");
-            
-            // Hide starting time requirement message
-            document.getElementById("startingTimeRequirement").style.display = "none";
-            
-            // Show all tables immediately
-            showAllTables();
-            
-            // Generate tables with empty data (clear all data since time intervals changed)
-            generateSummaryTable({});
-            
-            // Show warning about data loss
+        // Confirmation functions for time inputs
+        window.confirmStartTime = function() {
+          const startTimeInput = document.getElementById("startingTime");
+          const newStartingTime = startTimeInput.value;
+          
+          if (!newStartingTime) {
+            alert('Please select a time first');
+            return;
+          }
+          
+          const oldStartingTime = activeFirstStageStartTime;
+          activeFirstStageStartTime = newStartingTime;
+          
+          console.log('🕐 Starting time confirmed:', newStartingTime);
+          
+          // Generate new time columns
+          generateDynamicTimeColumns();
+          
+          // Save the starting time
+          saveStartingTime();
+          
+          // Lock the starting time input after confirmation
+          lockTimeInput("startingTime", "Active First Stage Start Time");
+          document.getElementById("confirmStartTimeBtn").disabled = true;
+          document.getElementById("confirmStartTimeBtn").innerHTML = '<i class="fas fa-lock"></i> Locked';
+          
+          // Hide starting time requirement message
+          document.getElementById("startingTimeRequirement").style.display = "none";
+          
+          // Show all tables immediately
+          showAllTables();
+          
+          // Generate tables with empty data (clear all data since time intervals changed)
+          generateSummaryTable({});
+          
+          // Show warning about data loss if time was changed
+          if (oldStartingTime && oldStartingTime !== newStartingTime) {
             showDataLossWarning();
           }
-        });
+        };
 
-        // Add event listener for second stage time input
-        document.getElementById("secondStageTime").addEventListener("change", function() {
-          const newSecondStageTime = this.value;
-          if (newSecondStageTime && activeFirstStageStartTime) {
-                    // Validate that second stage is after first stage (handle midnight crossing)
-        const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
-        const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
-        
-        // Calculate time difference in minutes, handling midnight crossing
-        let timeDiffMinutes = (secondTime - firstTime) / (1000 * 60);
-        
-        // If second time is earlier in the day, it means it's the next day
-        if (timeDiffMinutes < 0) {
-          timeDiffMinutes += 24 * 60; // Add 24 hours (1440 minutes)
-        }
-        
-        // Second stage must be at least 30 minutes after first stage
-        if (timeDiffMinutes < 30) {
-          alert('Second stage must start at least 30 minutes after the active first stage start time.');
-          this.value = '';
-          return;
-        }
-            
-            // Lock the second stage time input after first use
-            lockTimeInput("secondStageTime", "Second Stage Start Time");
-            
-            // Show the second stage controls
-            document.getElementById('secondStageControls').style.display = 'block';
+        window.confirmSecondTime = function() {
+          const secondTimeInput = document.getElementById("secondStageTime");
+          const newSecondStageTime = secondTimeInput.value;
+          
+          if (!newSecondStageTime) {
+            alert('Please select a time first');
+            return;
           }
-        });
+          
+          if (!activeFirstStageStartTime) {
+            alert('Please confirm Active First Stage Start Time first');
+            return;
+          }
+          
+          // Validate that second stage is after first stage (handle midnight crossing)
+          const firstTime = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+          const secondTime = new Date(`2000-01-01T${newSecondStageTime}:00`);
+          
+          // Calculate time difference in minutes, handling midnight crossing
+          let timeDiffMinutes = (secondTime - firstTime) / (1000 * 60);
+          
+          // If second time is earlier in the day, it means it's the next day
+          if (timeDiffMinutes < 0) {
+            timeDiffMinutes += 24 * 60; // Add 24 hours (1440 minutes)
+          }
+          
+          // Second stage must be at least 30 minutes after first stage
+          if (timeDiffMinutes < 30) {
+            alert('Second stage must start at least 30 minutes after the active first stage start time.');
+            secondTimeInput.value = '';
+            return;
+          }
+          
+          // Lock the second stage time input after confirmation
+          lockTimeInput("secondStageTime", "Second Stage Start Time");
+          document.getElementById("confirmSecondTimeBtn").disabled = true;
+          document.getElementById("confirmSecondTimeBtn").innerHTML = '<i class="fas fa-lock"></i> Locked';
+          
+          // Show the second stage controls
+          document.getElementById('secondStageControls').style.display = 'block';
+        };
 
       } catch (error) {
         console.error("Error loading data:", error);
@@ -5722,28 +5750,17 @@
       }
     }
 
-    // Open View Summary in new browser tab (not PWA)
-    function openViewSummary(event) {
-      event.preventDefault();
-      
+    // Open View Summary in same window (like carousel LCG)
+    function openViewSummary() {
       const patientId = getPatientIdFromUrl();
       if (!patientId) {
         alert('Patient ID not found.');
         return;
       }
       
-      // Create a new window with specific parameters to ensure it opens as a browser tab
+      // Navigate to summary view in the same window
       const summaryUrl = `summary-view.html?patient=${patientId}`;
-      
-      // Use window.open with specific parameters to force browser tab behavior
-      const newWindow = window.open(summaryUrl, '_blank', 'noopener,noreferrer');
-      
-      // Ensure the new window opens
-      if (!newWindow) {
-        alert('Please allow pop-ups for this site to view the summary.');
-        // Fallback: redirect in current window
-        window.location.href = summaryUrl;
-      }
+      window.location.href = summaryUrl;
     }
 
     // Language toggle function
