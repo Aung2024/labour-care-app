@@ -264,9 +264,11 @@
     <div class="patient-info">
       <span class="patient-name" id="patientName">Patient</span>
       <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <button onclick="toggleLanguage()" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; padding: 0.4rem 0.8rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">
-          <span id="languageToggle">EN</span>
-        </button>
+        <div class="language-switcher">
+          <button class="btn btn-sm" onclick="toggleLanguage()">
+            <span id="languageToggle">EN 🇬🇧</span>
+          </button>
+        </div>
         <div class="alerts-chip" id="alertsChip" onclick="openAlertsDrawer()">⚠</div>
       </div>
     </div>
@@ -401,9 +403,9 @@
         { key: 'Descent_Plot_0', label: 'Descent 0', type: 'checkbox', options: [['O','Mark']] }
       ],
       meds: [
-        { key: 'Oxytocin_U_L_drops_min', label: 'Oxytocin (U/L, drops/min)', type: 'text', placeholder: 'e.g. 5 U/L, 20 drops/min' },
-        { key: 'Medicine', label: 'Medicine', type: 'text', placeholder: 'Enter medicine name' },
-        { key: 'IV_fluids', label: 'IV Fluids', type: 'text', placeholder: 'e.g. NS 500ml' }
+        { key: 'Medication_Oxytocin', label: 'Oxytocin (U/L, drops/min)', type: 'text', placeholder: 'e.g. 5 U/L, 20 drops/min' },
+        { key: 'Medication_Medicine', label: 'Medicine', type: 'text', placeholder: 'Enter medicine name' },
+        { key: 'Medication_IV_Fluids', label: 'IV Fluids', type: 'text', placeholder: 'e.g. NS 500ml' }
       ],
       sdm: [
         { key: 'Assessment_Woman_condition', label: 'Woman\'s condition', type: 'textarea', placeholder: 'Assessment notes...' },
@@ -919,6 +921,8 @@
             isAlert = true;
           } else if (fieldName.includes('Moulding') && value === '+++') {
             isAlert = true;
+          } else if (fieldName.includes('Urine') && (value === 'P++' || value === 'A++')) {
+            isAlert = true;
           } else if (fieldName.includes('Contractions_per_10_min')) {
             const contractions = parseInt(value);
             isAlert = !isNaN(contractions) && (contractions < 2 || contractions > 5);
@@ -1230,6 +1234,8 @@
             alertCount++;
           } else if (fieldName.includes('Moulding') && value === '+++') {
             alertCount++;
+          } else if (fieldName.includes('Urine') && (value === 'P++' || value === 'A++')) {
+            alertCount++;
           } else if (fieldName.includes('Contractions_per_10_min')) {
             const contractions = parseInt(value);
             if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
@@ -1265,12 +1271,40 @@
       
       console.log('✅ Found drawer content, checking for alerts...');
       
+      // Use a Map to track latest value for each field type
+      const latestValues = new Map();
+      
+      // First, group all field values by field type and find the latest timepoint for each
+      Object.keys(state.data).forEach(fieldName => {
+        const value = state.data[fieldName];
+        
+        // Extract field base name (remove time suffix like _HH_MM)
+        const fieldParts = fieldName.split('_');
+        if (fieldParts.length >= 3) {
+          // Remove last two parts (time HH_MM)
+          const baseFieldName = fieldParts.slice(0, -2).join('_');
+          const timeKey = fieldParts.slice(-2).join('_'); // Get HH_MM
+          
+          // Store with time info
+          if (!latestValues.has(baseFieldName)) {
+            latestValues.set(baseFieldName, { timeKey, value, fieldName });
+          } else {
+            // Compare times and keep the latest
+            const existing = latestValues.get(baseFieldName);
+            if (timeKey > existing.timeKey) {
+              latestValues.set(baseFieldName, { timeKey, value, fieldName });
+            }
+          }
+        }
+      });
+      
       // Use a Map to track unique alerts by field type
       const alertMap = new Map();
       
-      // Check all data for alert values
-      Object.keys(state.data).forEach(fieldName => {
-        const value = state.data[fieldName];
+      // Check only the latest value for each field type
+      latestValues.forEach((data, baseFieldName) => {
+        const value = data.value;
+        const fieldName = data.fieldName;
         
         if (value && value.toString().trim() !== '') {
           // Check if this value should trigger an alert
@@ -1335,6 +1369,9 @@
           } else if (fieldName.includes('Moulding') && value === '+++') {
             shouldAlert = true;
             alertType = 'Moulding';
+          } else if (fieldName.includes('Urine') && (value === 'P++' || value === 'A++')) {
+            shouldAlert = true;
+            alertType = 'Urine';
           } else if (fieldName.includes('Contractions_per_10_min')) {
             const contractions = parseInt(value);
             if (!isNaN(contractions) && (contractions < 2 || contractions > 5)) {
@@ -1397,6 +1434,9 @@
             case 'Moulding':
               recommendation = 'Severe moulding detected. Monitor for obstructed labour. Consider specialist consultation.';
               break;
+            case 'Urine':
+              recommendation = 'High protein or acetone levels detected. Monitor for pre-eclampsia or ketoacidosis. Consider specialist consultation.';
+              break;
             case 'Pulse':
               recommendation = 'Monitor maternal pulse. Check for underlying causes and consider cardiovascular assessment.';
               break;
@@ -1444,9 +1484,12 @@
       const newLang = currentLang === 'en' ? 'my' : 'en';
       languageManager.switchLanguage(newLang);
       
-      // Update button text and re-render sections
+      // Update button text with flag and re-render sections
       setTimeout(() => {
-        document.getElementById('languageToggle').textContent = newLang.toUpperCase();
+        const toggleBtn = document.getElementById('languageToggle');
+        if (toggleBtn) {
+          toggleBtn.innerHTML = newLang === 'en' ? 'EN 🇬🇧' : 'MY 🇲🇲';
+        }
         renderSections(); // Re-render to apply new translations
       }, 100);
     }
@@ -1454,8 +1497,9 @@
     // Update language toggle button on load
     document.addEventListener('DOMContentLoaded', function() {
       const currentLang = localStorage.getItem('preferredLanguage') || 'en';
-      if (document.getElementById('languageToggle')) {
-        document.getElementById('languageToggle').textContent = currentLang.toUpperCase();
+      const toggleBtn = document.getElementById('languageToggle');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = currentLang === 'en' ? 'EN 🇬🇧' : 'MY 🇲🇲';
       }
     });
 
@@ -1464,10 +1508,11 @@
       if (typeof renderSections === 'function') {
         renderSections();
       }
-      // Update button text
+      // Update button text with flag
       const currentLang = localStorage.getItem('preferredLanguage') || 'en';
-      if (document.getElementById('languageToggle')) {
-        document.getElementById('languageToggle').textContent = currentLang.toUpperCase();
+      const toggleBtn = document.getElementById('languageToggle');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = currentLang === 'en' ? 'EN 🇬🇧' : 'MY 🇲🇲';
       }
     });
 
