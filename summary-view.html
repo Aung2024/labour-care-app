@@ -1971,12 +1971,40 @@
       
       console.log('✅ Found recommendations section, checking for alerts...');
       
+      // Use a Map to track latest value for each field type
+      const latestValues = new Map();
+      
+      // First, group all field values by field type and find the latest timepoint for each
+      Object.keys(summaryData).forEach(fieldName => {
+        const value = summaryData[fieldName];
+        
+        // Extract field base name (remove time suffix like _HH_MM)
+        const fieldParts = fieldName.split('_');
+        if (fieldParts.length >= 3) {
+          // Remove last two parts (time HH_MM)
+          const baseFieldName = fieldParts.slice(0, -2).join('_');
+          const timeKey = fieldParts.slice(-2).join('_'); // Get HH_MM
+          
+          // Store with time info
+          if (!latestValues.has(baseFieldName)) {
+            latestValues.set(baseFieldName, { timeKey, value, fieldName });
+          } else {
+            // Compare times and keep the latest
+            const existing = latestValues.get(baseFieldName);
+            if (timeKey > existing.timeKey) {
+              latestValues.set(baseFieldName, { timeKey, value, fieldName });
+            }
+          }
+        }
+      });
+      
       // Use a Map to track unique alerts by field type
       const alertMap = new Map();
       
-      // Check all summaryData for alert values
-      Object.keys(summaryData).forEach(fieldName => {
-        const value = summaryData[fieldName];
+      // Check only the latest value for each field type
+      latestValues.forEach((data, baseFieldName) => {
+        const value = data.value;
+        const fieldName = data.fieldName;
         
         if (value && value.toString().trim() !== '') {
           // Check if this value should trigger an alert
