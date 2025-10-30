@@ -283,6 +283,12 @@
         <span class="stage-value" id="secondStageTime">-</span>
       </div>
     </div>
+    <!-- Inline second stage time entry (visible only until set) -->
+    <div id="secondStageEntryBar" style="display:none; margin-top: 8px; gap: 8px; align-items: center;">
+      <label for="secondStageEntryInput" style="color: #fff; margin-right: 8px;">Second stage start</label>
+      <input type="time" id="secondStageEntryInput" style="padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.15); color: #fff;">
+      <button class="btn btn-sm" id="confirmSecondStageBtn" onclick="confirmSecondStageFromEntry()" style="background:#10b981;color:#fff;border:none;padding:6px 10px;border-radius:6px;">OK</button>
+    </div>
   </div>
   
   <!-- Time Pills Section -->
@@ -392,7 +398,8 @@
         { key: 'Cervix_Plot_8', label: 'Cervix 8cm', type: 'checkbox', options: [['X','Mark']] },
         { key: 'Cervix_Plot_7', label: 'Cervix 7cm', type: 'checkbox', options: [['X','Mark']] },
         { key: 'Cervix_Plot_6', label: 'Cervix 6cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_5', label: 'Cervix 5cm', type: 'checkbox', options: [['X','Mark']] }
+        { key: 'Cervix_Plot_5', label: 'Cervix 5cm', type: 'checkbox', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_P', label: 'Pushing began', type: 'checkbox', options: [['P','Mark']] }
       ],
       descent: [
         { key: 'Descent_Plot_5', label: 'Descent -5', type: 'checkbox', options: [['O','Mark']] },
@@ -645,6 +652,10 @@
         
         const sectionName = sectionNames[key];
         const sectionHtml = fields.map(f => {
+          // Hide pushing marker until second stage is active
+          if (f.key === 'Cervix_Plot_P' && !state.isSecondStageActive) {
+            return '';
+          }
           const inputName = `${f.key}_${timeKey}`;
           const storedValue = state.data[inputName] || '';
           const alertInfo = getAlertInfo(f.key, storedValue);
@@ -663,8 +674,8 @@
               </div>
             `;
           } else if (f.type === 'checkbox') {
-            const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X'; // Get the marker value (X or O)
-            const isChecked = storedValue === 'X' || storedValue === 'O';
+            const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X'; // Get the marker value (X, O, P)
+            const isChecked = storedValue === markerValue;
             return `
               <div class="form-field">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -753,8 +764,8 @@
             </div>
           `;
         } else if (f.type === 'checkbox') {
-          const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X'; // Get the marker value (X or O)
-          const isChecked = storedValue === 'X' || storedValue === 'O';
+          const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X'; // Get the marker value (X, O, P)
+          const isChecked = storedValue === markerValue;
           return `
             <div class="form-field">
               <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -1033,6 +1044,39 @@
           document.getElementById('patientName').textContent = patientData.name || 'Patient';
         }
         
+  // Inline second stage confirmation from entry page
+  async function confirmSecondStageFromEntry() {
+    const input = document.getElementById('secondStageEntryInput');
+    if (!input) return;
+    const value = (input.value || '').trim();
+    if (!value) { alert('Please select a time'); return; }
+    if (!state.startTime) { alert('Please set Active First Stage Start Time first.'); return; }
+
+    // Validate at least 30 minutes after first stage start
+    const first = new Date(`2000-01-01T${state.startTime}:00`);
+    const second = new Date(`2000-01-01T${value}:00`);
+    let diffMin = (second - first) / 60000;
+    if (diffMin < 0) diffMin += 1440;
+    if (diffMin < 30) {
+      alert('Second stage must start at least 30 minutes after the first stage start time.');
+      return;
+    }
+
+    state.secondStageTime = value;
+    const timeEl = document.getElementById('secondStageTime');
+    if (timeEl) timeEl.textContent = value;
+    const info = document.getElementById('secondStageInfo');
+    if (info) info.style.display = 'flex';
+    const bar = document.getElementById('secondStageEntryBar');
+    if (bar) bar.style.display = 'none';
+
+    generateTimepoints(state.startTime, state.secondStageTime);
+    renderTimePills();
+    renderSections();
+    await saveData(true);
+    showToast('✓ Second stage set');
+  }
+
         // Load summary data
         const base = firebase.firestore().collection("patients").doc(patientId);
         const doc = await base.collection("records").doc("summary").get();
@@ -1088,8 +1132,12 @@
           if (state.secondStageTime) {
             document.getElementById('secondStageTime').textContent = state.secondStageTime;
             document.getElementById('secondStageInfo').style.display = 'flex';
+            const bar = document.getElementById('secondStageEntryBar');
+            if (bar) bar.style.display = 'none';
           } else {
             document.getElementById('secondStageInfo').style.display = 'none';
+            const bar = document.getElementById('secondStageEntryBar');
+            if (bar) bar.style.display = state.startTime ? 'flex' : 'none';
           }
           
           if (state.startTime) {
