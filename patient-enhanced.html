@@ -196,6 +196,39 @@
       font-weight: 400;
     }
 
+    .parity-selects {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .parity-selects .select-block {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .parity-selects .select-block label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 0.35rem;
+    }
+
+    .parity-selects .parity-plus {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      padding-bottom: 0.5rem;
+    }
+
+    .parity-helper {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+    }
+
     .form-text {
       font-size: 0.875rem;
       color: var(--text-secondary);
@@ -499,8 +532,54 @@
       console.log('DOM Content Loaded - Initializing patient registration page');
       loadUserTownship();
       
-      // Add event listeners
-      
+      // Parity controls setup
+      const parityHiddenInput = document.getElementById('parity');
+      const parityPreview = document.getElementById('parityPreview');
+      const parityControls = {
+        gravida: document.getElementById('gravidaSelect'),
+        primary: document.getElementById('parityPrimarySelect'),
+        secondary: document.getElementById('paritySecondarySelect')
+      };
+
+      function buildParityString() {
+        const g = parityControls.gravida ? parityControls.gravida.value.trim() : '';
+        const p1 = parityControls.primary ? parityControls.primary.value.trim() : '';
+        const p2 = parityControls.secondary ? parityControls.secondary.value.trim() : '';
+
+        let parts = [];
+        if (g) {
+          parts.push(`G${g}`);
+        }
+        if (p1) {
+          let segment = `P${p1}`;
+          if (p2) {
+            segment += `+${p2}`;
+          }
+          parts.push(segment);
+        } else if (p2) {
+          parts.push(`P0+${p2}`);
+        }
+
+        return parts.join('');
+      }
+
+      function updateParityField() {
+        if (!parityHiddenInput) return;
+        const combined = buildParityString();
+        parityHiddenInput.value = combined;
+        if (parityPreview) {
+          parityPreview.textContent = combined || '—';
+        }
+      }
+
+      Object.values(parityControls).forEach(control => {
+        if (control) {
+          control.addEventListener('change', updateParityField);
+        }
+      });
+
+      updateParityField();
+
       // Add form submission listener with delay to ensure DOM is ready
       setTimeout(() => {
         const form = document.getElementById("patientForm");
@@ -557,6 +636,9 @@
       const messageDiv = document.getElementById('message');
       const originalText = submitBtn ? submitBtn.innerHTML : '';
       
+      // Ensure parity hidden value is up to date before collecting data
+      updateParityField();
+
       // Show loading state
       if (submitBtn) {
         submitBtn.innerHTML = '<div class="loading"></div> Registering Patient...';
@@ -689,6 +771,7 @@
         
         // Reset form
         form.reset();
+        updateParityField();
         
         // Auto-redirect to index.html after 2 seconds
         setTimeout(() => {
@@ -707,6 +790,12 @@
         // Show error message
         messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error creating patient record: ${error.message}</div>`;
       }
+      });
+
+      form.addEventListener('reset', () => {
+        setTimeout(() => {
+          updateParityField();
+        }, 0);
       });
       }, 100); // 100ms delay to ensure DOM is ready
     });
@@ -854,10 +943,67 @@
             </div>
             <div class="col-md-6">
               <div class="form-group">
-                <label for="parity" class="form-label">
-                  <i class="fas fa-baby"></i>Parity
+                <label class="form-label">
+                  <i class="fas fa-baby"></i>Parity & Gravida
                 </label>
-                <input type="text" name="parity" id="parity" class="form-control" placeholder="e.g., G2P1">
+                <div class="parity-selects">
+                  <div class="select-block">
+                    <label for="gravidaSelect">Gravida (G)</label>
+                    <select name="gravida_value" id="gravidaSelect" class="form-control">
+                      <option value="">Select</option>
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                      <option value="7">7</option>
+                      <option value="8">8</option>
+                      <option value="9">9</option>
+                      <option value="10">10</option>
+                    </select>
+                  </div>
+                  <div class="select-block">
+                    <label for="parityPrimarySelect">Parity (Primary)</label>
+                    <select name="parity_primary" id="parityPrimarySelect" class="form-control">
+                      <option value="">Select</option>
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                      <option value="7">7</option>
+                      <option value="8">8</option>
+                      <option value="9">9</option>
+                      <option value="10">10</option>
+                    </select>
+                  </div>
+                  <div class="parity-plus">+</div>
+                  <div class="select-block">
+                    <label for="paritySecondarySelect">Parity (Secondary)</label>
+                    <select name="parity_secondary" id="paritySecondarySelect" class="form-control">
+                      <option value="">Select</option>
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                      <option value="7">7</option>
+                      <option value="8">8</option>
+                      <option value="9">9</option>
+                      <option value="10">10</option>
+                    </select>
+                  </div>
+                </div>
+                <input type="hidden" name="parity" id="parity" value="">
+                <div class="parity-helper">
+                  Stored as <span id="parityPreview">—</span> for compatibility with existing dashboards.
+                </div>
               </div>
             </div>
           </div>
