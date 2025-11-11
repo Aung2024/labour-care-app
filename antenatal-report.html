@@ -247,12 +247,6 @@
       margin-bottom: 10px;
     }
 
-    .clinic-info {
-      margin-bottom: 15px;
-      text-align: center;
-      font-size: 12px;
-    }
-
     .patient-summary {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -277,6 +271,31 @@
       font-size: 14px;
       font-weight: bold;
       color: #007bff;
+    }
+
+    .lab-section {
+      margin-top: 20px;
+      border-top: 1px solid #dee2e6;
+      padding-top: 15px;
+    }
+
+    .lab-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin-top: 10px;
+    }
+
+    .lab-table th,
+    .lab-table td {
+      border: 1px solid #000;
+      padding: 4px;
+      text-align: center;
+    }
+
+    .lab-table th {
+      background: #e9ecef;
+      font-weight: 600;
     }
   </style>
 </head>
@@ -304,10 +323,6 @@
     <div id="reportContent" style="display: none;">
       <!-- Header -->
       <div class="report-header">
-        <div class="clinic-info">
-          <strong>Maternal & Child Health Care System</strong><br>
-          <small>Antenatal Care Record</small>
-        </div>
         <div class="report-title">Antenatal Care Summary Report</div>
         <div class="report-subtitle">Complete Antenatal Visit History</div>
       </div>
@@ -352,8 +367,7 @@
             <th>Urine</th>
             <th>Deworm</th>
             <th>IFA</th>
-            <th>TT/TD</th>
-            <th>Referral</th>
+            <th>TD</th>
             <th>Initial</th>
           </tr>
         </thead>
@@ -368,6 +382,12 @@
         <div id="treatmentInfo" class="treatment-info">
           <!-- Treatment information will be populated here -->
         </div>
+      </div>
+
+      <!-- Laboratory Tests -->
+      <div class="lab-section">
+        <h5><i class="fas fa-flask me-2"></i>Laboratory Test Results</h5>
+        <div id="labTestsContainer"></div>
       </div>
 
       <!-- Danger Signs Section -->
@@ -419,6 +439,8 @@
     let currentPatient = null;
     let patientId = null;
     let antenatalVisits = [];
+    let labTests = [];
+    const db = firebase.firestore();
 
     // Get patient ID from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -477,10 +499,15 @@
           });
         });
 
+        antenatalVisits.sort(compareVisits);
+
+        await loadLabTests();
+
         // Populate report
         populatePatientInfo();
         populateVisitsTable();
         populateSummary();
+        populateLabTests();
         
         // Show report and hide loading
         document.getElementById("loadingState").style.display = "none";
@@ -497,50 +524,122 @@
       }
     }
 
+    function getVisitTimestamp(visit) {
+      if (visit.visitNumber) {
+        return visit.visitNumber;
+      }
+      if (visit.visitDate) {
+        const parsedDate = new Date(visit.visitDate);
+        if (!isNaN(parsedDate)) {
+          return parsedDate.getTime();
+        }
+      }
+      if (visit.timestamp && typeof visit.timestamp.toDate === 'function') {
+        return visit.timestamp.toDate().getTime();
+      }
+      if (visit.timestamp && typeof visit.timestamp.seconds === 'number') {
+        return visit.timestamp.seconds * 1000;
+      }
+      return 0;
+    }
+
+    function compareVisits(a, b) {
+      if (a.visitNumber && b.visitNumber && a.visitNumber !== b.visitNumber) {
+        return a.visitNumber - b.visitNumber;
+      }
+      const timeDiff = getVisitTimestamp(a) - getVisitTimestamp(b);
+      if (timeDiff !== 0) return timeDiff;
+      return (a.created_at?.seconds || 0) - (b.created_at?.seconds || 0);
+    }
+
+    async function loadLabTests() {
+      try {
+        let testsSnapshot;
+        try {
+          testsSnapshot = await db.collection('patients')
+            .doc(patientId)
+            .collection('testRecords')
+            .orderBy('testDate', 'asc')
+            .get();
+        } catch (error) {
+          testsSnapshot = await db.collection('patients')
+            .doc(patientId)
+            .collection('testRecords')
+            .orderBy('timestamp', 'asc')
+            .get();
+        }
+
+        labTests = [];
+        testsSnapshot.forEach(doc => {
+          labTests.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+
+        labTests.sort((a, b) => getTestTimestamp(a) - getTestTimestamp(b));
+      } catch (error) {
+        console.error('Error loading lab tests:', error);
+        labTests = [];
+      }
+    }
+
+    function getTestTimestamp(test) {
+      if (test.testDate) {
+        const parsed = new Date(test.testDate);
+        if (!isNaN(parsed)) return parsed.getTime();
+      }
+      if (test.timestamp && typeof test.timestamp.toDate === 'function') {
+        return test.timestamp.toDate().getTime();
+      }
+      if (test.timestamp && typeof test.timestamp.seconds === 'number') {
+        return test.timestamp.seconds * 1000;
+      }
+      return 0;
+    }
+
     function populatePatientInfo() {
       document.getElementById("patientName").textContent = currentPatient.name || 'Unknown';
       document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
       document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
       document.getElementById("patientPhone").textContent = currentPatient.phone || 'Not provided';
       
-      // Display early ANC visit status from registration
-      const earlyAncVisitStatus = currentPatient.early_anc_visit ? 'Yes' : 'No';
-      document.getElementById("earlyAncVisit").textContent = earlyAncVisitStatus;
+      const hasEarlyANC = antenatalVisits.some(visit => visit.early_anc_visit) || currentPatient.early_anc_visit;
+      document.getElementById("earlyAncVisit").textContent = hasEarlyANC ? 'Yes' : 'No';
       
-      // Calculate total ANC visits from database
       document.getElementById("totalAncVisits").textContent = antenatalVisits.length;
       
-      // Get pregnancy details from the latest antenatal visit
-      let latestVisit = null;
-      if (antenatalVisits.length > 0) {
-        // Get the most recent visit (last in the array since they're ordered by date)
-        latestVisit = antenatalVisits[antenatalVisits.length - 1];
-      }
+      const latestVisit = antenatalVisits.length > 0 ? antenatalVisits[antenatalVisits.length - 1] : null;
       
-      // Load LMP and EDD from latest visit, fallback to patient data if no visits
-      const lmp = latestVisit?.lmp || currentPatient.lmp || 'Not recorded';
-      const edd = latestVisit?.edd || currentPatient.edd || 'Not calculated';
+      let lmp = latestVisit?.lmp || currentPatient.lmp || '';
+      let edd = latestVisit?.edd || currentPatient.edd || '';
+      const manualGA = latestVisit?.manualGestationalAge;
+      const manualEDD = latestVisit?.manualEdd;
       
-      document.getElementById("patientLMP").textContent = lmp;
-      document.getElementById("patientEDD").textContent = edd;
-      
-      // Calculate current gestational age from LMP
-      if (lmp && lmp !== 'Not recorded') {
-        const lmpDate = new Date(lmp);
-        const today = new Date();
-        const diffTime = today - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        document.getElementById("currentGA").textContent = `${diffWeeks}w ${diffDays}d`;
-      } else {
-        // Try to get GA from latest visit if LMP is not available
-        const latestGA = latestVisit?.gestationalAge;
-        if (latestGA) {
-          document.getElementById("currentGA").textContent = `${latestGA} weeks`;
-        } else {
-          document.getElementById("currentGA").textContent = 'Not calculated';
+      if ((!lmp || lmp === 'unknown') && manualGA) {
+        lmp = 'Unknown';
+        if (manualEDD) {
+          edd = manualEDD;
         }
       }
+      
+      document.getElementById("patientLMP").textContent = lmp ? lmp : 'Not recorded';
+      document.getElementById("patientEDD").textContent = edd ? edd : 'Not calculated';
+      
+      if (lmp && lmp !== 'Not recorded' && lmp !== 'Unknown') {
+        const lmpDate = new Date(lmp);
+        if (!isNaN(lmpDate)) {
+          const today = new Date();
+          const diffTime = today - lmpDate;
+          const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+          const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+          document.getElementById("currentGA").textContent = `${diffWeeks}w ${diffDays}d`;
+          return;
+        }
+      }
+      
+      const latestGA = manualGA || latestVisit?.gestationalAge;
+      document.getElementById("currentGA").textContent = latestGA ? `${latestGA} weeks` : 'Not calculated';
     }
 
     function populateVisitsTable() {
@@ -549,7 +648,7 @@
       if (antenatalVisits.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="15" class="text-center">No antenatal visits recorded</td>
+            <td colspan="13" class="text-center">No antenatal visits recorded</td>
           </tr>
         `;
         return;
@@ -557,41 +656,10 @@
 
       let tableHTML = '';
       antenatalVisits.forEach((visit, index) => {
-        const visitNumber = index + 1; // Sequential numbering
-        const visitDate = visit.visitDate ? 
-          new Date(visit.visitDate).toLocaleDateString() : 
-          'N/A';
-        
-        // Format danger signs if present
-        let dangerSignsText = '';
-        if (visit.dangerSignsPresent === 'Yes' && visit.dangerSigns) {
-          const dangerSignsList = [];
-          if (visit.dangerSigns.vaginal_bleeding) dangerSignsList.push('Vaginal bleeding');
-          if (visit.dangerSigns.convulsions) dangerSignsList.push('Convulsions');
-          if (visit.dangerSigns.loss_consciousness) dangerSignsList.push('Loss of consciousness');
-          if (visit.dangerSigns.severe_headache) dangerSignsList.push('Severe headache');
-          if (visit.dangerSigns.blurred_vision) dangerSignsList.push('Blurred vision');
-          if (visit.dangerSigns.vomiting) dangerSignsList.push('Vomiting');
-          if (visit.dangerSigns.severe_abdominal_pain) dangerSignsList.push('Severe abdominal pain');
-          if (visit.dangerSigns.fever) dangerSignsList.push('Fever');
-          if (visit.dangerSigns.fatigue) dangerSignsList.push('Fatigue');
-          if (visit.dangerSigns.fast_breathing) dangerSignsList.push('Fast breathing');
-          if (visit.dangerSigns.difficulty_breathing) dangerSignsList.push('Difficulty in breathing');
-          if (visit.dangerSigns.puffiness) dangerSignsList.push('Puffiness of face, hands and leg');
-          if (visit.dangerSigns.oliguria) dangerSignsList.push('Oliguria');
-          if (visit.dangerSigns.excessive_vomiting) dangerSignsList.push('Excessive vomiting');
-          if (visit.dangerSigns.abdominal_pain) dangerSignsList.push('Abdominal pain');
-          if (visit.dangerSigns.reduced_fetal_movement) dangerSignsList.push('Reduced/absent fetal movement');
-          if (visit.dangerSigns.no_labour_pain) dangerSignsList.push('No labor pain after 6 hours of membrane rupture');
-          if (visit.dangerSigns.no_delivery) dangerSignsList.push('No delivery until 12 hours of labour pain');
-          if (visit.dangerSigns.postpartum_hemorrhage) dangerSignsList.push('Postpartum hemorrhage after birth');
-          if (visit.dangerSigns.no_placenta) dangerSignsList.push('No placenta delivery until 1 hour after child birth');
-          if (visit.dangerSigns.very_small_baby) dangerSignsList.push('Very small babies (<1500gm/1.5kg)');
-          if (visit.dangerSigns.difficulty_breathing_baby) dangerSignsList.push('Difficulty in breathing (baby)');
-          dangerSignsText = dangerSignsList.join(', ') || 'Present';
-        } else if (visit.dangerSignsPresent === 'No') {
-          dangerSignsText = 'None';
-        }
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
+        const gaValue = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks || '-';
+        const tdValue = visit.tetanusToxoid || visit.td || '-';
         
         tableHTML += `
           <tr>
@@ -599,15 +667,14 @@
             <td>${visitDate}</td>
             <td>${visit.weight || '-'}</td>
             <td>${visit.bloodPressure || '-'}</td>
-            <td>${visit.gestationalAge || visit.gestationWeeks || '-'}</td>
+            <td>${gaValue}</td>
             <td>${visit.fundalHeight || '-'}</td>
             <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
             <td>${visit.urineTest || '-'}</td>
             <td>${visit.deworming || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
-            <td>${visit.tetanusToxoid || '-'}</td>
-            <td>${visit.referral || '-'}</td>
+            <td>${tdValue}</td>
             <td>${visit.initial || '-'}</td>
           </tr>
         `;
@@ -620,7 +687,6 @@
             <td class="visit-number">${i + 1}</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
             <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td>
           </tr>
         `;
       }
@@ -644,10 +710,8 @@
 
       let treatmentHTML = '';
       antenatalVisits.forEach((visit, index) => {
-        const visitNumber = index + 1;
-        const visitDate = visit.visitDate ? 
-          new Date(visit.visitDate).toLocaleDateString() : 
-          'N/A';
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
         
         if (visit.treatmentGiven && visit.treatmentGiven.trim() !== '') {
           treatmentHTML += `
@@ -670,6 +734,86 @@
       treatmentContainer.innerHTML = treatmentHTML;
     }
 
+    function populateLabTests() {
+      const container = document.getElementById('labTestsContainer');
+      if (!container) return;
+
+      if (labTests.length === 0) {
+        container.innerHTML = '<p class="text-muted">No laboratory tests recorded.</p>';
+        return;
+      }
+
+      let tableHTML = `
+        <table class="lab-table">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Date</th>
+              <th>GA</th>
+              <th>Lab</th>
+              <th>HIV</th>
+              <th>Malaria</th>
+              <th>Syphilis</th>
+              <th>Hep B</th>
+              <th>Hep C</th>
+              <th>Hb (g/dl)</th>
+              <th>Blood Group</th>
+              <th>Rh</th>
+              <th>Treatment</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      labTests.forEach((test, index) => {
+        const visitNo = index + 1;
+        const testDate = test.testDate ? new Date(test.testDate).toLocaleDateString() : 'N/A';
+        const ga = test.gestationalAge ? `${test.gestationalAge} weeks` : (calculateGAFromLMP(test.testDate) || 'N/A');
+
+        tableHTML += `
+          <tr>
+            <td>${visitNo}</td>
+            <td>${testDate}</td>
+            <td>${ga}</td>
+            <td>${test.labName || '-'}</td>
+            <td>${test.hivResult || '-'}</td>
+            <td>${test.malariaResult || '-'}</td>
+            <td>${test.syphilisResult || '-'}</td>
+            <td>${test.hepatitisBResult || '-'}</td>
+            <td>${test.hepatitisCResult || '-'}</td>
+            <td>${test.hemoglobinResult || '-'}</td>
+            <td>${test.bloodGroup || '-'}</td>
+            <td>${test.rhFactor || '-'}</td>
+            <td>${test.treatmentGiven || '-'}</td>
+          </tr>
+        `;
+      });
+
+      tableHTML += '</tbody></table>';
+      container.innerHTML = tableHTML;
+    }
+
+    function calculateGAFromLMP(testDateValue) {
+      if (!testDateValue) return null;
+      const testDate = new Date(testDateValue);
+      if (isNaN(testDate)) return null;
+
+      if (currentPatient.lmp && currentPatient.lmp !== 'unknown') {
+        const lmpDate = new Date(currentPatient.lmp);
+        if (!isNaN(lmpDate)) {
+          const diffDays = Math.floor((testDate - lmpDate) / (1000 * 60 * 60 * 24));
+          if (!isNaN(diffDays)) {
+            const weeks = Math.floor(diffDays / 7);
+            const days = diffDays % 7;
+            return `${weeks}w ${days}d`;
+          }
+        }
+      } else if (currentPatient.gestational_age) {
+        return `${currentPatient.gestational_age} weeks`;
+      }
+      return null;
+    }
+
     function populateDangerSignsInfo() {
       const dangerSignsContainer = document.getElementById('dangerSignsInfo');
       
@@ -680,10 +824,8 @@
 
       let dangerSignsHTML = '';
       antenatalVisits.forEach((visit, index) => {
-        const visitNumber = index + 1;
-        const visitDate = visit.visitDate ? 
-          new Date(visit.visitDate).toLocaleDateString() : 
-          'N/A';
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
         
         if (visit.dangerSignsPresent === 'Yes' && visit.dangerSigns) {
           const dangerSignsList = [];
@@ -745,22 +887,39 @@
       dangerSignsContainer.innerHTML = dangerSignsHTML;
     }
 
+    function getVisitDateObj(visit) {
+      if (visit.visitDate) {
+        const parsed = new Date(visit.visitDate);
+        if (!isNaN(parsed)) return parsed;
+      }
+      if (visit.timestamp && typeof visit.timestamp.toDate === 'function') {
+        return visit.timestamp.toDate();
+      }
+      if (visit.timestamp && typeof visit.timestamp.seconds === 'number') {
+        return new Date(visit.timestamp.seconds * 1000);
+      }
+      return null;
+    }
+
+    function formatVisitDate(visit) {
+      const dateObj = getVisitDateObj(visit);
+      return dateObj ? dateObj.toLocaleDateString() : 'N/A';
+    }
+
     function populateSummary() {
-      // Visit statistics only
       if (antenatalVisits.length > 0) {
-        const firstVisit = new Date(antenatalVisits[0].visitDate);
-        const lastVisit = new Date(antenatalVisits[antenatalVisits.length - 1].visitDate);
-        
-        document.getElementById("firstVisitDate").textContent = firstVisit.toLocaleDateString();
-        document.getElementById("lastVisitDate").textContent = lastVisit.toLocaleDateString();
-        
-        // Calculate average interval
-        if (antenatalVisits.length > 1) {
-          const totalDays = (lastVisit - firstVisit) / (1000 * 60 * 60 * 24);
+        const firstVisitDate = getVisitDateObj(antenatalVisits[0]);
+        const lastVisitDate = getVisitDateObj(antenatalVisits[antenatalVisits.length - 1]);
+
+        document.getElementById("firstVisitDate").textContent = firstVisitDate ? firstVisitDate.toLocaleDateString() : 'N/A';
+        document.getElementById("lastVisitDate").textContent = lastVisitDate ? lastVisitDate.toLocaleDateString() : 'N/A';
+
+        if (firstVisitDate && lastVisitDate && antenatalVisits.length > 1) {
+          const totalDays = (lastVisitDate - firstVisitDate) / (1000 * 60 * 60 * 24);
           const averageDays = Math.round(totalDays / (antenatalVisits.length - 1));
           document.getElementById("averageInterval").textContent = `${averageDays} days`;
         } else {
-          document.getElementById("averageInterval").textContent = 'N/A (Single visit)';
+          document.getElementById("averageInterval").textContent = 'N/A';
         }
       } else {
         document.getElementById("firstVisitDate").textContent = 'No visits recorded';
@@ -768,7 +927,6 @@
         document.getElementById("averageInterval").textContent = 'N/A';
       }
 
-      // Generate dynamic recommendations based on data
       generateRecommendations();
     }
 
@@ -777,7 +935,7 @@
       
       // Get clinical notes from visits
       antenatalVisits.forEach((visit, index) => {
-        const visitNumber = index + 1;
+        const visitNumber = visit.visitNumber || index + 1;
         const visitDate = visit.visitDate ? 
           new Date(visit.visitDate).toLocaleDateString() : 
           'N/A';
