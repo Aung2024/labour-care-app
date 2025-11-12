@@ -285,6 +285,27 @@
         font-size: 0.85rem;
       }
     }
+
+    .positive-alert {
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      color: #991b1b;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+
+    .is-positive {
+      border-color: #ef4444 !important;
+      background: #fee2e2 !important;
+      color: #991b1b;
+    }
+
+    .positive-alert ul {
+      margin: 0.5rem 0 0;
+      padding-left: 1.25rem;
+    }
   </style>
 </head>
 <body>
@@ -334,6 +355,10 @@
 
     <!-- Test Results Form -->
     <form id="testForm">
+      <div id="positiveAlerts" class="positive-alert">
+        <strong><i class="fas fa-exclamation-triangle me-2"></i>Positive Findings Detected</strong>
+        <ul id="positiveAlertsList"></ul>
+      </div>
       <!-- Basic Test Information -->
       <div class="test-section">
         <h5><i class="fas fa-calendar-alt me-2"></i>Test Information</h5>
@@ -582,11 +607,17 @@
         }
       });
 
-      // Auto-calculate hemoglobin diagnosis
       document.getElementById('hemoglobinResult').addEventListener('input', calculateHemoglobinDiagnosis);
-      
-      // Form submission
       document.getElementById('testForm').addEventListener('submit', saveTestResults);
+
+      ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.addEventListener('change', updatePositiveAlerts);
+        }
+      });
+
+      updatePositiveAlerts();
     });
 
     // Load patient from URL parameters
@@ -861,6 +892,43 @@
       }
     }
 
+    function updatePositiveAlerts() {
+      const alertBox = document.getElementById('positiveAlerts');
+      const list = document.getElementById('positiveAlertsList');
+      if (!alertBox || !list) return;
+
+      const checks = [
+        { id: 'hivResult', label: 'HIV', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'malariaResult', label: 'Malaria', positives: ['Positive', 'Detected'] },
+        { id: 'syphilisResult', label: 'Syphilis', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'hepatitisBResult', label: 'Hepatitis B', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'hepatitisCResult', label: 'Hepatitis C', positives: ['Reactive', 'Positive', 'Detected'] },
+      ];
+
+      const positivesFound = [];
+
+      checks.forEach(({ id, label, positives }) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const value = (select.value || '').trim();
+        const isPositive = positives.includes(value);
+        if (isPositive) {
+          positivesFound.push(`${label}: ${value}`);
+          select.classList.add('is-positive');
+        } else {
+          select.classList.remove('is-positive');
+        }
+      });
+
+      if (positivesFound.length > 0) {
+        list.innerHTML = positivesFound.map(item => `<li>${item}</li>`).join('');
+        alertBox.style.display = 'block';
+      } else {
+        list.innerHTML = '';
+        alertBox.style.display = 'none';
+      }
+    }
+
     // Load existing test data for editing
     async function loadExistingTestData(testId) {
       try {
@@ -913,6 +981,8 @@
         if (testData.hemoglobinResult) {
           calculateHemoglobinDiagnosis();
         }
+        
+        updatePositiveAlerts();
         
       } catch (error) {
         console.error('Error loading test data:', error);
