@@ -456,6 +456,31 @@
       font-weight: 600;
       color: #1f2937;
     }
+
+    /* Filter Bar */
+    .filter-card {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid #e5e7eb;
+      margin-bottom: 25px;
+    }
+
+    .filter-card .form-label {
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .filter-card .btn {
+      min-width: 120px;
+    }
+
+    @media (max-width: 768px) {
+      .filter-card .btn {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
@@ -505,6 +530,32 @@
 
         <!-- Dashboard Content -->
         <div id="dashboardContent" style="display: none;">
+
+          <!-- Date Filter -->
+          <div class="filter-card">
+            <div class="row g-3 align-items-end">
+              <div class="col-12 col-md-4">
+                <label for="filterStartDate" class="form-label"><i class="fas fa-calendar-day me-2"></i>Start Date</label>
+                <input type="date" id="filterStartDate" class="form-control">
+              </div>
+              <div class="col-12 col-md-4">
+                <label for="filterEndDate" class="form-label"><i class="fas fa-calendar-check me-2"></i>End Date</label>
+                <input type="date" id="filterEndDate" class="form-control">
+              </div>
+              <div class="col-12 col-md-4 d-flex gap-2">
+                <button type="button" class="btn btn-primary flex-grow-1" onclick="applyDateFilter()">
+                  <i class="fas fa-filter me-2"></i>Apply
+                </button>
+                <button type="button" class="btn btn-secondary flex-grow-1" onclick="resetDateFilter()">
+                  <i class="fas fa-undo me-2"></i>Reset
+                </button>
+              </div>
+            </div>
+            <div id="activeFilterNotice" class="mt-3 text-muted" style="display: none;">
+              <i class="fas fa-info-circle me-2"></i>
+              Showing records within the selected date range.
+            </div>
+          </div>
 
 
       <!-- TMO Analytics Section -->
@@ -660,6 +711,141 @@
     let currentUser = null;
     let userRole = null;
     let userTownship = null;
+    let dateFilter = { start: null, end: null };
+
+    function parseDateValue(value) {
+      if (!value) return null;
+      if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+      if (typeof value.toDate === 'function') {
+        const d = value.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof value === 'object' && typeof value.seconds === 'number') {
+        return new Date(value.seconds * 1000);
+      }
+      if (typeof value === 'number') {
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const iso = Date.parse(trimmed);
+        if (!isNaN(iso)) return new Date(iso);
+        const parts = trimmed.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts.map(p => parseInt(p, 10));
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            const candidate = new Date(year, month - 1, day);
+            if (!isNaN(candidate.getTime())) return candidate;
+          }
+        }
+      }
+      return null;
+    }
+
+    function normalizeStartOfDay(date) {
+      if (!date) return null;
+      const normalized = new Date(date.getTime());
+      normalized.setHours(0, 0, 0, 0);
+      return normalized;
+    }
+
+    function normalizeEndOfDay(date) {
+      if (!date) return null;
+      const normalized = new Date(date.getTime());
+      normalized.setHours(23, 59, 59, 999);
+      return normalized;
+    }
+
+    function isDateWithinActiveFilter(date) {
+      if (!dateFilter.start && !dateFilter.end) return true;
+      if (!date) return true;
+      if (dateFilter.start && date < dateFilter.start) return false;
+      if (dateFilter.end && date > dateFilter.end) return false;
+      return true;
+    }
+
+    function recordIsWithinFilter(data, dateKeys = []) {
+      if (!dateFilter.start && !dateFilter.end) return true;
+      let evaluated = false;
+
+      if (data) {
+        for (const key of dateKeys) {
+          if (data[key]) {
+            const parsed = parseDateValue(data[key]);
+            if (parsed) {
+              evaluated = true;
+              if (isDateWithinActiveFilter(parsed)) return true;
+            }
+          }
+        }
+
+        if (data.timestamp) {
+          const parsedTimestamp = parseDateValue(data.timestamp);
+          if (parsedTimestamp) {
+            evaluated = true;
+            if (isDateWithinActiveFilter(parsedTimestamp)) return true;
+          }
+        }
+      }
+
+      return !evaluated;
+    }
+
+    function updateFilterNotice() {
+      const notice = document.getElementById('activeFilterNotice');
+      if (!notice) return;
+      if (dateFilter.start || dateFilter.end) {
+        notice.style.display = 'block';
+      } else {
+        notice.style.display = 'none';
+      }
+    }
+
+    async function refreshDashboardContents() {
+      try {
+        document.getElementById('loadingState').style.display = 'block';
+        document.getElementById('dashboardContent').style.display = 'none';
+        analyticsData = await buildAnalyticsData();
+        await loadDashboardData();
+      } catch (error) {
+        console.error('Error refreshing dashboard:', error);
+      } finally {
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('dashboardContent').style.display = 'block';
+      }
+    }
+
+    async function applyDateFilter() {
+      const startInput = document.getElementById('filterStartDate');
+      const endInput = document.getElementById('filterEndDate');
+
+      const startValue = startInput ? parseDateValue(startInput.value) : null;
+      const endValue = endInput ? parseDateValue(endInput.value) : null;
+
+      if (startValue && endValue && startValue > endValue) {
+        alert('Start date cannot be later than end date.');
+        return;
+      }
+
+      dateFilter.start = startValue ? normalizeStartOfDay(startValue) : null;
+      dateFilter.end = endValue ? normalizeEndOfDay(endValue) : null;
+
+      updateFilterNotice();
+      await refreshDashboardContents();
+    }
+
+    async function resetDateFilter() {
+      const startInput = document.getElementById('filterStartDate');
+      const endInput = document.getElementById('filterEndDate');
+      if (startInput) startInput.value = '';
+      if (endInput) endInput.value = '';
+
+      dateFilter = { start: null, end: null };
+      updateFilterNotice();
+      await refreshDashboardContents();
+    }
 
     // Initialize dashboard
     async function initializeDashboard() {
@@ -696,13 +882,8 @@
         // Update dashboard title and subtitle
         updateDashboardHeader();
 
-        // Load dashboard data based on role
         console.log('Loading dashboard data...');
-        await loadDashboardData();
-
-        // Hide loading, show content
-        document.getElementById('loadingState').style.display = 'none';
-        document.getElementById('dashboardContent').style.display = 'block';
+        await refreshDashboardContents();
         
         console.log('Dashboard initialization complete');
 
@@ -755,20 +936,55 @@
       }
     }
 
-    // Load key statistics
+    function emptyStats() {
+      return {
+          totalPatients: 0,
+          antenatalPatients: 0,
+          labourPatients: 0,
+          postnatalPatients: 0
+        };
+      }
+
+    function computeStatusStatistics(patients = []) {
+      if (!patients.length) {
+        return emptyStats();
+      }
+
+      const stats = emptyStats();
+
+      patients.forEach(patient => {
+        stats.totalPatients++;
+        const data = patient.profile || {};
+        const status = (data.status || data.treatmentStatus || 'Antenatal Care').toLowerCase();
+
+        if (status.includes('antenatal')) {
+          stats.antenatalPatients++;
+        } else if (status.includes('labour')) {
+          stats.labourPatients++;
+        } else if (status.includes('postnatal') || status.includes('postpartum')) {
+          stats.postnatalPatients++;
+        } else {
+          stats.antenatalPatients++;
+        }
+      });
+
+      return stats;
+    }
+
     async function loadStatistics() {
       try {
-        let stats = {};
+        if (!analyticsData) {
+          analyticsData = await buildAnalyticsData();
+        }
+
+        let stats = emptyStats();
 
         if (userRole === 'Super Admin' || userRole === 'admin') {
-          // Global statistics
-          stats = await getGlobalStatistics();
+          stats = getGlobalStatistics();
         } else if (userRole === 'TMO') {
-          // Township statistics
-          stats = await getTownshipStatistics(userTownship);
+          stats = getTownshipStatistics(userTownship);
         } else {
-          // Personal statistics
-          stats = await getPersonalStatistics(currentUser.uid);
+          stats = getPersonalStatistics(currentUser.uid);
         }
 
         displayStatistics(stats);
@@ -778,175 +994,41 @@
       }
     }
 
-    // Get global statistics (Super Admin)
-    async function getGlobalStatistics() {
-      try {
-        console.log('Loading global statistics...');
-      const patientsSnap = await firebase.firestore().collection('patients').get();
-        console.log('Patients found:', patientsSnap.size);
-
-      let totalPatients = 0;
-        let antenatalPatients = 0;
-        let labourPatients = 0;
-        let postnatalPatients = 0;
-
-      patientsSnap.forEach(doc => {
-        const data = doc.data();
-        totalPatients++;
-        
-          // Handle new status system
-          const status = data.status || data.treatmentStatus || 'Antenatal Care';
-          console.log(`Patient ${doc.id}: status = "${status}"`);
-          
-          if (status.toLowerCase().includes('antenatal')) {
-            antenatalPatients++;
-          } else if (status.toLowerCase().includes('labour')) {
-            labourPatients++;
-          } else if (status.toLowerCase().includes('postnatal') || status.toLowerCase().includes('postpartum')) {
-            postnatalPatients++;
-          } else {
-            // Default to antenatal for unknown statuses
-            antenatalPatients++;
-          }
-        });
-
-        const stats = {
-          totalPatients,
-          antenatalPatients,
-          labourPatients,
-          postnatalPatients
-        };
-        
-        console.log('Calculated stats:', stats);
-        return stats;
-      } catch (error) {
-        console.error('Error in getGlobalStatistics:', error);
-      return {
-          totalPatients: 0,
-          antenatalPatients: 0,
-          labourPatients: 0,
-          postnatalPatients: 0
-        };
+    function getGlobalStatistics() {
+      if (!analyticsData || !analyticsData.patients) {
+        return emptyStats();
       }
+      return computeStatusStatistics(analyticsData.patients);
     }
 
-    // Get township statistics (TMO)
-    async function getTownshipStatistics(township) {
-      const patientsSnap = await firebase.firestore()
-        .collection('patients')
-        .where('township', '==', township)
-        .get();
+    function getTownshipStatistics(township) {
+      if (!analyticsData || !analyticsData.patients) {
+        return emptyStats();
+      }
 
-      let totalPatients = 0;
-      let antenatalPatients = 0;
-      let labourPatients = 0;
-      let postnatalPatients = 0;
+      if (!township) {
+        return computeStatusStatistics(analyticsData.patients);
+      }
 
-      patientsSnap.forEach(doc => {
-        const data = doc.data();
-        totalPatients++;
-        
-        // Handle new status system
-        const status = data.status || data.treatmentStatus || 'Antenatal Care';
-        
-        if (status.toLowerCase().includes('antenatal')) {
-          antenatalPatients++;
-        } else if (status.toLowerCase().includes('labour')) {
-          labourPatients++;
-        } else if (status.toLowerCase().includes('postnatal') || status.toLowerCase().includes('postpartum')) {
-          postnatalPatients++;
-        } else {
-          // Default to antenatal for unknown statuses
-          antenatalPatients++;
-        }
+      const filtered = analyticsData.patients.filter(patient => {
+        const patientTownship = (patient.profile?.township || '').toLowerCase();
+        return patientTownship === township.toLowerCase();
       });
 
-      return {
-        totalPatients,
-        antenatalPatients,
-        labourPatients,
-        postnatalPatients
-      };
+      return computeStatusStatistics(filtered.length ? filtered : analyticsData.patients);
     }
 
-    // Get personal statistics (Midwife)
-    async function getPersonalStatistics(userId) {
-      try {
-        console.log('Loading personal statistics for user:', userId);
-        
-        // Try multiple queries to find patients
-        let patientsSnap;
-        
-        // First try: createdBy field
-        patientsSnap = await firebase.firestore()
-        .collection('patients')
-        .where('createdBy', '==', userId)
-        .get();
-        
-        console.log('Patients found with createdBy:', patientsSnap.size);
-        
-        // If no patients found, try created_by field (snake_case)
-        if (patientsSnap.size === 0) {
-          patientsSnap = await firebase.firestore()
-            .collection('patients')
-            .where('created_by', '==', userId)
-            .get();
-          console.log('Patients found with created_by:', patientsSnap.size);
-        }
-        
-        // No fallback - only show patients the user has access to
-
-      let totalPatients = 0;
-        let antenatalPatients = 0;
-        let labourPatients = 0;
-        let postnatalPatients = 0;
-
-      patientsSnap.forEach(doc => {
-        const data = doc.data();
-          console.log(`Patient ${doc.id}:`, {
-            name: data.name,
-            status: data.status,
-            treatmentStatus: data.treatmentStatus,
-            createdBy: data.createdBy,
-            created_by: data.created_by
-          });
-          
-        totalPatients++;
-        
-          // Handle new status system
-          const status = data.status || data.treatmentStatus || 'Antenatal Care';
-          console.log(`Patient ${doc.id}: final status = "${status}"`);
-          
-          if (status.toLowerCase().includes('antenatal')) {
-            antenatalPatients++;
-          } else if (status.toLowerCase().includes('labour')) {
-            labourPatients++;
-          } else if (status.toLowerCase().includes('postnatal') || status.toLowerCase().includes('postpartum')) {
-            postnatalPatients++;
-          } else {
-            // Default to antenatal for unknown statuses
-            antenatalPatients++;
-          }
-        });
-
-        const stats = {
-          totalPatients,
-          antenatalPatients,
-          labourPatients,
-          postnatalPatients
-        };
-        
-        console.log('Personal statistics calculated:', stats);
-        return stats;
-      } catch (error) {
-        console.error('Error in getPersonalStatistics:', error);
-      return {
-          totalPatients: 0,
-          antenatalPatients: 0,
-          labourPatients: 0,
-          postnatalPatients: 0
-        };
+    function getPersonalStatistics(userId) {
+      if (!analyticsData || !analyticsData.patients) {
+        return emptyStats();
       }
+
+      const filtered = analyticsData.patients.filter(patient => {
+        const creator = patient.profile.created_by || patient.profile.createdBy;
+        return creator === userId;
+      });
+
+      return computeStatusStatistics(filtered.length ? filtered : analyticsData.patients);
     }
 
     // Display statistics in cards
@@ -1002,8 +1084,8 @@
 
     // Chart instances storage
     let chartInstances = {};
+    let analyticsData = null;
 
-    // Destroy existing chart if it exists
     function destroyChart(chartId) {
       if (chartInstances[chartId]) {
         chartInstances[chartId].destroy();
@@ -1011,82 +1093,213 @@
       }
     }
 
+    function cloneSnapshotDocs(snapshot) {
+      if (!snapshot || snapshot.empty) return [];
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        data: doc.data() || {}
+      }));
+    }
+
+    function filterRecords(records = [], dateKeys = []) {
+      return records
+        .filter(record => record && record.data)
+        .filter(record => recordIsWithinFilter(record.data, dateKeys));
+    }
+
+    function recordMatchesDate(record, dateKeys = []) {
+      if (!record || !record.data) return false;
+      return recordIsWithinFilter(record.data, dateKeys);
+    }
+
+    function patientMatchesDateFilter(entry) {
+      if (!entry) return false;
+      if (!dateFilter.start && !dateFilter.end) return true;
+
+      if (recordIsWithinFilter(entry.profile, [
+        'createdAt', 'created_at', 'createdDate', 'registrationDate',
+        'registration_date', 'timestamp', 'date'
+      ])) {
+        return true;
+      }
+
+      const hasFilteredVisits = (entry.antenatalVisits && entry.antenatalVisits.length > 0) ||
+        (entry.postpartumVisits && entry.postpartumVisits.length > 0) ||
+        (entry.testRecords && entry.testRecords.length > 0);
+      if (hasFilteredVisits) return true;
+
+      if (entry.birthRecord) return true;
+      if (entry.endTreatment) return true;
+      if (entry.transferRecord) return true;
+      if (entry.outcomeRecord) return true;
+
+      return false;
+    }
+
+    async function buildAnalyticsData() {
+      const db = firebase.firestore();
+      let patientDocs = [];
+        
+        if (userRole === 'TMO') {
+        const snapshot = await db.collection('patients')
+              .where('township', '==', userTownship)
+              .get();
+        patientDocs = snapshot.docs;
+      } else if (userRole && userRole.toLowerCase() === 'midwife') {
+        const [snapNew, snapOld] = await Promise.all([
+          db.collection('patients').where('created_by', '==', currentUser.uid).get(),
+          db.collection('patients').where('createdBy', '==', currentUser.uid).get()
+        ]);
+        const combined = new Map();
+        snapNew.forEach(doc => combined.set(doc.id, doc));
+        snapOld.forEach(doc => {
+          if (!combined.has(doc.id)) combined.set(doc.id, doc);
+        });
+        patientDocs = Array.from(combined.values());
+          } else {
+        const snapshot = await db.collection('patients').get();
+        patientDocs = snapshot.docs;
+      }
+
+      if (!patientDocs.length) {
+        return { patients: [] };
+      }
+
+      const patientData = await Promise.all(patientDocs.map(async doc => {
+        const profile = doc.data() || {};
+        const patientRef = db.collection('patients').doc(doc.id);
+
+        try {
+          const [
+            antenatalVisitsSnap,
+            postpartumVisitsSnap,
+            testRecordsSnap,
+            summaryDoc,
+            birthRecordDoc,
+            endTreatmentDoc,
+            transferRecordDoc,
+            outcomeRecordDoc
+          ] = await Promise.all([
+            patientRef.collection('antenatal_visits').get(),
+            patientRef.collection('postpartum_visits').get(),
+            patientRef.collection('testRecords').get(),
+            patientRef.collection('records').doc('summary').get(),
+            patientRef.collection('records').doc('birthRecord').get(),
+            patientRef.collection('records').doc('endTreatment').get(),
+            patientRef.collection('records').doc('transferRecord').get(),
+            patientRef.collection('records').doc('outcomeRecord').get()
+          ]);
+
+          const antenatalVisits = filterRecords(
+            cloneSnapshotDocs(antenatalVisitsSnap),
+            ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at', 'date']
+          );
+
+          const postpartumVisits = filterRecords(
+            cloneSnapshotDocs(postpartumVisitsSnap),
+            ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at', 'date']
+          );
+
+          const testRecords = filterRecords(
+            cloneSnapshotDocs(testRecordsSnap),
+            ['testDate', 'timestamp', 'createdAt', 'created_at', 'date']
+          );
+
+          const birthRecordData = birthRecordDoc.exists ? { id: birthRecordDoc.id, data: birthRecordDoc.data() || {} } : null;
+          const endTreatmentData = endTreatmentDoc.exists ? { id: endTreatmentDoc.id, data: endTreatmentDoc.data() || {} } : null;
+          const transferRecordData = transferRecordDoc.exists ? { id: transferRecordDoc.id, data: transferRecordDoc.data() || {} } : null;
+          const outcomeRecordData = outcomeRecordDoc.exists ? { id: outcomeRecordDoc.id, data: outcomeRecordDoc.data() || {} } : null;
+
+          const birthRecord = recordMatchesDate(birthRecordData, ['deliveryDate', 'birthDate', 'timestamp', 'date']) ? birthRecordData : null;
+          const endTreatment = recordMatchesDate(endTreatmentData, ['outcomeDate', 'timestamp', 'date']) ? endTreatmentData : null;
+          const transferRecord = recordMatchesDate(transferRecordData, ['transferDate', 'timestamp', 'date']) ? transferRecordData : null;
+          const outcomeRecord = recordMatchesDate(outcomeRecordData, ['outcomeDate', 'timestamp', 'date']) ? outcomeRecordData : null;
+
+          const entry = {
+            id: doc.id,
+            profile,
+            antenatalVisits,
+            postpartumVisits,
+            testRecords,
+            summary: summaryDoc.exists ? summaryDoc.data() || {} : null,
+            birthRecord,
+            endTreatment,
+            transferRecord,
+            outcomeRecord
+          };
+
+          entry.matchesDateFilter = patientMatchesDateFilter(entry);
+          return entry;
+            } catch (error) {
+          console.error('Error loading patient collections for analytics:', doc.id, error);
+          const fallbackEntry = {
+            id: doc.id,
+            profile,
+            antenatalVisits: [],
+            postpartumVisits: [],
+            testRecords: [],
+            summary: null,
+            birthRecord: null,
+            endTreatment: null,
+            transferRecord: null,
+            outcomeRecord: null,
+            matchesDateFilter: patientMatchesDateFilter({ profile })
+          };
+          return fallbackEntry;
+        }
+      }));
+
+      const filteredPatients = patientData.filter(patient => patient.matchesDateFilter);
+
+      return {
+        patients: filteredPatients,
+        totalPatients: patientData.length
+      };
+    }
+
     // Load TMO analytics with charts
     async function loadTMOAnalytics() {
       try {
-        const selectedMidwife = document.getElementById('midwifeFilter') ? document.getElementById('midwifeFilter').value : currentUser.uid;
-        console.log('Loading TMO analytics for midwife:', selectedMidwife);
-        
-        // Destroy all existing charts first
-        const chartIds = ['ancVisitsChart', 'oxytocinChart', 'highRiskChart', 
-                         'ttChart', 'folicAcidChart', 'hivSyphilisChart', 'pphChart', 
-                         'transferChart'];
-        
-        chartIds.forEach(chartId => destroyChart(chartId));
-        
-        // Get patients data
-        let patientsSnap;
-        
-        if (userRole === 'TMO') {
-          // TMO logic: filter by selected midwife or all patients in township
-          if (selectedMidwife === 'all') {
-            // Get all patients in township
-            patientsSnap = await firebase.firestore()
-              .collection('patients')
-              .where('township', '==', userTownship)
-              .get();
-          } else {
-            // Get patients for specific midwife - try both field names
-            try {
-              // Try created_by first (current field name)
-              patientsSnap = await firebase.firestore()
-                .collection('patients')
-                .where('created_by', '==', selectedMidwife)
-                .get();
-              
-              // If no results with created_by, try createdBy (legacy field name)
-              if (patientsSnap.empty) {
-                patientsSnap = await firebase.firestore()
-                  .collection('patients')
-                  .where('createdBy', '==', selectedMidwife)
-                  .get();
-              }
-            } catch (error) {
-              console.log('Trying alternative field name for midwife filter');
-              patientsSnap = await firebase.firestore()
-                .collection('patients')
-                .where('createdBy', '==', selectedMidwife)
-                .get();
-            }
-          }
-        } else {
-          // Midwife logic: only show their own patients
-          // Try created_by first (current field name)
-          patientsSnap = await firebase.firestore()
-            .collection('patients')
-            .where('created_by', '==', currentUser.uid)
-            .get();
-          
-          // If no results with created_by, try createdBy (legacy field name)
-          if (patientsSnap.empty) {
-            patientsSnap = await firebase.firestore()
-              .collection('patients')
-              .where('createdBy', '==', currentUser.uid)
-              .get();
-          }
+        if (!analyticsData) {
+          analyticsData = await buildAnalyticsData();
         }
-        
-        console.log('Patients found for TMO analytics:', patientsSnap.size);
-        
-        // Load all analytics charts
-        await loadANCVisitsChart(patientsSnap);
-        await loadOxytocinChart(patientsSnap);
-        await loadHighRiskChart(patientsSnap);
-        await loadTTChart(patientsSnap);
-        await loadFolicAcidChart(patientsSnap);
-        await loadHIVSyphilisChart(patientsSnap);
-        await loadPPHChart(patientsSnap);
-        await loadTransferChart(patientsSnap);
+
+        const selectedMidwife = document.getElementById('midwifeFilter')
+          ? document.getElementById('midwifeFilter').value
+          : currentUser.uid;
+
+        let dataset = analyticsData.patients || [];
+
+        if (userRole === 'TMO') {
+          if (selectedMidwife && selectedMidwife !== 'all') {
+            dataset = dataset.filter(patient => {
+              const createdBy = patient.profile.created_by || patient.profile.createdBy;
+              return createdBy === selectedMidwife;
+            });
+          }
+        } else if (userRole && userRole.toLowerCase() === 'midwife') {
+          dataset = dataset.filter(patient => {
+            const createdBy = patient.profile.created_by || patient.profile.createdBy;
+            return createdBy === currentUser.uid;
+          });
+        }
+
+        console.log('Patients available for analytics after filtering:', dataset.length);
+
+        const chartIds = ['ancVisitsChart', 'oxytocinChart', 'highRiskChart',
+          'ttChart', 'folicAcidChart', 'hivSyphilisChart', 'pphChart',
+          'transferChart'];
+
+        chartIds.forEach(chartId => destroyChart(chartId));
+
+        await loadANCVisitsChart(dataset);
+        await loadOxytocinChart(dataset);
+        await loadHighRiskChart(dataset);
+        await loadTTChart(dataset);
+        await loadFolicAcidChart(dataset);
+        await loadHIVSyphilisChart(dataset);
+        await loadPPHChart(dataset);
+        await loadTransferChart(dataset);
         
       } catch (error) {
         console.error('Error loading TMO analytics:', error);
@@ -1094,23 +1307,13 @@
     }
 
     // ANC Visits Chart
-    async function loadANCVisitsChart(patientsSnap) {
+    async function loadANCVisitsChart(patientsData) {
       try {
         let visitCounts = { '0': 0, '1-3': 0, '4+': 0, '8+': 0 };
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          // Get ANC visits for this patient
-          const visitsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('antenatal_visits')
-            .get();
-          
-          const visitCount = visitsSnap.size;
-          
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const visitCount = (patient.antenatalVisits || []).length;
           if (visitCount === 0) {
             visitCounts['0']++;
           } else if (visitCount >= 8) {
@@ -1120,7 +1323,11 @@
           } else {
             visitCounts['1-3']++;
           }
-        }
+        });
+
+        const chartData = totalPatients > 0
+          ? [visitCounts['0'], visitCounts['1-3'], visitCounts['4+'], visitCounts['8+']]
+          : [0, 0, 0, 0];
         
         const ctx = document.getElementById('ancVisitsChart').getContext('2d');
         chartInstances['ancVisitsChart'] = new Chart(ctx, {
@@ -1128,7 +1335,7 @@
           data: {
             labels: ['Zero visits', '1-3 visits', '4+ visits', '8+ visits'],
             datasets: [{
-              data: [visitCounts['0'], visitCounts['1-3'], visitCounts['4+'], visitCounts['8+']],
+              data: chartData,
               backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1154,7 +1361,8 @@
           }
         });
         
-        // Update details
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
+
         document.getElementById('ancVisitsDetails').innerHTML = `
           <div class="detail-item">
             <span class="detail-label">Total Patients:</span>
@@ -1162,15 +1370,15 @@
           </div>
           <div class="detail-item">
             <span class="detail-label">4+ ANC Visits:</span>
-            <span class="detail-value">${visitCounts['4+'] + visitCounts['8+']} (${Math.round(((visitCounts['4+'] + visitCounts['8+']) / totalPatients) * 100)}%)</span>
+            <span class="detail-value">${visitCounts['4+'] + visitCounts['8+']} (${pct(visitCounts['4+'] + visitCounts['8+'])}%)</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">8+ ANC Visits:</span>
-            <span class="detail-value">${visitCounts['8+']} (${Math.round((visitCounts['8+'] / totalPatients) * 100)}%)</span>
+            <span class="detail-value">${visitCounts['8+']} (${pct(visitCounts['8+'])}%)</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">Zero ANC Visits:</span>
-            <span class="detail-value">${visitCounts['0']} (${Math.round((visitCounts['0'] / totalPatients) * 100)}%)</span>
+            <span class="detail-value">${visitCounts['0']} (${pct(visitCounts['0'])}%)</span>
           </div>
         `;
         
@@ -1181,31 +1389,19 @@
 
     // Early ANC Chart
     // Oxytocin Chart
-    async function loadOxytocinChart(patientsSnap) {
+    async function loadOxytocinChart(patientsData) {
       try {
         let oxytocinYes = 0;
         let oxytocinNo = 0;
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          // Check oxytocin usage in records/summary document
-          const summaryDoc = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('records')
-            .doc('summary')
-            .get();
-          
-          if (summaryDoc.exists) {
-            const data = summaryDoc.data();
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const summaryData = patient.summary || {};
             let hasOxytocin = false;
             
-            // Check all medication oxytocin fields (they are saved as Medication_Oxytocin_XX_XX)
-            Object.keys(data).forEach(key => {
+          Object.keys(summaryData).forEach(key => {
               if (key.startsWith('Medication_Oxytocin_') && !key.includes('_UL') && !key.includes('_drops')) {
-                if (data[key] === 'Y' || data[key] === 'Yes') {
+              if (summaryData[key] === 'Y' || summaryData[key] === 'Yes') {
                   hasOxytocin = true;
                 }
               }
@@ -1216,10 +1412,7 @@
             } else {
               oxytocinNo++;
             }
-          } else {
-            oxytocinNo++;
-          }
-        }
+        });
         
         const ctx = document.getElementById('oxytocinChart').getContext('2d');
         chartInstances['oxytocinChart'] = new Chart(ctx, {
@@ -1227,7 +1420,7 @@
           data: {
             labels: ['Oxytocin Used', 'No Oxytocin'],
             datasets: [{
-              data: [oxytocinYes, oxytocinNo],
+              data: totalPatients > 0 ? [oxytocinYes, oxytocinNo] : [0, 0],
               backgroundColor: ['#3b82f6', '#6b7280'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1242,11 +1435,13 @@
             }
           }
         });
+
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
         
         document.getElementById('oxytocinDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">Oxytocin Used:</span><span class="detail-value">${oxytocinYes} (${Math.round((oxytocinYes / totalPatients) * 100)}%)</span></div>
-          <div class="detail-item"><span class="detail-label">No Oxytocin:</span><span class="detail-value">${oxytocinNo} (${Math.round((oxytocinNo / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Oxytocin Used:</span><span class="detail-value">${oxytocinYes} (${pct(oxytocinYes)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">No Oxytocin:</span><span class="detail-value">${oxytocinNo} (${pct(oxytocinNo)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1255,17 +1450,15 @@
     }
 
     // High Risk Chart
-    async function loadHighRiskChart(patientsSnap) {
+    async function loadHighRiskChart(patientsData) {
       try {
         let highRisk = 0;
         let normalRisk = 0;
         let riskFactors = {};
-        let totalPatients = 0;
-        
-        patientsSnap.forEach(doc => {
-          const data = doc.data();
-          totalPatients++;
-          
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const data = patient.profile || {};
           if (data.high_risk === 'yes' || data.high_risk === 'Yes') {
             highRisk++;
             
@@ -1285,7 +1478,7 @@
           data: {
             labels: ['High Risk', 'Normal Risk'],
             datasets: [{
-              data: [highRisk, normalRisk],
+              data: totalPatients > 0 ? [highRisk, normalRisk] : [0, 0],
               backgroundColor: ['#ef4444', '#10b981'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1301,6 +1494,8 @@
           }
         });
         
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
+        
         let riskFactorsHtml = '';
         Object.entries(riskFactors).forEach(([factor, count]) => {
           riskFactorsHtml += `<div class="detail-item"><span class="detail-label">${factor}:</span><span class="detail-value">${count}</span></div>`;
@@ -1308,8 +1503,8 @@
         
         document.getElementById('highRiskDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">High Risk:</span><span class="detail-value">${highRisk} (${Math.round((highRisk / totalPatients) * 100)}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Normal Risk:</span><span class="detail-value">${normalRisk} (${Math.round((normalRisk / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">High Risk:</span><span class="detail-value">${highRisk} (${pct(highRisk)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Normal Risk:</span><span class="detail-value">${normalRisk} (${pct(normalRisk)}%)</span></div>
           ${riskFactorsHtml ? '<hr><strong>Risk Factors:</strong>' + riskFactorsHtml : ''}
         `;
         
@@ -1319,29 +1514,19 @@
     }
 
     // TT Chart
-    async function loadTTChart(patientsSnap) {
+    async function loadTTChart(patientsData) {
       try {
         let ttComplete = 0;
         let ttIncomplete = 0;
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          const visitsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('antenatal_visits')
-            .get();
-          
-          let hasTT = false;
-          visitsSnap.forEach(visit => {
-            const visitData = visit.data();
-            if (visitData.ttTdCompletion === 'Complete' || 
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const visits = patient.antenatalVisits || [];
+          const hasTT = visits.some(visit => {
+            const visitData = visit.data || {};
+            return visitData.ttTdCompletion === 'Complete' ||
                 (visitData.tt1 && visitData.tt1 !== '') ||
-                (visitData.tt2 && visitData.tt2 !== '')) {
-              hasTT = true;
-            }
+              (visitData.tt2 && visitData.tt2 !== '');
           });
           
           if (hasTT) {
@@ -1349,7 +1534,7 @@
           } else {
             ttIncomplete++;
           }
-        }
+        });
         
         const ctx = document.getElementById('ttChart').getContext('2d');
         chartInstances['ttChart'] = new Chart(ctx, {
@@ -1357,7 +1542,7 @@
           data: {
             labels: ['TT Complete', 'TT Incomplete'],
             datasets: [{
-              data: [ttComplete, ttIncomplete],
+              data: totalPatients > 0 ? [ttComplete, ttIncomplete] : [0, 0],
               backgroundColor: ['#22c55e', '#f59e0b'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1372,11 +1557,13 @@
             }
           }
         });
+
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
         
         document.getElementById('ttDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">TT Complete:</span><span class="detail-value">${ttComplete} (${Math.round((ttComplete / totalPatients) * 100)}%)</span></div>
-          <div class="detail-item"><span class="detail-label">TT Incomplete:</span><span class="detail-value">${ttIncomplete} (${Math.round((ttIncomplete / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">TT Complete:</span><span class="detail-value">${ttComplete} (${pct(ttComplete)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">TT Incomplete:</span><span class="detail-value">${ttIncomplete} (${pct(ttIncomplete)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1385,29 +1572,18 @@
     }
 
     // Folic Acid Chart
-    async function loadFolicAcidChart(patientsSnap) {
+    async function loadFolicAcidChart(patientsData) {
       try {
         let folicAcidGiven = 0;
         let folicAcidNotGiven = 0;
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          const visitsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('antenatal_visits')
-            .get();
-          
-          let hasFolicAcid = false;
-          visitsSnap.forEach(visit => {
-            const visitData = visit.data();
-            if (visitData.ironFolicAcid === 'Given' || 
-                visitData.folicAcid === 'Given' ||
-                (visitData.treatmentGiven && visitData.treatmentGiven.toLowerCase().includes('folic'))) {
-              hasFolicAcid = true;
-            }
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const visits = patient.antenatalVisits || [];
+          const hasFolicAcid = visits.some(({ data = {} }) => {
+            return data.ironFolicAcid === 'Given' ||
+              data.folicAcid === 'Given' ||
+              (typeof data.treatmentGiven === 'string' && data.treatmentGiven.toLowerCase().includes('folic'));
           });
           
           if (hasFolicAcid) {
@@ -1415,7 +1591,7 @@
           } else {
             folicAcidNotGiven++;
           }
-        }
+        });
         
         const ctx = document.getElementById('folicAcidChart').getContext('2d');
         chartInstances['folicAcidChart'] = new Chart(ctx, {
@@ -1423,7 +1599,7 @@
           data: {
             labels: ['Folic Acid Given', 'Not Given'],
             datasets: [{
-              data: [folicAcidGiven, folicAcidNotGiven],
+              data: totalPatients > 0 ? [folicAcidGiven, folicAcidNotGiven] : [0, 0],
               backgroundColor: ['#10b981', '#ef4444'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1438,11 +1614,13 @@
             }
           }
         });
+
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
         
         document.getElementById('folicAcidDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">Folic Acid Given:</span><span class="detail-value">${folicAcidGiven} (${Math.round((folicAcidGiven / totalPatients) * 100)}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Not Given:</span><span class="detail-value">${folicAcidNotGiven} (${Math.round((folicAcidNotGiven / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Folic Acid Given:</span><span class="detail-value">${folicAcidGiven} (${pct(folicAcidGiven)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Not Given:</span><span class="detail-value">${folicAcidNotGiven} (${pct(folicAcidNotGiven)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1451,42 +1629,36 @@
     }
 
     // HIV & Syphilis Chart
-    async function loadHIVSyphilisChart(patientsSnap) {
+    async function loadHIVSyphilisChart(patientsData) {
       try {
         let hivPositive = 0;
         let syphilisPositive = 0;
         let bothNegative = 0;
         let notTested = 0;
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          const testsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('testRecords')
-            .get();
-          
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const tests = patient.testRecords || [];
           let hasHIV = false;
           let hasSyphilis = false;
           let hasAnyTestRecord = false;
           
-          testsSnap.forEach(test => {
-            const testData = test.data();
-            // Check if any test was recorded (not just reactive results)
-            if (testData.hivDone === 'Yes' || testData.hivResult) {
+          tests.forEach(({ data = {} }) => {
+            if (data.hivDone === 'Yes' || data.hivResult) {
               hasAnyTestRecord = true;
-              if (testData.hivResult === 'Reactive') hasHIV = true;
+              if (data.hivResult === 'Reactive' || data.hivResult === 'Positive') {
+                hasHIV = true;
             }
-            if (testData.syphilisDone === 'Yes' || testData.syphilisResult) {
+            }
+            if (data.syphilisDone === 'Yes' || data.syphilisResult) {
               hasAnyTestRecord = true;
-              if (testData.syphilisResult === 'Reactive') hasSyphilis = true;
+              if (data.syphilisResult === 'Reactive' || data.syphilisResult === 'Positive') {
+                hasSyphilis = true;
+              }
             }
           });
           
           if (!hasAnyTestRecord) {
-            // No test was recorded for this patient
             notTested++;
           } else if (hasHIV || hasSyphilis) {
             if (hasHIV) hivPositive++;
@@ -1494,18 +1666,18 @@
           } else {
             bothNegative++;
           }
-        }
+        });
         
         const ctx = document.getElementById('hivSyphilisChart').getContext('2d');
         
         // Only show chart if there are tested patients
-        if (totalPatients > notTested) {
+        if (totalPatients > 0) {
           chartInstances['hivSyphilisChart'] = new Chart(ctx, {
             type: 'doughnut',
             data: {
               labels: ['HIV Positive', 'Syphilis Positive', 'Both Negative', 'Not Tested'],
               datasets: [{
-                data: [hivPositive, syphilisPositive, bothNegative, notTested],
+                data: totalPatients > 0 ? [hivPositive, syphilisPositive, bothNegative, notTested] : [0, 0, 0, 0],
                 backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#6b7280'],
                 borderWidth: 2,
                 borderColor: '#ffffff'
@@ -1522,12 +1694,14 @@
           });
         }
         
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
+        
         document.getElementById('hivSyphilisDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">HIV Positive:</span><span class="detail-value">${hivPositive} (${totalPatients > 0 ? Math.round((hivPositive / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Syphilis Positive:</span><span class="detail-value">${syphilisPositive} (${totalPatients > 0 ? Math.round((syphilisPositive / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Both Negative:</span><span class="detail-value">${bothNegative} (${totalPatients > 0 ? Math.round((bothNegative / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Not Tested:</span><span class="detail-value">${notTested} (${totalPatients > 0 ? Math.round((notTested / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">HIV Positive:</span><span class="detail-value">${hivPositive} (${pct(hivPositive)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Syphilis Positive:</span><span class="detail-value">${syphilisPositive} (${pct(syphilisPositive)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Both Negative:</span><span class="detail-value">${bothNegative} (${pct(bothNegative)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Not Tested:</span><span class="detail-value">${notTested} (${pct(notTested)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1536,43 +1710,23 @@
     }
 
     // PPH Chart
-    async function loadPPHChart(patientsSnap) {
+    async function loadPPHChart(patientsData) {
       try {
         let pphCases = 0;
         let noPPH = 0;
-        let totalPatients = 0;
-        
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
-          // Check records/birthRecord document for PPH data (as saved from baby.html)
-          const birthRecordDoc = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('records')
-            .doc('birthRecord')
-            .get();
-          
+        const totalPatients = patientsData.length;
+
+        patientsData.forEach(patient => {
+          const birthRecord = patient.birthRecord ? patient.birthRecord.data : null;
           let hasPPH = false;
-          if (birthRecordDoc.exists) {
-            const babyData = birthRecordDoc.data();
-            console.log('PPH Debug - Baby data:', babyData); // Debug log
-            
-            // Check for PPH based on actual data structure from baby.html
-            // PPH is detected if: manualPPH is true OR pphDetected is true OR pphAutoDetected is true OR totalBloodLoss >= 300
-            if (babyData.manualPPH === true || 
-                babyData.pphDetected === true ||
-                babyData.pphAutoDetected === true ||
-                babyData.postpartumHemorrhage === true ||
-                (babyData.totalBloodLoss && parseInt(babyData.totalBloodLoss) >= 300)) {
+
+          if (birthRecord) {
+            if (birthRecord.manualPPH === true ||
+              birthRecord.pphDetected === true ||
+              birthRecord.pphAutoDetected === true ||
+              birthRecord.postpartumHemorrhage === true ||
+              (birthRecord.totalBloodLoss && parseInt(birthRecord.totalBloodLoss, 10) >= 300)) {
               hasPPH = true;
-              console.log('PPH detected for patient:', doc.id, {
-                manualPPH: babyData.manualPPH,
-                pphDetected: babyData.pphDetected,
-                pphAutoDetected: babyData.pphAutoDetected,
-                postpartumHemorrhage: babyData.postpartumHemorrhage,
-                totalBloodLoss: babyData.totalBloodLoss
-              });
             }
           }
           
@@ -1581,9 +1735,7 @@
           } else {
             noPPH++;
           }
-        }
-        
-        console.log('PPH Chart Results:', { pphCases, noPPH, totalPatients });
+        });
         
         const ctx = document.getElementById('pphChart').getContext('2d');
         chartInstances['pphChart'] = new Chart(ctx, {
@@ -1591,7 +1743,7 @@
           data: {
             labels: ['PPH Cases', 'No PPH'],
             datasets: [{
-              data: [pphCases, noPPH],
+              data: totalPatients > 0 ? [pphCases, noPPH] : [0, 0],
               backgroundColor: ['#ef4444', '#10b981'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1606,11 +1758,13 @@
             }
           }
         });
+
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
         
         document.getElementById('pphDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">PPH Cases:</span><span class="detail-value">${pphCases} (${Math.round((pphCases / totalPatients) * 100)}%)</span></div>
-          <div class="detail-item"><span class="detail-label">No PPH:</span><span class="detail-value">${noPPH} (${Math.round((noPPH / totalPatients) * 100)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">PPH Cases:</span><span class="detail-value">${pphCases} (${pct(pphCases)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">No PPH:</span><span class="detail-value">${noPPH} (${pct(noPPH)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1716,88 +1870,50 @@
     }
 
     // Transfer Chart
-    async function loadTransferChart(patientsSnap) {
+    async function loadTransferChart(patientsData) {
       try {
         let births = 0;
         let transfers = 0;
         let other = 0;
         let noOutcome = 0;
-        let totalPatients = 0;
+        const totalPatients = patientsData.length;
         
-        for (const doc of patientsSnap.docs) {
-          totalPatients++;
-          
+        patientsData.forEach(patient => {
           let outcomeFound = false;
-          
-          // Check Treatment Outcome from endTreatment document (new method)
-          const endTreatmentDoc = await firebase.firestore()
-            .collection('patients')
-            .doc(doc.id)
-            .collection('records')
-            .doc('endTreatment')
-            .get();
-          
-          if (endTreatmentDoc.exists) {
-            const outcome = endTreatmentDoc.data().outcome;
-            if (outcome === 'birth') {
+          const endTreatment = patient.endTreatment ? patient.endTreatment.data : null;
+
+          if (endTreatment && endTreatment.outcome) {
+            if (endTreatment.outcome === 'birth') {
               births++;
-              outcomeFound = true;
-            } else if (outcome === 'transfer') {
+            } else if (endTreatment.outcome === 'transfer') {
               transfers++;
-              outcomeFound = true;
-            } else if (outcome === 'other') {
+            } else if (endTreatment.outcome === 'other') {
               other++;
-              outcomeFound = true;
+            } else {
+              other++;
             }
+              outcomeFound = true;
           }
-          
-          // If no endTreatment document, check for older records (backward compatibility)
-          if (!outcomeFound) {
-            // Check for birth record
-            const birthRecordDoc = await firebase.firestore()
-              .collection('patients')
-              .doc(doc.id)
-              .collection('records')
-              .doc('birthRecord')
-              .get();
-            
-            if (birthRecordDoc.exists) {
+
+          if (!outcomeFound && patient.birthRecord) {
               births++;
               outcomeFound = true;
-            } else {
-              // Check for transfer record
-              const transferRecordDoc = await firebase.firestore()
-                .collection('patients')
-                .doc(doc.id)
-                .collection('records')
-                .doc('transferRecord')
-                .get();
-              
-              if (transferRecordDoc.exists) {
+          }
+
+          if (!outcomeFound && patient.transferRecord) {
                 transfers++;
                 outcomeFound = true;
-              } else {
-                // Check for outcome record
-                const outcomeRecordDoc = await firebase.firestore()
-                  .collection('patients')
-                  .doc(doc.id)
-                  .collection('records')
-                  .doc('outcomeRecord')
-                  .get();
-                
-                if (outcomeRecordDoc.exists) {
+          }
+
+          if (!outcomeFound && patient.outcomeRecord) {
                   other++;
                   outcomeFound = true;
-                }
-              }
-            }
           }
           
-          // If no outcome found at all
           if (!outcomeFound) {
             noOutcome++;
           }
-        }
+        });
         
         const ctx = document.getElementById('transferChart').getContext('2d');
         chartInstances['transferChart'] = new Chart(ctx, {
@@ -1805,7 +1921,7 @@
           data: {
             labels: ['Birth', 'Transfer', 'Other', 'No Outcome'],
             datasets: [{
-              data: [births, transfers, other, noOutcome],
+              data: totalPatients > 0 ? [births, transfers, other, noOutcome] : [0, 0, 0, 0],
               backgroundColor: ['#10b981', '#ef4444', '#6b7280', '#e5e7eb'],
               borderWidth: 2,
               borderColor: '#ffffff'
@@ -1820,13 +1936,15 @@
             }
           }
         });
+
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
         
         document.getElementById('transferDetails').innerHTML = `
           <div class="detail-item"><span class="detail-label">Total Patients:</span><span class="detail-value">${totalPatients}</span></div>
-          <div class="detail-item"><span class="detail-label">Birth:</span><span class="detail-value">${births} (${totalPatients > 0 ? Math.round((births / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Transfer:</span><span class="detail-value">${transfers} (${totalPatients > 0 ? Math.round((transfers / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">Other:</span><span class="detail-value">${other} (${totalPatients > 0 ? Math.round((other / totalPatients) * 100) : 0}%)</span></div>
-          <div class="detail-item"><span class="detail-label">No Outcome:</span><span class="detail-value">${noOutcome} (${totalPatients > 0 ? Math.round((noOutcome / totalPatients) * 100) : 0}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Birth:</span><span class="detail-value">${births} (${pct(births)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Transfer:</span><span class="detail-value">${transfers} (${pct(transfers)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">Other:</span><span class="detail-value">${other} (${pct(other)}%)</span></div>
+          <div class="detail-item"><span class="detail-label">No Outcome:</span><span class="detail-value">${noOutcome} (${pct(noOutcome)}%)</span></div>
         `;
         
       } catch (error) {
@@ -1950,27 +2068,12 @@
     // Get ANC Analysis Data
     async function getANCAnalysis() {
       try {
-        console.log('Loading ANC analysis...');
-        let patientsSnap;
-        
-        if (userRole === 'Super Admin' || userRole === 'admin') {
-          patientsSnap = await firebase.firestore().collection('patients').get();
-        } else if (userRole === 'TMO') {
-          patientsSnap = await firebase.firestore().collection('patients').where('township', '==', userTownship).get();
-        } else {
-          // Try created_by first (current field name)
-          patientsSnap = await firebase.firestore().collection('patients').where('created_by', '==', currentUser.uid).get();
-          
-          // If no results with created_by, try createdBy (legacy field name)
-          if (patientsSnap.size === 0) {
-            patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
-          }
-          
-          // No fallback - only show patients the user has access to
+        if (!analyticsData) {
+          analyticsData = await buildAnalyticsData();
         }
-        
-        console.log('Patients for ANC analysis:', patientsSnap.size);
-        const totalPatients = patientsSnap.size;
+
+        const patients = analyticsData?.patients || [];
+        const totalPatients = patients.length;
 
         let earlyANC = 0;
         let atLeast4ANC = 0;
@@ -1982,115 +2085,75 @@
         let referredCases = 0;
         let nextPregnancy24Months = 0;
 
-        // Process each patient to get ANC data
-        for (const doc of patientsSnap.docs) {
-          const data = doc.data();
-          console.log(`Processing patient ${doc.id} for ANC analysis:`, {
-            name: data.name,
-            early_anc_visit: data.early_anc_visit,
-            early_anc_number: data.early_anc_number,
-            high_risk: data.high_risk
-          });
-          
-          // Check early ANC visits using correct field names from patient-enhanced.html
-          let hasEarlyANC = false;
-          
-          // Check if early ANC visit checkbox is true (from registration form)
-          if (data.early_anc_visit === true || data.early_anc_visit === 'yes') {
-            hasEarlyANC = true;
-          }
-          
-          // Check if early ANC number is greater than 0
-          if (data.early_anc_number && parseInt(data.early_anc_number) > 0) {
-            hasEarlyANC = true;
-          }
-          
+        patients.forEach(patient => {
+          const profile = patient.profile || {};
+          const visits = patient.antenatalVisits || [];
+
+          const hasEarlyANC = profile.early_anc_visit === true ||
+            (typeof profile.early_anc_visit === 'string' && profile.early_anc_visit.toLowerCase() === 'yes') ||
+            (profile.early_anc_number && parseInt(profile.early_anc_number, 10) > 0);
           if (hasEarlyANC) {
             earlyANC++;
-            console.log(`✅ Patient ${doc.id} has early ANC visits`);
-          } else {
-            console.log(`❌ Patient ${doc.id} does not have early ANC visits`);
           }
           
-          // Check if high risk pregnancy using correct field name from patient-enhanced.html
-          if (data.high_risk === 'yes' || data.high_risk === 'Yes') {
+          if (profile.high_risk === 'yes' || profile.high_risk === 'Yes') {
             highRiskPregnancies++;
-            console.log(`✅ Patient ${doc.id} is high risk pregnancy`);
           }
-          
-          // Get ANC visits data
-          try {
-            const ancVisitsSnap = await firebase.firestore()
-                .collection('patients')
-                .doc(doc.id)
-              .collection('antenatal_visits')
-                .get();
-              
-            if (ancVisitsSnap.size >= 4) {
+
+          if (visits.length >= 4) {
               atLeast4ANC++;
             }
             
-            // Check for anemia, infections, treatments, referrals in visits
-            ancVisitsSnap.forEach(visitDoc => {
-              const visitData = visitDoc.data();
-              
-              // Check for anemia (hemoglobin < 11)
-              if (visitData.hemoglobin && parseInt(visitData.hemoglobin) < 11) {
+          visits.forEach(({ data = {} }) => {
+            const hemoglobin = data.hemoglobin !== undefined ? parseFloat(data.hemoglobin) : NaN;
+            if (!isNaN(hemoglobin) && hemoglobin < 11) {
                 anemiaCases++;
               }
               
-              // Check for anemia treatment (iron supplements)
-              if (visitData.ironFolicAcid === 'Given' || visitData.treatmentGiven && visitData.treatmentGiven.toLowerCase().includes('iron')) {
+            if (data.ironFolicAcid === 'Given' ||
+              (typeof data.treatmentGiven === 'string' && data.treatmentGiven.toLowerCase().includes('iron'))) {
                 anemiaTreated++;
               }
               
-              // Check for referrals
-              if (visitData.referral === 'Yes') {
+            if (data.referral === 'Yes') {
                 referredCases++;
               }
               
-              // Check for infections (HIV, Syphilis, Hepatitis B, Hepatitis C)
-              if (visitData.hiv === 'Positive' || visitData.syphilis === 'Positive' || 
-                  visitData.hepatitisB === 'Positive' || visitData.hepatitisC === 'Positive') {
-                infectionCases++;
-              }
-              
-              // Check for TT/TD completion
-              if (visitData.ttTdCompletion === 'Complete') {
-                ttTdCompletion++;
-              }
-            });
-          } catch (ancError) {
-            console.log(`No ANC visits for patient ${doc.id}`);
-          }
-        }
+            if (data.ttTdCompletion === 'Complete') {
+              ttTdCompletion++;
+            }
 
-        // Calculate percentages
-        const calculatePercentage = (count, total) => total > 0 ? Math.round((count / total) * 100) : 0;
+            if (data.hiv === 'Positive' ||
+              data.syphilis === 'Positive' ||
+              data.hepatitisB === 'Positive' ||
+              data.hepatitisC === 'Positive') {
+              infectionCases++;
+            }
+          });
+        });
 
-        const result = {
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
+
+        return {
           earlyANC,
-          earlyANCPercentage: calculatePercentage(earlyANC, totalPatients),
+          earlyANCPercentage: pct(earlyANC),
           atLeast4ANC,
-          atLeast4ANCPercentage: calculatePercentage(atLeast4ANC, totalPatients),
+          atLeast4ANCPercentage: pct(atLeast4ANC),
           ttTdCompletion,
-          ttTdCompletionPercentage: calculatePercentage(ttTdCompletion, totalPatients),
+          ttTdCompletionPercentage: pct(ttTdCompletion),
           anemiaCases,
-          anemiaCasesPercentage: calculatePercentage(anemiaCases, totalPatients),
+          anemiaCasesPercentage: pct(anemiaCases),
           infectionCases,
-          infectionCasesPercentage: calculatePercentage(infectionCases, totalPatients),
+          infectionCasesPercentage: pct(infectionCases),
           anemiaTreated,
-          anemiaTreatedPercentage: calculatePercentage(anemiaTreated, totalPatients),
+          anemiaTreatedPercentage: pct(anemiaTreated),
           highRiskPregnancies,
-          highRiskPregnanciesPercentage: calculatePercentage(highRiskPregnancies, totalPatients),
+          highRiskPregnanciesPercentage: pct(highRiskPregnancies),
           referredCases,
-          referredCasesPercentage: calculatePercentage(referredCases, totalPatients),
+          referredCasesPercentage: pct(referredCases),
           nextPregnancy24Months,
-          nextPregnancy24MonthsPercentage: calculatePercentage(nextPregnancy24Months, totalPatients)
+          nextPregnancy24MonthsPercentage: pct(nextPregnancy24Months)
         };
-
-        console.log('ANC Analysis Results:', result);
-        return result;
       } catch (error) {
         console.error('Error getting ANC analysis:', error);
         return {
@@ -2110,23 +2173,11 @@
     // Get Postnatal Analysis Data
     async function getPostnatalAnalysis() {
       try {
-        let patientsSnap;
-        
-        if (userRole === 'Super Admin' || userRole === 'admin') {
-          patientsSnap = await firebase.firestore().collection('patients').get();
-        } else if (userRole === 'TMO') {
-          patientsSnap = await firebase.firestore().collection('patients').where('township', '==', userTownship).get();
-        } else {
-          // Try created_by first (current field name)
-          patientsSnap = await firebase.firestore().collection('patients').where('created_by', '==', currentUser.uid).get();
-          
-          // If no results with created_by, try createdBy (legacy field name)
-          if (patientsSnap.size === 0) {
-            patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
-          }
-          
-          // No fallback - only show patients the user has access to
+        if (!analyticsData) {
+          analyticsData = await buildAnalyticsData();
         }
+
+        const patients = analyticsData?.patients || [];
 
         let totalVisits = 0;
         let dangerSigns = 0;
@@ -2136,47 +2187,28 @@
         let contraception = 0;
         let referrals = 0;
 
-        // Process each patient to get postnatal data
-        for (const doc of patientsSnap.docs) {
-          const data = doc.data();
-          
-          // Get postnatal visits data
-          try {
-            const postnatalVisitsSnap = await firebase.firestore()
-          .collection('patients')
-              .doc(doc.id)
-              .collection('postpartum_visits')
-          .get();
-        
-            totalVisits += postnatalVisitsSnap.size;
-            
-            postnatalVisitsSnap.forEach(visitDoc => {
-              const visitData = visitDoc.data();
-              
-              // Check for danger signs
-              if (visitData.dangerSigns && Object.keys(visitData.dangerSigns).some(key => visitData.dangerSigns[key] === true)) {
+        patients.forEach(patient => {
+          const visits = patient.postpartumVisits || [];
+          totalVisits += visits.length;
+
+          visits.forEach(({ data = {} }) => {
+            if (data.dangerSigns && Object.keys(data.dangerSigns).some(key => data.dangerSigns[key] === true)) {
                 dangerSigns++;
               }
               
-              // Check for medications
-              if (visitData.vitaminB1 === 'Yes') vitaminB1++;
-              if (visitData.vitaminA === 'Yes') vitaminA++;
-              if (visitData.ironFolicAcid === 'Yes') ironFolicAcid++;
-              
-              // Check for contraception
-              if (visitData.contraceptionMethod && visitData.contraceptionMethod !== '') {
+            if (data.vitaminB1 === 'Yes') vitaminB1++;
+            if (data.vitaminA === 'Yes') vitaminA++;
+            if (data.ironFolicAcid === 'Yes') ironFolicAcid++;
+
+            if (data.contraceptionMethod && data.contraceptionMethod !== '') {
                 contraception++;
               }
               
-              // Check for referrals
-              if (visitData.referral === 'Yes' || visitData.referred === 'Yes') {
+            if (data.referral === 'Yes' || data.referred === 'Yes') {
                 referrals++;
               }
             });
-          } catch (postnatalError) {
-            console.log(`No postnatal visits for patient ${doc.id}`);
-          }
-        }
+        });
 
         return {
           totalVisits,
@@ -2199,25 +2231,12 @@
     // Get Patient Analysis Data
     async function getPatientAnalysis() {
       try {
-        let patientsSnap;
-        
-        if (userRole === 'Super Admin' || userRole === 'admin') {
-          patientsSnap = await firebase.firestore().collection('patients').get();
-        } else if (userRole === 'TMO') {
-          patientsSnap = await firebase.firestore().collection('patients').where('township', '==', userTownship).get();
-        } else {
-          // Try created_by first (current field name)
-          patientsSnap = await firebase.firestore().collection('patients').where('created_by', '==', currentUser.uid).get();
-          
-          // If no results with created_by, try createdBy (legacy field name)
-          if (patientsSnap.size === 0) {
-            patientsSnap = await firebase.firestore().collection('patients').where('createdBy', '==', currentUser.uid).get();
-          }
-          
-          // No fallback - only show patients the user has access to
+        if (!analyticsData) {
+          analyticsData = await buildAnalyticsData();
         }
 
-        let totalPatients = 0;
+        const patients = analyticsData?.patients || [];
+
         let totalAge = 0;
         let primipara = 0;
         let multipara = 0;
@@ -2225,47 +2244,55 @@
         let earlyANC = 0;
         let complications = 0;
 
-        patientsSnap.forEach(doc => {
-          const data = doc.data();
-          totalPatients++;
-          
-          // Calculate average age
+        const totalPatients = patients.length;
+
+        const parseParity = (value) => {
+          if (value === undefined || value === null) return null;
+          if (typeof value === 'number') return value;
+          if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return null;
+            const direct = parseInt(trimmed, 10);
+            if (!isNaN(direct)) return direct;
+            const match = trimmed.match(/P(\d+)/i);
+            if (match && match[1]) {
+              const parsed = parseInt(match[1], 10);
+              if (!isNaN(parsed)) return parsed;
+            }
+          }
+          return null;
+        };
+
+        patients.forEach(patient => {
+          const data = patient.profile || {};
+
           if (data.age) {
-            totalAge += parseInt(data.age);
+            const ageVal = parseInt(data.age, 10);
+            if (!isNaN(ageVal)) {
+              totalAge += ageVal;
+            }
           }
           
-          // Check parity
-          if (data.parity === 0 || data.parity === '0') {
+          const parityValue = parseParity(data.parity);
+          if (parityValue === 0) {
             primipara++;
-          } else if (data.parity && parseInt(data.parity) > 0) {
+          } else if (parityValue && parityValue > 0) {
             multipara++;
           }
           
-          // Check high risk pregnancy - try multiple field names
           if (data.high_risk_pregnancy === 'Yes' || data.highRiskPregnancy === 'Yes' || 
               data.high_risk === 'Yes' || data.highRisk === 'Yes' ||
               data.high_risk_pregnancy === true || data.highRiskPregnancy === true) {
             highRisk++;
           }
           
-          // Check early ANC visits using correct field names from patient-enhanced.html
-          let hasEarlyANC = false;
-          
-          // Check if early ANC visit checkbox is true (from registration form)
-          if (data.early_anc_visit === true || data.early_anc_visit === 'yes') {
-            hasEarlyANC = true;
-          }
-          
-          // Check if early ANC number is greater than 0
-          if (data.early_anc_number && parseInt(data.early_anc_number) > 0) {
-            hasEarlyANC = true;
-          }
-          
+          const hasEarlyANC = data.early_anc_visit === true ||
+            (typeof data.early_anc_visit === 'string' && data.early_anc_visit.toLowerCase() === 'yes') ||
+            (data.early_anc_number && parseInt(data.early_anc_number, 10) > 0);
           if (hasEarlyANC) {
             earlyANC++;
           }
           
-          // Check for complications (from risk factors) - using correct field name
           if (data.risk_factors) {
             if (Array.isArray(data.risk_factors) && data.risk_factors.length > 0) {
               complications++;
@@ -2275,22 +2302,21 @@
           }
         });
 
-        // Calculate percentages
-        const calculatePercentage = (count, total) => total > 0 ? Math.round((count / total) * 100) : 0;
+        const pct = (value) => totalPatients > 0 ? Math.round((value / totalPatients) * 100) : 0;
 
         return {
           totalPatients,
           averageAge: totalPatients > 0 ? Math.round(totalAge / totalPatients) : 0,
           primipara,
-          primiparaPercentage: calculatePercentage(primipara, totalPatients),
+          primiparaPercentage: pct(primipara),
           multipara,
-          multiparaPercentage: calculatePercentage(multipara, totalPatients),
+          multiparaPercentage: pct(multipara),
           highRisk,
-          highRiskPercentage: calculatePercentage(highRisk, totalPatients),
+          highRiskPercentage: pct(highRisk),
           earlyANC,
-          earlyANCPercentage: calculatePercentage(earlyANC, totalPatients),
+          earlyANCPercentage: pct(earlyANC),
           complications,
-          complicationsPercentage: calculatePercentage(complications, totalPatients)
+          complicationsPercentage: pct(complications)
         };
       } catch (error) {
         console.error('Error getting patient analysis:', error);
