@@ -1436,17 +1436,40 @@
           const tspCodeDisplay = document.getElementById('tspCodeDisplay');
 
           const locationMetadata = getLocationMetadataByTownship(township);
+          let regionShort = 'UNK';
+          let tspCode = 'UNK-0';
+          
           if (locationMetadata) {
-            if (regionShortInput) regionShortInput.value = locationMetadata.regionShort;
-            if (tspCodeInput) tspCodeInput.value = locationMetadata.tspCode;
-            if (regionCodeDisplay) regionCodeDisplay.textContent = locationMetadata.regionShort;
-            if (tspCodeDisplay) tspCodeDisplay.textContent = locationMetadata.tspCode;
+            regionShort = locationMetadata.regionShort || 'UNK';
+            tspCode = locationMetadata.tspCode || 'UNK-0';
+            if (regionShortInput) regionShortInput.value = regionShort;
+            if (tspCodeInput) tspCodeInput.value = tspCode;
+            if (regionCodeDisplay) regionCodeDisplay.textContent = regionShort;
+            if (tspCodeDisplay) tspCodeDisplay.textContent = tspCode;
           } else {
-            if (regionShortInput) regionShortInput.value = 'UNK';
-            if (tspCodeInput) tspCodeInput.value = 'UNK-0';
-            if (regionCodeDisplay) regionCodeDisplay.textContent = 'UNK';
-            if (tspCodeDisplay) tspCodeDisplay.textContent = 'UNK-0';
+            if (regionShortInput) regionShortInput.value = regionShort;
+            if (tspCodeInput) tspCodeInput.value = tspCode;
+            if (regionCodeDisplay) regionCodeDisplay.textContent = regionShort;
+            if (tspCodeDisplay) tspCodeDisplay.textContent = tspCode;
             console.warn('No location metadata found for township:', township);
+          }
+          
+          // Generate and display patient ID immediately
+          const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
+          if (patientUniqueIdDisplay && userData.township && userData.township.trim() !== '') {
+            try {
+              const idResult = await generatePatientUniqueId(regionShort, tspCode);
+              patientUniqueIdDisplay.value = idResult.uniqueId;
+              // Store in hidden field for form submission
+              const patientUniqueIdHidden = document.getElementById('patientUniqueId');
+              if (patientUniqueIdHidden) {
+                patientUniqueIdHidden.value = idResult.uniqueId;
+              }
+              console.log('Patient ID generated and displayed:', idResult.uniqueId);
+            } catch (idError) {
+              console.error('Failed to generate patient ID:', idError);
+              patientUniqueIdDisplay.value = 'Error generating ID';
+            }
           }
           
           // Check if township is properly set
@@ -1766,7 +1789,10 @@
         if (regionShortInputHidden) regionShortInputHidden.value = resolvedRegionShort || '';
         if (tspCodeInputHidden) tspCodeInputHidden.value = resolvedTspCode || '';
 
-        // Generate unique patient ID if not already present
+        // Use pre-generated patient ID or generate if not present
+        if (!data.patientUniqueId && patientUniqueIdHidden && patientUniqueIdHidden.value) {
+          data.patientUniqueId = patientUniqueIdHidden.value;
+        }
         if (!data.patientUniqueId) {
           try {
             const idResult = await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode);
@@ -1793,6 +1819,7 @@
           ? null
           : (youngestYears || 0) * 12 + (youngestMonths || 0);
         const pregnancyWithin24 = data.pregnancyWithin24Months === 'true';
+        const frequentPregnancy = pregnancyWithin24 ? 'Yes' : 'No';
         const registrationDateDisplay = formatRegistrationDateDisplay(data.registration_date);
         
         // Convert field names to snake_case for consistency (no duplicates)
@@ -1817,6 +1844,7 @@
           youngest_child_age_months: youngestMonths,
           youngest_child_interval_months: intervalMonths,
           pregnancy_within_24_months: pregnancyWithin24,
+          frequent_pregnancy: frequentPregnancy,
           
           // Location identifiers
           region_short_code: resolvedRegionShort || null,
@@ -1902,14 +1930,32 @@
       }
       });
 
-      form.addEventListener('reset', () => {
-        setTimeout(() => {
+      form.addEventListener('reset', async () => {
+        setTimeout(async () => {
           updateParityField();
           toggleYoungestChildFields();
           evaluatePregnancyInterval();
-          if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
-          if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
           updateRegistrationDatePreview();
+          
+          // Regenerate patient ID after reset
+          const regionShortInput = document.getElementById('regionShort');
+          const tspCodeInput = document.getElementById('tspCode');
+          const regionShort = regionShortInput ? regionShortInput.value : '';
+          const tspCode = tspCodeInput ? tspCodeInput.value : '';
+          
+          if (regionShort && tspCode && patientUniqueIdDisplay) {
+            try {
+              const idResult = await generatePatientUniqueId(regionShort, tspCode);
+              if (patientUniqueIdHidden) patientUniqueIdHidden.value = idResult.uniqueId;
+              if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = idResult.uniqueId;
+            } catch (idError) {
+              console.error('Failed to regenerate patient ID after reset:', idError);
+              if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
+            }
+          } else {
+            if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
+            if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
+          }
         }, 0);
       });
       }, 100); // 100ms delay to ensure DOM is ready
@@ -2055,9 +2101,9 @@
                 </label>
                 <input type="date" name="registration_date" id="registration_date" class="form-control" required>
                 <div class="form-text">
-                  Enter the registration date.
+                
                   <span class="d-block mt-1">
-                    Displayed as <strong id="registrationDateFormatted">—</strong>
+                     <strong id="registrationDateFormatted">—</strong>
                   </span>
                 </div>
               </div>
@@ -2157,8 +2203,8 @@
                 <label class="form-label">
                   <i class="fas fa-id-badge"></i>Generated Patient ID
                 </label>
-                <input type="text" class="form-control" id="patientUniqueIdDisplay" placeholder="Generated when saved" readonly>
-                <div class="form-text">ID is created automatically on save.</div>
+                <input type="text" class="form-control" id="patientUniqueIdDisplay" placeholder="Loading..." readonly>
+                <div class="form-text">ID is generated automatically when the page loads.</div>
               </div>
             </div>
           </div>
