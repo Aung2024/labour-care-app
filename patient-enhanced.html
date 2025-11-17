@@ -1599,6 +1599,61 @@
     return segment ? segment.replace(/[^A-Za-z0-9-]/g, '').toUpperCase() : fallback;
   }
 
+  // Preview function: Get the next ID without incrementing the counter
+  async function previewNextPatientId(regionShortRaw, tspCodeRaw) {
+    try {
+      console.log('previewNextPatientId called with:', { regionShortRaw, tspCodeRaw });
+      
+      // Check if user is authenticated
+      const user = firebase.auth().currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+      
+      const db = firebase.firestore();
+      const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
+      const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+      const yearSuffix = new Date().getFullYear().toString().slice(-2);
+      // Counter ID uses only TSP code (region short code removed as it's redundant)
+      const sanitizedTspCode = tspCode.replace(/[^A-Za-z0-9]/g, '');
+      const counterId = `${sanitizedTspCode}_${yearSuffix}`;
+      const counterRef = db.collection('patient_counters').doc(counterId);
+      
+      console.log('Reading current serial for preview, counter ID:', counterId);
+      
+      // Read-only: Get current serial without incrementing
+      const snapshot = await counterRef.get();
+      let currentSerial = 0;
+      if (snapshot.exists) {
+        const data = snapshot.data();
+        if (typeof data.lastSerial === 'number') {
+          currentSerial = data.lastSerial;
+          console.log('Current serial from counter:', currentSerial);
+        }
+      }
+      
+      // Calculate what the next ID would be (without actually incrementing)
+      const nextSerial = currentSerial + 1;
+      const serialStr = String(nextSerial).padStart(6, '0');
+      // Patient ID format: TSP_CODE-YEAR_SERIAL (region short code removed)
+      const previewId = `${tspCode}-${yearSuffix}${serialStr}`;
+      console.log('Preview ID calculated:', previewId);
+      
+      return {
+        uniqueId: previewId,
+        meta: {
+          regionShort,
+          tspCode,
+          yearSuffix,
+          serial: nextSerial
+        }
+      };
+    } catch (error) {
+      console.error('Error in previewNextPatientId:', error);
+      throw new Error(`Failed to preview ID: ${error.message || error} (Code: ${error.code || 'unknown'})`);
+    }
+  }
+
   async function generatePatientUniqueId(regionShortRaw, tspCodeRaw) {
     try {
       console.log('generatePatientUniqueId called with:', { regionShortRaw, tspCodeRaw });
@@ -1744,78 +1799,32 @@
             console.warn('No location metadata found for township:', township);
           }
           
-          // Generate and display patient ID asynchronously (non-blocking)
-          // Use setTimeout to ensure it doesn't block page loading
-          // This runs in the background and won't prevent the page from loading
-          console.log('Setting up ID generation timeout with values:', { regionShort, tspCode, township: userData.township });
-          setTimeout(() => {
+          // Preview the next patient ID (read-only, doesn't increment counter)
+          const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
+          if (patientUniqueIdDisplay && regionShort !== 'UNK' && tspCode !== 'UNK-0') {
             try {
-              console.log('=== ID Generation Timeout Callback Executed ===');
-              console.log('Attempting to generate patient ID...');
-              console.log('Region Short:', regionShort);
-              console.log('TSP Code:', tspCode);
-              console.log('Township:', userData.township);
-              
-              const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
-              console.log('Patient ID Display element found:', !!patientUniqueIdDisplay);
-              
-              if (patientUniqueIdDisplay && userData.township && userData.township.trim() !== '') {
-                // Validate regionShort and tspCode before attempting generation
-                if (!regionShort || regionShort === 'UNK' || !tspCode || tspCode === 'UNK-0') {
-                  console.warn('Cannot generate ID - invalid location codes:', { regionShort, tspCode });
-                  patientUniqueIdDisplay.value = '';
-                  patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
-                  return;
-                }
-                
-                // Show loading state
-                patientUniqueIdDisplay.value = 'Generating...';
-                console.log('Starting ID generation with:', { regionShort, tspCode });
-                
-                // Add timeout to prevent hanging (10 seconds should be enough for Firestore)
-                const timeoutPromise = new Promise((_, reject) => {
-                  setTimeout(() => reject(new Error('ID generation timeout after 10 seconds')), 10000);
-                });
-                
-                // Generate ID asynchronously without blocking
-                Promise.race([
-                  generatePatientUniqueId(regionShort, tspCode),
-                  timeoutPromise
-                ])
-                  .then(idResult => {
-                    console.log('ID generation successful:', idResult);
-                    if (patientUniqueIdDisplay) {
-                      patientUniqueIdDisplay.value = idResult.uniqueId;
-                    }
-                    // Store in hidden field for form submission
-                    const patientUniqueIdHidden = document.getElementById('patientUniqueId');
-                    if (patientUniqueIdHidden) {
-                      patientUniqueIdHidden.value = idResult.uniqueId;
-                    }
-                    console.log('Patient ID generated and displayed:', idResult.uniqueId);
-                  })
-                  .catch(idError => {
-                    console.error('Failed to generate patient ID - Full error:', idError);
-                    console.error('Error message:', idError.message);
-                    console.error('Error stack:', idError.stack);
-                    if (patientUniqueIdDisplay) {
-                      patientUniqueIdDisplay.value = '';
-                      patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
-                    }
-                    // Don't block - ID will be generated on form submission
-                  });
-              } else {
-                console.warn('Cannot generate ID - missing requirements:', {
-                  hasDisplay: !!patientUniqueIdDisplay,
-                  hasTownship: !!(userData.township && userData.township.trim() !== '')
-                });
+              console.log('Loading preview ID...');
+              patientUniqueIdDisplay.value = 'Loading...';
+              const previewResult = await previewNextPatientId(regionShort, tspCode);
+              if (patientUniqueIdDisplay) {
+                patientUniqueIdDisplay.value = previewResult.uniqueId;
+                patientUniqueIdDisplay.placeholder = previewResult.uniqueId;
               }
-            } catch (error) {
-              console.error('Error in ID generation setup:', error);
-              console.error('Error details:', error.message, error.stack);
-              // Don't let this block anything
+              console.log('Preview ID loaded:', previewResult.uniqueId);
+            } catch (previewError) {
+              console.warn('Failed to load preview ID:', previewError);
+              if (patientUniqueIdDisplay) {
+                patientUniqueIdDisplay.value = '';
+                patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
+              }
             }
-          }, 1000); // Delay by 1 second to ensure page is fully loaded and rendered
+          } else {
+            if (patientUniqueIdDisplay) {
+              patientUniqueIdDisplay.value = '';
+              patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
+            }
+          }
+          console.log('Location codes loaded. Preview ID displayed (counter will increment on save).');
           
           // Check if township is properly set
           if (!userData.township || userData.township.trim() === '') {
@@ -2422,24 +2431,34 @@
           evaluateAgeRisk();
           updateRegistrationDatePreview();
           
-          // Regenerate patient ID after reset
+          // Reload preview ID after reset (read-only, doesn't increment counter)
+          if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
+          
           const regionShortInput = document.getElementById('regionShort');
           const tspCodeInput = document.getElementById('tspCode');
           const regionShort = regionShortInput ? regionShortInput.value : '';
           const tspCode = tspCodeInput ? tspCodeInput.value : '';
           
-          if (regionShort && tspCode && patientUniqueIdDisplay) {
+          if (patientUniqueIdDisplay && regionShort && tspCode && regionShort !== 'UNK' && tspCode !== 'UNK-0') {
             try {
-              const idResult = await generatePatientUniqueId(regionShort, tspCode);
-              if (patientUniqueIdHidden) patientUniqueIdHidden.value = idResult.uniqueId;
-              if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = idResult.uniqueId;
-            } catch (idError) {
-              console.error('Failed to regenerate patient ID after reset:', idError);
-              if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
+              patientUniqueIdDisplay.value = 'Loading...';
+              const previewResult = await previewNextPatientId(regionShort, tspCode);
+              if (patientUniqueIdDisplay) {
+                patientUniqueIdDisplay.value = previewResult.uniqueId;
+                patientUniqueIdDisplay.placeholder = previewResult.uniqueId;
+              }
+            } catch (previewError) {
+              console.warn('Failed to reload preview ID after reset:', previewError);
+              if (patientUniqueIdDisplay) {
+                patientUniqueIdDisplay.value = '';
+                patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
+              }
             }
           } else {
-            if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
-            if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
+            if (patientUniqueIdDisplay) {
+              patientUniqueIdDisplay.value = '';
+              patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
+            }
           }
         }, 0);
       });
@@ -2690,9 +2709,9 @@
                 <label class="form-label">
                   <i class="fas fa-id-badge"></i><span class="lang-text" data-en="Generated Patient ID" data-mm="လူနာ ID">Generated Patient ID</span>
                 </label>
-                <input type="text" class="form-control" id="patientUniqueIdDisplay" placeholder="Loading..." readonly>
+                <input type="text" class="form-control" id="patientUniqueIdDisplay" placeholder="ID will be generated when you save" readonly>
                 <div class="form-text">
-                  <span class="lang-text" data-en="ID is generated automatically when the page loads." data-mm=""></span>
+                  <span class="lang-text" data-en="Preview of the ID that will be assigned when you save. The counter increments only upon successful save." data-mm="သိမ်းဆည်းသောအခါ ရရှိမည့် ID ၏ အစမ်းပုံစံဖြစ်သည်။ အောင်မြင်စွာ သိမ်းဆည်းပြီးမှသာ ကောင်တာ တိုးပေးသည်။">Preview of the ID that will be assigned when you save. The counter increments only upon successful save.</span>
                 </div>
               </div>
             </div>
