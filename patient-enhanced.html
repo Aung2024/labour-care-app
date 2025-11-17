@@ -533,6 +533,62 @@
     .status-baby { background: rgba(251, 191, 36, 0.1); color: #d97706; }
     .status-other { background: rgba(107, 114, 128, 0.1); color: #374151; }
     .status-transferred { background: rgba(59, 130, 246, 0.1); color: #2563eb; }
+
+    /* Language Switcher */
+    .language-switcher {
+      display: flex;
+      gap: 0.25rem;
+      align-items: center;
+    }
+
+    .language-btn {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .language-btn.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+
+    .language-btn:hover:not(.active) {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: var(--primary-color);
+    }
+
+    .flag-icon {
+      font-size: 1rem;
+    }
+
+    /* Age Risk Alert */
+    #ageRiskAlert {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: rgba(220, 38, 38, 0.1);
+      border-radius: 12px;
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    #ageRiskAlert.show {
+      display: block;
+    }
+
+    #ageRiskAlert.hide {
+      display: none;
+    }
+
+    /* Risk indicator on age input */
+    .form-control.is-high-risk {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+    }
   </style>
   
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -1590,8 +1646,15 @@
           const township = userData.township || 'Not set';
           console.log('Township to display:', township);
           
-          document.getElementById('userTownship').textContent = township;
-          document.getElementById('townshipDisplay').style.display = 'block';
+          // Only update display elements if they exist
+          const userTownshipEl = document.getElementById('userTownship');
+          const townshipDisplayEl = document.getElementById('townshipDisplay');
+          if (userTownshipEl) {
+            userTownshipEl.textContent = township;
+          }
+          if (townshipDisplayEl) {
+            townshipDisplayEl.style.display = 'block';
+          }
 
           const regionShortInput = document.getElementById('regionShort');
           const tspCodeInput = document.getElementById('tspCode');
@@ -1689,43 +1752,161 @@
           
           // Check if township is properly set
           if (!userData.township || userData.township.trim() === '') {
-            document.getElementById('townshipDisplay').innerHTML = `
+            const townshipDisplayEl = document.getElementById('townshipDisplay');
+            if (townshipDisplayEl) {
+              townshipDisplayEl.innerHTML = `
               <div class="alert alert-warning">
                 <i class="fas fa-exclamation-triangle"></i>
                 <strong>Warning:</strong> Your township is not set. 
                 <br><small class="text-muted">Patients created without a township may not display properly.</small>
               </div>
             `;
+            }
             console.warn('User township is not set!');
           }
           
           console.log('User township loaded and displayed:', township);
         } else {
           console.error('User document does not exist!');
-          document.getElementById('townshipDisplay').innerHTML = `
+          const townshipDisplayEl = document.getElementById('townshipDisplay');
+          if (townshipDisplayEl) {
+            townshipDisplayEl.innerHTML = `
             <div class="alert alert-danger">
               <i class="fas fa-exclamation-circle"></i>
               <strong>Error:</strong> User data not found. Please contact administrator.
             </div>
           `;
+          }
         }
       } catch (error) {
         console.error('Error loading user township:', error);
-        document.getElementById('townshipDisplay').innerHTML = `
+        const townshipDisplayEl = document.getElementById('townshipDisplay');
+        if (townshipDisplayEl) {
+          townshipDisplayEl.innerHTML = `
           <div class="alert alert-danger">
             <i class="fas fa-exclamation-circle"></i>
             <strong>Error:</strong> Failed to load user data. Please refresh the page.
           </div>
         `;
+        }
       }
     }
 
 
 
 
+    // Language Switcher Functionality
+    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    
+    function switchLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      
+      // Update active button
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      
+      // Update all text elements with lang-text class
+      document.querySelectorAll('.lang-text').forEach(el => {
+        const text = el.dataset[lang] || el.dataset.en || el.textContent;
+        el.textContent = text;
+      });
+      
+      // Update placeholders
+      const placeholders = {
+        en: {
+          name: 'Enter patient\'s full name',
+          age: 'Enter age',
+          phone: 'Enter phone number',
+          address: 'Enter patient\'s address',
+          emergencyContact: 'Enter emergency contact name',
+          emergencyPhone: 'Enter emergency contact phone'
+        },
+        mm: {
+          name: 'လူနာ၏ အမည်အပြည့်အစုံ ထည့်သွင်းပါ',
+          age: 'အသက်ထည့်သွင်းပါ',
+          phone: 'ဖုန်းနံပါတ် ထည့်သွင်းပါ',
+          address: 'လူနာ၏ လိပ်စာ ထည့်သွင်းပါ',
+          emergencyContact: 'အရေးပေါ် ဆက်သွယ်ရမည့် ပုဂ္ဂိုလ်၏ အမည် ထည့်သွင်းပါ',
+          emergencyPhone: 'အရေးပေါ် ဆက်သွယ်ရမည့် ဖုန်းနံပါတ် ထည့်သွင်းပါ'
+        }
+      };
+      
+      if (placeholders[lang]) {
+        const nameInput = document.getElementById('name');
+        const ageInput = document.getElementById('age');
+        const phoneInput = document.getElementById('phone');
+        const addressInput = document.getElementById('patientAddress');
+        const emergencyContactInput = document.getElementById('emergencyContact');
+        const emergencyPhoneInput = document.getElementById('emergencyPhone');
+        
+        if (nameInput) nameInput.placeholder = placeholders[lang].name;
+        if (ageInput) ageInput.placeholder = placeholders[lang].age;
+        if (phoneInput) phoneInput.placeholder = placeholders[lang].phone;
+        if (addressInput) addressInput.placeholder = placeholders[lang].address;
+        if (emergencyContactInput) emergencyContactInput.placeholder = placeholders[lang].emergencyContact;
+        if (emergencyPhoneInput) emergencyPhoneInput.placeholder = placeholders[lang].emergencyPhone;
+      }
+    }
+    
+    // Age-based Risk Detection
+    function evaluateAgeRisk() {
+      const ageInput = document.getElementById('age');
+      const ageRiskAlert = document.getElementById('ageRiskAlert');
+      const ageValue = ageInput ? parseInt(ageInput.value, 10) : NaN;
+      
+      if (Number.isNaN(ageValue) || ageValue === 0) {
+        if (ageRiskAlert) {
+          ageRiskAlert.classList.remove('show');
+          ageRiskAlert.classList.add('hide');
+          ageRiskAlert.style.display = 'none';
+        }
+        if (ageInput) ageInput.classList.remove('is-high-risk');
+        return false;
+      }
+      
+      const isHighRisk = ageValue < 17 || ageValue > 35;
+      
+      if (ageRiskAlert) {
+        if (isHighRisk) {
+          ageRiskAlert.classList.remove('hide');
+          ageRiskAlert.classList.add('show');
+          ageRiskAlert.style.display = 'block';
+        } else {
+          ageRiskAlert.classList.remove('show');
+          ageRiskAlert.classList.add('hide');
+          ageRiskAlert.style.display = 'none';
+        }
+      }
+      
+      if (ageInput) {
+        ageInput.classList.toggle('is-high-risk', isHighRisk);
+      }
+      
+      return isHighRisk;
+    }
+
     // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOM Content Loaded - Initializing patient registration page');
+      
+      // Initialize language switcher
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          switchLanguage(this.dataset.lang);
+        });
+      });
+      
+      // Set initial language
+      switchLanguage(currentLanguage);
+      
+      // Age risk detection
+      const ageInput = document.getElementById('age');
+      if (ageInput) {
+        ageInput.addEventListener('input', evaluateAgeRisk);
+        ageInput.addEventListener('change', evaluateAgeRisk);
+      }
       
       // Load township asynchronously without blocking
       console.log('About to call loadUserTownship()');
@@ -2052,6 +2233,8 @@
           : (youngestYears || 0) * 12 + (youngestMonths || 0);
         const pregnancyWithin24 = data.pregnancyWithin24Months === 'true';
         const frequentPregnancy = pregnancyWithin24 ? 'Yes' : 'No';
+        const ageValue = parseInt(data.age, 10);
+        const ageRisk = (Number.isFinite(ageValue) && (ageValue < 17 || ageValue > 35)) ? 'Yes' : 'No';
         const registrationDateDisplay = formatRegistrationDateDisplay(data.registration_date);
         
         // Convert field names to snake_case for consistency (no duplicates)
@@ -2077,6 +2260,8 @@
           youngest_child_interval_months: intervalMonths,
           pregnancy_within_24_months: pregnancyWithin24,
           frequent_pregnancy: frequentPregnancy,
+          age_risk: ageRisk,
+          maternal_age_risk: ageRisk === 'Yes',
           
           // Location identifiers
           region_short_code: resolvedRegionShort || null,
@@ -2167,6 +2352,7 @@
           updateParityField();
           toggleYoungestChildFields();
           evaluatePregnancyInterval();
+          evaluateAgeRisk();
           updateRegistrationDatePreview();
           
           // Regenerate patient ID after reset
@@ -2238,11 +2424,20 @@
         </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
+            <!-- Language Switcher -->
+            <div class="language-switcher">
+              <button type="button" class="btn btn-sm btn-outline-secondary language-btn" data-lang="en" title="English">
+                <span class="flag-icon">🇬🇧</span> ENG
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary language-btn active" data-lang="mm" title="မြန်မာ">
+                <span class="flag-icon">🇲🇲</span> MM
+              </button>
+            </div>
             <a href="index.html" class="btn btn-secondary btn-sm">
-              <i class="fas fa-home me-2"></i>Home
+              <i class="fas fa-home me-2"></i><span class="lang-text" data-en="Home" data-mm="ပင်မစာမျက်နှာ">Home</span>
             </a>
             <button class="btn btn-secondary btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
-              <i class="fas fa-sign-out-alt me-2"></i>Logout
+              <i class="fas fa-sign-out-alt me-2"></i><span class="lang-text" data-en="Logout" data-mm="ထွက်ရန်">Logout</span>
             </button>
           </div>
         </div>
@@ -2260,13 +2455,13 @@
         <!-- Basic Information -->
         <div class="form-section">
           <h5 class="section-title">
-            <i class="fas fa-user"></i>Basic Information
+            <i class="fas fa-user"></i><span class="lang-text" data-en="Basic Information" data-mm="အခြေခံ အချက်အလက်">Basic Information</span>
           </h5>
           <div class="row">
             <div class="col-md-6">
               <div class="form-group">
                 <label for="name" class="form-label required-field">
-                  <i class="fas fa-id-card"></i>Patient Name
+                  <i class="fas fa-id-card"></i><span class="lang-text" data-en="Patient Name" data-mm="လူနာအမည်">Patient Name</span>
                 </label>
                 <input type="text" name="name" id="name" class="form-control" placeholder="Enter patient's full name" required>
               </div>
@@ -2274,9 +2469,13 @@
             <div class="col-md-6">
               <div class="form-group">
                 <label for="age" class="form-label required-field">
-                  <i class="fas fa-calendar-alt"></i>Age
+                  <i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>
                 </label>
                 <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="12" max="50">
+                <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
+                  <i class="fas fa-exclamation-triangle me-2"></i>
+                  <span class="lang-text" data-en="⚠️ High Risk: Maternal age is outside the recommended range (17-35 years). Please monitor closely." data-mm="⚠️ အန္တရာယ်များ: မိခင်အသက်သည် အကြံပြုထားသော အပိုင်းအခြား (၁၇-၃၅ နှစ်) ပြင်ပတွင်ရှိသည်။ ဂရုတစိုက်စောင့်ကြည့်ပါ။">⚠️ High Risk: Maternal age is outside the recommended range (17-35 years). Please monitor closely.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2335,7 +2534,7 @@
             <div class="col-md-6">
               <div class="form-group">
                 <label class="form-label">
-                  <i class="fas fa-baby"></i>Parity & Gravida
+                  <i class="fas fa-baby"></i><span class="lang-text" data-en="Parity & Gravida" data-mm="ကိုယ်ဝန်နှင့် မွေးဖွားမှု">Parity & Gravida</span>
                 </label>
                 <div class="parity-selects">
                   <div class="select-block">
@@ -2425,10 +2624,12 @@
             <div class="col-md-6">
               <div class="form-group">
                 <label class="form-label">
-                  <i class="fas fa-id-badge"></i>Generated Patient ID
+                  <i class="fas fa-id-badge"></i><span class="lang-text" data-en="Generated Patient ID" data-mm="ထုတ်လုပ်ထားသော လူနာ ID">Generated Patient ID</span>
                 </label>
                 <input type="text" class="form-control" id="patientUniqueIdDisplay" placeholder="Loading..." readonly>
-                <div class="form-text">ID is generated automatically when the page loads.</div>
+                <div class="form-text">
+                  <span class="lang-text" data-en="ID is generated automatically when the page loads." data-mm="ID ကို စာမျက်နှာ ဖွင့်သောအခါ အလိုအလျောက် ထုတ်လုပ်ပေးသည်။">ID is generated automatically when the page loads.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2443,10 +2644,10 @@
         <!-- Action Buttons -->
         <div class="action-buttons">
           <button type="submit" class="btn btn-primary">
-            <i class="fas fa-user-plus me-2"></i>Register Patient
+            <i class="fas fa-user-plus me-2"></i><span class="lang-text" data-en="Register Patient" data-mm="လူနာ မှတ်ပုံတင်ရန်">Register Patient</span>
           </button>
           <button type="reset" class="btn btn-secondary">
-            <i class="fas fa-undo me-2"></i>Reset Form
+            <i class="fas fa-undo me-2"></i><span class="lang-text" data-en="Reset Form" data-mm="ပုံစံ ပြန်လည်သတ်မှတ်ရန်">Reset Form</span>
           </button>
         </div>
       </form>
