@@ -1372,41 +1372,52 @@
   }
 
   async function generatePatientUniqueId(regionShortRaw, tspCodeRaw) {
-    const db = firebase.firestore();
-    const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
-    const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
-    const yearSuffix = new Date().getFullYear().toString().slice(-2);
-    const counterId = `${regionShort}_${tspCode.replace(/[^A-Za-z0-9]/g, '')}_${yearSuffix}`;
-    const counterRef = db.collection('patient_counters').doc(counterId);
+    try {
+      const db = firebase.firestore();
+      const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
+      const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+      const yearSuffix = new Date().getFullYear().toString().slice(-2);
+      const counterId = `${regionShort}_${tspCode.replace(/[^A-Za-z0-9]/g, '')}_${yearSuffix}`;
+      const counterRef = db.collection('patient_counters').doc(counterId);
 
-    const nextSerial = await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(counterRef);
-      let currentSerial = 0;
-      if (snapshot.exists) {
-        const data = snapshot.data();
-        if (typeof data.lastSerial === 'number') {
-          currentSerial = data.lastSerial;
+      const nextSerial = await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(counterRef);
+        let currentSerial = 0;
+        if (snapshot.exists) {
+          const data = snapshot.data();
+          if (typeof data.lastSerial === 'number') {
+            currentSerial = data.lastSerial;
+          }
         }
-      }
-      const updatedSerial = currentSerial + 1;
-      transaction.set(counterRef, {
-        lastSerial: updatedSerial,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      return updatedSerial;
-    });
+        const updatedSerial = currentSerial + 1;
+        transaction.set(counterRef, {
+          lastSerial: updatedSerial,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        return updatedSerial;
+      });
 
-    const serialStr = String(nextSerial).padStart(6, '0');
-    const uniqueId = `${regionShort}-${tspCode}-${yearSuffix}${serialStr}`;
-    return {
-      uniqueId,
-      meta: {
-        regionShort,
-        tspCode,
-        yearSuffix,
-        serial: nextSerial
-      }
-    };
+      const serialStr = String(nextSerial).padStart(6, '0');
+      const uniqueId = `${regionShort}-${tspCode}-${yearSuffix}${serialStr}`;
+      return {
+        uniqueId,
+        meta: {
+          regionShort,
+          tspCode,
+          yearSuffix,
+          serial: nextSerial
+        }
+      };
+    } catch (error) {
+      console.error('Error in generatePatientUniqueId:', error);
+      // Return a fallback ID if transaction fails
+      const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
+      const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+      const yearSuffix = new Date().getFullYear().toString().slice(-2);
+      const timestamp = Date.now().toString().slice(-6);
+      const fallbackId = `${regionShort}-${tspCode}-${yearSuffix}${timestamp}`;
+      throw new Error(`Failed to generate ID: ${error.message}. Fallback: ${fallbackId}`);
+    }
   }
     // Load user's township and display it
     async function loadUserTownship() {
@@ -1454,23 +1465,51 @@
             console.warn('No location metadata found for township:', township);
           }
           
-          // Generate and display patient ID immediately
-          const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
-          if (patientUniqueIdDisplay && userData.township && userData.township.trim() !== '') {
+          // Generate and display patient ID asynchronously (non-blocking)
+          // Use setTimeout to ensure it doesn't block page loading
+          // This runs in the background and won't prevent the page from loading
+          setTimeout(() => {
             try {
-              const idResult = await generatePatientUniqueId(regionShort, tspCode);
-              patientUniqueIdDisplay.value = idResult.uniqueId;
-              // Store in hidden field for form submission
-              const patientUniqueIdHidden = document.getElementById('patientUniqueId');
-              if (patientUniqueIdHidden) {
-                patientUniqueIdHidden.value = idResult.uniqueId;
+              const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
+              if (patientUniqueIdDisplay && userData.township && userData.township.trim() !== '') {
+                // Show loading state
+                patientUniqueIdDisplay.value = 'Generating...';
+                
+                // Add timeout to prevent hanging (5 seconds should be enough)
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('ID generation timeout')), 5000);
+                });
+                
+                // Generate ID asynchronously without blocking
+                Promise.race([
+                  generatePatientUniqueId(regionShort, tspCode),
+                  timeoutPromise
+                ])
+                  .then(idResult => {
+                    if (patientUniqueIdDisplay) {
+                      patientUniqueIdDisplay.value = idResult.uniqueId;
+                    }
+                    // Store in hidden field for form submission
+                    const patientUniqueIdHidden = document.getElementById('patientUniqueId');
+                    if (patientUniqueIdHidden) {
+                      patientUniqueIdHidden.value = idResult.uniqueId;
+                    }
+                    console.log('Patient ID generated and displayed:', idResult.uniqueId);
+                  })
+                  .catch(idError => {
+                    console.error('Failed to generate patient ID:', idError);
+                    if (patientUniqueIdDisplay) {
+                      patientUniqueIdDisplay.value = '';
+                      patientUniqueIdDisplay.placeholder = 'ID will be generated when you save';
+                    }
+                    // Don't block - ID will be generated on form submission
+                  });
               }
-              console.log('Patient ID generated and displayed:', idResult.uniqueId);
-            } catch (idError) {
-              console.error('Failed to generate patient ID:', idError);
-              patientUniqueIdDisplay.value = 'Error generating ID';
+            } catch (error) {
+              console.error('Error in ID generation setup:', error);
+              // Don't let this block anything
             }
-          }
+          }, 1000); // Delay by 1 second to ensure page is fully loaded and rendered
           
           // Check if township is properly set
           if (!userData.township || userData.township.trim() === '') {
@@ -1511,7 +1550,11 @@
     // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOM Content Loaded - Initializing patient registration page');
-      loadUserTownship();
+      // Load township asynchronously without blocking
+      loadUserTownship().catch(error => {
+        console.error('Error loading user township:', error);
+        // Page should still be usable even if township loading fails
+      });
       
       // Parity controls setup
       const parityHiddenInput = document.getElementById('parity');
