@@ -882,21 +882,55 @@
 
     // Calculate postpartum period
     function calculatePostpartumPeriod() {
-      const deliveredDateTime = document.getElementById('deliveredDateTime').value;
-      if (!deliveredDateTime) {
-        document.getElementById('postpartumDays').textContent = '—';
-        document.getElementById('postpartumHours').textContent = '—';
+      const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
+      const postpartumDaysEl = document.getElementById('postpartumDays');
+      const postpartumHoursEl = document.getElementById('postpartumHours');
+      
+      // Check if elements exist
+      if (!deliveredDateTimeInput || !postpartumDaysEl || !postpartumHoursEl) {
+        console.warn('Postpartum period elements not found');
         return;
       }
       
-      const deliveryDate = new Date(deliveredDateTime);
-      const now = new Date();
-      const diffMs = now - deliveryDate;
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const deliveredDateTime = deliveredDateTimeInput.value;
+      if (!deliveredDateTime) {
+        postpartumDaysEl.textContent = '—';
+        postpartumHoursEl.textContent = '—';
+        return;
+      }
       
-      document.getElementById('postpartumDays').textContent = diffDays;
-      document.getElementById('postpartumHours').textContent = diffHours;
+      try {
+        // Parse the datetime-local value (format: YYYY-MM-DDTHH:mm)
+        const deliveryDate = new Date(deliveredDateTime);
+        
+        // Check if date is valid
+        if (isNaN(deliveryDate.getTime())) {
+          console.error('Invalid delivery date:', deliveredDateTime);
+          postpartumDaysEl.textContent = '—';
+          postpartumHoursEl.textContent = '—';
+          return;
+        }
+        
+        const now = new Date();
+        const diffMs = now - deliveryDate;
+        
+        // Check if delivery date is in the future
+        if (diffMs < 0) {
+          postpartumDaysEl.textContent = '0';
+          postpartumHoursEl.textContent = '0';
+          return;
+        }
+        
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        
+        postpartumDaysEl.textContent = diffDays;
+        postpartumHoursEl.textContent = diffHours;
+      } catch (error) {
+        console.error('Error calculating postpartum period:', error);
+        postpartumDaysEl.textContent = '—';
+        postpartumHoursEl.textContent = '—';
+      }
     }
 
     // Toggle contraceptive methods visibility
@@ -978,8 +1012,15 @@
         
         // Set up event listeners
         const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
-        deliveredDateTimeInput.addEventListener('change', calculatePostpartumPeriod);
-        deliveredDateTimeInput.addEventListener('input', calculatePostpartumPeriod);
+        if (deliveredDateTimeInput) {
+          deliveredDateTimeInput.addEventListener('change', calculatePostpartumPeriod);
+          deliveredDateTimeInput.addEventListener('input', calculatePostpartumPeriod);
+          // Calculate immediately if value already exists
+          if (deliveredDateTimeInput.value) {
+            calculatePostpartumPeriod();
+          }
+        }
+        
         const contraceptionCheckbox = document.getElementById('contraception');
         if (contraceptionCheckbox) {
           contraceptionCheckbox.addEventListener('change', toggleContraceptiveMethods);
@@ -1016,6 +1057,12 @@
     // Load delivery date/time from first visit
     async function loadDeliveryDateTimeFromFirstVisit() {
       try {
+        const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
+        if (!deliveredDateTimeInput) {
+          console.warn('deliveredDateTime input not found');
+          return;
+        }
+
         const db = firebase.firestore();
         const visitsSnapshot = await db.collection('patients')
           .doc(currentPatient.id)
@@ -1024,21 +1071,45 @@
           .limit(1)
           .get();
         
+        let deliveryDate = null;
+        
         if (!visitsSnapshot.empty) {
           const firstVisit = visitsSnapshot.docs[0].data();
           if (firstVisit.deliveredDateTime) {
-            // Convert to local datetime format for input
-            const deliveryDate = new Date(firstVisit.deliveredDateTime);
-            const localDateTime = new Date(deliveryDate.getTime() - deliveryDate.getTimezoneOffset() * 60000);
-            document.getElementById('deliveredDateTime').value = localDateTime.toISOString().slice(0, 16);
-            calculatePostpartumPeriod();
+            // Handle Firestore Timestamp or string date
+            if (firstVisit.deliveredDateTime.toDate) {
+              deliveryDate = firstVisit.deliveredDateTime.toDate();
+            } else if (firstVisit.deliveredDateTime instanceof Date) {
+              deliveryDate = firstVisit.deliveredDateTime;
+            } else {
+              deliveryDate = new Date(firstVisit.deliveredDateTime);
+            }
           }
         } else if (currentPatient.deliveryDate) {
           // Fallback to patient's delivery date if no visits exist
-          const deliveryDate = new Date(currentPatient.deliveryDate);
-          const localDateTime = new Date(deliveryDate.getTime() - deliveryDate.getTimezoneOffset() * 60000);
-          document.getElementById('deliveredDateTime').value = localDateTime.toISOString().slice(0, 16);
-          calculatePostpartumPeriod();
+          if (currentPatient.deliveryDate.toDate) {
+            deliveryDate = currentPatient.deliveryDate.toDate();
+          } else if (currentPatient.deliveryDate instanceof Date) {
+            deliveryDate = currentPatient.deliveryDate;
+          } else {
+            deliveryDate = new Date(currentPatient.deliveryDate);
+          }
+        }
+        
+        if (deliveryDate && !isNaN(deliveryDate.getTime())) {
+          // Convert to local datetime format for input (YYYY-MM-DDTHH:mm)
+          const year = deliveryDate.getFullYear();
+          const month = String(deliveryDate.getMonth() + 1).padStart(2, '0');
+          const day = String(deliveryDate.getDate()).padStart(2, '0');
+          const hours = String(deliveryDate.getHours()).padStart(2, '0');
+          const minutes = String(deliveryDate.getMinutes()).padStart(2, '0');
+          const localDateTimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
+          
+          deliveredDateTimeInput.value = localDateTimeString;
+          // Use setTimeout to ensure DOM is ready
+          setTimeout(() => {
+            calculatePostpartumPeriod();
+          }, 100);
         }
       } catch (error) {
         console.error('Error loading delivery date/time:', error);
