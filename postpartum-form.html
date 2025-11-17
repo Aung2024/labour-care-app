@@ -456,8 +456,14 @@
               <input type="datetime-local" class="form-control" id="deliveredDateTime">
             </div>
             <div class="col-md-6">
-              <label class="form-label lang-text" data-en="Post-partum Period&#10;Day □      Hour □" data-my="မွေးဖွားပြီးကာလ&#10;ရက် □      နာရီ □">Post-partum Period<br>Day <span id="postpartumDays">—</span>      Hour <span id="postpartumHours">—</span></label>
+              <label class="form-label lang-text" data-en="Post-partum Period" data-my="မွေးဖွားပြီးကာလ">Post-partum Period</label>
               <div class="form-control" style="background: #f8f9fa; padding: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+                  <span class="lang-text" data-en="Day" data-my="ရက်">Day</span>
+                  <strong id="postpartumDays" style="color: var(--primary-color); font-size: 1.1rem;">—</strong>
+                  <span class="lang-text" data-en="Hour" data-my="နာရီ">Hour</span>
+                  <strong id="postpartumHours" style="color: var(--primary-color); font-size: 1.1rem;">—</strong>
+                </div>
                 <small class="text-muted lang-text" data-en="Auto-calculated from delivery date" data-my="မွေးဖွားသည့် ရက်စွဲမှ အလိုအလျောက် တွက်ချက်သည်">Auto-calculated from delivery date</small>
               </div>
             </div>
@@ -872,12 +878,25 @@
         btn.classList.toggle('active', btn.dataset.lang === lang);
       });
       
-      // Update all text elements with lang-text class
+      // Update all text elements with lang-text class (but preserve elements with specific IDs)
       document.querySelectorAll('.lang-text').forEach(el => {
+        // Skip if this element or its children contain the postpartum period display elements
+        if (el.id === 'postpartumDays' || el.id === 'postpartumHours' || 
+            el.querySelector('#postpartumDays') || el.querySelector('#postpartumHours')) {
+          return;
+        }
         const text = el.dataset[lang] || el.dataset.en || el.textContent;
         // Handle line breaks
         el.innerHTML = text.replace(/&#10;/g, '<br>').replace(/\n/g, '<br>');
       });
+      
+      // Recalculate postpartum period after language switch (if delivery date exists)
+      setTimeout(() => {
+        const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
+        if (deliveredDateTimeInput && deliveredDateTimeInput.value) {
+          calculatePostpartumPeriod();
+        }
+      }, 50);
     }
 
     // Calculate postpartum period
@@ -1106,10 +1125,10 @@
           const localDateTimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
           
           deliveredDateTimeInput.value = localDateTimeString;
-          // Use setTimeout to ensure DOM is ready
+          // Use setTimeout to ensure DOM is ready and language switcher has finished
           setTimeout(() => {
             calculatePostpartumPeriod();
-          }, 100);
+          }, 200);
         }
       } catch (error) {
         console.error('Error loading delivery date/time:', error);
