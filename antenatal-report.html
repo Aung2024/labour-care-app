@@ -216,24 +216,26 @@
 
     .compact-table td {
       padding: 2px;
-      font-size: 9px;
+      font-size: 8px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 50px;
+      max-width: 45px;
       text-align: center;
     }
     
     .compact-table td:first-child {
-      max-width: 30px;
+      max-width: 25px;
     }
     
     .compact-table td:nth-child(2) {
-      max-width: 70px;
+      max-width: 65px;
     }
     
-    .compact-table td:nth-child(3) {
-      max-width: 80px;
+    .compact-table th {
+      font-size: 8px;
+      padding: 2px;
+      white-space: nowrap;
     }
 
     .compact-table .visit-number {
@@ -361,13 +363,21 @@
             <th>Date</th>
             <th>Weight</th>
             <th>BP</th>
+            <th>Pulse</th>
+            <th>Temp</th>
             <th>GA</th>
             <th>FH</th>
+            <th>Fetal Lie</th>
             <th>Fetal Pres</th>
             <th>FHR</th>
-            <th>Urine</th>
+            <th>Fetal Mov</th>
+            <th>Urine Prot</th>
+            <th>Urine Sug</th>
+            <th>Blood Grp</th>
+            <th>Rh</th>
             <th>Deworm</th>
             <th>IFA</th>
+            <th>Vit B1</th>
             <th>TD</th>
             <th>Initial</th>
           </tr>
@@ -382,6 +392,22 @@
         <h5><i class="fas fa-pills me-2"></i>Treatment Information</h5>
         <div id="treatmentInfo" class="treatment-info">
           <!-- Treatment information will be populated here -->
+        </div>
+      </div>
+
+      <!-- Additional Examination Findings -->
+      <div class="treatment-section mt-4">
+        <h5><i class="fas fa-stethoscope me-2"></i>Additional Examination Findings</h5>
+        <div id="examinationInfo" class="treatment-info">
+          <!-- Examination information will be populated here -->
+        </div>
+      </div>
+
+      <!-- High Risk Assessment -->
+      <div class="treatment-section mt-4">
+        <h5><i class="fas fa-exclamation-circle me-2"></i>High Risk Assessment</h5>
+        <div id="highRiskInfo" class="treatment-info">
+          <!-- High risk information will be populated here -->
         </div>
       </div>
 
@@ -655,7 +681,7 @@
       if (antenatalVisits.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="13" class="text-center">No antenatal visits recorded</td>
+            <td colspan="21" class="text-center">No antenatal visits recorded</td>
           </tr>
         `;
         return;
@@ -667,6 +693,8 @@
         const visitDate = formatVisitDate(visit);
         const gaValue = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks || '-';
         const tdValue = visit.tetanusToxoid || visit.td || '-';
+        const temperature = visit.temperature ? `${visit.temperature}${visit.temperatureUnit || '°C'}` : '-';
+        const fetalMovement = visit.fetalMovement || '-';
         
         tableHTML += `
           <tr>
@@ -674,13 +702,21 @@
             <td>${visitDate}</td>
             <td>${visit.weight || '-'}</td>
             <td>${visit.bloodPressure || '-'}</td>
+            <td>${visit.pulseRate || '-'}</td>
+            <td>${temperature}</td>
             <td>${gaValue}</td>
             <td>${visit.fundalHeight || '-'}</td>
+            <td>${visit.fetalLie || '-'}</td>
             <td>${visit.fetalPresentation || '-'}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
-            <td>${visit.urineTest || '-'}</td>
+            <td>${fetalMovement}</td>
+            <td>${visit.urineProtein || '-'}</td>
+            <td>${visit.urineSugar || '-'}</td>
+            <td>${visit.bloodGroup || '-'}</td>
+            <td>${visit.rhesusFactor || '-'}</td>
             <td>${visit.deworming || '-'}</td>
             <td>${visit.ironFolicAcid || '-'}</td>
+            <td>${visit.vitaminB1 || '-'}</td>
             <td>${tdValue}</td>
             <td>${visit.initial || '-'}</td>
           </tr>
@@ -692,8 +728,9 @@
         tableHTML += `
           <tr>
             <td class="visit-number">${i + 1}</td>
-            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
-            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
           </tr>
         `;
       }
@@ -702,6 +739,12 @@
       
       // Populate treatment information
       populateTreatmentInfo();
+      
+      // Populate examination information
+      populateExaminationInfo();
+      
+      // Populate high risk information
+      populateHighRiskInfo();
       
       // Populate danger signs information
       populateDangerSignsInfo();
@@ -719,15 +762,18 @@
       antenatalVisits.forEach((visit, index) => {
         const visitNumber = visit.visitNumber || index + 1;
         const visitDate = formatVisitDate(visit);
+        const hasTreatment = visit.treatmentGiven && visit.treatmentGiven.trim() !== '';
+        const hasOtherMeds = visit.otherMedications && visit.otherMedications.trim() !== '';
         
-        if (visit.treatmentGiven && visit.treatmentGiven.trim() !== '') {
+        if (hasTreatment || hasOtherMeds) {
           treatmentHTML += `
             <div class="treatment-item mb-3">
               <div class="treatment-header">
                 <strong>Visit ${visitNumber}</strong> - ${visitDate}
               </div>
               <div class="treatment-content">
-                ${visit.treatmentGiven}
+                ${hasTreatment ? `<p><strong>Treatment Given:</strong> ${visit.treatmentGiven}</p>` : ''}
+                ${hasOtherMeds ? `<p><strong>Other Medications:</strong> ${visit.otherMedications}</p>` : ''}
               </div>
             </div>
           `;
@@ -739,6 +785,110 @@
       }
 
       treatmentContainer.innerHTML = treatmentHTML;
+    }
+
+    function populateExaminationInfo() {
+      const examinationContainer = document.getElementById('examinationInfo');
+      
+      if (antenatalVisits.length === 0) {
+        examinationContainer.innerHTML = '<p class="text-muted">No examination findings recorded.</p>';
+        return;
+      }
+
+      let examinationHTML = '';
+      antenatalVisits.forEach((visit, index) => {
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
+        const hasFindings = visit.cvs || visit.rs || visit.cns || visit.otherFindings || visit.mentalHealthStatus;
+        
+        if (hasFindings) {
+          examinationHTML += `
+            <div class="treatment-item mb-3">
+              <div class="treatment-header">
+                <strong>Visit ${visitNumber}</strong> - ${visitDate}
+              </div>
+              <div class="treatment-content">
+                ${visit.cvs ? `<p><strong>Cardiovascular System (CVS):</strong> ${visit.cvs}</p>` : ''}
+                ${visit.rs ? `<p><strong>Respiratory System (RS):</strong> ${visit.rs}</p>` : ''}
+                ${visit.cns ? `<p><strong>Central Nervous System (CNS):</strong> ${visit.cns}</p>` : ''}
+                ${visit.mentalHealthStatus ? `<p><strong>Mental Health Status:</strong> ${visit.mentalHealthStatus}</p>` : ''}
+                ${visit.otherFindings ? `<p><strong>Other Findings:</strong> ${visit.otherFindings}</p>` : ''}
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      if (examinationHTML === '') {
+        examinationHTML = '<p class="text-muted">No additional examination findings recorded.</p>';
+      }
+
+      examinationContainer.innerHTML = examinationHTML;
+    }
+
+    function populateHighRiskInfo() {
+      const highRiskContainer = document.getElementById('highRiskInfo');
+      
+      if (antenatalVisits.length === 0) {
+        highRiskContainer.innerHTML = '<p class="text-muted">No high risk assessments recorded.</p>';
+        return;
+      }
+
+      let highRiskHTML = '';
+      antenatalVisits.forEach((visit, index) => {
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
+        const isHighRisk = visit.high_risk === 'yes';
+        const hasRiskFactors = visit.risk_factors && visit.risk_factors.length > 0;
+        const hasRiskNotes = visit.risk_notes && visit.risk_notes.trim() !== '';
+        const hasPastHistory = visit.pastHistoryStatus && visit.pastHistoryStatus !== 'nad';
+        const hasPastHistoryNotes = visit.pastHistoryNotes && visit.pastHistoryNotes.trim() !== '';
+        
+        if (isHighRisk || hasRiskFactors || hasRiskNotes || hasPastHistory || hasPastHistoryNotes) {
+          const riskFactorLabels = {
+            'maternal_age_18_or_35': 'Maternal age <18 or >35 years',
+            'parity_5': 'Parity ≥ 5',
+            'multiple_pregnancy': 'Multiple pregnancy',
+            'previous_complications': 'History of complications in previous pregnancies',
+            'previous_stillbirths': 'Previous stillbirths or neonatal deaths',
+            'previous_preterm': 'Previous preterm births',
+            'obstructed_labour': 'History of obstructed labour, prolonged labour, or cesarean section',
+            'uterine_scar': 'Uterine scar',
+            'hypertension': 'Hypertension',
+            'diabetes': 'Diabetes mellitus',
+            'cardiac_disease': 'Cardiac disease',
+            'tuberculosis': 'Tuberculosis',
+            'epilepsy': 'Epilepsy',
+            'kidney_disease': 'Kidney disease',
+            'hiv': 'HIV infection',
+            'previous_congenital_anomalies': 'Previous child with congenital anomalies',
+            'short_interval_pregnancy': 'Short interval between pregnancies',
+            'placenta_previa_abruption': 'Placenta previa/Abruption',
+            'other_medical_conditions': 'Other Medical Conditions'
+          };
+          
+          highRiskHTML += `
+            <div class="treatment-item mb-3">
+              <div class="treatment-header">
+                <strong>Visit ${visitNumber}</strong> - ${visitDate}
+              </div>
+              <div class="treatment-content">
+                <p><strong>High Risk Status:</strong> ${isHighRisk ? 'Yes - High risk pregnancy' : 'No - Standard risk pregnancy'}</p>
+                ${hasRiskFactors ? `<p><strong>Risk Factors:</strong> ${visit.risk_factors.map(rf => riskFactorLabels[rf] || rf).join(', ')}</p>` : ''}
+                ${hasRiskNotes ? `<p><strong>Risk Notes:</strong> ${visit.risk_notes}</p>` : ''}
+                ${hasPastHistory ? `<p><strong>Past History Status:</strong> ${visit.pastHistoryStatus}</p>` : ''}
+                ${hasPastHistoryNotes ? `<p><strong>Past History Notes:</strong> ${visit.pastHistoryNotes}</p>` : ''}
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      if (highRiskHTML === '') {
+        highRiskHTML = '<p class="text-muted">No high risk assessments recorded.</p>';
+      }
+
+      highRiskContainer.innerHTML = highRiskHTML;
     }
 
     function populateLabTests() {
