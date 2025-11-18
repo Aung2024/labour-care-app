@@ -609,11 +609,15 @@
     }
 
     /* Ensure header buttons are aligned */
-    .header-right .btn {
+    .header-right .btn,
+    .header-right a.btn {
       display: inline-flex;
       align-items: center;
       white-space: nowrap;
       font-weight: 500;
+      height: 38px; /* Fixed height for alignment */
+      line-height: 1;
+      vertical-align: middle;
     }
 
     @media (max-width: 768px) {
@@ -953,6 +957,32 @@
       
       // Update care stats labels and values
       updateCareStatsTexts();
+      
+      // Update PNC and Baby data with current language (without reloading from Firestore)
+      updatePNCAndBabyTexts();
+    }
+    
+    // Update PNC and Baby texts without reloading from Firestore
+    function updatePNCAndBabyTexts() {
+      // Update last PNC visit text if it says "Never"
+      const lastPNCVisitEl = document.getElementById('lastPNCVisit');
+      if (lastPNCVisitEl && (lastPNCVisitEl.textContent === 'Never' || lastPNCVisitEl.textContent === 'မရှိသေး')) {
+        const neverText = currentLanguage === 'en' ? 'Never' : 'မရှိသေး';
+        lastPNCVisitEl.textContent = neverText;
+      }
+      
+      // Update baby status text
+      const babyStatusEl = document.getElementById('babyStatus');
+      if (babyStatusEl) {
+        const currentText = babyStatusEl.textContent;
+        if (currentText === 'Recorded' || currentText === 'မှတ်တမ်းတင်ထားသည်') {
+          const statusText = currentLanguage === 'en' ? 'Recorded' : 'မှတ်တမ်းတင်ထားသည်';
+          babyStatusEl.textContent = statusText;
+        } else if (currentText === 'No Record' || currentText === 'မှတ်တမ်း မရှိပါ') {
+          const statusText = currentLanguage === 'en' ? 'No Record' : 'မှတ်တမ်း မရှိပါ';
+          babyStatusEl.textContent = statusText;
+        }
+      }
     }
 
     // Update care stats texts
@@ -1199,17 +1229,41 @@
         
         try {
           // Try postpartum_visits collection first
-          const pncVisitsSnap = await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('postpartum_visits')
-            .orderBy('timestamp', 'desc')
-            .get();
+          let pncVisitsSnap;
+          try {
+            // Try with orderBy first
+            pncVisitsSnap = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('postpartum_visits')
+              .orderBy('timestamp', 'desc')
+              .get();
+          } catch (orderError) {
+            // If orderBy fails, try without it
+            console.log('OrderBy failed, trying without orderBy...');
+            pncVisitsSnap = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('postpartum_visits')
+              .get();
+          }
           
           pncCount = pncVisitsSnap.size;
           
           if (pncCount > 0) {
-            const lastVisit = pncVisitsSnap.docs[0].data();
+            // Sort manually if orderBy didn't work
+            let sortedDocs = pncVisitsSnap.docs;
+            if (pncVisitsSnap.docs.length > 1) {
+              sortedDocs = pncVisitsSnap.docs.sort((a, b) => {
+                const aDate = a.data().timestamp || a.data().visitDate || a.data().visit_date;
+                const bDate = b.data().timestamp || b.data().visitDate || b.data().visit_date;
+                const aTime = aDate?.seconds ? aDate.seconds * 1000 : (aDate ? new Date(aDate).getTime() : 0);
+                const bTime = bDate?.seconds ? bDate.seconds * 1000 : (bDate ? new Date(bDate).getTime() : 0);
+                return bTime - aTime;
+              });
+            }
+            
+            const lastVisit = sortedDocs[0].data();
             // Try multiple possible date fields
             const visitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
             if (visitDate) {
@@ -1219,34 +1273,93 @@
             }
           }
         } catch (error) {
-          console.log('No postpartum_visits collection found, trying alternative...');
+          console.error('Error loading PNC visits:', error);
         }
         
-        document.getElementById('pncVisits').textContent = pncCount;
-        
-        if (lastPNCDate) {
-          document.getElementById('lastPNCVisit').textContent = formatDateShort(lastPNCDate);
-        } else {
-          const neverText = currentLanguage === 'en' ? 'Never' : 'မရှိသေး';
-          document.getElementById('lastPNCVisit').textContent = neverText;
+        // Update PNC visits count
+        const pncVisitsEl = document.getElementById('pncVisits');
+        if (pncVisitsEl) {
+          pncVisitsEl.textContent = pncCount;
+          console.log('PNC visits count updated:', pncCount);
         }
         
-        // Load Baby record
-        const birthRecordDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('birthRecord')
-          .get();
+        // Update last PNC visit date
+        const lastPNCVisitEl = document.getElementById('lastPNCVisit');
+        if (lastPNCVisitEl) {
+          if (lastPNCDate) {
+            lastPNCVisitEl.textContent = formatDateShort(lastPNCDate);
+          } else {
+            const neverText = currentLanguage === 'en' ? 'Never' : 'မရှိသေး';
+            lastPNCVisitEl.textContent = neverText;
+          }
+        }
         
-        if (birthRecordDoc.exists) {
-          const birthData = birthRecordDoc.data();
+        // Load Baby record - check multiple possible locations
+        let birthData = null;
+        let birthRecordFound = false;
+        
+        // Try records/birthRecord first
+        try {
+          const birthRecordDoc = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('records')
+            .doc('birthRecord')
+            .get();
+          
+          if (birthRecordDoc.exists) {
+            birthData = birthRecordDoc.data();
+            birthRecordFound = true;
+          }
+        } catch (error) {
+          console.log('No birthRecord in records collection, trying alternative...');
+        }
+        
+        // Try baby_records collection if not found
+        if (!birthRecordFound) {
+          try {
+            const babyRecordsSnap = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('baby_records')
+              .orderBy('timestamp', 'desc')
+              .limit(1)
+              .get();
+            
+            if (!babyRecordsSnap.empty) {
+              birthData = babyRecordsSnap.docs[0].data();
+              birthRecordFound = true;
+            }
+          } catch (error) {
+            console.log('No baby_records collection found...');
+          }
+        }
+        
+        // Update baby status and name
+        if (birthRecordFound && birthData) {
           const statusText = currentLanguage === 'en' ? 'Recorded' : 'မှတ်တမ်းတင်ထားသည်';
-          document.getElementById('babyStatus').textContent = statusText;
-          document.getElementById('babyName').textContent = birthData.babyName || (currentLanguage === 'en' ? 'Baby' : 'ကလေး');
+          const babyStatusEl = document.getElementById('babyStatus');
+          if (babyStatusEl) {
+            babyStatusEl.textContent = statusText;
+          }
+          
+          const babyName = birthData.babyName || birthData.name || birthData.baby_name || '';
+          const babyNameEl = document.getElementById('babyName');
+          if (babyNameEl) {
+            babyNameEl.textContent = babyName || (currentLanguage === 'en' ? 'Baby' : 'ကလေး');
+            console.log('Baby name updated:', babyName || 'Baby');
+          }
         } else {
           const statusText = currentLanguage === 'en' ? 'No Record' : 'မှတ်တမ်း မရှိပါ';
-          document.getElementById('babyStatus').textContent = statusText;
+          const babyStatusEl = document.getElementById('babyStatus');
+          if (babyStatusEl) {
+            babyStatusEl.textContent = statusText;
+          }
+          const babyNameEl = document.getElementById('babyName');
+          if (babyNameEl) {
+            babyNameEl.textContent = '-';
+          }
+          console.log('No baby record found for patient:', patientId);
         }
         
       } catch (error) {
