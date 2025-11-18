@@ -1063,7 +1063,7 @@
       }
     }
 
-    // Load delivery date/time from first visit
+    // Load delivery date/time from first visit or baby.html birth record
     async function loadDeliveryDateTimeFromFirstVisit() {
       try {
         const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
@@ -1073,29 +1073,59 @@
         }
 
         const db = firebase.firestore();
-        const visitsSnapshot = await db.collection('patients')
-          .doc(currentPatient.id)
-          .collection('postpartum_visits')
-          .orderBy('visitDate', 'asc')
-          .limit(1)
-          .get();
-        
         let deliveryDate = null;
         
-        if (!visitsSnapshot.empty) {
-          const firstVisit = visitsSnapshot.docs[0].data();
-          if (firstVisit.deliveredDateTime) {
-            // Handle Firestore Timestamp or string date
-            if (firstVisit.deliveredDateTime.toDate) {
-              deliveryDate = firstVisit.deliveredDateTime.toDate();
-            } else if (firstVisit.deliveredDateTime instanceof Date) {
-              deliveryDate = firstVisit.deliveredDateTime;
-            } else {
-              deliveryDate = new Date(firstVisit.deliveredDateTime);
+        // First, try to load from baby.html birth record
+        try {
+          const birthRecordDoc = await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('records')
+            .doc('birthRecord')
+            .get();
+          
+          if (birthRecordDoc.exists) {
+            const birthData = birthRecordDoc.data();
+            if (birthData.birthTime) {
+              // Handle Firestore Timestamp or string date
+              if (birthData.birthTime.toDate) {
+                deliveryDate = birthData.birthTime.toDate();
+              } else if (birthData.birthTime instanceof Date) {
+                deliveryDate = birthData.birthTime;
+              } else {
+                deliveryDate = new Date(birthData.birthTime);
+              }
             }
           }
-        } else if (currentPatient.deliveryDate) {
-          // Fallback to patient's delivery date if no visits exist
+        } catch (error) {
+          console.log('No birth record found, checking postpartum visits...');
+        }
+        
+        // If no birth record, check first postpartum visit
+        if (!deliveryDate) {
+          const visitsSnapshot = await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('postpartum_visits')
+            .orderBy('visitDate', 'asc')
+            .limit(1)
+            .get();
+          
+          if (!visitsSnapshot.empty) {
+            const firstVisit = visitsSnapshot.docs[0].data();
+            if (firstVisit.deliveredDateTime) {
+              // Handle Firestore Timestamp or string date
+              if (firstVisit.deliveredDateTime.toDate) {
+                deliveryDate = firstVisit.deliveredDateTime.toDate();
+              } else if (firstVisit.deliveredDateTime instanceof Date) {
+                deliveryDate = firstVisit.deliveredDateTime;
+              } else {
+                deliveryDate = new Date(firstVisit.deliveredDateTime);
+              }
+            }
+          }
+        }
+        
+        // Fallback to patient's delivery date if no visits or birth record exist
+        if (!deliveryDate && currentPatient.deliveryDate) {
           if (currentPatient.deliveryDate.toDate) {
             deliveryDate = currentPatient.deliveryDate.toDate();
           } else if (currentPatient.deliveryDate instanceof Date) {
