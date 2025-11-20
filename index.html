@@ -408,15 +408,25 @@
     });
 
     function loadUserData() {
-      db.collection("users").doc(currentUser.uid).get().then(doc => {
-          if (doc.exists) {
+      // Try cache first, then server with timeout
+      Promise.race([
+        db.collection("users").doc(currentUser.uid).get({ source: 'cache' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 100))
+      ]).catch(() => {
+        // Fallback to server with timeout
+        return Promise.race([
+          db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 8000))
+        ]);
+      }).then(doc => {
+        if (doc.exists) {
           const userData = doc.data();
           userRole = userData.role;
           
           document.getElementById("userEmail").textContent = currentUser.email;
           document.getElementById("userRole").textContent = userData.role;
           
-            // Show admin link if Super Admin
+          // Show admin link if Super Admin
           const adminCard = document.getElementById("adminCard");
           if (userRole === "Super Admin" && adminCard) {
             adminCard.style.display = "block";
@@ -434,10 +444,37 @@
             cmeCard.style.display = "block";
           }
           
-          // Load patient stats after user role is loaded
+          // Load patient stats after user role is loaded (non-blocking)
           loadPatientStats();
         }
+      }).catch(error => {
+        console.warn('Error loading user data:', error);
+        // Still show the page even if user data fails
+        document.getElementById("userEmail").textContent = currentUser.email || 'User';
+        document.getElementById("userRole").textContent = 'Loading...';
+        // Try to load stats anyway (might work with cached data)
+        loadPatientStats();
       });
+    }
+
+    // Helper function to query with timeout and offline support
+    async function queryWithTimeout(queryPromise, timeout = 8000) {
+      try {
+        return await Promise.race([
+          queryPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Query timeout')), timeout))
+        ]);
+      } catch (error) {
+        // Try cache as fallback
+        try {
+          const cacheQuery = queryPromise.then ? 
+            queryPromise.catch(() => null) : 
+            Promise.resolve(null);
+          return await cacheQuery;
+        } catch {
+          throw error;
+        }
+      }
     }
 
     async function loadPatientStats() {
@@ -455,40 +492,86 @@
 
         if (!currentUser || !userRole) {
           console.log('User not loaded yet, skipping stats');
+          updateStatsDisplay(); // Show zeros
           return;
         }
 
-        // Get user's township for TMO role
+        // Get user's township for TMO role with timeout
         let userTownship = null;
         if (userRole === "TMO") {
-          const userDoc = await db.collection("users").doc(currentUser.uid).get();
-          if (userDoc.exists) {
-            userTownship = userDoc.data().township;
+          try {
+            const userDoc = await queryWithTimeout(
+              db.collection("users").doc(currentUser.uid).get({ source: 'cache' })
+                .catch(() => db.collection("users").doc(currentUser.uid).get({ source: 'server' })),
+              5000
+            );
+            if (userDoc && userDoc.exists) {
+              userTownship = userDoc.data().township;
+            }
+          } catch (error) {
+            console.warn('Could not load township, using cached data if available');
           }
         }
 
         let querySnapshot;
         
-        // Load patient statistics based on user role
+        // Load patient statistics based on user role with timeout handling
         if (userRole === "Super Admin" || userRole === "admin") {
           // Super Admin sees all patients
-          querySnapshot = await db.collection("patients").get();
+          querySnapshot = await queryWithTimeout(
+            db.collection("patients").get({ source: 'cache' })
+              .catch(() => db.collection("patients").get({ source: 'server' })),
+            10000
+          );
         } else if (userRole === "TMO") {
           // TMO sees patients from their township
-          querySnapshot = await db.collection("patients").where("township", "==", userTownship).get();
+          if (userTownship) {
+            querySnapshot = await queryWithTimeout(
+              db.collection("patients").where("township", "==", userTownship).get({ source: 'cache' })
+                .catch(() => db.collection("patients").where("township", "==", userTownship).get({ source: 'server' })),
+              10000
+            );
+          } else {
+            updateStatsDisplay();
+            return;
+          }
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only patients they created
-          const snapNew = await db.collection("patients").where("created_by", "==", currentUser.uid).get();
-          const snapOld = await db.collection("patients").where("createdBy", "==", currentUser.uid).get();
+          // Midwife sees only patients they created - try cache first
+          let snapNew, snapOld;
+          try {
+            snapNew = await queryWithTimeout(
+              db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'cache' })
+                .catch(() => db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'server' })),
+              8000
+            );
+          } catch (error) {
+            console.warn('Could not load new format patients:', error);
+            snapNew = { forEach: () => {}, docs: [], empty: true };
+          }
+          
+          try {
+            snapOld = await queryWithTimeout(
+              db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'cache' })
+                .catch(() => db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'server' })),
+              8000
+            );
+          } catch (error) {
+            console.warn('Could not load old format patients:', error);
+            snapOld = { forEach: () => {}, docs: [], empty: true };
+          }
           
           // Combine both snapshots
           const combinedDocs = new Map();
-          snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
-          snapOld.forEach(doc => {
-            if (!combinedDocs.has(doc.id)) {
-              combinedDocs.set(doc.id, doc);
-            }
-          });
+          if (snapNew && !snapNew.empty) {
+            snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
+          }
+          if (snapOld && !snapOld.empty) {
+            snapOld.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, doc);
+              }
+            });
+          }
           
           // Process combined results
           await Promise.all(Array.from(combinedDocs.values()).map(async (doc) => {
@@ -504,20 +587,29 @@
               patientStats[status]++;
             }
             
-            // Check if this postnatal patient has a birth record (counts as baby)
+            // Check if this postnatal patient has a birth record (counts as baby) - skip if offline
             if (status === 'postnatal') {
               try {
-                const birthRecord = await db.collection("patients")
-                  .doc(doc.id)
-                  .collection("records")
-                  .doc("birthRecord")
-                  .get();
+                const birthRecord = await queryWithTimeout(
+                  db.collection("patients")
+                    .doc(doc.id)
+                    .collection("records")
+                    .doc("birthRecord")
+                    .get({ source: 'cache' })
+                    .catch(() => db.collection("patients")
+                      .doc(doc.id)
+                      .collection("records")
+                      .doc("birthRecord")
+                      .get({ source: 'server' })),
+                  3000
+                );
                 
-                if (birthRecord.exists) {
+                if (birthRecord && birthRecord.exists) {
                   patientStats.baby++;
                 }
               } catch (error) {
-                console.log('No birth record for patient:', doc.id);
+                // Silently skip if can't load birth record (offline or timeout)
+                console.log('Skipping birth record check for patient:', doc.id);
               }
             }
             
@@ -533,6 +625,11 @@
         }
 
         // Process query results for Super Admin and TMO
+        if (!querySnapshot || querySnapshot.empty) {
+          updateStatsDisplay();
+          return;
+        }
+        
         await Promise.all(querySnapshot.docs.map(async (doc) => {
           const data = doc.data();
           // Map legacy statuses to new 3-status system
@@ -546,20 +643,29 @@
             patientStats[status]++;
           }
           
-          // Check if this postnatal patient has a birth record (counts as baby)
+          // Check if this postnatal patient has a birth record (counts as baby) - skip if offline
           if (status === 'postnatal') {
             try {
-              const birthRecord = await db.collection("patients")
-                .doc(doc.id)
-                .collection("records")
-                .doc("birthRecord")
-                .get();
+              const birthRecord = await queryWithTimeout(
+                db.collection("patients")
+                  .doc(doc.id)
+                  .collection("records")
+                  .doc("birthRecord")
+                  .get({ source: 'cache' })
+                  .catch(() => db.collection("patients")
+                    .doc(doc.id)
+                    .collection("records")
+                    .doc("birthRecord")
+                    .get({ source: 'server' })),
+                3000
+              );
               
-              if (birthRecord.exists) {
+              if (birthRecord && birthRecord.exists) {
                 patientStats.baby++;
               }
             } catch (error) {
-              console.log('No birth record for patient:', doc.id);
+              // Silently skip if can't load birth record (offline or timeout)
+              console.log('Skipping birth record check for patient:', doc.id);
             }
           }
           
@@ -569,6 +675,8 @@
         updateStatsDisplay();
       } catch (error) {
         console.error('Error loading patient stats:', error);
+        // Still update display with zeros so page doesn't look broken
+        updateStatsDisplay();
       }
     }
 
