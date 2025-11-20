@@ -1516,25 +1516,25 @@
           const patientRef = db.collection('patients').doc(doc.id);
 
           try {
-            // Use cache-first strategy with timeout fallback
-            const queryWithTimeout = async (queryPromise, timeout = 5000) => {
+            // Use cache-first strategy with server fallback
+            const queryWithFallback = async (cacheQuery, serverQuery, timeout = 10000) => {
               try {
+                // Try cache first
+                const cacheResult = await cacheQuery;
+                if (cacheResult && !cacheResult.empty) {
+                  return cacheResult;
+                }
+                // Cache empty, try server
                 return await Promise.race([
-                  queryPromise,
+                  serverQuery,
                   new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('Query timeout')), timeout)
                   )
                 ]);
               } catch (error) {
-                // If timeout or error, try to get from cache or return empty snapshot
-                try {
-                  return await queryPromise.catch(() => {
-                    // Return empty snapshot-like object
-                    return { empty: true, size: 0, forEach: () => {}, docs: [] };
-                  });
-                } catch {
-                  return { empty: true, size: 0, forEach: () => {}, docs: [] };
-                }
+                console.warn('Query failed, returning empty result:', error);
+                // Return empty snapshot-like object
+                return { empty: true, size: 0, forEach: () => {}, docs: [] };
               }
             };
 
@@ -1548,60 +1548,60 @@
               transferRecordDoc,
               outcomeRecordDoc
             ] = await Promise.all([
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('antenatal_visits')
                   .orderBy('visitDate', 'desc')
-                  .limit(5) // Only get latest 5 visits for dashboard
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('antenatal_visits')
-                    .orderBy('visitDate', 'desc')
-                    .limit(5)
-                    .get({ source: 'server' }))
+                  .limit(5)
+                  .get({ source: 'cache' }),
+                patientRef.collection('antenatal_visits')
+                  .orderBy('visitDate', 'desc')
+                  .limit(5)
+                  .get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('postpartum_visits')
                   .orderBy('visitDate', 'desc')
-                  .limit(5) // Only get latest 5 visits
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('postpartum_visits')
-                    .orderBy('visitDate', 'desc')
-                    .limit(5)
-                    .get({ source: 'server' }))
+                  .limit(5)
+                  .get({ source: 'cache' }),
+                patientRef.collection('postpartum_visits')
+                  .orderBy('visitDate', 'desc')
+                  .limit(5)
+                  .get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('testRecords')
                   .orderBy('testDate', 'desc')
-                  .limit(3) // Only get latest 3 tests
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('testRecords')
-                    .orderBy('testDate', 'desc')
-                    .limit(3)
-                    .get({ source: 'server' }))
+                  .limit(3)
+                  .get({ source: 'cache' }),
+                patientRef.collection('testRecords')
+                  .orderBy('testDate', 'desc')
+                  .limit(3)
+                  .get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('records').doc('summary')
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('records').doc('summary').get({ source: 'server' }))
+                  .get({ source: 'cache' }),
+                patientRef.collection('records').doc('summary').get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('records').doc('birthRecord')
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('records').doc('birthRecord').get({ source: 'server' }))
+                  .get({ source: 'cache' }),
+                patientRef.collection('records').doc('birthRecord').get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('records').doc('endTreatment')
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('records').doc('endTreatment').get({ source: 'server' }))
+                  .get({ source: 'cache' }),
+                patientRef.collection('records').doc('endTreatment').get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('records').doc('transferRecord')
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('records').doc('transferRecord').get({ source: 'server' }))
+                  .get({ source: 'cache' }),
+                patientRef.collection('records').doc('transferRecord').get({ source: 'server' })
               ),
-              queryWithTimeout(
+              queryWithFallback(
                 patientRef.collection('records').doc('outcomeRecord')
-                  .get({ source: 'cache' })
-                  .catch(() => patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' }))
+                  .get({ source: 'cache' }),
+                patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' })
               )
             ]);
 

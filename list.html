@@ -827,17 +827,23 @@
           query = query.where('township', '==', userTownship);
         }
 
-        // Try cache first, then server with timeout
-        const snapshot = await Promise.race([
-          query.get({ source: 'cache' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 100))
-        ]).catch(() => {
-          // If cache fails or times out, try server with timeout
-          return Promise.race([
+        // Try cache first (fast), then fallback to server if cache is empty or fails
+        let snapshot;
+        try {
+          const cacheSnapshot = await query.get({ source: 'cache' });
+          if (!cacheSnapshot.empty) {
+            console.log('Loaded from cache');
+            snapshot = cacheSnapshot;
+          } else {
+            throw new Error('Cache empty');
+          }
+        } catch (cacheError) {
+          console.log('Cache miss or empty, loading from server...');
+          snapshot = await Promise.race([
             query.get({ source: 'server' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 10000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 15000))
           ]);
-        });
+        }
         
         allPatients = [];
         snapshot.forEach(doc => {

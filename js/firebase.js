@@ -11,6 +11,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 // Enable offline persistence for better performance and offline support
+// This must be called before any Firestore operations
 try {
   db.enablePersistence({
     synchronizeTabs: true
@@ -28,9 +29,3 @@ try {
 } catch (error) {
   console.warn('Persistence initialization error:', error);
 }
-
-// Set Firestore settings for better performance
-db.settings({
-  cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-  ignoreUndefinedProperties: true
-});
