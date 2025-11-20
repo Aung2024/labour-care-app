@@ -339,6 +339,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/status-manager.js"></script>
   <script src="languages/language-manager.js"></script>
   <script>
     // Prevent language manager from creating the default switcher
@@ -996,6 +997,14 @@
             startingTime: state.startTime,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
+          
+          // Update patient status to Labour Care when first stage time is saved
+          if (window.StatusManager) {
+            const statusUpdated = await StatusManager.checkAndUpdateToLabourCare(state.patientId);
+            if (statusUpdated) {
+              console.log('✅ Patient status updated to Labour Care');
+            }
+          }
         }
 
         // Save second stage if exists (for Classic LCG compatibility)
@@ -1005,6 +1014,17 @@
             isSecondStageActive: true,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
+          
+          // Update patient status to Postnatal Care when second stage time is saved
+          if (window.StatusManager) {
+            const statusUpdated = await StatusManager.checkAndUpdateToPostnatalCare(
+              state.patientId,
+              'Second stage time recorded'
+            );
+            if (statusUpdated) {
+              console.log('✅ Patient status updated to Postnatal Care');
+            }
+          }
         }
         
         if (!silent) {
@@ -1199,6 +1219,7 @@
       renderTimePills();
       renderSections();
       await saveData(true);
+      // Status update is handled in saveData() function
       showToast('✓ Second stage set');
     }
 
