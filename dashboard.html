@@ -1505,50 +1505,125 @@
         return { patients: [] };
       }
 
-      const patientData = await Promise.all(patientDocs.map(async doc => {
-        const profile = doc.data() || {};
-        const patientRef = db.collection('patients').doc(doc.id);
+      // Optimize: Batch queries and use cache-first strategy with limits
+      const BATCH_SIZE = 10; // Process patients in batches to avoid overwhelming
+      const patientData = [];
+      
+      for (let i = 0; i < patientDocs.length; i += BATCH_SIZE) {
+        const batch = patientDocs.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(async doc => {
+          const profile = doc.data() || {};
+          const patientRef = db.collection('patients').doc(doc.id);
 
-        try {
-          const [
-            antenatalVisitsSnap,
-            postpartumVisitsSnap,
-            testRecordsSnap,
-            summaryDoc,
-            birthRecordDoc,
-            endTreatmentDoc,
-            transferRecordDoc,
-            outcomeRecordDoc
-          ] = await Promise.all([
-            patientRef.collection('antenatal_visits').get(),
-            patientRef.collection('postpartum_visits').get(),
-            patientRef.collection('testRecords').get(),
-            patientRef.collection('records').doc('summary').get(),
-            patientRef.collection('records').doc('birthRecord').get(),
-            patientRef.collection('records').doc('endTreatment').get(),
-            patientRef.collection('records').doc('transferRecord').get(),
-            patientRef.collection('records').doc('outcomeRecord').get()
-          ]);
+          try {
+            // Use cache-first strategy with timeout fallback
+            const queryWithTimeout = async (queryPromise, timeout = 5000) => {
+              try {
+                return await Promise.race([
+                  queryPromise,
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Query timeout')), timeout)
+                  )
+                ]);
+              } catch (error) {
+                // If timeout or error, try to get from cache or return empty snapshot
+                try {
+                  return await queryPromise.catch(() => {
+                    // Return empty snapshot-like object
+                    return { empty: true, size: 0, forEach: () => {}, docs: [] };
+                  });
+                } catch {
+                  return { empty: true, size: 0, forEach: () => {}, docs: [] };
+                }
+              }
+            };
 
-          const antenatalVisits = filterRecords(
+            const [
+              antenatalVisitsSnap,
+              postpartumVisitsSnap,
+              testRecordsSnap,
+              summaryDoc,
+              birthRecordDoc,
+              endTreatmentDoc,
+              transferRecordDoc,
+              outcomeRecordDoc
+            ] = await Promise.all([
+              queryWithTimeout(
+                patientRef.collection('antenatal_visits')
+                  .orderBy('visitDate', 'desc')
+                  .limit(5) // Only get latest 5 visits for dashboard
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('antenatal_visits')
+                    .orderBy('visitDate', 'desc')
+                    .limit(5)
+                    .get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('postpartum_visits')
+                  .orderBy('visitDate', 'desc')
+                  .limit(5) // Only get latest 5 visits
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('postpartum_visits')
+                    .orderBy('visitDate', 'desc')
+                    .limit(5)
+                    .get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('testRecords')
+                  .orderBy('testDate', 'desc')
+                  .limit(3) // Only get latest 3 tests
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('testRecords')
+                    .orderBy('testDate', 'desc')
+                    .limit(3)
+                    .get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('summary')
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('records').doc('summary').get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('birthRecord')
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('records').doc('birthRecord').get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('endTreatment')
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('records').doc('endTreatment').get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('transferRecord')
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('records').doc('transferRecord').get({ source: 'server' }))
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('outcomeRecord')
+                  .get({ source: 'cache' })
+                  .catch(() => patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' }))
+              )
+            ]);
+
+          const antenatalVisits = antenatalVisitsSnap && !antenatalVisitsSnap.empty ? filterRecords(
             cloneSnapshotDocs(antenatalVisitsSnap),
             ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at', 'date']
-          );
+          ) : [];
 
-          const postpartumVisits = filterRecords(
+          const postpartumVisits = postpartumVisitsSnap && !postpartumVisitsSnap.empty ? filterRecords(
             cloneSnapshotDocs(postpartumVisitsSnap),
             ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at', 'date']
-          );
+          ) : [];
 
-          const testRecords = filterRecords(
+          const testRecords = testRecordsSnap && !testRecordsSnap.empty ? filterRecords(
             cloneSnapshotDocs(testRecordsSnap),
             ['testDate', 'timestamp', 'createdAt', 'created_at', 'date']
-          );
+          ) : [];
 
-          const birthRecordData = birthRecordDoc.exists ? { id: birthRecordDoc.id, data: birthRecordDoc.data() || {} } : null;
-          const endTreatmentData = endTreatmentDoc.exists ? { id: endTreatmentDoc.id, data: endTreatmentDoc.data() || {} } : null;
-          const transferRecordData = transferRecordDoc.exists ? { id: transferRecordDoc.id, data: transferRecordDoc.data() || {} } : null;
-          const outcomeRecordData = outcomeRecordDoc.exists ? { id: outcomeRecordDoc.id, data: outcomeRecordDoc.data() || {} } : null;
+          const birthRecordData = birthRecordDoc && birthRecordDoc.exists ? { id: birthRecordDoc.id, data: birthRecordDoc.data() || {} } : null;
+          const endTreatmentData = endTreatmentDoc && endTreatmentDoc.exists ? { id: endTreatmentDoc.id, data: endTreatmentDoc.data() || {} } : null;
+          const transferRecordData = transferRecordDoc && transferRecordDoc.exists ? { id: transferRecordDoc.id, data: transferRecordDoc.data() || {} } : null;
+          const outcomeRecordData = outcomeRecordDoc && outcomeRecordDoc.exists ? { id: outcomeRecordDoc.id, data: outcomeRecordDoc.data() || {} } : null;
 
           const birthRecord = recordMatchesDate(birthRecordData, ['deliveryDate', 'birthDate', 'timestamp', 'date']) ? birthRecordData : null;
           const endTreatment = recordMatchesDate(endTreatmentData, ['outcomeDate', 'timestamp', 'date']) ? endTreatmentData : null;
@@ -1561,7 +1636,7 @@
             antenatalVisits,
             postpartumVisits,
             testRecords,
-            summary: summaryDoc.exists ? summaryDoc.data() || {} : null,
+            summary: summaryDoc && summaryDoc.exists ? summaryDoc.data() || {} : null,
             birthRecord,
             endTreatment,
             transferRecord,
@@ -1587,7 +1662,15 @@
           };
           return fallbackEntry;
         }
-      }));
+        }));
+        
+        patientData.push(...batchResults);
+        
+        // Small delay between batches to avoid overwhelming the connection
+        if (i + BATCH_SIZE < patientDocs.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
 
       const filteredPatients = patientData.filter(patient => patient.matchesDateFilter);
 

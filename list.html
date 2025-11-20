@@ -809,7 +809,7 @@
       await loadPatients();
     });
 
-    // Load patients from Firestore
+    // Load patients from Firestore with optimization
     async function loadPatients() {
       try {
         console.log('Loading patients...');
@@ -820,12 +820,24 @@
         if (userRole === 'Midwife') {
           query = query.where('created_by', '==', currentUser.uid);
         } else if (userRole === 'TMO') {
-          const userDoc = await db.collection('users').doc(currentUser.uid).get();
+          const userDoc = await db.collection('users').doc(currentUser.uid).get({ source: 'cache' }).catch(() => 
+            db.collection('users').doc(currentUser.uid).get()
+          );
           const userTownship = userDoc.data().township;
           query = query.where('township', '==', userTownship);
         }
 
-        const snapshot = await query.get();
+        // Try cache first, then server with timeout
+        const snapshot = await Promise.race([
+          query.get({ source: 'cache' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 100))
+        ]).catch(() => {
+          // If cache fails or times out, try server with timeout
+          return Promise.race([
+            query.get({ source: 'server' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 10000))
+          ]);
+        });
         
         allPatients = [];
         snapshot.forEach(doc => {
@@ -837,7 +849,7 @@
 
         console.log('Loaded', allPatients.length, 'patients');
         
-        // Sort by creation date (newest first)
+        // Sort by creation date (newest first) - optimized
         allPatients.sort((a, b) => {
           const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
           const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
@@ -858,6 +870,29 @@
       } catch (error) {
         console.error('Error loading patients:', error);
         document.getElementById('loadingContainer').style.display = 'none';
+        
+        // Try to show cached data if available
+        try {
+          const db = firebase.firestore();
+          let query = db.collection('patients');
+          if (userRole === 'Midwife') {
+            query = query.where('created_by', '==', currentUser.uid);
+          }
+          const cachedSnapshot = await query.get({ source: 'cache' });
+          if (!cachedSnapshot.empty) {
+            allPatients = [];
+            cachedSnapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+            filteredPatients = [...allPatients];
+            displayPatients();
+            alert('Showing cached data. Please check your internet connection.');
+            return;
+          }
+        } catch (cacheError) {
+          console.error('Cache fallback failed:', cacheError);
+        }
+        
         alert('Error loading patients: ' + error.message);
       }
     }
