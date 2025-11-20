@@ -1977,10 +1977,49 @@
       // Set initial language
       switchLanguage(currentLanguage);
       
-      // Age risk detection
+      // Age risk detection and English number only validation
       const ageInput = document.getElementById('age');
       if (ageInput) {
-        ageInput.addEventListener('input', evaluateAgeRisk);
+        // Only allow English numbers (0-9)
+        ageInput.addEventListener('input', function(e) {
+          // Remove any non-English digits
+          let value = e.target.value.replace(/[^0-9]/g, '');
+          if (e.target.value !== value) {
+            e.target.value = value;
+          }
+          evaluateAgeRisk();
+        });
+        
+        // Handle paste events to filter non-English numbers
+        ageInput.addEventListener('paste', function(e) {
+          e.preventDefault();
+          const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+          const englishNumbersOnly = pastedText.replace(/[^0-9]/g, '');
+          if (englishNumbersOnly) {
+            e.target.value = englishNumbersOnly;
+            evaluateAgeRisk();
+          }
+        });
+        
+        // Handle keypress to prevent non-English numbers
+        ageInput.addEventListener('keypress', function(e) {
+          // Allow: backspace, delete, tab, escape, enter, and numbers 0-9
+          if ([46, 8, 9, 27, 13, 110, 190].indexOf(e.keyCode) !== -1 ||
+              // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+              (e.keyCode === 65 && e.ctrlKey === true) ||
+              (e.keyCode === 67 && e.ctrlKey === true) ||
+              (e.keyCode === 86 && e.ctrlKey === true) ||
+              (e.keyCode === 88 && e.ctrlKey === true) ||
+              // Allow: home, end, left, right
+              (e.keyCode >= 35 && e.keyCode <= 39)) {
+            return;
+          }
+          // Ensure that it is a number and stop the keypress if not
+          if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+            e.preventDefault();
+          }
+        });
+        
         ageInput.addEventListener('change', evaluateAgeRisk);
       }
       
@@ -2554,7 +2593,7 @@
                 <label for="age" class="form-label required-field">
                   <i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>
                 </label>
-                <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="12" max="50">
+                <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="12" max="50" pattern="[0-9]*" inputmode="numeric">
                 <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
                   <i class="fas fa-exclamation-triangle me-2"></i>
                   <span class="lang-text" data-en="⚠️ High Risk: Maternal age is 17 or under, or 40 and over. Please monitor closely." data-mm="⚠️ အန္တရာယ်များ: မိခင်အသက်သည် ၁၇ နှစ်အောက် သို့မဟုတ် ၄၀ နှစ်နှင့် အထက်ဖြစ်သည်။ ဂရုတစိုက်စောင့်ကြည့်ပါ။">⚠️ High Risk: Maternal age is 17 or under, or 40 and over. Please monitor closely.</span>
