@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Overall Patient Report</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    @media print {
+      body { margin: 0; }
+      .no-print { display: none !important; }
+      .page-break { page-break-before: always; }
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      color: #2c3e50;
+      padding: 20px 0;
+    }
+
+    .report-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 30px;
+      background: white;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 10px 0;
+        font-size: 12px;
+      }
+
+      .report-container {
+        padding: 15px;
+        border-radius: 0;
+        margin: 0;
+        max-width: 100%;
+      }
+
+      .report-header {
+        margin: -15px -15px 20px -15px;
+        padding: 15px;
+        border-radius: 0;
+      }
+
+      .report-title {
+        font-size: 18px;
+      }
+
+      .report-subtitle {
+        font-size: 13px;
+      }
+    }
+
+    .report-header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 3px solid #6366f1;
+      padding-bottom: 20px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 10px 10px 0 0;
+      margin: -30px -30px 30px -30px;
+    }
+
+    .report-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .report-subtitle {
+      font-size: 16px;
+      opacity: 0.95;
+      font-weight: 300;
+    }
+
+    .patient-info {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 25px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .patient-info h5 {
+      color: #6366f1;
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .patient-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .patient-summary {
+        grid-template-columns: 1fr;
+        gap: 15px;
+      }
+    }
+
+    .summary-card {
+      border: 2px solid #e5e7eb;
+      padding: 15px;
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .summary-card h6 {
+      margin-bottom: 5px;
+      font-size: 12px;
+      color: #495057;
+    }
+
+    .summary-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: #6366f1;
+    }
+
+    .section-divider {
+      margin: 40px 0;
+      border-top: 3px solid #6366f1;
+      padding-top: 20px;
+    }
+
+    .section-header {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: white;
+      padding: 15px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-header i {
+      font-size: 24px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 25px;
+    }
+
+    .visits-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .visits-table th {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: white;
+      padding: 10px 8px;
+      text-align: center;
+      font-weight: 600;
+      border: 1px solid #4f46e5;
+      font-size: 10px;
+    }
+
+    .visits-table td {
+      padding: 8px;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+      background: white;
+    }
+
+    .visits-table tbody tr:hover {
+      background: #f8f9fa;
+    }
+
+    .visits-table tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    .info-section {
+      background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 25px;
+    }
+
+    .info-section h6 {
+      color: #6366f1;
+      font-weight: 700;
+      font-size: 16px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .treatment-item {
+      background: white;
+      border-left: 4px solid #6366f1;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .treatment-header {
+      font-weight: 600;
+      color: #6366f1;
+      margin-bottom: 10px;
+    }
+
+    .treatment-content {
+      color: #374151;
+      line-height: 1.6;
+    }
+
+    .btn-group {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn-back {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+    }
+
+    @media (max-width: 768px) {
+      .btn-group {
+        top: 10px;
+        right: 10px;
+        flex-direction: column;
+      }
+
+      .btn-group .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
+      .btn-back {
+        top: 10px;
+        left: 10px;
+      }
+
+      .btn-back .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 30px;
+      color: #6b7280;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <!-- Back Button -->
+  <div class="btn-back no-print">
+    <button class="btn btn-outline-secondary btn-sm" onclick="goBack()">
+      <i class="fas fa-arrow-left me-1"></i>Back
+    </button>
+  </div>
+
+  <!-- Print Button -->
+  <div class="btn-group no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()">
+      <i class="fas fa-print me-1"></i>Print Report
+    </button>
+  </div>
+
+  <div class="report-container">
+    <!-- Loading State -->
+    <div id="loadingState" class="loading">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading overall patient report...</p>
+    </div>
+
+    <!-- Report Content -->
+    <div id="reportContent" style="display: none;">
+      <!-- Header -->
+      <div class="report-header">
+        <div class="report-title">Overall Patient Report</div>
+        <div class="report-subtitle">Complete Medical History - ANC, Labour Care & Postnatal Care</div>
+      </div>
+
+      <!-- Patient Information -->
+      <div class="patient-info">
+        <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+        <div class="patient-summary">
+          <div class="summary-card">
+            <h6>Patient Details</h6>
+            <div><strong>Name:</strong> <span id="patientName">-</span></div>
+            <div><strong>Age:</strong> <span id="patientAge">-</span></div>
+            <div><strong>Parity:</strong> <span id="patientParity">-</span></div>
+          </div>
+          <div class="summary-card">
+            <h6>Pregnancy Details</h6>
+            <div><strong>LMP:</strong> <span id="patientLMP">-</span></div>
+            <div><strong>EDD:</strong> <span id="patientEDD">-</span></div>
+            <div><strong>Status:</strong> <span id="patientStatus">-</span></div>
+          </div>
+          <div class="summary-card">
+            <h6>Contact Information</h6>
+            <div><strong>Phone:</strong> <span id="patientPhone">-</span></div>
+            <div><strong>Total ANC Visits:</strong> <span id="totalAncVisits" class="summary-value">0</span></div>
+            <div><strong>Total PNC Visits:</strong> <span id="totalPncVisits" class="summary-value">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANC Report Section -->
+      <div class="section-divider">
+        <div class="section-header">
+          <i class="fas fa-baby-carriage"></i>
+          <span>Antenatal Care (ANC) Report</span>
+        </div>
+
+        <!-- ANC Visits Table -->
+        <div id="ancSection">
+          <div class="table-wrapper">
+            <table class="visits-table">
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Date</th>
+                  <th>Weight</th>
+                  <th>BP</th>
+                  <th>Pulse</th>
+                  <th>Temp</th>
+                  <th>GA</th>
+                  <th>FH</th>
+                  <th>Fetal Lie</th>
+                  <th>Fetal Pres</th>
+                  <th>FHR</th>
+                  <th>Fetal Mov</th>
+                  <th>Deworm</th>
+                  <th>IFA</th>
+                  <th>Vit B1</th>
+                  <th>Micronut</th>
+                  <th>TD</th>
+                  <th>Initial</th>
+                </tr>
+              </thead>
+              <tbody id="ancVisitsTableBody">
+                <!-- ANC visits will be populated here -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ANC Additional Info -->
+          <div id="ancAdditionalInfo"></div>
+        </div>
+      </div>
+
+      <!-- Labour Care Guide Section -->
+      <div class="section-divider page-break">
+        <div class="section-header">
+          <i class="fas fa-heartbeat"></i>
+          <span>Labour Care Guide (LCG) Report</span>
+        </div>
+
+        <div id="lcgSection">
+          <div class="no-data" id="lcgNoData" style="display: none;">
+            No labour care data available for this patient.
+          </div>
+          <div id="lcgContent"></div>
+        </div>
+      </div>
+
+      <!-- Postnatal Care Section -->
+      <div class="section-divider page-break">
+        <div class="section-header">
+          <i class="fas fa-hands-holding-child"></i>
+          <span>Postnatal Care (PNC) Report</span>
+        </div>
+
+        <div id="pncSection">
+          <div class="no-data" id="pncNoData" style="display: none;">
+            No postnatal care data available for this patient.
+          </div>
+          <div id="pncContent"></div>
+        </div>
+      </div>
+
+      <!-- Report Footer -->
+      <div class="mt-4 pt-3 border-top text-center text-muted" style="font-size: 11px;">
+        <p>Report generated on: <span id="reportDate"></span></p>
+        <p>Generated by: <span id="generatedBy"></span></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let patientId = null;
+    let antenatalVisits = [];
+    let postpartumVisits = [];
+    let labourData = null;
+    let reportDb;
+
+    // Get patient ID from URL or session
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        alert("Please log in to view this report.");
+        window.location.href = 'login.html';
+      } else {
+        currentUser = user;
+        reportDb = firebase.firestore();
+        if (patientId) {
+          loadReportData();
+        } else {
+          alert("No patient ID provided.");
+          window.location.href = 'patient-care-hub.html';
+        }
+      }
+    });
+
+    function goBack() {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = 'patient-care-hub.html';
+      }
+    }
+
+    async function loadReportData() {
+      try {
+        // Load patient data
+        const patientDoc = await reportDb.collection("patients").doc(patientId).get();
+        if (!patientDoc.exists) {
+          alert("Patient not found!");
+          window.location.href = 'patient-care-hub.html';
+          return;
+        }
+        
+        currentPatient = patientDoc.data();
+        
+        // Load all report data in parallel
+        await Promise.all([
+          loadANCData(),
+          loadLCGData(),
+          loadPNCData()
+        ]);
+
+        // Populate report
+        populatePatientInfo();
+        populateANCReport();
+        populateLCGReport();
+        populatePNCReport();
+        
+        // Show report and hide loading
+        document.getElementById("loadingState").style.display = "none";
+        document.getElementById("reportContent").style.display = "block";
+        
+        // Set report generation info
+        document.getElementById("reportDate").textContent = new Date().toLocaleString();
+        document.getElementById("generatedBy").textContent = currentUser.email;
+
+      } catch (error) {
+        console.error("Error loading report data:", error);
+        alert("Error loading report data: " + error.message);
+        window.location.href = 'patient-care-hub.html';
+      }
+    }
+
+    async function loadANCData() {
+      try {
+        let visitsSnapshot;
+        try {
+          visitsSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("antenatal_visits")
+            .orderBy("visitDate", "asc")
+            .get();
+        } catch (error) {
+          visitsSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("antenatal_visits")
+            .orderBy("timestamp", "asc")
+            .get();
+        }
+
+        antenatalVisits = [];
+        visitsSnapshot.forEach(doc => {
+          antenatalVisits.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+
+        antenatalVisits.sort(compareVisits);
+      } catch (error) {
+        console.error("Error loading ANC data:", error);
+        antenatalVisits = [];
+      }
+    }
+
+    async function loadLCGData() {
+      try {
+        const summaryDoc = await reportDb.collection("patients")
+          .doc(patientId)
+          .collection("records")
+          .doc("summary")
+          .get();
+        
+        if (summaryDoc.exists) {
+          labourData = summaryDoc.data();
+        }
+      } catch (error) {
+        console.error("Error loading LCG data:", error);
+        labourData = null;
+      }
+    }
+
+    async function loadPNCData() {
+      try {
+        let visitsSnapshot;
+        try {
+          visitsSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("postpartum_visits")
+            .orderBy("visitDate", "asc")
+            .get();
+        } catch (error) {
+          visitsSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("postpartum_visits")
+            .get();
+        }
+
+        postpartumVisits = [];
+        visitsSnapshot.forEach(doc => {
+          postpartumVisits.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+
+        // Sort manually if needed
+        postpartumVisits.sort((a, b) => {
+          const dateA = getVisitDate(a);
+          const dateB = getVisitDate(b);
+          return dateA - dateB;
+        });
+      } catch (error) {
+        console.error("Error loading PNC data:", error);
+        postpartumVisits = [];
+      }
+    }
+
+    function getVisitDate(visit) {
+      if (visit.visitDate) {
+        const parsed = new Date(visit.visitDate);
+        if (!isNaN(parsed)) return parsed.getTime();
+      }
+      if (visit.timestamp && typeof visit.timestamp.toDate === 'function') {
+        return visit.timestamp.toDate().getTime();
+      }
+      if (visit.timestamp && typeof visit.timestamp.seconds === 'number') {
+        return visit.timestamp.seconds * 1000;
+      }
+      return 0;
+    }
+
+    function compareVisits(a, b) {
+      if (a.visitNumber && b.visitNumber && a.visitNumber !== b.visitNumber) {
+        return a.visitNumber - b.visitNumber;
+      }
+      const timeDiff = getVisitDate(a) - getVisitDate(b);
+      if (timeDiff !== 0) return timeDiff;
+      return (a.created_at?.seconds || 0) - (b.created_at?.seconds || 0);
+    }
+
+    function populatePatientInfo() {
+      document.getElementById('patientName').textContent = currentPatient.name || '-';
+      document.getElementById('patientAge').textContent = currentPatient.age ? `${currentPatient.age} years` : '-';
+      document.getElementById('patientParity').textContent = currentPatient.parity || '-';
+      
+      if (currentPatient.lmp && currentPatient.lmp !== 'unknown') {
+        const lmpDate = new Date(currentPatient.lmp);
+        document.getElementById('patientLMP').textContent = lmpDate.toLocaleDateString();
+        
+        // Calculate EDD (280 days from LMP)
+        const edd = new Date(lmpDate);
+        edd.setDate(edd.getDate() + 280);
+        document.getElementById('patientEDD').textContent = edd.toLocaleDateString();
+      } else {
+        document.getElementById('patientLMP').textContent = '-';
+        document.getElementById('patientEDD').textContent = '-';
+      }
+      
+      document.getElementById('patientPhone').textContent = currentPatient.phone || '-';
+      document.getElementById('patientStatus').textContent = currentPatient.status || '-';
+      document.getElementById('totalAncVisits').textContent = antenatalVisits.length;
+      document.getElementById('totalPncVisits').textContent = postpartumVisits.length;
+    }
+
+    function populateANCReport() {
+      const tbody = document.getElementById('ancVisitsTableBody');
+      
+      if (antenatalVisits.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="18" class="text-center text-muted">No ANC visits recorded</td></tr>';
+        return;
+      }
+
+      let tableHTML = '';
+      antenatalVisits.forEach((visit, index) => {
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
+        const gaValue = visit.gestationalAge || calculateGA(visit.visitDate || visit.timestamp) || '-';
+        const tdValue = visit.tetanusToxoid || '-';
+        const fetalMovement = visit.fetalMovement || '-';
+
+        tableHTML += `
+          <tr>
+            <td class="visit-number">${visitNumber}</td>
+            <td>${visitDate}</td>
+            <td>${visit.weight || '-'}</td>
+            <td>${visit.bloodPressure || '-'}</td>
+            <td>${visit.pulseRate || '-'}</td>
+            <td>${visit.temperature || '-'}</td>
+            <td>${gaValue}</td>
+            <td>${visit.fundalHeight || '-'}</td>
+            <td>${visit.fetalLie || '-'}</td>
+            <td>${visit.fetalPresentation || '-'}</td>
+            <td>${visit.fetalHeartRate || '-'}</td>
+            <td>${fetalMovement}</td>
+            <td>${visit.deworming || '-'}</td>
+            <td>${visit.ironFolicAcid || '-'}</td>
+            <td>${visit.vitaminB1 || '-'}</td>
+            <td>${visit.micronutrientsTablet || '-'}</td>
+            <td>${tdValue}</td>
+            <td>${visit.initial || '-'}</td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = tableHTML;
+    }
+
+    function populateLCGReport() {
+      const lcgContent = document.getElementById('lcgContent');
+      const lcgNoData = document.getElementById('lcgNoData');
+
+      if (!labourData) {
+        lcgNoData.style.display = 'block';
+        lcgContent.innerHTML = '';
+        return;
+      }
+
+      lcgNoData.style.display = 'none';
+      
+      let html = '<div class="info-section">';
+      
+      // Labour Summary
+      if (labourData.activeFirstStage_Time || labourData.secondStage_Time || labourData.deliveryTime) {
+        html += '<h6><i class="fas fa-clock me-2"></i>Labour Timeline</h6>';
+        html += '<div class="treatment-item">';
+        if (labourData.activeFirstStage_Time) {
+          const time = formatDateTime(labourData.activeFirstStage_Time);
+          html += `<p><strong>Active First Stage Started:</strong> ${time}</p>`;
+        }
+        if (labourData.secondStage_Time) {
+          const time = formatDateTime(labourData.secondStage_Time);
+          html += `<p><strong>Second Stage Started:</strong> ${time}</p>`;
+        }
+        if (labourData.deliveryTime) {
+          const time = formatDateTime(labourData.deliveryTime);
+          html += `<p><strong>Delivery Time:</strong> ${time}</p>`;
+        }
+        html += '</div>';
+      }
+
+      // Delivery Details
+      if (labourData.deliveryMode || labourData.birthWeight || labourData.babyGender) {
+        html += '<h6><i class="fas fa-baby me-2"></i>Delivery Details</h6>';
+        html += '<div class="treatment-item">';
+        if (labourData.deliveryMode) html += `<p><strong>Delivery Mode:</strong> ${labourData.deliveryMode}</p>`;
+        if (labourData.birthWeight) html += `<p><strong>Birth Weight:</strong> ${labourData.birthWeight} g</p>`;
+        if (labourData.babyGender) html += `<p><strong>Baby Gender:</strong> ${labourData.babyGender}</p>`;
+        if (labourData.apgarScore) html += `<p><strong>Apgar Score:</strong> ${labourData.apgarScore}</p>`;
+        html += '</div>';
+      }
+
+      html += '</div>';
+      lcgContent.innerHTML = html;
+    }
+
+    function populatePNCReport() {
+      const pncContent = document.getElementById('pncContent');
+      const pncNoData = document.getElementById('pncNoData');
+
+      if (postpartumVisits.length === 0) {
+        pncNoData.style.display = 'block';
+        pncContent.innerHTML = '';
+        return;
+      }
+
+      pncNoData.style.display = 'none';
+      
+      let html = '<div class="table-wrapper">';
+      html += '<table class="visits-table">';
+      html += '<thead><tr><th>No</th><th>Date</th><th>BP</th><th>Pulse</th><th>Temp</th><th>Uterus</th><th>Lochia</th><th>Breast</th><th>Baby Status</th><th>Notes</th></tr></thead>';
+      html += '<tbody>';
+
+      postpartumVisits.forEach((visit, index) => {
+        const visitNumber = visit.visitNumber || index + 1;
+        const visitDate = formatVisitDate(visit);
+        
+        html += `
+          <tr>
+            <td>${visitNumber}</td>
+            <td>${visitDate}</td>
+            <td>${visit.bloodPressure || '-'}</td>
+            <td>${visit.pulseRate || '-'}</td>
+            <td>${visit.temperature || '-'}</td>
+            <td>${visit.uterus || '-'}</td>
+            <td>${visit.lochia || '-'}</td>
+            <td>${visit.breast || '-'}</td>
+            <td>${visit.babyStatus || '-'}</td>
+            <td>${visit.notes || '-'}</td>
+          </tr>
+        `;
+      });
+
+      html += '</tbody></table></div>';
+      pncContent.innerHTML = html;
+    }
+
+    function formatVisitDate(visit) {
+      const dateObj = getVisitDateObj(visit);
+      return dateObj ? dateObj.toLocaleDateString() : 'N/A';
+    }
+
+    function getVisitDateObj(visit) {
+      if (visit.visitDate) {
+        const parsed = new Date(visit.visitDate);
+        if (!isNaN(parsed)) return parsed;
+      }
+      if (visit.timestamp && typeof visit.timestamp.toDate === 'function') {
+        return visit.timestamp.toDate();
+      }
+      if (visit.timestamp && typeof visit.timestamp.seconds === 'number') {
+        return new Date(visit.timestamp.seconds * 1000);
+      }
+      return null;
+    }
+
+    function formatDateTime(timestamp) {
+      if (!timestamp) return 'N/A';
+      let date;
+      if (timestamp.toDate) {
+        date = timestamp.toDate();
+      } else if (timestamp.seconds) {
+        date = new Date(timestamp.seconds * 1000);
+      } else {
+        date = new Date(timestamp);
+      }
+      return date.toLocaleString();
+    }
+
+    function calculateGA(dateValue) {
+      if (!currentPatient.lmp || currentPatient.lmp === 'unknown') return null;
+      if (!dateValue) return null;
+
+      let visitDate;
+      if (dateValue.toDate) {
+        visitDate = dateValue.toDate();
+      } else if (dateValue.seconds) {
+        visitDate = new Date(dateValue.seconds * 1000);
+      } else {
+        visitDate = new Date(dateValue);
+      }
+
+      const lmpDate = new Date(currentPatient.lmp);
+      const diffDays = Math.floor((visitDate - lmpDate) / (1000 * 60 * 60 * 24));
+      const weeks = Math.floor(diffDays / 7);
+      return weeks > 0 ? `${weeks}w` : null;
+    }
+  </script>
+</body>
+</html>
+
