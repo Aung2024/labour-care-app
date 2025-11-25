@@ -1395,20 +1395,44 @@
               connectionType: navigator.connection ? navigator.connection.effectiveType : 'unknown'
             };
             
+            // Detect Mac
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+            
+            let platformSpecificHelp = '';
+            if (isMac) {
+              platformSpecificHelp = 
+                `Mac-Specific Solutions:\n` +
+                `• Change DNS: System Settings > Network > WiFi > Details > DNS\n` +
+                `  Add: 8.8.8.8 and 8.8.4.4 (Google DNS) or 1.1.1.1 (Cloudflare)\n` +
+                `• Flush DNS cache: Open Terminal and run:\n` +
+                `  sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder\n` +
+                `• Test with mobile hotspot to confirm WiFi is blocking\n` +
+                `• Open test-firebase-connection.html for detailed diagnostics\n\n`;
+            } else if (isIOS) {
+              platformSpecificHelp =
+                `iOS-Specific Solutions:\n` +
+                `• Try using mobile data instead of WiFi\n` +
+                `• Clear Safari cache: Settings > Safari > Clear History and Website Data\n` +
+                `• Check Safari settings: Settings > Safari > Block All Cookies (should be OFF)\n\n`;
+            }
+            
             throw new Error(
               `Firebase Connection Failed\n\n` +
               `This usually means:\n` +
               `• WiFi/Network is blocking Firebase domains (firebaseapp.com, googleapis.com)\n` +
               `• Government firewall may be blocking Google services\n` +
-              `• iOS Safari has stricter network security policies\n\n` +
-              `Why it works on Android/Mobile Data:\n` +
+              (isIOS ? `• iOS Safari has stricter network security policies\n` : '') +
+              `\nWhy it works on Android/Mobile Data:\n` +
               `• Mobile data uses different DNS/routing that may bypass blocks\n` +
               `• Android may have different network stack behavior\n\n` +
-              `Solutions:\n` +
+              platformSpecificHelp +
+              `General Solutions:\n` +
               `• Try using mobile data instead of WiFi\n` +
               `• Check if VPN is needed\n` +
               `• Contact network administrator\n` +
-              `• Run diagnostics: testFirebaseConnectivity() in console\n\n` +
+              `• Run diagnostics: testFirebaseConnectivity() in console\n` +
+              `• Open test-firebase-connection.html for Mac-specific testing\n\n` +
               `Technical Details:\n${JSON.stringify(diagnosticInfo, null, 2)}`
             );
           }
@@ -1949,6 +1973,10 @@
               <button onclick="testFirebaseConnectivity().then(r => displayDiagnosticResults(r))" 
                       class="btn btn-primary" style="margin-right: 1rem;">
                 <i class="fas fa-diagnostic"></i> Run Network Diagnostics
+              </button>
+              <button onclick="window.open('test-firebase-connection.html', '_blank')" 
+                      class="btn btn-primary" style="margin-right: 1rem;">
+                <i class="fas fa-laptop"></i> Mac Connection Test
               </button>
               <button onclick="location.reload()" class="btn btn-secondary">
                 <i class="fas fa-redo"></i> Retry
