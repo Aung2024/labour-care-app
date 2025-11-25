@@ -223,6 +223,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 <script src="js/firebase.js"></script>
+<script src="js/network-diagnostics.js"></script>
   <script src="js/status-manager.js"></script>
 <script src="languages/language-manager.js"></script>
 </head>
@@ -1360,6 +1361,66 @@
     // REMOVED: Old recommendations object that was causing duplicates
     // The new showRecommendations() function handles all recommendations dynamically
 
+    // Retry helper for Firebase queries with exponential backoff
+    async function retryFirestoreQuery(queryFn, maxRetries = 3, baseDelay = 1000) {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await queryFn();
+        } catch (error) {
+          const isLastAttempt = attempt === maxRetries - 1;
+          
+          // Check if it's a network/connectivity error
+          const isNetworkError = 
+            error.message && (
+              error.message.includes('Failed to get document from server') ||
+              error.message.includes('UNAVAILABLE') ||
+              error.message.includes('DEADLINE_EXCEEDED') ||
+              error.message.includes('network') ||
+              error.code === 'unavailable' ||
+              error.code === 'deadline-exceeded'
+            );
+          
+          if (isLastAttempt) {
+            // On final failure, provide detailed error information
+            console.error('❌ Firebase connection failed after', maxRetries, 'attempts');
+            console.error('Error details:', error);
+            
+            // Show diagnostic information
+            const diagnosticInfo = {
+              error: error.message,
+              code: error.code,
+              platform: navigator.platform,
+              userAgent: navigator.userAgent,
+              onLine: navigator.onLine,
+              connectionType: navigator.connection ? navigator.connection.effectiveType : 'unknown'
+            };
+            
+            throw new Error(
+              `Firebase Connection Failed\n\n` +
+              `This usually means:\n` +
+              `• WiFi/Network is blocking Firebase domains (firebaseapp.com, googleapis.com)\n` +
+              `• Government firewall may be blocking Google services\n` +
+              `• iOS Safari has stricter network security policies\n\n` +
+              `Why it works on Android/Mobile Data:\n` +
+              `• Mobile data uses different DNS/routing that may bypass blocks\n` +
+              `• Android may have different network stack behavior\n\n` +
+              `Solutions:\n` +
+              `• Try using mobile data instead of WiFi\n` +
+              `• Check if VPN is needed\n` +
+              `• Contact network administrator\n` +
+              `• Run diagnostics: testFirebaseConnectivity() in console\n\n` +
+              `Technical Details:\n${JSON.stringify(diagnosticInfo, null, 2)}`
+            );
+          }
+          
+          // Exponential backoff: wait longer between each retry
+          const delay = baseDelay * Math.pow(2, attempt);
+          console.warn(`⚠️ Firebase query failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`, error.message);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
     // Load data from Firestore
     async function loadData() {
       try {
@@ -1372,8 +1433,10 @@
           return;
         }
           
-        // Fetch user profile
-        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        // Fetch user profile with retry
+        const userDoc = await retryFirestoreQuery(
+          () => firebase.firestore().collection("users").doc(user.uid).get()
+        );
         if (!userDoc.exists) {
           document.body.innerHTML = '<div class="alert alert-danger">User profile not found.</div>';
           return;
@@ -1389,7 +1452,10 @@
           return;
         }
 
-        const patientDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).get({ source: "server" });
+        // Get patient document with retry and server source
+        const patientDoc = await retryFirestoreQuery(
+          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).get({ source: "server" })
+        );
         if (!patientDoc.exists) {
           document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
           return;
@@ -1459,7 +1525,9 @@
 
         // Load starting time and second stage data
         try {
-          const startingTimeDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get();
+          const startingTimeDoc = await retryFirestoreQuery(
+            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get({ source: "server" })
+          );
           if (startingTimeDoc.exists) {
             const startingData = startingTimeDoc.data();
             const savedStartingTime = startingData.startingTime;
@@ -1473,12 +1541,14 @@
               generateDynamicTimeColumns();
               
               // Load existing records from the new structure
-              const recordsDoc = await firebase.firestore()
-                .collection("patients")
-                .doc(patientIdFromUrl)
-                .collection("records")
-                .doc("summary")
-                .get();
+              const recordsDoc = await retryFirestoreQuery(
+                () => firebase.firestore()
+                  .collection("patients")
+                  .doc(patientIdFromUrl)
+                  .collection("records")
+                  .doc("summary")
+                  .get({ source: "server" })
+              );
               
               if (recordsDoc.exists) {
                 const savedData = recordsDoc.data();
@@ -1494,8 +1564,10 @@
                 }
               }
 
-              // Load medication data
-              const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
+              // Load medication data with retry
+              const medicationSnap = await retryFirestoreQuery(
+                () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" })
+              );
               medicationSnap.forEach(doc => {
                 const d = doc.data();
                 const time = d.time;
@@ -1560,7 +1632,9 @@
           
           console.log('🔄 Loading second stage data...');
           
-          const secondStageDoc = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get();
+          const secondStageDoc = await retryFirestoreQuery(
+            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get({ source: "server" })
+          );
           if (secondStageDoc.exists) {
             const secondStageData = secondStageDoc.data();
             secondStageStartTime = secondStageData.secondStageStartTime;
@@ -1637,8 +1711,10 @@
           }
         }
 
-        // Load medication data
-        const medicationSnap = await firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" });
+        // Load medication data with retry
+        const medicationSnap = await retryFirestoreQuery(
+          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" })
+        );
         medicationSnap.forEach(doc => {
           const d = doc.data();
           const time = d.time;
@@ -1832,7 +1908,68 @@
 
       } catch (error) {
         console.error("Error loading data:", error);
-        document.body.innerHTML = `<div class="alert alert-danger">Error loading data: ${error.message}</div>`;
+        
+        // Create detailed error display
+        let errorHTML = `
+          <div class="alert alert-danger" style="margin: 2rem; padding: 2rem;">
+            <h3><i class="fas fa-exclamation-triangle"></i> Firebase Connection Error</h3>
+            <p><strong>Error:</strong> ${error.message}</p>
+            
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.1); border-radius: 8px;">
+              <h4>Why This Happens:</h4>
+              <ul style="text-align: left; margin: 1rem 0;">
+                <li><strong>WiFi/Network Blocking:</strong> Your WiFi provider or network may be blocking Firebase domains (firebaseapp.com, googleapis.com)</li>
+                <li><strong>Government Firewall:</strong> Myanmar government may be blocking Google/Firebase services on certain networks</li>
+                <li><strong>iOS Safari:</strong> iOS has stricter network security policies that may block connections</li>
+                <li><strong>DNS Issues:</strong> DNS servers may not resolve Firebase domains correctly</li>
+              </ul>
+            </div>
+            
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.1); border-radius: 8px;">
+              <h4>Why It Works on Android/Mobile Data:</h4>
+              <ul style="text-align: left; margin: 1rem 0;">
+                <li>Mobile data providers use different DNS/routing that may bypass blocks</li>
+                <li>Android may have different network stack behavior</li>
+                <li>Mobile data may not be subject to the same firewall rules</li>
+              </ul>
+            </div>
+            
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(0,150,0,0.1); border-radius: 8px;">
+              <h4>Solutions:</h4>
+              <ul style="text-align: left; margin: 1rem 0;">
+                <li><strong>Try Mobile Data:</strong> Switch from WiFi to mobile data</li>
+                <li><strong>Use VPN:</strong> If available, use a VPN to bypass network blocks</li>
+                <li><strong>Contact Network Admin:</strong> Ask your network administrator to whitelist Firebase domains</li>
+                <li><strong>Check DNS Settings:</strong> Try using different DNS servers (e.g., 8.8.8.8, 1.1.1.1)</li>
+                <li><strong>Run Diagnostics:</strong> Open browser console and run: <code>testFirebaseConnectivity()</code></li>
+              </ul>
+            </div>
+            
+            <div style="margin-top: 1.5rem;">
+              <button onclick="testFirebaseConnectivity().then(r => displayDiagnosticResults(r))" 
+                      class="btn btn-primary" style="margin-right: 1rem;">
+                <i class="fas fa-diagnostic"></i> Run Network Diagnostics
+              </button>
+              <button onclick="location.reload()" class="btn btn-secondary">
+                <i class="fas fa-redo"></i> Retry
+              </button>
+            </div>
+            
+            <details style="margin-top: 1rem; text-align: left;">
+              <summary style="cursor: pointer; padding: 0.5rem;">Technical Details</summary>
+              <pre style="background: rgba(0,0,0,0.2); padding: 1rem; margin-top: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">${JSON.stringify({
+                error: error.message,
+                code: error.code,
+                platform: navigator.platform,
+                userAgent: navigator.userAgent,
+                onLine: navigator.onLine,
+                connectionType: navigator.connection ? navigator.connection.effectiveType : 'unknown'
+              }, null, 2)}</pre>
+            </details>
+          </div>
+        `;
+        
+        document.body.innerHTML = errorHTML;
       }
     }
 
