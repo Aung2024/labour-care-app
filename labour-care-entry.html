@@ -476,17 +476,31 @@
       
       const startMin = sh * 60 + sm;
       
-      // Generate first stage timepoints with BOTH 30-min and 1-hour intervals
-      let currentMin = startMin;
-      const endMin = startMin + (12 * 60); // 12 hours
+      // Check if first and second stage times are the same
+      const timesAreSame = secondStageMin !== null && secondStageMin === startMin;
       
-      if (secondStageMin !== null && secondStageMin <= currentMin) {
-        // If second stage is before or at start, skip first stage
-        console.log('⚠️ Second stage is at or before start time, skipping first stage');
+      // If times are the same, start 3 hours before the start time
+      let effectiveStartMin = startMin;
+      if (timesAreSame) {
+        effectiveStartMin = startMin - (3 * 60); // 3 hours before
+        if (effectiveStartMin < 0) {
+          effectiveStartMin += 24 * 60; // Wrap around midnight
+        }
+        console.log('⚠️ First and second stage times are the same - starting 3 hours before:', effectiveStartMin);
+      }
+      
+      // Generate first stage timepoints with BOTH 30-min and 1-hour intervals
+      let currentMin = effectiveStartMin;
+      const endMin = startMin + (12 * 60); // 12 hours from actual start
+      
+      if (secondStageMin !== null && secondStageMin < startMin && !timesAreSame) {
+        // If second stage is before start (and not same), skip first stage
+        console.log('⚠️ Second stage is before start time, skipping first stage');
       } else {
         // Generate 30-minute intervals (for FHR and Contractions)
-        currentMin = startMin;
-        while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin - 30)) {
+        currentMin = effectiveStartMin;
+        const stopBeforeSecondStage = secondStageMin !== null && !timesAreSame ? secondStageMin - 30 : endMin;
+        while (currentMin <= stopBeforeSecondStage) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
@@ -500,10 +514,6 @@
           
           currentMin += 30;
           
-          if (secondStageMin !== null && currentMin >= secondStageMin) {
-            break;
-          }
-          
           if (result.length > 100) {
             console.error('❌ Too many timepoints generated, breaking loop');
             break;
@@ -511,9 +521,11 @@
         }
         
         // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
-        currentMin = startMin;
+        // If times are the same, still generate 1-hour intervals starting from 3 hours before
+        currentMin = effectiveStartMin;
         let hourCount = 0;
-        while (secondStageMin === null ? (currentMin <= endMin) : (currentMin < secondStageMin)) {
+        const stopBeforeSecondStageHourly = secondStageMin !== null && !timesAreSame ? secondStageMin : endMin;
+        while (currentMin <= stopBeforeSecondStageHourly) {
           const totalMins = currentMin % (24 * 60);
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
@@ -530,10 +542,6 @@
           
           currentMin += 60;
           
-          if (secondStageMin !== null && currentMin >= secondStageMin) {
-            break;
-          }
-          
           if (hourCount > 50) {
             console.error('❌ Too many 1-hour timepoints, breaking loop');
             break;
@@ -548,7 +556,7 @@
         console.log('🎯 Starting second stage timepoint generation at:', secondStageMin);
         // Start exactly at second stage time
         currentMin = secondStageMin;
-        const endSecondStageMin = secondStageMin + (15 * 6); // 6 intervals of 15 min = 90 min
+        const endSecondStageMin = secondStageMin + (15 * 12); // 12 intervals of 15 min = 3 hours
         
         let secondStageCount = 0;
         while (currentMin <= endSecondStageMin) {
@@ -569,7 +577,7 @@
           
           currentMin += 15;
         }
-        console.log(`✅ Generated ${secondStageCount} second stage timepoints`);
+        console.log(`✅ Generated ${secondStageCount} second stage timepoints (3 hours)`);
       }
       
       state.timepoints = result;

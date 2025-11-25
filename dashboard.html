@@ -1516,17 +1516,11 @@
           const patientRef = db.collection('patients').doc(doc.id);
 
           try {
-            // Use cache-first strategy with server fallback
-            const queryWithFallback = async (cacheQuery, serverQuery, timeout = 10000) => {
+            // Query with timeout protection
+            const queryWithTimeout = async (queryPromise, timeout = 10000) => {
               try {
-                // Try cache first
-                const cacheResult = await cacheQuery;
-                if (cacheResult && !cacheResult.empty) {
-                  return cacheResult;
-                }
-                // Cache empty, try server
                 return await Promise.race([
-                  serverQuery,
+                  queryPromise,
                   new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('Query timeout')), timeout)
                   )
@@ -1548,59 +1542,37 @@
               transferRecordDoc,
               outcomeRecordDoc
             ] = await Promise.all([
-              queryWithFallback(
-                patientRef.collection('antenatal_visits')
-                  .orderBy('visitDate', 'desc')
-                  .limit(5)
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('antenatal_visits')
                   .orderBy('visitDate', 'desc')
                   .limit(5)
                   .get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('postpartum_visits')
-                  .orderBy('visitDate', 'desc')
-                  .limit(5)
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('postpartum_visits')
                   .orderBy('visitDate', 'desc')
                   .limit(5)
                   .get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('testRecords')
-                  .orderBy('testDate', 'desc')
-                  .limit(3)
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('testRecords')
                   .orderBy('testDate', 'desc')
                   .limit(3)
                   .get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('records').doc('summary')
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('records').doc('summary').get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('records').doc('birthRecord')
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('records').doc('birthRecord').get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('records').doc('endTreatment')
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('records').doc('endTreatment').get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('records').doc('transferRecord')
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('records').doc('transferRecord').get({ source: 'server' })
               ),
-              queryWithFallback(
-                patientRef.collection('records').doc('outcomeRecord')
-                  .get({ source: 'cache' }),
+              queryWithTimeout(
                 patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' })
               )
             ]);

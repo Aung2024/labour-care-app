@@ -408,17 +408,11 @@
     });
 
     function loadUserData() {
-      // Try cache first, then server with timeout
-      Promise.race([
-        db.collection("users").doc(currentUser.uid).get({ source: 'cache' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 100))
-      ]).catch(() => {
-        // Fallback to server with timeout
-        return Promise.race([
-          db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 8000))
-        ]);
-      }).then(doc => {
+      // Get from server with timeout
+      return Promise.race([
+        db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 8000))
+      ]).then(doc => {
         if (doc.exists) {
           const userData = doc.data();
           userRole = userData.role;
@@ -501,8 +495,7 @@
         if (userRole === "TMO") {
           try {
             const userDoc = await queryWithTimeout(
-              db.collection("users").doc(currentUser.uid).get({ source: 'cache' })
-                .catch(() => db.collection("users").doc(currentUser.uid).get({ source: 'server' })),
+              db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
               5000
             );
             if (userDoc && userDoc.exists) {
@@ -519,16 +512,14 @@
         if (userRole === "Super Admin" || userRole === "admin") {
           // Super Admin sees all patients
           querySnapshot = await queryWithTimeout(
-            db.collection("patients").get({ source: 'cache' })
-              .catch(() => db.collection("patients").get({ source: 'server' })),
+            db.collection("patients").get({ source: 'server' }),
             10000
           );
         } else if (userRole === "TMO") {
           // TMO sees patients from their township
           if (userTownship) {
             querySnapshot = await queryWithTimeout(
-              db.collection("patients").where("township", "==", userTownship).get({ source: 'cache' })
-                .catch(() => db.collection("patients").where("township", "==", userTownship).get({ source: 'server' })),
+              db.collection("patients").where("township", "==", userTownship).get({ source: 'server' }),
               10000
             );
           } else {
@@ -540,8 +531,7 @@
           let snapNew, snapOld;
           try {
             snapNew = await queryWithTimeout(
-              db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'cache' })
-                .catch(() => db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'server' })),
+              db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'server' }),
               8000
             );
           } catch (error) {
@@ -551,8 +541,7 @@
           
           try {
             snapOld = await queryWithTimeout(
-              db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'cache' })
-                .catch(() => db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'server' })),
+              db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'server' }),
               8000
             );
           } catch (error) {
@@ -595,12 +584,7 @@
                     .doc(doc.id)
                     .collection("records")
                     .doc("birthRecord")
-                    .get({ source: 'cache' })
-                    .catch(() => db.collection("patients")
-                      .doc(doc.id)
-                      .collection("records")
-                      .doc("birthRecord")
-                      .get({ source: 'server' })),
+                    .get({ source: 'server' }),
                   3000
                 );
                 
@@ -651,12 +635,7 @@
                   .doc(doc.id)
                   .collection("records")
                   .doc("birthRecord")
-                  .get({ source: 'cache' })
-                  .catch(() => db.collection("patients")
-                    .doc(doc.id)
-                    .collection("records")
-                    .doc("birthRecord")
-                    .get({ source: 'server' })),
+                  .get({ source: 'server' }),
                 3000
               );
               

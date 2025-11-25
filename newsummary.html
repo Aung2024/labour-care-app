@@ -4949,8 +4949,17 @@
       // Generate hybrid contractions time columns
       contractionsTimeCols = [];
       
+      // Check if first and second stage times are the same
+      const timesAreSame = activeFirstStageStartTime === secondStageStartTime;
+      
       // Phase 1: Generate 30-minute intervals up to (but not including) second stage time
+      // If times are the same, start 3 hours before the start time
       let currentTime = new Date(startTimeDate);
+      if (timesAreSame) {
+        currentTime.setHours(currentTime.getHours() - 3); // 3 hours before
+        console.log(`  ⚠️ Times are the same - starting 3 hours before: ${currentTime.toTimeString().slice(0, 5)}`);
+      }
+      
       while (currentTime < secondStageDate) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         contractionsTimeCols.push(timeStr);
@@ -4963,11 +4972,11 @@
       contractionsTimeCols.push(exactSecondStageTime);
       console.log(`  Added ${exactSecondStageTime} (EXACT second stage time)`);
       
-      // Phase 3: Continue with 15-minute intervals for 4 hours after second stage
+      // Phase 3: Continue with 15-minute intervals for 3 hours after second stage
       currentTime = new Date(secondStageDate);
       currentTime.setMinutes(currentTime.getMinutes() + 15); // Start 15 minutes after second stage
       const endTime = new Date(secondStageDate);
-      endTime.setHours(endTime.getHours() + 4); // 4 hours after second stage
+      endTime.setHours(endTime.getHours() + 3); // 3 hours after second stage
       
       while (currentTime <= endTime) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
@@ -4980,7 +4989,13 @@
       babyBaselineTimeCols = [];
       
       // Phase 1: Generate 30-minute intervals up to (but not including) second stage time
+      // If times are the same, start 3 hours before the start time
       currentTime = new Date(startTimeDate);
+      if (timesAreSame) {
+        currentTime.setHours(currentTime.getHours() - 3); // 3 hours before
+        console.log(`  FHR: ⚠️ Times are the same - starting 3 hours before: ${currentTime.toTimeString().slice(0, 5)}`);
+      }
+      
       while (currentTime < secondStageDate) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         babyBaselineTimeCols.push(timeStr);
@@ -4992,11 +5007,13 @@
       babyBaselineTimeCols.push(exactSecondStageTime);
       console.log(`  FHR: Added ${exactSecondStageTime} (EXACT second stage time)`);
       
-      // Phase 3: Continue with 15-minute intervals for 4 hours after second stage
+      // Phase 3: Continue with 15-minute intervals for 3 hours after second stage
       currentTime = new Date(secondStageDate);
       currentTime.setMinutes(currentTime.getMinutes() + 15); // Start 15 minutes after second stage
+      const endTimeFHR = new Date(secondStageDate);
+      endTimeFHR.setHours(endTimeFHR.getHours() + 3); // 3 hours after second stage
       
-      while (currentTime <= endTime) {
+      while (currentTime <= endTimeFHR) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         babyBaselineTimeCols.push(timeStr);
         console.log(`  FHR: Added ${timeStr} (15-min interval, after second stage)`);
@@ -5007,7 +5024,13 @@
       cervixPlotTimeCols = [];
       
       // Phase 1: Generate 1-hour intervals up to (but not including) second stage time
+      // If times are the same, start 3 hours before the start time
       currentTime = new Date(startTimeDate);
+      if (timesAreSame) {
+        currentTime.setHours(currentTime.getHours() - 3); // 3 hours before
+        console.log(`  Cervix: ⚠️ Times are the same - starting 3 hours before: ${currentTime.toTimeString().slice(0, 5)}`);
+      }
+      
       while (currentTime < secondStageDate) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         cervixPlotTimeCols.push(timeStr);
@@ -5019,11 +5042,13 @@
       cervixPlotTimeCols.push(exactSecondStageTime);
       console.log(`  Cervix: Added ${exactSecondStageTime} (EXACT second stage time)`);
       
-      // Phase 3: Continue with 15-minute intervals for 4 hours after second stage
+      // Phase 3: Continue with 15-minute intervals for 3 hours after second stage
       currentTime = new Date(secondStageDate);
       currentTime.setMinutes(currentTime.getMinutes() + 15); // Start 15 minutes after second stage
+      const endTimeCervix = new Date(secondStageDate);
+      endTimeCervix.setHours(endTimeCervix.getHours() + 3); // 3 hours after second stage
       
-      while (currentTime <= endTime) {
+      while (currentTime <= endTimeCervix) {
         const timeStr = currentTime.toTimeString().slice(0, 5);
         cervixPlotTimeCols.push(timeStr);
         console.log(`  Cervix: Added ${timeStr} (15-min interval, after second stage)`);
@@ -5058,37 +5083,65 @@
       const startMinute = parseInt(activeFirstStageStartTime.split(':')[1]);
       console.log(`  Start time: ${startHour}:${startMinute}`);
       
-      // Supportive Care: +1 hour intervals for 12 hours
-      supportiveCareTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        supportiveCareTimeCols.push(timeStr);
-      }
+      // Helper function to generate time columns with exact second stage time included
+      const generateWithSecondStage = () => {
+        const timeCols = [];
+        const startTimeDate = new Date(`2000-01-01T${activeFirstStageStartTime}:00`);
+        const endTimeDate = new Date(startTimeDate);
+        endTimeDate.setHours(endTimeDate.getHours() + 12); // 12-hour horizon
+        
+        // Check if first and second stage times are the same
+        const timesAreSame = secondStageStartTime && isSecondStageActive && 
+                            activeFirstStageStartTime === secondStageStartTime;
+        
+        let currentTime = new Date(startTimeDate);
+        
+        // If times are the same, start 3 hours before the start time
+        if (timesAreSame) {
+          currentTime.setHours(currentTime.getHours() - 3); // 3 hours before
+          console.log(`  ⚠️ Times are the same - starting 3 hours before: ${currentTime.toTimeString().slice(0, 5)}`);
+        }
+        
+        // Add exact second stage time if it exists
+        if (secondStageStartTime && isSecondStageActive) {
+          const secondStageDate = new Date(`2000-01-01T${secondStageStartTime}:00`);
+          const exactSecondStageTime = secondStageStartTime;
+          
+          // Generate 1-hour intervals up to (but not including) second stage
+          // If times are same, we already started 3 hours before, so generate from there
+          while (currentTime < secondStageDate) {
+            const timeStr = currentTime.toTimeString().slice(0, 5);
+            timeCols.push(timeStr);
+            currentTime.setHours(currentTime.getHours() + 1);
+          }
+          
+          // Add the EXACT second stage time
+          timeCols.push(exactSecondStageTime);
+          console.log(`  Added ${exactSecondStageTime} (EXACT second stage time)`);
+          
+          // Continue 1-hour intervals after second stage
+          currentTime = new Date(secondStageDate);
+          currentTime.setHours(currentTime.getHours() + 1);
+        }
+        
+        // Generate remaining 1-hour intervals
+        while (currentTime <= endTimeDate) {
+          const timeStr = currentTime.toTimeString().slice(0, 5);
+          timeCols.push(timeStr);
+          currentTime.setHours(currentTime.getHours() + 1);
+        }
+        
+        return timeCols;
+      };
       
-      // Baby Other, Woman, Medication, Assessment, Initials: +1 hour intervals for 12 hours
-      babyOtherTimeCols = [];
-      womanTimeCols = [];
-      medicationTimeCols = [];
-      assessmentTimeCols = [];
-      initialsTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        babyOtherTimeCols.push(timeStr);
-        womanTimeCols.push(timeStr);
-        medicationTimeCols.push(timeStr);
-        assessmentTimeCols.push(timeStr);
-        initialsTimeCols.push(timeStr);
-      }
-      
-      // Descent Plot: +1 hour intervals for 12 hours
-      descentPlotTimeCols = [];
-      for (let i = 0; i <= 12; i++) {
-        const hour = (startHour + i) % 24;
-        const timeStr = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}`;
-        descentPlotTimeCols.push(timeStr);
-      }
+      // Generate time columns with second stage support
+      supportiveCareTimeCols = generateWithSecondStage();
+      babyOtherTimeCols = generateWithSecondStage();
+      womanTimeCols = generateWithSecondStage();
+      medicationTimeCols = generateWithSecondStage();
+      assessmentTimeCols = generateWithSecondStage();
+      initialsTimeCols = generateWithSecondStage();
+      descentPlotTimeCols = generateWithSecondStage();
       
       // Plan: +2 hour intervals for 12 hours
       planTimeCols = [];

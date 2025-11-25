@@ -820,30 +820,16 @@
         if (userRole === 'Midwife') {
           query = query.where('created_by', '==', currentUser.uid);
         } else if (userRole === 'TMO') {
-          const userDoc = await db.collection('users').doc(currentUser.uid).get({ source: 'cache' }).catch(() => 
-            db.collection('users').doc(currentUser.uid).get()
-          );
+          const userDoc = await db.collection('users').doc(currentUser.uid).get({ source: 'server' });
           const userTownship = userDoc.data().township;
           query = query.where('township', '==', userTownship);
         }
 
-        // Try cache first (fast), then fallback to server if cache is empty or fails
-        let snapshot;
-        try {
-          const cacheSnapshot = await query.get({ source: 'cache' });
-          if (!cacheSnapshot.empty) {
-            console.log('Loaded from cache');
-            snapshot = cacheSnapshot;
-          } else {
-            throw new Error('Cache empty');
-          }
-        } catch (cacheError) {
-          console.log('Cache miss or empty, loading from server...');
-          snapshot = await Promise.race([
-            query.get({ source: 'server' }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 15000))
-          ]);
-        }
+        // Load from server with timeout
+        const snapshot = await Promise.race([
+          query.get({ source: 'server' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 15000))
+        ]);
         
         allPatients = [];
         snapshot.forEach(doc => {
@@ -877,27 +863,8 @@
         console.error('Error loading patients:', error);
         document.getElementById('loadingContainer').style.display = 'none';
         
-        // Try to show cached data if available
-        try {
-          const db = firebase.firestore();
-          let query = db.collection('patients');
-          if (userRole === 'Midwife') {
-            query = query.where('created_by', '==', currentUser.uid);
-          }
-          const cachedSnapshot = await query.get({ source: 'cache' });
-          if (!cachedSnapshot.empty) {
-            allPatients = [];
-            cachedSnapshot.forEach(doc => {
-              allPatients.push({ id: doc.id, ...doc.data() });
-            });
-            filteredPatients = [...allPatients];
-            displayPatients();
-            alert('Showing cached data. Please check your internet connection.');
-            return;
-          }
-        } catch (cacheError) {
-          console.error('Cache fallback failed:', cacheError);
-        }
+        // Show error message
+        console.error('Failed to load patients from server');
         
         alert('Error loading patients: ' + error.message);
       }
