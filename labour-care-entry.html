@@ -490,17 +490,23 @@
       }
       
       // Generate first stage timepoints with BOTH 30-min and 1-hour intervals
+      // Stop at second stage time (or endMin if no second stage)
       let currentMin = effectiveStartMin;
       const endMin = startMin + (12 * 60); // 12 hours from actual start
+      
+      // Determine where to stop first stage generation
+      // If second stage exists, stop just before it (or at it if times are same)
+      const firstStageEndMin = secondStageMin !== null ? secondStageMin : endMin;
       
       if (secondStageMin !== null && secondStageMin < startMin && !timesAreSame) {
         // If second stage is before start (and not same), skip first stage
         console.log('⚠️ Second stage is before start time, skipping first stage');
       } else {
         // Generate 30-minute intervals (for FHR and Contractions)
+        // Stop 30 minutes before second stage (or at endMin if no second stage)
         currentMin = effectiveStartMin;
-        const stopBeforeSecondStage = secondStageMin !== null && !timesAreSame ? secondStageMin - 30 : endMin;
-        while (currentMin <= stopBeforeSecondStage) {
+        const stopBeforeSecondStage = secondStageMin !== null ? Math.max(effectiveStartMin, secondStageMin - 30) : endMin;
+        while (currentMin < stopBeforeSecondStage) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
@@ -521,11 +527,12 @@
         }
         
         // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
-        // If times are the same, still generate 1-hour intervals starting from 3 hours before
+        // Stop at second stage time (or endMin if no second stage)
+        // When times are same, stop at secondStageMin (not endMin)
         currentMin = effectiveStartMin;
         let hourCount = 0;
-        const stopBeforeSecondStageHourly = secondStageMin !== null && !timesAreSame ? secondStageMin : endMin;
-        while (currentMin <= stopBeforeSecondStageHourly) {
+        const stopBeforeSecondStageHourly = secondStageMin !== null ? secondStageMin : endMin;
+        while (currentMin < stopBeforeSecondStageHourly) {
           const totalMins = currentMin % (24 * 60);
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
@@ -548,17 +555,17 @@
           }
         }
         
-        console.log(`✅ Generated ${hourCount} 1-hour interval timepoints`);
+        console.log(`✅ Generated ${hourCount} 1-hour interval timepoints (stopped at ${stopBeforeSecondStageHourly})`);
       }
       
       // Generate second stage timepoints if applicable
       if (secondStageMin !== null) {
         console.log('🎯 Starting second stage timepoint generation at:', secondStageMin);
-        // Start exactly at second stage time
-        currentMin = secondStageMin;
         const endSecondStageMin = secondStageMin + (15 * 12); // 12 intervals of 15 min = 3 hours
         
-        let secondStageCount = 0;
+        // Generate 15-minute intervals for second stage (for FHR, Contractions, Cervix)
+        currentMin = secondStageMin;
+        let secondStage15minCount = 0;
         while (currentMin <= endSecondStageMin) {
           const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
           const h = Math.floor(totalMins / 60);
@@ -572,12 +579,35 @@
           };
           
           result.push(tp);
-          secondStageCount++;
-          console.log(`  ✅ Added second stage pill: ${timeStr} (count: ${secondStageCount})`);
+          secondStage15minCount++;
+          console.log(`  ✅ Added second stage 15-min pill: ${timeStr} (count: ${secondStage15minCount})`);
           
           currentMin += 15;
         }
-        console.log(`✅ Generated ${secondStageCount} second stage timepoints (3 hours)`);
+        console.log(`✅ Generated ${secondStage15minCount} second stage 15-min timepoints`);
+        
+        // Generate 1-hour intervals for second stage (for Support, Woman, Baby, Meds, SDM, etc.)
+        currentMin = secondStageMin;
+        let secondStage60minCount = 0;
+        while (currentMin <= endSecondStageMin) {
+          const totalMins = currentMin % (24 * 60);
+          const h = Math.floor(totalMins / 60);
+          const m = totalMins % 60;
+          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          
+          const tp = {
+            time: timeStr,
+            isSecondStage: true,
+            interval: '60min'
+          };
+          
+          result.push(tp);
+          secondStage60minCount++;
+          console.log(`  ✅ Added second stage 1-hour pill: ${timeStr} (count: ${secondStage60minCount})`);
+          
+          currentMin += 60;
+        }
+        console.log(`✅ Generated ${secondStage60minCount} second stage 1-hour timepoints (3 hours total)`);
       }
       
       state.timepoints = result;
