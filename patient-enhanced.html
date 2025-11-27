@@ -1872,9 +1872,9 @@
   }
 
   // Preview function: Get the next ID without incrementing the counter
-  async function previewNextPatientId(regionShortRaw, tspCodeRaw) {
+  async function previewNextPatientId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
     try {
-      console.log('previewNextPatientId called with:', { regionShortRaw, tspCodeRaw });
+      console.log('previewNextPatientId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
       const user = firebase.auth().currentUser;
@@ -1885,10 +1885,16 @@
       const db = firebase.firestore();
       const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
       const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+      // Sanitize facility code to ensure it's 3 digits
+      let facilityCode = (facilityCodeRaw || '003').toString().trim().padStart(3, '0').substring(0, 3);
+      if (!/^\d{3}$/.test(facilityCode)) {
+        console.warn('Invalid facility code, defaulting to 003:', facilityCodeRaw);
+        facilityCode = '003';
+      }
       const yearSuffix = new Date().getFullYear().toString().slice(-2);
-      // Counter ID uses only TSP code (region short code removed as it's redundant)
+      // Counter ID now includes facility code: TSP_CODE_FACILITY_CODE_YEAR
       const sanitizedTspCode = tspCode.replace(/[^A-Za-z0-9]/g, '');
-      const counterId = `${sanitizedTspCode}_${yearSuffix}`;
+      const counterId = `${sanitizedTspCode}_${facilityCode}_${yearSuffix}`;
       const counterRef = db.collection('patient_counters').doc(counterId);
       
       console.log('Reading current serial for preview, counter ID:', counterId);
@@ -1906,9 +1912,9 @@
       
       // Calculate what the next ID would be (without actually incrementing)
       const nextSerial = currentSerial + 1;
-      const serialStr = String(nextSerial).padStart(6, '0');
-      // Patient ID format: TSP_CODE-YEAR_SERIAL (region short code removed)
-      const previewId = `${tspCode}-${yearSuffix}${serialStr}`;
+      const serialStr = String(nextSerial).padStart(4, '0'); // Changed to 4 digits
+      // New Patient ID format: TSP_CODE-FACILITY_CODE-YYNNNN
+      const previewId = `${tspCode}-${facilityCode}-${yearSuffix}${serialStr}`;
       console.log('Preview ID calculated:', previewId);
       
       return {
@@ -1916,6 +1922,7 @@
         meta: {
           regionShort,
           tspCode,
+          facilityCode,
           yearSuffix,
           serial: nextSerial
         }
@@ -1926,9 +1933,9 @@
     }
   }
 
-  async function generatePatientUniqueId(regionShortRaw, tspCodeRaw) {
+  async function generatePatientUniqueId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
     try {
-      console.log('generatePatientUniqueId called with:', { regionShortRaw, tspCodeRaw });
+      console.log('generatePatientUniqueId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
       const user = firebase.auth().currentUser;
@@ -1940,10 +1947,16 @@
       const db = firebase.firestore();
       const regionShort = sanitizeCodeSegment(regionShortRaw, 'GEN');
       const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+      // Sanitize facility code to ensure it's 3 digits
+      let facilityCode = (facilityCodeRaw || '003').toString().trim().padStart(3, '0').substring(0, 3);
+      if (!/^\d{3}$/.test(facilityCode)) {
+        console.warn('Invalid facility code, defaulting to 003:', facilityCodeRaw);
+        facilityCode = '003';
+      }
       const yearSuffix = new Date().getFullYear().toString().slice(-2);
-      // Counter ID uses only TSP code (region short code removed as it's redundant)
+      // Counter ID now includes facility code: TSP_CODE_FACILITY_CODE_YEAR
       const sanitizedTspCode = tspCode.replace(/[^A-Za-z0-9]/g, '');
-      const counterId = `${sanitizedTspCode}_${yearSuffix}`;
+      const counterId = `${sanitizedTspCode}_${facilityCode}_${yearSuffix}`;
       const counterRef = db.collection('patient_counters').doc(counterId);
       
       console.log('Counter reference:', counterId);
@@ -1975,9 +1988,9 @@
       });
 
       console.log('Transaction completed. Next serial:', nextSerial);
-      const serialStr = String(nextSerial).padStart(6, '0');
-      // Patient ID format: TSP_CODE-YEAR_SERIAL (region short code removed)
-      const uniqueId = `${tspCode}-${yearSuffix}${serialStr}`;
+      const serialStr = String(nextSerial).padStart(4, '0'); // Changed to 4 digits
+      // New Patient ID format: TSP_CODE-FACILITY_CODE-YYNNNN
+      const uniqueId = `${tspCode}-${facilityCode}-${yearSuffix}${serialStr}`;
       console.log('Generated unique ID:', uniqueId);
       
       return {
@@ -1985,6 +1998,7 @@
         meta: {
           regionShort,
           tspCode,
+          facilityCode,
           yearSuffix,
           serial: nextSerial
         }
@@ -2054,6 +2068,10 @@
           const tspCodeInput = document.getElementById('tspCode');
           const tspCodeDisplay = document.getElementById('tspCodeDisplay');
 
+          // Get facility code from user data (default to 003 if not set)
+          const facilityCode = userData.facility_code || '003';
+          console.log('Facility code from user data:', facilityCode);
+          
           const locationMetadata = getLocationMetadataByTownship(township);
           let regionShort = 'UNK';
           let tspCode = 'UNK-0';
@@ -2077,7 +2095,7 @@
             try {
               console.log('Loading preview ID...');
               patientUniqueIdDisplay.value = 'Loading...';
-              const previewResult = await previewNextPatientId(regionShort, tspCode);
+              const previewResult = await previewNextPatientId(regionShort, tspCode, facilityCode);
               if (patientUniqueIdDisplay) {
                 patientUniqueIdDisplay.value = previewResult.uniqueId;
                 patientUniqueIdDisplay.placeholder = previewResult.uniqueId;
@@ -2557,8 +2575,11 @@
           console.log('User township from Firestore:', userData.township);
         }
         
-        const userTownship = userDoc.exists ? userDoc.data().township : "";
+        const userData = userDoc.exists ? userDoc.data() : {};
+        const userTownship = userData.township || "";
+        const facilityCode = userData.facility_code || '003'; // Default to 003 (Other) if not set
         console.log('Township to assign to patient:', userTownship);
+        console.log('Facility code from user data:', facilityCode);
         
         // Validate township
         if (!userTownship || userTownship.trim() === '') {
@@ -2595,7 +2616,7 @@
         }
         if (!data.patientUniqueId) {
           try {
-            const idResult = await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode);
+            const idResult = await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode, facilityCode);
             data.patientUniqueId = idResult.uniqueId;
             if (patientUniqueIdHidden) patientUniqueIdHidden.value = idResult.uniqueId;
             if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = idResult.uniqueId;
@@ -2745,6 +2766,21 @@
           // Reload preview ID after reset (read-only, doesn't increment counter)
           if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
           
+          // Get facility code from user document
+          let facilityCode = '003'; // Default
+          try {
+            const user = firebase.auth().currentUser;
+            if (user) {
+              const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                facilityCode = userData.facility_code || '003';
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to get facility code, using default:', error);
+          }
+          
           const regionShortInput = document.getElementById('regionShort');
           const tspCodeInput = document.getElementById('tspCode');
           const regionShort = regionShortInput ? regionShortInput.value : '';
@@ -2753,7 +2789,7 @@
           if (patientUniqueIdDisplay && regionShort && tspCode && regionShort !== 'UNK' && tspCode !== 'UNK-0') {
             try {
               patientUniqueIdDisplay.value = 'Loading...';
-              const previewResult = await previewNextPatientId(regionShort, tspCode);
+              const previewResult = await previewNextPatientId(regionShort, tspCode, facilityCode);
               if (patientUniqueIdDisplay) {
                 patientUniqueIdDisplay.value = previewResult.uniqueId;
                 patientUniqueIdDisplay.placeholder = previewResult.uniqueId;
