@@ -815,7 +815,7 @@
 
         <div class="row g-3 mt-1">
           <div class="col-md-4 col-sm-6">
-            <label for="tbSymptoms" class="form-label lang-text" data-en="Co-infection (TB/Malaria/Immuno-suppress symptoms)" data-mm="ကူးစက်ရောဂါ (TB/Malaria/Immuno-suppress လက္ခဏာများ)">Co-infection (TB/Malaria/Immuno-suppress symptoms)</label>
+            <label for="tbSymptoms" class="form-label lang-text" data-en="Co-infection symptoms (TB/Malaria/HIV)" data-mm="ကူးစက်ရောဂါ လက္ခဏာများ (TB/Malaria/HIV )">Co-infection symptoms (TB/Malaria/HIV)</label>
             <select id="tbSymptoms" name="tbSymptoms" class="form-control" onchange="toggleCoinfectionNotes()">
               <option value="">Select</option>
               <option value="Yes">Yes</option>
@@ -1354,13 +1354,25 @@
         document.getElementById('visitNumber').value = visitCount;
         
 
-        // Auto-calculate gestational age if LMP is available
+        // Auto-calculate gestational age if LMP is available (from patient record, not previous visit)
         if (currentPatient.lmp) {
-          calculateGestationalAge();
+          // Set LMP date if available from patient record
+          const lmpInput = document.getElementById('lmp');
+          if (lmpInput && currentPatient.lmp) {
+            // Convert Firestore timestamp to date string if needed
+            let lmpDate = currentPatient.lmp;
+            if (lmpDate && typeof lmpDate.toDate === 'function') {
+              lmpDate = lmpDate.toDate().toISOString().split('T')[0];
+            } else if (lmpDate && typeof lmpDate === 'string') {
+              lmpDate = lmpDate.split('T')[0];
+            }
+            lmpInput.value = lmpDate || '';
+            calculateGestationalAgeAndEDD();
+          }
         }
 
-        // Load existing visit data if available
-        await loadExistingVisitData();
+        // Don't load previous visit data - start each new visit with a fresh form
+        // await loadExistingVisitData();
 
       } catch (error) {
         console.error('Error loading patient info:', error);
@@ -2022,18 +2034,23 @@
           console.log('✅ Patient status updated to Antenatal Care');
         }
 
-        // Refresh the visit count to ensure accuracy
+        // Refresh the visit count to ensure accuracy and update visit number
         await loadVisitCount();
+        document.getElementById('visitNumber').value = visitCount;
         console.log('Visit count refreshed:', visitCount);
-
+        
         // Show mobile-friendly success message
         showSuccessMessage('Visit data saved successfully!');
         console.log('Visit data saved:', visitRef.id);
         
-        // Redirect to antenatal care main page after a short delay
-        setTimeout(() => {
-          window.location.href = 'antenatal-care.html';
-        }, 1500);
+        // Clear all form fields after successful save
+        clearFormFields();
+        
+        // Reset button state
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+        }
 
       } catch (error) {
         console.error('Error saving visit data:', error);
@@ -2045,6 +2062,112 @@
           submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
         }
       }
+    }
+
+    function clearFormFields() {
+      // Helper function to clear a field
+      const clearField = (id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (el.type === 'checkbox') {
+            el.checked = false;
+          } else if (el.type === 'radio') {
+            el.checked = false;
+          } else {
+            el.value = '';
+          }
+        }
+      };
+
+      // Set visit date to today (don't clear visit number, it will be updated separately)
+      setToday('visitDate');
+      
+      // Clear all input fields (visitNumber will be updated with new count after clearing)
+      clearField('otherVisitCount');
+      clearField('lmp');
+      clearField('edd');
+      clearField('manualGestationalAge');
+      clearField('manualEdd');
+      clearField('gestationalAgeDisplay');
+      clearField('weight');
+      clearField('heightFeet');
+      clearField('heightInches');
+      clearField('bloodPressure');
+      clearField('pulseRate');
+      clearField('temperature');
+      clearField('anemiaStatus');
+      clearField('pittingEdema');
+      clearField('tbSymptoms');
+      clearField('coinfectionNotes');
+      clearField('otherFindings');
+      clearField('fundalHeight');
+      clearField('fetalLie');
+      clearField('fetalPresentation');
+      clearField('fetalHeartRate');
+      clearField('ironFolicAcid');
+      clearField('tetanusToxoid');
+      clearField('vitaminB1');
+      clearField('micronutrientsTablet');
+      clearField('deworming');
+      clearField('nextVisitDate');
+      clearField('clinicalNotes');
+      clearField('pastHistoryNotes');
+      clearField('riskNotes');
+      clearField('otherMedications');
+      clearField('initial');
+
+      // Reset select dropdowns to default (first option)
+      const selects = document.querySelectorAll('select');
+      selects.forEach(select => {
+        if (select.options.length > 0) {
+          select.selectedIndex = 0;
+        }
+      });
+
+      // Uncheck all checkboxes
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+      });
+
+      // Reset radio buttons to default values
+      const radioGroups = {
+        'lmpStatus': 'known',
+        'pastHistoryStatus': 'nad',
+        'gbvSuspected': 'no',
+        'highRisk': 'no',
+        'dangerSignsPresent': 'no'
+      };
+
+      Object.keys(radioGroups).forEach(groupName => {
+        const defaultValue = radioGroups[groupName];
+        // Uncheck all radios in the group first
+        document.querySelectorAll(`input[name="${groupName}"]`).forEach(r => r.checked = false);
+        // Check the default radio button
+        const radio = document.querySelector(`input[name="${groupName}"][value="${defaultValue}"]`);
+        if (radio) {
+          radio.checked = true;
+        }
+      });
+
+      // Clear fetal movement radio buttons (no default)
+      document.querySelectorAll('input[name="fetalMovement"]').forEach(r => r.checked = false);
+
+      // Hide conditional sections
+      toggleLMPFields();
+      togglePastHistoryNotes();
+      toggleCoinfectionNotes();
+      toggleGBVDetails();
+      toggleHighRiskDetails();
+      toggleDangerSignsDetails();
+
+      // Clear temperature unit default
+      const tempUnit = document.getElementById('temperatureUnit');
+      if (tempUnit) {
+        tempUnit.value = 'C';
+      }
+
+      console.log('Form fields cleared successfully');
     }
 
     function showSuccessMessage(message) {
