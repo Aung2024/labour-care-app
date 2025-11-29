@@ -565,41 +565,70 @@
     });
     
     // Check if a cervix plot value should be highlighted as an alert based on time thresholds
+    // CORRECT LOGIC: Alert if cervix has been at this dilation level for the threshold duration
+    // (not since labor started, but since it first reached this dilation level)
     function checkCervixPlotAlert(cervixValue, dataValue, timeKey) {
       if (!dataValue || dataValue !== 'X') return false;
       
       // Define time thresholds for each cervix value (in hours)
+      // These represent: "How long can cervix be at this dilation before alert?"
       const timeThresholds = {
         '10': 0,    // No threshold for 10cm
-        '9': 2,     // ≥ 2h
-        '8': 2.5,   // ≥ 2.5h  
-        '7': 3,     // ≥ 3h
-        '6': 5,     // ≥ 5h
-        '5': 6      // ≥ 6h
+        '9': 2,     // ≥ 2h at 9cm
+        '8': 2.5,   // ≥ 2.5h at 8cm
+        '7': 3,     // ≥ 3h at 7cm
+        '6': 5,     // ≥ 5h at 6cm
+        '5': 6      // ≥ 6h at 5cm
       };
       
       const thresholdHours = timeThresholds[cervixValue];
       if (!thresholdHours) return false; // No threshold for this cervix value
       
       // Get the current time from the timeKey (format: "HH_MM")
-      const [hours, minutes] = timeKey.split('_').map(Number);
-      const currentTime = hours * 60 + minutes; // Convert to minutes
+      const [currentHours, currentMinutes] = timeKey.split('_').map(Number);
+      const currentTime = currentHours * 60 + currentMinutes; // Convert to minutes
       
-      // Get the active first stage start time
-      if (!activeFirstStageStartTime) return false;
-      const [startHours, startMinutes] = activeFirstStageStartTime.split(':').map(Number);
-      const startTime = startHours * 60 + startMinutes; // Convert to minutes
+      // Find the EARLIEST time this cervix value was marked with 'X'
+      // We need to check all time columns to find when this dilation level was first recorded
+      let firstOccurrenceTime = null;
       
-      // Calculate elapsed time in hours
-      let elapsedHours = (currentTime - startTime) / 60;
+      // Sort time columns chronologically to find the first occurrence
+      const sortedTimes = [...cervixPlotTimeCols].sort((a, b) => {
+        const [aH, aM] = a.split(':').map(Number);
+        const [bH, bM] = b.split(':').map(Number);
+        const aTime = aH * 60 + aM;
+        const bTime = bH * 60 + bM;
+        return aTime - bTime;
+      });
       
-      // Handle midnight crossing
-      if (elapsedHours < 0) {
-        elapsedHours += 24;
+      // Find the first occurrence of this cervix value
+      for (const time of sortedTimes) {
+        const timeKeyCheck = time.replace(':', '_');
+        const key = `Cervix_Plot_${cervixValue}_${timeKeyCheck}`;
+        const value = summaryData[key];
+        
+        if (value === 'X') {
+          const [firstH, firstM] = time.split(':').map(Number);
+          firstOccurrenceTime = firstH * 60 + firstM;
+          break; // Found the first occurrence
+        }
       }
       
-      // Check if elapsed time exceeds threshold
-      return elapsedHours >= thresholdHours;
+      // If we couldn't find a first occurrence, or if current time is before first occurrence, no alert
+      if (firstOccurrenceTime === null) return false;
+      
+      // Calculate duration from first occurrence to current time
+      let durationMinutes = currentTime - firstOccurrenceTime;
+      
+      // Handle midnight crossing
+      if (durationMinutes < 0) {
+        durationMinutes += 24 * 60; // Add 24 hours in minutes
+      }
+      
+      const durationHours = durationMinutes / 60;
+      
+      // Alert if cervix has been at this dilation level for threshold duration or longer
+      return durationHours >= thresholdHours;
     }
 
     // Check if a value should be highlighted as an alert (same logic as summary.html)
