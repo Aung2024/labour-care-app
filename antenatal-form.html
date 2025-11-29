@@ -1168,7 +1168,14 @@
           </div>
         </div>
 
-        <div class="card-subtitle mt-3"><i class="fas fa-capsules me-2"></i><span class="lang-text" data-en="Vitamin B1(10mg/day)" data-mm="ဗီတာမင်ဘီဝမ်း အားဆေး (တစ်နေ့လျှင် ၁၀မီလီဂရမ်)">Vitamin B1 (10mg/day)</span></div>
+        <div class="card-subtitle mt-3">
+          <i class="fas fa-capsules me-2"></i><span class="lang-text" data-en="Vitamin B1(10mg/day)" data-mm="ဗီတာမင်ဘီဝမ်း အားဆေး (တစ်နေ့လျှင် ၁၀မီလီဂရမ်)">Vitamin B1 (10mg/day)</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('vitaminB1Info')" title="Click for more information"></i>
+        </div>
+        <div id="vitaminB1Info" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="Vitamin B1 - 10mg daily throughout pregnancy" data-mm="ဗီတာမင် ဘီဝမ်းဆေးပြား 10 mg ကို တစ်နေ့လျှင် တစ်ကြိမ် မမွေးခင်  (၁)လ (ကိုယ်ဝန် (၃၆) ပတ်မှစတင်ပြီး) နှင့် မွေးပြီး (၃) လအထိ တိုက်ကျွေးရန်။">Vitamin B1 10mg daily 1 month before and 3 months after delivery</span>
+        </div>
         <div class="row g-3">
           <div class="col-md-4 col-sm-6">
             
@@ -1180,7 +1187,14 @@
             </div>
           </div>
           
-        <div class="card-subtitle mt-3"><i class="fas fa-tablets me-2"></i><span class="lang-text" data-en="Deworming" data-mm="သန်ချဆေးပြား">Deworming</span></div>
+        <div class="card-subtitle mt-3">
+          <i class="fas fa-tablets me-2"></i><span class="lang-text" data-en="Deworming" data-mm="သန်ချဆေးပြား">Deworming</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('dewormingInfo')" title="Click for more information"></i>
+        </div>
+        <div id="dewormingInfo" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="Deworming - Single dose during second trimester (after 12 weeks)" data-mm="ကိုယ်ဝန် ဒုတိယ (၃)လပတ်မှစ၍ သန်ချဆေး တစ်ကြိမ် တိုက်ကျွေးရန်။ ">Deworming after the first trimester</span>
+        </div>
         <div class="row g-3">
           <div class="col-md-4 col-sm-6">
        
@@ -1376,6 +1390,9 @@
           }
         }
 
+        // Load History Taking fields from first visit only (these should persist across visits)
+        await loadHistoryTakingFromFirstVisit();
+
         // Don't load previous visit data - start each new visit with a fresh form
         // await loadExistingVisitData();
 
@@ -1404,6 +1421,109 @@
       } catch (error) {
         console.error('Error loading visit count:', error);
         visitCount = 1;
+      }
+    }
+
+    async function loadHistoryTakingFromFirstVisit() {
+      try {
+        console.log('Loading History Taking fields from first visit for patient:', patientId);
+        
+        // Get the first visit (ordered by visitDate ascending, limit 1)
+        const firstVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'asc')
+          .limit(1)
+          .get();
+        
+        if (firstVisitSnapshot.empty) {
+          console.log('No first visit found - skipping History Taking load');
+          return;
+        }
+        
+        const firstVisit = firstVisitSnapshot.docs[0].data();
+        console.log('First visit data loaded:', firstVisit);
+        
+        // Helper function to safely set element value
+        const setValue = (id, value) => {
+          const el = document.getElementById(id);
+          if (el && value !== undefined && value !== null && value !== '') {
+            // Handle date fields
+            if (el.type === 'date') {
+              let dateValue = value;
+              if (dateValue && typeof dateValue.toDate === 'function') {
+                dateValue = dateValue.toDate().toISOString().split('T')[0];
+              } else if (dateValue && typeof dateValue === 'string') {
+                dateValue = dateValue.split('T')[0];
+              }
+              el.value = dateValue || '';
+            } else {
+              el.value = value;
+            }
+          }
+        };
+        
+        // Load LMP Status
+        if (firstVisit.lmpStatus) {
+          const lmpRadio = document.getElementById(firstVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
+          if (lmpRadio) {
+            lmpRadio.checked = true;
+            toggleLMPFields();
+          }
+        }
+        
+        // Load LMP date
+        if (firstVisit.lmp) {
+          setValue('lmp', firstVisit.lmp);
+          calculateGestationalAgeAndEDD();
+        }
+        
+        // Load EDD
+        if (firstVisit.edd) {
+          setValue('edd', firstVisit.edd);
+        }
+        
+        // Load manual GA/EDD if LMP unknown
+        if (firstVisit.manualGestationalAge) {
+          setValue('manualGestationalAge', firstVisit.manualGestationalAge);
+        }
+        if (firstVisit.manualEdd) {
+          setValue('manualEdd', firstVisit.manualEdd);
+        }
+        
+        // Load Gestational Age Display (calculated)
+        if (firstVisit.gestationalAge) {
+          setValue('gestationalAgeDisplay', firstVisit.gestationalAge);
+        }
+        
+        // Load Early ANC Visit checkbox
+        if (firstVisit.early_anc_visit !== undefined) {
+          const earlyAncCheckbox = document.getElementById('earlyAncVisit');
+          if (earlyAncCheckbox) {
+            earlyAncCheckbox.checked = firstVisit.early_anc_visit;
+          }
+        }
+        
+        // Load Past History Status
+        if (firstVisit.pastHistoryStatus) {
+          const historyRadio = document.querySelector(`input[name="pastHistoryStatus"][value="${firstVisit.pastHistoryStatus}"]`);
+          if (historyRadio) {
+            historyRadio.checked = true;
+            togglePastHistoryNotes();
+          }
+        }
+        
+        // Load Past History Notes
+        if (firstVisit.pastHistoryNotes) {
+          setValue('pastHistoryNotes', firstVisit.pastHistoryNotes);
+        }
+        
+        console.log('History Taking fields loaded from first visit');
+        
+      } catch (error) {
+        console.error('Error loading History Taking from first visit:', error);
+        // Don't show alert - just log the error as this is non-critical
       }
     }
 
