@@ -1542,12 +1542,49 @@
     }
     
     // Navigate to Carousel LCG
-    function navigateToLabourCarousel() {
+    async function navigateToLabourCarousel() {
       if (!selectedPatient || !selectedPatient.id) {
         alert('No patient selected');
         return;
       }
-      window.location.href = 'labour-care-setup.html?patient=' + selectedPatient.id;
+      
+      const patientId = selectedPatient.id;
+      
+      try {
+        // Check if Active First Stage time already exists
+        const base = firebase.firestore().collection("patients").doc(patientId);
+        
+        // Check in summary document first
+        const summaryDoc = await base.collection("records").doc("summary").get();
+        let startingTime = null;
+        
+        if (summaryDoc.exists) {
+          const summaryData = summaryDoc.data();
+          startingTime = summaryData.startingTime || summaryData.activeFirstStage_Time;
+        }
+        
+        // If not found in summary, check startingTime document
+        if (!startingTime) {
+          const startingTimeDoc = await base.collection("records").doc("startingTime").get();
+          if (startingTimeDoc.exists) {
+            startingTime = startingTimeDoc.data().startingTime;
+          }
+        }
+        
+        // If startingTime exists, go directly to entry page
+        if (startingTime) {
+          console.log('✅ Active First Stage time found:', startingTime, '- Redirecting directly to entry page');
+          window.location.href = 'labour-care-entry.html?patient=' + patientId;
+        } else {
+          // No starting time found, go to setup page
+          console.log('⚠️ No Active First Stage time found - Redirecting to setup page');
+          window.location.href = 'labour-care-setup.html?patient=' + patientId;
+        }
+      } catch (error) {
+        console.error('Error checking starting time:', error);
+        // On error, default to setup page
+        window.location.href = 'labour-care-setup.html?patient=' + patientId;
+      }
     }
 
     // Change patient
