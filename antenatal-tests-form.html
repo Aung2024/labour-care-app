@@ -306,6 +306,47 @@
       margin: 0.5rem 0 0;
       padding-left: 1.25rem;
     }
+
+    /* Highlight styles for select options */
+    .highlight-yellow {
+      background-color: #fef3c7 !important;
+      color: #92400e !important;
+      font-weight: 600;
+    }
+
+    .highlight-red {
+      background-color: #fee2e2 !important;
+      color: #991b1b !important;
+      font-weight: 600;
+    }
+
+    /* Style select elements when they have specific values */
+    .form-select.highlight-yellow {
+      background-color: #fef3c7;
+      border-color: #fbbf24;
+      color: #92400e;
+      font-weight: 600;
+    }
+
+    .form-select.highlight-red {
+      background-color: #fee2e2;
+      border-color: #ef4444;
+      color: #991b1b;
+      font-weight: 600;
+    }
+
+    /* Style option elements in dropdown */
+    option.highlight-yellow-option {
+      background-color: #fef3c7;
+      color: #92400e;
+      font-weight: 600;
+    }
+
+    option.highlight-red-option {
+      background-color: #fee2e2;
+      color: #991b1b;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -386,7 +427,7 @@
               <label class="form-label">Result</label>
               <select class="form-select" id="hivResult">
                 <option value="">Select Result</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="Reactive">Reactive</option>
                 <option value="Non-reactive">Non-reactive</option>
                 <option value="Indeterminate">Indeterminate</option>
@@ -403,7 +444,7 @@
               <label class="form-label">Result</label>
               <select class="form-select" id="malariaResult">
                 <option value="">Select Result</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="Positive">Positive</option>
                 <option value="Negative">Negative</option>
               </select>
@@ -419,7 +460,7 @@
               <label class="form-label">Result</label>
               <select class="form-select" id="syphilisResult">
                 <option value="">Select Result</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="Reactive">Reactive</option>
                 <option value="Non-reactive">Non-reactive</option>
               </select>
@@ -435,7 +476,7 @@
               <label class="form-label">Result</label>
               <select class="form-select" id="hepatitisBResult">
                 <option value="">Select Result</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="Reactive">Reactive</option>
                 <option value="Non-reactive">Non-reactive</option>
               </select>
@@ -451,7 +492,7 @@
               <label class="form-label">Result</label>
               <select class="form-select" id="hepatitisCResult">
                 <option value="">Select Result</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="Reactive">Reactive</option>
                 <option value="Non-reactive">Non-reactive</option>
               </select>
@@ -521,7 +562,7 @@
               <label class="form-label">Blood Group</label>
               <select class="form-select" id="bloodGroup">
                 <option value="">Select Blood Group</option>
-                <option value="No Test Yet">No Test Yet</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
                 <option value="A">A</option>
                 <option value="B">B</option>
                 <option value="O">O</option>
@@ -532,8 +573,8 @@
               <label class="form-label">Rh Factor</label>
               <select class="form-select" id="rhFactor">
                 <option value="">Select Rh Factor</option>
-                <option value="No Test Yet">No Test Yet</option>
-                <option value="Rh positive">Rh positive</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Rh positive" class="highlight-red-option">Rh positive</option>
                 <option value="Rh negative">Rh negative</option>
               </select>
             </div>
@@ -594,11 +635,23 @@
       ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].forEach(id => {
         const select = document.getElementById(id);
         if (select) {
-          select.addEventListener('change', updatePositiveAlerts);
+          select.addEventListener('change', function() {
+            updatePositiveAlerts(); // Check positive cases first
+            updateSelectHighlights(); // Then check for yellow/red highlights
+          });
+        }
+      });
+
+      // Add highlight listeners to blood grouping selects (not checked for positive cases)
+      ['bloodGroup', 'rhFactor'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.addEventListener('change', updateSelectHighlights);
         }
       });
 
       updatePositiveAlerts();
+      updateSelectHighlights();
     });
 
     // Load patient from URL parameters
@@ -873,6 +926,41 @@
       }
     }
 
+    function updateSelectHighlights() {
+      // Get all select elements that need highlighting
+      const selectIds = ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult', 'bloodGroup', 'rhFactor'];
+      
+      selectIds.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        
+        const value = select.value || '';
+        
+        // Check if this is a positive test result field that should be handled by updatePositiveAlerts
+        const isPositiveTestField = ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].includes(id);
+        
+        // For positive test fields, only apply yellow highlighting if not already marked as positive
+        // Positive highlighting (is-positive class) takes priority
+        if (isPositiveTestField && select.classList.contains('is-positive')) {
+          // Skip - positive highlighting is already applied, don't override
+          return;
+        }
+        
+        // Remove existing highlight classes (yellow/red only, preserve is-positive)
+        select.classList.remove('highlight-yellow', 'highlight-red');
+        
+        // Apply yellow highlight for "No Test Yet"
+        if (value === 'No Test Yet') {
+          select.classList.add('highlight-yellow');
+        }
+        
+        // Apply red highlight for "Rh positive" (only for Rh Factor field)
+        if (id === 'rhFactor' && value === 'Rh positive') {
+          select.classList.add('highlight-red');
+        }
+      });
+    }
+
     function updatePositiveAlerts() {
       const alertBox = document.getElementById('positiveAlerts');
       const list = document.getElementById('positiveAlertsList');
@@ -960,6 +1048,7 @@
         }
         
         updatePositiveAlerts();
+        updateSelectHighlights();
         
       } catch (error) {
         console.error('Error loading test data:', error);
