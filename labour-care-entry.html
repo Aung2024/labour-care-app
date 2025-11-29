@@ -49,15 +49,41 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     }
     .time-pills-container { 
-      display: flex;
-      width: 100%;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 1rem; 
+      align-items: center;
+      position: relative;
     }
     .time-pills-wrapper { 
       display: flex; 
-      flex-wrap: wrap;
       gap: 0.75rem; 
-      width: 100%;
+      overflow-x: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
       padding: 0.5rem 0;
+      /* Hide scrollbar but keep functionality */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .time-pills-wrapper::-webkit-scrollbar {
+      display: none;
+    }
+    /* Position indicator */
+    .time-pills-position {
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.75rem;
+      color: #64748b;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+      pointer-events: none;
     }
     .time-pill { 
       background: white; 
@@ -129,11 +155,19 @@
       box-shadow: 0 4px 8px rgba(16,185,129,0.2);
     }
     .time-pill-nav:disabled { 
-      opacity: 0.4; 
+      opacity: 0.3; 
       cursor: not-allowed; 
       background: #f1f5f9;
       border-color: #e2e8f0;
       color: #94a3b8;
+      transform: none;
+      box-shadow: none;
+    }
+    .time-pill-nav:disabled:hover { 
+      background: #f1f5f9;
+      border-color: #e2e8f0;
+      color: #94a3b8;
+      transform: none;
     }
     
     .btn-add-now { background: var(--warning); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -275,7 +309,10 @@
   <!-- Time Pills Section -->
   <div class="time-pills-section">
     <div class="time-pills-container">
+      <button class="time-pill-nav" id="timePillsPrev" onclick="scrollTimePills('prev')" aria-label="Previous time">‹</button>
       <div class="time-pills-wrapper" id="timePillsWrapper"></div>
+      <button class="time-pill-nav" id="timePillsNext" onclick="scrollTimePills('next')" aria-label="Next time">›</button>
+      <div class="time-pills-position" id="timePillsPosition" style="display: none;"></div>
     </div>
   </div>
   
@@ -1625,6 +1662,9 @@
         updateUI();
         renderTimePills();
         renderSections();
+        // Update navigation buttons after selection
+        updateNavigationButtons();
+        updatePositionIndicator();
       }
     }
 
@@ -1681,12 +1721,51 @@
           activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }
       }, 100);
+      
+      // Update navigation buttons (stop at boundaries)
+      updateNavigationButtons();
+      
+      // Update position indicator
+      updatePositionIndicator();
+    }
+    
+    // Update navigation button states (stop at boundaries)
+    function updateNavigationButtons() {
+      const prevBtn = document.getElementById('timePillsPrev');
+      const nextBtn = document.getElementById('timePillsNext');
+      
+      if (!prevBtn || !nextBtn || !state.timepoints || state.timepoints.length === 0) {
+        return; // Buttons not ready yet or no timepoints
+      }
+      
+      const maxIndex = state.timepoints.length - 1;
+      
+      // Disable prev button at first pill, disable next button at last pill
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex >= maxIndex;
+    }
+    
+    // Update position indicator showing current position
+    function updatePositionIndicator() {
+      const positionEl = document.getElementById('timePillsPosition');
+      
+      if (!positionEl || !state.timepoints || state.timepoints.length === 0) {
+        return;
+      }
+      
+      const current = currentIndex + 1;
+      const total = state.timepoints.length;
+      positionEl.textContent = `${current} / ${total}`;
+      
+      // Only show indicator if there are many timepoints
+      positionEl.style.display = state.timepoints.length > 5 ? 'block' : 'none';
     }
 
-    // Scroll time pills
+    // Scroll time pills (stops at first/last - no infinite rotation)
     function scrollTimePills(direction) {
       const maxIndex = state.timepoints.length - 1;
       
+      // Stop at boundaries - don't allow going past first or last
       if (direction === 'prev' && currentIndex > 0) {
         currentIndex--;
         selectTimepoint(state.timepoints[currentIndex].time || state.timepoints[currentIndex]);
@@ -1694,6 +1773,7 @@
         currentIndex++;
         selectTimepoint(state.timepoints[currentIndex].time || state.timepoints[currentIndex]);
       }
+      // If already at boundary, do nothing (buttons will be disabled)
     }
 
     // Add current timepoint
