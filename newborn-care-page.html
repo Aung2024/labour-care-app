@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Newborn Care Page - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #667eea;
+      --secondary-color: #764ba2;
+      --accent-color: #a78bfa;
+      --light-bg: #f5f3ff;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #f5f3ff 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding-bottom: 2rem;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-section {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      margin-left: 0.75rem;
+      margin-right: 0.75rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+      border-left: 4px solid var(--primary-color);
+      transition: all 0.3s ease;
+    }
+
+    .form-section:hover {
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+      transform: translateY(-2px);
+    }
+
+    .section-title {
+      color: var(--primary-color);
+      font-weight: 700;
+      font-size: 1.25rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .patient-name-header {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      margin-left: 0.75rem;
+      margin-right: 0.75rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+    }
+
+    .patient-name-header h4 {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .grouped-field {
+      margin-left: 1.5rem;
+      padding-left: 1rem;
+      border-left: 2px solid #e5e7eb;
+      margin-top: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .info-alert {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+      border-left: 4px solid #f59e0b;
+      padding: 1rem;
+      margin-top: 0.5rem;
+      border-radius: 8px;
+      color: #92400e;
+      font-size: 0.9rem;
+    }
+
+    .alert-warning {
+      background: linear-gradient(135deg, rgba(220, 38, 38, 0.1), rgba(220, 38, 38, 0.05));
+      border-left: 4px solid #dc2626;
+      padding: 1rem;
+      margin-top: 0.5rem;
+      border-radius: 8px;
+      color: #991b1b;
+      font-size: 0.9rem;
+    }
+
+    .btn-save {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.875rem 2rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+    }
+
+    .btn-save:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .success-toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 600;
+      font-size: 1rem;
+      animation: slideDown 0.3s ease-out;
+      max-width: 90%;
+      text-align: center;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    .language-switcher {
+      display: flex;
+      gap: 0.25rem;
+      align-items: center;
+    }
+
+    .language-btn {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+    }
+
+    .language-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .language-btn.active {
+      background: rgba(255, 255, 255, 0.4);
+      font-weight: 600;
+    }
+
+    .followup-section {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f9fafb;
+      border-radius: 8px;
+      border-left: 3px solid var(--primary-color);
+    }
+
+    @media (max-width: 768px) {
+      .form-section {
+        margin-left: 0.75rem;
+        margin-right: 0.75rem;
+        padding: 1.5rem 1.25rem;
+        border-radius: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-baby me-3"></i>
+            <span class="lang-text" data-en="Newborn Care" data-mm="မွေးကင်းစကလေး စောင့်ရှောက်မှု">Newborn Care</span>
+          </h1>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <div class="language-switcher">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" title="English">
+                <span>🇬🇧</span> ENG
+              </button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" title="မြန်မာ">
+                <span>🇲🇲</span> MM
+              </button>
+            </div>
+            <a href="immediate-newborn-care.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i><span class="lang-text" data-en="Logout" data-mm="ထွက်ရန်">Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Name Header -->
+    <div class="patient-name-header">
+      <h4 class="mb-0">
+        <i class="fas fa-user me-2"></i>
+        <span id="patientNameDisplay">Loading...</span>
+      </h4>
+    </div>
+
+    <!-- Newborn Care Form -->
+    <form id="newbornCareForm" onsubmit="saveNewbornCareData(event)">
+      <!-- Baby Information Section -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-baby me-2"></i>
+          <span class="lang-text" data-en="Baby Information" data-mm="ကလေး အချက်အလက်">Baby Information</span>
+        </h5>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label for="baby_name" class="form-label">
+              <span class="lang-text" data-en="Baby's Name" data-mm="ကလေး၏ အမည်">Baby's Name</span>
+            </label>
+            <input type="text" class="form-control" id="baby_name" name="baby_name" placeholder="">
+          </div>
+          <div class="col-md-6">
+            <label for="gender" class="form-label">
+              <span class="lang-text" data-en="Gender" data-mm="ကျား/မ">Gender</span>
+            </label>
+            <select class="form-control" id="gender" name="gender">
+              <option value=""><span class="lang-text" data-en="Select gender" data-mm="လိင် ရွေးချယ်ရန်">Select gender</span></option>
+              <option value="male"><span class="lang-text" data-en="Male" data-mm="ကျား">Male</span></option>
+              <option value="female"><span class="lang-text" data-en="Female" data-mm="မ">Female</span></option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label for="birth_time" class="form-label">
+              <span class="lang-text" data-en="Birth Time" data-mm="မွေးဖွားသည့် အချိန်">Birth Time</span>
+            </label>
+            <div class="d-flex gap-2">
+              <input type="datetime-local" class="form-control" id="birth_time" name="birth_time">
+              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setCurrentDateTime('birth_time')">
+                <i class="fas fa-clock"></i> <span class="lang-text" data-en="Now" data-mm="ယခု">Now</span>
+              </button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label for="birth_weight_lb" class="form-label">
+              <span class="lang-text" data-en="Birth Weight (lb)" data-mm="မွေးဖွားသည့် ကိုယ်အလေးချိန် (ပေါင်)">Birth Weight (lb)</span>
+            </label>
+            <input type="number" class="form-control" id="birth_weight_lb" name="birth_weight_lb" step="0.1" min="0" placeholder="">
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label for="birth_length_cm" class="form-label">
+              <span class="lang-text" data-en="Birth Length (cm)" data-mm="မွေးဖွားသည့် အရ်အမြင့် (စင်တီမီတာ)">Birth Length (cm)</span>
+            </label>
+            <input type="number" class="form-control" id="birth_length_cm" name="birth_length_cm" step="0.1" min="0" placeholder="">
+          </div>
+          <div class="col-md-6">
+            <label for="head_circumference_cm" class="form-label">
+              <span class="lang-text" data-en="Head Circumference (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စင်တီမီတာ)">Head Circumference (cm)</span>
+            </label>
+            <input type="number" class="form-control" id="head_circumference_cm" name="head_circumference_cm" step="0.1" min="0" placeholder="">
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label for="birthplace" class="form-label">
+              <span class="lang-text" data-en="Birthplace" data-mm="မွေးဖွားသည့်နေရာ">Birthplace</span>
+            </label>
+            <input type="text" class="form-control" id="birthplace" name="birthplace" placeholder="">
+          </div>
+          <div class="col-md-6">
+            <label for="mode_of_delivery" class="form-label">
+              <span class="lang-text" data-en="Mode of Delivery" data-mm="မွေးဖွားသည့်နည်းလမ်း">Mode of Delivery</span>
+            </label>
+            <select class="form-control" id="mode_of_delivery" name="mode_of_delivery">
+              <option value=""><span class="lang-text" data-en="Select mode" data-mm="နည်းလမ်း ရွေးချယ်ရန်">Select mode</span></option>
+              <option value="normal_vaginal"><span class="lang-text" data-en="Normal Vaginal Delivery" data-mm="ပုံမှန်မွေးဖွားခြင်း">Normal Vaginal Delivery</span></option>
+              <option value="assisted_vaginal"><span class="lang-text" data-en="Assisted Vaginal Delivery (Forceps/Vacuum)" data-mm="အကူအညီဖြင့်မွေးဖွားခြင်း (ညှပ်စွဲ့/လေစုပ်)">Assisted Vaginal Delivery (Forceps/Vacuum)</span></option>
+              <option value="caesarean_section"><span class="lang-text" data-en="Caesarean Section" data-mm="ခွဲစိတ်မွေးဖွားခြင်း">Caesarean Section</span></option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parents Information Section -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-users me-2"></i>
+          <span class="lang-text" data-en="Parents Information" data-mm="မိဘ၏အချက်အလက်">Parents Information</span>
+        </h5>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label for="mother_name" class="form-label">
+              <span class="lang-text" data-en="Mother's Name" data-mm="မိခင်၏အမည်">Mother's Name</span>
+            </label>
+            <input type="text" class="form-control" id="mother_name" name="mother_name" placeholder="">
+          </div>
+          <div class="col-md-6">
+            <label for="father_name" class="form-label">
+              <span class="lang-text" data-en="Father's Name" data-mm="ဖခင်၏အမည်">Father's Name</span>
+            </label>
+            <input type="text" class="form-control" id="father_name" name="father_name" placeholder="">
+          </div>
+        </div>
+      </div>
+
+      <!-- Assessment Section -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-stethoscope me-2"></i>
+          <span class="lang-text" data-en="Assessment" data-mm="စမ်းသပ်စစ်ဆေးခြင်း">Assessment</span>
+        </h5>
+
+        <!-- Body Weight -->
+        <div class="mb-4">
+          <label for="body_weight_gram" class="form-label">
+            <span class="lang-text" data-en="Body Weight (gram)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Body Weight (gram)</span>
+          </label>
+          <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert()">
+          <div class="info-alert mt-2">
+            <i class="fas fa-info-circle me-2"></i>
+            <span class="lang-text" data-en="If between 2000 g and 2500 g – start practice on Kangaroo Mother Care (KMC) method. If < 2000 g – plan referral to higher facility for advanced baby care." data-mm="ကိုယ်အလေးချိန် (၂၀၀၀-၂၅၀၀) ဂရမ် ဖြစ်လျှင် မိခင်ရင်ခွင်ကပ်စောင့်ရှောက်မှုပေးခြင်း (KMC) စတင်ပါ။ ကိုယ်အလေးချိန် (၂၀၀၀) ဂရမ် အောက် ဖြစ်လျှင် လိုအပ်သော စောင့်ရှောက်ကုသမှုရယူရန် အဆင့်မြင့်ကျန်းမာရေးဌာနသို့ လွှဲပြောင်းညွှန်းပို့ပါ။">If between 2000 g and 2500 g – start practice on Kangaroo Mother Care (KMC) method. If < 2000 g – plan referral to higher facility for advanced baby care.</span>
+          </div>
+        </div>
+
+        <!-- Vital Signs Group -->
+        <div class="mb-4">
+          <label class="form-label fw-bold mb-2">
+            <span class="lang-text" data-en="Vital Signs" data-mm="Vital Signs">Vital Signs</span>
+          </label>
+          
+          <div class="grouped-field">
+            <!-- Temperature -->
+            <div class="mb-3">
+              <label for="temperature" class="form-label">
+                <span class="lang-text" data-en="Temperature (°C / °F)" data-mm="ကိုယ်အပူချိန်">Temperature (°C / °F)</span>
+              </label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <input type="number" class="form-control" id="temperature" name="temperature" step="0.1" placeholder="°C" onchange="checkTemperatureAlert()">
+                </div>
+                <div class="col-md-6">
+                  <select class="form-control" id="temperature_unit" name="temperature_unit" onchange="checkTemperatureAlert()">
+                    <option value="C">°C</option>
+                    <option value="F">°F</option>
+                  </select>
+                </div>
+              </div>
+              <div class="alert-warning mt-2" id="temperatureAlert" style="display: none;">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <span class="lang-text" data-en="Alert if <36.5 or >37.5 °C or <97.7 or >99.5 °F" data-mm="၃၆.၅ °C ထက်နိမ့်ခြင်း၊ ၃၇.၅ °C ထက်မြင့်ခြင်း (သို့) ၉၇.၇ °F ထက်နိမ့်ခြင်း၊ ၉၉.၅ °F ထက်မြင့်ခြင်းတွင် သတိထားရမည်။">Alert if <36.5 or >37.5 °C or <97.7 or >99.5 °F</span>
+              </div>
+            </div>
+
+            <!-- Heart Rate -->
+            <div class="mb-3">
+              <label for="heart_rate" class="form-label">
+                <span class="lang-text" data-en="Heart rate (beats per minute)" data-mm="နှလုံးခုန်နှုန်း">Heart rate (beats per minute)</span>
+              </label>
+              <input type="number" class="form-control" id="heart_rate" name="heart_rate" min="0" placeholder="" onchange="checkHeartRateAlert()">
+              <div class="alert-warning mt-2" id="heartRateAlert" style="display: none;">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <span class="lang-text" data-en="Alert if <120 or >160 beats per minute" data-mm="၁၂၀ ထက်နိမ့်ခြင်း သို့မဟုတ် ၁၆၀ ထက်မြင့်ခြင်းမှာ သတိထားရမည်။">Alert if <120 or >160 beats per minute</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Respiration Group -->
+        <div class="mb-4">
+          <label class="form-label fw-bold mb-2">
+            <span class="lang-text" data-en="Respiration" data-mm="အသက်ရှူနှုန်း">Respiration</span>
+          </label>
+          
+          <div class="grouped-field">
+            <!-- Respiration Rate -->
+            <div class="mb-3">
+              <label for="respiration_rate" class="form-label">
+                <span class="lang-text" data-en="Respiration rate (breaths per minute)" data-mm="အသက်ရှူနှုန်း">Respiration rate (breaths per minute)</span>
+              </label>
+              <input type="number" class="form-control" id="respiration_rate" name="respiration_rate" min="0" placeholder="" onchange="checkRespirationAlert()">
+              <div class="alert-warning mt-2" id="respirationAlert" style="display: none;">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <span class="lang-text" data-en="Alert if <40 or >60 breaths per minute" data-mm="အသက်ရှူနှုန်း ၄၀ ထက်နိမ့်ခြင်း သို့မဟုတ် ၆၀ ထက်မြင့်လျှင် သတိထားရမည်။">Alert if <40 or >60 breaths per minute</span>
+              </div>
+            </div>
+
+            <!-- Difficult Breathing -->
+            <div class="mb-3">
+              <label class="form-label d-block">
+                <span class="lang-text" data-en="Difficult breathing" data-mm="အသက်ရှူရန်ခက်ခဲခြင်း">Difficult breathing</span>
+              </label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="difficult_breathing" id="difficult_breathing_yes" value="yes" onchange="toggleDifficultBreathingFollowup()">
+                <label class="form-check-label" for="difficult_breathing_yes">
+                  <span class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</span>
+                </label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="difficult_breathing" id="difficult_breathing_no" value="no" onchange="toggleDifficultBreathingFollowup()">
+                <label class="form-check-label" for="difficult_breathing_no">
+                  <span class="lang-text" data-en="No" data-mm="မရှိ">No</span>
+                </label>
+              </div>
+
+              <!-- Follow-up: Difficult Breathing Signs -->
+              <div class="followup-section" id="difficultBreathingFollowup" style="display: none;">
+                <label class="form-label">
+                  <span class="lang-text" data-en="If yes, select signs" data-mm="ရှိပါက လက္ခဏာရွေးချယ်ပါ">If yes, select signs</span>
+                </label>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="difficult_breathing_grunting" name="difficult_breathing_signs" value="grunting">
+                  <label class="form-check-label" for="difficult_breathing_grunting">
+                    <span class="lang-text" data-en="Grunting" data-mm="ညီးသံထွက်နေခြင်း">Grunting</span>
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="difficult_breathing_chest_indrawing" name="difficult_breathing_signs" value="chest_indrawing">
+                  <label class="form-check-label" for="difficult_breathing_chest_indrawing">
+                    <span class="lang-text" data-en="Chest indrawing" data-mm="ရင်ဘတ်အောက်ချိုင့်ဝင်ခြင်း">Chest indrawing</span>
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="difficult_breathing_fast_or_slow_rate" name="difficult_breathing_signs" value="fast_or_slow_rate">
+                  <label class="form-check-label" for="difficult_breathing_fast_or_slow_rate">
+                    <span class="lang-text" data-en="Fast or slow respiratory rate" data-mm="အသက်ရှူနှုန်း မြန်/နှေးခြင်း">Fast or slow respiratory rate</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Eye Infection Status -->
+        <div class="mb-4">
+          <label class="form-label d-block mb-2">
+            <span class="lang-text" data-en="Eye redness / swelling / pus (NAD/AD)" data-mm="မျက်စိ နီမှု၊ ရောင်ရမ်းမှု၊ ပြည်တည်မှု (NAD/AD)">Eye redness / swelling / pus (NAD/AD)</span>
+          </label>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="eye_infection_status" id="eye_infection_nad" value="nad" onchange="toggleEyeInfectionFollowup()">
+            <label class="form-check-label" for="eye_infection_nad">
+              <span class="lang-text" data-en="NAD (No abnormality detected)" data-mm="ပုံမှန် (NAD)">NAD (No abnormality detected)</span>
+            </label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="eye_infection_status" id="eye_infection_ad" value="ad" onchange="toggleEyeInfectionFollowup()">
+            <label class="form-check-label" for="eye_infection_ad">
+              <span class="lang-text" data-en="AD (Abnormality detected)" data-mm="မပုံမှန် (AD)">AD (Abnormality detected)</span>
+            </label>
+          </div>
+
+          <!-- Follow-up: Eye Infection Findings -->
+          <div class="followup-section" id="eyeInfectionFollowup" style="display: none;">
+            <label class="form-label">
+              <span class="lang-text" data-en="If AD, tick findings" data-mm="AD ဖြစ်ပါက လက္ခဏာများကို ရွေးချယ်ပါ">If AD, tick findings</span>
+            </label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="eye_finding_redness" name="eye_infection_findings" value="redness">
+              <label class="form-check-label" for="eye_finding_redness">
+                <span class="lang-text" data-en="Redness" data-mm="နီခြင်း">Redness</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="eye_finding_swelling" name="eye_infection_findings" value="swelling">
+              <label class="form-check-label" for="eye_finding_swelling">
+                <span class="lang-text" data-en="Swelling" data-mm="ရောင်ရမ်းခြင်း">Swelling</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="eye_finding_pus_discharge" name="eye_infection_findings" value="pus_discharge">
+              <label class="form-check-label" for="eye_finding_pus_discharge">
+                <span class="lang-text" data-en="Pus discharge" data-mm="ပြည်တည်ခြင်း">Pus discharge</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Eye Care Status -->
+        <div class="mb-4">
+          <label for="eye_care_status" class="form-label">
+            <span class="lang-text" data-en="Eye Care" data-mm="မျက်စိကို ပြုစုစောင့်ရှောက်မှုပေးခြင်း">Eye Care</span>
+          </label>
+          <select class="form-control" id="eye_care_status" name="eye_care_status">
+            <option value=""><span class="lang-text" data-en="Select status" data-mm="အခြေအနေ ရွေးချယ်ရန်">Select status</span></option>
+            <option value="clean_and_dry"><span class="lang-text" data-en="Clean and dry" data-mm="ခြောက်သွေ့သန့်ရှင်းနေသည်">Clean and dry</span></option>
+            <option value="discharge_present"><span class="lang-text" data-en="Discharge present" data-mm="အရည်ထွက်နေသည်">Discharge present</span></option>
+          </select>
+        </div>
+
+        <!-- Cord Care -->
+        <div class="mb-4">
+          <label class="form-label d-block mb-2">
+            <span class="lang-text" data-en="Cord Care" data-mm="ချက်တိုင်စောင့်ရှောက်မှုပေးခြင်း">Cord Care</span>
+          </label>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="cord_care" id="cord_care_yes" value="yes">
+            <label class="form-check-label" for="cord_care_yes">
+              <span class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</span>
+            </label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="cord_care" id="cord_care_no" value="no">
+            <label class="form-check-label" for="cord_care_no">
+              <span class="lang-text" data-en="No" data-mm="မရှိ">No</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Anatomy Abnormalities -->
+        <div class="mb-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="anatomy_abnormalities" name="anatomy_abnormalities" value="yes">
+            <label class="form-check-label" for="anatomy_abnormalities">
+              <span class="lang-text" data-en="Anatomy abnormalities" data-mm="ခန္ဓာကိုယ်အစိတ်အပိုင်းများ ပုံမှန်မရှိခြင်း">Anatomy abnormalities</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Immunization Group -->
+        <div class="mb-4">
+          <label class="form-label fw-bold mb-2">
+            <span class="lang-text" data-en="Immunization" data-mm="ကာကွယ်ဆေးထိုးခြင်း">Immunization</span>
+          </label>
+          <div class="grouped-field">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="vitamin_k" name="vitamin_k" value="yes">
+              <label class="form-check-label" for="vitamin_k">
+                <span class="lang-text" data-en="Vitamin K" data-mm="ဗီတာမင်ကေ">Vitamin K</span>
+              </label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="hepatitis_b" name="hepatitis_b" value="yes">
+              <label class="form-check-label" for="hepatitis_b">
+                <span class="lang-text" data-en="Hepatitis B" data-mm="အသည်းရောင်အသားဝါ (ဘီ)">Hepatitis B</span>
+              </label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="bcg" name="bcg" value="yes">
+              <label class="form-check-label" for="bcg">
+                <span class="lang-text" data-en="BCG" data-mm="ဘီစီဂျီ">BCG</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Exclusive Breastfeeding -->
+        <div class="mb-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="exclusive_breastfeeding_on_demand" name="exclusive_breastfeeding_on_demand" value="yes">
+            <label class="form-check-label" for="exclusive_breastfeeding_on_demand">
+              <span class="lang-text" data-en="Exclusive breast feeding on demand" data-mm="မိခင်နို့တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း">Exclusive breast feeding on demand</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Follow-up Appointment Date -->
+        <div class="mb-4">
+          <label for="follow_up_appointment_date" class="form-label">
+            <span class="lang-text" data-en="Follow-up Date (mm/dd/yy)" data-mm="ပြန်ပြရမည့် ရက်စွဲ (လ/ရက်စွဲ/ခုနှစ်)">Follow-up Date (mm/dd/yy)</span>
+          </label>
+          <div class="d-flex gap-2">
+            <input type="date" class="form-control" id="follow_up_appointment_date" name="follow_up_appointment_date">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setToday('follow_up_appointment_date')">
+              <i class="fas fa-calendar"></i> <span class="lang-text" data-en="Today" data-mm="ယနေ့">Today</span>
+            </button>
+          </div>
+          <div class="info-alert mt-2">
+            <i class="fas fa-info-circle me-2"></i>
+            <span class="lang-text" data-en="Link with calendar for follow-up reminder." data-mm="နောက်တစ်ကြိမ် ပြန်ပြရန် ရက်ချိန်းပေးပြီး ကယ်လင်ဒါနှင့် ချိတ်ဆက်ရန်။">Link with calendar for follow-up reminder.</span>
+          </div>
+        </div>
+
+        <!-- Clinical Notes -->
+        <div class="mb-4">
+          <label for="clinical_notes" class="form-label">
+            <span class="lang-text" data-en="Clinical notes and recommendations" data-mm="ဆေးကုသမှုမှတ်တမ်း နှင့် အကြံပြုချက်များ">Clinical notes and recommendations</span>
+          </label>
+          <textarea class="form-control" id="clinical_notes" name="clinical_notes" rows="4" placeholder=""></textarea>
+        </div>
+
+        <!-- Outcome -->
+        <div class="mb-4">
+          <label class="form-label d-block mb-2">
+            <span class="lang-text" data-en="Outcome" data-mm="ရလဒ်">Outcome</span>
+          </label>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="outcome" id="outcome_alive" value="alive" onchange="toggleOutcomeFollowup()">
+            <label class="form-check-label" for="outcome_alive">
+              <span class="lang-text" data-en="Alive" data-mm="အရှင်မွေး">Alive</span>
+            </label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="outcome" id="outcome_dead" value="dead" onchange="toggleOutcomeFollowup()">
+            <label class="form-check-label" for="outcome_dead">
+              <span class="lang-text" data-en="Dead" data-mm="သေဆုံး">Dead</span>
+            </label>
+          </div>
+
+          <!-- Follow-up: Cause of Death -->
+          <div class="followup-section" id="outcomeFollowup" style="display: none;">
+            <label for="cause_of_death" class="form-label">
+              <span class="lang-text" data-en="Cause of death" data-mm="သေဆုံးရသည့် အကြောင်းအရင်း">Cause of death</span>
+            </label>
+            <textarea class="form-control" id="cause_of_death" name="cause_of_death" rows="3" placeholder=""></textarea>
+          </div>
+        </div>
+
+        <!-- Referral -->
+        <div class="mb-4">
+          <label for="referral" class="form-label">
+            <span class="lang-text" data-en="Referral (re-attach referral card)" data-mm="လွှဲပြောင်းညွှန်းပို့မှု (ညွှန်းစာပြန်ထည့်ရန်)">Referral (re-attach referral card)</span>
+          </label>
+          <textarea class="form-control" id="referral" name="referral" rows="3" placeholder=""></textarea>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-section">
+        <div class="d-flex flex-column flex-md-row gap-3 justify-content-center align-items-stretch">
+          <button type="submit" class="btn btn-save flex-fill">
+            <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Newborn Care Data" data-mm="မွေးကင်းစကလေး စောင့်ရှောက်မှု အချက်အလက် သိမ်းဆည်းရန်">Save Newborn Care Data</span>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <footer class="footer" style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); color: #374151; text-align: center; padding: 2rem; margin-top: 2rem; border-radius: 20px; box-shadow: var(--card-shadow);">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let patientId = null;
+    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+
+    // Language switching function
+    function switchLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      
+      document.querySelectorAll('.lang-text').forEach(el => {
+        const text = el.dataset[lang] || el.dataset.en || el.textContent;
+        el.textContent = text;
+      });
+    }
+
+    // Get patient ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        await loadPatientInfo();
+      }
+    });
+
+    async function loadPatientInfo() {
+      try {
+        if (!patientId) {
+          alert('Patient ID not found.');
+          return;
+        }
+
+        const patientDoc = await firebase.firestore()
+          .collection("patients")
+          .doc(patientId)
+          .get();
+
+        if (!patientDoc.exists) {
+          alert('Patient not found.');
+          return;
+        }
+
+        currentPatient = patientDoc.data();
+        document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+
+        // Load existing newborn care data if any
+        await loadExistingNewbornCareData();
+
+      } catch (error) {
+        console.error('Error loading patient info:', error);
+        alert(`Error loading patient information: ${error.message}`);
+      }
+    }
+
+    async function loadExistingNewbornCareData() {
+      try {
+        const newbornCareDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('newborn_care')
+          .limit(1)
+          .get();
+
+        if (!newbornCareDoc.empty) {
+          const data = newbornCareDoc.docs[0].data();
+          
+          // Populate Baby Information
+          if (data.baby_name) document.getElementById('baby_name').value = data.baby_name;
+          if (data.gender) document.getElementById('gender').value = data.gender;
+          if (data.birth_time) document.getElementById('birth_time').value = data.birth_time;
+          if (data.birth_weight_lb) document.getElementById('birth_weight_lb').value = data.birth_weight_lb;
+          if (data.birth_length_cm) document.getElementById('birth_length_cm').value = data.birth_length_cm;
+          if (data.head_circumference_cm) document.getElementById('head_circumference_cm').value = data.head_circumference_cm;
+          if (data.birthplace) document.getElementById('birthplace').value = data.birthplace;
+          if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
+          
+          // Populate Parents Information
+          if (data.mother_name) document.getElementById('mother_name').value = data.mother_name;
+          if (data.father_name) document.getElementById('father_name').value = data.father_name;
+          
+          // Populate Assessment fields
+          if (data.body_weight_gram) document.getElementById('body_weight_gram').value = data.body_weight_gram;
+          if (data.temperature) document.getElementById('temperature').value = data.temperature;
+          if (data.temperature_unit) document.getElementById('temperature_unit').value = data.temperature_unit;
+          if (data.heart_rate) document.getElementById('heart_rate').value = data.heart_rate;
+          if (data.respiration_rate) document.getElementById('respiration_rate').value = data.respiration_rate;
+          
+          // Radio buttons
+          if (data.difficult_breathing) {
+            document.getElementById(`difficult_breathing_${data.difficult_breathing}`).checked = true;
+            toggleDifficultBreathingFollowup();
+          }
+          if (data.eye_infection_status) {
+            document.getElementById(`eye_infection_${data.eye_infection_status}`).checked = true;
+            toggleEyeInfectionFollowup();
+          }
+          if (data.cord_care) {
+            document.getElementById(`cord_care_${data.cord_care}`).checked = true;
+          }
+          if (data.outcome) {
+            document.getElementById(`outcome_${data.outcome}`).checked = true;
+            toggleOutcomeFollowup();
+          }
+          
+          // Checkboxes
+          if (data.anatomy_abnormalities) document.getElementById('anatomy_abnormalities').checked = true;
+          if (data.vitamin_k) document.getElementById('vitamin_k').checked = true;
+          if (data.hepatitis_b) document.getElementById('hepatitis_b').checked = true;
+          if (data.bcg) document.getElementById('bcg').checked = true;
+          if (data.exclusive_breastfeeding_on_demand) document.getElementById('exclusive_breastfeeding_on_demand').checked = true;
+          
+          // Follow-up checkboxes
+          if (data.difficult_breathing_signs) {
+            data.difficult_breathing_signs.forEach(sign => {
+              const checkbox = document.querySelector(`input[name="difficult_breathing_signs"][value="${sign}"]`);
+              if (checkbox) checkbox.checked = true;
+            });
+          }
+          if (data.eye_infection_findings) {
+            data.eye_infection_findings.forEach(finding => {
+              const checkbox = document.querySelector(`input[name="eye_infection_findings"][value="${finding}"]`);
+              if (checkbox) checkbox.checked = true;
+            });
+          }
+          
+          // Other fields
+          if (data.eye_care_status) document.getElementById('eye_care_status').value = data.eye_care_status;
+          if (data.follow_up_appointment_date) document.getElementById('follow_up_appointment_date').value = data.follow_up_appointment_date;
+          if (data.clinical_notes) document.getElementById('clinical_notes').value = data.clinical_notes;
+          if (data.cause_of_death) document.getElementById('cause_of_death').value = data.cause_of_death;
+          if (data.referral) document.getElementById('referral').value = data.referral;
+          
+          // Check alerts
+          checkTemperatureAlert();
+          checkHeartRateAlert();
+          checkRespirationAlert();
+        }
+      } catch (error) {
+        console.error('Error loading existing newborn care data:', error);
+      }
+    }
+
+    async function saveNewbornCareData(event) {
+      event.preventDefault();
+      
+      try {
+        // Collect difficult breathing signs
+        const difficultBreathingSigns = [];
+        document.querySelectorAll('input[name="difficult_breathing_signs"]:checked').forEach(cb => {
+          difficultBreathingSigns.push(cb.value);
+        });
+        
+        // Collect eye infection findings
+        const eyeInfectionFindings = [];
+        document.querySelectorAll('input[name="eye_infection_findings"]:checked').forEach(cb => {
+          eyeInfectionFindings.push(cb.value);
+        });
+        
+        const formData = {
+          // Baby Information
+          baby_name: document.getElementById('baby_name').value || null,
+          gender: document.getElementById('gender').value || null,
+          birth_time: document.getElementById('birth_time').value || null,
+          birth_weight_lb: document.getElementById('birth_weight_lb').value ? parseFloat(document.getElementById('birth_weight_lb').value) : null,
+          birth_length_cm: document.getElementById('birth_length_cm').value ? parseFloat(document.getElementById('birth_length_cm').value) : null,
+          head_circumference_cm: document.getElementById('head_circumference_cm').value ? parseFloat(document.getElementById('head_circumference_cm').value) : null,
+          birthplace: document.getElementById('birthplace').value || null,
+          mode_of_delivery: document.getElementById('mode_of_delivery').value || null,
+          
+          // Parents Information
+          mother_name: document.getElementById('mother_name').value || null,
+          father_name: document.getElementById('father_name').value || null,
+          
+          // Assessment
+          body_weight_gram: document.getElementById('body_weight_gram').value ? parseFloat(document.getElementById('body_weight_gram').value) : null,
+          temperature: document.getElementById('temperature').value ? parseFloat(document.getElementById('temperature').value) : null,
+          temperature_unit: document.getElementById('temperature_unit').value || 'C',
+          heart_rate: document.getElementById('heart_rate').value ? parseInt(document.getElementById('heart_rate').value) : null,
+          respiration_rate: document.getElementById('respiration_rate').value ? parseInt(document.getElementById('respiration_rate').value) : null,
+          difficult_breathing: document.querySelector('input[name="difficult_breathing"]:checked')?.value || null,
+          difficult_breathing_signs: difficultBreathingSigns.length > 0 ? difficultBreathingSigns : null,
+          eye_infection_status: document.querySelector('input[name="eye_infection_status"]:checked')?.value || null,
+          eye_infection_findings: eyeInfectionFindings.length > 0 ? eyeInfectionFindings : null,
+          eye_care_status: document.getElementById('eye_care_status').value || null,
+          cord_care: document.querySelector('input[name="cord_care"]:checked')?.value || null,
+          anatomy_abnormalities: document.getElementById('anatomy_abnormalities').checked,
+          vitamin_k: document.getElementById('vitamin_k').checked,
+          hepatitis_b: document.getElementById('hepatitis_b').checked,
+          bcg: document.getElementById('bcg').checked,
+          exclusive_breastfeeding_on_demand: document.getElementById('exclusive_breastfeeding_on_demand').checked,
+          follow_up_appointment_date: document.getElementById('follow_up_appointment_date').value || null,
+          clinical_notes: document.getElementById('clinical_notes').value || null,
+          outcome: document.querySelector('input[name="outcome"]:checked')?.value || null,
+          cause_of_death: document.getElementById('cause_of_death').value || null,
+          referral: document.getElementById('referral').value || null,
+          
+          patientId: patientId,
+          recordedBy: currentUser.uid,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Check if record already exists
+        const existingDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('newborn_care')
+          .limit(1)
+          .get();
+
+        if (!existingDoc.empty) {
+          // Update existing record
+          await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('newborn_care')
+            .doc(existingDoc.docs[0].id)
+            .update(formData);
+        } else {
+          // Create new record
+          await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('newborn_care')
+            .add(formData);
+        }
+
+        showSuccessMessage('Newborn care data saved successfully!');
+        
+      } catch (error) {
+        console.error('Error saving newborn care data:', error);
+        alert(`Error saving data: ${error.message}`);
+      }
+    }
+
+    // Alert checking functions
+    function checkTemperatureAlert() {
+      const temp = parseFloat(document.getElementById('temperature').value);
+      const unit = document.getElementById('temperature_unit').value;
+      const alertDiv = document.getElementById('temperatureAlert');
+      
+      if (!temp || isNaN(temp)) {
+        alertDiv.style.display = 'none';
+        return;
+      }
+      
+      let showAlert = false;
+      if (unit === 'C') {
+        showAlert = temp < 36.5 || temp > 37.5;
+      } else {
+        showAlert = temp < 97.7 || temp > 99.5;
+      }
+      
+      alertDiv.style.display = showAlert ? 'block' : 'none';
+    }
+
+    function checkHeartRateAlert() {
+      const rate = parseInt(document.getElementById('heart_rate').value);
+      const alertDiv = document.getElementById('heartRateAlert');
+      
+      if (!rate || isNaN(rate)) {
+        alertDiv.style.display = 'none';
+        return;
+      }
+      
+      const showAlert = rate < 120 || rate > 160;
+      alertDiv.style.display = showAlert ? 'block' : 'none';
+    }
+
+    function checkRespirationAlert() {
+      const rate = parseInt(document.getElementById('respiration_rate').value);
+      const alertDiv = document.getElementById('respirationAlert');
+      
+      if (!rate || isNaN(rate)) {
+        alertDiv.style.display = 'none';
+        return;
+      }
+      
+      const showAlert = rate < 40 || rate > 60;
+      alertDiv.style.display = showAlert ? 'block' : 'none';
+    }
+
+    function checkWeightAlert() {
+      // Weight alert logic can be added here if needed
+    }
+
+    // Toggle follow-up sections
+    function toggleDifficultBreathingFollowup() {
+      const followup = document.getElementById('difficultBreathingFollowup');
+      const isYes = document.getElementById('difficult_breathing_yes').checked;
+      followup.style.display = isYes ? 'block' : 'none';
+    }
+
+    function toggleEyeInfectionFollowup() {
+      const followup = document.getElementById('eyeInfectionFollowup');
+      const isAD = document.getElementById('eye_infection_ad').checked;
+      followup.style.display = isAD ? 'block' : 'none';
+    }
+
+    function toggleOutcomeFollowup() {
+      const followup = document.getElementById('outcomeFollowup');
+      const isDead = document.getElementById('outcome_dead').checked;
+      followup.style.display = isDead ? 'block' : 'none';
+    }
+
+    // Helper functions
+    function setToday(fieldId) {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById(fieldId).value = today;
+    }
+
+    function setCurrentDateTime(fieldId) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const dateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+      document.getElementById(fieldId).value = dateTime;
+    }
+
+    function showSuccessMessage(message) {
+      const existingToast = document.querySelector('.success-toast');
+      if (existingToast) {
+        existingToast.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'success-toast';
+      toast.innerHTML = `
+        <i class="fas fa-check-circle"></i>
+        <span>${message}</span>
+      `;
+      
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = 'slideDown 0.3s ease-out reverse';
+        setTimeout(() => {
+          toast.remove();
+        }, 300);
+      }, 2000);
+    }
+
+    // Initialize language switcher on page load
+    window.addEventListener('load', function() {
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          switchLanguage(this.dataset.lang);
+        });
+      });
+      
+      switchLanguage(currentLanguage);
+    });
+  </script>
+</body>
+</html>
