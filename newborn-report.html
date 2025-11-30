@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Newborn Care Report</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    @media print {
+      body { margin: 0; }
+      .no-print { display: none !important; }
+      .page-break { page-break-before: always; }
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      color: #2c3e50;
+      padding: 20px 0;
+    }
+
+    .report-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 30px;
+      background: white;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 10px 0;
+        font-size: 12px;
+      }
+
+      .report-container {
+        padding: 15px;
+        border-radius: 0;
+        margin: 0;
+        max-width: 100%;
+      }
+
+      .report-header {
+        margin: -15px -15px 20px -15px;
+        padding: 15px;
+        border-radius: 0;
+      }
+
+      .report-title {
+        font-size: 18px;
+      }
+
+      .report-subtitle {
+        font-size: 13px;
+      }
+    }
+
+    .report-header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 3px solid #667eea;
+      padding-bottom: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 10px 10px 0 0;
+      margin: -30px -30px 30px -30px;
+    }
+
+    .report-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .report-subtitle {
+      font-size: 16px;
+      opacity: 0.95;
+      font-weight: 300;
+    }
+
+    .patient-info {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 25px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .patient-info h5 {
+      margin-bottom: 10px;
+      color: #495057;
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 5px;
+    }
+
+    .patient-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .patient-summary {
+        grid-template-columns: 1fr;
+        gap: 15px;
+      }
+
+      .summary-card {
+        padding: 12px;
+      }
+
+      .summary-card h6 {
+        font-size: 11px;
+      }
+
+      .summary-value {
+        font-size: 12px;
+      }
+    }
+
+    .summary-card {
+      border: 2px solid #e5e7eb;
+      padding: 15px;
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .summary-card h6 {
+      margin-bottom: 5px;
+      font-size: 12px;
+      color: #495057;
+    }
+
+    .summary-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .treatment-section {
+      margin-top: 25px;
+      border-top: 2px solid #e5e7eb;
+      padding-top: 20px;
+    }
+
+    .treatment-section h5 {
+      color: #667eea;
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .treatment-item {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      border-left: 4px solid #667eea;
+      padding: 18px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .treatment-item:hover {
+      transform: translateX(4px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .treatment-header {
+      font-weight: 600;
+      color: #495057;
+      margin-bottom: 8px;
+    }
+
+    .treatment-content {
+      color: #6c757d;
+      line-height: 1.5;
+    }
+
+    .print-info {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 10px;
+      color: #666;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+    }
+
+    .btn-group {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn-back {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+    }
+
+    @media (max-width: 768px) {
+      .btn-group {
+        top: 10px;
+        right: 10px;
+        flex-direction: column;
+      }
+
+      .btn-group .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
+      .btn-back {
+        top: 10px;
+        left: 10px;
+      }
+
+      .btn-back .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .info-label {
+      font-weight: bold;
+      min-width: 120px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Back Button -->
+  <div class="btn-back no-print">
+    <button class="btn btn-outline-secondary btn-sm" onclick="goBack()">
+      <i class="fas fa-arrow-left me-1"></i>Back
+    </button>
+  </div>
+
+  <!-- Print/Close Buttons -->
+  <div class="btn-group no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()">
+      <i class="fas fa-print me-1"></i>Print Report
+    </button>
+  </div>
+
+  <div class="report-container">
+    <!-- Loading State -->
+    <div id="loadingState" class="loading">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading newborn care report...</p>
+    </div>
+
+    <!-- Report Content -->
+    <div id="reportContent" style="display: none;">
+      <!-- Header -->
+      <div class="report-header">
+        <div class="report-title">Newborn Care Summary Report</div>
+        <div class="report-subtitle">Complete Newborn Care History</div>
+      </div>
+
+      <!-- Patient Information -->
+      <div class="patient-info">
+        <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+        <div class="patient-summary">
+          <div class="summary-card">
+            <h6>Patient Details</h6>
+            <div><strong>Name:</strong> <span id="patientName">-</span></div>
+            <div><strong>Age:</strong> <span id="patientAge">-</span></div>
+            <div><strong>Parity:</strong> <span id="patientParity">-</span></div>
+          </div>
+          <div class="summary-card">
+            <h6>Baby Information</h6>
+            <div><strong>Baby Name:</strong> <span id="babyName">-</span></div>
+            <div><strong>Gender:</strong> <span id="babyGender">-</span></div>
+            <div><strong>Birth Time:</strong> <span id="birthTime">-</span></div>
+          </div>
+          <div class="summary-card">
+            <h6>Birth Details</h6>
+            <div><strong>Birth Weight:</strong> <span id="birthWeight">-</span></div>
+            <div><strong>Birth Length:</strong> <span id="birthLength">-</span></div>
+            <div><strong>Head Circumference:</strong> <span id="headCircumference">-</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Immediate Newborn Care Section -->
+      <div class="treatment-section">
+        <h5><i class="fas fa-baby me-2"></i>Immediate Newborn Care</h5>
+        <div id="immediateCareInfo" class="treatment-info">
+          <!-- Immediate care information will be populated here -->
+        </div>
+      </div>
+
+      <!-- Newborn Care Assessment Section -->
+      <div class="treatment-section">
+        <h5><i class="fas fa-stethoscope me-2"></i>Newborn Care Assessment</h5>
+        <div id="newbornCareInfo" class="treatment-info">
+          <!-- Newborn care information will be populated here -->
+        </div>
+      </div>
+
+      <!-- Recommendations -->
+      <div class="recommendations" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #fbbf24; border-left: 5px solid #f59e0b; border-radius: 10px; padding: 20px; margin-top: 25px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);">
+        <h6 style="color: #92400e; font-weight: 700; font-size: 16px; margin-bottom: 12px;"><i class="fas fa-lightbulb me-2"></i>Clinical Recommendations</h6>
+        <div id="recommendationsContent">
+          <ul style="margin: 0; padding-left: 20px;">
+            <li style="margin-bottom: 8px; line-height: 1.6; color: #78350f;">Continue regular newborn care monitoring</li>
+            <li style="margin-bottom: 8px; line-height: 1.6; color: #78350f;">Maintain proper feeding and nutrition</li>
+            <li style="margin-bottom: 8px; line-height: 1.6; color: #78350f;">Monitor for any danger signs and report concerns immediately</li>
+            <li style="margin-bottom: 8px; line-height: 1.6; color: #78350f;">Follow up on scheduled appointments</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Print Information -->
+      <div class="print-info">
+        <hr>
+        <p><strong>Report Generated:</strong> <span id="reportDate"></span> | 
+           <strong>Generated by:</strong> <span id="generatedBy">System</span></p>
+        <p><small>This report contains confidential medical information. Handle with care.</small></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let patientId = null;
+    let immediateCareData = null;
+    let newbornCareData = null;
+    let reportDb;
+
+    // Get patient ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        alert("Please log in to view this report.");
+        window.close();
+      } else {
+        currentUser = user;
+        reportDb = firebase.firestore();
+        if (patientId) {
+          loadReportData();
+        } else {
+          alert("No patient ID provided.");
+          window.close();
+        }
+      }
+    });
+
+    async function loadReportData() {
+      try {
+        // Load patient data
+        const patientDoc = await reportDb.collection("patients").doc(patientId).get();
+        if (!patientDoc.exists) {
+          alert("Patient not found!");
+          window.close();
+          return;
+        }
+        
+        currentPatient = patientDoc.data();
+        
+        // Load immediate newborn care data
+        try {
+          const immediateCareSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("immediate_newborn_care")
+            .limit(1)
+            .get();
+          
+          if (!immediateCareSnapshot.empty) {
+            immediateCareData = immediateCareSnapshot.docs[0].data();
+          }
+        } catch (error) {
+          console.log("No immediate newborn care data:", error);
+        }
+
+        // Load newborn care data
+        try {
+          const newbornCareSnapshot = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("newborn_care")
+            .limit(1)
+            .get();
+          
+          if (!newbornCareSnapshot.empty) {
+            newbornCareData = newbornCareSnapshot.docs[0].data();
+          }
+        } catch (error) {
+          console.log("No newborn care data:", error);
+        }
+
+        // Populate report
+        populatePatientInfo();
+        populateImmediateCareInfo();
+        populateNewbornCareInfo();
+        generateRecommendations();
+        
+        // Show report and hide loading
+        document.getElementById("loadingState").style.display = "none";
+        document.getElementById("reportContent").style.display = "block";
+        
+        // Set report generation info
+        document.getElementById("reportDate").textContent = new Date().toLocaleString();
+        document.getElementById("generatedBy").textContent = currentUser.email || 'System';
+
+      } catch (error) {
+        console.error("Error loading report data:", error);
+        alert("Error loading report data: " + error.message);
+        window.close();
+      }
+    }
+
+    function populatePatientInfo() {
+      document.getElementById("patientName").textContent = currentPatient.name || 'Unknown';
+      document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
+      document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
+      
+      if (newbornCareData) {
+        document.getElementById("babyName").textContent = newbornCareData.baby_name || 'Not recorded';
+        document.getElementById("babyGender").textContent = newbornCareData.gender === 'male' ? 'Male' : (newbornCareData.gender === 'female' ? 'Female' : 'Not recorded');
+        document.getElementById("birthTime").textContent = newbornCareData.birth_time ? new Date(newbornCareData.birth_time).toLocaleString() : 'Not recorded';
+        document.getElementById("birthWeight").textContent = newbornCareData.birth_weight_lb ? `${newbornCareData.birth_weight_lb} lb` : 'Not recorded';
+        document.getElementById("birthLength").textContent = newbornCareData.birth_length_cm ? `${newbornCareData.birth_length_cm} cm` : 'Not recorded';
+        document.getElementById("headCircumference").textContent = newbornCareData.head_circumference_cm ? `${newbornCareData.head_circumference_cm} cm` : 'Not recorded';
+      } else {
+        document.getElementById("babyName").textContent = 'Not recorded';
+        document.getElementById("babyGender").textContent = 'Not recorded';
+        document.getElementById("birthTime").textContent = 'Not recorded';
+        document.getElementById("birthWeight").textContent = 'Not recorded';
+        document.getElementById("birthLength").textContent = 'Not recorded';
+        document.getElementById("headCircumference").textContent = 'Not recorded';
+      }
+    }
+
+    function populateImmediateCareInfo() {
+      const container = document.getElementById('immediateCareInfo');
+      
+      if (!immediateCareData) {
+        container.innerHTML = '<p class="text-muted">No immediate newborn care data recorded.</p>';
+        return;
+      }
+
+      let html = '<div class="treatment-item">';
+      html += '<div class="treatment-header">Immediate Care Procedures</div>';
+      html += '<div class="treatment-content">';
+      
+      const procedures = [];
+      if (immediateCareData.thorough_drying) procedures.push('Thorough drying');
+      if (immediateCareData.spontaneous_breathing) procedures.push('Spontaneous breathing');
+      if (immediateCareData.gasping_or_no_breathing) procedures.push('Gasping or no breathing - resuscitation initiated');
+      if (immediateCareData.skin_to_skin_contact) procedures.push('Skin-to-skin contact');
+      if (immediateCareData.delayed_cord_clamping) procedures.push('Delayed cord clamping');
+      if (immediateCareData.support_early_exclusive_breastfeeding) procedures.push('Support for early & exclusive breast feeding');
+      if (immediateCareData.eye_care_teo) procedures.push('Eye care (within 1 hour) with Tetracycline Eye Ointment (TEO)');
+      if (immediateCareData.cord_care_clean_dry) procedures.push('Cord care (let it clean & dry)');
+      
+      if (procedures.length > 0) {
+        html += '<ul style="margin: 0; padding-left: 20px;">';
+        procedures.forEach(proc => {
+          html += `<li style="margin-bottom: 5px;">${proc}</li>`;
+        });
+        html += '</ul>';
+      } else {
+        html += '<p class="text-muted">No procedures recorded.</p>';
+      }
+      
+      if (immediateCareData.apgar_1min !== null && immediateCareData.apgar_1min !== undefined) {
+        html += `<p style="margin-top: 10px;"><strong>APGAR Score (1 min):</strong> ${immediateCareData.apgar_1min}/10</p>`;
+      }
+      if (immediateCareData.apgar_5min !== null && immediateCareData.apgar_5min !== undefined) {
+        html += `<p><strong>APGAR Score (5 min):</strong> ${immediateCareData.apgar_5min}/10</p>`;
+      }
+      
+      html += '</div></div>';
+      container.innerHTML = html;
+    }
+
+    function populateNewbornCareInfo() {
+      const container = document.getElementById('newbornCareInfo');
+      
+      if (!newbornCareData) {
+        container.innerHTML = '<p class="text-muted">No newborn care assessment data recorded.</p>';
+        return;
+      }
+
+      let html = '';
+      
+      // Baby Information
+      html += '<div class="treatment-item mb-3">';
+      html += '<div class="treatment-header">Baby Information</div>';
+      html += '<div class="treatment-content">';
+      html += `<p><strong>Baby Name:</strong> ${newbornCareData.baby_name || 'Not recorded'}</p>`;
+      html += `<p><strong>Gender:</strong> ${newbornCareData.gender === 'male' ? 'Male' : (newbornCareData.gender === 'female' ? 'Female' : 'Not recorded')}</p>`;
+      html += `<p><strong>Birth Time:</strong> ${newbornCareData.birth_time ? new Date(newbornCareData.birth_time).toLocaleString() : 'Not recorded'}</p>`;
+      html += `<p><strong>Birth Weight:</strong> ${newbornCareData.birth_weight_lb ? `${newbornCareData.birth_weight_lb} lb` : 'Not recorded'}</p>`;
+      html += `<p><strong>Birth Length:</strong> ${newbornCareData.birth_length_cm ? `${newbornCareData.birth_length_cm} cm` : 'Not recorded'}</p>`;
+      html += `<p><strong>Head Circumference:</strong> ${newbornCareData.head_circumference_cm ? `${newbornCareData.head_circumference_cm} cm` : 'Not recorded'}</p>`;
+      html += `<p><strong>Birthplace:</strong> ${newbornCareData.birthplace || 'Not recorded'}</p>`;
+      html += `<p><strong>Mode of Delivery:</strong> ${formatDeliveryMode(newbornCareData.mode_of_delivery)}</p>`;
+      html += '</div></div>';
+
+      // Parents Information
+      html += '<div class="treatment-item mb-3">';
+      html += '<div class="treatment-header">Parents Information</div>';
+      html += '<div class="treatment-content">';
+      html += `<p><strong>Mother's Name:</strong> ${newbornCareData.mother_name || 'Not recorded'}</p>`;
+      html += `<p><strong>Father's Name:</strong> ${newbornCareData.father_name || 'Not recorded'}</p>`;
+      html += '</div></div>';
+
+      // Assessment
+      html += '<div class="treatment-item mb-3">';
+      html += '<div class="treatment-header">Assessment</div>';
+      html += '<div class="treatment-content">';
+      
+      if (newbornCareData.body_weight_gram) {
+        html += `<p><strong>Body Weight:</strong> ${newbornCareData.body_weight_gram} g</p>`;
+      }
+      
+      if (newbornCareData.temperature) {
+        const tempUnit = newbornCareData.temperature_unit === 'F' ? '°F' : '°C';
+        html += `<p><strong>Temperature:</strong> ${newbornCareData.temperature} ${tempUnit}</p>`;
+      }
+      
+      if (newbornCareData.heart_rate) {
+        html += `<p><strong>Heart Rate:</strong> ${newbornCareData.heart_rate} beats/min</p>`;
+      }
+      
+      if (newbornCareData.respiration_rate) {
+        html += `<p><strong>Respiration Rate:</strong> ${newbornCareData.respiration_rate} breaths/min</p>`;
+      }
+      
+      if (newbornCareData.difficult_breathing) {
+        html += `<p><strong>Difficult Breathing:</strong> ${newbornCareData.difficult_breathing === 'yes' ? 'Yes' : 'No'}</p>`;
+        if (newbornCareData.difficult_breathing === 'yes' && newbornCareData.difficult_breathing_signs) {
+          html += `<p><strong>Signs:</strong> ${Array.isArray(newbornCareData.difficult_breathing_signs) ? newbornCareData.difficult_breathing_signs.join(', ') : newbornCareData.difficult_breathing_signs}</p>`;
+        }
+      }
+      
+      if (newbornCareData.eye_infection_status) {
+        html += `<p><strong>Eye Infection Status:</strong> ${newbornCareData.eye_infection_status === 'nad' ? 'NAD (No abnormality detected)' : 'AD (Abnormality detected)'}</p>`;
+        if (newbornCareData.eye_infection_status === 'ad' && newbornCareData.eye_infection_findings) {
+          html += `<p><strong>Findings:</strong> ${Array.isArray(newbornCareData.eye_infection_findings) ? newbornCareData.eye_infection_findings.join(', ') : newbornCareData.eye_infection_findings}</p>`;
+        }
+      }
+      
+      if (newbornCareData.eye_care_status) {
+        html += `<p><strong>Eye Care:</strong> ${formatEyeCareStatus(newbornCareData.eye_care_status)}</p>`;
+      }
+      
+      if (newbornCareData.cord_care) {
+        html += `<p><strong>Cord Care:</strong> ${newbornCareData.cord_care === 'yes' ? 'Yes' : 'No'}</p>`;
+      }
+      
+      if (newbornCareData.anatomy_abnormalities) {
+        html += '<p><strong>Anatomy Abnormalities:</strong> Present</p>';
+      }
+      
+      const immunizations = [];
+      if (newbornCareData.vitamin_k) immunizations.push('Vitamin K');
+      if (newbornCareData.hepatitis_b) immunizations.push('Hepatitis B');
+      if (newbornCareData.bcg) immunizations.push('BCG');
+      if (immunizations.length > 0) {
+        html += `<p><strong>Immunization:</strong> ${immunizations.join(', ')}</p>`;
+      }
+      
+      if (newbornCareData.exclusive_breastfeeding_on_demand) {
+        html += '<p><strong>Exclusive Breastfeeding:</strong> Yes</p>';
+      }
+      
+      if (newbornCareData.follow_up_appointment_date) {
+        html += `<p><strong>Follow-up Date:</strong> ${new Date(newbornCareData.follow_up_appointment_date).toLocaleDateString()}</p>`;
+      }
+      
+      if (newbornCareData.clinical_notes) {
+        html += `<p><strong>Clinical Notes:</strong> ${newbornCareData.clinical_notes}</p>`;
+      }
+      
+      if (newbornCareData.outcome) {
+        html += `<p><strong>Outcome:</strong> ${newbornCareData.outcome === 'alive' ? 'Alive' : 'Dead'}</p>`;
+        if (newbornCareData.outcome === 'dead' && newbornCareData.cause_of_death) {
+          html += `<p><strong>Cause of Death:</strong> ${newbornCareData.cause_of_death}</p>`;
+        }
+      }
+      
+      if (newbornCareData.referral) {
+        html += `<p><strong>Referral:</strong> ${newbornCareData.referral}</p>`;
+      }
+      
+      html += '</div></div>';
+      
+      container.innerHTML = html;
+    }
+
+    function formatDeliveryMode(mode) {
+      if (!mode) return 'Not recorded';
+      const modes = {
+        'normal_vaginal': 'Normal Vaginal Delivery',
+        'assisted_vaginal': 'Assisted Vaginal Delivery (Forceps/Vacuum)',
+        'caesarean_section': 'Caesarean Section'
+      };
+      return modes[mode] || mode;
+    }
+
+    function formatEyeCareStatus(status) {
+      if (!status) return 'Not recorded';
+      const statuses = {
+        'clean_and_dry': 'Clean and dry',
+        'discharge_present': 'Discharge present'
+      };
+      return statuses[status] || status;
+    }
+
+    function generateRecommendations() {
+      const recommendations = [];
+      
+      if (newbornCareData && newbornCareData.clinical_notes) {
+        recommendations.push(`<strong>Clinical Notes:</strong> ${newbornCareData.clinical_notes}`);
+      }
+      
+      if (newbornCareData && newbornCareData.body_weight_gram) {
+        if (newbornCareData.body_weight_gram < 2000) {
+          recommendations.push('Plan referral to higher facility for advanced baby care (weight < 2000g)');
+        } else if (newbornCareData.body_weight_gram >= 2000 && newbornCareData.body_weight_gram <= 2500) {
+          recommendations.push('Start practice on Kangaroo Mother Care (KMC) method (weight 2000-2500g)');
+        }
+      }
+      
+      if (recommendations.length > 0) {
+        const recommendationsHTML = recommendations.map(rec => `<li style="margin-bottom: 8px; line-height: 1.6; color: #78350f;">${rec}</li>`).join('');
+        document.getElementById("recommendationsContent").innerHTML = `<ul style="margin: 0; padding-left: 20px;">${recommendationsHTML}</ul>`;
+      }
+    }
+
+    function goBack() {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        const patientId = urlParams.get('patient');
+        if (patientId) {
+          window.location.href = `immediate-newborn-care.html?patient=${patientId}`;
+        } else {
+          window.location.href = 'index.html';
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+
