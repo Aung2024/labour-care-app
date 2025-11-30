@@ -13,6 +13,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/status-manager.js"></script>
   <style>
     :root {
       --primary-color: #667eea;
@@ -656,10 +657,12 @@
 
         <!-- Referral -->
         <div class="mb-4">
-          <label for="referral" class="form-label">
-            <span class="lang-text" data-en="Referral (re-attach referral card)" data-mm="လွှဲပြောင်းညွှန်းပို့မှု (ညွှန်းစာပြန်ထည့်ရန်)">Referral (re-attach referral card)</span>
-          </label>
-          <textarea class="form-control" id="referral" name="referral" rows="3" placeholder=""></textarea>
+          <div class="d-flex justify-content-center">
+            <button type="button" class="btn btn-warning flex-fill" onclick="referPatient()" style="background-color: #fbbf24; border-color: #fbbf24; color: #000; max-width: 300px;">
+              <i class="fas fa-share-square me-2"></i>
+              <span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -822,8 +825,6 @@
           if (data.follow_up_appointment_date) document.getElementById('follow_up_appointment_date').value = data.follow_up_appointment_date;
           if (data.clinical_notes) document.getElementById('clinical_notes').value = data.clinical_notes;
           if (data.cause_of_death) document.getElementById('cause_of_death').value = data.cause_of_death;
-          if (data.referral) document.getElementById('referral').value = data.referral;
-          
           // Check alerts
           checkTemperatureAlert();
           checkHeartRateAlert();
@@ -886,7 +887,6 @@
           clinical_notes: document.getElementById('clinical_notes').value || null,
           outcome: document.querySelector('input[name="outcome"]:checked')?.value || null,
           cause_of_death: document.getElementById('cause_of_death').value || null,
-          referral: document.getElementById('referral').value || null,
           
           patientId: patientId,
           recordedBy: currentUser.uid,
@@ -916,6 +916,17 @@
             .doc(patientId)
             .collection('newborn_care')
             .add(formData);
+        }
+
+        // Update patient status to Birthed when newborn care data is saved
+        if (window.StatusManager) {
+          const statusUpdated = await StatusManager.checkAndUpdateToBirthed(
+            patientId,
+            'Newborn care data recorded'
+          );
+          if (statusUpdated) {
+            console.log('✅ Patient status updated to Birthed');
+          }
         }
 
         showSuccessMessage('Newborn care data saved successfully!');

@@ -7,8 +7,12 @@
 const PATIENT_STATUSES = {
   REGISTERED: 'registered',
   ANTENATAL: 'antenatal_care', 
-  LABOUR: 'labour_care',
-  POSTNATAL: 'postnatal_care'
+  IN_LABOUR: 'in_labour',
+  BIRTHED: 'birthed',
+  POSTNATAL: 'postnatal_care',
+  ANC_TRANSFER: 'anc_transfer',
+  LABOUR_TRANSFER: 'labour_transfer',
+  PNC_TRANSFER: 'pnc_transfer'
 };
 
 /**
@@ -76,11 +80,11 @@ async function checkAndUpdateToAntenatalCare(patientId) {
 }
 
 /**
- * Check if patient should be moved to Labour Care status
- * Called when active first stage time is recorded in summary.html
+ * Check if patient should be moved to In Labour status
+ * Called when active first stage time is recorded in labour-care-setup.html or summary.html
  * @param {string} patientId - Patient document ID
  */
-async function checkAndUpdateToLabourCare(patientId) {
+async function checkAndUpdateToInLabour(patientId) {
   try {
     // Check current patient status
     const patientDoc = await firebase.firestore()
@@ -95,12 +99,12 @@ async function checkAndUpdateToLabourCare(patientId) {
     
     const currentStatus = patientDoc.data().status;
     
-    // Update if patient is in "registered" or "antenatal_care" status
+    // Update if patient is in "registered" or "antenatal_care" status (not if already transferred)
     if (currentStatus === PATIENT_STATUSES.REGISTERED || 
         currentStatus === PATIENT_STATUSES.ANTENATAL) {
       return await updatePatientStatus(
         patientId, 
-        PATIENT_STATUSES.LABOUR, 
+        PATIENT_STATUSES.IN_LABOUR, 
         'Active first stage time recorded'
       );
     }
@@ -108,7 +112,45 @@ async function checkAndUpdateToLabourCare(patientId) {
     console.log(`Patient status is already ${currentStatus}, no update needed`);
     return true;
   } catch (error) {
-    console.error('Error checking labour care status:', error);
+    console.error('Error checking in labour status:', error);
+    return false;
+  }
+}
+
+/**
+ * Check if patient should be moved to Birthed status
+ * Called when second stage time is recorded OR when immediate/newborn care data is saved
+ * @param {string} patientId - Patient document ID
+ * @param {string} reason - Specific reason (second stage time, immediate care, or newborn care)
+ */
+async function checkAndUpdateToBirthed(patientId, reason = 'Birth recorded') {
+  try {
+    // Check current patient status
+    const patientDoc = await firebase.firestore()
+      .collection('patients')
+      .doc(patientId)
+      .get();
+    
+    if (!patientDoc.exists) {
+      console.error('Patient not found:', patientId);
+      return false;
+    }
+    
+    const currentStatus = patientDoc.data().status;
+    
+    // Update if patient is in "in_labour" status (not if already transferred or birthed)
+    if (currentStatus === PATIENT_STATUSES.IN_LABOUR) {
+      return await updatePatientStatus(
+        patientId, 
+        PATIENT_STATUSES.BIRTHED, 
+        reason
+      );
+    }
+    
+    console.log(`Patient status is already ${currentStatus}, no update needed`);
+    return true;
+  } catch (error) {
+    console.error('Error checking birthed status:', error);
     return false;
   }
 }
@@ -176,6 +218,49 @@ async function getPatientStatus(patientId) {
 }
 
 /**
+ * Check if patient should be moved to Transfer status
+ * Called when transfer data is saved from different forms
+ * @param {string} patientId - Patient document ID
+ * @param {string} transferType - Type of transfer: 'anc_transfer', 'labour_transfer', or 'pnc_transfer'
+ * @param {string} reason - Reason for transfer
+ */
+async function checkAndUpdateToTransfer(patientId, transferType, reason = '') {
+  try {
+    // Validate transfer type
+    const validTransferTypes = [
+      PATIENT_STATUSES.ANC_TRANSFER,
+      PATIENT_STATUSES.LABOUR_TRANSFER,
+      PATIENT_STATUSES.PNC_TRANSFER
+    ];
+    
+    if (!validTransferTypes.includes(transferType)) {
+      console.error('Invalid transfer type:', transferType);
+      return false;
+    }
+    
+    // Check current patient status
+    const patientDoc = await firebase.firestore()
+      .collection('patients')
+      .doc(patientId)
+      .get();
+    
+    if (!patientDoc.exists) {
+      console.error('Patient not found:', patientId);
+      return false;
+    }
+    
+    return await updatePatientStatus(
+      patientId, 
+      transferType, 
+      reason || `Transferred during ${transferType.replace('_', ' ')}`
+    );
+  } catch (error) {
+    console.error('Error updating transfer status:', error);
+    return false;
+  }
+}
+
+/**
  * Get status display name for UI
  * @param {string} status - Status value
  * @returns {string} Display name
@@ -186,10 +271,18 @@ function getStatusDisplayName(status) {
       return 'Registered';
     case PATIENT_STATUSES.ANTENATAL:
       return 'Antenatal Care';
-    case PATIENT_STATUSES.LABOUR:
-      return 'Labour Care';
+    case PATIENT_STATUSES.IN_LABOUR:
+      return 'In Labour';
+    case PATIENT_STATUSES.BIRTHED:
+      return 'Birthed';
     case PATIENT_STATUSES.POSTNATAL:
       return 'Postnatal Care';
+    case PATIENT_STATUSES.ANC_TRANSFER:
+      return 'ANC Transfer';
+    case PATIENT_STATUSES.LABOUR_TRANSFER:
+      return 'Labour Transfer';
+    case PATIENT_STATUSES.PNC_TRANSFER:
+      return 'PNC Transfer';
     default:
       return status || 'Unknown';
   }
@@ -206,10 +299,16 @@ function getStatusBadgeClass(status) {
       return 'badge bg-secondary';
     case PATIENT_STATUSES.ANTENATAL:
       return 'badge bg-success';
-    case PATIENT_STATUSES.LABOUR:
+    case PATIENT_STATUSES.IN_LABOUR:
       return 'badge bg-danger';
+    case PATIENT_STATUSES.BIRTHED:
+      return 'badge bg-warning';
     case PATIENT_STATUSES.POSTNATAL:
       return 'badge bg-info';
+    case PATIENT_STATUSES.ANC_TRANSFER:
+    case PATIENT_STATUSES.LABOUR_TRANSFER:
+    case PATIENT_STATUSES.PNC_TRANSFER:
+      return 'badge bg-warning text-dark';
     default:
       return 'badge bg-secondary';
   }
@@ -219,8 +318,10 @@ function getStatusBadgeClass(status) {
 window.StatusManager = {
   updatePatientStatus,
   checkAndUpdateToAntenatalCare,
-  checkAndUpdateToLabourCare,
+  checkAndUpdateToInLabour,
+  checkAndUpdateToBirthed,
   checkAndUpdateToPostnatalCare,
+  checkAndUpdateToTransfer,
   getPatientStatus,
   getStatusDisplayName,
   getStatusBadgeClass,

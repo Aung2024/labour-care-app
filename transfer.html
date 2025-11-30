@@ -363,6 +363,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/status-manager.js"></script>
 </head>
 <body>
   <!-- Header Section -->
@@ -679,21 +680,54 @@
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           });
 
-        // Update patient status to "Transferred" in main patients collection
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .update({
-            status: 'Transferred',
-            treatmentStatus: 'transferred',
-            transferRecordId: firebase.firestore().collection('patients').doc(patientId).collection('records').doc('transferRecord').id,
-            last_updated: firebase.firestore.FieldValue.serverTimestamp()
-          });
+        // Get transfer type from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const transferType = urlParams.get('type') || 'anc'; // Default to 'anc' if not specified
+        
+        // Map transfer type to status
+        let transferStatus;
+        let transferReason;
+        switch(transferType) {
+          case 'labour':
+            transferStatus = 'labour_transfer';
+            transferReason = 'Transferred during labour care';
+            break;
+          case 'pnc':
+            transferStatus = 'pnc_transfer';
+            transferReason = 'Transferred during postnatal care';
+            break;
+          case 'anc':
+          default:
+            transferStatus = 'anc_transfer';
+            transferReason = 'Transferred during antenatal care';
+            break;
+        }
+
+        // Update patient status using StatusManager
+        if (window.StatusManager) {
+          const statusUpdated = await StatusManager.checkAndUpdateToTransfer(
+            patientId,
+            transferStatus,
+            transferReason
+          );
+          if (statusUpdated) {
+            console.log(`✅ Patient status updated to ${transferStatus}`);
+          }
+        } else {
+          // Fallback if StatusManager is not available
+          await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .update({
+              status: transferStatus,
+              last_updated: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
 
         console.log('Transfer record saved successfully and patient status updated');
         
         // Redirect to Patient Care Hub after successful save
-        window.location.href = 'patient-care-hub.html';
+        window.location.href = `patient-care-hub.html?patient=${patientId}`;
 
       } catch (error) {
         console.error('Error saving transfer record:', error);
