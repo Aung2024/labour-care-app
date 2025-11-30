@@ -845,27 +845,27 @@
         </a>
       </div>
 
-      <!-- Baby Care Card -->
-      <div class="care-card baby" onclick="navigateToCare('baby')">
+      <!-- Vaccine Schedule Card -->
+      <div class="care-card baby" onclick="navigateToCare('vaccine-schedule')">
         <div class="care-icon">
-          <i class="fas fa-baby"></i>
+          <i class="fas fa-syringe"></i>
         </div>
-        <h3 class="care-title lang-text" data-en="Baby Care" data-mm="ကလေး စောင့်ရှောက်မှု">Baby Care</h3>
-        <p class="care-description lang-text" data-en="Newborn care management, health checks, and birth records." data-mm="မွေးကင်းစ စောင့်ရှောက်မှု စီမံခန့်ခွဲမှု၊ ကျန်းမာရေး စစ်ဆေးမှုများနှင့် မွေးဖွားမှတ်တမ်းများ။">
-          Newborn care management, health checks, and birth records.
+        <h3 class="care-title lang-text" data-en="Vaccine Schedule" data-mm="ကာကွယ်ဆေးထိုး အစီအစဉ်">Vaccine Schedule</h3>
+        <p class="care-description lang-text" data-en="View and track routine immunization schedule based on baby's age." data-mm="ကလေး၏ အသက်အရွယ်ကို အခြေခံ၍ ပုံမှန်ကာကွယ်ဆေးထိုး အစီအစဉ်ကို ကြည့်ရှုနှင့် မှတ်တမ်းတင်ရန်။">
+          View and track routine immunization schedule based on baby's age.
         </p>
         <div class="care-stats">
-          <div class="stat-item">
-            <div class="stat-number" id="babyStatus">No Record</div>
-            <div class="stat-label lang-text" data-en="Status" data-mm="အခြေအနေ">Status</div>
-          </div>
           <div class="stat-item">
             <div class="stat-number" id="babyName">-</div>
             <div class="stat-label lang-text" data-en="Baby Name" data-mm="ကလေးအမည်">Baby Name</div>
           </div>
+          <div class="stat-item">
+            <div class="stat-number" id="babyAge">-</div>
+            <div class="stat-label lang-text" data-en="Age" data-mm="အသက်">Age</div>
+          </div>
         </div>
-        <a href="#" class="care-action baby" onclick="event.preventDefault(); navigateToCare('baby');">
-          <i class="fas fa-notes-medical me-2"></i><span class="lang-text" data-en="View Baby Care" data-mm="ကလေး စောင့်ရှောက်မှု ကြည့်ရှုရန်">View Baby Care</span>
+        <a href="#" class="care-action baby" onclick="event.preventDefault(); navigateToCare('vaccine-schedule');">
+          <i class="fas fa-calendar-alt me-2"></i><span class="lang-text" data-en="View Schedule" data-mm="အစီအစဉ် ကြည့်ရှုရန်">View Schedule</span>
         </a>
       </div>
 
@@ -1402,29 +1402,92 @@
           }
         }
         
-        // Update baby status and name
-        if (birthRecordFound && birthData) {
-          const statusText = currentLanguage === 'en' ? 'Recorded' : 'မှတ်တမ်းတင်ထားသည်';
-          const babyStatusEl = document.getElementById('babyStatus');
-          if (babyStatusEl) {
-            babyStatusEl.textContent = statusText;
+        // Also check newborn_care collection for baby data
+        if (!birthRecordFound) {
+          try {
+            const newbornCareSnap = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('newborn_care')
+              .limit(1)
+              .get({ source: 'server' });
+            
+            if (!newbornCareSnap.empty) {
+              birthData = newbornCareSnap.docs[0].data();
+              birthRecordFound = true;
+              console.log('Baby data found in newborn_care collection:', birthData);
+            }
+          } catch (error) {
+            console.error('Error loading newborn_care:', error);
           }
-          
-          const babyName = birthData.babyName || birthData.name || birthData.baby_name || '';
+        }
+        
+        // Update baby name and age for Vaccine Schedule card
+        if (birthRecordFound && birthData) {
+          const babyName = birthData.babyName || birthData.baby_name || birthData.name || '';
           const babyNameEl = document.getElementById('babyName');
           if (babyNameEl) {
             babyNameEl.textContent = babyName || (currentLanguage === 'en' ? 'Baby' : 'ကလေး');
-            console.log('Baby name updated:', babyName || 'Baby');
+          }
+          
+          // Calculate and display baby age
+          let birthDate = null;
+          if (birthData.birth_time) {
+            if (birthData.birth_time.toDate) {
+              birthDate = birthData.birth_time.toDate();
+            } else if (birthData.birth_time.seconds) {
+              birthDate = new Date(birthData.birth_time.seconds * 1000);
+            } else {
+              birthDate = new Date(birthData.birth_time);
+            }
+          } else if (birthData.deliveryDate) {
+            if (birthData.deliveryDate.toDate) {
+              birthDate = birthData.deliveryDate.toDate();
+            } else if (birthData.deliveryDate.seconds) {
+              birthDate = new Date(birthData.deliveryDate.seconds * 1000);
+            } else {
+              birthDate = new Date(birthData.deliveryDate);
+            }
+          }
+          
+          const babyAgeEl = document.getElementById('babyAge');
+          if (babyAgeEl) {
+            if (birthDate) {
+              const now = new Date();
+              const diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
+              const months = Math.floor(diffDays / 30);
+              const years = Math.floor(months / 12);
+              const remainingMonths = months % 12;
+              
+              if (currentLanguage === 'mm') {
+                if (years > 0) {
+                  babyAgeEl.textContent = `${years} နှစ် ${remainingMonths} လ`;
+                } else if (months > 0) {
+                  babyAgeEl.textContent = `${months} လ`;
+                } else {
+                  babyAgeEl.textContent = `${diffDays} ရက်`;
+                }
+              } else {
+                if (years > 0) {
+                  babyAgeEl.textContent = `${years}y ${remainingMonths}m`;
+                } else if (months > 0) {
+                  babyAgeEl.textContent = `${months}m`;
+                } else {
+                  babyAgeEl.textContent = `${diffDays}d`;
+                }
+              }
+            } else {
+              babyAgeEl.textContent = '-';
+            }
           }
         } else {
-          const statusText = currentLanguage === 'en' ? 'No Record' : 'မှတ်တမ်း မရှိပါ';
-          const babyStatusEl = document.getElementById('babyStatus');
-          if (babyStatusEl) {
-            babyStatusEl.textContent = statusText;
-          }
           const babyNameEl = document.getElementById('babyName');
           if (babyNameEl) {
             babyNameEl.textContent = '-';
+          }
+          const babyAgeEl = document.getElementById('babyAge');
+          if (babyAgeEl) {
+            babyAgeEl.textContent = '-';
           }
           console.log('No baby record found for patient:', patientId);
         }
@@ -1521,7 +1584,8 @@
           window.location.href = 'postpartum-care.html';
           break;
         case 'baby':
-          window.location.href = 'baby-care.html';
+        case 'vaccine-schedule':
+          window.location.href = `vaccine-schedule.html?patient=${selectedPatient.id}`;
           break;
         case 'newborn':
           window.location.href = 'immediate-newborn-care.html';
