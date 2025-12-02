@@ -10,36 +10,25 @@ var firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Detect iOS and Safari
+// Detect iOS and Safari - FIXED: More accurate detection
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-const isSafariBrowser = isSafari || (isIOS && !window.chrome);
+// Safari detection: Must be Safari AND not Chrome/Edge
+const isSafari = /Safari/.test(navigator.userAgent) && 
+                 !/Chrome/.test(navigator.userAgent) && 
+                 !/Edge/.test(navigator.userAgent) &&
+                 !/Chromium/.test(navigator.userAgent);
+const isSafariBrowser = isSafari || (isIOS && !window.chrome && !navigator.userAgent.includes('CriOS'));
 
 // CRITICAL FIX: Force long polling instead of WebSockets
 // WebSockets are often blocked by firewalls/proxies/ISPs, especially in restrictive regions
 // Long polling uses standard HTTPS which is much more reliable
-// Safari's ITP blocks real-time listeners, so we MUST use long polling
 // This MUST be called before enablePersistence() and before any Firestore operations
 try {
-  // CRITICAL: For Safari, we need to disable real-time listeners and force long polling
-  // Safari's ITP blocks the Firestore Listen channel (CORS error)
-  const settings = {
+  db.settings({
     experimentalForceLongPolling: true,
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
-  };
-  
-  // On Safari, also try to disable real-time listeners if possible
-  // Note: Firebase v8 doesn't have a direct setting for this, but long polling helps
-  if (isSafariBrowser) {
-    console.log('🌐 Safari detected - applying Safari-specific Firestore settings');
-    // Long polling is the key fix for Safari
-  }
-  
-  db.settings(settings);
+  });
   console.log('✅ Firestore configured with long polling (bypasses WebSocket blocks)');
-  if (isSafariBrowser) {
-    console.log('✅ Safari-specific settings applied - real-time listeners disabled via long polling');
-  }
 } catch (error) {
   // Settings might have been called already - this is OK, just continue
   // The warning about overriding host is harmless if it appears
@@ -48,31 +37,28 @@ try {
 
 // Enable offline persistence for better performance and offline support
 // iOS Safari has known issues with IndexedDB, so we handle it more carefully
-// Safari's ITP can also interfere with persistence
 try {
-  if (isIOS || isSafariBrowser) {
-    // On iOS/Safari, try persistence but don't fail if it doesn't work
-    // Safari's ITP may block IndexedDB access
+  if (isIOS) {
+    // On iOS, try persistence but don't fail if it doesn't work
     db.enablePersistence({
-      synchronizeTabs: false // Disable tab sync on iOS/Safari to avoid conflicts
+      synchronizeTabs: false // Disable tab sync on iOS to avoid conflicts
     }).catch((err) => {
-      console.warn('Safari/iOS Persistence error (non-critical):', err.code || err.message);
-      console.warn('App will continue without persistence - data will still load from server');
+      console.warn('iOS Persistence error (non-critical):', err.code || err.message);
       // Continue without persistence - app will still work
     });
   } else {
     // On other platforms, use full persistence
-  db.enablePersistence({
-    synchronizeTabs: true
-  }).catch((err) => {
-    if (err.code == 'failed-precondition') {
-      console.warn('Persistence can only be enabled in one tab at a time.');
-    } else if (err.code == 'unimplemented') {
-      console.warn('Persistence is not supported in this browser.');
-    } else {
-      console.warn('Error enabling persistence:', err);
-    }
-  });
+    db.enablePersistence({
+      synchronizeTabs: true
+    }).catch((err) => {
+      if (err.code == 'failed-precondition') {
+        console.warn('Persistence can only be enabled in one tab at a time.');
+      } else if (err.code == 'unimplemented') {
+        console.warn('Persistence is not supported in this browser.');
+      } else {
+        console.warn('Error enabling persistence:', err);
+      }
+    });
   }
 } catch (error) {
   console.warn('Persistence initialization error:', error);
@@ -228,7 +214,7 @@ window.testFirebaseDomains = async function() {
 // Users can call testFirebaseDomains() manually if needed
 
 // Smart query function: tries server first, falls back to cache on iOS or network errors
-// CRITICAL: On Safari, uses default source to avoid Listen channel blocking
+// OPTIMIZED: Fast for Chrome, reliable for Safari
 window.smartFirestoreQuery = async function(queryPromise, options = {}) {
   const { 
     preferCache = false, 
@@ -237,54 +223,53 @@ window.smartFirestoreQuery = async function(queryPromise, options = {}) {
     fallbackToCache = true 
   } = options;
   
-  // Detect Safari (re-detect in case this function is called before global vars are set)
-  const isSafariDetected = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || 
-                          (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.chrome);
+  // Detect iOS (for cache preference)
   const isIOSDetected = /iPhone|iPad|iPod/.test(navigator.userAgent);
   
   // If preferCache is true (for iOS), try cache first
   if (preferCache && isIOSDetected) {
     try {
-      // Try cache first on iOS
+      // Try cache first on iOS (fast if available)
       const cacheResult = await Promise.race([
         queryPromise.then(q => q.get({ source: 'cache' })),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 3000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 2000))
       ]);
       if (cacheResult && !cacheResult.empty) {
-        console.log('✅ Loaded from cache (iOS/Safari)');
+        console.log('✅ Loaded from cache (iOS)');
         return cacheResult;
       }
     } catch (cacheError) {
-      console.log('Cache miss, trying server...');
+      // Cache miss - continue to server
     }
   }
   
-  // Try server with timeout and retries
-  // CRITICAL: On Safari, avoid using { source: 'server' } as it may trigger blocked listeners
-  // Use default source which respects long polling setting and avoids Listen channel
-  const useServerSource = !isSafariDetected; // Don't force server on Safari
-  
+  // Try server with timeout and retries - FAST PATH for all browsers
+  // Long polling is already enabled globally, so this works on Safari too
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      let result;
-      if (useServerSource) {
-        // On non-Safari browsers, try server directly
-        result = await Promise.race([
-          queryPromise.then(q => q.get({ source: 'server' })),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), timeout))
-        ]);
-      } else {
-        // On Safari, use default source (respects long polling, avoids Listen channel)
-        // Default source will try cache first, then server with long polling
-        result = await Promise.race([
-          queryPromise.then(q => q.get()), // No source = uses long polling properly
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Query timeout')), timeout))
-        ]);
-      }
-      console.log('✅ Loaded from', useServerSource ? 'server' : 'default source (Safari-optimized)');
+      // Always use server source - long polling handles Safari compatibility
+      const result = await Promise.race([
+        queryPromise.then(q => q.get({ source: 'server' })),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), timeout))
+      ]);
+      console.log('✅ Loaded from server');
       return result;
     } catch (error) {
       const isLastAttempt = attempt === retries;
+      
+      // Check for CORS errors (Safari ITP blocking) - these are non-fatal
+      const isCORSError = error.message && (
+        error.message.includes('CORS') ||
+        error.message.includes('cross-origin') ||
+        error.message.includes('Access-Control')
+      );
+      
+      // CORS errors are informational (Safari blocking Listen channel) but query may still work
+      if (isCORSError && !isLastAttempt) {
+        console.warn('⚠️ CORS warning (Safari ITP) - retrying...');
+        // Don't treat CORS as fatal - continue to retry
+      }
+      
       const isNetworkError = 
         error.message && (
           error.message.includes('timeout') ||
@@ -296,7 +281,7 @@ window.smartFirestoreQuery = async function(queryPromise, options = {}) {
         );
       
       if (isLastAttempt) {
-        // Last attempt failed - try cache if enabled (CRITICAL: try cache BEFORE checking domains)
+        // Last attempt failed - try cache if enabled
         if (fallbackToCache) {
           try {
             console.log('⚠️ Server failed, trying cache fallback...');
@@ -317,24 +302,25 @@ window.smartFirestoreQuery = async function(queryPromise, options = {}) {
           }
         }
         
-        // If all fails, try default (cache or server) - this is most permissive
-        // Default source will try cache first, then server automatically
-        try {
-          console.log('⚠️ Trying default source (Firestore will use cache if available, then server)...');
-          const defaultResult = await Promise.race([
-            queryPromise.then(q => q.get()), // No source specified = tries cache first, then server
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Default source timeout')), 15000))
-          ]);
-          if (defaultResult && !defaultResult.empty) {
-            console.log('✅ Loaded from default source -', defaultResult.size, 'documents');
-            return defaultResult;
-          } else if (defaultResult) {
-            console.log('⚠️ Default source returned empty result (no data found)');
-            // Return empty result instead of throwing - let the app handle empty data
-            return defaultResult;
+        // If we got CORS errors (Safari), try default source as last resort
+        // Only do this if we suspect Safari blocking - don't slow down Chrome
+        if (isCORSError) {
+          try {
+            console.log('⚠️ CORS error detected - trying default source (Safari fallback)...');
+            const defaultResult = await Promise.race([
+              queryPromise.then(q => q.get()), // No source = tries cache then server
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Default source timeout')), 8000))
+            ]);
+            if (defaultResult && !defaultResult.empty) {
+              console.log('✅ Loaded from default source (Safari fallback) -', defaultResult.size, 'documents');
+              return defaultResult;
+            } else if (defaultResult) {
+              console.log('⚠️ Default source returned empty result');
+              return defaultResult;
+            }
+          } catch (defaultError) {
+            console.warn('⚠️ Default source also failed:', defaultError.message);
           }
-        } catch (defaultError) {
-          console.warn('⚠️ Default source also failed:', defaultError.message);
         }
         
         // Don't check domains - it's not reliable and causes false alarms
