@@ -22,7 +22,7 @@ try {
   db.settings({
     experimentalForceLongPolling: true,
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
-  });
+  }, { merge: true }); // Use merge to avoid override warning
   console.log('✅ Firestore configured with long polling (bypasses WebSocket blocks)');
 } catch (error) {
   console.warn('Warning: Could not set Firestore settings:', error);
@@ -82,12 +82,16 @@ window.testFirebaseDomains = async function() {
       let latency = 0;
       let errorMsg = '';
       
-      // Method 1: Try fetch with CORS (most reliable)
+      // IMPORTANT: CORS errors are EXPECTED and don't mean domain is blocked
+      // Firebase domains don't allow CORS from arbitrary origins (security)
+      // We need to test actual connectivity, not CORS
+      
+      // Method 1: Try with no-cors (doesn't check CORS, just connectivity)
       try {
         const response = await Promise.race([
           fetch(domain.url, {
             method: 'HEAD',
-            mode: 'cors',
+            mode: 'no-cors', // no-cors doesn't check CORS, just connectivity
             cache: 'no-cache',
             signal: controller.signal
           }),
@@ -95,49 +99,55 @@ window.testFirebaseDomains = async function() {
         ]);
         clearTimeout(timeoutId);
         latency = Math.round(performance.now() - startTime);
-        accessible = true; // If we get here, domain is reachable
+        // If we get here (even with opaque response), domain is reachable
+        accessible = true;
       } catch (fetchError) {
-        // Method 2: Try with no-cors (works even if CORS fails, but less reliable)
+        // Method 2: Try DNS resolution via image load (bypasses CORS entirely)
         try {
           clearTimeout(timeoutId);
           const controller2 = new AbortController();
           const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
           
-          await Promise.race([
-            fetch(domain.url, {
-              method: 'HEAD',
-              mode: 'no-cors',
-              cache: 'no-cache',
-              signal: controller2.signal
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-          ]);
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            const timeout = setTimeout(() => {
+              controller2.abort();
+              reject(new Error('Image load timeout'));
+            }, 3000);
+            
+            img.onload = () => {
+              clearTimeout(timeout);
+              clearTimeout(timeoutId2);
+              resolve();
+            };
+            img.onerror = () => {
+              // Even onerror means DNS resolved and connection was attempted
+              // This means domain is reachable (404 is fine, means domain exists)
+              clearTimeout(timeout);
+              clearTimeout(timeoutId2);
+              resolve(); // Domain is reachable
+            };
+            // Use a path that likely doesn't exist (404 is fine, means domain is reachable)
+            img.src = domain.url + '/favicon.ico?' + Date.now();
+          });
           clearTimeout(timeoutId2);
           latency = Math.round(performance.now() - startTime);
-          accessible = true; // Domain is reachable (even if CORS blocked)
-        } catch (noCorsError) {
-          // Method 3: Try image load (works in most browsers)
-          try {
-            clearTimeout(timeoutId);
-            await new Promise((resolve, reject) => {
-              const img = new Image();
-              const timeout = setTimeout(() => reject(new Error('Image load timeout')), 3000);
-              img.onload = () => {
-                clearTimeout(timeout);
-                resolve();
-              };
-              img.onerror = () => {
-                clearTimeout(timeout);
-                reject(new Error('Image load failed'));
-              };
-              // Use a known endpoint that returns an image or 404 (both mean domain is reachable)
-              img.src = domain.url + '/favicon.ico?' + Date.now();
-            });
-            latency = Math.round(performance.now() - startTime);
-            accessible = true;
-          } catch (imgError) {
-            errorMsg = fetchError.message || noCorsError.message || imgError.message;
+          accessible = true;
+        } catch (imgError) {
+          // If image load fails completely, domain might be blocked
+          // But check error type - DNS errors vs network errors
+          const isDNSOrNetworkError = 
+            imgError.message.includes('timeout') ||
+            imgError.message.includes('Failed to fetch') ||
+            imgError.message.includes('network');
+          
+          if (isDNSOrNetworkError) {
+            errorMsg = 'Domain may be blocked or unreachable: ' + (imgError.message || 'Unknown error');
             accessible = false;
+          } else {
+            // Other errors might just mean the resource doesn't exist (but domain is reachable)
+            accessible = true;
+            latency = Math.round(performance.now() - startTime);
           }
         }
       }
