@@ -1077,13 +1077,17 @@
           return;
         }
 
-        // Load patient from Firestore
-        const patientDoc = await firebase.firestore()
+        // Load patient from Firestore - use smart query for Safari compatibility
+        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const patientQuery = firebase.firestore()
           .collection('patients')
-          .doc(patientId)
-          .get();
+          .doc(patientId);
+        const patientDoc = await smartFirestoreQuery(
+          Promise.resolve(patientQuery),
+          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
 
-        if (!patientDoc.exists) {
+        if (!patientDoc || !patientDoc.exists) {
           // Patient not found
           sessionStorage.removeItem('selectedPatientId');
           sessionStorage.removeItem('selectedPatientData');
@@ -1164,24 +1168,31 @@
     async function loadCareStats() {
       try {
         const patientId = selectedPatient.id;
+        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
         
-        // Load ANC visits - optimized with cache-first and limit
-        const ancVisitsSnap = await firebase.firestore()
+        // Load ANC visits - use smart query for Safari compatibility
+        const ancVisitsQuery = firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('antenatal_visits')
           .orderBy('timestamp', 'desc')
-          .limit(1) // Only need count and latest visit
-          .get({ source: 'server' });
+          .limit(1); // Only need count and latest visit
+        const ancVisitsSnap = await smartFirestoreQuery(
+          Promise.resolve(ancVisitsQuery),
+          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
         
-        // Get total count separately with cache-first
-        const ancCountSnap = await firebase.firestore()
+        // Get total count separately - use smart query
+        const ancCountQuery = firebase.firestore()
           .collection('patients')
           .doc(patientId)
-          .collection('antenatal_visits')
-          .get({ source: 'server' });
+          .collection('antenatal_visits');
+        const ancCountSnap = await smartFirestoreQuery(
+          Promise.resolve(ancCountQuery),
+          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
         
-        const ancCount = ancCountSnap.size;
+        const ancCount = ancCountSnap && ancCountSnap.size ? ancCountSnap.size : 0;
         
         document.getElementById('ancVisits').textContent = ancCount;
         
@@ -1193,7 +1204,8 @@
             ancActionBtn.innerHTML = `<i class="fas fa-plus me-2"></i><span class="lang-text" data-en="Add ANC Visit" data-mm="ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှု ထပ်ထည့်ရန်">${btnText}</span>`;
           }
           
-          const lastVisit = ancVisitsSnap.docs[0].data();
+          const lastVisit = ancVisitsSnap && ancVisitsSnap.docs && ancVisitsSnap.docs.length > 0 ? ancVisitsSnap.docs[0].data() : null;
+          if (!lastVisit) return;
           // Try multiple possible date fields
           const lastVisitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
           if (lastVisitDate) {
@@ -1214,15 +1226,18 @@
         // Load Labour status - check patient's current status and summary data
         const currentStatus = selectedPatient.status || 'registered';
         
-        // Check if patient has summary record (labour care data) - cache-first
-        const summaryDoc = await firebase.firestore()
+        // Check if patient has summary record (labour care data) - use smart query
+        const summaryQuery = firebase.firestore()
           .collection('patients')
           .doc(patientId)
           .collection('records')
-          .doc('summary')
-          .get({ source: 'server' });
+          .doc('summary');
+        const summaryDoc = await smartFirestoreQuery(
+          Promise.resolve(summaryQuery),
+          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
         
-        if (summaryDoc.exists) {
+        if (summaryDoc && summaryDoc.exists) {
           const summaryData = summaryDoc.data();
           
           // Determine labour status based on patient's current status and summary data
@@ -1275,33 +1290,42 @@
           // Try postpartum_visits collection first - cache-first strategy
           let pncVisitsSnap;
           try {
-            // Try cache first, then server with orderBy
-            pncVisitsSnap = await firebase.firestore()
+            // Try with orderBy first - use smart query
+            const pncVisitsQuery = firebase.firestore()
               .collection('patients')
               .doc(patientId)
               .collection('postpartum_visits')
               .orderBy('timestamp', 'desc')
-              .limit(1) // Only need latest for display
-              .get({ source: 'server' });
+              .limit(1); // Only need latest for display
+            pncVisitsSnap = await smartFirestoreQuery(
+              Promise.resolve(pncVisitsQuery),
+              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
           } catch (orderError) {
-            // If orderBy fails, try without it
+            // If orderBy fails, try without it - use smart query
             console.log('OrderBy failed, trying without orderBy...');
-            pncVisitsSnap = await firebase.firestore()
+            const pncVisitsQueryNoOrder = firebase.firestore()
               .collection('patients')
               .doc(patientId)
               .collection('postpartum_visits')
-              .limit(1)
-              .get({ source: 'server' });
+              .limit(1);
+            pncVisitsSnap = await smartFirestoreQuery(
+              Promise.resolve(pncVisitsQueryNoOrder),
+              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
           }
           
-          // Get total count separately
-          const pncCountSnap = await firebase.firestore()
+          // Get total count separately - use smart query
+          const pncCountQuery = firebase.firestore()
             .collection('patients')
             .doc(patientId)
-            .collection('postpartum_visits')
-            .get({ source: 'server' });
+            .collection('postpartum_visits');
+          const pncCountSnap = await smartFirestoreQuery(
+            Promise.resolve(pncCountQuery),
+            { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          );
           
-          pncCount = pncCountSnap.size;
+          pncCount = pncCountSnap && pncCountSnap.size ? pncCountSnap.size : 0;
           
           if (pncCount > 0 && !pncVisitsSnap.empty) {
             // Sort manually if orderBy didn't work
@@ -1351,16 +1375,19 @@
         let birthData = null;
         let birthRecordFound = false;
         
-        // Try records/birthRecord first - cache-first
+        // Try records/birthRecord first - use smart query
         try {
-          const birthRecordDoc = await firebase.firestore()
+          const birthRecordQuery = firebase.firestore()
             .collection('patients')
             .doc(patientId)
             .collection('records')
-            .doc('birthRecord')
-            .get({ source: 'server' });
+            .doc('birthRecord');
+          const birthRecordDoc = await smartFirestoreQuery(
+            Promise.resolve(birthRecordQuery),
+            { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          );
           
-          if (birthRecordDoc.exists) {
+          if (birthRecordDoc && birthRecordDoc.exists) {
             birthData = birthRecordDoc.data();
             birthRecordFound = true;
           }
@@ -1373,26 +1400,32 @@
           try {
             let babyRecordsSnap;
             try {
-              // Try with orderBy first - cache-first
-              babyRecordsSnap = await firebase.firestore()
+              // Try with orderBy first - use smart query
+              const babyRecordsQuery = firebase.firestore()
                 .collection('patients')
                 .doc(patientId)
                 .collection('baby_records')
                 .orderBy('timestamp', 'desc')
-                .limit(1)
-                .get({ source: 'server' });
+                .limit(1);
+              babyRecordsSnap = await smartFirestoreQuery(
+                Promise.resolve(babyRecordsQuery),
+                { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+              );
             } catch (orderError) {
-              // If orderBy fails, try without it
+              // If orderBy fails, try without it - use smart query
               console.log('OrderBy failed for baby_records, trying without orderBy...');
-              babyRecordsSnap = await firebase.firestore()
+              const babyRecordsQueryNoOrder = firebase.firestore()
                 .collection('patients')
                 .doc(patientId)
                 .collection('baby_records')
-                .limit(1)
-                .get({ source: 'server' });
+                .limit(1);
+              babyRecordsSnap = await smartFirestoreQuery(
+                Promise.resolve(babyRecordsQueryNoOrder),
+                { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+              );
             }
             
-            if (!babyRecordsSnap.empty) {
+            if (babyRecordsSnap && !babyRecordsSnap.empty) {
               birthData = babyRecordsSnap.docs[0].data();
               birthRecordFound = true;
               console.log('Baby record found in baby_records collection:', birthData);
@@ -1402,17 +1435,20 @@
           }
         }
         
-        // Also check newborn_care collection for baby data
+        // Also check newborn_care collection for baby data - use smart query
         if (!birthRecordFound) {
           try {
-            const newbornCareSnap = await firebase.firestore()
+            const newbornCareQuery = firebase.firestore()
               .collection('patients')
               .doc(patientId)
               .collection('newborn_care')
-              .limit(1)
-              .get({ source: 'server' });
+              .limit(1);
+            const newbornCareSnap = await smartFirestoreQuery(
+              Promise.resolve(newbornCareQuery),
+              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
             
-            if (!newbornCareSnap.empty) {
+            if (newbornCareSnap && !newbornCareSnap.empty) {
               birthData = newbornCareSnap.docs[0].data();
               birthRecordFound = true;
               console.log('Baby data found in newborn_care collection:', birthData);
@@ -1613,24 +1649,33 @@
       }
       
       const patientId = selectedPatient.id;
+      const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
       
       try {
         // Check if Active First Stage time already exists
         const base = firebase.firestore().collection("patients").doc(patientId);
         
-        // Check in summary document first
-        const summaryDoc = await base.collection("records").doc("summary").get();
+        // Check in summary document first - use smart query
+        const summaryQuery = base.collection("records").doc("summary");
+        const summaryDoc = await smartFirestoreQuery(
+          Promise.resolve(summaryQuery),
+          { preferCache: isIOSDevice, timeout: 8000, retries: 1, fallbackToCache: true }
+        );
         let startingTime = null;
         
-        if (summaryDoc.exists) {
+        if (summaryDoc && summaryDoc.exists) {
           const summaryData = summaryDoc.data();
           startingTime = summaryData.startingTime || summaryData.activeFirstStage_Time;
         }
         
-        // If not found in summary, check startingTime document
+        // If not found in summary, check startingTime document - use smart query
         if (!startingTime) {
-          const startingTimeDoc = await base.collection("records").doc("startingTime").get();
-          if (startingTimeDoc.exists) {
+          const startingTimeQuery = base.collection("records").doc("startingTime");
+          const startingTimeDoc = await smartFirestoreQuery(
+            Promise.resolve(startingTimeQuery),
+            { preferCache: isIOSDevice, timeout: 8000, retries: 1, fallbackToCache: true }
+          );
+          if (startingTimeDoc && startingTimeDoc.exists) {
             startingTime = startingTimeDoc.data().startingTime;
           }
         }
