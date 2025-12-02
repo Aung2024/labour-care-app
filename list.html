@@ -792,14 +792,23 @@
       
       currentUser = user;
       
-      // Get user role
-      const userDoc = await firebase.firestore()
-        .collection('users')
-        .doc(user.uid)
-        .get();
+      // Detect iOS
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
       
-      if (userDoc.exists) {
-        userRole = userDoc.data().role;
+      // Get user role using smart query
+      try {
+        const userQuery = firebase.firestore().collection('users').doc(user.uid);
+        const userDoc = await smartFirestoreQuery(
+          Promise.resolve(userQuery),
+          { preferCache: isIOS, timeout: 8000, retries: 1 }
+        );
+        
+        if (userDoc && userDoc.exists) {
+          userRole = userDoc.data().role;
+        }
+      } catch (error) {
+        console.warn('Error loading user role:', error);
+        // Continue without role - will default to Midwife behavior
       }
       
       // Load recent patients
@@ -814,30 +823,95 @@
       try {
         console.log('Loading patients...');
         const db = firebase.firestore();
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
         let query = db.collection('patients');
 
         // Apply role-based filtering
-        if (userRole === 'Midwife') {
-          query = query.where('created_by', '==', currentUser.uid);
+        if (userRole === 'Midwife' || userRole === 'midwife') {
+          // Try both field names for compatibility
+          try {
+            const newQuery = db.collection('patients').where('created_by', '==', currentUser.uid);
+            const newSnap = await smartFirestoreQuery(
+              Promise.resolve(newQuery),
+              { preferCache: isIOS, timeout: 10000, retries: 2 }
+            );
+            
+            const oldQuery = db.collection('patients').where('createdBy', '==', currentUser.uid);
+            const oldSnap = await smartFirestoreQuery(
+              Promise.resolve(oldQuery),
+              { preferCache: isIOS, timeout: 10000, retries: 2 }
+            );
+            
+            // Combine results
+            allPatients = [];
+            const patientMap = new Map();
+            
+            if (newSnap && !newSnap.empty) {
+              newSnap.forEach(doc => {
+                patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+              });
+            }
+            
+            if (oldSnap && !oldSnap.empty) {
+              oldSnap.forEach(doc => {
+                if (!patientMap.has(doc.id)) {
+                  patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                }
+              });
+            }
+            
+            allPatients = Array.from(patientMap.values());
+          } catch (error) {
+            console.error('Error loading midwife patients:', error);
+            allPatients = [];
+          }
         } else if (userRole === 'TMO') {
-          const userDoc = await db.collection('users').doc(currentUser.uid).get({ source: 'server' });
-          const userTownship = userDoc.data().township;
-          query = query.where('township', '==', userTownship);
+          try {
+            const userQuery = db.collection('users').doc(currentUser.uid);
+            const userDoc = await smartFirestoreQuery(
+              Promise.resolve(userQuery),
+              { preferCache: isIOS, timeout: 5000, retries: 1 }
+            );
+            
+            if (userDoc && userDoc.exists) {
+              const userTownship = userDoc.data().township;
+              query = query.where('township', '==', userTownship);
+              
+              const snapshot = await smartFirestoreQuery(
+                Promise.resolve(query),
+                { preferCache: isIOS, timeout: 10000, retries: 2 }
+              );
+              
+              allPatients = [];
+              if (snapshot && !snapshot.empty) {
+                snapshot.forEach(doc => {
+                  allPatients.push({ id: doc.id, ...doc.data() });
+                });
+              }
+            } else {
+              allPatients = [];
+            }
+          } catch (error) {
+            console.error('Error loading TMO patients:', error);
+            allPatients = [];
+          }
+        } else if (userRole === 'Super Admin' || userRole === 'admin') {
+          // Super Admin sees all patients
+          const snapshot = await smartFirestoreQuery(
+            Promise.resolve(query),
+            { preferCache: isIOS, timeout: 10000, retries: 2 }
+          );
+          
+          allPatients = [];
+          if (snapshot && !snapshot.empty) {
+            snapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+          }
+        } else {
+          // Default: no access
+          allPatients = [];
         }
-
-        // Load from server with timeout
-        const snapshot = await Promise.race([
-          query.get({ source: 'server' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 15000))
-        ]);
-        
-        allPatients = [];
-        snapshot.forEach(doc => {
-          allPatients.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
 
         console.log('Loaded', allPatients.length, 'patients');
         
@@ -863,10 +937,14 @@
         console.error('Error loading patients:', error);
         document.getElementById('loadingContainer').style.display = 'none';
         
-        // Show error message
-        console.error('Failed to load patients from server');
+        // Show user-friendly error message
+        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const errorMsg = isIOSDevice 
+          ? 'Unable to load patients. Please check your internet connection or try using mobile data instead of WiFi.'
+          : 'Error loading patients: ' + error.message;
         
-        alert('Error loading patients: ' + error.message);
+        document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('emptyMessage').textContent = errorMsg;
       }
     }
 

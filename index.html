@@ -407,13 +407,16 @@
       }
     });
 
-    function loadUserData() {
-      // Get from server with timeout
-      return Promise.race([
-        db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout')), 8000))
-      ]).then(doc => {
-        if (doc.exists) {
+    async function loadUserData() {
+      try {
+        // Use smart query for iOS compatibility
+        const userQuery = db.collection("users").doc(currentUser.uid);
+        const doc = await smartFirestoreQuery(
+          Promise.resolve(userQuery),
+          { preferCache: isIOS, timeout: 8000, retries: 1 }
+        );
+        
+        if (doc && doc.exists) {
           const userData = doc.data();
           userRole = userData.role;
           
@@ -441,19 +444,33 @@
           // Load patient stats after user role is loaded (non-blocking)
           loadPatientStats();
         }
-      }).catch(error => {
+      } catch (error) {
         console.warn('Error loading user data:', error);
         // Still show the page even if user data fails
         document.getElementById("userEmail").textContent = currentUser.email || 'User';
         document.getElementById("userRole").textContent = 'Loading...';
         // Try to load stats anyway (might work with cached data)
         loadPatientStats();
-      });
+      }
     }
 
-    // Helper function to query with timeout and offline support
+    // Detect iOS for smart queries
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    
+    // Helper function to query with timeout and offline support (legacy - use smartFirestoreQuery instead)
     async function queryWithTimeout(queryPromise, timeout = 8000) {
       try {
+        // If it's a Firestore query, use smart query
+        if (queryPromise && typeof queryPromise.then === 'function') {
+          const query = await queryPromise;
+          if (query && query.get) {
+            return await smartFirestoreQuery(
+              Promise.resolve(query),
+              { preferCache: isIOS, timeout: timeout, retries: 1 }
+            );
+          }
+        }
+        // Fallback to original behavior
         return await Promise.race([
           queryPromise,
           new Promise((_, reject) => setTimeout(() => reject(new Error('Query timeout')), timeout))
@@ -494,9 +511,10 @@
         let userTownship = null;
         if (userRole === "TMO") {
           try {
-            const userDoc = await queryWithTimeout(
-              db.collection("users").doc(currentUser.uid).get({ source: 'server' }),
-              5000
+            const userQuery = db.collection("users").doc(currentUser.uid);
+            const userDoc = await smartFirestoreQuery(
+              Promise.resolve(userQuery),
+              { preferCache: isIOS, timeout: 5000, retries: 1 }
             );
             if (userDoc && userDoc.exists) {
               userTownship = userDoc.data().township;
@@ -511,28 +529,31 @@
         // Load patient statistics based on user role with timeout handling
         if (userRole === "Super Admin" || userRole === "admin") {
           // Super Admin sees all patients
-          querySnapshot = await queryWithTimeout(
-            db.collection("patients").get({ source: 'server' }),
-            10000
+          const patientsQuery = db.collection("patients");
+          querySnapshot = await smartFirestoreQuery(
+            Promise.resolve(patientsQuery),
+            { preferCache: isIOS, timeout: 10000, retries: 2 }
           );
         } else if (userRole === "TMO") {
           // TMO sees patients from their township
           if (userTownship) {
-            querySnapshot = await queryWithTimeout(
-              db.collection("patients").where("township", "==", userTownship).get({ source: 'server' }),
-              10000
+            const patientsQuery = db.collection("patients").where("township", "==", userTownship);
+            querySnapshot = await smartFirestoreQuery(
+              Promise.resolve(patientsQuery),
+              { preferCache: isIOS, timeout: 10000, retries: 2 }
             );
           } else {
             updateStatsDisplay();
             return;
           }
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only patients they created - try cache first
+          // Midwife sees only patients they created - use smart query for iOS
           let snapNew, snapOld;
           try {
-            snapNew = await queryWithTimeout(
-              db.collection("patients").where("created_by", "==", currentUser.uid).get({ source: 'server' }),
-              8000
+            const newQuery = db.collection("patients").where("created_by", "==", currentUser.uid);
+            snapNew = await smartFirestoreQuery(
+              Promise.resolve(newQuery),
+              { preferCache: isIOS, timeout: 8000, retries: 1 }
             );
           } catch (error) {
             console.warn('Could not load new format patients:', error);
@@ -540,9 +561,10 @@
           }
           
           try {
-            snapOld = await queryWithTimeout(
-              db.collection("patients").where("createdBy", "==", currentUser.uid).get({ source: 'server' }),
-              8000
+            const oldQuery = db.collection("patients").where("createdBy", "==", currentUser.uid);
+            snapOld = await smartFirestoreQuery(
+              Promise.resolve(oldQuery),
+              { preferCache: isIOS, timeout: 8000, retries: 1 }
             );
           } catch (error) {
             console.warn('Could not load old format patients:', error);
@@ -579,13 +601,13 @@
             // Check if this postnatal patient has a birth record (counts as baby) - skip if offline
             if (status === 'postnatal') {
               try {
-                const birthRecord = await queryWithTimeout(
-                  db.collection("patients")
-                    .doc(doc.id)
-                    .collection("records")
-                    .doc("birthRecord")
-                    .get({ source: 'server' }),
-                  3000
+                const birthRecordQuery = db.collection("patients")
+                  .doc(doc.id)
+                  .collection("records")
+                  .doc("birthRecord");
+                const birthRecord = await smartFirestoreQuery(
+                  Promise.resolve(birthRecordQuery),
+                  { preferCache: isIOS, timeout: 3000, retries: 0, fallbackToCache: false }
                 );
                 
                 if (birthRecord && birthRecord.exists) {
@@ -630,13 +652,13 @@
           // Check if this postnatal patient has a birth record (counts as baby) - skip if offline
           if (status === 'postnatal') {
             try {
-              const birthRecord = await queryWithTimeout(
-                db.collection("patients")
-                  .doc(doc.id)
-                  .collection("records")
-                  .doc("birthRecord")
-                  .get({ source: 'server' }),
-                3000
+              const birthRecordQuery = db.collection("patients")
+                .doc(doc.id)
+                .collection("records")
+                .doc("birthRecord");
+              const birthRecord = await smartFirestoreQuery(
+                Promise.resolve(birthRecordQuery),
+                { preferCache: isIOS, timeout: 3000, retries: 0, fallbackToCache: false }
               );
               
               if (birthRecord && birthRecord.exists) {
