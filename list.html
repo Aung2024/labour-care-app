@@ -821,99 +821,142 @@
     // Load patients from Firestore with optimization
     async function loadPatients() {
       try {
-        console.log('Loading patients...');
+        console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
         const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
         let query = db.collection('patients');
 
         // Apply role-based filtering
-        if (userRole === 'Midwife' || userRole === 'midwife') {
+        if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
+          // Default to Midwife if role not loaded yet
+          console.log('Loading as Midwife - checking both field formats...');
           // Try both field names for compatibility
           try {
             const newQuery = db.collection('patients').where('created_by', '==', currentUser.uid);
+            console.log('Trying created_by query...');
             const newSnap = await smartFirestoreQuery(
               Promise.resolve(newQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2 }
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
+            console.log('created_by query result:', newSnap?.empty ? 'empty' : `${newSnap?.size || 0} docs`);
             
             const oldQuery = db.collection('patients').where('createdBy', '==', currentUser.uid);
+            console.log('Trying createdBy query...');
             const oldSnap = await smartFirestoreQuery(
               Promise.resolve(oldQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2 }
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
+            console.log('createdBy query result:', oldSnap?.empty ? 'empty' : `${oldSnap?.size || 0} docs`);
             
             // Combine results
             allPatients = [];
             const patientMap = new Map();
             
-            if (newSnap && !newSnap.empty) {
+            if (newSnap && typeof newSnap.forEach === 'function' && !newSnap.empty) {
+              let count = 0;
               newSnap.forEach(doc => {
-                patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-              });
-            }
-            
-            if (oldSnap && !oldSnap.empty) {
-              oldSnap.forEach(doc => {
-                if (!patientMap.has(doc.id)) {
+                if (doc && doc.id && doc.data) {
                   patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                  count++;
                 }
               });
+              console.log('✅ Added', count, 'patients from created_by field');
+            } else {
+              console.log('⚠️ created_by query returned empty or invalid result');
+            }
+            
+            if (oldSnap && typeof oldSnap.forEach === 'function' && !oldSnap.empty) {
+              let count = 0;
+              oldSnap.forEach(doc => {
+                if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                  patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                  count++;
+                }
+              });
+              console.log('✅ Added', count, 'patients from createdBy field');
+            } else {
+              console.log('⚠️ createdBy query returned empty or invalid result');
             }
             
             allPatients = Array.from(patientMap.values());
+            console.log('📊 Total combined patients:', allPatients.length);
+            
+            if (allPatients.length === 0) {
+              console.warn('⚠️ No patients found. This could mean:');
+              console.warn('  - User has not created any patients yet');
+              console.warn('  - Cache is empty and server query failed');
+              console.warn('  - User ID mismatch:', currentUser?.uid);
+            }
           } catch (error) {
             console.error('Error loading midwife patients:', error);
+            console.error('Error details:', error.message, error.code);
             allPatients = [];
           }
         } else if (userRole === 'TMO') {
           try {
+            console.log('Loading as TMO...');
             const userQuery = db.collection('users').doc(currentUser.uid);
             const userDoc = await smartFirestoreQuery(
               Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1 }
+              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
             );
             
             if (userDoc && userDoc.exists) {
               const userTownship = userDoc.data().township;
+              console.log('TMO Township:', userTownship);
               query = query.where('township', '==', userTownship);
               
               const snapshot = await smartFirestoreQuery(
                 Promise.resolve(query),
-                { preferCache: isIOS, timeout: 10000, retries: 2 }
+                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
               );
               
               allPatients = [];
-              if (snapshot && !snapshot.empty) {
+              if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
                 snapshot.forEach(doc => {
-                  allPatients.push({ id: doc.id, ...doc.data() });
+                  if (doc && doc.id && doc.data) {
+                    allPatients.push({ id: doc.id, ...doc.data() });
+                  }
                 });
+                console.log('✅ Loaded', allPatients.length, 'patients for TMO');
+              } else {
+                console.warn('⚠️ TMO query returned empty result');
               }
             } else {
+              console.warn('⚠️ TMO user document not found or missing township');
               allPatients = [];
             }
           } catch (error) {
-            console.error('Error loading TMO patients:', error);
+            console.error('❌ Error loading TMO patients:', error);
+            console.error('Error details:', error.message, error.code);
             allPatients = [];
           }
         } else if (userRole === 'Super Admin' || userRole === 'admin') {
+          console.log('Loading as Super Admin (all patients)...');
           // Super Admin sees all patients
           const snapshot = await smartFirestoreQuery(
             Promise.resolve(query),
-            { preferCache: isIOS, timeout: 10000, retries: 2 }
+            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
           );
           
           allPatients = [];
-          if (snapshot && !snapshot.empty) {
+          if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
             snapshot.forEach(doc => {
-              allPatients.push({ id: doc.id, ...doc.data() });
+              if (doc && doc.id && doc.data) {
+                allPatients.push({ id: doc.id, ...doc.data() });
+              }
             });
+            console.log('✅ Loaded', allPatients.length, 'patients for Super Admin');
+          } else {
+            console.warn('⚠️ Super Admin query returned empty result');
           }
         } else {
+          console.warn('⚠️ Unknown user role:', userRole, '- defaulting to no access');
           // Default: no access
           allPatients = [];
         }
 
-        console.log('Loaded', allPatients.length, 'patients');
+        console.log('✅ Loaded', allPatients.length, 'patients total');
         
         // Sort by creation date (newest first) - optimized
         allPatients.sort((a, b) => {
@@ -927,9 +970,15 @@
         document.getElementById('loadingContainer').style.display = 'none';
         
         if (allPatients.length === 0) {
+          console.warn('⚠️ No patients found. Possible reasons:');
+          console.warn('1. User has no patients created yet');
+          console.warn('2. Network issue - cache might be empty');
+          console.warn('3. User role might not match patient ownership');
+          console.warn('User Role:', userRole, 'User ID:', currentUser?.uid);
           document.getElementById('emptyState').style.display = 'block';
           document.getElementById('emptyMessage').textContent = 'There are no patients registered yet.';
         } else {
+          console.log('✅ Displaying', allPatients.length, 'patients');
           displayPatients();
         }
         
