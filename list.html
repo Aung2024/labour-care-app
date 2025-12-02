@@ -795,20 +795,25 @@
       // Detect iOS
       const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
       
-      // Get user role using smart query
+      // Get user role using smart query - CRITICAL: must succeed for app to work
       try {
         const userQuery = firebase.firestore().collection('users').doc(user.uid);
         const userDoc = await smartFirestoreQuery(
           Promise.resolve(userQuery),
-          { preferCache: isIOS, timeout: 8000, retries: 1 }
+          { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
         );
         
         if (userDoc && userDoc.exists) {
           userRole = userDoc.data().role;
+          console.log('✅ User role loaded:', userRole);
+        } else {
+          console.warn('⚠️ User document not found, defaulting to Midwife');
+          userRole = 'Midwife'; // Default role
         }
       } catch (error) {
-        console.warn('Error loading user role:', error);
-        // Continue without role - will default to Midwife behavior
+        console.error('❌ Error loading user role:', error);
+        console.warn('⚠️ Defaulting to Midwife role - app may have limited functionality');
+        userRole = 'Midwife'; // Default to Midwife if role load fails
       }
       
       // Load recent patients
@@ -882,10 +887,11 @@
             console.log('📊 Total combined patients:', allPatients.length);
             
             if (allPatients.length === 0) {
-              console.warn('⚠️ No patients found. This could mean:');
-              console.warn('  - User has not created any patients yet');
-              console.warn('  - Cache is empty and server query failed');
-              console.warn('  - User ID mismatch:', currentUser?.uid);
+              console.warn('⚠️ No patients found. Possible reasons:');
+              console.warn('  1. User has not created any patients yet');
+              console.warn('  2. Network issue - cache is empty and server query failed');
+              console.warn('  3. User ID mismatch - checking:', currentUser?.uid);
+              console.warn('  4. Try: Refresh page, check VPN, or use mobile data');
             }
           } catch (error) {
             console.error('Error loading midwife patients:', error);
@@ -972,11 +978,23 @@
         if (allPatients.length === 0) {
           console.warn('⚠️ No patients found. Possible reasons:');
           console.warn('1. User has no patients created yet');
-          console.warn('2. Network issue - cache might be empty');
+          console.warn('2. Network issue - cache is empty and server query failed');
           console.warn('3. User role might not match patient ownership');
-          console.warn('User Role:', userRole, 'User ID:', currentUser?.uid);
+          console.warn('User Role:', userRole || 'NOT LOADED', 'User ID:', currentUser?.uid);
+          console.warn('💡 Suggestions:');
+          console.warn('  - If first time: Create a patient first');
+          console.warn('  - If network issue: Check VPN, try mobile data, refresh page');
+          console.warn('  - If cache issue: Clear cache and reload');
+          
+          document.getElementById('loadingContainer').style.display = 'none';
           document.getElementById('emptyState').style.display = 'block';
-          document.getElementById('emptyMessage').textContent = 'There are no patients registered yet.';
+          
+          // Show helpful message based on whether it's likely a network issue
+          const isNetworkIssue = !userRole || userRole === 'NOT LOADED';
+          const emptyMsg = isNetworkIssue 
+            ? 'Unable to load patients. Please check your internet connection, ensure VPN is working, or try using mobile data instead of WiFi. Then refresh the page.'
+            : 'There are no patients registered yet. Click "Register New Patient" to get started.';
+          document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
           console.log('✅ Displaying', allPatients.length, 'patients');
           displayPatients();
