@@ -14,6 +14,21 @@ const db = firebase.firestore();
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
+// CRITICAL FIX: Force long polling instead of WebSockets
+// WebSockets are often blocked by firewalls/proxies/ISPs, especially in restrictive regions
+// Long polling uses standard HTTPS which is much more reliable
+// This MUST be called before enablePersistence() and before any Firestore operations
+try {
+  db.settings({
+    experimentalForceLongPolling: true,
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+  });
+  console.log('✅ Firestore configured with long polling (bypasses WebSocket blocks)');
+} catch (error) {
+  console.warn('Warning: Could not set Firestore settings:', error);
+  // Continue - settings might have been called already
+}
+
 // Enable offline persistence for better performance and offline support
 // iOS Safari has known issues with IndexedDB, so we handle it more carefully
 try {
@@ -42,6 +57,147 @@ try {
 } catch (error) {
   console.warn('Persistence initialization error:', error);
   // Continue without persistence - app will still work
+}
+
+// Domain connectivity test - checks if Firebase domains are accessible
+window.testFirebaseDomains = async function() {
+  const domains = [
+    { name: 'Firebase Auth', url: 'https://labourcare-2481a.firebaseapp.com', critical: true },
+    { name: 'Firestore API', url: 'https://firestore.googleapis.com', critical: true },
+    { name: 'Google Static', url: 'https://www.gstatic.com', critical: true },
+    { name: 'Google APIs', url: 'https://www.googleapis.com', critical: false },
+    { name: 'Storage', url: 'https://labourcare-2481a.appspot.com', critical: false }
+  ];
+  
+  const results = [];
+  for (const domain of domains) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const startTime = performance.now();
+      
+      // Try multiple methods to test connectivity
+      let accessible = false;
+      let latency = 0;
+      let errorMsg = '';
+      
+      // Method 1: Try fetch with CORS (most reliable)
+      try {
+        const response = await Promise.race([
+          fetch(domain.url, {
+            method: 'HEAD',
+            mode: 'cors',
+            cache: 'no-cache',
+            signal: controller.signal
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ]);
+        clearTimeout(timeoutId);
+        latency = Math.round(performance.now() - startTime);
+        accessible = true; // If we get here, domain is reachable
+      } catch (fetchError) {
+        // Method 2: Try with no-cors (works even if CORS fails, but less reliable)
+        try {
+          clearTimeout(timeoutId);
+          const controller2 = new AbortController();
+          const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
+          
+          await Promise.race([
+            fetch(domain.url, {
+              method: 'HEAD',
+              mode: 'no-cors',
+              cache: 'no-cache',
+              signal: controller2.signal
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+          ]);
+          clearTimeout(timeoutId2);
+          latency = Math.round(performance.now() - startTime);
+          accessible = true; // Domain is reachable (even if CORS blocked)
+        } catch (noCorsError) {
+          // Method 3: Try image load (works in most browsers)
+          try {
+            clearTimeout(timeoutId);
+            await new Promise((resolve, reject) => {
+              const img = new Image();
+              const timeout = setTimeout(() => reject(new Error('Image load timeout')), 3000);
+              img.onload = () => {
+                clearTimeout(timeout);
+                resolve();
+              };
+              img.onerror = () => {
+                clearTimeout(timeout);
+                reject(new Error('Image load failed'));
+              };
+              // Use a known endpoint that returns an image or 404 (both mean domain is reachable)
+              img.src = domain.url + '/favicon.ico?' + Date.now();
+            });
+            latency = Math.round(performance.now() - startTime);
+            accessible = true;
+          } catch (imgError) {
+            errorMsg = fetchError.message || noCorsError.message || imgError.message;
+            accessible = false;
+          }
+        }
+      }
+      
+      results.push({
+        name: domain.name,
+        url: domain.url,
+        accessible: accessible,
+        latency: latency,
+        error: errorMsg,
+        critical: domain.critical
+      });
+    } catch (error) {
+      results.push({
+        name: domain.name,
+        url: domain.url,
+        accessible: false,
+        error: error.message || 'Unknown error',
+        critical: domain.critical
+      });
+    }
+  }
+  
+  const criticalFailed = results.filter(r => r.critical && !r.accessible);
+  if (criticalFailed.length > 0) {
+    console.error('🚨 CRITICAL: Firebase domains are blocked!', criticalFailed);
+    console.error('Blocked domains:', criticalFailed.map(r => `${r.name} (${r.url})`).join(', '));
+    console.error('Solutions:');
+    console.error('1. Use VPN to bypass firewall');
+    console.error('2. Change DNS to 8.8.8.8 (Google) or 1.1.1.1 (Cloudflare)');
+    console.error('3. Use mobile data instead of WiFi');
+    console.error('4. Contact network administrator');
+  } else {
+    const allAccessible = results.every(r => r.accessible);
+    if (allAccessible) {
+      console.log('✅ All Firebase domains are accessible');
+    } else {
+      const nonCriticalFailed = results.filter(r => !r.critical && !r.accessible);
+      if (nonCriticalFailed.length > 0) {
+        console.warn('⚠️ Some non-critical domains may be blocked:', nonCriticalFailed.map(r => r.name).join(', '));
+      }
+    }
+  }
+  
+  return results;
+};
+
+// Test domains on initialization (non-blocking)
+if (typeof window !== 'undefined') {
+  // Run domain test after a short delay to not block initialization
+  setTimeout(() => {
+    testFirebaseDomains().then(results => {
+      const blocked = results.filter(r => !r.accessible);
+      if (blocked.length > 0) {
+        console.warn('⚠️ Some Firebase domains may be blocked:', blocked.map(r => r.name).join(', '));
+      }
+    }).catch(err => {
+      console.warn('Domain test failed:', err);
+    });
+  }, 2000);
 }
 
 // Smart query function: tries server first, falls back to cache on iOS or network errors
@@ -92,6 +248,21 @@ window.smartFirestoreQuery = async function(queryPromise, options = {}) {
         );
       
       if (isLastAttempt) {
+        // Check if this might be a domain blocking issue
+        const domainTest = await testFirebaseDomains().catch(() => null);
+        if (domainTest) {
+          const blockedDomains = domainTest.filter(r => r.critical && !r.accessible);
+          if (blockedDomains.length > 0) {
+            console.error('🚨 DOMAIN BLOCKING DETECTED!');
+            console.error('Blocked domains:', blockedDomains.map(r => r.name).join(', '));
+            console.error('Solutions:');
+            console.error('1. Use VPN to bypass firewall');
+            console.error('2. Change DNS to 8.8.8.8 (Google) or 1.1.1.1 (Cloudflare)');
+            console.error('3. Use mobile data instead of WiFi');
+            console.error('4. Contact network administrator');
+          }
+        }
+        
         // Last attempt failed - try cache if enabled
         if (fallbackToCache && isNetworkError) {
           try {
@@ -112,7 +283,18 @@ window.smartFirestoreQuery = async function(queryPromise, options = {}) {
           console.log('✅ Loaded from default source');
           return defaultResult;
         } catch (defaultError) {
-          throw error; // Throw original error
+          // Enhance error message with domain blocking info
+          const enhancedError = new Error(
+            error.message + 
+            '\n\n🔍 Domain Blocking Check:\n' +
+            'Run testFirebaseDomains() in console to check which domains are blocked.\n' +
+            'If domains are blocked, try:\n' +
+            '• VPN\n' +
+            '• Change DNS to 8.8.8.8\n' +
+            '• Use mobile data instead of WiFi'
+          );
+          enhancedError.originalError = error;
+          throw enhancedError;
         }
       }
       
