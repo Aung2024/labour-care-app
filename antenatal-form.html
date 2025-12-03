@@ -699,8 +699,8 @@
         
         <div id="autoGASection" class="row g-3 mt-0">
           <div class="col-md-6" id="autoGAGrid">
-            <label for="gestationalAgeDisplay" class="form-label lang-text" data-en="Gestational Age (Weeks)" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်)">Gestational Age (Weeks)</label>
-            <input type="number" id="gestationalAgeDisplay" name="gestationalAgeDisplay" class="form-control" step="0.1" min="0" max="42" readonly>
+            <label for="gestationalAgeDisplay" class="form-label lang-text" data-en="Gestational Age" data-mm="ကိုယ်ဝန်ဆောင်ကာလ">Gestational Age</label>
+            <input type="text" id="gestationalAgeDisplay" name="gestationalAgeDisplay" class="form-control" readonly>
             <small class="form-hint lang-text" data-en="Auto-calculated from LMP or manual entry" data-mm="">Auto-calculated from LMP or manual entry</small>
           </div>
         </div>
@@ -1494,7 +1494,17 @@
         
         // Load Gestational Age Display (calculated)
         if (firstVisit.gestationalAge) {
-          setValue('gestationalAgeDisplay', firstVisit.gestationalAge);
+          // Convert decimal GA to weeks and days format
+          const gaValue = parseFloat(firstVisit.gestationalAge);
+          if (!isNaN(gaValue)) {
+            const weeks = Math.floor(gaValue);
+            const days = Math.round((gaValue - weeks) * 7);
+            const currentLang = localStorage.getItem('appLanguage') || 'mm';
+            const displayValue = currentLang === 'en' 
+              ? `${weeks} weeks and ${days} days`
+              : `${weeks} ပတ် ${days} ရက်`;
+            setValue('gestationalAgeDisplay', displayValue);
+          }
         }
         
         // Load Early ANC Visit checkbox
@@ -1569,7 +1579,19 @@
           setValue('tbSymptoms', latestVisit.tbSymptoms);
           setValue('coinfectionNotes', latestVisit.coinfectionNotes);
           setValue('urineTest', latestVisit.urineTest);
-          setValue('gestationalAgeDisplay', latestVisit.gestationalAge);
+          // Convert decimal GA to weeks and days format
+          if (latestVisit.gestationalAge) {
+            const gaValue = parseFloat(latestVisit.gestationalAge);
+            if (!isNaN(gaValue)) {
+              const weeks = Math.floor(gaValue);
+              const days = Math.round((gaValue - weeks) * 7);
+              const currentLang = localStorage.getItem('appLanguage') || 'mm';
+              const displayValue = currentLang === 'en' 
+                ? `${weeks} weeks and ${days} days`
+                : `${weeks} ပတ် ${days} ရက်`;
+              setValue('gestationalAgeDisplay', displayValue);
+            }
+          }
           setValue('fundalHeight', latestVisit.fundalHeight);
           setValue('fetalHeartRate', latestVisit.fetalHeartRate);
           setValue('deworming', latestVisit.deworming);
@@ -1702,20 +1724,36 @@
         const diffTime = today - lmpDate;
         const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
         const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        const gestationalAge = diffWeeks + (diffDays / 7);
         const displayGA = document.getElementById('gestationalAgeDisplay');
         if (displayGA) {
-          displayGA.value = gestationalAge.toFixed(1);
+          // Display as "X weeks and Y days" format
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
+          } else {
+            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
+          }
         }
       }
     }
 
     function updateGestationalAge() {
-      const manualGAInput = document.getElementById('gestationalAgeManual');
+      const manualGAInput = document.getElementById('manualGestationalAge');
       const displayGA = document.getElementById('gestationalAgeDisplay');
       
       if (manualGAInput?.value && displayGA) {
-        displayGA.value = manualGAInput.value;
+        // Convert manual GA (decimal weeks) to weeks and days format
+        const gaWeeks = parseFloat(manualGAInput.value);
+        if (!isNaN(gaWeeks)) {
+          const weeks = Math.floor(gaWeeks);
+          const days = Math.round((gaWeeks - weeks) * 7);
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${weeks} weeks and ${days} days`;
+          } else {
+            displayGA.value = `${weeks} ပတ် ${days} ရက်`;
+          }
+        }
       } else {
         // Recalculate from LMP if available
         if (currentPatient?.lmp) {
@@ -1747,10 +1785,15 @@
         const diffTime = today - lmpDate;
         const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
         const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        const gestationalAge = diffWeeks + (diffDays / 7);
         const displayGA = document.getElementById('gestationalAgeDisplay');
         if (displayGA) {
-          displayGA.value = gestationalAge.toFixed(1);
+          // Display as "X weeks and Y days" format
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
+          } else {
+            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
+          }
         }
       }
     }
@@ -2026,7 +2069,25 @@
           pulseRate: getInt('pulseRate'),
           anemiaStatus: getValue('anemiaStatus'),
           pittingEdema: getValue('pittingEdema'),
-          gestationalAge: getNumber('gestationalAgeDisplay'),
+          gestationalAge: (() => {
+            // Parse from display format "X weeks and Y days" or use manual GA
+            const manualGA = getNumber('manualGestationalAge');
+            if (manualGA !== null) {
+              return manualGA; // Use manual GA if available
+            }
+            const displayGA = getValue('gestationalAgeDisplay');
+            if (displayGA) {
+              // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
+              const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
+              const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
+              if (weeksMatch && daysMatch) {
+                const weeks = parseInt(weeksMatch[1]);
+                const days = parseInt(daysMatch[1]);
+                return weeks + (days / 7); // Convert to decimal weeks
+              }
+            }
+            return null;
+          })(),
           fundalHeight: getNumber('fundalHeight'),
           fetalPresentation: getValue('fetalPresentation'),
           fetalHeartRate: getInt('fetalHeartRate'),
