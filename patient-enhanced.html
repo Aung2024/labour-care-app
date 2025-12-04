@@ -2686,60 +2686,38 @@
         console.log('Processed data to save:', processedData);
         console.log('created_by field in processed data:', processedData.created_by);
         
-        const docRef = await firebase.firestore().collection("patients").add(processedData);
-        console.log("Document written with ID: ", docRef.id);
-        console.log('Patient created with township:', userTownship);
-        console.log('Patient created by:', processedData.created_by);
-        
-        // Verify what was actually saved to Firestore
-        const savedDoc = await docRef.get();
-        if (savedDoc.exists) {
-          const savedData = savedDoc.data();
-          console.log('✅ Verification - Document saved successfully');
-          console.log('✅ Verification - created_by field in saved document:', savedData.created_by);
-          console.log('✅ Verification - Full saved document:', savedData);
-        } else {
-          console.error('❌ Verification failed - Document not found after creation');
-        }
-        
-        // Log the saved data for verification
-        console.log('Saved patient data:', {
-          id: docRef.id,
+        // Store patient data temporarily and redirect to consent screen
+        const patientDataForConsent = {
           name: processedData.name,
           age: processedData.age,
-          township: processedData.township,
-          status: processedData.status,
-          registration_date: processedData.registration_date,
           parity: processedData.parity,
-          patient_unique_id: processedData.patient_unique_id,
-          pregnancy_within_24_months: processedData.pregnancy_within_24_months
-        });
-        
-        // Show success message
-        const successDetails = data.patientUniqueId
-          ? `<br><strong>Patient ID:</strong> ${data.patientUniqueId}`
-          : '';
-        messageDiv.innerHTML = `<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i>Patient record created successfully! Redirecting to dashboard...${successDetails}</div>`;
-        
-        // Reset button
-        if (submitBtn) {
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-        }
-        
-        // Reset form
-        form.reset();
-        updateParityField();
-        toggleYoungestChildFields();
-        evaluatePregnancyInterval();
-        if (patientUniqueIdHidden) patientUniqueIdHidden.value = '';
-        if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = '';
-        updateRegistrationDatePreview();
-        
-        // Auto-redirect to index.html after 2 seconds
-        setTimeout(() => {
-          window.location.href = 'index.html';
-        }, 2000);
+          phone: processedData.phone || null,
+          patient_address: processedData.patient_address || null,
+          emergency_contact: processedData.emergency_contact || null,
+          emergency_phone: processedData.emergency_phone || null,
+          registration_date: processedData.registration_date || null,
+          gravida: processedData.gravida || null,
+          parity_primary: processedData.parity_primary || null,
+          parity_secondary: processedData.parity_secondary || null,
+          youngest_child_age_years: processedData.youngest_child_age_years || null,
+          youngest_child_age_months: processedData.youngest_child_age_months || null,
+          pregnancy_within_24_months: processedData.pregnancy_within_24_months || false,
+          frequent_pregnancy: processedData.frequent_pregnancy || 'No',
+          age_risk: processedData.age_risk || 'No',
+          maternal_age_risk: processedData.maternal_age_risk || false,
+          region_short_code: processedData.region_short_code || null,
+          tsp_code: processedData.tsp_code || null,
+          patient_unique_id: processedData.patient_unique_id || null,
+          township: userTownship,
+          created_by: user.uid
+        };
+
+        // Save to sessionStorage for consent page
+        sessionStorage.setItem('pendingPatientData', JSON.stringify(patientDataForConsent));
+
+        // Redirect to consent page
+        const consentUrl = 'patient-consent.html?data=' + encodeURIComponent(JSON.stringify(patientDataForConsent));
+        window.location.href = consentUrl;
         
       } catch (error) {
         console.error("Error adding document: ", error);
