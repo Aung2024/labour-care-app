@@ -13,12 +13,23 @@ const PROVIDER_RE_CONSENT_DAYS = 90; // 3 months
  */
 async function checkProviderConsent(userId) {
   try {
-    const consentDoc = await firebase.firestore()
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+    const consentQuery = firebase.firestore()
       .collection('provider_consents')
-      .doc(userId)
-      .get();
+      .doc(userId);
     
-    if (!consentDoc.exists) {
+    // Use smartFirestoreQuery for iOS compatibility
+    const consentDoc = await smartFirestoreQuery(
+      Promise.resolve(consentQuery),
+      { 
+        preferCache: isIOS, 
+        timeout: 8000, 
+        retries: 2, 
+        fallbackToCache: true 
+      }
+    );
+    
+    if (!consentDoc || !consentDoc.exists) {
       return { hasConsent: false, needsReconsent: false, consentData: null };
     }
     
@@ -58,10 +69,18 @@ async function saveProviderConsent(userId, userEmail, ipAddress = null) {
       deviceInfo: navigator.userAgent || 'Unknown'
     };
     
-    await firebase.firestore()
+    // Use Promise.race with timeout for iOS compatibility
+    const savePromise = firebase.firestore()
       .collection('provider_consents')
       .doc(userId)
       .set(consentData);
+    
+    await Promise.race([
+      savePromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Save timeout')), 10000)
+      )
+    ]);
     
     console.log('✅ Provider consent saved successfully');
     return true;
@@ -78,14 +97,25 @@ async function saveProviderConsent(userId, userEmail, ipAddress = null) {
  */
 async function checkPatientConsent(patientId) {
   try {
-    const consentDoc = await firebase.firestore()
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+    const consentQuery = firebase.firestore()
       .collection('patients')
       .doc(patientId)
       .collection('consents')
-      .doc('patient_consent')
-      .get();
+      .doc('patient_consent');
     
-    if (!consentDoc.exists) {
+    // Use smartFirestoreQuery for iOS compatibility
+    const consentDoc = await smartFirestoreQuery(
+      Promise.resolve(consentQuery),
+      { 
+        preferCache: isIOS, 
+        timeout: 8000, 
+        retries: 2, 
+        fallbackToCache: true 
+      }
+    );
+    
+    if (!consentDoc || !consentDoc.exists) {
       return { hasConsent: false, consentData: null };
     }
     
@@ -125,15 +155,23 @@ async function savePatientConsent(patientId, providerId, providerName, consentDa
       deviceInfo: navigator.userAgent || 'Unknown'
     };
     
-    await firebase.firestore()
+    // Use Promise.race with timeout for iOS compatibility
+    const saveConsentPromise = firebase.firestore()
       .collection('patients')
       .doc(patientId)
       .collection('consents')
       .doc('patient_consent')
       .set(consentRecord);
     
+    await Promise.race([
+      saveConsentPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Save consent timeout')), 10000)
+      )
+    ]);
+    
     // Also update patient document with consent status
-    await firebase.firestore()
+    const updatePatientPromise = firebase.firestore()
       .collection('patients')
       .doc(patientId)
       .update({
@@ -141,6 +179,13 @@ async function savePatientConsent(patientId, providerId, providerName, consentDa
         consentStatus: consentData.type === 'refused' ? 'no_consent' : 'consented',
         consentDate: firebase.firestore.FieldValue.serverTimestamp()
       });
+    
+    await Promise.race([
+      updatePatientPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Update patient timeout')), 10000)
+      )
+    ]);
     
     console.log('✅ Patient consent saved successfully');
     return true;
@@ -156,8 +201,15 @@ async function savePatientConsent(patientId, providerId, providerName, consentDa
  */
 async function getClientIP() {
   try {
-    // Try to get IP from a public service
-    const response = await fetch('https://api.ipify.org?format=json');
+    // Try to get IP from a public service with timeout for iOS
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    const response = await fetch('https://api.ipify.org?format=json', {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
     const data = await response.json();
     return data.ip || null;
   } catch (error) {

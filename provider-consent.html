@@ -302,12 +302,21 @@
       
       currentUser = user;
       
-      // Check if consent already given and not expired
-      const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
-      if (consentCheck.hasConsent && !consentCheck.needsReconsent) {
-        // Consent is valid, redirect to app
-        window.location.href = 'index.html';
-        return;
+      // Check if consent already given and not expired with timeout
+      try {
+        const consentCheck = await Promise.race([
+          ConsentManager.checkProviderConsent(user.uid),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Consent check timeout')), 10000))
+        ]);
+        
+        if (consentCheck.hasConsent && !consentCheck.needsReconsent) {
+          // Consent is valid, redirect to app
+          window.location.href = 'index.html';
+          return;
+        }
+      } catch (error) {
+        console.warn('Error checking consent status, showing consent form anyway:', error);
+        // Continue to show consent form if check fails
       }
       
       // Initialize language
@@ -322,33 +331,67 @@
       }
 
       const agreeBtn = document.getElementById('agreeBtn');
+      const originalText = agreeBtn.innerHTML;
       agreeBtn.disabled = true;
-      agreeBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div> Processing...';
+      agreeBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div> <span class="lang-text" data-en="Processing..." data-mm="လုပ်ဆောင်နေသည်...">Processing...</span>';
+
+      // Add overall timeout to prevent getting stuck
+      const overallTimeout = setTimeout(() => {
+        agreeBtn.disabled = false;
+        agreeBtn.innerHTML = originalText;
+        alert('Request is taking longer than expected. Please check your internet connection and try again.');
+      }, 15000); // 15 second overall timeout
 
       try {
-        // Get IP address
-        const ipAddress = await ConsentManager.getClientIP();
+        // Get IP address with timeout
+        let ipAddress = null;
+        try {
+          ipAddress = await Promise.race([
+            ConsentManager.getClientIP(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('IP fetch timeout')), 5000))
+          ]);
+        } catch (ipError) {
+          console.log('Could not fetch IP, continuing without it:', ipError);
+          // Continue without IP address
+        }
         
-        // Save consent
-        const saved = await ConsentManager.saveProviderConsent(
-          currentUser.uid,
-          currentUser.email,
-          ipAddress
-        );
+        // Save consent with timeout
+        const saved = await Promise.race([
+          ConsentManager.saveProviderConsent(
+            currentUser.uid,
+            currentUser.email,
+            ipAddress
+          ),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Save timeout')), 12000))
+        ]);
+
+        clearTimeout(overallTimeout);
 
         if (saved) {
+          // Show success message briefly before redirect
+          agreeBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i> <span class="lang-text" data-en="Success! Redirecting..." data-mm="အောင်မြင်ပါသည်! လမ်းညွှန်နေသည်...">Success! Redirecting...</span>';
           // Redirect to app
-          window.location.href = 'index.html';
+          setTimeout(() => {
+            window.location.href = 'index.html';
+          }, 500);
         } else {
+          clearTimeout(overallTimeout);
           alert('Error saving consent. Please try again.');
           agreeBtn.disabled = false;
-          agreeBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>I Agree and Accept';
+          agreeBtn.innerHTML = originalText;
         }
       } catch (error) {
+        clearTimeout(overallTimeout);
         console.error('Error accepting consent:', error);
-        alert('Error: ' + error.message);
+        
+        // Update button text based on language
+        const errorMsg = currentLanguage === 'mm' 
+          ? 'မှားယွင်းမှု: ' + (error.message || 'မသိရသော အမှား')
+          : 'Error: ' + (error.message || 'Unknown error');
+        
+        alert(errorMsg);
         agreeBtn.disabled = false;
-        agreeBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>I Agree and Accept';
+        agreeBtn.innerHTML = originalText;
       }
     }
 
