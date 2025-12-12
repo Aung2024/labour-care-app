@@ -462,6 +462,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/password-policy.js"></script>
+  <script src="js/audit-logger.js"></script>
 </head>
 <body>
   <div class="registration-container">
@@ -596,17 +598,21 @@
           
           <div class="form-group">
             <label for="password" class="form-label">
-              <i class="fas fa-lock"></i> Password
+              <i class="fas fa-lock"></i> <span class="lang-text" data-en="Password" data-mm="စကားဝှက်">Password</span>
             </label>
-      <input name="password" id="password" type="password" class="form-control" placeholder="Create a strong password" required>
-    </div>
+            <input name="password" id="password" type="password" class="form-control" placeholder="Create a strong password" required oninput="validatePasswordInput()">
+            <div id="passwordPolicyDescription"></div>
+            <div id="passwordStrengthIndicator"></div>
+            <div id="passwordValidationErrors" class="text-danger" style="font-size: 0.875rem; margin-top: 0.5rem;"></div>
+          </div>
 
           <div class="form-group">
             <label for="confirm" class="form-label">
-              <i class="fas fa-lock"></i> Confirm Password
+              <i class="fas fa-lock"></i> <span class="lang-text" data-en="Confirm Password" data-mm="စကားဝှက် အတည်ပြုရန်">Confirm Password</span>
             </label>
-      <input name="confirm" id="confirm" type="password" class="form-control" placeholder="Confirm your password" required>
-    </div>
+            <input name="confirm" id="confirm" type="password" class="form-control" placeholder="Confirm your password" required oninput="validatePasswordMatch()">
+            <div id="passwordMatchError" class="text-danger" style="font-size: 0.875rem; margin-top: 0.5rem;"></div>
+          </div>
         </div>
 
         <!-- Privacy Policy Consent -->
@@ -1090,13 +1096,33 @@
         return;
       }
       
+      // Password validation using PasswordPolicy
+      if (window.PasswordPolicy) {
+        const passwordValidation = PasswordPolicy.validate(data.password);
+        if (!passwordValidation.isValid) {
+          submitButton.innerHTML = originalButtonText;
+          submitButton.disabled = false;
+          const currentLang = localStorage.getItem('language') || 'mm';
+          const errorTitle = currentLang === 'en' 
+            ? 'Password does not meet requirements:'
+            : 'စကားဝှက်သည် လိုအပ်ချက်များနှင့် မကိုက်ညီပါ:';
+          const errorList = passwordValidation.errors.map(err => `• ${err}`).join('<br>');
+          messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i><strong>${errorTitle}</strong><br>${errorList}</div>`;
+          return;
+        }
+      }
+      
       // Password confirmation validation
       if (data.password !== data.confirm) {
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
-        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Passwords do not match.</div>';
-          return;
-        }
+        const currentLang = localStorage.getItem('language') || 'mm';
+        const errorMsg = currentLang === 'en' 
+          ? 'Passwords do not match.'
+          : 'စကားဝှက်များ မကိုက်ညီပါ။';
+        messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${errorMsg}</div>`;
+        return;
+      }
         
         console.log('Registration data:', data);
         console.log('Township to save:', data.township);
@@ -1177,6 +1203,66 @@
         messageDiv.innerHTML = `<div class="alert ${alertClass}"><i class="fas fa-exclamation-triangle me-2"></i>${errorMessage}</div>`;
       }
     };
+    
+    // Password validation functions
+    function validatePasswordInput() {
+      const password = document.getElementById('password').value;
+      const policyDesc = document.getElementById('passwordPolicyDescription');
+      const strengthIndicator = document.getElementById('passwordStrengthIndicator');
+      const errorDiv = document.getElementById('passwordValidationErrors');
+      
+      // Show password policy description on first focus
+      if (password.length === 0 && !policyDesc.innerHTML) {
+        const currentLang = localStorage.getItem('language') || 'mm';
+        policyDesc.innerHTML = PasswordPolicy.getDescription(currentLang);
+      }
+      
+      if (password.length === 0) {
+        strengthIndicator.innerHTML = '';
+        errorDiv.innerHTML = '';
+        return;
+      }
+      
+      // Validate password
+      if (window.PasswordPolicy) {
+        const validation = PasswordPolicy.validate(password);
+        
+        // Show strength indicator
+        strengthIndicator.innerHTML = PasswordPolicy.getStrengthIndicator(password);
+        
+        // Show errors
+        if (!validation.isValid) {
+          const currentLang = localStorage.getItem('language') || 'mm';
+          const errorTitle = currentLang === 'en' 
+            ? 'Password requirements not met:'
+            : 'စကားဝှက် လိုအပ်ချက်များ မပြည့်စုံပါ:';
+          errorDiv.innerHTML = `<strong>${errorTitle}</strong><br>${validation.errors.map(e => `• ${e}`).join('<br>')}`;
+        } else {
+          errorDiv.innerHTML = '';
+        }
+      }
+    }
+    
+    function validatePasswordMatch() {
+      const password = document.getElementById('password').value;
+      const confirm = document.getElementById('confirm').value;
+      const matchError = document.getElementById('passwordMatchError');
+      
+      if (confirm.length === 0) {
+        matchError.innerHTML = '';
+        return;
+      }
+      
+      if (password !== confirm) {
+        const currentLang = localStorage.getItem('language') || 'mm';
+        const errorMsg = currentLang === 'en' 
+          ? 'Passwords do not match'
+          : 'စကားဝှက်များ မကိုက်ညီပါ';
+        matchError.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${errorMsg}`;
+      } else {
+        matchError.innerHTML = '<span style="color: #10b981;"><i class="fas fa-check-circle"></i> Passwords match</span>';
+      }
+    }
     
     // Debug function to check form data (can be called from console)
     window.debugFormData = function() {

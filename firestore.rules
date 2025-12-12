@@ -136,5 +136,53 @@ service cloud.firestore {
       // Allow users to read their own feedback
       allow read: if request.auth != null && request.auth.uid == resource.data.submittedBy;
     }
+    
+    // Audit Logs collection (security and compliance)
+    match /audit_logs/{logId} {
+      // Allow authenticated users to create audit logs (for their own actions)
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Allow Super Admin to read all audit logs
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      
+      // Users can read their own audit logs
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // No updates or deletes allowed (immutable audit trail)
+      allow update, delete: if false;
+    }
+    
+    // Account Lockouts collection (security)
+    match /account_lockouts/{userId} {
+      // Allow system to create/update lockout records
+      allow create, update: if request.auth != null;
+      
+      // Allow users to read their own lockout status
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow Super Admin to read all lockouts
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      
+      // Allow deletion (for clearing lockouts)
+      allow delete: if request.auth != null;
+    }
+    
+    // Password History collection (security)
+    match /password_history/{userId} {
+      // Allow system to create/update password history
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow users to read their own password history
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // No deletes allowed (for security audit)
+      allow delete: if false;
+    }
   }
 }

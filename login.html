@@ -418,6 +418,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/consent-manager.js"></script>
+  <script src="js/audit-logger.js"></script>
+  <script src="js/password-policy.js"></script>
+  <script src="js/session-manager.js"></script>
 </head>
 <body>
   <div class="login-container">
@@ -562,7 +565,19 @@
     }
 
     // Global logout function that can be called from other pages
-    function logout() {
+    async function logout() {
+      const user = firebase.auth().currentUser;
+      
+      // Log logout event
+      if (window.AuditLogger && user) {
+        await AuditLogger.logLogout(user.uid);
+      }
+      
+      // Stop session tracking
+      if (window.SessionManager) {
+        SessionManager.stop();
+      }
+      
       firebase.auth().signOut();
       clearSession();
       window.location.href = 'login.html';
@@ -617,6 +632,28 @@
         console.log('Starting login process...');
         isLoggingIn = true; // Set flag to prevent session check
         
+        // Check account lockout BEFORE attempting login
+        if (window.PasswordPolicy) {
+          const lockoutStatus = await PasswordPolicy.checkLockout(email);
+          if (lockoutStatus.isLocked) {
+            const currentLang = localStorage.getItem('language') || 'mm';
+            const message = currentLang === 'en'
+              ? `Account is locked due to too many failed login attempts. Please try again in ${lockoutStatus.remainingTime} minute(s).`
+              : `အကောင့်ကို ဝင်ရောက်ခွင့် မရှိပါ။ မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် ပိတ်ထားပါသည်။ ${lockoutStatus.remainingTime} မိနစ် စောင့်ပြီး ထပ်မံကြိုးစားပါ။`;
+            
+            messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
+            submitButton.innerHTML = originalButtonText;
+            submitButton.disabled = false;
+            isLoggingIn = false;
+            
+            // Log failed login attempt (account locked)
+            if (window.AuditLogger) {
+              await AuditLogger.logLogin(email, false);
+            }
+            return;
+          }
+        }
+        
         // Set Firebase persistence to SESSION (session-only)
         console.log('Setting SESSION persistence...');
         await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
@@ -624,6 +661,16 @@
         console.log('Attempting Firebase sign in...');
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
         console.log('Firebase sign in successful:', userCred.user.uid);
+        
+        // Clear failed login attempts on successful login
+        if (window.PasswordPolicy) {
+          await PasswordPolicy.clearFailedAttempts(email);
+        }
+        
+        // Log successful login
+        if (window.AuditLogger) {
+          await AuditLogger.logLogin(userCred.user.uid, true);
+        }
         
         // Get user document from Firestore
         console.log('Fetching user profile from Firestore...');
@@ -705,6 +752,11 @@
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
         
+        // Start session tracking
+        if (window.SessionManager) {
+          SessionManager.start();
+        }
+        
         // Check provider consent before redirecting
         const consentCheck = await ConsentManager.checkProviderConsent(userCred.user.uid);
         if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
@@ -723,6 +775,46 @@
         // Reset button
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
+        
+        // Record failed login attempt
+        if (window.PasswordPolicy && (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found')) {
+          const lockoutStatus = await PasswordPolicy.recordFailedAttempt(email);
+          
+          // Check if account is now locked
+          if (lockoutStatus.isLocked) {
+            const currentLang = localStorage.getItem('language') || 'mm';
+            const message = currentLang === 'en'
+              ? `Too many failed login attempts. Account locked for ${lockoutStatus.remainingTime} minute(s).`
+              : `မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် အကောင့်ကို ${lockoutStatus.remainingTime} မိနစ် ပိတ်ထားပါသည်။`;
+            
+            messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
+            
+            // Log account lockout
+            if (window.AuditLogger) {
+              await AuditLogger.logLogin(email, false);
+            }
+            
+            isLoggingIn = false;
+            return;
+          }
+          
+          // Show remaining attempts
+          const remainingAttempts = PasswordPolicy.LOCKOUT.maxAttempts - lockoutStatus.attempts;
+          if (remainingAttempts > 0 && remainingAttempts <= 3) {
+            const currentLang = localStorage.getItem('language') || 'mm';
+            const warning = currentLang === 'en'
+              ? ` Warning: ${remainingAttempts} attempt(s) remaining before account lockout.`
+              : ` သတိပေးချက်: အကောင့် ပိတ်မည့်အထိ ${remainingAttempts} ကြိမ် ကျန်ရှိပါသည်။`;
+            
+            // Append to error message
+            console.warn(warning);
+          }
+        }
+        
+        // Log failed login
+        if (window.AuditLogger) {
+          await AuditLogger.logLogin(email, false);
+        }
         
         // Provide more user-friendly error messages
         let errorMessage = err.message;
