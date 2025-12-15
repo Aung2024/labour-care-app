@@ -790,7 +790,18 @@
                 ? `Too many failed login attempts. Account locked for ${lockoutStatus.remainingTime} minute(s).`
                 : `မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် အကောင့်ကို ${lockoutStatus.remainingTime} မိနစ် ပိတ်ထားပါသည်။`;
               
-              messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
+              messageDiv.innerHTML = `
+                <div class="alert alert-warning alert-dismissible fade show" role="alert" style="border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <i class="fas fa-lock" style="font-size: 1.25rem;"></i>
+                    <div style="flex: 1;">
+                      <strong style="display: block; margin-bottom: 4px;">Account Locked</strong>
+                      <span style="font-size: 0.95rem;">${message}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+              messageDiv.className = 'mt-3';
               
               // Log account lockout
               if (window.AuditLogger) {
@@ -832,24 +843,48 @@
         }
         
         // Provide more user-friendly error messages
-        let errorMessage = err.message;
+        let errorMessage = '';
         let alertClass = 'alert-danger';
+        let icon = 'fas fa-exclamation-circle';
         
         if (err.code === 'auth/user-not-found') {
-          errorMessage = 'No account found with this email address.';
+          errorMessage = 'No account found with this email address. Please check your email and try again.';
+          icon = 'fas fa-user-times';
         } else if (err.code === 'auth/wrong-password') {
-          errorMessage = 'Incorrect password. Please try again.';
+          errorMessage = 'Incorrect password. Please check your password and try again.';
+          icon = 'fas fa-lock';
         } else if (err.code === 'auth/invalid-email') {
           errorMessage = 'Please enter a valid email address.';
+          icon = 'fas fa-envelope';
         } else if (err.code === 'auth/too-many-requests') {
           errorMessage = 'Too many failed attempts. Please try again later.';
           alertClass = 'alert-warning';
+          icon = 'fas fa-clock';
         } else if (err.code === 'auth/network-request-failed') {
-          errorMessage = 'Network error. Please check your connection.';
+          errorMessage = 'Network error. Please check your internet connection and try again.';
           alertClass = 'alert-warning';
+          icon = 'fas fa-wifi';
+        } else if (err.code === 'auth/internal-error' || err.message.includes('INVALID_LOGIN_CREDENTIALS')) {
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+          icon = 'fas fa-shield-alt';
+        } else {
+          errorMessage = 'Unable to sign in. Please check your credentials and try again.';
+          icon = 'fas fa-exclamation-triangle';
         }
         
-        messageDiv.innerHTML = `<div class="alert ${alertClass}"><i class="fas fa-exclamation-triangle me-2"></i>${errorMessage}</div>`;
+        // Create professional error message UI
+        messageDiv.innerHTML = `
+          <div class="alert ${alertClass} alert-dismissible fade show" role="alert" style="border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="${icon}" style="font-size: 1.25rem;"></i>
+              <div style="flex: 1;">
+                <strong style="display: block; margin-bottom: 4px;">Sign in failed</strong>
+                <span style="font-size: 0.95rem;">${errorMessage}</span>
+              </div>
+            </div>
+          </div>
+        `;
+        messageDiv.className = 'mt-3';
         console.error('Login error:', err);
         
         // Reset login flag on error
