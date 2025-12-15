@@ -270,7 +270,8 @@ async function logSecurityEvent(action, details = '', metadata = {}) {
     resource: 'security',
     resourceId: null,
     details: details,
-    metadata: metadata
+    metadata: metadata,
+    allowUnauthenticated: true
   });
 }
 
