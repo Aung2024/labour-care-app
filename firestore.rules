@@ -142,6 +142,12 @@ service cloud.firestore {
       // Allow authenticated users to create audit logs (for their own actions)
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       
+      // Allow unauthenticated events (like failed login attempts) to be logged
+      // This is safe because we're only logging authentication failures
+      allow create: if 
+        request.resource.data.unauthenticated == true 
+        && request.resource.data.action in ['login_failed', 'account_locked'];
+      
       // Allow Super Admin to read all audit logs
       allow read: if
         request.auth != null

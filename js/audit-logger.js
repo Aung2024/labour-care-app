@@ -87,13 +87,18 @@ function getUserAgent() {
  * @param {string} eventData.resourceId - Resource ID (e.g., patient ID, user ID)
  * @param {string} eventData.details - Additional details
  * @param {Object} eventData.metadata - Additional metadata
+ * @param {boolean} eventData.allowUnauthenticated - Allow logging without authentication (for failed login attempts)
  * @returns {Promise<boolean>} Success status
  */
 async function logAuditEvent(eventData) {
   try {
     const user = firebase.auth().currentUser;
-    if (!user) {
-      console.warn('⚠️ Cannot log audit event: User not authenticated');
+    const allowUnauthenticated = eventData.allowUnauthenticated || false;
+    
+    // Some events (like failed login) can be logged without authentication
+    if (!user && !allowUnauthenticated) {
+      // Skip quietly to avoid noisy console errors before login
+      console.info('ℹ️ Audit log skipped (no authenticated user).');
       return false;
     }
     
@@ -116,9 +121,9 @@ async function logAuditEvent(eventData) {
     
     // Build audit log entry
     const auditEntry = {
-      // User information
-      userId: user.uid,
-      userEmail: user.email || 'unknown',
+      // User information (may be null for unauthenticated events)
+      userId: user ? user.uid : (eventData.userId || 'unauthenticated'),
+      userEmail: user ? (user.email || 'unknown') : (eventData.userEmail || 'unknown'),
       userRole: userRole,
       
       // Action information
@@ -139,16 +144,36 @@ async function logAuditEvent(eventData) {
         platform: navigator.platform || 'unknown',
         language: navigator.language || 'unknown',
         screenResolution: `${window.screen.width}x${window.screen.height}` || 'unknown'
-      }
+      },
+      
+      // Flag for unauthenticated events
+      unauthenticated: !user
     };
     
     // Save to Firestore
-    await firebase.firestore()
-      .collection(AUDIT_COLLECTION)
-      .add(auditEntry);
-    
-    console.log('✅ Audit log saved:', eventData.action);
-    return true;
+    // For unauthenticated events, we need to use a different approach
+    if (!user && allowUnauthenticated) {
+      // For unauthenticated events, we can't use the normal security rules
+      // We'll need to handle this differently - either skip logging or use a different collection
+      // For now, we'll try to log it, but it may fail if rules don't allow it
+      try {
+        await firebase.firestore()
+          .collection(AUDIT_COLLECTION)
+          .add(auditEntry);
+        console.log('✅ Audit log saved (unauthenticated):', eventData.action);
+        return true;
+      } catch (error) {
+        // If it fails due to permissions, that's okay - we tried
+        console.warn('⚠️ Could not log unauthenticated event (permissions):', error.message);
+        return false;
+      }
+    } else {
+      await firebase.firestore()
+        .collection(AUDIT_COLLECTION)
+        .add(auditEntry);
+      console.log('✅ Audit log saved:', eventData.action);
+      return true;
+    }
     
   } catch (error) {
     console.error('❌ Error logging audit event:', error);
@@ -160,12 +185,15 @@ async function logAuditEvent(eventData) {
 /**
  * Log authentication events
  */
-async function logLogin(userId, success = true) {
+async function logLogin(userId, success = true, userEmail = null) {
   return await logAuditEvent({
     action: success ? AUDIT_ACTIONS.LOGIN : AUDIT_ACTIONS.LOGIN_FAILED,
     resource: 'authentication',
     resourceId: userId,
-    details: success ? 'User logged in successfully' : 'Login attempt failed'
+    details: success ? 'User logged in successfully' : 'Login attempt failed',
+    allowUnauthenticated: !success, // Allow logging failed login attempts without auth
+    userId: userId,
+    userEmail: userEmail || userId // Use email if provided, otherwise use userId
   });
 }
 
