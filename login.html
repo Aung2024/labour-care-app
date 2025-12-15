@@ -778,36 +778,51 @@
         
         // Record failed login attempt
         if (window.PasswordPolicy && (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found')) {
-          const lockoutStatus = await PasswordPolicy.recordFailedAttempt(email);
-          
-          // Check if account is now locked
-          if (lockoutStatus.isLocked) {
-            const currentLang = localStorage.getItem('language') || 'mm';
-            const message = currentLang === 'en'
-              ? `Too many failed login attempts. Account locked for ${lockoutStatus.remainingTime} minute(s).`
-              : `မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် အကောင့်ကို ${lockoutStatus.remainingTime} မိနစ် ပိတ်ထားပါသည်။`;
+          try {
+            console.log('🔒 Recording failed login attempt for:', email);
+            const lockoutStatus = await PasswordPolicy.recordFailedAttempt(email);
+            console.log('🔒 Lockout status:', lockoutStatus);
             
-            messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
-            
-            // Log account lockout
-            if (window.AuditLogger) {
-              await AuditLogger.logLogin(email, false);
+            // Check if account is now locked
+            if (lockoutStatus.isLocked) {
+              const currentLang = localStorage.getItem('language') || 'mm';
+              const message = currentLang === 'en'
+                ? `Too many failed login attempts. Account locked for ${lockoutStatus.remainingTime} minute(s).`
+                : `မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် အကောင့်ကို ${lockoutStatus.remainingTime} မိနစ် ပိတ်ထားပါသည်။`;
+              
+              messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
+              
+              // Log account lockout
+              if (window.AuditLogger) {
+                await AuditLogger.logSecurityEvent(
+                  AuditLogger.ACTIONS.ACCOUNT_LOCKED,
+                  `Account locked after ${lockoutStatus.attempts} failed login attempts`,
+                  { email: email, attempts: lockoutStatus.attempts, remainingTime: lockoutStatus.remainingTime }
+                );
+              }
+              
+              isLoggingIn = false;
+              return;
             }
             
-            isLoggingIn = false;
-            return;
-          }
-          
-          // Show remaining attempts
-          const remainingAttempts = PasswordPolicy.LOCKOUT.maxAttempts - lockoutStatus.attempts;
-          if (remainingAttempts > 0 && remainingAttempts <= 3) {
-            const currentLang = localStorage.getItem('language') || 'mm';
-            const warning = currentLang === 'en'
-              ? ` Warning: ${remainingAttempts} attempt(s) remaining before account lockout.`
-              : ` သတိပေးချက်: အကောင့် ပိတ်မည့်အထိ ${remainingAttempts} ကြိမ် ကျန်ရှိပါသည်။`;
-            
-            // Append to error message
-            console.warn(warning);
+            // Show remaining attempts
+            const remainingAttempts = PasswordPolicy.LOCKOUT.maxAttempts - lockoutStatus.attempts;
+            if (remainingAttempts > 0 && remainingAttempts <= 3) {
+              const currentLang = localStorage.getItem('language') || 'mm';
+              const warning = currentLang === 'en'
+                ? ` Warning: ${remainingAttempts} attempt(s) remaining before account lockout.`
+                : ` သတိပေးချက်: အကောင့် ပိတ်မည့်အထိ ${remainingAttempts} ကြိမ် ကျန်ရှိပါသည်။`;
+              
+              // Append to error message
+              console.warn('⚠️', warning);
+              
+              // Show warning in UI
+              const existingError = messageDiv.innerHTML;
+              messageDiv.innerHTML = existingError + `<div class="alert alert-warning mt-2"><small>${warning}</small></div>`;
+            }
+          } catch (lockoutError) {
+            console.error('❌ Error recording failed login attempt:', lockoutError);
+            // Continue with normal error handling even if lockout fails
           }
         }
         
