@@ -777,11 +777,19 @@
         submitButton.disabled = false;
         
         // Record failed login attempt
-        if (window.PasswordPolicy && (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found')) {
+        // Check for various error codes that indicate failed login
+        const isFailedLogin = err.code === 'auth/wrong-password' 
+          || err.code === 'auth/user-not-found'
+          || err.code === 'auth/internal-error' 
+          || (err.message && err.message.includes('INVALID_LOGIN_CREDENTIALS'));
+        
+        if (window.PasswordPolicy && isFailedLogin) {
           try {
             console.log('🔒 Recording failed login attempt for:', email);
+            console.log('🔒 Error code:', err.code);
             const lockoutStatus = await PasswordPolicy.recordFailedAttempt(email);
             console.log('🔒 Lockout status:', lockoutStatus);
+            console.log('🔒 Attempts:', lockoutStatus.attempts, '/', PasswordPolicy.LOCKOUT.maxAttempts);
             
             // Check if account is now locked
             if (lockoutStatus.isLocked) {
@@ -833,8 +841,15 @@
             }
           } catch (lockoutError) {
             console.error('❌ Error recording failed login attempt:', lockoutError);
+            console.error('❌ Lockout error details:', {
+              code: lockoutError.code,
+              message: lockoutError.message,
+              stack: lockoutError.stack
+            });
             // Continue with normal error handling even if lockout fails
           }
+        } else {
+          console.log('⚠️ Lockout not triggered - Error code:', err.code, 'isFailedLogin:', false);
         }
         
         // Log failed login (pass email for unauthenticated logging)

@@ -197,11 +197,14 @@ async function checkAccountLockout(userId) {
  */
 async function recordFailedLoginAttempt(userId) {
   try {
+    console.log('🔒 recordFailedLoginAttempt called with userId:', userId);
     const lockoutRef = firebase.firestore()
       .collection('account_lockouts')
       .doc(userId);
     
+    console.log('🔒 Checking existing lockout document...');
     const lockoutDoc = await lockoutRef.get();
+    console.log('🔒 Lockout document exists:', lockoutDoc.exists);
     const now = Date.now();
     
     let attempts = 1;
@@ -247,13 +250,30 @@ async function recordFailedLoginAttempt(userId) {
     }
     
     // Update lockout record
-    await lockoutRef.set({
+    console.log('🔒 Saving lockout record to Firestore:', {
+      userId: userId,
       attempts: attempts,
-      lockoutUntil: lockoutUntil ? firebase.firestore.Timestamp.fromMillis(lockoutUntil) : null,
-      lockoutCount: lockoutDoc.exists ? (lockoutDoc.data().lockoutCount || 0) + 1 : 1,
-      lastAttempt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+      isLocked: isLocked,
+      lockoutUntil: lockoutUntil
+    });
+    
+    try {
+      await lockoutRef.set({
+        attempts: attempts,
+        lockoutUntil: lockoutUntil ? firebase.firestore.Timestamp.fromMillis(lockoutUntil) : null,
+        lockoutCount: lockoutDoc.exists ? (lockoutDoc.data().lockoutCount || 0) + 1 : 1,
+        lastAttempt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        email: userId // Store email for easier querying
+      }, { merge: true });
+      
+      console.log('✅ Lockout record saved successfully');
+    } catch (writeError) {
+      console.error('❌ Error writing lockout record:', writeError);
+      console.error('❌ Error code:', writeError.code);
+      console.error('❌ Error message:', writeError.message);
+      throw writeError; // Re-throw to be caught by outer catch
+    }
     
     return {
       isLocked: isLocked,
@@ -263,7 +283,12 @@ async function recordFailedLoginAttempt(userId) {
     };
     
   } catch (error) {
-    console.error('Error recording failed login attempt:', error);
+    console.error('❌ Error recording failed login attempt:', error);
+    console.error('❌ Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
     return { isLocked: false, unlockTime: null, attempts: 0 };
   }
 }
