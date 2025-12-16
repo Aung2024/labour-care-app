@@ -774,6 +774,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
 
@@ -798,16 +799,23 @@
       // Detect iOS
       const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
       
-      // Get user role using smart query - CRITICAL: must succeed for app to work
+      // OPTIMIZED: Get user role using cache to avoid redundant queries
       try {
-        const userQuery = firebase.firestore().collection('users').doc(user.uid);
-        const userDoc = await smartFirestoreQuery(
-          Promise.resolve(userQuery),
-          { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
-        );
+        let userData;
+        if (window.UserCache) {
+          userData = await window.UserCache.get(user.uid);
+        } else {
+          // Fallback to direct query
+          const userQuery = firebase.firestore().collection('users').doc(user.uid);
+          const userDoc = await smartFirestoreQuery(
+            Promise.resolve(userQuery),
+            { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
+          );
+          userData = userDoc && userDoc.exists ? userDoc.data() : null;
+        }
       
-        if (userDoc && userDoc.exists) {
-        userRole = userDoc.data().role;
+        if (userData) {
+          userRole = userData.role;
           console.log('✅ User role loaded:', userRole);
         } else {
           console.warn('⚠️ User document not found, defaulting to Midwife');

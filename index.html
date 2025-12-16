@@ -29,6 +29,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js" crossorigin="anonymous"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/page-performance.js"></script>
   <script src="js/consent-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -441,15 +443,21 @@
     
     async function loadUserData() {
       try {
-        // Use smart query for iOS compatibility
-        const userQuery = db.collection("users").doc(currentUser.uid);
-        const doc = await smartFirestoreQuery(
-          Promise.resolve(userQuery),
-          { preferCache: isIOSDevice, timeout: 8000, retries: 1 }
-        );
+        // OPTIMIZED: Use user cache to avoid redundant queries
+        let userData;
+        if (window.UserCache) {
+          userData = await window.UserCache.get(currentUser.uid);
+        } else {
+          // Fallback to direct query if cache not available
+          const userQuery = db.collection("users").doc(currentUser.uid);
+          const doc = await smartFirestoreQuery(
+            Promise.resolve(userQuery),
+            { preferCache: isIOSDevice, timeout: 8000, retries: 1 }
+          );
+          userData = doc && doc.exists ? doc.data() : null;
+        }
         
-        if (doc && doc.exists) {
-          const userData = doc.data();
+        if (userData) {
           userRole = userData.role;
           
           document.getElementById("userEmail").textContent = currentUser.email;
