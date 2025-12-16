@@ -725,12 +725,25 @@
         // Check if user is approved (support both 'approved' and 'status' fields)
         const isApproved = userData.approved === true || userData.status === 'approved';
         
-        // TEMPORARY: Allow all users for testing (remove this in production)
-        if (!isApproved && email !== 'admin@test.com') {
+        // Enforce account approval - user must be approved to access the application
+        if (!isApproved) {
           await firebase.auth().signOut();
           const message = document.getElementById('message');
-          message.textContent = "Your account is pending approval by a super admin.";
-          message.className = "mt-3 text-warning";
+          const currentLang = localStorage.getItem('language') || 'mm';
+          const errorMsg = currentLang === 'en'
+            ? "Your account is pending approval by a super admin. Please contact your administrator."
+            : "သင့်အကောင့်ကို Super Admin မှ အတည်ပြုရန် စောင့်ဆိုင်းနေပါသည်။ ကျေးဇူးပြု၍ စီမံခန့်ခွဲသူနှင့် ဆက်သွယ်ပါ။";
+          message.innerHTML = `<div class="alert alert-warning"><i class="fas fa-clock me-2"></i>${errorMsg}</div>`;
+          message.className = "mt-3";
+          
+          // Log unauthorized access attempt
+          if (window.AuditLogger) {
+            await AuditLogger.logSecurityEvent(
+              AuditLogger.ACTIONS.UNAUTHORIZED_ACCESS,
+              `Unauthorized login attempt - account not approved`,
+              { email: email, userId: userCred.user.uid }
+            );
+          }
           return;
         }
         
@@ -757,17 +770,25 @@
           SessionManager.start();
         }
         
+        // Check for redirect URL (from auth guard)
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectUrl = urlParams.get('redirect');
+        
         // Check provider consent before redirecting
         const consentCheck = await ConsentManager.checkProviderConsent(userCred.user.uid);
         if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
-          // Redirect to consent page
+          // Redirect to consent page (preserve redirect URL if exists)
+          const consentUrl = redirectUrl 
+            ? `provider-consent.html?redirect=${encodeURIComponent(redirectUrl)}`
+            : "provider-consent.html";
           setTimeout(() => {
-            window.location.replace("provider-consent.html");
+            window.location.replace(consentUrl);
           }, 1000);
         } else {
-          // Consent is valid, redirect to app
+          // Consent is valid, redirect to app or original page
+          const targetUrl = redirectUrl || "index.html";
           setTimeout(() => {
-            window.location.replace("index.html");
+            window.location.replace(targetUrl);
           }, 1000);
         }
         
