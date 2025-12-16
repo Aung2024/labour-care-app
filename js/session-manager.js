@@ -5,8 +5,8 @@
 
 // Session configuration
 const SESSION_CONFIG = {
-  INACTIVITY_TIMEOUT: 30 * 60 * 1000, // 30 minutes in milliseconds
-  WARNING_TIME: 5 * 60 * 1000, // Show warning 5 minutes before timeout
+  INACTIVITY_TIMEOUT: 15 * 60 * 1000, // 15 minutes in milliseconds
+  WARNING_TIME: 2 * 60 * 1000, // Show warning 2 minutes before timeout
   CHECK_INTERVAL: 60 * 1000, // Check every minute
   MAX_SESSIONS: 3 // Maximum concurrent sessions per user
 };
