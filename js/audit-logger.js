@@ -102,18 +102,20 @@ async function logAuditEvent(eventData) {
       return false;
     }
     
-    // Get user role
+    // Get user role (only if user is authenticated)
     let userRole = 'unknown';
-    try {
-      const userDoc = await firebase.firestore()
-        .collection('users')
-        .doc(user.uid)
-        .get();
-      if (userDoc.exists) {
-        userRole = userDoc.data().role || 'unknown';
+    if (user) {
+      try {
+        const userDoc = await firebase.firestore()
+          .collection('users')
+          .doc(user.uid)
+          .get();
+        if (userDoc.exists) {
+          userRole = userDoc.data().role || 'unknown';
+        }
+      } catch (error) {
+        console.warn('Could not fetch user role for audit log:', error);
       }
-    } catch (error) {
-      console.warn('Could not fetch user role for audit log:', error);
     }
     
     // Get client IP

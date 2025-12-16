@@ -18,8 +18,8 @@ const PASSWORD_POLICY = {
 // Account lockout configuration
 const LOCKOUT_CONFIG = {
   maxAttempts: 5,
-  lockoutDuration: 15 * 60 * 1000, // 15 minutes in milliseconds
-  exponentialBackoff: true // Increase lockout duration after each lockout
+  lockoutDuration: 60 * 60 * 1000, // 60 minutes (1 hour) in milliseconds
+  exponentialBackoff: false // Disable exponential backoff - use fixed 1 hour duration
 };
 
 // Common passwords to prevent
