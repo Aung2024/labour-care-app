@@ -69,15 +69,31 @@ function initAuthGuard() {
 
   // Wait for Firebase to initialize
   if (typeof firebase === 'undefined' || !firebase.auth) {
-    console.error('❌ Firebase Auth not loaded - cannot enforce authentication');
-    // Retry after a short delay
-    setTimeout(initAuthGuard, 500);
+    console.warn('⚠️ Firebase Auth not loaded yet - retrying...');
+    // Retry after a short delay (but limit retries to avoid infinite loop)
+    if (!initAuthGuard.retryCount) initAuthGuard.retryCount = 0;
+    if (initAuthGuard.retryCount < 10) {
+      initAuthGuard.retryCount++;
+      setTimeout(initAuthGuard, 500);
+    } else {
+      console.error('❌ Firebase Auth failed to load after 10 retries - page may not work correctly');
+      // Don't block the page, but log the error
+    }
     return;
   }
 
+  // Reset retry count on success
+  initAuthGuard.retryCount = 0;
+
   // Check authentication status
   // OPTIMIZED: Use a single listener with immediate check
+  let hasUnsubscribed = false;
   const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
+    // Prevent multiple calls
+    if (hasUnsubscribed) {
+      return;
+    }
+    
     if (!user) {
       // User is not authenticated
       console.warn('⚠️ No authenticated user - redirecting to login');
@@ -88,15 +104,21 @@ function initAuthGuard() {
         const hasSessionData = localStorage.getItem('uid') || sessionStorage.getItem('patientData');
         if (!hasSessionData) {
           console.warn('⚠️ No valid session data for conditional page - redirecting to login');
+          hasUnsubscribed = true;
+          unsubscribe();
           redirectToLogin();
           return;
         }
         // Allow access to conditional pages if we have session data
         console.log('✅ Conditional page with valid session data - allowing access');
+        hasUnsubscribed = true;
+        unsubscribe();
         return;
       }
 
       // For all other pages, redirect to login
+      hasUnsubscribed = true;
+      unsubscribe();
       redirectToLogin();
     } else {
       // User is authenticated
@@ -106,10 +128,13 @@ function initAuthGuard() {
       const cachedUserId = USER_VERIFICATION_CACHE.data?.userId;
       if (isCacheValid() && cachedUserId === user.uid) {
         console.log('✅ User verified (cached)');
+        hasUnsubscribed = true;
+        unsubscribe();
         return;
       }
       
       // Verify user exists in Firestore (with caching)
+      // Don't block page load - verify asynchronously
       verifyUserInFirestore(user.uid).then((isValid) => {
         if (!isValid) {
           console.warn('⚠️ User not found in Firestore - redirecting to login');
@@ -118,15 +143,16 @@ function initAuthGuard() {
         } else {
           console.log('✅ User verified in Firestore');
         }
+        hasUnsubscribed = true;
+        unsubscribe();
       }).catch((error) => {
         console.error('❌ Error verifying user in Firestore:', error);
         // Don't block access if verification fails (could be network issue)
         // But log it for security monitoring
+        hasUnsubscribed = true;
+        unsubscribe();
       });
     }
-    
-    // Unsubscribe after first check to avoid multiple listeners
-    unsubscribe();
   });
 }
 
@@ -143,6 +169,37 @@ async function verifyUserInFirestore(userId) {
       return USER_VERIFICATION_CACHE.data.isValid;
     }
     
+    // Check if smartFirestoreQuery is available (might not be loaded yet)
+    if (typeof smartFirestoreQuery === 'undefined' && typeof window.smartFirestoreQuery === 'undefined') {
+      console.warn('⚠️ smartFirestoreQuery not available yet, using direct query');
+      // Fallback to direct query if smartFirestoreQuery is not available
+      const userDoc = await firebase.firestore()
+        .collection('users')
+        .doc(userId)
+        .get();
+      
+      if (!userDoc.exists) {
+        console.warn('⚠️ User document does not exist in Firestore');
+        USER_VERIFICATION_CACHE.data = { userId, isValid: false };
+        USER_VERIFICATION_CACHE.timestamp = Date.now();
+        return false;
+      }
+      
+      const userData = userDoc.data();
+      const isApproved = userData.approved === true || userData.status === 'approved' || userData.approved === undefined;
+      
+      if (!isApproved) {
+        console.warn('⚠️ User account is not approved');
+        USER_VERIFICATION_CACHE.data = { userId, isValid: false };
+        USER_VERIFICATION_CACHE.timestamp = Date.now();
+        return false;
+      }
+      
+      USER_VERIFICATION_CACHE.data = { userId, isValid: true };
+      USER_VERIFICATION_CACHE.timestamp = Date.now();
+      return true;
+    }
+    
     // iOS/SAFARI COMPATIBLE: Use smartFirestoreQuery instead of direct .get()
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
     const userQuery = firebase.firestore()
@@ -150,7 +207,9 @@ async function verifyUserInFirestore(userId) {
       .doc(userId);
     
     // Use smartFirestoreQuery for iOS/Safari compatibility
-    const userDoc = await smartFirestoreQuery(
+    // Check both global and window scope
+    const smartQuery = typeof smartFirestoreQuery !== 'undefined' ? smartFirestoreQuery : window.smartFirestoreQuery;
+    const userDoc = await smartQuery(
       Promise.resolve(userQuery),
       { 
         preferCache: isIOS, 
@@ -203,31 +262,41 @@ function clearUserVerificationCache() {
 
 /**
  * Redirect to login page
+ * Added small delay to allow page to render first
  */
 function redirectToLogin() {
-  // Clear any session data
-  localStorage.removeItem('uid');
-  localStorage.removeItem('role');
-  localStorage.removeItem('userEmail');
-  localStorage.removeItem('userTownship');
-  localStorage.removeItem('userRegion');
-  localStorage.removeItem('rememberMe');
-  localStorage.removeItem('sessionExpiry');
+  // Don't redirect if already on login page
+  const currentPage = window.location.pathname.split('/').pop() || '';
+  if (currentPage === 'login.html' || currentPage === '') {
+    return;
+  }
   
-  // Clear session storage
-  sessionStorage.clear();
-  
-  // Clear verification cache
-  clearUserVerificationCache();
-  
-  // Get current page to redirect back after login
-  const currentPage = window.location.pathname + window.location.search;
-  
-  // Redirect to login with return URL
-  const loginUrl = `login.html?redirect=${encodeURIComponent(currentPage)}`;
-  
-  // Use replace to prevent back button from going to protected page
-  window.location.replace(loginUrl);
+  // Small delay to allow page to render (prevents blank page)
+  setTimeout(() => {
+    // Clear any session data
+    localStorage.removeItem('uid');
+    localStorage.removeItem('role');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('userTownship');
+    localStorage.removeItem('userRegion');
+    localStorage.removeItem('rememberMe');
+    localStorage.removeItem('sessionExpiry');
+    
+    // Clear session storage
+    sessionStorage.clear();
+    
+    // Clear verification cache
+    clearUserVerificationCache();
+    
+    // Get current page to redirect back after login
+    const fullPath = window.location.pathname + window.location.search;
+    
+    // Redirect to login with return URL
+    const loginUrl = `login.html?redirect=${encodeURIComponent(fullPath)}`;
+    
+    // Use replace to prevent back button from going to protected page
+    window.location.replace(loginUrl);
+  }, 100); // 100ms delay to allow page to render
 }
 
 /**
@@ -260,11 +329,15 @@ window.AuthGuard = {
 };
 
 // Auto-initialize when script loads
+// Use a small delay to ensure Firebase is loaded first
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAuthGuard);
+  document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure Firebase scripts are loaded
+    setTimeout(initAuthGuard, 100);
+  });
 } else {
-  // DOM already loaded
-  initAuthGuard();
+  // DOM already loaded, but wait a bit for Firebase
+  setTimeout(initAuthGuard, 100);
 }
 
 console.log('✅ Authentication Guard initialized (optimized)');

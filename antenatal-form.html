@@ -14,6 +14,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/clinical-validator.js"></script>
+  <script src="js/data-linkage.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -2038,6 +2040,81 @@
           return isNaN(num) ? null : num;
         };
         
+        // STEP 1: Clinical Data Validation (LMP, EDD, GA)
+        if (window.ClinicalValidator) {
+          const lmp = getValue('lmp');
+          const edd = getValue('edd') || getValue('manualEdd');
+          const manualGA = getNumber('manualGestationalAge');
+          const displayGA = getValue('gestationalAgeDisplay');
+          const visitDate = getValue('visitDate');
+          
+          // Parse gestational age from display format if needed
+          let gestationalAge = null;
+          if (manualGA !== null) {
+            gestationalAge = manualGA;
+          } else if (displayGA) {
+            // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
+            const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
+            const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
+            if (weeksMatch && daysMatch) {
+              const weeks = parseInt(weeksMatch[1]);
+              const days = parseInt(daysMatch[1]);
+              gestationalAge = weeks + (days / 7);
+            }
+          }
+          
+          // Validate visit date is not in future
+          if (visitDate) {
+            const dateCheck = window.ClinicalValidator.validateNotFuture(visitDate, 'Visit date');
+            if (!dateCheck.isValid) {
+              alert(dateCheck.error);
+              if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+              }
+              return;
+            }
+          }
+          
+          // Validate EDD/LMP consistency (if both provided)
+          if (lmp && edd) {
+            const eddLmpCheck = window.ClinicalValidator.validateEDDLMP(lmp, edd);
+            if (!eddLmpCheck.isValid) {
+              const continueAnyway = confirm(
+                `Validation Warning: ${eddLmpCheck.error}\n\n` +
+                'Do you want to continue anyway?'
+              );
+              if (!continueAnyway) {
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+                }
+                return;
+              }
+            }
+          }
+          
+          // Validate gestational age (if provided)
+          if (gestationalAge !== null && lmp) {
+            const gaCheck = window.ClinicalValidator.validateGestationalAge(gestationalAge, lmp, visitDate || new Date());
+            if (!gaCheck.isValid) {
+              const continueAnyway = confirm(
+                `Validation Warning: ${gaCheck.error}\n\n` +
+                'Do you want to continue anyway?'
+              );
+              if (!continueAnyway) {
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+                }
+                return;
+              }
+            }
+          }
+          
+          console.log('✅ Clinical validation passed');
+        }
+        
         // Helper function to safely get integer value
         const getInt = (id) => {
           const el = document.getElementById(id);
@@ -2216,6 +2293,20 @@
           });
 
         console.log('Patient record updated');
+        
+        // Sync LMP/EDD to patient document for cross-form linkage
+        if (window.DataLinkage) {
+          const lmp = getValue('lmp');
+          const edd = getValue('edd') || getValue('manualEdd');
+          if (lmp || edd) {
+            try {
+              await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
+            } catch (error) {
+              console.warn('Error syncing LMP/EDD:', error);
+              // Non-critical error, don't block save
+            }
+          }
+        }
 
         // Update patient status to Antenatal Care (if first visit)
         const statusUpdated = await StatusManager.checkAndUpdateToAntenatalCare(patientId);

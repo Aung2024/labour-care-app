@@ -18,6 +18,7 @@ let sessionState = {
   warningTimer: null,
   logoutTimer: null,
   activityCheckInterval: null,
+  tokenRenewalInterval: null,
   isActive: true
 };
 
@@ -53,6 +54,9 @@ function startSessionTracking() {
     checkSessionActivity();
   }, SESSION_CONFIG.CHECK_INTERVAL);
   
+  // Setup token renewal
+  setupTokenRenewal();
+  
   // Store session start time
   localStorage.setItem('sessionStartTime', Date.now().toString());
   
@@ -64,6 +68,7 @@ function startSessionTracking() {
  */
 function stopSessionTracking() {
   clearTimers();
+  stopTokenRenewal();
   removeActivityListeners();
   sessionState.isActive = false;
   console.log('✅ Session tracking stopped');
@@ -289,6 +294,11 @@ function clearTimers() {
     clearInterval(sessionState.activityCheckInterval);
     sessionState.activityCheckInterval = null;
   }
+  
+  if (sessionState.tokenRenewalInterval) {
+    clearInterval(sessionState.tokenRenewalInterval);
+    sessionState.tokenRenewalInterval = null;
+  }
 }
 
 /**
@@ -323,6 +333,77 @@ function refreshSession() {
   if (rememberMe) {
     const expiryTime = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days
     localStorage.setItem('sessionExpiry', expiryTime.toString());
+  }
+}
+
+/**
+ * Renew Firebase authentication token
+ * Firebase tokens expire after 1 hour, so we renew them proactively
+ */
+async function renewAuthToken() {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    return false;
+  }
+  
+  try {
+    // Get fresh token (Firebase automatically renews if needed)
+    const token = await user.getIdToken(true); // Force refresh
+    
+    console.log('✅ Auth token renewed successfully');
+    
+    // Log token renewal
+    if (window.AuditLogger) {
+      await AuditLogger.logSecurityEvent(
+        AuditLogger.ACTIONS.TOKEN_RENEWED,
+        'Authentication token renewed',
+        { userId: user.uid }
+      );
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error renewing auth token:', error);
+    
+    // If token renewal fails, user needs to re-authenticate
+    if (error.code === 'auth/user-token-expired' || error.code === 'auth/user-disabled') {
+      console.warn('⚠️ Token expired or user disabled - logging out');
+      handleSessionTimeout();
+    }
+    
+    return false;
+  }
+}
+
+/**
+ * Setup token renewal interval
+ * Renew token every 50 minutes (tokens expire after 1 hour)
+ */
+function setupTokenRenewal() {
+  // Clear any existing interval
+  if (sessionState.tokenRenewalInterval) {
+    clearInterval(sessionState.tokenRenewalInterval);
+  }
+  
+  // Renew token every 50 minutes
+  const TOKEN_RENEWAL_INTERVAL = 50 * 60 * 1000; // 50 minutes
+  
+  sessionState.tokenRenewalInterval = setInterval(() => {
+    renewAuthToken().catch(error => {
+      console.error('❌ Token renewal failed:', error);
+    });
+  }, TOKEN_RENEWAL_INTERVAL);
+  
+  console.log('✅ Token renewal scheduled (every 50 minutes)');
+}
+
+/**
+ * Stop token renewal
+ */
+function stopTokenRenewal() {
+  if (sessionState.tokenRenewalInterval) {
+    clearInterval(sessionState.tokenRenewalInterval);
+    sessionState.tokenRenewalInterval = null;
   }
 }
 
@@ -378,6 +459,7 @@ window.SessionManager = {
   stop: stopSessionTracking,
   extend: extendSession,
   refresh: refreshSession,
+  renewToken: renewAuthToken,
   getInfo: getSessionInfo,
   CONFIG: SESSION_CONFIG
 };

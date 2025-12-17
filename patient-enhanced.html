@@ -935,6 +935,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/clinical-validator.js"></script>
+  <script src="js/duplicate-detector.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script>
@@ -2552,6 +2554,75 @@
         }
         return;
       }
+      
+      // STEP 1: Check for duplicate patients
+      if (window.DuplicateDetector) {
+        console.log('🔍 Checking for duplicate patients...');
+        const duplicateCheck = await window.DuplicateDetector.check({
+          name: data.name,
+          age: parseInt(data.age),
+          phone: data.phone || data.phoneNumber
+        });
+        
+        if (duplicateCheck.hasDuplicates) {
+          console.log('⚠️ Duplicate patients found:', duplicateCheck.duplicates);
+          
+          // Show duplicate warning modal
+          window.DuplicateDetector.showWarning(
+            duplicateCheck.duplicates,
+            // onLink callback - user wants to use existing patient
+            async (existingPatientId) => {
+              console.log('User chose to link to existing patient:', existingPatientId);
+              
+              // Log the decision
+              if (window.AuditLogger) {
+                await window.AuditLogger.logPatientOperation(
+                  'duplicate_linked',
+                  existingPatientId,
+                  `User chose to link to existing patient instead of creating new record. Original name: ${data.name}, phone: ${data.phone || 'N/A'}`
+                );
+              }
+              
+              // Redirect to patient care hub with existing patient
+              sessionStorage.setItem('selectedPatientId', existingPatientId);
+              window.location.href = 'patient-care-hub.html';
+            },
+            // onContinue callback - user wants to create new patient
+            async (justification) => {
+              console.log('User chose to create new patient with justification:', justification);
+              
+              // Log the decision with justification
+              if (window.AuditLogger) {
+                await window.AuditLogger.logPatientOperation(
+                  'duplicate_override',
+                  null,
+                  `User created new patient despite duplicates. Justification: ${justification}. Name: ${data.name}, phone: ${data.phone || 'N/A'}`
+                );
+              }
+              
+              // Store justification in patient data
+              data.duplicateOverrideJustification = justification;
+              
+              // Continue with patient creation (will be called again below)
+              // We'll set a flag to skip duplicate check
+              data.skipDuplicateCheck = true;
+              
+              // Trigger form submission again
+              form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+          );
+          
+          // Reset button and return (wait for user decision)
+          if (submitBtn) {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+          }
+          return;
+        } else {
+          console.log('✅ No duplicates found');
+        }
+      }
+      
       try {
         const user = firebase.auth().currentUser;
         console.log('Current user object:', user);
@@ -2683,11 +2754,32 @@
           phone: data.phone || null,
           patient_address: data.patientAddress || null,
           emergency_contact: data.emergencyContact || null,
-          emergency_phone: data.emergencyPhone || null
+          emergency_phone: data.emergencyPhone || null,
+          
+          // Duplicate detection metadata
+          duplicate_check_performed: true,
+          duplicate_justification: sessionStorage.getItem('duplicateJustification') || null
         };
+        
+        // Clear duplicate check flag and justification from session storage
+        if (sessionStorage.getItem('skipDuplicateCheck')) {
+          sessionStorage.removeItem('skipDuplicateCheck');
+        }
+        if (sessionStorage.getItem('duplicateJustification')) {
+          sessionStorage.removeItem('duplicateJustification');
+        }
         
         console.log('Processed data to save:', processedData);
         console.log('created_by field in processed data:', processedData.created_by);
+        
+        // Log duplicate check result (no duplicates found)
+        if (window.DuplicateDetector) {
+          await window.DuplicateDetector.logCheck('checked', {
+            name: processedData.name,
+            age: processedData.age,
+            phone: processedData.phone
+          }, [], 'no_duplicates');
+        }
         
         // Store patient data temporarily and redirect to consent screen
         const patientDataForConsent = {

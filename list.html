@@ -775,6 +775,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
+  <script src="js/data-masking.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
 
@@ -1028,6 +1029,21 @@
 
     // Display patients in current view
     function displayPatients() {
+      // Create masking toggle if it doesn't exist
+      if (window.DataMasking && !document.getElementById('maskingToggle')) {
+        const searchSection = document.querySelector('.search-section');
+        if (searchSection) {
+          let toggleContainer = document.getElementById('maskingToggleContainer');
+          if (!toggleContainer) {
+            toggleContainer = document.createElement('div');
+            toggleContainer.id = 'maskingToggleContainer';
+            toggleContainer.style.cssText = 'display: flex; justify-content: flex-end; margin-top: 0.5rem;';
+            searchSection.appendChild(toggleContainer);
+          }
+          window.DataMasking.createToggle('maskingToggleContainer');
+        }
+      }
+      
       const grid = document.getElementById('patientsGrid');
       const list = document.getElementById('patientsList');
       grid.innerHTML = '';
@@ -1129,10 +1145,13 @@
     const ageDisplay = patient.age ? `${patient.age} yrs` : '-';
     const riskDisplay = isHighRisk ? 'High Risk' : 'Normal';
       
+      // Apply data masking
+      const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
+      
       card.innerHTML = `
         <div class="patient-header">
           <div>
-            <div class="patient-name">${patient.name || 'Unknown'}</div>
+            <div class="patient-name">${displayName}</div>
           </div>
           <span class="status-badge ${statusClass}">${displayStatus}</span>
         </div>
