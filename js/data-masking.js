@@ -149,19 +149,16 @@ function createMaskingToggle(containerId) {
   const toggleBtn = document.createElement('button');
   toggleBtn.id = 'maskingToggle';
   toggleBtn.className = 'btn btn-outline-secondary btn-sm';
-  toggleBtn.style.cssText = 'margin-left: 1rem;';
+  toggleBtn.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; white-space: nowrap;';
   toggleBtn.onclick = toggleMasking;
   
   // Set initial state
-  if (isMaskingEnabled) {
-    toggleBtn.innerHTML = '<i class="fas fa-eye-slash"></i> Show Sensitive Data';
-    toggleBtn.classList.add('active');
-  } else {
-    toggleBtn.innerHTML = '<i class="fas fa-eye"></i> Hide Sensitive Data';
-  }
+  updateToggleButton(toggleBtn);
   
-  // Insert at the beginning of container
-  container.insertBefore(toggleBtn, container.firstChild);
+  // Append to container (not insertBefore, just append)
+  container.appendChild(toggleBtn);
+  
+  console.log('✅ Masking toggle button created');
 }
 
 /**

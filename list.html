@@ -688,6 +688,8 @@
           <i class="fas fa-hands-holding-child me-1"></i> Postnatal
         </div>
       </div>
+      <!-- Data Masking Toggle Container -->
+      <div id="maskingToggleContainer" style="display: flex; justify-content: flex-end; margin-top: 0.5rem;"></div>
     </div>
 
     <!-- Recent Patients Section -->
@@ -1030,19 +1032,7 @@
     // Display patients in current view
     function displayPatients() {
       // Create masking toggle if it doesn't exist
-      if (window.DataMasking && !document.getElementById('maskingToggle')) {
-        const searchSection = document.querySelector('.search-section');
-        if (searchSection) {
-          let toggleContainer = document.getElementById('maskingToggleContainer');
-          if (!toggleContainer) {
-            toggleContainer = document.createElement('div');
-            toggleContainer.id = 'maskingToggleContainer';
-            toggleContainer.style.cssText = 'display: flex; justify-content: flex-end; margin-top: 0.5rem;';
-            searchSection.appendChild(toggleContainer);
-          }
-          window.DataMasking.createToggle('maskingToggleContainer');
-        }
-      }
+      createMaskingToggleIfNeeded();
       
       const grid = document.getElementById('patientsGrid');
       const list = document.getElementById('patientsList');
@@ -1212,10 +1202,13 @@
 
       const ageDisplay = patient.age ? `${patient.age} yrs` : '-';
       const parityDisplay = patient.parity || '-';
+      
+      // Apply data masking
+      const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
 
       row.innerHTML = `
         <td>
-          <div class="fw-semibold text-dark mb-1">${patient.name || 'Unknown'}</div>
+          <div class="fw-semibold text-dark mb-1">${displayName}</div>
           <div class="text-muted" style="font-size: 0.8rem;">${ageDisplay} · Parity: ${parityDisplay}</div>
         </td>
         <td>
@@ -1431,6 +1424,33 @@
     });
 
     updateViewToggleUI();
+
+    // Function to create masking toggle
+    function createMaskingToggleIfNeeded() {
+      if (window.DataMasking && !document.getElementById('maskingToggle')) {
+        const toggleContainer = document.getElementById('maskingToggleContainer');
+        if (toggleContainer) {
+          try {
+            window.DataMasking.createToggle('maskingToggleContainer');
+            console.log('✅ Data masking toggle created');
+          } catch (error) {
+            console.error('Error creating masking toggle:', error);
+          }
+        } else {
+          console.warn('Masking toggle container not found');
+        }
+      }
+    }
+
+    // Try to create toggle on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(createMaskingToggleIfNeeded, 500);
+    });
+
+    // Also try after auth state changes
+    if (window.DataMasking) {
+      setTimeout(createMaskingToggleIfNeeded, 1000);
+    }
 
     // Load recent patients from localStorage
     function loadRecentPatients() {

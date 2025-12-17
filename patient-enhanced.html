@@ -2558,10 +2558,33 @@
       // STEP 1: Check for duplicate patients
       if (window.DuplicateDetector) {
         console.log('🔍 Checking for duplicate patients...');
+        
+        // Get current user info for role-based filtering
+        const currentUser = firebase.auth().currentUser;
+        let userRole = 'Midwife'; // Default
+        let userTownship = null;
+        
+        if (currentUser) {
+          try {
+            const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+            if (userDoc.exists) {
+              const userData = userDoc.data();
+              userRole = userData.role || 'Midwife';
+              userTownship = userData.township || null;
+            }
+          } catch (error) {
+            console.warn('Error getting user role:', error);
+          }
+        }
+        
         const duplicateCheck = await window.DuplicateDetector.check({
           name: data.name,
           age: parseInt(data.age),
           phone: data.phone || data.phoneNumber
+        }, {
+          userRole: userRole,
+          userId: currentUser ? currentUser.uid : null,
+          township: userTownship
         });
         
         if (duplicateCheck.hasDuplicates) {

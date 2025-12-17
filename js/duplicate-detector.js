@@ -6,9 +6,10 @@
 /**
  * Search for duplicate patients by phone number
  * @param {string} phoneNumber - Phone number to search
+ * @param {object} options - Options for filtering (userRole, userId, township)
  * @returns {Promise<Array>} Array of potential duplicate patients
  */
-async function searchDuplicatesByPhone(phoneNumber) {
+async function searchDuplicatesByPhone(phoneNumber, options = {}) {
   try {
     if (!phoneNumber || phoneNumber.trim() === '') {
     return [];
@@ -23,18 +24,55 @@ async function searchDuplicatesByPhone(phoneNumber) {
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
     const db = firebase.firestore();
     
-    // Search for patients with same phone number
-    // Try different field names for compatibility
-    const queries = [
-      db.collection('patients').where('phone', '==', normalizedPhone),
-      db.collection('patients').where('phoneNumber', '==', normalizedPhone),
-      db.collection('patients').where('phone_number', '==', normalizedPhone)
-    ];
+    // Build base queries with role-based filtering
+    let baseQueries = [];
+    
+    if (options.userRole === 'Midwife' && options.userId) {
+      // Midwife: only check patients they created
+      baseQueries = [
+        db.collection('patients')
+          .where('phone', '==', normalizedPhone)
+          .where('created_by', '==', options.userId),
+        db.collection('patients')
+          .where('phoneNumber', '==', normalizedPhone)
+          .where('created_by', '==', options.userId),
+        db.collection('patients')
+          .where('phone_number', '==', normalizedPhone)
+          .where('created_by', '==', options.userId),
+        // Also check old format
+        db.collection('patients')
+          .where('phone', '==', normalizedPhone)
+          .where('createdBy', '==', options.userId),
+        db.collection('patients')
+          .where('phoneNumber', '==', normalizedPhone)
+          .where('createdBy', '==', options.userId)
+      ];
+    } else if (options.userRole === 'TMO' && options.township) {
+      // TMO: only check patients in their township
+      baseQueries = [
+        db.collection('patients')
+          .where('phone', '==', normalizedPhone)
+          .where('township', '==', options.township),
+        db.collection('patients')
+          .where('phoneNumber', '==', normalizedPhone)
+          .where('township', '==', options.township),
+        db.collection('patients')
+          .where('phone_number', '==', normalizedPhone)
+          .where('township', '==', options.township)
+      ];
+    } else {
+      // Super Admin or no role: check all patients
+      baseQueries = [
+        db.collection('patients').where('phone', '==', normalizedPhone),
+        db.collection('patients').where('phoneNumber', '==', normalizedPhone),
+        db.collection('patients').where('phone_number', '==', normalizedPhone)
+      ];
+    }
     
     const allMatches = [];
     const seenIds = new Set();
     
-    for (const query of queries) {
+    for (const query of baseQueries) {
       try {
         const snapshot = await smartFirestoreQuery(
       Promise.resolve(query),
@@ -70,9 +108,10 @@ async function searchDuplicatesByPhone(phoneNumber) {
  * @param {string} name - Patient name
  * @param {number} age - Patient age
  * @param {number} ageTolerance - Age difference tolerance (default: 2 years)
+ * @param {object} filterCriteria - Role-based filter criteria
  * @returns {Promise<Array>} Array of potential duplicate patients
  */
-async function searchDuplicatesByNameAge(name, age, ageTolerance = 2) {
+async function searchDuplicatesByNameAge(name, age, ageTolerance = 2, filterCriteria = null) {
   try {
     if (!name || name.trim() === '') {
       return [];
@@ -94,12 +133,61 @@ async function searchDuplicatesByNameAge(name, age, ageTolerance = 2) {
     const minAge = age - ageTolerance;
     const maxAge = age + ageTolerance;
     
-    // Get all patients (we'll filter by name similarity in memory)
-    // This is less efficient but necessary for fuzzy name matching
+    // Build query with role-based filtering
+    let query = db.collection('patients');
+    
+    if (filterCriteria) {
+      if (filterCriteria.type === 'created_by') {
+        // Midwife: filter by created_by (try both field names)
+        try {
+          const newQuery = query.where('created_by', '==', filterCriteria.value);
+          const oldQuery = query.where('createdBy', '==', filterCriteria.value);
+          
+          // Get both queries
+          const [newSnap, oldSnap] = await Promise.all([
+            smartFirestoreQuery(Promise.resolve(newQuery), { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }),
+            smartFirestoreQuery(Promise.resolve(oldQuery), { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true })
+          ]);
+          
+          // Combine results
+          const allPatients = [];
+          const seenIds = new Set();
+          
+          if (newSnap && !newSnap.empty) {
+            newSnap.forEach(doc => {
+              if (!seenIds.has(doc.id)) {
+                seenIds.add(doc.id);
+                allPatients.push({ id: doc.id, ...doc.data() });
+              }
+            });
+          }
+          
+          if (oldSnap && !oldSnap.empty) {
+            oldSnap.forEach(doc => {
+              if (!seenIds.has(doc.id)) {
+                seenIds.add(doc.id);
+                allPatients.push({ id: doc.id, ...doc.data() });
+              }
+            });
+          }
+          
+          // Filter by age and name similarity
+          return filterPatientsByNameAge(allPatients, normalizedName, minAge, maxAge);
+        } catch (error) {
+          console.warn('Error fetching patients for name/age search:', error);
+          return [];
+        }
+      } else if (filterCriteria.type === 'township') {
+        // TMO: filter by township
+        query = query.where('township', '==', filterCriteria.value);
+      }
+    }
+    
+    // For Super Admin or TMO, get all matching patients
     let allPatients = [];
     try {
       const snapshot = await smartFirestoreQuery(
-        Promise.resolve(db.collection('patients')),
+        Promise.resolve(query),
       { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
     );
     
@@ -116,39 +204,48 @@ async function searchDuplicatesByNameAge(name, age, ageTolerance = 2) {
       return [];
     }
     
-    // Filter by name similarity and age
-    const matches = allPatients.filter(patient => {
-      // Check age match
-      const patientAge = patient.age || patient.patientAge;
-      if (!patientAge || isNaN(patientAge)) {
-        return false;
-      }
-      
-      if (patientAge < minAge || patientAge > maxAge) {
-        return false;
-      }
-      
-      // Check name similarity
-      const patientName = patient.name || patient.patientName || '';
-      const normalizedPatientName = normalizeName(patientName);
-      
-      if (!normalizedPatientName) {
-        return false;
-      }
-      
-      // Calculate similarity (simple Levenshtein-like check)
-      const similarity = calculateNameSimilarity(normalizedName, normalizedPatientName);
-      
-      // Consider it a match if similarity is > 80%
-      return similarity > 0.8;
-    });
-    
-    return matches;
+    // Filter by age and name similarity
+    return filterPatientsByNameAge(allPatients, normalizedName, minAge, maxAge);
   } catch (error) {
     console.error('Error in searchDuplicatesByNameAge:', error);
     return [];
   }
 }
+
+/**
+ * Filter patients by name similarity and age range
+ * @param {Array} patients - Array of patient objects
+ * @param {string} normalizedName - Normalized search name
+ * @param {number} minAge - Minimum age
+ * @param {number} maxAge - Maximum age
+ * @returns {Array} Filtered patients
+ */
+function filterPatientsByNameAge(patients, normalizedName, minAge, maxAge) {
+  return patients.filter(patient => {
+    // Check age match
+    const patientAge = patient.age || patient.patientAge;
+    if (!patientAge || isNaN(patientAge)) {
+      return false;
+    }
+    
+    if (patientAge < minAge || patientAge > maxAge) {
+      return false;
+    }
+    
+    // Check name similarity
+    const patientName = patient.name || patient.patientName || '';
+    const normalizedPatientName = normalizeName(patientName);
+    
+    if (!normalizedPatientName) {
+      return false;
+    }
+    
+    // Calculate similarity (simple Levenshtein-like check)
+    const similarity = calculateNameSimilarity(normalizedName, normalizedPatientName);
+    
+    // Consider it a match if similarity is > 80%
+    return similarity > 0.8;
+  });
 
 /**
  * Normalize phone number (remove spaces, dashes, etc.)
@@ -200,9 +297,10 @@ function calculateNameSimilarity(name1, name2) {
 /**
  * Check for duplicate patients (combines phone and name/age search)
  * @param {object} patientData - Patient data object
+ * @param {object} options - Options for filtering (userRole, userId, township)
  * @returns {Promise<{hasDuplicates: boolean, duplicates: Array, phoneMatches: Array, nameMatches: Array}>}
  */
-async function checkForDuplicates(patientData) {
+async function checkForDuplicates(patientData, options = {}) {
   const phoneNumber = patientData.phone || patientData.phoneNumber || patientData.phone_number;
   const name = patientData.name || patientData.patientName;
   const age = patientData.age || patientData.patientAge;
@@ -216,12 +314,21 @@ async function checkForDuplicates(patientData) {
   
   // Search by phone number
   if (phoneNumber) {
-    results.phoneMatches = await searchDuplicatesByPhone(phoneNumber);
+    results.phoneMatches = await searchDuplicatesByPhone(phoneNumber, options);
   }
   
   // Search by name and age
   if (name && age) {
-    results.nameMatches = await searchDuplicatesByNameAge(name, age);
+    // Convert options to filterCriteria format
+    let filterCriteria = null;
+    if (options.userRole === 'Midwife' && options.userId) {
+      filterCriteria = { type: 'created_by', value: options.userId };
+    } else if (options.userRole === 'TMO' && options.township) {
+      filterCriteria = { type: 'township', value: options.township };
+    }
+    // Super Admin: filterCriteria remains null (check all patients)
+    
+    results.nameMatches = await searchDuplicatesByNameAge(name, age, 2, filterCriteria);
   }
   
   // Combine and deduplicate
