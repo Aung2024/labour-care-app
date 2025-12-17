@@ -162,10 +162,18 @@ function createMaskingToggle(containerId) {
 }
 
 /**
- * Check if masking is enabled
+ * Update toggle button appearance
  */
-function isMaskingEnabled() {
-  return isMaskingEnabled;
+function updateToggleButton(btn) {
+  if (!btn) return;
+  
+  if (isMaskingEnabled) {
+    btn.innerHTML = '<i class="fas fa-eye-slash"></i> <span class="lang-text" data-en="Show Sensitive Data" data-mm="အချက်အလက်များ ပြရန်">Show Sensitive Data</span>';
+    btn.classList.add('active');
+  } else {
+    btn.innerHTML = '<i class="fas fa-eye"></i> <span class="lang-text" data-en="Hide Sensitive Data" data-mm="အချက်အလက်များ ဖျောက်ရန်">Hide Sensitive Data</span>';
+    btn.classList.remove('active');
+  }
 }
 
 // Export functions
