@@ -359,12 +359,43 @@ function showDuplicateWarning(duplicates, onLink, onContinue) {
   };
 }
 
+/**
+ * Log duplicate check result to audit log
+ * @param {string} action - Action type ('checked', 'linked', 'created_new')
+ * @param {Object} patientData - Patient data that was checked
+ * @param {Array} duplicates - Array of duplicate matches found
+ * @param {string} outcome - Outcome ('no_duplicates', 'linked', 'created_with_justification')
+ */
+async function logDuplicateCheck(action, patientData, duplicates = [], outcome = 'no_duplicates') {
+  try {
+    if (window.AuditLogger) {
+      await window.AuditLogger.logAuditEvent({
+        action: `duplicate_check_${action}`,
+        resource: 'patient_registration',
+        details: {
+          patientName: patientData.name,
+          patientAge: patientData.age,
+          patientPhone: patientData.phone,
+          duplicatesFound: duplicates.length,
+          duplicateIds: duplicates.map(d => d.id),
+          outcome: outcome
+        }
+      });
+    }
+    console.log(`📝 Duplicate check logged: ${action} - ${outcome}`);
+  } catch (error) {
+    console.warn('Error logging duplicate check:', error);
+    // Non-critical, don't throw
+  }
+}
+
 // Export functions
 window.DuplicateDetector = {
   check: checkForDuplicates,
   searchByPhone: searchDuplicatesByPhone,
   searchByNameAge: searchDuplicatesByNameAge,
-  showWarning: showDuplicateWarning
+  showWarning: showDuplicateWarning,
+  logCheck: logDuplicateCheck
 };
 
 console.log('✅ Duplicate Detector initialized');
