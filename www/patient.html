@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>New Patient</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+ <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script>
+    // Load user's township and display it
+    async function loadUserTownship() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        console.log('Loading township for user:', user.uid);
+        
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('Full user data:', userData);
+          console.log('Township from user data:', userData.township);
+          
+          const township = userData.township || 'Not set';
+          console.log('Township to display:', township);
+          
+          document.getElementById('userTownship').textContent = township;
+          document.getElementById('townshipDisplay').style.display = 'block';
+          
+          // Check if township is properly set
+          if (!userData.township || userData.township.trim() === '') {
+            document.getElementById('townshipDisplay').innerHTML = `
+              <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> Your township is not set. 
+                <br><small class="text-muted">Patients created without a township may not display properly.</small>
+              </div>
+            `;
+            console.warn('User township is not set!');
+          }
+          
+          console.log('User township loaded and displayed:', township);
+        } else {
+          console.log('User document does not exist!');
+        }
+      } catch (error) {
+        console.error('Error loading user township:', error);
+      }
+    }
+  </script>
+</head>
+<body class="container my-4">
+  <h3>Create New Patient Record</h3>
+  
+  <!-- Township Display -->
+  <div id="townshipDisplay" class="alert alert-info mb-3" style="display: none;">
+    <i class="fas fa-map-marker-alt"></i>
+    <strong>Township:</strong> <span id="userTownship">Loading...</span>
+    <br><small class="text-muted">This patient will automatically be assigned to your township.</small>
+  </div>
+  
+  <form id="patientForm" class="mt-4">
+    <div class="mb-2">
+      <label>Patient Name</label>
+      <input type="text" name="name" class="form-control" required>
+    </div>
+    <div class="mb-2">
+      <label>Age</label>
+      <input type="number" name="age" class="form-control" required>
+    </div>
+    <div class="mb-2">
+      <label>Active Labour Diagnosis (Date)</label>
+      <input type="date" name="activeDiagnosis" id="activeDiagnosis" class="form-control">
+      <small class="text-muted">This date should be earlier than or equal to the rupture membrane date</small>
+    </div>
+    <div class="mb-2">
+      <label>Ruptured membranes (Date and Time)</label>
+      <input type="datetime-local" name="rupturedMembranes" id="rupturedMembranes" class="form-control">
+      <small class="text-muted">This date should be later than or equal to the active labour diagnosis date</small>
+    </div>
+    <div class="mb-2">
+      <label>Risk Factors</label>
+      <textarea name="riskFactors" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="mb-2">
+      <label>Parity</label>
+      <input type="text" name="parity" class="form-control">
+    </div>
+    <div class="mb-2">
+      <label>Labour Onset</label>
+      <select name="labourOnset" class="form-control" required>
+        <option value="">Select...</option>
+        <option value="Spontaneous">Spontaneous</option>
+        <option value="Induced">Induced</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Save</button>
+  </form>
+  <div id="message" class="mt-3"></div>
+  <a href="index.html" class="btn btn-secondary mt-3">⬅️ Back to Home</a>
+  <button class="btn btn-outline-danger" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">Logout</button>
+  <script>
+    // Date validation function
+    function validateDates() {
+      const activeDiagnosis = document.getElementById('activeDiagnosis').value;
+      const rupturedMembranes = document.getElementById('rupturedMembranes').value;
+      
+      if (activeDiagnosis && rupturedMembranes) {
+        const activeDate = new Date(activeDiagnosis);
+        const ruptureDate = new Date(rupturedMembranes);
+        
+        // Compare only the date part (ignore time)
+        const activeDateOnly = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate());
+        const ruptureDateOnly = new Date(ruptureDate.getFullYear(), ruptureDate.getMonth(), ruptureDate.getDate());
+        
+        if (activeDateOnly > ruptureDateOnly) {
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-danger">❌ Error: Active Labour Diagnosis Date must be earlier than or equal to Ruptured Membranes Date.</div>';
+          return false;
+        }
+      }
+      return true;
+    }
+    
+    // Add event listeners for real-time validation
+    document.getElementById('activeDiagnosis').addEventListener('change', validateDates);
+    document.getElementById('rupturedMembranes').addEventListener('change', validateDates);
+    
+    const form = document.getElementById("patientForm");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      // Validate dates before submitting
+      if (!validateDates()) {
+        return;
+      }
+      
+      const data = Object.fromEntries(new FormData(form));
+      try {
+        const user = firebase.auth().currentUser;
+        console.log('Current user:', user.uid);
+        
+        // Fetch the user's township from Firestore
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('User data:', userData);
+          console.log('User township from Firestore:', userData.township);
+        }
+        
+        const userTownship = userDoc.exists ? userDoc.data().township : "";
+        console.log('Township to assign to patient:', userTownship);
+        
+        // Validate township
+        if (!userTownship || userTownship.trim() === '') {
+          console.error('User township is empty or invalid:', userTownship);
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-warning">⚠️ Warning: Your township is not set. Please contact an administrator to set your township.</div>';
+          return;
+        }
+        
+        // Create patient with auto-generated ID
+        const docRef = await firebase.firestore().collection("patients").add({
+          name: data.name,
+          age: data.age,
+          parity: data.parity,
+          ruptured_membrane: data.rupturedMembranes,
+          risk_factors: data.riskFactors,
+          labour_onset: data.labourOnset,
+          active_labour: data.activeDiagnosis,
+          createdBy: user.uid,
+          township: userTownship,
+          treatmentStatus: 'active', // Default status for new patients
+          createdAt: new Date().toISOString()
+        });
+        
+        console.log('Patient created with township:', userTownship);
+        console.log('Patient document ID:', docRef.id);
+        console.log('Patient data saved:', {
+          name: data.name,
+          age: data.age,
+          parity: data.parity,
+          risk_factors: data.riskFactors,
+          labour_onset: data.labourOnset,
+          active_labour: data.activeDiagnosis,
+          ruptured_membrane: data.rupturedMembranes
+        });
+        
+        // Optionally update the document with its own ID for easy search
+        await docRef.update({ id: docRef.id });
+
+        document.getElementById("message").innerHTML =
+          `<div class="alert alert-success">✅ Patient created. <a href="summary.html?patient=${docRef.id}">Open Summary</a></div>`;
+        form.reset();
+      } catch (err) {
+        document.getElementById("message").innerHTML =
+          `<div class="alert alert-danger">❌ Error: ${err.message}</div>`;
+      }
+    });
+
+    // Single auth state listener
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        // Load and display user's township
+        loadUserTownship();
+      }
+    });
+    
+    // Debug function to check user township (can be called from console)
+    window.debugUserTownship = async function() {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          console.log('No user logged in');
+          return;
+        }
+        
+        console.log('=== DEBUG USER TOWNSHIP ===');
+        console.log('User ID:', user.uid);
+        
+        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+        console.log('User document exists:', userDoc.exists);
+        
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          console.log('Full user data:', userData);
+          console.log('Township field:', userData.township);
+          console.log('Township type:', typeof userData.township);
+          console.log('Township length:', userData.township ? userData.township.length : 'N/A');
+          console.log('Township trimmed:', userData.township ? userData.township.trim() : 'N/A');
+        } else {
+          console.log('User document does not exist!');
+        }
+        console.log('=== END DEBUG ===');
+      } catch (error) {
+        console.error('Debug error:', error);
+      }
+    };
+  </script>
+</body>
+<footer class="footer">
+  MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+</footer>
+</html>

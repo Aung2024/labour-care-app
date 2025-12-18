@@ -1,0 +1,2506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ANC Visit Record - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/clinical-validator.js"></script>
+  <script src="js/data-linkage.js"></script>
+  <script src="js/status-manager.js"></script>
+  <script src="js/session-manager.js"></script>
+  <script src="js/audit-logger.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --accent-color: #34d399;
+      --light-bg: #f0fdf4;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f0fdf4 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding-bottom: 2rem;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-section {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      margin-left: 0.75rem;
+      margin-right: 0.75rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+      border-left: 4px solid var(--primary-color);
+      transition: all 0.3s ease;
+    }
+
+    .form-section:hover {
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+      transform: translateY(-2px);
+    }
+
+    @media (max-width: 768px) {
+      .form-section {
+        margin-left: 0.75rem;
+        margin-right: 0.75rem;
+        padding: 1.5rem 1.25rem;
+        border-radius: 12px;
+      }
+    }
+
+    @media (max-width: 576px) {
+      .form-section {
+        margin-left: 0.75rem;
+        margin-right: 0.75rem;
+        padding: 1.25rem 1rem;
+        border-radius: 10px;
+      }
+    }
+
+    .section-title {
+      color: var(--primary-color);
+      font-weight: 700;
+      font-size: 1.25rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-title i {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+
+    .card-subtitle {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #2563eb;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 1.5rem 0 1rem;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.04));
+      border-radius: 8px;
+      border-left: 3px solid #2563eb;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-hint {
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+
+    .patient-name-header {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      margin-left: 0.75rem;
+      margin-right: 0.75rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+    }
+
+    .patient-name-header h4 {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .anc-table {
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    .anc-table th {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      font-weight: 600;
+      text-align: center;
+      padding: 0.75rem 0.5rem;
+      border: none;
+      font-size: 0.9rem;
+    }
+
+    .anc-table td {
+      padding: 0.75rem 0.5rem;
+      border: 1px solid #e5e7eb;
+      vertical-align: middle;
+    }
+
+    .anc-table input,
+    .anc-table select {
+      border: none;
+      background: transparent;
+      width: 100%;
+      padding: 0.25rem;
+      font-size: 0.9rem;
+    }
+
+    .anc-table input:focus,
+    .anc-table select:focus {
+      outline: 2px solid var(--primary-color);
+      background: #f0fdf4;
+      border-radius: 4px;
+    }
+
+    .danger-signs-card {
+      border: 2px solid #f59e0b;
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
+      overflow: hidden;
+    }
+
+    .danger-signs-card .card-header {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+      font-weight: 600;
+    }
+
+    .danger-signs-card.severe {
+      border-color: #dc2626;
+    }
+
+    .danger-signs-card.severe .card-header {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+    }
+
+    .form-check-input {
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 2px solid #d1d5db;
+      transition: all 0.2s ease;
+    }
+
+    .form-check-input:checked {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    }
+
+    .form-check-input:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    }
+
+    .form-check-label {
+      font-weight: 500;
+      color: #374151;
+      margin-left: 0.5rem;
+      cursor: pointer;
+    }
+
+    .quick-fill-btn {
+      background: var(--accent-color);
+      color: white;
+      border: none;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .quick-fill-btn:hover {
+      background: var(--secondary-color);
+      transform: translateY(-1px);
+    }
+
+    .btn-save {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.875rem 2rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-save:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-education {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      border: none;
+      color: white;
+      padding: 0.875rem 2rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+    }
+
+    .btn-education:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+      color: white;
+    }
+
+    /* Enhanced Alert Styles */
+    .alert {
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      border-left: 4px solid;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .alert-info {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+      border-left-color: #3b82f6;
+      color: #1e40af;
+    }
+
+    .alert-warning {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+      border-left-color: #f59e0b;
+      color: #92400e;
+    }
+
+    .alert-danger {
+      background: linear-gradient(135deg, rgba(220, 38, 38, 0.1), rgba(220, 38, 38, 0.05));
+      border-left-color: #dc2626;
+      color: #991b1b;
+    }
+
+    .text-urgent {
+      color: #dc2626;
+      font-weight: 700;
+      background-color: rgba(220, 38, 38, 0.15);
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+
+    /* Success Message Toast */
+    .success-toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 600;
+      font-size: 1rem;
+      animation: slideDown 0.3s ease-out;
+      max-width: 90%;
+      text-align: center;
+    }
+
+    .success-toast i {
+      font-size: 1.25rem;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .success-toast {
+        top: 10px;
+        left: 50%;
+        right: auto;
+        padding: 0.875rem 1.5rem;
+        font-size: 0.9rem;
+        max-width: 85%;
+      }
+    }
+
+    @media (max-width: 576px) {
+      .success-toast {
+        top: 10px;
+        padding: 0.75rem 1.25rem;
+        font-size: 0.85rem;
+        max-width: 90%;
+      }
+
+      .success-toast i {
+        font-size: 1.1rem;
+      }
+    }
+
+    .footer {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      color: #374151;
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: var(--card-shadow);
+    }
+
+    /* Mobile-First ANC Form Styles */
+    .mobile-anc-form {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-row-mobile {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-group-mobile {
+      background: white;
+      padding: 1rem;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      transition: all 0.3s ease;
+    }
+
+    .form-group-mobile:hover {
+      border-color: var(--primary-color);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+    }
+
+    .form-group-mobile .form-label {
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .form-group-mobile .form-control {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+      background: #ffffff;
+    }
+
+    .form-group-mobile .form-control:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+      outline: none;
+      background: #ffffff;
+    }
+
+    .form-group-mobile .form-control:hover:not(:focus) {
+      border-color: #cbd5e1;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+      }
+
+      .form-row-mobile {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+      
+      .form-group-mobile {
+        padding: 0.75rem;
+      }
+      
+      .mobile-anc-form {
+        padding: 1rem;
+      }
+      
+      .patient-name-header {
+        padding: 0.75rem 1rem;
+        margin-left: 0.75rem;
+        margin-right: 0.75rem;
+      }
+      
+      .patient-name-header h4 {
+        font-size: 1.1rem;
+      }
+
+      .section-title {
+        font-size: 1.1rem;
+      }
+
+      .card-subtitle {
+        font-size: 0.85rem;
+        padding: 0.625rem 0.875rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+      }
+
+      .form-group-mobile .form-control {
+        padding: 0.625rem 0.875rem;
+        font-size: 0.9rem;
+      }
+      
+      .form-group-mobile .form-label {
+        font-size: 0.875rem;
+      }
+
+      .btn-save, .btn-education, .btn-warning {
+        padding: 0.75rem 1.5rem;
+        font-size: 0.95rem;
+      }
+
+      .section-title {
+        font-size: 1rem;
+      }
+    }
+
+    /* Language Switcher */
+    .language-switcher {
+      display: flex;
+      gap: 0.25rem;
+      align-items: center;
+    }
+
+    .language-btn {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+    }
+
+    .language-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .language-btn.active {
+      background: rgba(255, 255, 255, 0.4);
+      border-color: rgba(255, 255, 255, 0.6);
+      font-weight: 600;
+    }
+
+    .flag-icon {
+      font-size: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      .header-section .d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+        justify-content: flex-start !important;
+      }
+
+      .header-section .btn-sm {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+
+      .language-switcher {
+        order: 1;
+      }
+
+      .header-section .btn-outline-light {
+        order: 2;
+        flex: 0 0 auto;
+      }
+    }
+
+    @media (max-width: 576px) {
+      .header-section {
+        padding: 0.75rem 0;
+      }
+
+      .header-section h1 {
+        font-size: 1.25rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .header-section .col-md-4 {
+        margin-top: 0.5rem;
+      }
+
+      .header-section .d-flex {
+        gap: 0.375rem !important;
+      }
+
+      .header-section .btn-sm {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+      }
+
+      .language-btn {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 0.7rem !important;
+      }
+
+      .flag-icon {
+        font-size: 0.875rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-clipboard-list me-3"></i>
+            <span class="lang-text" data-en="ANC Visit Record" data-mm="ကိုယ်ဝန်ဆောင် ပြုစုစောင့်ရှောက်မှု">ANC Visit Record</span>
+          </h1>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <!-- Language Switcher -->
+            <div class="language-switcher">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" title="English">
+                <span class="flag-icon">🇬🇧</span> ENG
+              </button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" title="မြန်မာ">
+                <span class="flag-icon">🇲🇲</span> MM
+              </button>
+            </div>
+            <a href="antenatal-care.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to ANC" data-mm="ကိုယ်ဝန်ဆောင် ပြုစုစောင့်ရှောက်မှု သို့ ပြန်သွားရန်">Back to ANC</span>
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i><span class="lang-text" data-en="Logout" data-mm="ထွက်ရန်">Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Name Header -->
+    <div class="patient-name-header">
+      <h4 class="mb-0">
+        <i class="fas fa-user me-2"></i>
+        <span id="patientNameDisplay">Loading...</span>
+      </h4>
+    </div>
+
+    <!-- ANC Visit Form -->
+    <form id="ancForm" onsubmit="saveVisitData(event)">
+      <!-- ANC Information -->
+   
+
+      <!-- Visit Information -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-calendar-alt me-2"></i><span class="lang-text" data-en="Visit Information" data-mm="ပြသမှု အချက်အလက်">Visit Information</span>
+        </h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label lang-text" data-en="Visit Number&#10;This Facility - (Auto generate)" data-mm="အကြိမ်အရေအတွက်"></label>
+            <input type="number" class="form-control" id="visitNumber" name="visitNumber" readonly placeholder="">
+            <small class="form-hint lang-text" data-en="" data-mm=""></small>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label lang-text" data-en="Date of Visit (mm/dd/yyyy)" data-mm="လာရောက်ပြသသည့် ရက်စွဲ (/ရက်/လ /ခုနှစ်)">Date of Visit (mm/dd/yyyy)</label>
+            <div class="d-flex gap-2">
+              <input type="date" class="form-control" id="visitDate" name="visitDate" required>
+              <button type="button" class="quick-fill-btn" onclick="setToday('visitDate')">Today</button>
+          </div>
+        </div>
+          <div class="col-md-6">
+            <label class="form-label lang-text" data-en="Other Visits (e.g. private/other facility)" data-mm="အခြား စောင့်ရှောက်မှု (ဥပမာ - ပုဂ္ဂလိက/အခြား ကျန်းမာရေးဌာန)">Other Visits (e.g. private/other facility)</label>
+            <input type="number" class="form-control" id="otherVisitCount" name="otherVisitCount" min="0" step="1" value="0">
+            <small class="form-hint lang-text" data-en="Optional: include additional visits outside this record" data-mm="">Optional: include additional visits outside this record</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- History Taking -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-clipboard-list me-2"></i><span class="lang-text" data-en="History Taking" data-mm="ကိုယ်ဝင်ရာဇဝင် မေးမြန်းခြင်း">History Taking</span>
+        </h5>
+
+        <div class="row g-3 align-items-end">
+          <div class="col-lg-4 col-md-6">
+            <label class="form-label d-block lang-text" data-en="LMP Status" data-mm="နောက်ဆုံးရာသီပေါ်ခြင်း၏ ပထမဆုံးရက် (LMP)"">LMP Status</label>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="lmpStatus" id="lmpKnown" value="known" checked onchange="toggleLMPFields()">
+              <label class="form-check-label lang-text" data-en="LMP Known" data-mm="‌နေ့ရက်ကိုသိပါသည်">LMP Known</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="lmpStatus" id="lmpUnknown" value="unknown" onchange="toggleLMPFields()">
+              <label class="form-check-label lang-text" data-en="LMP Unknown (Ultrasound-based)" data-mm="နေ့ရက်ကို မသိပါ">LMP Unknown (Ultrasound-based)</label>
+            </div>
+          </div>
+          <div class="col-lg-4 col-md-6 history-known-only" id="lmpKnownGroup">
+            <label for="lmp" class="form-label lang-text" data-en="Last Menstrual Period (LMP)_mm/dd/yyyy" data-mm="နောက်ဆုံးရာသီပေါ်သည့် ရက်စွဲ">Last Menstrual Period (LMP)_mm/dd/yyyy</label>
+            <input type="date" id="lmp" name="lmp" class="form-control" onchange="calculateGestationalAgeAndEDD()">
+            </div>
+          <div class="col-lg-4 col-md-6 history-known-only" id="eddKnownGroup">
+            <label for="edd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
+            <input type="date" id="edd" name="edd" class="form-control" readonly>
+            <small class="form-hint lang-text" data-en="Auto-calculated when LMP is known" data-mm="">Auto-calculated when LMP is known</small>
+          </div>
+        </div>
+        
+        <div id="manualGAEDDSection" class="row g-3 mt-1" style="display: none;">
+          <div class="col-md-6">
+            <label for="manualGestationalAge" class="form-label lang-text" data-en="Manual Gestational Age (if LMP unknown)" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်) ">Manual Gestational Age (if LMP unknown)</label>
+            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA()">
+          </div>
+          <div class="col-md-6">
+            <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
+            <input type="date" id="manualEdd" name="manualEdd" class="form-control">
+          </div>
+        </div>
+        
+        <div id="autoGASection" class="row g-3 mt-0">
+          <div class="col-md-6" id="autoGAGrid">
+            <label for="gestationalAgeDisplay" class="form-label lang-text" data-en="Gestational Age" data-mm="ကိုယ်ဝန်ဆောင်ကာလ">Gestational Age</label>
+            <input type="text" id="gestationalAgeDisplay" name="gestationalAgeDisplay" class="form-control" readonly>
+            <small class="form-hint lang-text" data-en="Auto-calculated from LMP or manual entry" data-mm="">Auto-calculated from LMP or manual entry</small>
+          </div>
+        </div>
+        
+        <div class="mt-4">
+            <label class="form-label">
+            <i class="fas fa-calendar-plus"></i><span class="lang-text" data-en="Early ANC Visit" data-mm="ကိုယ်ဝန်ဆောင် ပြုစုစောင့်ရှောက်မှု အစောပိုင်း">Early ANC Visit</span>
+            </label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="earlyAncVisit" id="earlyAncVisit" value="yes">
+            <label class="form-check-label" for="earlyAncVisit"><span class="lang-text" data-en="Patient attended ANC before 14 weeks" data-mm="လူနာသည် ၁၄ ပတ်မတိုင်မီ စောနိုင်သမျှ စောစော ကိုယ်ဝန်ဆောင် ပြုစုစောင့်ရှောက်မှု ခံယူခဲ့သည်">Patient attended ANC before 14 weeks</span></label>
+          </div>
+        </div>
+        
+        <div class="card-subtitle"><i class="fas fa-history me-2"></i><span class="lang-text" data-en="Past History" data-mm="ယခင် ရာဇဝင်များ">Past History</span></div>
+        <div class="row g-3">
+          <div class="col-lg-4 col-md-6">
+            <label class="form-label d-block lang-text" data-en="Status" data-mm="အခြေအနေ">Status</label>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="pastHistoryStatus" id="pastHistoryStatusNAD" value="nad" checked onchange="togglePastHistoryNotes()">
+              <label class="form-check-label" for="pastHistoryStatusNAD">NAD</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="pastHistoryStatus" id="pastHistoryStatusRisk" value="risk" onchange="togglePastHistoryNotes()">
+              <label class="form-check-label" for="pastHistoryStatusRisk">Risk +</label>
+            </div>
+          </div>
+          <div class="col-lg-8 col-md-6" id="pastHistoryNotesGroup" style="display: none;">
+            
+            <textarea class="form-control" id="pastHistoryNotes" name="pastHistoryNotes" rows="2" placeholder="e.g Family / Medical / Surgical / OG / Drugs / Social history"></textarea>
+            <small class="form-hint lang-text" data-en="" data-mm=""></small>
+            </div>
+          </div>
+        </div>
+        
+      <!-- Physical Examination -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-stethoscope me-2"></i><span class="lang-text" data-en="General Examination(Look, Listen, Feel)" data-mm="အထွေထွေစမ်းသပ်စစ်ဆေးခြင်း">General Examination (Look, Listen, Feel)</span>
+        </h5>
+
+        <div class="card-subtitle"><i class="fas fa-female me-2"></i><span class="lang-text" data-en="Maternal Portion" data-mm="မိခင်ဆိုင်ရာ အပိုင်း">Maternal Portion</span></div>
+        <div class="row g-3">
+          <div class="col-md-3 col-sm-6">
+            <label for="weight" class="form-label lang-text" data-en="Weight (Kg)" data-mm="ကိုယ်အလေးချိန် (ကီလိုဂရမ်)">Weight (Kg)</label>
+            <input type="number" id="weight" name="weight" class="form-control" step="0.1" min="0" max="200">
+                </div>
+          <div class="col-md-3 col-sm-6">
+            <label class="form-label lang-text" data-en="Height" data-mm="အရပ် အမြင့်">Height</label>
+            <div class="d-flex gap-2">
+              <div style="flex: 1;">
+                <input type="number" id="heightFeet" name="heightFeet" class="form-control" placeholder="Feet" min="0" max="10">
+                <small class="form-hint lang-text" data-en="ft" data-mm="ပေ">ft</small>
+              </div>
+              <div style="flex: 1;">
+                <input type="number" id="heightInches" name="heightInches" class="form-control" placeholder="Inches" min="0" max="11">
+                <small class="form-hint lang-text" data-en="in" data-mm="လက်မ">in</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3 col-sm-6">
+            <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate (bpm)" data-mm="သွေးခုန်နှုန်း">Pulse Rate (bpm)</label>
+            <input type="number" id="pulseRate" name="pulseRate" class="form-control" min="40" max="180">
+                </div>
+
+   <div class="row g-3 mt-1">
+          <div class="col-md-3 col-sm-6">
+            <label for="bloodPressure" class="form-label lang-text" data-en="Blood Pressure (mm Hg)" data-mm="သွေးပေါင်ချိန် (mm Hg)">Blood Pressure (mm Hg)</label>
+            <input type="text" id="bloodPressure" name="bloodPressure" class="form-control" placeholder="120/80">
+                </div>
+                </div>
+
+          <div class="col-md-3 col-sm-6">
+            <label for="temperature" class="form-label lang-text" data-en="Temperature" data-mm="ကိုယ်အပူချိန်">Temperature</label>
+            <div class="d-flex gap-1">
+              <input type="number" id="temperature" name="temperature" class="form-control" step="0.1" placeholder="37.5">
+              <select id="temperatureUnit" name="temperatureUnit" class="form-control" style="width: 80px;">
+                <option value="C">°C</option>
+                <option value="F">°F</option>
+              </select>
+                </div>
+              </div>
+                </div>
+        
+     
+
+        <div class="row g-3 mt-1">
+          <div class="col-md-3 col-sm-6">
+            <label for="anemiaStatus" class="form-label lang-text" data-en="Anemia (Lower Inner Eyelid)" data-mm="သွေးအားနည်းခြင်း ရှိ/မရှိ (အောက်မျက်ခမ်းအတွင်းဘက်ကို ကြည့်ရန်)">Anemia (Lower Inner Eyelid)</label>
+            <select id="anemiaStatus" name="anemiaStatus" class="form-control">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+              </div>
+          <div class="col-md-3 col-sm-6">
+            <label for="pittingEdema" class="form-label lang-text" data-en="Edema (Leg)" data-mm=" ခြေ/လက် ဖောယောင်ခြင်း ရှိ/မရှိ">Edema (Leg)</label>
+            <select id="pittingEdema" name="pittingEdema" class="form-control">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+            </div>
+      
+     
+
+          <div class="col-md-6 col-sm-12">
+            <label for="otherFindings" class="form-label lang-text" data-en="Other Findings" data-mm="အခြား တွေ့ရှိချက်များ">Other Findings</label>
+            <input type="text" id="otherFindings" name="otherFindings" class="form-control" placeholder="Describe any other findings">
+          </div>
+      </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-md-4 col-sm-6">
+            <label for="tbSymptoms" class="form-label lang-text" data-en="Co-infection symptoms (TB/Malaria/HIV)" data-mm="ကူးစက်ရောဂါ လက္ခဏာများ (TB/Malaria/HIV )">Co-infection symptoms (TB/Malaria/HIV)</label>
+            <select id="tbSymptoms" name="tbSymptoms" class="form-control" onchange="toggleCoinfectionNotes()">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="col-md-4 col-sm-6" id="coinfectionNotesGroup" style="display: none;">
+            <label for="coinfectionNotes" class="form-label lang-text" data-en="If yes, specify" data-mm="ရှိပါက ဖော်ပြရန်">If yes, specify</label>
+            <input type="text" id="coinfectionNotes" name="coinfectionNotes" class="form-control" placeholder="e.g. TB symptoms, malaria">
+          </div>
+        </div>
+      </div>
+
+      <!-- Gender Based Violence Suspected Case -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-shield-alt me-2"></i><span class="lang-text" data-en="Gender Based Violence Suspected Case" data-mm="ကျား၊မအခြေပြု အကြမ်းဖက်ခံရမှုသံသယရှိ/မရှိ ဆန်းစစ်ခြင်း">Gender Based Violence Suspected Case</span>
+        </h5>
+        
+        <div class="mt-2">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="gbvSuspected" id="gbvSuspectedNo" value="no" checked onchange="toggleGBVDetails()">
+            <label class="form-check-label lang-text" data-en="No" data-mm="မရှိပါ">No</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="gbvSuspected" id="gbvSuspectedYes" value="yes" onchange="toggleGBVDetails()">
+            <label class="form-check-label lang-text" data-en="Yes" data-mm="ရှိပါသည်">Yes</label>
+          </div>
+        </div>
+
+        <div id="gbvDetails" class="mt-3" style="display: none;">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <div class="card danger-signs-card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="GBV Indicators" data-mm="ကျား၊မအခြေပြု အကြမ်းဖက်ခံရမှု လက္ခဏာများ">GBV Indicators</span></h6>
+                </div>
+                <div class="card-body">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="gbv_bruise_cuts" name="gbv_bruise_cuts">
+                    <label class="form-check-label lang-text" data-en="Bruise, Cuts and injuries around the body/genital areas" data-mm="ရိုက်နှိပ်ခြင်း၊ ထိုးကြိတ်ခံရခြင်းကြောင့် အနာတရများရှိနေခြင်း" for="gbv_bruise_cuts">Bruise, Cuts and injuries around the body/genital areas</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="gbv_fatigue_pallor" name="gbv_fatigue_pallor">
+                    <label class="form-check-label lang-text" data-en="Fatigue, pallor" data-mm="ပင်ပန်းနွမ်းနယ်ခြင်း၊ ဖြူဖျော့ခြင်း" for="gbv_fatigue_pallor">Fatigue, pallor</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="gbv_worry_stress" name="gbv_worry_stress">
+                    <label class="form-check-label lang-text" data-en="worry, stress, fear and anxiety" data-mm="စိတ်ပင်ပန်းခြင်း၊ စိတ်ဖိစီးမှု၊ စိုးရိမ်မှုနှင့် ကြောက်ရွံ့မှုများရှိခြင်း" for="gbv_worry_stress">worry, stress, fear and anxiety</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+   
+       
+      <!-- Abdominal Examination -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-hand-holding-medical me-2"></i><span class="lang-text" data-en="Abdominal Examination" data-mm="ဝမ်းဗိုက်စမ်းသပ်ခြင်း">Abdominal Examination</span>
+        </h5>
+
+        <div class="card-subtitle"><i class="fas fa-baby me-2"></i><span class="lang-text" data-en="Fetal Portion" data-mm="သန္ဓေသားဆိုင်ရာ အပိုင်း">Fetal Portion</span></div>
+        <div class="row g-3">
+          <div class="col-md-4 col-sm-6">
+            <label for="fundalHeight" class="form-label lang-text" data-en="Fundal Height (cm)" data-mm="သားအိမ်အမြင့် (cm)">Fundal Height (cm)</label>
+              <input type="number" id="fundalHeight" name="fundalHeight" class="form-control" step="0.1" min="0" max="50">
+            </div>
+          <div class="col-md-4 col-sm-6">
+            <label for="fetalLie" class="form-label lang-text" data-en="Fetal Position (+36Weeks)" data-mm="သန္ဓေသား အနေအထား (ကိုယ်ဝန် ၃၆ ပတ်နှင့် အထက်တွင် စမ်းသပ်ရန်)">Fetal Position (+36Weeks)</label>
+            <select id="fetalLie" name="fetalLie" class="form-control">
+              <option value="">Select</option>
+              <option value="Longitudinal" class="lang-text" data-en="Occiput Anterior (OA)" data-mm="Occiput Anterior (OA)">Occiput Anterior (OA)</option>
+              <option value="Transverse" class="lang-text" data-en="Occiput Posterior (OP)" data-mm="Occiput Posterior (OP)">Occiput Posterior (OP)</option>
+              <option value="Oblique" class="lang-text" data-en="Transverse Lie" data-mm="Transverse Lie">Transverse Lie</option>
+            </select>
+          </div>
+          <div class="col-md-4 col-sm-6">
+            <label for="fetalPresentation" class="form-label lang-text" data-en="Fetal Presentation (+36Weeks)" data-mm="သန္ဓေသား ဦးတိုက်မှု (ကိုယ်ဝန် ၃၆ ပတ်နှင့် အထက်တွင် စမ်းသပ်ရန်)">Fetal Presentation (+36Weeks)</label>
+              <select id="fetalPresentation" name="fetalPresentation" class="form-control">
+                <option value="">Select</option>
+              <option value="Cephalic" class="lang-text" data-en="Cephalic" data-mm="ဦးခေါင်း">Cephalic</option>
+              <option value="Breech" class="lang-text" data-en="Breech" data-mm="တင်ပါးဆုံ">Breech</option>
+             
+              <option value="Other" class="lang-text" data-en="Shoulder" data-mm="ပုခုံး">Other</option>
+              </select>
+            </div>
+          </div>
+          
+        <div class="row g-3 mt-1">
+          <div class="col-md-4 col-sm-6">
+            <label for="fetalHeartRate" class="form-label lang-text" data-en="Fetal Heart Rate (bpm) (>20 Weeks)" data-mm="သန္ဓေသားနှလုံးခုန်နှုန်း (bpm) (ကိုယ်ဝန် ၂၀ ပတ် အထက်တွင် နားထောင်ရန်)">Fetal Heart Rate (bpm) (>20 Weeks)</label>
+              <input type="number" id="fetalHeartRate" name="fetalHeartRate" class="form-control" min="100" max="180">
+            </div>
+          <div class="col-md-4 col-sm-6">
+            <label class="form-label lang-text" data-en="Fetal Movement (>20 Weeks)" data-mm="သန္ဓေသားလှုပ်ရှားမှု ရှိ/မရှိ (ကိုယ်ဝန် ၂၀ ပတ် အထက်တွင် စမ်းသပ်ရန်)">Fetal Movement (>20 Weeks)</label>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fetalMovement" id="fetalMovementYes" value="Yes">
+              <label class="form-check-label" for="fetalMovementYes">Yes</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fetalMovement" id="fetalMovementNo" value="No">
+              <label class="form-check-label" for="fetalMovementNo">No</label>
+            </div>
+            </div>
+          </div>
+      </div>
+      
+          
+      <!-- High Risk Pregnancy Assessment -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="High Risk Pregnancy Assessment" data-mm="အန္တရာယ်ဖြစ်နိုင်ချေရှိသော ကိုယ်ဝန်ဆောင် ဟုတ်/မဟုတ် ဆန်းစစ်ခြင်း">High Risk Pregnancy Assessment</span>
+        </h5>
+        
+        <div class="mt-2">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="highRisk" id="highRiskNo" value="no" checked onchange="toggleHighRiskDetails()">
+            <label class="form-check-label lang-text" data-en="No - Standard risk pregnancy" data-mm="အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင် မဟုတ်ပါ။">No - Standard risk pregnancy</label>
+            </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="highRisk" id="highRiskYes" value="yes" onchange="toggleHighRiskDetails()">
+            <label class="form-check-label lang-text" data-en="Yes - High risk pregnancy" data-mm="အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင် ဖြစ်သည်။">Yes - High risk pregnancy</label>
+          </div>
+        </div>
+
+        <div id="highRiskDetails" class="row g-3 mt-2" style="display: none;">
+          <div class="col-md-12">
+            <label class="form-label lang-text" data-en="High Risk Factors (Select all that apply):" data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော အချက်အလက်များ (ကိုက်ညီသောအကြောင်းအရာအားလုံးကို ရွေးချယ်နိုင်ပါသည်):">High Risk Factors (Select all that apply):</label>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskAge" value="maternal_age_18_or_40 and over">
+                  <label class="form-check-label lang-text" data-en="Maternal Age ≤18 years or ≥ 40 years" data-mm="- အသက်- ≤ ၁၈ နှစ် (သို့) ≥ ၄၀ နှစ်">Maternal Age ≤18 years or ≥ 40 years</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskDiabetes" value="Diabetes (pre-existing or gestational)">
+                  <label class="form-check-label lang-text" data-en="Diabetes (pre-existing or gestational)" data-mm="- ဆီးချိုရောဂါ (ဆီးချိုရောဂါအခံရှိခြင်း (သို့) ကိုယ်ဝန်ဆောင်စဥ်ဆီးချိုတက်ခြင်း)">Diabetes (pre-existing or gestational)</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskHypertension" value="Hypertension">
+                  <label class="form-check-label lang-text" data-en="Hypertension" data-mm="သွေးပေါင်ချိန်တက်ခြင်း">Hypertension</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskHeartDisease" value="Heart Disease (or) Kidney Disease">
+                  <label class="form-check-label lang-text" data-en="Heart Disease (or) Kidney Disease" data-mm="နှလုံးရောဂါ (သို့မဟုတ်) ကျောက်ကပ်ရောဂါ">Heart Disease (or) Kidney Disease</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPregnancyInducedHypertension" value="Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia">
+                  <label class="form-check-label lang-text" data-en="Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia" data-mm="ကိုယ်ဝန်ဆောင်စဥ် သွေးတိုးခြင်း၊ ကိုယ်ဝန်ဆိပ်တက်ခြင်း နှင့် ကိုယ်ဝန်ဆိပ်တက်နာ">Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPreviousPregnancyComplications" value="Previous pregnancy complications">
+                  <label class="form-check-label lang-text" data-en="Previous pregnancy complications" data-mm="ယခင်ကိုယ်ဝန်နှင့် ပတ်သက်သည့် နောက်ဆက်တွဲ ပြဿနာများ (ဥပမာ- သွေးဆင်းခြင်း၊ ဖျားခြင်း၊ တက်ခြင်း၊ တတိယအဆင့် စုတ်ပြဲခြင်း၊ ကလေး အသေမွေးခြင်း (သို့မဟုတ်) မွေးကင်းစ မွေးမွေးပြီးခြင်း သေဆုံးခြင်း၊ ပေါင်ချိန်မပြည့်/လမစေ့ မွေးဖွားခြင်း)">Previous pregnancy complications</label>
+                </div>
+               
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskMultiplePregnancy" value="Multiple pregnancy">
+                  <label class="form-check-label lang-text" data-en="Multiple pregnancy" data-mm="ယခင် (၅)ကြိမ်အထက် မွေးဖွားခြင်း">Multiple pregnancy</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskFetalMalpresentation" value="Fetal Malpresentation">
+                  Fetal Malpresentation<label class="form-check-label lang-text" data-en="Fetal Malpresentation" data-mm="သန္ဓေသား အနေအထား ပုံမမှန်ခြင်းများ">Fetal Malpresentation</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskTwinsPregnancy" value="Twins Pregnancy">
+                  <label class="form-check-label lang-text" data-en="Twins Pregnancy" data-mm="အမွှာကိုယ်ဝန်ဟု ထင်မြင်ခြင်း/ အမွှာကိုယ်ဝန် သေချာခြင်း">Twins Pregnancy</label>
+                </div>
+               
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPlacentaPreviaAbruption" value="Placenta previa/Abruption">
+                  <label class="form-check-label lang-text" data-en="Placenta previa/Abruption" data-mm="အချင်းရှေ့ရောက်ခြင်း/ အချိန်မတိုင်မီ အချင်းကွာခြင်း">Placenta previa/Abruption</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOtherMedicalConditions" value="Other Medical Conditions">
+                  <label class="form-check-label lang-text" data-en="Other Medical Conditions" data-mm="အခြားကျန်းမာရေးပြဿနာများ">Other Medical Conditions</label>
+                </div>
+ 
+            </div>
+          </div>
+        </div>
+
+            <div class="alert alert-info mt-3">
+              <i class="fas fa-info-circle me-2"></i>
+              <span class="lang-text" data-en="Women with one or more of the above conditions should deliver only at a hospital. They should also make the necessary preparations for childbirth in advance." data-mm="အထက်ပါအခြေအနေတစ်ခုခု (သို့) တစ်ခုထပ်ပိုရှိသော အမျိုးသမီးများသည် ‌ဆေးရုံအဆင့်တွင်သာ မွေးဖွားသင့်ကြောင်း ရှင်းပြရမည်။ မွေးဖွားရန် ကြိုတင်ပြင်ဆင်မှုများ ဆောင်ရွက်ရန်။">Women with one or more of the above conditions should deliver only at a hospital. They should also make the necessary preparations for childbirth in advance.</span>
+            </div>
+            
+            <label class="form-label mt-2 lang-text" data-en="Additional Notes:&#10;Describe any other risks or concerns" data-mm="မှတ်ချက်။&#10;အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော အခြားအခြေအနေများရှိလျှင် ဖော်ပြပါ။" for="riskNotes">Additional Notes:<br>Describe any other risks or concerns</label>
+            <textarea name="riskNotes" id="riskNotes" class="form-control" rows="2" placeholder="Describe any other risk factors or concerns"></textarea>
+          </div>
+        </div>
+      </div>
+
+<!-- Danger Signs in Pregnancy -->
+      <div class="form-section">
+        <h5 class="section      -title">
+          <i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="Danger Signs in Pregnancy" data-mm="ကိုယ်ဝန်ဆောင်စဥ် အန္တရာယ်လက္ခဏာများ">Danger Signs in Pregnancy</span>
+        </h5>
+        
+        <div class="mt-2">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="dangerSignsPresent" id="dangerSignsNo" value="no" checked onchange="toggleDangerSignsDetails()">
+            <label class="form-check-label lang-text" data-en="No - No danger signs present" data-mm="မရှိပါ ">No - No danger signs present</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="dangerSignsPresent" id="dangerSignsYes" value="yes" onchange="toggleDangerSignsDetails()">
+            <label class="form-check-label lang-text" data-en="Yes - Danger signs present" data-mm="ရှိပါသည် ">Yes - Danger signs present</label>
+          </div>
+        </div>
+
+        <div id="dangerSignsDetails" class="mt-3" style="display: none;">
+          <div class="alert alert-danger mb-3" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <span id="urgentAlertText">
+              <span class="lang-text" data-en="If the symptoms below occur, please go " data-mm="အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ "></span>
+              <span class="text-urgent lang-text" data-en="urgently" data-mm="နေ့ညမဆိုင်း ချက်ချင်း"></span>
+              <span class="lang-text" data-en=" to health center:" data-mm=" ပို့ဆောင်ရမည်။"></span>
+            </span>
+          </div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <div class="card danger-signs-card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Urgent Danger Signs" data-mm="အရေးပေါ် အန္တရာယ်လက္ခဏာများ">Urgent Danger Signs</span></h6>
+                </div>
+                <div class="card-body">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_vaginal_bleeding" name="ds_vaginal_bleeding">
+                    <label class="form-check-label lang-text" data-en="Vaginal Bleeding" data-mm="မိန်းမကိုယ်မှ သွေးဆင်းခြင်း" for="ds_vaginal_bleeding">Vaginal Bleeding</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_convulsions" name="ds_convulsions">
+                    <label class="form-check-label lang-text" data-en="Convulsions, Loss of consciousness" data-mm="တက်လျှင်၊ သတိလစ်ခြင်း" for="ds_convulsions">Convulsions, Loss of consciousness</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_severe_headache" name="ds_severe_headache">
+                    <label class="form-check-label lang-text" data-en="Severe Headache, Blurred Vision, Vomiting" data-mm="ပြင်းထန်စွာ ခေါင်းကိုက်ခြင်း၊ အမြင်မှုန်ဝါးခြင်း နှင့် အန်ခြင်း" for="ds_severe_headache">Severe Headache, Blurred Vision, Vomiting</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_severe_abdominal_pain" name="ds_severe_abdominal_pain">
+                    <label class="form-check-label lang-text" data-en="Severe Abdominal Pain" data-mm="ဝမ်းဗိုက်အလွန်အမင်း ဆက်တိုက်နာခြင်း" for="ds_severe_abdominal_pain">Severe Abdominal Pain</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_fever" name="ds_fever">
+                    <label class="form-check-label lang-text" data-en="Fever, Fatigue" data-mm="ဖျားပြီး အိပ်ယာမှ မထနိုင်လောက်အောင် အားနည်းခြင်း" for="ds_fever">Fever, Fatigue</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_fast_breathing" name="ds_fast_breathing">
+                    <label class="form-check-label lang-text" data-en="Fast breathing, Difficulty in breathing" data-mm="အသက်ရှူမြန်ခြင်း၊ အသက်ရှူရန် ခက်ခဲခြင်း" for="ds_fast_breathing">Fast breathing, Difficulty in breathing</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-warning mb-3" role="alert">
+            <i class="fas fa-info-circle me-2"></i>
+            <span id="regularAlertText"></span>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card danger-signs-card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Other Danger Signs" data-mm="အခြား အန္တရာယ်လက္ခဏာများ">Other Danger Signs</span></h6>
+                </div>
+                <div class="card-body">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_puffiness" name="ds_puffiness">
+                    <label class="form-check-label lang-text" data-en="Puffiness of face, hands and leg" data-mm="မျက်နှာ၊ လက်နှင့် ခြေ‌ထောက်များ ဖောယောင်လျှင်" for="ds_puffiness">Puffiness of face, hands and leg</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_oliguria" name="ds_oliguria">
+                    <label class="form-check-label lang-text" data-en="Oliguria" data-mm="ဆီးသွားနည်းလျှင်" for="ds_oliguria">Oliguria</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_excessive_vomiting" name="ds_excessive_vomiting">
+                    <label class="form-check-label lang-text" data-en="Excessive vomiting" data-mm="ဆက်တိုက်ပြင်းထန်စွာ အန်လျှင်" for="ds_excessive_vomiting">Excessive vomiting</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_fever_other" name="ds_fever_other">
+                    <label class="form-check-label lang-text" data-en="Fever" data-mm="ဖျားလျှင်၊ နေမကောင်းဖြစ်လျှင်" for="ds_fever_other">Fever</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_abdominal_pain" name="ds_abdominal_pain">
+                    <label class="form-check-label lang-text" data-en="Abdominal Pain" data-mm="ဗိုက်နာလျှင်" for="ds_abdominal_pain">Abdominal Pain</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_post_date" name="ds_post_date">
+                    <label class="form-check-label lang-text" data-en="Post Date (> 7 days)" data-mm="ခန့်မှန်းမွေးဖွားရက်ထက် (၇) ရက်ကျော်သည်အထိ ကလေး မမွေးသေးလျှင်" for="ds_post_date">Post Date (> 7 days)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_reduced_fetal_movement" name="ds_reduced_fetal_movement">
+                    <label class="form-check-label lang-text" data-en="Reduced/absent fetal movement" data-mm="ကလေး ပုံမှန်တိုးသည့်အတိုင်း မတိုးပဲ အကြိမ်ရေနည်းလျှင် (ပုံမှန်အောက်ကလေးအတိုးနည်းလျှင်)" for="ds_reduced_fetal_movement">Reduced/absent fetal movement</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ds_other_symptoms" name="ds_other_symptoms">
+                    <label class="form-check-label lang-text" data-en="Other symptoms which make woman feel very unwell" data-mm="အခြားနေထိုင်မကောင်းဖြစ်လျှင်" for="ds_other_symptoms">Other symptoms which make woman feel very unwell</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+        
+      <!-- Treatment & Medications -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-syringe me-2"></i><span class="lang-text" data-en="Treatment & Medications" data-mm="ကုသမှု နှင့် ဆေးပေးခြင်းများ">Treatment & Medications</span>
+        </h5>
+        
+        <div class="card-subtitle">
+          <i class="fas fa-pills me-2"></i><span class="lang-text" data-en="Iron & Folic Acid Tablet" data-mm="သံဓါတ်နှင့် ဖောလစ်အက်ဆစ် အားဆေး">Iron & Folic Acid Tablet</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('ironFolicInfo')" title="Click for more information"></i>
+        </div>
+        <div id="ironFolicInfo" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="Folic Acid - 0.4mg daily, Iron - 60mg daily till 37 weeks, 2 times after 37 weeks" data-mm="သံဓာတ် 60mg နှင့်ဖောလစ်အက်ဆစ် 0.4mg ကို ကိုယ်ဝန် (၃၇)ပတ်အထိ နေ့စဉ်တိုက် ကျွေးရန် (၃၇)ပတ် ပြည့်ပြီးပါက မွေးဖွား သည်အထိ တစ်နေ့လျှင် (၂)ကြိမ် တိုက် ကျွေးရန်">Folic Acid - 0.4mg daily, Iron - 60mg daily till 37 weeks, 2 times after 37 weeks</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4 col-sm-6">
+            <select id="ironFolicAcid" name="ironFolicAcid" class="form-control">
+              <option value="">Select</option>
+              <option value="Given">Given</option>
+              <option value="Not Given">Not Given</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card-subtitle">
+          <i class="fas fa-pills me-2"></i><span class="lang-text" data-en="Micronutrients Tablet" data-mm="အဏုအာဟာရဆေးပြား">Micronutrients Tablet</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('micronutrientsInfo')" title="Click for more information"></i>
+        </div>
+        <div id="micronutrientsInfo" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="1 tablet per day till 7 months pregnancy and 2 tablets (Day/Night) per day after 7 months of pregnancy. Total 180 tablets should be taken" data-mm="ကိုယ်ဝန်ရှိမှန်းသိချိန်မှ ကိုယ်ဝန် (၇)လ ပြည့်သည်အထိ အဏုအာဟာရဆေးပြားကို တစ်နေ့လျှင် (၁)ပြားနှင့် ကိုယ်ဝန် (၇)လပြည့်ချိန်မှစ၍ နံနက် (၁)ပြား၊ ည(၁)ပြားနှုန်းဖြင့် ကိုယ်ဝန်ဆောင်ကာလအတွင်း စုစုပေါင်း (၁၈၀)ပြား ပြည့်အောင်သောက်ပါ။">1 tablet per day till 7 months pregnancy and 2 tablets (Day/Night) per day after 7 months of pregnancy. Total 180 tablets should be taken</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4 col-sm-6">
+            <select id="micronutrientsTablet" name="micronutrientsTablet" class="form-control">
+              <option value="">Select</option>
+              <option value="Given">Given</option>
+              <option value="Not Given">Not Given</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card-subtitle mt-3">
+          <i class="fas fa-capsules me-2"></i><span class="lang-text" data-en="Vitamin B1(10mg/day)" data-mm="ဗီတာမင်ဘီဝမ်း အားဆေး (တစ်နေ့လျှင် ၁၀မီလီဂရမ်)">Vitamin B1 (10mg/day)</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('vitaminB1Info')" title="Click for more information"></i>
+        </div>
+        <div id="vitaminB1Info" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="Vitamin B1 10mg daily 1 month before and 3 months after delivery" data-mm="ဗီတာမင် ဘီဝမ်းဆေးပြား 10 mg ကို တစ်နေ့လျှင် တစ်ကြိမ် မမွေးခင်  (၁)လ (ကိုယ်ဝန် (၃၆) ပတ်မှစတင်ပြီး) နှင့် မွေးပြီး (၃) လအထိ တိုက်ကျွေးရန်။">Vitamin B1 10mg daily 1 month before and 3 months after delivery</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4 col-sm-6">
+            
+            <select id="vitaminB1" name="vitaminB1" class="form-control">
+                <option value="">Select</option>
+              <option value="Given">Given</option>
+                <option value="Not Given">Not Given</option>
+              </select>
+            </div>
+          </div>
+          
+        <div class="card-subtitle mt-3">
+          <i class="fas fa-tablets me-2"></i><span class="lang-text" data-en="Deworming" data-mm="သန်ချဆေးပြား">Deworming</span>
+          <i class="fas fa-info-circle ms-2" style="cursor: pointer; color: var(--primary-color);" onclick="toggleInfo('dewormingInfo')" title="Click for more information"></i>
+        </div>
+        <div id="dewormingInfo" class="alert alert-info mt-2" style="display: none;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="Deworming after the first trimester" data-mm="ကိုယ်ဝန် ဒုတိယ (၃)လပတ်မှစ၍ သန်ချဆေး တစ်ကြိမ် တိုက်ကျွေးရန်။ ">Deworming after the first trimester</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4 col-sm-6">
+       
+            <select id="deworming" name="deworming" class="form-control">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+            </div>
+          </div>
+          
+        <div class="row g-3 mt-1">
+          <div class="col-md-4 col-sm-6">
+            <label for="tetanusToxoid" class="form-label lang-text" data-en="Tetanus Diphtheria (TD)" data-mm="မေးခိုင်၊ ဆုံဆို့နာ ကာကွယ်ဆေး">Tetanus Diphtheria (TD)</label>
+            <select id="tetanusToxoid" name="tetanusToxoid" class="form-control">
+                <option value="">Select</option>
+              <option value="TD1">TD1</option>
+              <option value="TD2">TD2</option>
+              <option value="Not Given">Not Given</option>
+              </select>
+            </div>
+          </div>
+          
+        <div class="row g-3 mt-1">
+          <div class="col-12">
+            <label for="otherMedications" class="form-label lang-text" data-en="Other Medications" data-mm="အခြားသော ဆေးပေးခြင်းများ မှတ်တမ်းတင်ရန်">Other Medications</label>
+            <textarea id="otherMedications" name="otherMedications" class="form-control" rows="3" placeholder="Include additional medications"></textarea>
+        </div>
+        </div>
+      </div>
+
+      <!-- Clinical Notes & Next Steps -->
+      <div class="form-section">
+        <h5 class="section-title">
+          <i class="fas fa-notes-medical me-2"></i><span class="lang-text" data-en="Clinical Notes & Next Steps" data-mm="ကုသမှု မှတ်စုများနှင့် နောက်ထပ် အဆင့်များ">Clinical Notes & Next Steps</span>
+        </h5>
+        
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="nextVisitDate" class="form-label lang-text" data-en="Follow-up Appointment&#10;Follow-up Date - (mm/dd/yyyy)" data-mm="နောက်တစ်ကြိမ် ပြန်ပြရန် ရက်ချိန်းပေးခြင်း&#10;ပြန်ပြရမည့် ရက်စွဲ - (လ/ရက်စွဲ/ခုနှစ်)">Follow-up Appointment<br>Follow-up Date - (mm/dd/yyyy)</label>
+            <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control">
+            <small class="form-hint lang-text" data-en="To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)" data-mm="ကိုယ်ဝန် ၅လ နှင့် ၆လ (ဒုတိယအကြိမ်နှင့် တတိယအကြိမ်) မှစ၍ မွေးဖွားရန်ကြိုတင်ပြင်ဆင်ရေးအတွက် ကူညီပေးရန်">To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)</small>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-12">
+            <label for="clinicalNotes" class="form-label lang-text" data-en="Clinical Notes & Recommendations" data-mm="ဆေးကုသမှုမှတ်တမ်း နှင့် အကြံပြုချက်များ">Clinical Notes & Recommendations</label>
+            <textarea class="form-control" id="clinicalNotes" name="clinicalNotes" rows="3" placeholder="Additional clinical observations and recommendations"></textarea>
+          </div>
+        </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-md-4 col-sm-6">
+              <label for="initial" class="form-label lang-text" data-en="Initial" data-mm="အမည်အတိုကောက်">Initial</label>
+              <input type="text" id="initial" name="initial" class="form-control" placeholder="Initials">
+            </div>
+          </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-section">
+        <div class="d-flex flex-column flex-md-row gap-3 justify-content-center align-items-stretch">
+          <button type="button" class="btn btn-education flex-fill" onclick="window.location.href='antenatal-education.html'">
+            <i class="fas fa-graduation-cap me-2"></i><span class="lang-text" data-en="Health Education" data-mm="ကျန်းမာရေးပညာပေးခြင်း">Health Education</span>
+          </button>
+          <button type="submit" class="btn btn-save flex-fill">
+            <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ပြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>
+          </button>
+          <button type="button" class="btn btn-warning flex-fill" onclick="referPatient()" style="background-color: #fbbf24; border-color: #fbbf24; color: #000;">
+            <i class="fas fa-share-square me-2"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let patientId = null;
+    let visitCount = 1;
+    
+    // Language switching
+    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+
+    // Language switching function
+    function switchLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      
+      // Update active button
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      
+      // Update all text elements with lang-text class
+      document.querySelectorAll('.lang-text').forEach(el => {
+        const text = el.dataset[lang] || el.dataset.en || el.textContent;
+        el.textContent = text;
+      });
+
+      // Special handling for urgent alert text with red highlights
+      const urgentAlertText = document.getElementById('urgentAlertText');
+      if (urgentAlertText) {
+        if (lang === 'en') {
+          urgentAlertText.innerHTML = "If the symptoms below occur, please go <span class='text-urgent'>urgently</span> to health center:";
+        } else {
+          urgentAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>နေ့ညမဆိုင်း ချက်ချင်း</span> ပို့ဆောင်ရမည်။";
+        }
+      }
+
+      // Special handling for regular alert text with red highlights
+      const regularAlertText = document.getElementById('regularAlertText');
+      if (regularAlertText) {
+        if (lang === 'en') {
+          regularAlertText.innerHTML = "If the symptoms below occur, please go to health center:";
+        } else {
+          regularAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>အမြန်ဆုံး</span> သွားရောက်သင့်ပါသည်။";
+        }
+      }
+    }
+
+    // Get patient ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadPatientInfo();
+      }
+    });
+
+    async function loadPatientInfo() {
+      try {
+        if (!patientId) {
+          alert('Patient ID not found.');
+          return;
+        }
+
+        // Load patient data
+        const patientDoc = await firebase.firestore()
+          .collection("patients")
+          .doc(patientId)
+          .get();
+
+        if (!patientDoc.exists) {
+          alert('Patient not found.');
+          return;
+        }
+
+        currentPatient = patientDoc.data();
+        
+        // Populate patient name in header
+        document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+
+        // Load visit count and set visit number
+        await loadVisitCount();
+        document.getElementById('visitNumber').value = visitCount;
+        
+        // Clear all form fields to start fresh for each new visit
+        clearFormFields();
+        
+        // Set visit date to today
+        setToday('visitDate');
+        
+        // Only load LMP from patient record if available (patient-level data, not visit-specific)
+        if (currentPatient.lmp) {
+          // Set LMP date if available from patient record
+          const lmpInput = document.getElementById('lmp');
+          if (lmpInput && currentPatient.lmp) {
+            // Convert Firestore timestamp to date string if needed
+            let lmpDate = currentPatient.lmp;
+            if (lmpDate && typeof lmpDate.toDate === 'function') {
+              lmpDate = lmpDate.toDate().toISOString().split('T')[0];
+            } else if (lmpDate && typeof lmpDate === 'string') {
+              lmpDate = lmpDate.split('T')[0];
+            }
+            lmpInput.value = lmpDate || '';
+            calculateGestationalAgeAndEDD();
+          }
+        }
+
+        // Load History Taking fields from first visit only (these should persist across visits)
+        await loadHistoryTakingFromFirstVisit();
+
+        // Don't load previous visit data - start each new visit with a fresh form
+        // await loadExistingVisitData();
+
+      } catch (error) {
+        console.error('Error loading patient info:', error);
+        alert(`Error loading patient information: ${error.message}`);
+      }
+    }
+
+    async function loadVisitCount() {
+      try {
+        console.log('Loading visit count for patient:', patientId);
+        
+        const visitsSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .get();
+        
+        console.log('Found visits:', visitsSnapshot.size);
+        console.log('Visit documents:', visitsSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+        
+        visitCount = visitsSnapshot.size + 1;
+        console.log('Calculated visit count:', visitCount);
+      } catch (error) {
+        console.error('Error loading visit count:', error);
+        visitCount = 1;
+      }
+    }
+
+    async function loadHistoryTakingFromFirstVisit() {
+      try {
+        console.log('Loading History Taking fields from first visit for patient:', patientId);
+        
+        // Get the first visit (ordered by visitDate ascending, limit 1)
+        const firstVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'asc')
+          .limit(1)
+          .get();
+        
+        if (firstVisitSnapshot.empty) {
+          console.log('No first visit found - skipping History Taking load');
+          return;
+        }
+        
+        const firstVisit = firstVisitSnapshot.docs[0].data();
+        console.log('First visit data loaded:', firstVisit);
+        
+        // Helper function to safely set element value
+        const setValue = (id, value) => {
+          const el = document.getElementById(id);
+          if (el && value !== undefined && value !== null && value !== '') {
+            // Handle date fields
+            if (el.type === 'date') {
+              let dateValue = value;
+              if (dateValue && typeof dateValue.toDate === 'function') {
+                dateValue = dateValue.toDate().toISOString().split('T')[0];
+              } else if (dateValue && typeof dateValue === 'string') {
+                dateValue = dateValue.split('T')[0];
+              }
+              el.value = dateValue || '';
+            } else {
+              el.value = value;
+            }
+          }
+        };
+        
+        // Load LMP Status
+        if (firstVisit.lmpStatus) {
+          const lmpRadio = document.getElementById(firstVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
+          if (lmpRadio) {
+            lmpRadio.checked = true;
+            toggleLMPFields();
+          }
+        }
+        
+        // Load LMP date
+        if (firstVisit.lmp) {
+          setValue('lmp', firstVisit.lmp);
+          calculateGestationalAgeAndEDD();
+        }
+        
+        // Load EDD
+        if (firstVisit.edd) {
+          setValue('edd', firstVisit.edd);
+        }
+        
+        // Load manual GA/EDD if LMP unknown
+        if (firstVisit.manualGestationalAge) {
+          setValue('manualGestationalAge', firstVisit.manualGestationalAge);
+        }
+        if (firstVisit.manualEdd) {
+          setValue('manualEdd', firstVisit.manualEdd);
+        }
+        
+        // Load Gestational Age Display (calculated)
+        if (firstVisit.gestationalAge) {
+          // Convert decimal GA to weeks and days format
+          const gaValue = parseFloat(firstVisit.gestationalAge);
+          if (!isNaN(gaValue)) {
+            const weeks = Math.floor(gaValue);
+            const days = Math.round((gaValue - weeks) * 7);
+            const currentLang = localStorage.getItem('appLanguage') || 'mm';
+            const displayValue = currentLang === 'en' 
+              ? `${weeks} weeks and ${days} days`
+              : `${weeks} ပတ် ${days} ရက်`;
+            setValue('gestationalAgeDisplay', displayValue);
+          }
+        }
+        
+        // Load Early ANC Visit checkbox
+        if (firstVisit.early_anc_visit !== undefined) {
+          const earlyAncCheckbox = document.getElementById('earlyAncVisit');
+          if (earlyAncCheckbox) {
+            earlyAncCheckbox.checked = firstVisit.early_anc_visit;
+          }
+        }
+        
+        // Load Past History Status
+        if (firstVisit.pastHistoryStatus) {
+          const historyRadio = document.querySelector(`input[name="pastHistoryStatus"][value="${firstVisit.pastHistoryStatus}"]`);
+          if (historyRadio) {
+            historyRadio.checked = true;
+            togglePastHistoryNotes();
+          }
+        }
+        
+        // Load Past History Notes
+        if (firstVisit.pastHistoryNotes) {
+          setValue('pastHistoryNotes', firstVisit.pastHistoryNotes);
+        }
+        
+        console.log('History Taking fields loaded from first visit');
+        
+      } catch (error) {
+        console.error('Error loading History Taking from first visit:', error);
+        // Don't show alert - just log the error as this is non-critical
+      }
+    }
+
+    async function loadExistingVisitData() {
+      try {
+        console.log('Loading existing visit data for patient:', patientId);
+        
+        // Load the most recent visit data to populate the form
+        const visitsSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .limit(1)
+          .get();
+        
+        console.log('Found existing visits:', visitsSnapshot.size);
+        
+        if (!visitsSnapshot.empty) {
+          const latestVisit = visitsSnapshot.docs[0].data();
+          
+          // Populate form fields with latest visit data (with null checks)
+          const setValue = (id, value) => {
+            const el = document.getElementById(id);
+            if (el && value !== undefined && value !== null) el.value = value;
+          };
+          
+          setValue('weight', latestVisit.weight);
+          // Parse height from "Xft Yin" format and split into feet and inches
+          if (latestVisit.height) {
+            const heightMatch = latestVisit.height.match(/(\d+)ft\s*(\d+)in/i);
+            if (heightMatch) {
+              setValue('heightFeet', heightMatch[1]);
+              setValue('heightInches', heightMatch[2]);
+            }
+          }
+          setValue('bloodPressure', latestVisit.bloodPressure);
+          setValue('pulseRate', latestVisit.pulseRate);
+          setValue('anemiaStatus', latestVisit.anemiaStatus);
+          setValue('jaundiceStatus', latestVisit.jaundiceStatus);
+          setValue('breastExam', latestVisit.breastExam);
+          setValue('pittingEdema', latestVisit.pittingEdema);
+          setValue('tbSymptoms', latestVisit.tbSymptoms);
+          setValue('coinfectionNotes', latestVisit.coinfectionNotes);
+          setValue('urineTest', latestVisit.urineTest);
+          // Convert decimal GA to weeks and days format
+          if (latestVisit.gestationalAge) {
+            const gaValue = parseFloat(latestVisit.gestationalAge);
+            if (!isNaN(gaValue)) {
+              const weeks = Math.floor(gaValue);
+              const days = Math.round((gaValue - weeks) * 7);
+              const currentLang = localStorage.getItem('appLanguage') || 'mm';
+              const displayValue = currentLang === 'en' 
+                ? `${weeks} weeks and ${days} days`
+                : `${weeks} ပတ် ${days} ရက်`;
+              setValue('gestationalAgeDisplay', displayValue);
+            }
+          }
+          setValue('fundalHeight', latestVisit.fundalHeight);
+          setValue('fetalHeartRate', latestVisit.fetalHeartRate);
+          setValue('deworming', latestVisit.deworming);
+          setValue('ironFolicAcid', latestVisit.ironFolicAcid);
+          setValue('tetanusToxoid', latestVisit.tetanusToxoid);
+          setValue('vitaminB1', latestVisit.vitaminB1);
+          setValue('micronutrientsTablet', latestVisit.micronutrientsTablet);
+          setValue('treatmentGiven', latestVisit.treatmentGiven);
+          setValue('initial', latestVisit.initial);
+          if (typeof latestVisit.otherVisitCount === 'number') setValue('otherVisitCount', latestVisit.otherVisitCount);
+          setValue('nextVisitDate', latestVisit.nextVisitDate);
+          setValue('clinicalNotes', latestVisit.clinicalNotes);
+          
+          // Load ANC information from latest visit
+          setValue('lmp', latestVisit.lmp);
+          setValue('edd', latestVisit.edd);
+          
+          // Load LMP status
+          if (latestVisit.lmpStatus) {
+            const lmpRadio = document.getElementById(latestVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
+            if (lmpRadio) {
+              lmpRadio.checked = true;
+            toggleLMPFields();
+            }
+          }
+          
+          // Load manual GA/EDD if LMP unknown
+          setValue('manualGestationalAge', latestVisit.manualGestationalAge);
+          setValue('manualEdd', latestVisit.manualEdd);
+          
+          // Load danger signs checkboxes
+          if (latestVisit.dangerSigns) {
+            Object.keys(latestVisit.dangerSigns).forEach(sign => {
+              const checkbox = document.getElementById(`ds_${sign}`);
+              if (checkbox) {
+                checkbox.checked = latestVisit.dangerSigns[sign];
+              }
+            });
+          }
+
+          // Load GBV data
+          if (latestVisit.gbvSuspected) {
+            const gbvRadio = document.querySelector(`input[name="gbvSuspected"][value="${latestVisit.gbvSuspected}"]`);
+            if (gbvRadio) {
+              gbvRadio.checked = true;
+              toggleGBVDetails();
+            }
+          }
+          if (latestVisit.gbvIndicators) {
+            Object.keys(latestVisit.gbvIndicators).forEach(indicator => {
+              const checkbox = document.getElementById(`gbv_${indicator}`);
+              if (checkbox) {
+                checkbox.checked = latestVisit.gbvIndicators[indicator];
+              }
+            });
+          }
+          
+          // Load Early ANC Visit checkbox
+          const earlyAncCheckbox = document.getElementById('earlyAncVisit');
+          if (earlyAncCheckbox && latestVisit.early_anc_visit !== undefined) {
+            earlyAncCheckbox.checked = latestVisit.early_anc_visit;
+          }
+          
+          if (latestVisit.pastHistoryStatus) {
+            const historyRadio = document.querySelector(`input[name="pastHistoryStatus"][value="${latestVisit.pastHistoryStatus}"]`);
+            if (historyRadio) {
+              historyRadio.checked = true;
+              togglePastHistoryNotes();
+            }
+          }
+          setValue('pastHistoryNotes', latestVisit.pastHistoryNotes);
+          toggleCoinfectionNotes();
+          toggleLMPFields();
+          
+          // Load High Risk Assessment
+          if (latestVisit.high_risk) {
+            const highRiskRadio = document.querySelector(`input[name="highRisk"][value="${latestVisit.high_risk}"]`);
+            if (highRiskRadio) {
+              highRiskRadio.checked = true;
+              toggleHighRiskDetails(); // Show/hide risk factors section
+            }
+          }
+          
+          // Load High Risk Factors checkboxes
+          if (latestVisit.risk_factors && Array.isArray(latestVisit.risk_factors)) {
+            latestVisit.risk_factors.forEach(riskFactor => {
+              const checkbox = document.querySelector(`input[name="riskFactors"][value="${riskFactor}"]`);
+              if (checkbox) {
+                checkbox.checked = true;
+              }
+            });
+          }
+          
+          // Load Risk Notes
+          setValue('riskNotes', latestVisit.risk_notes);
+          
+          // Load additional fields
+          setValue('temperature', latestVisit.temperature);
+          setValue('temperatureUnit', latestVisit.temperatureUnit);
+          setValue('bloodGroup', latestVisit.bloodGroup);
+          setValue('rhesusFactor', latestVisit.rhesusFactor);
+          setValue('urineProtein', latestVisit.urineProtein);
+          setValue('urineSugar', latestVisit.urineSugar);
+          setValue('otherFindings', latestVisit.otherFindings);
+          setValue('cvs', latestVisit.cvs);
+          setValue('rs', latestVisit.rs);
+          setValue('cns', latestVisit.cns);
+          setValue('mentalHealthStatus', latestVisit.mentalHealthStatus);
+          setValue('fetalLie', latestVisit.fetalLie);
+          setValue('fetalPresentation', latestVisit.fetalPresentation);
+          setValue('otherMedications', latestVisit.otherMedications);
+          
+          // Load fetal movement radio
+          if (latestVisit.fetalMovement) {
+            const fetalMovementRadio = document.querySelector(`input[name="fetalMovement"][value="${latestVisit.fetalMovement}"]`);
+            if (fetalMovementRadio) {
+              fetalMovementRadio.checked = true;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing visit data:', error);
+      }
+    }
+
+    function calculateGestationalAge() {
+      if (currentPatient?.lmp) {
+        const lmpDate = new Date(currentPatient.lmp);
+        const today = new Date();
+        const diffTime = today - lmpDate;
+        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        const displayGA = document.getElementById('gestationalAgeDisplay');
+        if (displayGA) {
+          // Display as "X weeks and Y days" format
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
+          } else {
+            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
+          }
+        }
+      }
+    }
+
+    function updateGestationalAge() {
+      const manualGAInput = document.getElementById('manualGestationalAge');
+      const displayGA = document.getElementById('gestationalAgeDisplay');
+      
+      if (manualGAInput?.value && displayGA) {
+        // Convert manual GA (decimal weeks) to weeks and days format
+        const gaWeeks = parseFloat(manualGAInput.value);
+        if (!isNaN(gaWeeks)) {
+          const weeks = Math.floor(gaWeeks);
+          const days = Math.round((gaWeeks - weeks) * 7);
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${weeks} weeks and ${days} days`;
+          } else {
+            displayGA.value = `${weeks} ပတ် ${days} ရက်`;
+          }
+        }
+      } else {
+        // Recalculate from LMP if available
+        if (currentPatient?.lmp) {
+          calculateGestationalAge();
+        }
+      }
+    }
+
+    function calculateGestationalAgeAndEDD() {
+      const lmpInput = document.getElementById('lmp');
+      const eddInput = document.getElementById('edd');
+      
+      if (lmpInput?.value && eddInput) {
+        const lmpDate = new Date(lmpInput.value);
+        
+        // Calculate EDD (LMP + 280 days)
+        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
+        eddInput.value = eddDate.toISOString().split('T')[0];
+        
+        // Update gestational age display
+        calculateGestationalAgeFromLMP(lmpInput.value);
+      }
+    }
+
+    function calculateGestationalAgeFromLMP(lmpValue) {
+      if (lmpValue) {
+        const lmpDate = new Date(lmpValue);
+        const today = new Date();
+        const diffTime = today - lmpDate;
+        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        const displayGA = document.getElementById('gestationalAgeDisplay');
+        if (displayGA) {
+          // Display as "X weeks and Y days" format
+          const currentLang = localStorage.getItem('appLanguage') || 'mm';
+          if (currentLang === 'en') {
+            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
+          } else {
+            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
+          }
+        }
+      }
+    }
+
+    function calculateEDDFromGA() {
+      const gaInput = document.getElementById('manualGestationalAge');
+      const eddInput = document.getElementById('manualEdd');
+      
+      if (gaInput.value) {
+        const today = new Date();
+        const weeksFromNow = 40 - parseFloat(gaInput.value); // Assuming 40 weeks full term
+        const eddDate = new Date(today.getTime() + (weeksFromNow * 7 * 24 * 60 * 60 * 1000));
+        eddInput.value = eddDate.toISOString().split('T')[0];
+      }
+    }
+
+    function toggleLMPFields() {
+      const lmpKnown = document.getElementById('lmpKnown').checked;
+      const manualSection = document.getElementById('manualGAEDDSection');
+      const lmpKnownGroups = document.querySelectorAll('.history-known-only');
+      const autoGASection = document.getElementById('autoGASection');
+      const lmpInput = document.getElementById('lmp');
+      const eddInput = document.getElementById('edd');
+      const manualGAInput = document.getElementById('manualGestationalAge');
+      const manualEddInput = document.getElementById('manualEdd');
+    
+      if (lmpKnown) {
+        manualSection.style.display = 'none';
+        autoGASection.style.display = 'flex';
+        lmpKnownGroups.forEach(el => el.style.display = '');
+        lmpInput.disabled = false;
+        manualGAInput.value = '';
+        manualEddInput.value = '';
+        calculateGestationalAgeAndEDD();
+      } else {
+        manualSection.style.display = 'flex';
+        autoGASection.style.display = 'none';
+        lmpKnownGroups.forEach(el => el.style.display = 'none');
+        lmpInput.disabled = true;
+        lmpInput.value = '';
+        eddInput.value = '';
+      }
+    }
+
+    function togglePastHistoryNotes() {
+      const riskSelected = document.getElementById('pastHistoryStatusRisk').checked;
+      const notesGroup = document.getElementById('pastHistoryNotesGroup');
+      if (notesGroup) {
+        notesGroup.style.display = riskSelected ? '' : 'none';
+        if (!riskSelected) {
+          document.getElementById('pastHistoryNotes').value = '';
+        }
+      }
+    }
+
+    function toggleCoinfectionNotes() {
+      const select = document.getElementById('tbSymptoms');
+      const notesGroup = document.getElementById('coinfectionNotesGroup');
+      if (!select || !notesGroup) return;
+      if (select.value === 'Yes') {
+        notesGroup.style.display = '';
+      } else {
+        notesGroup.style.display = 'none';
+        document.getElementById('coinfectionNotes').value = '';
+      }
+    }
+
+    function setToday(fieldId) {
+      const field = document.getElementById(fieldId);
+      if (field) {
+      const today = new Date().toISOString().split('T')[0];
+        field.value = today;
+      }
+    }
+    
+    // Toggle high risk details
+    function toggleHighRiskDetails() {
+      const highRisk = document.querySelector('input[name="highRisk"]:checked');
+      const highRiskDetails = document.getElementById('highRiskDetails');
+      
+      if (highRisk && highRisk.value === 'yes') {
+        highRiskDetails.style.display = 'block';
+      } else {
+        highRiskDetails.style.display = 'none';
+      }
+    }
+
+    function toggleGBVDetails() {
+      const gbvSuspected = document.querySelector('input[name="gbvSuspected"]:checked');
+      const gbvDetails = document.getElementById('gbvDetails');
+      
+      if (gbvSuspected && gbvSuspected.value === 'yes') {
+        gbvDetails.style.display = 'block';
+      } else {
+        gbvDetails.style.display = 'none';
+        // Uncheck all GBV checkboxes when hidden
+        document.querySelectorAll('input[name^="gbv_"]').forEach(cb => cb.checked = false);
+      }
+    }
+
+    function toggleDangerSignsDetails() {
+      const dangerSigns = document.querySelector('input[name="dangerSignsPresent"]:checked');
+      const dangerSignsDetails = document.getElementById('dangerSignsDetails');
+      
+      if (dangerSigns && dangerSigns.value === 'yes') {
+        dangerSignsDetails.style.display = 'block';
+      } else {
+        dangerSignsDetails.style.display = 'none';
+      }
+    }
+
+    function toggleInfo(infoId) {
+      const infoElement = document.getElementById(infoId);
+      if (infoElement) {
+        infoElement.style.display = infoElement.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+    
+    // Initialize high risk toggle on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Add event listeners to high risk radios
+      document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
+        radio.addEventListener('change', toggleHighRiskDetails);
+      });
+
+      document.querySelectorAll('input[name="pastHistoryStatus"]').forEach(radio => {
+        radio.addEventListener('change', togglePastHistoryNotes);
+      });
+
+      document.querySelectorAll('input[name="dangerSignsPresent"]').forEach(radio => {
+        radio.addEventListener('change', toggleDangerSignsDetails);
+      });
+
+      document.querySelectorAll('input[name="gbvSuspected"]').forEach(radio => {
+        radio.addEventListener('change', toggleGBVDetails);
+      });
+
+      const tbSelect = document.getElementById('tbSymptoms');
+      if (tbSelect) {
+        tbSelect.addEventListener('change', toggleCoinfectionNotes);
+      }
+
+      toggleLMPFields();
+      togglePastHistoryNotes();
+      toggleCoinfectionNotes();
+      toggleDangerSignsDetails();
+      toggleGBVDetails();
+
+      // Initialize alert texts with red highlights
+      const currentLang = localStorage.getItem('appLanguage') || 'mm';
+      const urgentAlertText = document.getElementById('urgentAlertText');
+      const regularAlertText = document.getElementById('regularAlertText');
+      
+      if (urgentAlertText) {
+        if (currentLang === 'en') {
+          urgentAlertText.innerHTML = "If the symptoms below occur, please go <span class='text-urgent'>urgently</span> to health center:";
+        } else {
+          urgentAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>နေ့ညမဆိုင်း ချက်ချင်း</span> ပို့ဆောင်ရမည်။";
+        }
+      }
+
+      if (regularAlertText) {
+        if (currentLang === 'en') {
+          regularAlertText.innerHTML = "If the symptoms below occur, please go to health center:";
+        } else {
+          regularAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>အမြန်ဆုံး</span> သွားရြသသင့်ပါသည်။";
+        }
+      }
+    });
+
+    function setNextMonth(fieldId) {
+      const field = document.getElementById(fieldId);
+      if (field) {
+      const today = new Date();
+      const nextMonth = new Date(today.getTime() + (28 * 24 * 60 * 60 * 1000)); // 4 weeks
+        field.value = nextMonth.toISOString().split('T')[0];
+      }
+    }
+
+    function referPatient() {
+      if (!patientId) {
+        window.location.href = 'transfer.html';
+        return;
+      }
+      window.location.href = `transfer.html?patient=${encodeURIComponent(patientId)}&type=anc`;
+    }
+
+    function fillCurrentUser(fieldId) {
+      if (currentUser) {
+        const field = document.getElementById(fieldId);
+        if (field) {
+          field.value = currentUser.email || 'Current User';
+        }
+      }
+    }
+
+    function checkDangerSignsPresent() {
+      // Check all danger sign checkboxes
+      const dangerSigns = [
+        'ds_vaginal_bleeding', 'ds_convulsions', 'ds_loss_consciousness', 'ds_severe_headache',
+        'ds_blurred_vision', 'ds_vomiting', 'ds_severe_abdominal_pain', 'ds_fever', 'ds_fatigue',
+        'ds_fast_breathing', 'ds_difficulty_breathing', 'ds_puffiness', 'ds_oliguria', 
+        'ds_excessive_vomiting', 'ds_abdominal_pain', 'ds_reduced_fetal_movement',
+        'ds_no_labour_pain', 'ds_no_delivery', 'ds_postpartum_hemorrhage', 'ds_no_placenta',
+        'ds_very_small_baby', 'ds_difficulty_breathing_baby'
+      ];
+      
+      for (let checkboxId of dangerSigns) {
+        if (document.getElementById(checkboxId) && document.getElementById(checkboxId).checked) {
+          return 'Yes';
+        }
+      }
+      return 'No';
+    }
+
+
+    async function saveVisitData(event) {
+      event.preventDefault();
+      
+      // Prevent double submission
+      const submitButton = event.target.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+      }
+      
+      try {
+        // Helper function to safely get element value
+        const getValue = (id) => {
+          const el = document.getElementById(id);
+          return el ? el.value : '';
+        };
+        
+        // Helper function to safely get number value
+        const getNumber = (id) => {
+          const el = document.getElementById(id);
+          if (!el || !el.value || el.value.trim() === '') return null;
+          const num = parseFloat(el.value);
+          return isNaN(num) ? null : num;
+        };
+        
+        // STEP 1: Clinical Data Validation (LMP, EDD, GA)
+        if (window.ClinicalValidator) {
+          const lmp = getValue('lmp');
+          const edd = getValue('edd') || getValue('manualEdd');
+          const manualGA = getNumber('manualGestationalAge');
+          const displayGA = getValue('gestationalAgeDisplay');
+          const visitDate = getValue('visitDate');
+          
+          // Parse gestational age from display format if needed
+          let gestationalAge = null;
+          if (manualGA !== null) {
+            gestationalAge = manualGA;
+          } else if (displayGA) {
+            // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
+            const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
+            const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
+            if (weeksMatch && daysMatch) {
+              const weeks = parseInt(weeksMatch[1]);
+              const days = parseInt(daysMatch[1]);
+              gestationalAge = weeks + (days / 7);
+            }
+          }
+          
+          // Validate visit date is not in future
+          if (visitDate) {
+            const dateCheck = window.ClinicalValidator.validateNotFuture(visitDate, 'Visit date');
+            if (!dateCheck.isValid) {
+              alert(dateCheck.error);
+              if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+              }
+              return;
+            }
+          }
+          
+          // Validate EDD/LMP consistency (if both provided)
+          if (lmp && edd) {
+            const eddLmpCheck = window.ClinicalValidator.validateEDDLMP(lmp, edd);
+            if (!eddLmpCheck.isValid) {
+              const continueAnyway = confirm(
+                `Validation Warning: ${eddLmpCheck.error}\n\n` +
+                'Do you want to continue anyway?'
+              );
+              if (!continueAnyway) {
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+                }
+                return;
+              }
+            }
+          }
+          
+          // Validate gestational age (if provided)
+          if (gestationalAge !== null && lmp) {
+            const gaCheck = window.ClinicalValidator.validateGestationalAge(gestationalAge, lmp, visitDate || new Date());
+            if (!gaCheck.isValid) {
+              const continueAnyway = confirm(
+                `Validation Warning: ${gaCheck.error}\n\n` +
+                'Do you want to continue anyway?'
+              );
+              if (!continueAnyway) {
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+                }
+                return;
+              }
+            }
+          }
+          
+          console.log('✅ Clinical validation passed');
+        }
+        
+        // Helper function to safely get integer value
+        const getInt = (id) => {
+          const el = document.getElementById(id);
+          if (!el || !el.value || el.value.trim() === '') return null;
+          const num = parseInt(el.value);
+          return isNaN(num) ? null : num;
+        };
+        
+        // Helper function to safely get checkbox state
+        const getChecked = (id) => {
+          const el = document.getElementById(id);
+          return el ? (el.checked || false) : false;
+        };
+        
+        // Collect all form data with null-safe access
+        const visitData = {
+          visitNumber: visitCount, // Use the calculated visit count instead of form input
+          visitNumberOther: getValue('visitNumberOther'),
+          visitDate: getValue('visitDate'),
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          healthFacility: currentPatient?.township || 'Unknown Facility',
+          totalAncVisits: visitCount - 1, // Previous visits count
+          
+          // Main table data
+          weight: getNumber('weight'),
+          height: (() => {
+            const feet = getValue('heightFeet') || '0';
+            const inches = getValue('heightInches') || '0';
+            return feet && inches ? `${feet}ft ${inches}in` : (feet || inches ? `${feet || '0'}ft ${inches || '0'}in` : '');
+          })(),
+          bloodPressure: getValue('bloodPressure'),
+          pulseRate: getInt('pulseRate'),
+          anemiaStatus: getValue('anemiaStatus'),
+          pittingEdema: getValue('pittingEdema'),
+          gestationalAge: (() => {
+            // Parse from display format "X weeks and Y days" or use manual GA
+            const manualGA = getNumber('manualGestationalAge');
+            if (manualGA !== null) {
+              return manualGA; // Use manual GA if available
+            }
+            const displayGA = getValue('gestationalAgeDisplay');
+            if (displayGA) {
+              // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
+              const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
+              const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
+              if (weeksMatch && daysMatch) {
+                const weeks = parseInt(weeksMatch[1]);
+                const days = parseInt(daysMatch[1]);
+                return weeks + (days / 7); // Convert to decimal weeks
+              }
+            }
+            return null;
+          })(),
+          fundalHeight: getNumber('fundalHeight'),
+          fetalPresentation: getValue('fetalPresentation'),
+          fetalHeartRate: getInt('fetalHeartRate'),
+          deworming: getValue('deworming'),
+          tbSymptoms: getValue('tbSymptoms'),
+          coinfectionNotes: getValue('coinfectionNotes'),
+          initial: getValue('initial'),
+          otherVisitCount: getInt('otherVisitCount') || 0,
+          
+          // Second table data
+          ironFolicAcid: getValue('ironFolicAcid'),
+          tetanusToxoid: getValue('tetanusToxoid'),
+          vitaminB1: getValue('vitaminB1'),
+          micronutrientsTablet: getValue('micronutrientsTablet'),
+          nextVisitDate: getValue('nextVisitDate') || null,
+          
+          // Danger signs - determine if any are present
+          dangerSignsPresent: checkDangerSignsPresent(),
+          dangerSigns: {
+            vaginal_bleeding: getChecked('ds_vaginal_bleeding'),
+            convulsions: getChecked('ds_convulsions'),
+            loss_consciousness: getChecked('ds_loss_consciousness'),
+            severe_headache: getChecked('ds_severe_headache'),
+            blurred_vision: getChecked('ds_blurred_vision'),
+            vomiting: getChecked('ds_vomiting'),
+            severe_abdominal_pain: getChecked('ds_severe_abdominal_pain'),
+            fever: getChecked('ds_fever'),
+            fatigue: getChecked('ds_fatigue'),
+            fast_breathing: getChecked('ds_fast_breathing'),
+            difficulty_breathing: getChecked('ds_difficulty_breathing'),
+            puffiness: getChecked('ds_puffiness'),
+            oliguria: getChecked('ds_oliguria'),
+            excessive_vomiting: getChecked('ds_excessive_vomiting'),
+            abdominal_pain: getChecked('ds_abdominal_pain'),
+            reduced_fetal_movement: getChecked('ds_reduced_fetal_movement'),
+            post_date: getChecked('ds_post_date'),
+            other_symptoms: getChecked('ds_other_symptoms'),
+            fever_other: getChecked('ds_fever_other')
+          },
+          
+          // Gender Based Violence
+          gbvSuspected: (() => {
+            const checked = document.querySelector('input[name="gbvSuspected"]:checked');
+            return checked ? checked.value : 'no';
+          })(),
+          gbvIndicators: {
+            bruise_cuts: getChecked('gbv_bruise_cuts'),
+            fatigue_pallor: getChecked('gbv_fatigue_pallor'),
+            worry_stress: getChecked('gbv_worry_stress')
+          },
+          
+          clinicalNotes: getValue('clinicalNotes'),
+          
+          // ANC Information
+          lmp: getValue('lmp') || null,
+          edd: getValue('edd') || null,
+          lmpStatus: (() => {
+            const checked = document.querySelector('input[name="lmpStatus"]:checked');
+            return checked ? checked.value : 'known';
+          })(),
+          manualGestationalAge: getNumber('manualGestationalAge'),
+          manualEdd: getValue('manualEdd') || null,
+          
+          // Early ANC Visit
+          early_anc_visit: getChecked('earlyAncVisit'),
+          
+          // Past history
+          pastHistoryStatus: (() => {
+            const checked = document.querySelector('input[name="pastHistoryStatus"]:checked');
+            return checked ? checked.value : 'nad';
+          })(),
+          pastHistoryNotes: getValue('pastHistoryNotes'),
+          
+          // High risk pregnancy assessment
+          high_risk: (() => {
+            const checked = document.querySelector('input[name="highRisk"]:checked');
+            return checked ? checked.value : 'no';
+          })(),
+          risk_factors: Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value),
+          risk_notes: getValue('riskNotes') || null,
+          
+          // Additional fields
+          temperature: getValue('temperature'),
+          temperatureUnit: getValue('temperatureUnit') || 'C',
+          bloodGroup: getValue('bloodGroup'),
+          rhesusFactor: getValue('rhesusFactor'),
+          urineProtein: getValue('urineProtein'),
+          urineSugar: getValue('urineSugar'),
+          otherFindings: getValue('otherFindings'),
+          cvs: getValue('cvs'),
+          rs: getValue('rs'),
+          cns: getValue('cns'),
+          mentalHealthStatus: getValue('mentalHealthStatus'),
+          fetalLie: getValue('fetalLie'),
+          fetalMovement: (() => {
+            const checked = document.querySelector('input[name="fetalMovement"]:checked');
+            return checked ? checked.value : '';
+          })(),
+          otherMedications: getValue('otherMedications'),
+          
+          patientId: patientId,
+          recordedBy: currentUser?.uid || ''
+        };
+
+        console.log('Saving visit data:', visitData);
+        
+        // Save visit data to Firestore
+        const visitRef = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .add(visitData);
+
+        console.log('Visit saved with ID:', visitRef.id);
+
+        // Update patient's last antenatal visit
+        await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .update({
+            lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+        console.log('Patient record updated');
+        
+        // Sync LMP/EDD to patient document for cross-form linkage
+        if (window.DataLinkage) {
+          const lmp = getValue('lmp');
+          const edd = getValue('edd') || getValue('manualEdd');
+          if (lmp || edd) {
+            try {
+              await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
+            } catch (error) {
+              console.warn('Error syncing LMP/EDD:', error);
+              // Non-critical error, don't block save
+            }
+          }
+        }
+
+        // Update patient status to Antenatal Care (if first visit)
+        const statusUpdated = await StatusManager.checkAndUpdateToAntenatalCare(patientId);
+        if (statusUpdated) {
+          console.log('✅ Patient status updated to Antenatal Care');
+        }
+
+        // Refresh the visit count to ensure accuracy and update visit number
+        await loadVisitCount();
+        document.getElementById('visitNumber').value = visitCount;
+        console.log('Visit count refreshed:', visitCount);
+        
+        // Show mobile-friendly success message
+        showSuccessMessage('Visit data saved successfully!');
+        console.log('Visit data saved:', visitRef.id);
+        
+        // Clear all form fields after successful save
+        clearFormFields();
+        
+        // Reset button state
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+        }
+
+      } catch (error) {
+        console.error('Error saving visit data:', error);
+        alert(`Error saving visit data: ${error.message}`);
+        
+        // Reset button state on error
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+        }
+      }
+    }
+
+    function clearFormFields() {
+      // Helper function to clear a field
+      const clearField = (id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (el.type === 'checkbox') {
+            el.checked = false;
+          } else if (el.type === 'radio') {
+            el.checked = false;
+          } else {
+            el.value = '';
+          }
+        }
+      };
+
+      // Set visit date to today (don't clear visit number, it will be updated separately)
+      setToday('visitDate');
+      
+      // Clear all input fields (visitNumber will be updated with new count after clearing)
+      clearField('otherVisitCount');
+      clearField('lmp');
+      clearField('edd');
+      clearField('manualGestationalAge');
+      clearField('manualEdd');
+      clearField('gestationalAgeDisplay');
+      clearField('weight');
+      clearField('heightFeet');
+      clearField('heightInches');
+      clearField('bloodPressure');
+      clearField('pulseRate');
+      clearField('temperature');
+      clearField('anemiaStatus');
+      clearField('pittingEdema');
+      clearField('tbSymptoms');
+      clearField('coinfectionNotes');
+      clearField('otherFindings');
+      clearField('fundalHeight');
+      clearField('fetalLie');
+      clearField('fetalPresentation');
+      clearField('fetalHeartRate');
+      clearField('ironFolicAcid');
+      clearField('tetanusToxoid');
+      clearField('vitaminB1');
+      clearField('micronutrientsTablet');
+      clearField('deworming');
+      clearField('nextVisitDate');
+      clearField('clinicalNotes');
+      clearField('pastHistoryNotes');
+      clearField('riskNotes');
+      clearField('otherMedications');
+      clearField('initial');
+
+      // Reset select dropdowns to default (first option)
+      const selects = document.querySelectorAll('select');
+      selects.forEach(select => {
+        if (select.options.length > 0) {
+          select.selectedIndex = 0;
+        }
+      });
+
+      // Uncheck all checkboxes
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+      });
+
+      // Reset radio buttons to default values
+      const radioGroups = {
+        'lmpStatus': 'known',
+        'pastHistoryStatus': 'nad',
+        'gbvSuspected': 'no',
+        'highRisk': 'no',
+        'dangerSignsPresent': 'no'
+      };
+
+      Object.keys(radioGroups).forEach(groupName => {
+        const defaultValue = radioGroups[groupName];
+        // Uncheck all radios in the group first
+        document.querySelectorAll(`input[name="${groupName}"]`).forEach(r => r.checked = false);
+        // Check the default radio button
+        const radio = document.querySelector(`input[name="${groupName}"][value="${defaultValue}"]`);
+        if (radio) {
+          radio.checked = true;
+        }
+      });
+
+      // Clear fetal movement radio buttons (no default)
+      document.querySelectorAll('input[name="fetalMovement"]').forEach(r => r.checked = false);
+
+      // Hide conditional sections
+      toggleLMPFields();
+      togglePastHistoryNotes();
+      toggleCoinfectionNotes();
+      toggleGBVDetails();
+      toggleHighRiskDetails();
+      toggleDangerSignsDetails();
+
+      // Clear temperature unit default
+      const tempUnit = document.getElementById('temperatureUnit');
+      if (tempUnit) {
+        tempUnit.value = 'C';
+      }
+
+      console.log('Form fields cleared successfully');
+    }
+
+    function showSuccessMessage(message) {
+      // Remove any existing toast
+      const existingToast = document.querySelector('.success-toast');
+      if (existingToast) {
+        existingToast.remove();
+      }
+
+      // Create new toast
+      const toast = document.createElement('div');
+      toast.className = 'success-toast';
+      toast.innerHTML = `
+        <i class="fas fa-check-circle"></i>
+        <span>${message}</span>
+      `;
+      
+      document.body.appendChild(toast);
+
+      // Remove toast after 2 seconds
+      setTimeout(() => {
+        toast.style.animation = 'slideDown 0.3s ease-out reverse';
+        setTimeout(() => {
+          toast.remove();
+        }, 300);
+      }, 2000);
+    }
+
+    function generateAntenatalReport() {
+      window.location.href = `antenatal-report.html?patient=${patientId}`;
+    }
+
+    function showVisitHistory() {
+      // Redirect to antenatal care page to show history
+      window.location.href = `antenatal-care.html`;
+    }
+
+    // Set today's date on page load
+    window.addEventListener('load', function() {
+      setToday('visitDate');
+      
+      // Initialize language switcher
+      document.querySelectorAll('.language-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          switchLanguage(this.dataset.lang);
+        });
+      });
+      
+      // Set initial language
+      switchLanguage(currentLanguage);
+    });
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baby Care - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/patient-session.js"></script>
+  <style>
+    :root {
+      --primary-color: #f59e0b;
+      --secondary-color: #d97706;
+      --accent-color: #fbbf24;
+      --light-bg: #fffbeb;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .baby-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid var(--primary-color);
+      transition: all 0.3s ease;
+    }
+
+    .baby-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(245, 158, 11, 0.15);
+    }
+
+    .baby-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .baby-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .baby-details {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-baby {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .btn-baby:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+      color: white;
+    }
+
+    .baby-stats {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 1rem;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    .stat-label {
+      font-size: 0.9rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+
+    .gender-icon {
+      color: var(--primary-color);
+    }
+
+    .gender-male { color: #3b82f6; }
+    .gender-female { color: #ec4899; }
+
+    .no-babies {
+      text-align: center;
+      padding: 3rem;
+      color: #6b7280;
+    }
+
+    .no-babies i {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      color: #d1d5db;
+    }
+
+    .footer {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      color: #374151;
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: var(--card-shadow);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-baby me-3"></i>
+            Baby Care Management
+          </h1>
+          <p class="mb-0">Newborn care tracking and management system</p>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <span id="userInfo" class="text-white-50"></span>
+            <a href="index.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-home me-2"></i>Home
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i>Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Baby Statistics -->
+    <div class="baby-stats">
+      <h4 class="mb-3">
+        <i class="fas fa-chart-bar me-2"></i>Baby Care Statistics
+      </h4>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="totalBabies">0</div>
+          <div class="stat-label">Total Babies</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="maleBabies">0</div>
+          <div class="stat-label">Male</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="femaleBabies">0</div>
+          <div class="stat-label">Female</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="avgWeight">0</div>
+          <div class="stat-label">Avg Weight (Lb)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <div class="row mb-4">
+      <div class="col-md-8">
+        <div class="input-group">
+          <span class="input-group-text"><i class="fas fa-search"></i></span>
+          <input type="text" class="form-control" id="searchInput" placeholder="Search babies by name, mother name, or gender...">
+        </div>
+      </div>
+      <div class="col-md-4">
+        <button class="btn btn-outline-primary w-100" onclick="loadBabies()">
+          <i class="fas fa-sync me-2"></i>Refresh List
+        </button>
+      </div>
+    </div>
+
+    <!-- Babies List -->
+    <div id="babiesContainer">
+      <!-- Babies will be populated here -->
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let userRole = null;
+    let babies = [];
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
+          
+          // Load babies after user role is loaded
+          loadBabies();
+        }
+      });
+    }
+
+    async function loadBabies() {
+      try {
+        if (!currentUser || !userRole) {
+          console.log('User not loaded yet, skipping baby load');
+          return;
+        }
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        babies = [];
+
+        // Load patients with birth records based on user role
+        let patientsQuery;
+        
+        if (userRole === "Super Admin" || userRole === "admin") {
+          // Super Admin sees all patients
+          patientsQuery = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .get();
+        } else if (userRole === "TMO") {
+          // TMO sees patients from their township
+          patientsQuery = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("township", "==", userTownship)
+            .get();
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          // Midwife sees only patients they created
+          const snapNew = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapOld = await db.collection("patients")
+            .where("status", "==", "postpartum")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+
+          // Combine both snapshots and remove duplicates
+          const combinedDocs = new Map();
+          
+          snapNew.forEach(doc => {
+            combinedDocs.set(doc.id, doc);
+          });
+          
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          // Check each patient for birth records
+          for (const [patientId, patientDoc] of combinedDocs) {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(patientId)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                babies.push({
+                  id: patientId,
+                  patient: patientDoc.data(),
+                  birthRecord: birthRecord.data()
+                });
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', patientId);
+            }
+          }
+          
+          displayBabies();
+          updateStatistics();
+          return;
+        }
+
+        // For Super Admin and TMO, check each patient for birth records
+        if (patientsQuery) {
+          for (const patientDoc of patientsQuery.docs) {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(patientDoc.id)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                babies.push({
+                  id: patientDoc.id,
+                  patient: patientDoc.data(),
+                  birthRecord: birthRecord.data()
+                });
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', patientDoc.id);
+            }
+          }
+        }
+
+        // Sort by birth time (newest first)
+        babies.sort((a, b) => {
+          const aTime = a.birthRecord.birthTime ? new Date(a.birthRecord.birthTime) : new Date(0);
+          const bTime = b.birthRecord.birthTime ? new Date(b.birthRecord.birthTime) : new Date(0);
+          return bTime - aTime;
+        });
+        
+        displayBabies();
+        updateStatistics();
+
+      } catch (error) {
+        console.error("Error loading babies:", error);
+        document.getElementById("babiesContainer").innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Error loading babies: ${error.message}
+          </div>
+        `;
+      }
+    }
+
+    function displayBabies() {
+      const container = document.getElementById("babiesContainer");
+      
+      if (babies.length === 0) {
+        container.innerHTML = `
+          <div class="no-babies">
+            <i class="fas fa-baby"></i>
+            <h4>No Babies Found</h4>
+            <p>No birth records found for your patients.</p>
+            <a href="index.html" class="btn btn-baby">
+              <i class="fas fa-home me-2"></i>Back to Dashboard
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <div class="row mb-3">
+          <div class="col-md-8">
+            <h5><i class="fas fa-baby me-2"></i>Birth Records (${babies.length})</h5>
+          </div>
+          <div class="col-md-4 text-end">
+            <button class="btn btn-outline-primary btn-sm" onclick="loadBabies()">
+              <i class="fas fa-sync me-1"></i>Refresh
+            </button>
+          </div>
+        </div>
+      `;
+      
+      babies.forEach(baby => {
+        const birthRecord = baby.birthRecord;
+        const patient = baby.patient;
+        
+        // Calculate age in days
+        const birthTime = birthRecord.birthTime ? new Date(birthRecord.birthTime) : null;
+        const ageInDays = birthTime ? Math.floor((new Date() - birthTime) / (1000 * 60 * 60 * 24)) : 'Unknown';
+        
+        // Gender icon
+        const genderIcon = birthRecord.babyGender === 'Male' ? 
+          '<i class="fas fa-mars gender-male"></i>' : 
+          birthRecord.babyGender === 'Female' ? 
+          '<i class="fas fa-venus gender-female"></i>' : 
+          '<i class="fas fa-question gender-icon"></i>';
+        
+        html += `
+          <div class="baby-card">
+            <div class="baby-info">
+              <div>
+                <div class="baby-name">
+                  <i class="fas fa-baby me-2 gender-icon"></i>
+                  ${birthRecord.babyName || 'Unnamed Baby'} ${genderIcon}
+                </div>
+                <div class="baby-details">
+                  <div class="row">
+                    <div class="col-md-6">
+                      <small><strong>Mother:</strong> ${patient.name || birthRecord.motherName || 'Unknown'}</small><br>
+                      <small><strong>Birth Date:</strong> ${birthTime ? birthTime.toLocaleDateString() : 'Unknown'}</small><br>
+                      <small><strong>Age:</strong> ${ageInDays} day(s)</small>
+                    </div>
+                    <div class="col-md-6">
+                      <small><strong>Weight:</strong> ${birthRecord.birthWeight || 'N/A'} Lb</small><br>
+                      <small><strong>Length:</strong> ${birthRecord.birthLength || 'N/A'} cm</small><br>
+                      <small><strong>APGAR:</strong> ${birthRecord.apgarScore1min || 'N/A'}/${birthRecord.apgarScore5min || 'N/A'}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="text-end">
+                <div class="action-buttons">
+                  <button class="btn btn-baby btn-sm" onclick="editBabyRecord('${baby.id}')">
+                    <i class="fas fa-edit me-1"></i>Edit
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" onclick="generateBabyReport('${baby.id}')">
+                    <i class="fas fa-file-pdf me-1"></i>Report
+                  </button>
+                  <button class="btn btn-outline-info btn-sm" onclick="viewBabyDetails('${baby.id}')">
+                    <i class="fas fa-eye me-1"></i>View
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function updateStatistics() {
+      const stats = {
+        total: babies.length,
+        male: 0,
+        female: 0,
+        totalWeight: 0,
+        weightCount: 0
+      };
+
+      babies.forEach(baby => {
+        const birthRecord = baby.birthRecord;
+        
+        if (birthRecord.babyGender === 'Male') {
+          stats.male++;
+        } else if (birthRecord.babyGender === 'Female') {
+          stats.female++;
+        }
+        
+        if (birthRecord.birthWeight) {
+          stats.totalWeight += parseFloat(birthRecord.birthWeight);
+          stats.weightCount++;
+        }
+      });
+
+      document.getElementById('totalBabies').textContent = stats.total;
+      document.getElementById('maleBabies').textContent = stats.male;
+      document.getElementById('femaleBabies').textContent = stats.female;
+      document.getElementById('avgWeight').textContent = 
+        stats.weightCount > 0 ? (stats.totalWeight / stats.weightCount).toFixed(1) : '0';
+    }
+
+    function editBabyRecord(patientId) {
+      // Redirect to baby.html for editing
+      window.location.href = `baby.html?patient=${patientId}&edit=true`;
+    }
+
+    function generateBabyReport(patientId) {
+      // Open baby report in new window
+      const reportUrl = `baby-report.html?patient=${patientId}`;
+      window.open(reportUrl, '_blank', 'width=800,height=1000,scrollbars=yes,resizable=yes');
+    }
+
+    function viewBabyDetails(patientId) {
+      // Redirect to summary view
+      window.location.href = `summary-view.html?patient=${patientId}`;
+    }
+
+    // Search functionality
+    document.getElementById('searchInput').addEventListener('input', function() {
+      const searchTerm = this.value.toLowerCase();
+      const filteredBabies = babies.filter(baby => {
+        const babyName = (baby.birthRecord.babyName || '').toLowerCase();
+        const motherName = (baby.patient.name || baby.birthRecord.motherName || '').toLowerCase();
+        const gender = (baby.birthRecord.babyGender || '').toLowerCase();
+        
+        return babyName.includes(searchTerm) || 
+               motherName.includes(searchTerm) || 
+               gender.includes(searchTerm);
+      });
+      
+      // Temporarily replace babies array for display
+      const originalBabies = babies;
+      babies = filteredBabies;
+      displayBabies();
+      babies = originalBabies; // Restore original array
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

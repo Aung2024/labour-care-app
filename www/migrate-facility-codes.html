@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migrate Facility Codes</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .log-area {
+      max-height: 400px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+    .log-entry {
+      margin-bottom: 0.5rem;
+    }
+    .log-success {
+      color: #28a745;
+    }
+    .log-error {
+      color: #dc3545;
+    }
+    .log-info {
+      color: #007bff;
+    }
+    .log-warning {
+      color: #ffc107;
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1 class="mb-4">Migrate Facility Codes</h1>
+    <p class="text-muted">This script will assign facility code "003" (Other) to all existing users who don't have a facility_code field.</p>
+    
+    <div class="alert alert-warning">
+      <strong>⚠️ Warning:</strong> This migration should only be run once. Make sure you are logged in as a Superadmin.
+    </div>
+    
+    <button id="runMigration" class="btn btn-primary mb-3">Run Migration</button>
+    <button id="checkStatus" class="btn btn-secondary mb-3">Check Status</button>
+    
+    <div id="logArea" class="log-area mt-4">
+      <div class="log-entry log-info">Ready. Click "Run Migration" to start.</div>
+    </div>
+  </div>
+
+  <script>
+    const logArea = document.getElementById('logArea');
+    
+    function addLog(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logArea.appendChild(entry);
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+    
+    async function checkMigrationStatus() {
+      addLog('Checking migration status...', 'info');
+      
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          addLog('❌ Please log in first', 'error');
+          return;
+        }
+        
+        // Check user role
+        const userDoc = await firebase.firestore().collection('users').doc(user.uid).get();
+        if (!userDoc.exists) {
+          addLog('❌ User document not found', 'error');
+          return;
+        }
+        
+        const userData = userDoc.data();
+        if (userData.role !== 'Superadmin') {
+          addLog('⚠️ Warning: You are not a Superadmin. Migration may fail.', 'warning');
+        }
+        
+        // Count all users
+        const usersSnapshot = await firebase.firestore().collection('users').get();
+        const totalUsers = usersSnapshot.size;
+        let usersWithFacilityCode = 0;
+        let usersWithoutFacilityCode = 0;
+        
+        usersSnapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.facility_code) {
+            usersWithFacilityCode++;
+          } else {
+            usersWithoutFacilityCode++;
+          }
+        });
+        
+        addLog(`Total users: ${totalUsers}`, 'info');
+        addLog(`Users with facility_code: ${usersWithFacilityCode}`, 'success');
+        addLog(`Users without facility_code: ${usersWithoutFacilityCode}`, usersWithoutFacilityCode > 0 ? 'warning' : 'success');
+        
+        if (usersWithoutFacilityCode === 0) {
+          addLog('✅ All users have facility codes!', 'success');
+        }
+      } catch (error) {
+        addLog(`❌ Error checking status: ${error.message}`, 'error');
+        console.error('Check status error:', error);
+      }
+    }
+    
+    async function runMigration() {
+      addLog('Starting migration...', 'info');
+      
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user) {
+          addLog('❌ Please log in first', 'error');
+          return;
+        }
+        
+        // Check user role
+        const userDoc = await firebase.firestore().collection('users').doc(user.uid).get();
+        if (!userDoc.exists) {
+          addLog('❌ User document not found', 'error');
+          return;
+        }
+        
+        const userData = userDoc.data();
+        if (userData.role !== 'Superadmin') {
+          const confirmRun = confirm('You are not a Superadmin. Do you still want to proceed?');
+          if (!confirmRun) {
+            addLog('Migration cancelled by user', 'warning');
+            return;
+          }
+        }
+        
+        // Get all users
+        const usersSnapshot = await firebase.firestore().collection('users').get();
+        const totalUsers = usersSnapshot.size;
+        addLog(`Found ${totalUsers} users to check`, 'info');
+        
+        let updated = 0;
+        let skipped = 0;
+        let errors = 0;
+        
+        // Update each user that doesn't have facility_code
+        const batch = firebase.firestore().batch();
+        let batchCount = 0;
+        const BATCH_SIZE = 500; // Firestore batch limit
+        
+        usersSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (!data.facility_code) {
+            batch.update(doc.ref, {
+              facility_code: '003',
+              facility_code_migrated_at: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            batchCount++;
+            updated++;
+            
+            if (batchCount >= BATCH_SIZE) {
+              // Commit current batch and start new one
+              batch.commit().then(() => {
+                addLog(`Committed batch of ${batchCount} updates`, 'success');
+              }).catch(error => {
+                addLog(`Error committing batch: ${error.message}`, 'error');
+                errors += batchCount;
+              });
+              batchCount = 0;
+            }
+          } else {
+            skipped++;
+          }
+        });
+        
+        // Commit remaining updates
+        if (batchCount > 0) {
+          try {
+            await batch.commit();
+            addLog(`Committed final batch of ${batchCount} updates`, 'success');
+          } catch (error) {
+            addLog(`Error committing final batch: ${error.message}`, 'error');
+            errors += batchCount;
+            updated -= batchCount;
+          }
+        }
+        
+        addLog('=== Migration Complete ===', 'info');
+        addLog(`Total users checked: ${totalUsers}`, 'info');
+        addLog(`Users updated: ${updated}`, 'success');
+        addLog(`Users skipped (already have facility_code): ${skipped}`, 'info');
+        if (errors > 0) {
+          addLog(`Errors: ${errors}`, 'error');
+        }
+        
+        if (updated > 0) {
+          addLog('✅ Migration completed successfully!', 'success');
+        } else if (errors === 0) {
+          addLog('ℹ️ No users needed updating. All users already have facility codes.', 'info');
+        }
+      } catch (error) {
+        addLog(`❌ Migration error: ${error.message}`, 'error');
+        console.error('Migration error:', error);
+      }
+    }
+    
+    // Wait for Firebase to be ready
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        addLog(`Logged in as: ${user.email}`, 'success');
+      } else {
+        addLog('⚠️ Not logged in. Please log in to run migration.', 'warning');
+      }
+    });
+    
+    document.getElementById('runMigration').addEventListener('click', () => {
+      const confirmRun = confirm('Are you sure you want to run the migration? This will assign facility code "003" to all users without a facility_code.');
+      if (confirmRun) {
+        runMigration();
+      }
+    });
+    
+    document.getElementById('checkStatus').addEventListener('click', checkMigrationStatus);
+  </script>
+</body>
+</html>

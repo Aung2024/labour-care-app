@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection
+    match /users/{userId} {
+      // Allow users to read/write their own data
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow Super Admin to read/write all user data
+      allow read, write: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+        
+      // Allow TMO to read users in their township
+      allow read: if request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO" && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township;
+    }
+    
+    // Patient Counters collection (for patient ID generation)
+    match /patient_counters/{counterId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Patients collection
+    match /patients/{patientId} {
+      // Allow authenticated users to read/write patient documents
+      allow read, write: if request.auth != null;
+      
+      // Allow access to plotData subcollection
+      match /plotData/{plotId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to records subcollection (includes summary, startingTime, secondStage documents)
+      match /records/{recordId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to medication subcollection
+      match /medication/{medicationId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to antenatal_visits subcollection
+      match /antenatal_visits/{visitId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to testRecords subcollection
+      match /testRecords/{testId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to test_records subcollection (alternative naming)
+      match /test_records/{testId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to immediate_newborn_care subcollection
+      match /immediate_newborn_care/{careId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to newborn_care subcollection
+      match /newborn_care/{careId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to postpartum_visits subcollection
+      match /postpartum_visits/{visitId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to baby_records subcollection
+      match /baby_records/{recordId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to labour_care subcollection (if used)
+      match /labour_care/{recordId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to lab_tests subcollection (if used)
+      match /lab_tests/{testId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      // Allow access to consents subcollection (patient consent records)
+      match /consents/{consentId} {
+        // Allow authenticated healthcare providers to read consent records (for audit purposes)
+        allow read: if request.auth != null;
+        
+        // Allow users to write consent if they are the provider who collected it
+        allow write: if 
+          request.auth != null 
+          && (
+            request.resource.data.providerId == request.auth.uid
+            || (
+              exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin"
+            )
+          );
+      }
+      
+      // Catch-all rule for any other subcollections under patients
+      // This ensures iOS devices can access nested data structures
+      match /{subcollection}/{document=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+    
+    // Provider Consents collection (stores provider consent records)
+    match /provider_consents/{userId} {
+      // Allow users to read/write their own consent
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow Super Admin to read all provider consents (for audit purposes)
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+    }
+    
+    // Feedback collection (for pilot feedback from midwives)
+    match /feedback/{feedbackId} {
+      // Allow authenticated users to create feedback
+      allow create: if request.auth != null;
+      
+      // Allow Super Admin to read all feedback
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      
+      // Allow users to read their own feedback
+      allow read: if request.auth != null && request.auth.uid == resource.data.submittedBy;
+    }
+    
+    // Audit Logs collection (security and compliance)
+    match /audit_logs/{logId} {
+      // Allow authenticated users to create audit logs (for their own actions)
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Allow unauthenticated events (like failed login attempts) to be logged
+      // This is safe because we're only logging authentication failures
+      allow create: if 
+        request.resource.data.unauthenticated == true 
+        && request.resource.data.action in ['login_failed', 'account_locked'];
+      
+      // Allow Super Admin to read all audit logs
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      
+      // Users can read their own audit logs
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // No updates or deletes allowed (immutable audit trail)
+      allow update, delete: if false;
+    }
+    
+    // Account Lockouts collection (security)
+    match /account_lockouts/{userId} {
+      // Allow reads without auth (needed to check lockout status before login)
+      // Safe: data is limited to lockout attempts for the supplied email/userId
+      allow read: if true;
+      
+      // Allow unauthenticated writes for lockout tracking before login
+      // Keep the data minimal: attempts, lockoutUntil, lockoutCount, timestamps
+      allow create, update: if true;
+      
+      // Allow Super Admin to read all lockouts
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      
+      // Allow deletion (for clearing lockouts)
+      allow delete: if request.auth != null;
+    }
+    
+    // Password History collection (security)
+    match /password_history/{userId} {
+      // Allow system to create/update password history
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow users to read their own password history
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // No deletes allowed (for security audit)
+      allow delete: if false;
+    }
+  }
+}

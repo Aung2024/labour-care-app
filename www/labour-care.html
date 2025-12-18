@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Labour Care - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/patient-session.js"></script>
+  <style>
+    :root {
+      --primary-color: #ef4444;
+      --secondary-color: #dc2626;
+      --accent-color: #f87171;
+      --light-bg: #fef2f2;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .patient-selector {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .care-modules {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .module-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      box-shadow: var(--card-shadow);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .module-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .module-icon {
+      font-size: 2.5rem;
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+    }
+
+    .module-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .module-description {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-labour {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .status-antenatal {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .patient-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .patient-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .patient-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .patient-details {
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-labour {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .btn-labour:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      color: white;
+    }
+
+    .labour-alert {
+      background: linear-gradient(135deg, #fee2e2, #fecaca);
+      border: 1px solid #f87171;
+      color: #991b1b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .labour-alert i {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .footer {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      color: #374151;
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: var(--card-shadow);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-heartbeat me-3"></i>
+            Labour Care Management
+          </h1>
+          <p class="mb-0">Active labour monitoring and WHO Labour Care Guide protocols</p>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <span id="userInfo" class="text-white-50"></span>
+            <a href="index.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-home me-2"></i>Home
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i>Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Selector -->
+    <div class="patient-selector">
+      <h4 class="mb-3">
+        <i class="fas fa-user-plus me-2"></i>
+        Select Patient for Labour Care
+      </h4>
+      <div class="row">
+        <div class="col-md-8">
+          <select class="form-select" id="patientSelect">
+            <option value="">Choose a patient...</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-labour w-100" onclick="selectPatient()">
+            <i class="fas fa-heartbeat me-2"></i>Start Labour Care
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Care Modules -->
+    <div class="care-modules">
+      <div class="module-card" onclick="scrollToPatients()">
+        <div class="module-icon">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="module-title">All Labour Patients</div>
+        <div class="module-description">View and manage all patients in active labour</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='labour-protocols.html'">
+        <div class="module-icon">
+          <i class="fas fa-clipboard-list"></i>
+        </div>
+        <div class="module-title">Protocols</div>
+        <div class="module-description">Labour care protocols and guidelines</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='labour-monitoring.html'">
+        <div class="module-icon">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="module-title">Monitoring Charts</div>
+        <div class="module-description">Partograph and monitoring tools</div>
+      </div>
+
+      <div class="module-card" onclick="window.location.href='labour-emergencies.html'">
+        <div class="module-icon">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div class="module-title">Emergency Protocols</div>
+        <div class="module-description">Emergency labour care procedures</div>
+      </div>
+    </div>
+
+    <!-- Patients List -->
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="fas fa-list me-2"></i>
+          Labour Care Patients
+        </h5>
+      </div>
+      <div class="card-body">
+        <div id="patientsContainer">
+          <div class="text-center py-4">
+            <div class="spinner-border text-danger" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let userRole = null;
+    let labourPatients = [];
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
+          
+          // Load labour patients after user role is loaded
+          loadLabourPatients();
+        }
+      });
+    }
+
+    async function loadLabourPatients() {
+      try {
+        if (!currentUser || !userRole) {
+          console.log('User not loaded yet, skipping patient load');
+          return;
+        }
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        labourPatients = [];
+
+        // Load both antenatal and labour patients based on user role (for proper workflow)
+        if (userRole === "Super Admin" || userRole === "admin") {
+          // Super Admin sees all antenatal and labour patients
+          const antenatalSnapshot = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .get();
+          const labourSnapshot = await db.collection("patients")
+            .where("status", "==", "labour")
+            .get();
+          
+          [antenatalSnapshot, labourSnapshot].forEach(snapshot => {
+            snapshot.forEach(doc => {
+              labourPatients.push({
+                id: doc.id,
+                ...doc.data()
+              });
+            });
+          });
+        } else if (userRole === "TMO") {
+          // TMO sees antenatal and labour patients from their township
+          const antenatalSnapshot = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("township", "==", userTownship)
+            .get();
+          const labourSnapshot = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("township", "==", userTownship)
+            .get();
+          
+          [antenatalSnapshot, labourSnapshot].forEach(snapshot => {
+            snapshot.forEach(doc => {
+              labourPatients.push({
+                id: doc.id,
+                ...doc.data()
+              });
+            });
+          });
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          // Midwife sees antenatal and labour patients they created
+          const snapAntenatalNew = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapAntenatalOld = await db.collection("patients")
+            .where("status", "==", "antenatal")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+          const snapLabourNew = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapLabourOld = await db.collection("patients")
+            .where("status", "==", "labour")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+          
+          // Also check for old 'active' status patients (legacy)
+          const snapLegacy = await db.collection("patients")
+            .where("treatmentStatus", "==", "active")
+            .where("created_by", "==", currentUser.uid)
+            .get();
+          const snapLegacyOld = await db.collection("patients")
+            .where("treatmentStatus", "==", "active")
+            .where("createdBy", "==", currentUser.uid)
+            .get();
+
+          // Combine all snapshots and remove duplicates
+          const combinedDocs = new Map();
+          
+          [snapAntenatalNew, snapAntenatalOld, snapLabourNew, snapLabourOld, snapLegacy, snapLegacyOld].forEach(snap => {
+            snap.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, {
+                  id: doc.id,
+                  ...doc.data()
+                });
+              }
+            });
+          });
+          
+          labourPatients = Array.from(combinedDocs.values());
+        }
+
+        // Sort by name for better user experience
+        labourPatients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        
+        displayLabourPatients();
+        populatePatientSelector();
+      } catch (error) {
+        console.error("Error loading labour patients:", error);
+        document.getElementById("patientsContainer").innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Error loading patients: ${error.message}
+          </div>
+        `;
+      }
+    }
+
+    function displayLabourPatients() {
+      const container = document.getElementById("patientsContainer");
+      
+      if (labourPatients.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-5">
+            <i class="fas fa-heartbeat fa-3x text-muted mb-3"></i>
+            <h4 class="text-muted">No Patients Available</h4>
+            <p class="text-muted">No antenatal or labour patients found.</p>
+            <a href="antenatal-care.html" class="btn btn-labour">
+              <i class="fas fa-baby-carriage me-2"></i>View Antenatal Care
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      // Count patients by status
+      const antenatalCount = labourPatients.filter(p => (p.status || p.treatmentStatus) === 'antenatal' || p.treatmentStatus === 'active').length;
+      const labourCount = labourPatients.filter(p => (p.status || p.treatmentStatus) === 'labour').length;
+
+      let html = `
+        <div class="row mb-3">
+          <div class="col-md-8">
+            <h5><i class="fas fa-heartbeat me-2"></i>Labour Care Patients (${labourPatients.length} total)</h5>
+            <small class="text-muted">
+              <span class="badge bg-success me-2">${antenatalCount} Antenatal</span>
+              <span class="badge bg-danger">${labourCount} Active Labour</span>
+            </small>
+          </div>
+          <div class="col-md-4 text-end">
+            <button class="btn btn-outline-primary btn-sm" onclick="loadLabourPatients()">
+              <i class="fas fa-sync me-1"></i>Refresh
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Add urgent alert if there are patients in active labour
+      if (labourCount > 0) {
+        html += `
+          <div class="labour-alert">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Active Labour Monitoring Required</strong>
+            <p>${labourCount} patient(s) in active labour need continuous monitoring</p>
+          </div>
+        `;
+      }
+      
+      labourPatients.forEach(patient => {
+        // Determine current status
+        const currentStatus = patient.status || patient.treatmentStatus || 'antenatal';
+        const isInLabour = currentStatus === 'labour';
+        const isAntenatal = currentStatus === 'antenatal' || currentStatus === 'active';
+        
+        // Calculate time since labour started (only for labour patients)
+        let labourDuration = '';
+        if (isInLabour && patient.labour_started_at) {
+          const labourStart = new Date(patient.labour_started_at.seconds * 1000);
+          const now = new Date();
+          const durationHours = Math.floor((now - labourStart) / (1000 * 60 * 60));
+          const durationMinutes = Math.floor(((now - labourStart) % (1000 * 60 * 60)) / (1000 * 60));
+          labourDuration = `${durationHours}h ${durationMinutes}m`;
+        }
+        
+        // Calculate gestational age if LMP is available
+        let gestationalInfo = '';
+        if (patient.lmp) {
+          const lmpDate = new Date(patient.lmp);
+          const today = new Date();
+          const diffTime = today - lmpDate;
+          const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+          const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+          gestationalInfo = `${diffWeeks}w ${diffDays}d`;
+        }
+        
+        // Determine status badge and urgency
+        const statusBadge = isInLabour ? 'status-labour' : 'status-antenatal';
+        const statusText = isInLabour ? 'Labour Care' : 'Antenatal';
+        const urgencyBadge = isInLabour ? '<span class="badge bg-danger ms-2">URGENT</span>' : '';
+        const actionButtonText = isInLabour ? 'Continue Care' : 'Start Labour Care';
+        const actionButtonIcon = isInLabour ? 'fa-play' : 'fa-heartbeat';
+        
+        html += `
+          <div class="patient-card">
+            <div class="patient-info">
+              <div>
+                <div class="patient-name">
+                  <i class="fas fa-user me-2"></i>${patient.name || 'Unknown'}
+                  ${urgencyBadge}
+                </div>
+                <div class="patient-details">
+                  <div class="row">
+                    <div class="col-md-6">
+                      <small><strong>Age:</strong> ${patient.age || 'N/A'}</small><br>
+                      <small><strong>Parity:</strong> ${patient.parity || 'N/A'}</small><br>
+                      ${isInLabour ? `<small><strong>Labour Duration:</strong> ${labourDuration}</small>` : '<small><strong>Status:</strong> Ready for labour care</small>'}
+                    </div>
+                    <div class="col-md-6">
+                      <small><strong>LMP:</strong> ${patient.lmp || 'Not set'}</small><br>
+                      <small><strong>GA:</strong> ${gestationalInfo || 'Not calculated'}</small><br>
+                      <small><strong>Township:</strong> ${patient.township || 'Not set'}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="text-end">
+                <span class="status-badge ${statusBadge}">${statusText}</span>
+              </div>
+            </div>
+            <div class="row mt-2">
+              <div class="col-md-6">
+                <small class="text-muted">
+                  <i class="fas fa-clock me-1"></i>${isInLabour ? `Labour Started: ${patient.labour_started_at ? new Date(patient.labour_started_at.seconds * 1000).toLocaleString() : 'Unknown'}` : 'Ready to start labour care'}
+                </small>
+              </div>
+              <div class="col-md-6 text-end">
+                <div class="action-buttons">
+                  <button class="btn btn-labour btn-sm" onclick="continueLabourCare('${patient.id}')">
+                    <i class="fas ${actionButtonIcon} me-1"></i>${actionButtonText}
+                  </button>
+                  <button class="btn btn-outline-info btn-sm" onclick="viewLabourHistory('${patient.id}')">
+                    <i class="fas fa-chart-line me-1"></i>Labour Care Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function populatePatientSelector() {
+      const selector = document.getElementById("patientSelect");
+      selector.innerHTML = '<option value="">Choose a patient...</option>';
+      
+      labourPatients.forEach(patient => {
+        const option = document.createElement('option');
+        option.value = patient.id;
+        option.textContent = `${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'} (Labour ${patient.labour_started_at ? 'Active' : 'Status Unknown'})`;
+        selector.appendChild(option);
+      });
+    }
+
+    function scrollToPatients() {
+      // Scroll to patients list and refresh data
+      loadLabourPatients();
+      document.getElementById('patientsContainer').scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+
+    function continueLabourCare(patientId) {
+      // Redirect to summary.html for labour care monitoring
+      window.location.href = `summary.html?patient=${patientId}`;
+    }
+
+    function viewLabourHistory(patientId) {
+      // Redirect to summary view for partograph
+      window.location.href = `summary-view.html?patient=${patientId}`;
+    }
+
+    function selectPatient() {
+      const patientId = document.getElementById("patientSelect").value;
+      if (patientId) {
+        continueLabourCare(patientId);
+      } else {
+        alert("Please select a patient first.");
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

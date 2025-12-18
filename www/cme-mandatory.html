@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mandatory Learning - CME</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #ef4444;
+      --secondary-color: #dc2626;
+      --success-color: #10b981;
+      --text-primary: #1f2937;
+      --text-secondary: #64748b;
+      --bg-light: #f8fafc;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      border-left: 5px solid var(--primary-color);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .back-btn {
+      background: var(--bg-light);
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      color: var(--primary-color);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .back-btn:hover {
+      background: var(--primary-color);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .header h1 {
+      color: var(--primary-color);
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+    }
+
+    .progress-summary {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .progress-item {
+      text-align: center;
+    }
+
+    .progress-item .number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: 0.25rem;
+    }
+
+    .progress-item .label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .module-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transition: all 0.3s ease;
+      border-left: 4px solid var(--primary-color);
+      cursor: pointer;
+    }
+
+    .module-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    .module-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 1rem;
+    }
+
+    .module-icon {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.5rem;
+    }
+
+    .module-badge {
+      background: #fee2e2;
+      color: var(--primary-color);
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .module-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .module-description {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .module-meta {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .module-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .progress-bar-container {
+      margin-bottom: 1rem;
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+      border-radius: 10px;
+      transition: width 0.3s ease;
+    }
+
+    .module-action {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      width: 100%;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .module-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+
+    .module-action.completed {
+      background: linear-gradient(135deg, var(--success-color), #059669);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 1rem;
+      }
+
+      .header {
+        padding: 1.5rem;
+      }
+
+      .header-top {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+
+      .header h1 {
+        font-size: 1.5rem;
+      }
+
+      .modules-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .progress-summary {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-top">
+        <button class="back-btn" onclick="window.location.href='cme-learning.html'">
+          <i class="fas fa-arrow-left"></i>
+          <span>Back</span>
+        </button>
+      </div>
+      <h1>
+        <i class="fas fa-exclamation-circle"></i>
+        Mandatory Learning
+      </h1>
+      <p>Complete these required modules to maintain your professional certification</p>
+    </div>
+
+    <div class="progress-summary">
+      <div class="progress-item">
+        <div class="number">5</div>
+        <div class="label">Total Modules</div>
+      </div>
+      <div class="progress-item">
+        <div class="number">2</div>
+        <div class="label">Completed</div>
+      </div>
+      <div class="progress-item">
+        <div class="number">3</div>
+        <div class="label">In Progress</div>
+      </div>
+      <div class="progress-item">
+        <div class="number">40%</div>
+        <div class="label">Overall Progress</div>
+      </div>
+    </div>
+
+    <div class="modules-grid">
+      <!-- Module 1 -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-heartbeat"></i>
+          </div>
+          <span class="module-badge">Required</span>
+        </div>
+        <h3 class="module-title">Maternal Health Assessment</h3>
+        <p class="module-description">
+          Comprehensive training on conducting thorough maternal health assessments, including vital signs monitoring, risk identification, and documentation protocols.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2 hours</span>
+          <span><i class="fas fa-certificate"></i> Certificate</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Progress</span>
+            <span>100%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+        </div>
+        <button class="module-action completed">
+          <i class="fas fa-check-circle"></i>
+          <span>Completed</span>
+        </button>
+      </div>
+
+      <!-- Module 2 -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-baby"></i>
+          </div>
+          <span class="module-badge">Required</span>
+        </div>
+        <h3 class="module-title">Newborn Care Protocols</h3>
+        <p class="module-description">
+          Essential guidelines for newborn care including immediate post-birth procedures, feeding support, and early warning signs recognition.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 3 hours</span>
+          <span><i class="fas fa-certificate"></i> Certificate</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Progress</span>
+            <span>65%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 65%"></div>
+          </div>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Continue Learning</span>
+        </button>
+      </div>
+
+      <!-- Module 3 -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-shield-alt"></i>
+          </div>
+          <span class="module-badge">Required</span>
+        </div>
+        <h3 class="module-title">Infection Prevention & Control</h3>
+        <p class="module-description">
+          Critical training on infection prevention measures, sterilization techniques, and maintaining a safe healthcare environment for patients and staff.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2.5 hours</span>
+          <span><i class="fas fa-certificate"></i> Certificate</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Progress</span>
+            <span>0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Learning</span>
+        </button>
+      </div>
+
+      <!-- Module 4 -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+          <span class="module-badge">Required</span>
+        </div>
+        <h3 class="module-title">Emergency Obstetric Care</h3>
+        <p class="module-description">
+          Training on recognizing and managing obstetric emergencies, including postpartum hemorrhage, eclampsia, and other life-threatening conditions.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 4 hours</span>
+          <span><i class="fas fa-certificate"></i> Certificate</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Progress</span>
+            <span>30%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 30%"></div>
+          </div>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Continue Learning</span>
+        </button>
+      </div>
+
+      <!-- Module 5 -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-file-medical"></i>
+          </div>
+          <span class="module-badge">Required</span>
+        </div>
+        <h3 class="module-title">Medical Documentation Standards</h3>
+        <p class="module-description">
+          Learn proper documentation practices, maintaining accurate patient records, and ensuring compliance with healthcare regulations and standards.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 1.5 hours</span>
+          <span><i class="fas fa-certificate"></i> Certificate</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Progress</span>
+            <span>100%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%"></div>
+          </div>
+        </div>
+        <button class="module-action completed">
+          <i class="fas fa-check-circle"></i>
+          <span>Completed</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      }
+    });
+  </script>
+</body>
+</html>
+

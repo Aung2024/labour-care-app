@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laboratory Test Report - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --accent-color: #34d399;
+      --light-bg: #f0fdf4;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .btn-group {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+
+    .report-container {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin: 2rem auto;
+      max-width: 1000px;
+      box-shadow: var(--card-shadow);
+    }
+
+    .report-header {
+      text-align: center;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .report-title {
+      color: var(--secondary-color);
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .report-subtitle {
+      color: #6b7280;
+      font-size: 1rem;
+    }
+
+    .patient-info {
+      background: var(--light-bg);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .info-item:last-child {
+      border-bottom: none;
+    }
+
+    .info-label {
+      font-weight: 600;
+      color: var(--secondary-color);
+    }
+
+    .info-value {
+      color: #374151;
+    }
+
+    .test-results-table {
+      margin-bottom: 2rem;
+      overflow-x: auto;
+    }
+
+    .test-results-table table {
+      width: 100%;
+      min-width: 1000px;
+      border-collapse: collapse;
+      margin: 0;
+    }
+
+    .test-results-table th,
+    .test-results-table td {
+      border: 1px solid #e5e7eb;
+      padding: 0.75rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .test-results-table th {
+      background: var(--light-bg);
+      color: var(--secondary-color);
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .test-results-table td {
+      background: white;
+    }
+
+    .test-results-table tr:nth-child(even) td {
+      background: #f9fafb;
+    }
+
+    .test-name {
+      font-weight: 600;
+      color: var(--secondary-color);
+    }
+
+    .test-result {
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .result-reactive {
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-non-reactive {
+      color: #059669;
+      background: #f0fdf4;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-positive {
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-negative {
+      color: #059669;
+      background: #f0fdf4;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-absent {
+      color: #059669;
+      background: #f0fdf4;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-trace {
+      color: #d97706;
+      background: #fef3c7;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .result-present {
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .hemoglobin-section {
+      background: var(--light-bg);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--accent-color);
+    }
+
+    .hemoglobin-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--secondary-color);
+    }
+
+    .diagnosis {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .diagnosis-label {
+      font-weight: 600;
+      color: var(--secondary-color);
+    }
+
+    .diagnosis-severe {
+      background: #fef2f2;
+      border-color: #dc2626;
+      color: #dc2626;
+    }
+
+    .diagnosis-mild {
+      background: #fef3c7;
+      border-color: #d97706;
+      color: #d97706;
+    }
+
+    .diagnosis-normal {
+      background: #f0fdf4;
+      border-color: #059669;
+      color: #059669;
+    }
+
+    .referral-section {
+      background: white;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .referral-given {
+      background: #fef2f2;
+      border-left: 4px solid #dc2626;
+    }
+
+    .referral-not-given {
+      background: #f0fdf4;
+      border-left: 4px solid #059669;
+    }
+
+    .summary-section {
+      background: var(--light-bg);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .summary-item:last-child {
+      border-bottom: none;
+    }
+
+    .loading-spinner {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .no-data {
+      text-align: center;
+      color: #6b7280;
+      padding: 2rem;
+      background: white;
+      border-radius: 10px;
+      border: 2px dashed #d1d5db;
+    }
+
+    .footer {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      text-align: center;
+      padding: 2rem 0;
+      margin-top: 3rem;
+    }
+
+    .footer-content {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+
+    .footer p {
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+
+    .footer .copyright {
+      font-weight: 500;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+        font-size: 12pt;
+        line-height: 1.4;
+        color: #000;
+        background: white;
+      }
+      
+      .btn-group {
+        display: none;
+      }
+      
+      .report-container {
+        max-width: 210mm;
+        margin: 0;
+        padding: 10mm;
+        box-shadow: none;
+        border-radius: 0;
+        background: white;
+      }
+      
+      .header-section {
+        background: white !important;
+        color: #000 !important;
+        padding: 5mm 0;
+        margin-bottom: 5mm;
+        border-bottom: 2px solid #000;
+      }
+      
+      .header-section h1 {
+        font-size: 18pt;
+        margin: 0;
+        color: #000;
+      }
+      
+      .patient-info {
+        background: white !important;
+        border: 1px solid #000;
+        padding: 5mm;
+        margin-bottom: 5mm;
+        page-break-inside: avoid;
+      }
+      
+      .patient-info h4 {
+        font-size: 14pt;
+        margin-bottom: 3mm;
+        color: #000;
+      }
+      
+      .info-row {
+        margin-bottom: 2mm;
+        display: flex;
+        justify-content: space-between;
+      }
+      
+      .info-label {
+        font-weight: bold;
+        color: #000;
+      }
+      
+      .info-value {
+        color: #000;
+      }
+      
+      .test-results-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 5mm;
+        page-break-inside: avoid;
+        overflow: visible;
+      }
+      
+      .test-results-table table {
+        width: 100%;
+        min-width: auto;
+        border-collapse: collapse;
+        font-size: 10pt;
+      }
+      
+      .test-results-table th,
+      .test-results-table td {
+        border: 1px solid #000;
+        padding: 2mm;
+        text-align: left;
+        white-space: nowrap;
+      }
+      
+      .test-results-table th {
+        background: #f0f0f0 !important;
+        color: #000 !important;
+        font-weight: bold;
+      }
+      
+      .test-results-table td {
+        background: white !important;
+        color: #000 !important;
+      }
+      
+      .result-box {
+        display: inline-block;
+        padding: 1mm 2mm;
+        border-radius: 2mm;
+        font-size: 9pt;
+        font-weight: bold;
+        margin: 0.5mm;
+      }
+      
+      .result-reactive {
+        background: #ffebee !important;
+        color: #c62828 !important;
+        border: 1px solid #c62828;
+      }
+      
+      .result-negative {
+        background: #e8f5e8 !important;
+        color: #2e7d32 !important;
+        border: 1px solid #2e7d32;
+      }
+      
+      .result-non-reactive {
+        background: #e8f5e8 !important;
+        color: #2e7d32 !important;
+        border: 1px solid #2e7d32;
+      }
+      
+      .diagnosis {
+        background: white !important;
+        border: 1px solid #000;
+        padding: 3mm;
+        margin-top: 3mm;
+        page-break-inside: avoid;
+      }
+      
+      .diagnosis-label {
+        font-weight: bold;
+        color: #000;
+      }
+      
+      .diagnosis-severe {
+        background: #ffebee !important;
+        border-color: #c62828 !important;
+        color: #c62828 !important;
+      }
+      
+      .diagnosis-mild {
+        background: #fff8e1 !important;
+        border-color: #f57c00 !important;
+        color: #f57c00 !important;
+      }
+      
+      .diagnosis-normal {
+        background: #e8f5e8 !important;
+        border-color: #2e7d32 !important;
+        color: #2e7d32 !important;
+      }
+      
+      .referral-section {
+        background: white !important;
+        border: 1px solid #000;
+        padding: 3mm;
+        margin-bottom: 3mm;
+        page-break-inside: avoid;
+      }
+      
+      .referral-given {
+        background: #ffebee !important;
+        border-left: 3mm solid #c62828 !important;
+        color: #c62828 !important;
+      }
+      
+      .referral-not-given {
+        background: #e8f5e8 !important;
+        border-left: 3mm solid #2e7d32 !important;
+        color: #2e7d32 !important;
+      }
+      
+      .referral-section h4 {
+        font-size: 12pt;
+        margin-bottom: 2mm;
+        color: #000;
+      }
+      
+      .referral-info {
+        margin-bottom: 1mm;
+      }
+      
+      .referral-info .diagnosis-label {
+        font-weight: bold;
+        color: #000;
+      }
+      
+      .referral-info span {
+        color: #000;
+      }
+      
+      .footer {
+        display: none;
+      }
+      
+      /* Page breaks */
+      .page-break {
+        page-break-before: always;
+      }
+      
+      /* Ensure proper spacing and colors */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .report-container {
+        margin: 1rem;
+        padding: 1rem;
+      }
+      
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .btn-group {
+        position: relative;
+        top: auto;
+        right: auto;
+        margin: 1rem 0;
+        text-align: center;
+      }
+      
+      .test-results-table {
+        font-size: 0.8rem;
+      }
+      
+      .test-results-table th,
+      .test-results-table td {
+        padding: 0.5rem 0.25rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Action Buttons -->
+  <div class="btn-group" role="group">
+    <button type="button" class="btn btn-primary" onclick="printReport()">
+      <i class="fas fa-print me-1"></i>Print Report
+    </button>
+    <button type="button" class="btn btn-secondary" onclick="window.close()">
+      <i class="fas fa-times me-1"></i>Close
+    </button>
+  </div>
+
+  <!-- Report Container -->
+  <div class="report-container">
+    <!-- Report Header -->
+    <div class="report-header">
+      <h1 class="report-title">Laboratory Test Report</h1>
+      <p class="report-subtitle">Maternal & Child Health Care System</p>
+      <p class="report-subtitle">Generated on: <span id="reportDate"></span></p>
+    </div>
+
+    <!-- Patient Information -->
+    <div class="patient-info">
+      <h5 class="mb-3"><i class="fas fa-user me-2"></i>Patient Information</h5>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">Name:</span>
+          <span class="info-value" id="patientName">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Age:</span>
+          <span class="info-value" id="patientAge">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">LMP:</span>
+          <span class="info-value" id="patientLMP">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">EDD:</span>
+          <span class="info-value" id="patientEDD">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Phone:</span>
+          <span class="info-value" id="patientPhone">-</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Address:</span>
+          <span class="info-value" id="patientAddress">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Results -->
+    <div class="test-results-table" id="testResultsSection">
+      <h5 class="mb-3"><i class="fas fa-vial me-2"></i>Laboratory Test Results</h5>
+      <table>
+        <thead>
+          <tr>
+            <th>Test Date</th>
+            <th>Gestational Age</th>
+            <th>HIV</th>
+            <th>Malaria</th>
+            <th>Syphilis</th>
+            <th>Hepatitis B</th>
+            <th>Hepatitis C</th>
+            <th>Urine Protein</th>
+            <th>Urine Sugar</th>
+            <th>Hb (g/dl)</th>
+            <th>Treatment</th>
+            <th>Referral</th>
+          </tr>
+        </thead>
+        <tbody id="testResultsBody">
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Hemoglobin Analysis -->
+    <div class="hemoglobin-section" id="hemoglobinSection" style="display: none;">
+      <h5 class="mb-3"><i class="fas fa-tint me-2"></i>Hemoglobin Analysis</h5>
+      <div class="diagnosis" id="hemoglobinDiagnosis">
+        <div class="summary-item">
+          <span class="diagnosis-label">Latest Hb Level:</span>
+          <span class="hemoglobin-value" id="latestHemoglobin">-</span>
+        </div>
+        <div class="summary-item">
+          <span class="diagnosis-label">Diagnosis:</span>
+          <span id="hemoglobinDiagnosisText">-</span>
+        </div>
+        <div class="summary-item">
+          <span class="diagnosis-label">Treatment Given:</span>
+          <span id="hemoglobinTreatment">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Referral Information -->
+    <div class="referral-section" id="referralSection" style="display: none;">
+      <h5 class="mb-3"><i class="fas fa-user-md me-2"></i>Referral Information</h5>
+      <div class="summary-item">
+        <span class="diagnosis-label">Referral Given:</span>
+        <span id="referralStatus">-</span>
+      </div>
+      <div class="summary-item" id="referralServiceItem" style="display: none;">
+        <span class="diagnosis-label">Service:</span>
+        <span id="referralService">-</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Loading Spinner -->
+  <div class="loading-spinner" id="loadingSpinner">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2">Loading laboratory test data...</p>
+  </div>
+
+  <!-- No Data Message -->
+  <div class="no-data" id="noDataMessage" style="display: none;">
+    <i class="fas fa-flask fa-3x mb-3 text-muted"></i>
+    <h5>No Test Records Found</h5>
+    <p>No laboratory test records found for this patient.</p>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-content">
+      <p class="copyright">MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.</p>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let testRecords = [];
+
+    // Initialize Firebase and load data
+    document.addEventListener('DOMContentLoaded', function() {
+      firebase.auth().onAuthStateChanged(function(user) {
+        if (user) {
+          currentUser = user;
+          loadReportData();
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+    });
+
+    // Load report data
+    async function loadReportData() {
+      try {
+        showLoading(true);
+        
+        // Get patient ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const patientId = urlParams.get('patient');
+        
+        if (!patientId) {
+          showNoData();
+          return;
+        }
+
+        // Load patient data
+        const db = firebase.firestore();
+        const patientDoc = await db.collection('patients').doc(patientId).get();
+        
+        if (!patientDoc.exists) {
+          showNoData();
+          return;
+        }
+        
+        currentPatient = { id: patientDoc.id, ...patientDoc.data() };
+        populatePatientInfo();
+        
+        // Load test records
+        const testSnapshot = await db.collection('patients')
+          .doc(patientId)
+          .collection('testRecords')
+          .orderBy('testDate', 'asc')
+          .get();
+        
+        testRecords = [];
+        testSnapshot.forEach(doc => {
+          testRecords.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (testRecords.length === 0) {
+          showNoData();
+          return;
+        }
+        
+        populateTestResults();
+        
+      } catch (error) {
+        console.error('Error loading report data:', error);
+        showNoData();
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Populate patient information
+    function populatePatientInfo() {
+      document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+      document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+      document.getElementById('patientLMP').textContent = currentPatient.lmp || 'Not recorded';
+      document.getElementById('patientEDD').textContent = currentPatient.edd || 'Not calculated';
+      document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
+      document.getElementById('patientAddress').textContent = currentPatient.patientAddress || currentPatient.patient_address || 'Not provided';
+      
+      // Set report date
+      const today = new Date();
+      document.getElementById('reportDate').textContent = today.toLocaleDateString();
+    }
+
+    // Populate test results table
+    function populateTestResults() {
+      const tbody = document.getElementById('testResultsBody');
+      tbody.innerHTML = '';
+      
+      testRecords.forEach(test => {
+        const testDate = test.testDate ? new Date(test.testDate).toLocaleDateString() : 'Not recorded';
+        const gestationalAge = test.gestationalAge ? `${test.gestationalAge} weeks` : 'Not recorded';
+        
+        tbody.innerHTML += `
+          <tr>
+            <td>${testDate}</td>
+            <td>${gestationalAge}</td>
+            <td class="test-result">${formatTestResult(test.hivResult)}</td>
+            <td class="test-result">${formatTestResult(test.malariaResult)}</td>
+            <td class="test-result">${formatTestResult(test.syphilisResult)}</td>
+            <td class="test-result">${formatTestResult(test.hepatitisBResult)}</td>
+            <td class="test-result">${formatTestResult(test.hepatitisCResult)}</td>
+            <td class="test-result">${formatUrineResult(test.urineProtein)}</td>
+            <td class="test-result">${formatUrineResult(test.urineSugar)}</td>
+            <td class="test-result">${test.hemoglobinResult || '-'}</td>
+            <td class="test-result">${test.hemoglobinTreatment || '-'}</td>
+            <td class="test-result">${test.referralGiven || '-'}</td>
+          </tr>
+        `;
+      });
+    }
+
+    // Format test result for display
+    function formatTestResult(result) {
+      if (!result) return '-';
+      
+      const lowerResult = result.toLowerCase();
+      
+      if (lowerResult.includes('reactive')) {
+        return `<span class="result-reactive">${result}</span>`;
+      } else if (lowerResult.includes('non-reactive')) {
+        return `<span class="result-non-reactive">${result}</span>`;
+      } else if (lowerResult.includes('positive')) {
+        return `<span class="result-positive">${result}</span>`;
+      } else if (lowerResult.includes('negative')) {
+        return `<span class="result-negative">${result}</span>`;
+      } else if (lowerResult.includes('indeterminate')) {
+        return `<span class="result-trace">${result}</span>`;
+      }
+      
+      return result;
+    }
+
+    // Format urine result for display
+    function formatUrineResult(result) {
+      if (!result) return '-';
+      
+      const lowerResult = result.toLowerCase();
+      
+      if (lowerResult.includes('absent')) {
+        return `<span class="result-absent">${result}</span>`;
+      } else if (lowerResult.includes('trace')) {
+        return `<span class="result-trace">${result}</span>`;
+      } else if (lowerResult.includes('present')) {
+        return `<span class="result-present">${result}</span>`;
+      }
+      
+      return result;
+    }
+
+
+    // Check if test result is abnormal
+    function isAbnormalResult(test) {
+      const abnormalResults = [
+        'Reactive', 'Positive', 'Present', 'Indeterminate'
+      ];
+      
+      const results = [
+        test.hivResult, test.malariaResult, test.syphilisResult,
+        test.hepatitisBResult, test.hepatitisCResult, test.urineProtein, test.urineSugar
+      ];
+      
+      return results.some(result => 
+        result && abnormalResults.some(abnormal => 
+          result.toLowerCase().includes(abnormal.toLowerCase())
+        )
+      );
+    }
+
+    // Show hemoglobin analysis
+    function showHemoglobinAnalysis(test) {
+      const hbValue = test.hemoglobinResult;
+      let diagnosis = '';
+      let diagnosisClass = '';
+      
+      if (hbValue >= 11) {
+        diagnosis = 'No anemia';
+        diagnosisClass = 'diagnosis-normal';
+      } else if (hbValue >= 7) {
+        diagnosis = 'Mild anemia';
+        diagnosisClass = 'diagnosis-mild';
+      } else {
+        diagnosis = 'Severe anemia';
+        diagnosisClass = 'diagnosis-severe';
+      }
+      
+      document.getElementById('latestHemoglobin').textContent = `${hbValue} g/dl`;
+      document.getElementById('hemoglobinDiagnosisText').textContent = diagnosis;
+      document.getElementById('hemoglobinTreatment').textContent = test.hemoglobinTreatment || 'Not specified';
+      
+      const diagnosisDiv = document.getElementById('hemoglobinDiagnosis');
+      diagnosisDiv.className = `diagnosis ${diagnosisClass}`;
+      
+      document.getElementById('hemoglobinSection').style.display = 'block';
+    }
+
+    // Show referral information
+    function showReferralInfo(test) {
+      document.getElementById('referralStatus').textContent = test.referralGiven;
+      
+      if (test.referralService) {
+        document.getElementById('referralService').textContent = test.referralService;
+        document.getElementById('referralServiceItem').style.display = 'flex';
+      }
+      
+      const referralDiv = document.getElementById('referralSection');
+      if (test.referralGiven === 'Yes') {
+        referralDiv.className = 'referral-section referral-given';
+      } else {
+        referralDiv.className = 'referral-section referral-not-given';
+      }
+      
+      document.getElementById('referralSection').style.display = 'block';
+    }
+
+    // Show no data message
+    function showNoData() {
+      document.getElementById('testResultsSection').style.display = 'none';
+      document.getElementById('noDataMessage').style.display = 'block';
+      
+      // Still show patient info if available
+      if (currentPatient) {
+        populatePatientInfo();
+      }
+    }
+
+    // Show/hide loading spinner
+    function showLoading(show) {
+      document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
+    }
+
+    // Print report
+    function printReport() {
+      window.print();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Optional Learning - CME</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --text-primary: #1f2937;
+      --text-secondary: #64748b;
+      --bg-light: #f8fafc;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      border-left: 5px solid var(--primary-color);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .back-btn {
+      background: var(--bg-light);
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      color: var(--primary-color);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .back-btn:hover {
+      background: var(--primary-color);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .header h1 {
+      color: var(--primary-color);
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+    }
+
+    .filter-tabs {
+      background: white;
+      border-radius: 15px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-tab {
+      background: var(--bg-light);
+      border: 2px solid transparent;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .filter-tab.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+
+    .filter-tab:hover {
+      border-color: var(--primary-color);
+    }
+
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .module-card {
+      background: white;
+      border-radius: 15px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transition: all 0.3s ease;
+      border-left: 4px solid var(--primary-color);
+      cursor: pointer;
+      position: relative;
+    }
+
+    .module-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    .module-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 1rem;
+    }
+
+    .module-icon {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.5rem;
+    }
+
+    .module-badge {
+      background: #d1fae5;
+      color: var(--primary-color);
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .module-badge.new {
+      background: #fef3c7;
+      color: #f59e0b;
+    }
+
+    .module-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .module-description {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .module-meta {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .module-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .module-action {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      width: 100%;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .module-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+
+    .module-action.completed {
+      background: linear-gradient(135deg, #6b7280, #4b5563);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 1rem;
+      }
+
+      .header {
+        padding: 1.5rem;
+      }
+
+      .header-top {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+
+      .header h1 {
+        font-size: 1.5rem;
+      }
+
+      .modules-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .filter-tabs {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-top">
+        <button class="back-btn" onclick="window.location.href='cme-learning.html'">
+          <i class="fas fa-arrow-left"></i>
+          <span>Back</span>
+        </button>
+      </div>
+      <h1>
+        <i class="fas fa-book-open"></i>
+        Optional Learning
+      </h1>
+      <p>Explore additional courses to expand your knowledge and expertise</p>
+    </div>
+
+    <div class="filter-tabs">
+      <div class="filter-tab active" onclick="filterModules('all')">All Courses</div>
+      <div class="filter-tab" onclick="filterModules('recent')">Recent</div>
+      <div class="filter-tab" onclick="filterModules('popular')">Popular</div>
+      <div class="filter-tab" onclick="filterModules('completed')">Completed</div>
+    </div>
+
+    <div class="modules-grid" id="modulesGrid">
+      <!-- Module 1 -->
+      <div class="module-card" data-category="recent">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-stethoscope"></i>
+          </div>
+          <span class="module-badge new">New</span>
+        </div>
+        <h3 class="module-title">Advanced Fetal Monitoring</h3>
+        <p class="module-description">
+          Deep dive into advanced techniques for fetal heart rate monitoring, interpretation of patterns, and decision-making in high-risk pregnancies.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 3 hours</span>
+          <span><i class="fas fa-users"></i> 245 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 2 -->
+      <div class="module-card" data-category="popular">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-pills"></i>
+          </div>
+          <span class="module-badge">Optional</span>
+        </div>
+        <h3 class="module-title">Pharmacology for Midwives</h3>
+        <p class="module-description">
+          Comprehensive guide to medications commonly used in maternal and newborn care, including dosages, contraindications, and administration protocols.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 4 hours</span>
+          <span><i class="fas fa-users"></i> 189 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 3 -->
+      <div class="module-card" data-category="recent">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-comments"></i>
+          </div>
+          <span class="module-badge new">New</span>
+        </div>
+        <h3 class="module-title">Patient Communication Skills</h3>
+        <p class="module-description">
+          Enhance your communication skills to build trust, provide effective counseling, and support patients through their healthcare journey.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2 hours</span>
+          <span><i class="fas fa-users"></i> 312 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 4 -->
+      <div class="module-card" data-category="popular">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-microscope"></i>
+          </div>
+          <span class="module-badge">Optional</span>
+        </div>
+        <h3 class="module-title">Laboratory Test Interpretation</h3>
+        <p class="module-description">
+          Learn to interpret common laboratory tests in pregnancy, understand normal ranges, and identify when results require immediate attention.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2.5 hours</span>
+          <span><i class="fas fa-users"></i> 156 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 5 -->
+      <div class="module-card" data-category="completed">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-heart"></i>
+          </div>
+          <span class="module-badge">Optional</span>
+        </div>
+        <h3 class="module-title">Mental Health in Pregnancy</h3>
+        <p class="module-description">
+          Understanding perinatal mental health, recognizing signs of depression and anxiety, and providing appropriate support and referrals.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 3 hours</span>
+          <span><i class="fas fa-users"></i> 278 enrolled</span>
+        </div>
+        <button class="module-action completed">
+          <i class="fas fa-check-circle"></i>
+          <span>Completed</span>
+        </button>
+      </div>
+
+      <!-- Module 6 -->
+      <div class="module-card" data-category="popular">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-utensils"></i>
+          </div>
+          <span class="module-badge">Optional</span>
+        </div>
+        <h3 class="module-title">Nutrition in Pregnancy</h3>
+        <p class="module-description">
+          Comprehensive guide to maternal nutrition, dietary requirements, managing common issues, and supporting healthy fetal development.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2 hours</span>
+          <span><i class="fas fa-users"></i> 201 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 7 -->
+      <div class="module-card" data-category="recent">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-syringe"></i>
+          </div>
+          <span class="module-badge new">New</span>
+        </div>
+        <h3 class="module-title">Vaccination Protocols</h3>
+        <p class="module-description">
+          Updated guidelines on vaccination schedules for pregnant women and newborns, including safety considerations and administration techniques.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 1.5 hours</span>
+          <span><i class="fas fa-users"></i> 134 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+
+      <!-- Module 8 -->
+      <div class="module-card" data-category="popular">
+        <div class="module-header">
+          <div class="module-icon">
+            <i class="fas fa-database"></i>
+          </div>
+          <span class="module-badge">Optional</span>
+        </div>
+        <h3 class="module-title">Digital Health Records Management</h3>
+        <p class="module-description">
+          Best practices for managing digital health records, ensuring data accuracy, privacy compliance, and efficient documentation workflows.
+        </p>
+        <div class="module-meta">
+          <span><i class="far fa-clock"></i> 2 hours</span>
+          <span><i class="fas fa-users"></i> 167 enrolled</span>
+        </div>
+        <button class="module-action">
+          <i class="fas fa-play-circle"></i>
+          <span>Start Course</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      }
+    });
+
+    function filterModules(category) {
+      // Update active tab
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      event.target.classList.add('active');
+
+      // Filter modules
+      const modules = document.querySelectorAll('.module-card');
+      modules.forEach(module => {
+        if (category === 'all' || module.dataset.category === category) {
+          module.style.display = 'block';
+        } else {
+          module.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+

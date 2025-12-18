@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Record Lab Tests - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/session-manager.js"></script>
+  <script src="js/audit-logger.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --accent-color: #34d399;
+      --light-bg: #f0fdf4;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    body {
+      background: var(--light-bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem 0;
+      margin-bottom: 2rem;
+    }
+
+    .form-container {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .patient-info {
+      background: var(--light-bg);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .test-section {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid #e5e7eb;
+    }
+
+    .test-section h5 {
+      color: var(--secondary-color);
+      border-bottom: 2px solid var(--accent-color);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      font-weight: 600;
+      color: var(--secondary-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-control, .form-select {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.75rem;
+      transition: border-color 0.3s ease;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+    }
+
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .test-item {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .test-item h6 {
+      color: var(--secondary-color);
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+      background: var(--secondary-color);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    .hemoglobin-table {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .hemoglobin-table table {
+      width: 100%;
+      margin: 0;
+    }
+
+    .hemoglobin-table th,
+    .hemoglobin-table td {
+      padding: 0.5rem;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+    }
+
+    .hemoglobin-table th {
+      background: var(--light-bg);
+      color: var(--secondary-color);
+      font-weight: 600;
+    }
+
+    .diagnosis-result {
+      background: var(--light-bg);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .loading-spinner {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .footer {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      color: #374151;
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: var(--card-shadow);
+    }
+
+    /* Mobile-First Lab Test Form Styles */
+    .mobile-lab-form {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-row-mobile {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-group-mobile {
+      background: white;
+      padding: 1rem;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      transition: all 0.3s ease;
+    }
+
+    .form-group-mobile:hover {
+      border-color: var(--primary-color);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+    }
+
+    .form-group-mobile .form-label {
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .form-group-mobile .form-control,
+    .form-group-mobile .form-select {
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+    }
+
+    .form-group-mobile .form-control:focus,
+    .form-group-mobile .form-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+      outline: none;
+    }
+
+    @media (max-width: 768px) {
+      .header-section {
+        padding: 1.5rem 0;
+      }
+      
+      .form-container,
+      .test-section {
+        padding: 1rem;
+        margin: 0 1rem 1rem;
+      }
+      
+      .test-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+      
+      .btn-primary,
+      .btn-secondary {
+        width: 100%;
+        margin: 0.5rem 0;
+      }
+      
+      .form-row-mobile {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+      
+      .form-group-mobile {
+        padding: 0.75rem;
+      }
+      
+      .mobile-lab-form {
+        padding: 1rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .form-group-mobile .form-control,
+      .form-group-mobile .form-select {
+        padding: 0.5rem;
+        font-size: 0.9rem;
+      }
+      
+      .form-group-mobile .form-label {
+        font-size: 0.85rem;
+      }
+    }
+
+    .positive-alert {
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      color: #991b1b;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+
+    .is-positive {
+      border-color: #ef4444 !important;
+      background: #fee2e2 !important;
+      color: #991b1b;
+    }
+
+    .positive-alert ul {
+      margin: 0.5rem 0 0;
+      padding-left: 1.25rem;
+    }
+
+    /* Highlight styles for select options */
+    .highlight-yellow {
+      background-color: #fef3c7 !important;
+      color: #92400e !important;
+      font-weight: 600;
+    }
+
+    .highlight-red {
+      background-color: #fee2e2 !important;
+      color: #991b1b !important;
+      font-weight: 600;
+    }
+
+    /* Style select elements when they have specific values */
+    .form-select.highlight-yellow {
+      background-color: #fef3c7;
+      border-color: #fbbf24;
+      color: #92400e;
+      font-weight: 600;
+    }
+
+    .form-select.highlight-red {
+      background-color: #fee2e2;
+      border-color: #ef4444;
+      color: #991b1b;
+      font-weight: 600;
+    }
+
+    /* Style option elements in dropdown */
+    option.highlight-yellow-option {
+      background-color: #fef3c7;
+      color: #92400e;
+      font-weight: 600;
+    }
+
+    option.highlight-red-option {
+      background-color: #fee2e2;
+      color: #991b1b;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Section -->
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h1 class="mb-2">
+            <i class="fas fa-flask me-3"></i>
+            Record Laboratory Tests
+          </h1>
+        </div>
+        <div class="col-md-4 text-end">
+          <div class="d-flex align-items-center justify-content-end gap-3">
+            <a href="antenatal-tests.html" class="btn btn-outline-light btn-sm">
+              <i class="fas fa-arrow-left me-2"></i>Back to Tests
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+              <i class="fas fa-sign-out-alt me-2"></i>Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Patient Information -->
+    <div class="patient-info" id="patientInfo">
+      <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+      <div class="row">
+        <div class="col-md-3">
+          <strong>Name:</strong> <span id="patientName">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>Age:</strong> <span id="patientAge">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>LMP:</strong> <span id="patientLMP">-</span>
+        </div>
+        <div class="col-md-3">
+          <strong>Current GA:</strong> <span id="currentGA">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Results Form -->
+    <form id="testForm">
+      <div id="positiveAlerts" class="positive-alert">
+        <strong><i class="fas fa-exclamation-triangle me-2"></i>Positive Findings Detected</strong>
+        <ul id="positiveAlertsList"></ul>
+      </div>
+      <!-- Basic Test Information -->
+      <div class="test-section">
+        <h5><i class="fas fa-calendar-alt me-2"></i>Test Information</h5>
+        <div class="test-grid">
+          <div class="form-group">
+            <label class="form-label">Date of Result</label>
+            <input type="date" class="form-control" id="testDate" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Lab Name</label>
+            <input type="text" class="form-control" id="labName" placeholder="Enter lab name" required>
+          </div>
+        </div>
+      </div>
+
+      <!-- Laboratory Tests -->
+      <div class="test-section">
+        <h5><i class="fas fa-vial me-2"></i>Laboratory Test Results</h5>
+        
+        <!-- HIV Test -->
+        <div class="test-item">
+          <h6>HIV Test</h6>
+          <div class="row">
+            <div class="col-md-12">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hivResult">
+                <option value="">Select Result</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+                <option value="Indeterminate">Indeterminate</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Malaria Test -->
+        <div class="test-item">
+          <h6>Malaria Test (RDT)</h6>
+          <div class="row">
+            <div class="col-md-12">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="malariaResult">
+                <option value="">Select Result</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Positive">Positive</option>
+                <option value="Negative">Negative</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Syphilis Test -->
+        <div class="test-item">
+          <h6>Syphilis Test</h6>
+          <div class="row">
+            <div class="col-md-12">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="syphilisResult">
+                <option value="">Select Result</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hepatitis B Test -->
+        <div class="test-item">
+          <h6>Hepatitis B</h6>
+          <div class="row">
+            <div class="col-md-12">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hepatitisBResult">
+                <option value="">Select Result</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hepatitis C Test -->
+        <div class="test-item">
+          <h6>Hepatitis C</h6>
+          <div class="row">
+            <div class="col-md-12">
+              <label class="form-label">Result</label>
+              <select class="form-select" id="hepatitisCResult">
+                <option value="">Select Result</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Reactive">Reactive</option>
+                <option value="Non-reactive">Non-reactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Hemoglobin Test -->
+        <div class="test-item">
+          <h6>Hemoglobin (Hb) Test</h6>
+          <div class="row">
+            <div class="col-md-6">
+              <label class="form-label">Hb Result (g/dl)</label>
+              <input type="number" class="form-control" id="hemoglobinResult" min="0" max="20" step="0.1" placeholder="e.g., 12.5 or leave blank if no test">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Treatment Given (Y/N)</label>
+              <select class="form-select" id="hemoglobinTreatment">
+                <option value="">Select</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-12">
+              <div class="diagnosis-result" id="hemoglobinDiagnosis" style="display: none;">
+                <strong>Diagnosis:</strong> <span id="diagnosisText">-</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Hemoglobin Range Table -->
+          <div class="hemoglobin-table">
+            <h6>Hemoglobin Range Reference</h6>
+            <table>
+              <thead>
+                <tr>
+                  <th>Hemoglobin Result (g/dl)</th>
+                  <th>Diagnosis</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>≥ 11 g/dl</td>
+                  <td>No anemia</td>
+                </tr>
+                <tr>
+                  <td>7-11 g/dl</td>
+                  <td>Mild anemia</td>
+                </tr>
+                <tr>
+                  <td>&lt; 7 g/dl</td>
+                  <td>Severe anemia</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Blood Grouping Test -->
+        <div class="test-item">
+          <h6>Blood Grouping</h6>
+          <div class="row">
+            <div class="col-md-6">
+              <label class="form-label">Blood Group</label>
+              <select class="form-select" id="bloodGroup">
+                <option value="">Select Blood Group</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="O">O</option>
+                <option value="AB">AB</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Rh Factor</label>
+              <select class="form-select" id="rhFactor">
+                <option value="">Select Rh Factor</option>
+                <option value="No Test Yet" class="highlight-yellow-option">No Test Yet</option>
+                <option value="Rh positive" class="highlight-red-option">Rh positive</option>
+                <option value="Rh negative">Rh negative</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="test-section text-center">
+        <button type="submit" class="btn btn-primary me-3">
+          <i class="fas fa-save me-2"></i>Save Test Results
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='antenatal-tests.html'">
+          <i class="fas fa-times me-2"></i>Cancel
+        </button>
+      </div>
+    </form>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading patient data...</p>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let allPatients = [];
+    let isEditMode = false;
+    let currentTestId = null;
+
+    // Initialize Firebase and load data
+    document.addEventListener('DOMContentLoaded', function() {
+      firebase.auth().onAuthStateChanged(function(user) {
+        if (user) {
+          currentUser = user;
+          loadPatientFromURL();
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+
+      document.getElementById('hemoglobinResult').addEventListener('input', calculateHemoglobinDiagnosis);
+      document.getElementById('testForm').addEventListener('submit', saveTestResults);
+
+      ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.addEventListener('change', function() {
+            updatePositiveAlerts(); // Check positive cases first
+            updateSelectHighlights(); // Then check for yellow/red highlights
+          });
+        }
+      });
+
+      // Add highlight listeners to blood grouping selects (not checked for positive cases)
+      ['bloodGroup', 'rhFactor'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.addEventListener('change', updateSelectHighlights);
+        }
+      });
+
+      updatePositiveAlerts();
+      updateSelectHighlights();
+    });
+
+    // Load patient from URL parameters
+    async function loadPatientFromURL() {
+      try {
+        showLoading(true);
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const patientId = urlParams.get('patient');
+        const testId = urlParams.get('test');
+        
+        if (!patientId) {
+          // Instead of redirecting, load all patients and show a selector
+          await loadAllPatientsForSelection();
+          return;
+        }
+
+        // Load patient data
+        const db = firebase.firestore();
+        const patientDoc = await db.collection('patients').doc(patientId).get();
+        
+        if (!patientDoc.exists) {
+          alert('Patient not found.');
+          await loadAllPatientsForSelection();
+          return;
+        }
+        
+        currentPatient = { id: patientDoc.id, ...patientDoc.data() };
+        await populatePatientInfo();
+        
+        // If editing existing test
+        if (testId) {
+          isEditMode = true;
+          currentTestId = testId;
+          await loadExistingTestData(testId);
+        } else {
+          // Set current date
+          setCurrentDate();
+        }
+        
+      } catch (error) {
+        console.error('Error loading patient:', error);
+        alert('Error loading patient data: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Load all patients for selection
+    async function loadAllPatientsForSelection() {
+      try {
+        const db = firebase.firestore();
+        let query = db.collection('patients');
+        
+        // Check user role and filter patients accordingly
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          
+          if (userData.role === 'Midwife') {
+            // For Midwives, get patients created by them using both field names for compatibility
+            const snapNew = await db.collection('patients').where('created_by', '==', currentUser.uid).get();
+            const snapOld = await db.collection('patients').where('createdBy', '==', currentUser.uid).get();
+            
+            // Combine both snapshots and remove duplicates
+            const combinedDocs = new Map();
+            
+            snapNew.forEach(doc => {
+              combinedDocs.set(doc.id, doc);
+            });
+            
+            snapOld.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, doc);
+              }
+            });
+            
+            allPatients = [];
+            combinedDocs.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+            
+          } else if (userData.role === 'TMO') {
+            // TMOs can see patients from their township
+            const snapshot = await query.where('township', '==', userData.township).get();
+            allPatients = [];
+            snapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+          } else {
+            // Super Admin can see all patients
+            const snapshot = await query.get();
+            allPatients = [];
+            snapshot.forEach(doc => {
+              allPatients.push({ id: doc.id, ...doc.data() });
+            });
+          }
+        } else {
+          // Fallback: load all patients
+          const snapshot = await query.get();
+          allPatients = [];
+          snapshot.forEach(doc => {
+            allPatients.push({ id: doc.id, ...doc.data() });
+          });
+        }
+        
+        // Sort patients by name
+        allPatients.sort((a, b) => {
+          const nameA = a.name || '';
+          const nameB = b.name || '';
+          return nameA.localeCompare(nameB);
+        });
+        
+        showPatientSelector();
+        
+      } catch (error) {
+        console.error('Error loading patients:', error);
+        alert('Error loading patients: ' + error.message);
+      }
+    }
+
+    // Show patient selector
+    function showPatientSelector() {
+      const patientInfo = document.getElementById('patientInfo');
+      patientInfo.innerHTML = `
+        <h5><i class="fas fa-user me-2"></i>Select Patient</h5>
+        <div class="row">
+          <div class="col-md-8">
+            <select class="form-select" id="patientSelector">
+              <option value="">Choose a patient...</option>
+              ${allPatients.map(patient => 
+                `<option value="${patient.id}">${patient.name || 'Unknown'} - Age ${patient.age || 'N/A'}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary" onclick="selectPatient()">
+              <i class="fas fa-check me-1"></i>Select Patient
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Select patient from dropdown
+    function selectPatient() {
+      const patientId = document.getElementById('patientSelector').value;
+      if (!patientId) {
+        alert('Please select a patient first.');
+        return;
+      }
+      
+      currentPatient = allPatients.find(p => p.id === patientId);
+      if (currentPatient) {
+        populatePatientInfo();
+        setCurrentDate();
+        
+        // Hide the selector and show the form
+        document.getElementById('patientInfo').innerHTML = `
+          <h5><i class="fas fa-user me-2"></i>Patient Information</h5>
+          <div class="row">
+            <div class="col-md-3">
+              <strong>Name:</strong> <span id="patientName">${currentPatient.name || 'Unknown'}</span>
+            </div>
+            <div class="col-md-3">
+              <strong>Age:</strong> <span id="patientAge">${currentPatient.age || 'N/A'}</span>
+            </div>
+            <div class="col-md-3">
+              <strong>LMP:</strong> <span id="patientLMP">Loading...</span>
+            </div>
+            <div class="col-md-3">
+              <strong>Current GA:</strong> <span id="currentGA">Loading...</span>
+            </div>
+          </div>
+        `;
+        
+        // Re-populate patient info with async data
+        populatePatientInfo();
+      }
+    }
+
+    // Populate patient information
+    async function populatePatientInfo() {
+      document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+      document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+      
+      // Load LMP and GA from latest antenatal visit
+      try {
+        const db = firebase.firestore();
+        const visitsSnapshot = await db.collection('patients')
+          .doc(currentPatient.id)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .limit(1)
+          .get();
+        
+        let lmp = 'Not recorded';
+        let currentGA = 'Not calculated';
+        
+        if (!visitsSnapshot.empty) {
+          const latestVisit = visitsSnapshot.docs[0].data();
+          lmp = latestVisit.lmp || currentPatient.lmp || 'Not recorded';
+          
+          // Calculate current GA from LMP
+          if (lmp && lmp !== 'Not recorded') {
+            const lmpDate = new Date(lmp);
+            const today = new Date();
+            const diffTime = today - lmpDate;
+            const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+            const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+            currentGA = `${diffWeeks}w ${diffDays}d`;
+          } else if (latestVisit.gestationalAge) {
+            currentGA = `${latestVisit.gestationalAge} weeks`;
+          }
+        } else {
+          // Fallback to patient data if no visits
+          lmp = currentPatient.lmp || 'Not recorded';
+          if (lmp && lmp !== 'Not recorded') {
+            const lmpDate = new Date(lmp);
+            const today = new Date();
+            const diffTime = today - lmpDate;
+            const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+            const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+            currentGA = `${diffWeeks}w ${diffDays}d`;
+          }
+        }
+        
+        document.getElementById('patientLMP').textContent = lmp;
+        document.getElementById('currentGA').textContent = currentGA;
+        
+      } catch (error) {
+        console.error('Error loading patient visit data:', error);
+        // Fallback to basic patient data
+        document.getElementById('patientLMP').textContent = currentPatient.lmp || 'Not recorded';
+        document.getElementById('currentGA').textContent = 'Not calculated';
+      }
+    }
+
+    // Set current date
+    function setCurrentDate() {
+      const today = new Date();
+      const dateString = today.toISOString().split('T')[0];
+      document.getElementById('testDate').value = dateString;
+    }
+
+    // Calculate current gestational age (now only for display)
+    function calculateCurrentGA() {
+      // This function is now handled in populatePatientInfo()
+      // GA is calculated and displayed in the patient info section
+    }
+
+    // Calculate hemoglobin diagnosis
+    function calculateHemoglobinDiagnosis() {
+      const hbValue = parseFloat(document.getElementById('hemoglobinResult').value);
+      const diagnosisDiv = document.getElementById('hemoglobinDiagnosis');
+      const diagnosisText = document.getElementById('diagnosisText');
+      
+      if (hbValue && !isNaN(hbValue)) {
+        let diagnosis = '';
+        if (hbValue >= 11) {
+          diagnosis = 'No anemia';
+        } else if (hbValue >= 7) {
+          diagnosis = 'Mild anemia';
+        } else {
+          diagnosis = 'Severe anemia';
+        }
+        
+        diagnosisText.textContent = diagnosis;
+        diagnosisDiv.style.display = 'block';
+      } else {
+        diagnosisDiv.style.display = 'none';
+      }
+    }
+
+    function updateSelectHighlights() {
+      // Get all select elements that need highlighting
+      const selectIds = ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult', 'bloodGroup', 'rhFactor'];
+      
+      selectIds.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        
+        const value = select.value || '';
+        
+        // Check if this is a positive test result field that should be handled by updatePositiveAlerts
+        const isPositiveTestField = ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].includes(id);
+        
+        // For positive test fields, only apply yellow highlighting if not already marked as positive
+        // Positive highlighting (is-positive class) takes priority
+        if (isPositiveTestField && select.classList.contains('is-positive')) {
+          // Skip - positive highlighting is already applied, don't override
+          return;
+        }
+        
+        // Remove existing highlight classes (yellow/red only, preserve is-positive)
+        select.classList.remove('highlight-yellow', 'highlight-red');
+        
+        // Apply yellow highlight for "No Test Yet"
+        if (value === 'No Test Yet') {
+          select.classList.add('highlight-yellow');
+        }
+        
+        // Apply red highlight for "Rh positive" (only for Rh Factor field)
+        if (id === 'rhFactor' && value === 'Rh positive') {
+          select.classList.add('highlight-red');
+        }
+      });
+    }
+
+    function updatePositiveAlerts() {
+      const alertBox = document.getElementById('positiveAlerts');
+      const list = document.getElementById('positiveAlertsList');
+      if (!alertBox || !list) return;
+
+      const checks = [
+        { id: 'hivResult', label: 'HIV', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'malariaResult', label: 'Malaria', positives: ['Positive', 'Detected'] },
+        { id: 'syphilisResult', label: 'Syphilis', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'hepatitisBResult', label: 'Hepatitis B', positives: ['Reactive', 'Positive', 'Detected'] },
+        { id: 'hepatitisCResult', label: 'Hepatitis C', positives: ['Reactive', 'Positive', 'Detected'] },
+      ];
+
+      const positivesFound = [];
+
+      checks.forEach(({ id, label, positives }) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const value = (select.value || '').trim();
+        const isPositive = positives.includes(value);
+        if (isPositive) {
+          positivesFound.push(`${label}: ${value}`);
+          select.classList.add('is-positive');
+        } else {
+          select.classList.remove('is-positive');
+        }
+      });
+
+      if (positivesFound.length > 0) {
+        list.innerHTML = positivesFound.map(item => `<li>${item}</li>`).join('');
+        alertBox.style.display = 'block';
+      } else {
+        list.innerHTML = '';
+        alertBox.style.display = 'none';
+      }
+    }
+
+    // Load existing test data for editing
+    async function loadExistingTestData(testId) {
+      try {
+        const db = firebase.firestore();
+        const testDoc = await db.collection('patients')
+          .doc(currentPatient.id)
+          .collection('testRecords')
+          .doc(testId)
+          .get();
+        
+        if (!testDoc.exists) {
+          alert('Test record not found.');
+          return;
+        }
+        
+        const testData = testDoc.data();
+        
+        // Populate form fields
+        document.getElementById('testDate').value = testData.testDate || '';
+        document.getElementById('labName').value = testData.labName || '';
+        
+        // HIV Test
+        document.getElementById('hivResult').value = testData.hivResult || '';
+        
+        // Malaria Test
+        document.getElementById('malariaResult').value = testData.malariaResult || '';
+        
+        // Syphilis Test
+        document.getElementById('syphilisResult').value = testData.syphilisResult || '';
+        
+        // Hepatitis B Test
+        document.getElementById('hepatitisBResult').value = testData.hepatitisBResult || '';
+        
+        // Hepatitis C Test
+        document.getElementById('hepatitisCResult').value = testData.hepatitisCResult || '';
+        
+        // Hemoglobin Test
+        document.getElementById('hemoglobinResult').value = testData.hemoglobinResult || '';
+        document.getElementById('hemoglobinTreatment').value = testData.hemoglobinTreatment || '';
+        
+        // Blood Grouping Test
+        document.getElementById('bloodGroup').value = testData.bloodGroup || '';
+        document.getElementById('rhFactor').value = testData.rhFactor || '';
+        
+        // Calculate hemoglobin diagnosis if value exists
+        if (testData.hemoglobinResult) {
+          calculateHemoglobinDiagnosis();
+        }
+        
+        updatePositiveAlerts();
+        updateSelectHighlights();
+        
+      } catch (error) {
+        console.error('Error loading test data:', error);
+        alert('Error loading test data: ' + error.message);
+      }
+    }
+
+    // Save test results
+    async function saveTestResults(event) {
+      event.preventDefault();
+      
+      try {
+        showLoading(true);
+        console.log('Starting to save test results...');
+        console.log('Current user:', currentUser?.uid);
+        console.log('Current patient:', currentPatient?.id);
+        
+        const testData = {
+          testDate: document.getElementById('testDate').value,
+          labName: document.getElementById('labName').value,
+          
+          // HIV Test
+          hivResult: document.getElementById('hivResult').value,
+          
+          // Malaria Test
+          malariaResult: document.getElementById('malariaResult').value,
+          
+          // Syphilis Test
+          syphilisResult: document.getElementById('syphilisResult').value,
+          
+          // Hepatitis B Test
+          hepatitisBResult: document.getElementById('hepatitisBResult').value,
+          
+          // Hepatitis C Test
+          hepatitisCResult: document.getElementById('hepatitisCResult').value,
+          
+          // Hemoglobin Test
+          hemoglobinResult: parseFloat(document.getElementById('hemoglobinResult').value) || null,
+          hemoglobinTreatment: document.getElementById('hemoglobinTreatment').value,
+          
+          // Blood Grouping Test
+          bloodGroup: document.getElementById('bloodGroup').value,
+          rhFactor: document.getElementById('rhFactor').value,
+          
+          // Metadata
+          patientId: currentPatient.id,
+          patientName: currentPatient.name,
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        
+        const db = firebase.firestore();
+        console.log('About to save to Firestore...');
+        console.log('Test data:', testData);
+        
+        if (isEditMode) {
+          // Update existing test record
+          console.log('Updating existing test record:', currentTestId);
+          await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('testRecords')
+            .doc(currentTestId)
+            .update(testData);
+          
+          alert('Test results updated successfully!');
+        } else {
+          // Create new test record
+          console.log('Creating new test record for patient:', currentPatient.id);
+          await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('testRecords')
+            .add(testData);
+          
+          alert('Test results saved successfully!');
+        }
+        
+        // Redirect back to tests page
+        window.location.href = 'antenatal-tests.html';
+        
+      } catch (error) {
+        console.error('Error saving test results:', error);
+        alert('Error saving test results: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Show/hide loading spinner
+    function showLoading(show) {
+      document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
+    }
+
+    // Logout function
+    function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        firebase.auth().signOut().then(() => {
+          window.location.href = 'login.html';
+        }).catch(error => {
+          console.error('Logout error:', error);
+          alert('Error logging out: ' + error.message);
+        });
+      }
+    }
+  </script>
+</body>
+</html>

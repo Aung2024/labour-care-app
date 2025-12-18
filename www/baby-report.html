@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baby Care Report</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    @media print {
+      body { margin: 0; font-size: 12px; }
+      .no-print { display: none !important; }
+      .page-break { page-break-before: always; }
+    }
+
+    body {
+      font-family: 'Arial', sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      background: white;
+      color: black;
+    }
+
+    .report-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: white;
+    }
+
+    .report-header {
+      text-align: center;
+      margin-bottom: 25px;
+      border-bottom: 3px solid #f59e0b;
+      padding-bottom: 15px;
+    }
+
+    .report-title {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #92400e;
+    }
+
+    .report-subtitle {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .baby-banner {
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      border: 2px solid #f59e0b;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    .baby-name {
+      font-size: 24px;
+      font-weight: bold;
+      color: #92400e;
+      margin-bottom: 10px;
+    }
+
+    .baby-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .detail-item {
+      text-align: center;
+    }
+
+    .detail-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+
+    .detail-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: #92400e;
+    }
+
+    .info-section {
+      margin-bottom: 25px;
+    }
+
+    .section-title {
+      background: #f3f4f6;
+      padding: 10px 15px;
+      margin-bottom: 15px;
+      border-left: 4px solid #f59e0b;
+      font-weight: bold;
+      color: #374151;
+      font-size: 14px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .info-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f9fafb;
+    }
+
+    .info-card h6 {
+      margin-bottom: 8px;
+      color: #374151;
+      font-size: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 4px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .info-label {
+      font-weight: bold;
+      color: #6b7280;
+    }
+
+    .info-value {
+      color: #374151;
+    }
+
+    .vital-signs-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+
+    .vital-signs-table th,
+    .vital-signs-table td {
+      border: 1px solid #000;
+      padding: 6px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .vital-signs-table th {
+      background-color: #f59e0b;
+      color: white;
+      font-weight: bold;
+      font-size: 10px;
+    }
+
+    .emotive-checklist {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .emotive-title {
+      color: #1e40af;
+      font-weight: bold;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .emotive-items {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+
+    .emotive-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px;
+      border-radius: 4px;
+      background: white;
+      border: 1px solid #e5e7eb;
+    }
+
+    .emotive-check.completed {
+      background: #ecfdf5;
+      border-color: #10b981;
+    }
+
+    .check-icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+
+    .check-icon.checked {
+      background: #10b981;
+      color: white;
+    }
+
+    .check-icon.unchecked {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+    }
+
+    .hemorrhage-warning {
+      background: #fee2e2;
+      border: 2px solid #f87171;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      text-align: center;
+      color: #991b1b;
+    }
+
+    .hemorrhage-warning h6 {
+      color: #dc2626;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .print-info {
+      text-align: center;
+      margin-top: 25px;
+      font-size: 10px;
+      color: #666;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 15px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+    }
+
+    .btn-group {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+
+    .gender-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .gender-male {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .gender-female {
+      background: #fce7f3;
+      color: #be185d;
+    }
+  </style>
+</head>
+<body>
+  <!-- Print/Close Buttons -->
+  <div class="btn-group no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()">
+      <i class="fas fa-print me-1"></i>Print Report
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="window.close()">
+      <i class="fas fa-times me-1"></i>Close
+    </button>
+  </div>
+
+  <div class="report-container">
+    <!-- Loading State -->
+    <div id="loadingState" class="loading">
+      <div class="spinner-border text-warning" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading baby care report...</p>
+    </div>
+
+    <!-- Report Content -->
+    <div id="reportContent" style="display: none;">
+      <!-- Header -->
+      <div class="report-header">
+        <div class="report-title">
+          <i class="fas fa-baby me-2"></i>Baby Care Report
+        </div>
+        <div class="report-subtitle">Complete Birth Record & Care Information</div>
+        <div style="margin-top: 10px; font-size: 12px;">
+          <strong>Maternal & Child Health Care System</strong><br>
+          <small>MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.</small>
+        </div>
+      </div>
+
+      <!-- Baby Information Banner -->
+      <div class="baby-banner">
+        <div class="baby-name" id="babyName">Baby Name</div>
+        <div class="baby-details">
+          <div class="detail-item">
+            <div class="detail-label">Gender</div>
+            <div class="detail-value" id="babyGender">-</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Birth Date</div>
+            <div class="detail-value" id="birthDate">-</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Age</div>
+            <div class="detail-value" id="babyAge">-</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Weight</div>
+            <div class="detail-value" id="birthWeight">-</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Length</div>
+            <div class="detail-value" id="birthLength">-</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">APGAR</div>
+            <div class="detail-value" id="apgarScores">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Birth Information -->
+      <div class="info-section">
+        <div class="section-title">
+          <i class="fas fa-calendar-check me-2"></i>Birth Information
+        </div>
+        <div class="info-grid">
+          <div class="info-card">
+            <h6>Birth Details</h6>
+            <div class="info-row">
+              <span class="info-label">Birth Place:</span>
+              <span class="info-value" id="birthPlace">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Delivery Method:</span>
+              <span class="info-value" id="deliveryMethod">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Head Circumference:</span>
+              <span class="info-value" id="headCircumference">-</span>
+            </div>
+          </div>
+          
+          <div class="info-card">
+            <h6>Parent Information</h6>
+            <div class="info-row">
+              <span class="info-label">Mother:</span>
+              <span class="info-value" id="motherName">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Father:</span>
+              <span class="info-value" id="fatherName">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Mother's Age:</span>
+              <span class="info-value" id="motherAge">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Contact:</span>
+              <span class="info-value" id="motherPhone">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Complications & Hemorrhage -->
+      <div id="hemorrhageSection" style="display: none;">
+        <div class="hemorrhage-warning">
+          <h6><i class="fas fa-exclamation-triangle me-2"></i>Postpartum Hemorrhage Detected</h6>
+          <p>Blood loss: <strong id="bloodLossAmount">-</strong>ml (>300ml threshold exceeded)</p>
+        </div>
+      </div>
+
+      <!-- Vital Signs Table -->
+      <div class="info-section">
+        <div class="section-title">
+          <i class="fas fa-heartbeat me-2"></i>Vital Signs Monitoring
+        </div>
+        <table class="vital-signs-table">
+          <thead>
+            <tr>
+              <th>Reading #</th>
+              <th>Temperature<br>(°C)</th>
+              <th>Time</th>
+              <th>Blood Pressure<br>(mmHg)</th>
+              <th>Time</th>
+              <th>Pulse Rate<br>(bpm)</th>
+              <th>Time</th>
+              <th>Respiratory Rate<br>(breaths/min)</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody id="vitalSignsTableBody">
+            <!-- Vital signs will be populated here -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- E-MOTIVE Bundle -->
+      <div class="info-section">
+        <div class="section-title">
+          <i class="fas fa-shield-alt me-2"></i>E-MOTIVE Bundle Implementation
+        </div>
+        <div class="emotive-checklist">
+          <div class="emotive-title">Post-partum Hemorrhage Management Protocol</div>
+          <div class="emotive-items" id="emotiveItems">
+            <!-- E-MOTIVE items will be populated here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Best Practices -->
+      <div class="info-section">
+        <div class="section-title">
+          <i class="fas fa-award me-2"></i>Best Practices Checklist
+        </div>
+        
+        <div class="row">
+          <div class="col-md-6">
+            <div class="emotive-checklist" style="background: #fdf4ff; border-color: #e879f9;">
+              <div class="emotive-title" style="color: #a21caf;">Maternal Outcome Practices</div>
+              <div class="emotive-items" id="maternalPractices">
+                <!-- Maternal practices will be populated here -->
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="emotive-checklist" style="background: #fdf2f8; border-color: #f472b6;">
+              <div class="emotive-title" style="color: #be185d;">Birth & Newborn Care Practices</div>
+              <div class="emotive-items" id="newbornPractices">
+                <!-- Newborn practices will be populated here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Birth Complications -->
+      <div class="info-section" id="complicationsSection" style="display: none;">
+        <div class="section-title">
+          <i class="fas fa-exclamation-circle me-2"></i>Birth Complications
+        </div>
+        <div class="info-card">
+          <p id="birthComplications">No complications recorded</p>
+        </div>
+      </div>
+
+      <!-- Print Information -->
+      <div class="print-info">
+        <p><strong>Report Generated:</strong> <span id="reportDate"></span> | 
+           <strong>Generated by:</strong> <span id="generatedBy">System</span></p>
+        <p><small>MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.</small></p>
+        <p><small>This report contains confidential medical information. Handle with care.</small></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let currentPatient = null;
+    let birthRecord = null;
+    let patientId = null;
+
+    // Get patient ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        alert("Please log in to view this report.");
+        window.close();
+      } else {
+        currentUser = user;
+        if (patientId) {
+          loadReportData();
+        } else {
+          alert("No patient ID provided.");
+          window.close();
+        }
+      }
+    });
+
+    async function loadReportData() {
+      try {
+        // Load patient data
+        const patientDoc = await db.collection("patients").doc(patientId).get();
+        if (!patientDoc.exists) {
+          alert("Patient not found!");
+          window.close();
+          return;
+        }
+        
+        currentPatient = patientDoc.data();
+        
+        // Load birth record
+        const birthRecordDoc = await db.collection("patients")
+          .doc(patientId)
+          .collection("records")
+          .doc("birthRecord")
+          .get();
+
+        if (!birthRecordDoc.exists) {
+          alert("No birth record found for this patient!");
+          window.close();
+          return;
+        }
+        
+        birthRecord = birthRecordDoc.data();
+
+        // Populate report
+        populateBabyInfo();
+        populateBirthInfo();
+        populateVitalSigns();
+        populateEmotiveBundle();
+        populateBestPractices();
+        populateComplications();
+        
+        // Show report and hide loading
+        document.getElementById("loadingState").style.display = "none";
+        document.getElementById("reportContent").style.display = "block";
+        
+        // Set report generation info
+        document.getElementById("reportDate").textContent = new Date().toLocaleString();
+        document.getElementById("generatedBy").textContent = currentUser.email;
+
+      } catch (error) {
+        console.error("Error loading report data:", error);
+        alert("Error loading report data: " + error.message);
+        window.close();
+      }
+    }
+
+    function populateBabyInfo() {
+      document.getElementById("babyName").textContent = birthRecord.babyName || 'Unnamed Baby';
+      
+      const gender = birthRecord.babyGender || 'Unknown';
+      document.getElementById("babyGender").innerHTML = `
+        <span class="gender-badge gender-${gender.toLowerCase()}">${gender}</span>
+      `;
+      
+      // Calculate age
+      const birthTime = birthRecord.birthTime ? new Date(birthRecord.birthTime) : null;
+      if (birthTime) {
+        const ageInDays = Math.floor((new Date() - birthTime) / (1000 * 60 * 60 * 24));
+        const ageInHours = Math.floor((new Date() - birthTime) / (1000 * 60 * 60));
+        
+        if (ageInDays > 0) {
+          document.getElementById("babyAge").textContent = `${ageInDays} day(s)`;
+        } else {
+          document.getElementById("babyAge").textContent = `${ageInHours} hour(s)`;
+        }
+        
+        document.getElementById("birthDate").textContent = birthTime.toLocaleDateString() + ' ' + birthTime.toLocaleTimeString();
+      } else {
+        document.getElementById("birthDate").textContent = 'Not recorded';
+        document.getElementById("babyAge").textContent = 'Unknown';
+      }
+      
+      document.getElementById("birthWeight").textContent = 
+        birthRecord.birthWeight ? `${birthRecord.birthWeight} Lb` : 'Not recorded';
+      document.getElementById("birthLength").textContent = 
+        birthRecord.birthLength ? `${birthRecord.birthLength} cm` : 'Not recorded';
+      document.getElementById("apgarScores").textContent = 
+        `${birthRecord.apgarScore1min || 'N/A'}/${birthRecord.apgarScore5min || 'N/A'}`;
+    }
+
+    function populateBirthInfo() {
+      document.getElementById("birthPlace").textContent = birthRecord.birthPlace || 'Not recorded';
+      document.getElementById("deliveryMethod").textContent = birthRecord.deliveryMethod || 'Not recorded';
+      document.getElementById("headCircumference").textContent = 
+        birthRecord.headCircumference ? `${birthRecord.headCircumference} cm` : 'Not recorded';
+      document.getElementById("motherName").textContent = 
+        currentPatient.name || birthRecord.motherName || 'Not recorded';
+      document.getElementById("fatherName").textContent = birthRecord.fatherName || 'Not recorded';
+      document.getElementById("motherAge").textContent = 
+        currentPatient.age || birthRecord.motherAge || 'Not recorded';
+      document.getElementById("motherPhone").textContent = 
+        currentPatient.phone || birthRecord.motherPhone || 'Not recorded';
+    }
+
+    function populateVitalSigns() {
+      const tableBody = document.getElementById("vitalSignsTableBody");
+      
+      if (!birthRecord.vitalSigns || birthRecord.vitalSigns.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="9" class="text-center">No vital signs recorded</td>
+          </tr>
+        `;
+        return;
+      }
+
+      let tableHTML = '';
+      birthRecord.vitalSigns.forEach((vital, index) => {
+        tableHTML += `
+          <tr>
+            <td><strong>${index + 1}</strong></td>
+            <td>${vital.temperature || '-'}</td>
+            <td>${vital.temperatureTime || '-'}</td>
+            <td>${vital.bloodPressure || '-'}</td>
+            <td>${vital.bloodPressureTime || '-'}</td>
+            <td>${vital.pulseRate || '-'}</td>
+            <td>${vital.pulseRateTime || '-'}</td>
+            <td>${vital.respiratoryRate || '-'}</td>
+            <td>${vital.respiratoryRateTime || '-'}</td>
+          </tr>
+        `;
+      });
+
+      tableBody.innerHTML = tableHTML;
+    }
+
+    function populateEmotiveBundle() {
+      const emotiveItems = document.getElementById("emotiveItems");
+      
+      const emotiveData = [
+        { key: 'massageUterus', label: 'M - Massage Uterus', duration: birthRecord.massageDuration },
+        { key: 'oxytocinDrugs', label: 'O - Oxytocic Drugs', duration: birthRecord.oxytocinDuration },
+        { key: 'tranexamicAcid', label: 'T - Tranexamic Acid', duration: birthRecord.tranexamicDuration },
+        { key: 'ivFluids', label: 'IV - IV Fluids', duration: birthRecord.ivFluidsDuration },
+        { key: 'examination', label: 'E - Examination & Escalation', duration: birthRecord.examinationDuration }
+      ];
+
+      let emotiveHTML = '';
+      emotiveData.forEach(item => {
+        const isCompleted = birthRecord[item.key] || false;
+        const durationText = item.duration ? ` (${item.duration} mins)` : '';
+        
+        emotiveHTML += `
+          <div class="emotive-check ${isCompleted ? 'completed' : ''}">
+            <div class="check-icon ${isCompleted ? 'checked' : 'unchecked'}">
+              ${isCompleted ? '<i class="fas fa-check"></i>' : ''}
+            </div>
+            <span>${item.label}${durationText}</span>
+          </div>
+        `;
+      });
+
+      emotiveItems.innerHTML = emotiveHTML;
+    }
+
+    function populateBestPractices() {
+      // Maternal Outcome Practices
+      const maternalPractices = document.getElementById("maternalPractices");
+      const maternalData = [
+        { key: 'uteronicReceived', label: 'Uterotonic Received', description: 'Oxytocin 10 IU IM in third stage' },
+        { key: 'cordTraction', label: 'Control Cord Traction', description: 'Controlled cord traction performed' }
+      ];
+
+      let maternalHTML = '';
+      maternalData.forEach(item => {
+        const isCompleted = birthRecord[item.key] || false;
+        
+        maternalHTML += `
+          <div class="emotive-check ${isCompleted ? 'completed' : ''}">
+            <div class="check-icon ${isCompleted ? 'checked' : 'unchecked'}">
+              ${isCompleted ? '<i class="fas fa-check"></i>' : ''}
+            </div>
+            <div>
+              <strong>${item.label}</strong><br>
+              <small>${item.description}</small>
+            </div>
+          </div>
+        `;
+      });
+
+      maternalPractices.innerHTML = maternalHTML;
+
+      // Birth & Newborn Care Practices
+      const newbornPractices = document.getElementById("newbornPractices");
+      const newbornData = [
+        { key: 'delayedCordClamping', label: 'Delayed Cord Clamping', description: 'Practiced delay cord clamping (1-3 min)', duration: birthRecord.cordClampingDuration },
+        { key: 'skinToSkinContact', label: 'Skin to Skin Contact', description: 'Immediate skin to skin contact' },
+        { key: 'breastfeedingWithinHour', label: 'Breastfeeding', description: 'Initiated within one hour of birth' },
+        { key: 'eyeCare', label: 'Eye Care (TEO)', description: 'Tetracycline Eye Ointment provided' },
+        { key: 'vitaminK', label: 'Vitamin K Injection', description: 'Vitamin K (1mg IM) on first day' },
+        { key: 'hepBVaccine', label: 'Hep B Vaccine', description: 'Hep B vaccine on first day' }
+      ];
+
+      let newbornHTML = '';
+      newbornData.forEach(item => {
+        const isCompleted = birthRecord[item.key] || false;
+        const durationText = item.duration ? ` (${item.duration} mins)` : '';
+        
+        newbornHTML += `
+          <div class="emotive-check ${isCompleted ? 'completed' : ''}">
+            <div class="check-icon ${isCompleted ? 'checked' : 'unchecked'}">
+              ${isCompleted ? '<i class="fas fa-check"></i>' : ''}
+            </div>
+            <div>
+              <strong>${item.label}${durationText}</strong><br>
+              <small>${item.description}</small>
+            </div>
+          </div>
+        `;
+      });
+
+      newbornPractices.innerHTML = newbornHTML;
+    }
+
+    function populateComplications() {
+      // Show hemorrhage warning if detected
+      if (birthRecord.postpartumHemorrhage && birthRecord.totalBloodLoss) {
+        document.getElementById("hemorrhageSection").style.display = "block";
+        document.getElementById("bloodLossAmount").textContent = birthRecord.totalBloodLoss;
+      }
+      
+      // Show birth complications if any
+      if (birthRecord.birthComplications && birthRecord.birthComplications.trim()) {
+        document.getElementById("complicationsSection").style.display = "block";
+        document.getElementById("birthComplications").textContent = birthRecord.birthComplications;
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+</body>
+</html>
