@@ -221,7 +221,13 @@ async function searchDuplicatesByNameAge(name, age, ageTolerance = 2, filterCrit
  * @returns {Array} Filtered patients
  */
 function filterPatientsByNameAge(patients, normalizedName, minAge, maxAge) {
-  return patients.filter(patient => {
+  console.log('🔎 Filtering patients by name/age:', { 
+    searchName: normalizedName, 
+    ageRange: `${minAge}-${maxAge}`, 
+    totalPatients: patients.length 
+  });
+  
+  const matches = patients.filter(patient => {
     // Check age match
     const patientAge = patient.age || patient.patientAge;
     if (!patientAge || isNaN(patientAge)) {
@@ -232,7 +238,7 @@ function filterPatientsByNameAge(patients, normalizedName, minAge, maxAge) {
       return false;
     }
     
-    // Check name similarity
+    // Check name - EXACT MATCH ONLY (no similarity threshold)
     const patientName = patient.name || patient.patientName || '';
     const normalizedPatientName = normalizeName(patientName);
     
@@ -240,12 +246,24 @@ function filterPatientsByNameAge(patients, normalizedName, minAge, maxAge) {
       return false;
     }
     
-    // Calculate similarity (simple Levenshtein-like check)
-    const similarity = calculateNameSimilarity(normalizedName, normalizedPatientName);
+    // Only match if names are exactly the same (after normalization)
+    const isExactMatch = normalizedName === normalizedPatientName;
     
-    // Consider it a match if similarity is > 80%
-    return similarity > 0.8;
+    if (isExactMatch) {
+      console.log('✅ Exact name match found:', { 
+        searchName: normalizedName, 
+        patientName: normalizedPatientName, 
+        patientId: patient.id,
+        patientAge: patientAge
+      });
+    }
+    
+    return isExactMatch;
   });
+  
+  console.log('🔎 Name/age filtering complete:', { matches: matches.length });
+  return matches;
+}
 
 /**
  * Normalize phone number (remove spaces, dashes, etc.)
@@ -305,6 +323,8 @@ async function checkForDuplicates(patientData, options = {}) {
   const name = patientData.name || patientData.patientName;
   const age = patientData.age || patientData.patientAge;
   
+  console.log('🔍 Duplicate check started:', { name, age, phoneNumber, options });
+  
   const results = {
     hasDuplicates: false,
     duplicates: [],
@@ -314,7 +334,9 @@ async function checkForDuplicates(patientData, options = {}) {
   
   // Search by phone number
   if (phoneNumber) {
+    console.log('📞 Searching for phone duplicates:', phoneNumber);
     results.phoneMatches = await searchDuplicatesByPhone(phoneNumber, options);
+    console.log('📞 Phone matches found:', results.phoneMatches.length, results.phoneMatches);
   }
   
   // Search by name and age
@@ -328,7 +350,9 @@ async function checkForDuplicates(patientData, options = {}) {
     }
     // Super Admin: filterCriteria remains null (check all patients)
     
+    console.log('👤 Searching for name/age duplicates:', { name, age, filterCriteria });
     results.nameMatches = await searchDuplicatesByNameAge(name, age, 2, filterCriteria);
+    console.log('👤 Name/age matches found:', results.nameMatches.length, results.nameMatches);
   }
   
   // Combine and deduplicate
@@ -345,6 +369,12 @@ async function checkForDuplicates(patientData, options = {}) {
   
   results.duplicates = uniqueDuplicates;
   results.hasDuplicates = uniqueDuplicates.length > 0;
+  
+  console.log('✅ Duplicate check complete:', { 
+    hasDuplicates: results.hasDuplicates, 
+    totalDuplicates: uniqueDuplicates.length,
+    duplicates: uniqueDuplicates.map(d => ({ id: d.id, name: d.name || d.patientName, age: d.age || d.patientAge }))
+  });
   
   return results;
 }
