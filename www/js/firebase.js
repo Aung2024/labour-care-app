@@ -23,6 +23,7 @@ const isSafariBrowser = isSafariDesktop || isIOS;
 
 // --- Firestore settings: force long polling for all browsers ---
 // This helps when WebSockets are blocked by ISP / firewall.
+// CRITICAL for Android native apps and networks with firewall restrictions
 try {
   db.settings({
     experimentalForceLongPolling: true,
@@ -31,6 +32,7 @@ try {
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
   });
   console.log("✅ Firestore configured with long polling (bypasses WebSocket blocks)");
+  console.log("✅ Long polling mode helps with: ISP blocks, firewalls, VPN issues, Android native apps");
 } catch (error) {
   console.warn("⚠️ Firestore settings error (non-critical):", error);
 }

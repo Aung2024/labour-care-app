@@ -59,31 +59,38 @@
         window.location.replace('home.html');
       }
       
-      // Wait for Firebase to load
+      // Wait for Firebase to load with timeout
       function checkAuthAndRoute() {
         if (typeof firebase === 'undefined' || !firebase.auth) {
-          // Retry (max 3 seconds)
+          // Retry (max 2 seconds for Firebase to load)
           if (!checkAuthAndRoute.retryCount) checkAuthAndRoute.retryCount = 0;
-          if (checkAuthAndRoute.retryCount < 30) {
+          if (checkAuthAndRoute.retryCount < 20) {
             checkAuthAndRoute.retryCount++;
             setTimeout(checkAuthAndRoute, 100);
           } else {
-            // Firebase failed - default to login
-            console.error('❌ Firebase failed to load - routing to login');
+            // Firebase failed to load after 2 seconds - default to login
+            console.warn('⚠️ Firebase failed to load quickly - routing to login (network may be slow)');
             redirectToLogin();
           }
           return;
         }
         
-        // Check current user (synchronous)
+        // Check current user (synchronous - fastest)
         const currentUser = firebase.auth().currentUser;
         if (currentUser) {
           redirectToHome();
           return;
         }
         
-        // Set up auth state listener (async, more reliable)
+        // Set up auth state listener with timeout
+        let listenerTimeout;
+        let listenerFired = false;
+        
         const unsubscribe = firebase.auth().onAuthStateChanged(function(user) {
+          if (listenerFired) return; // Prevent multiple calls
+          listenerFired = true;
+          
+          clearTimeout(listenerTimeout);
           unsubscribe(); // Unsubscribe immediately after first check
           
           if (user) {
@@ -94,17 +101,27 @@
           }
         });
         
-        // Fallback: If no response after 1 second, check again and redirect
-        setTimeout(function() {
-          if (!redirectExecuted) {
-            const user = firebase.auth().currentUser;
-            if (user) {
-              redirectToHome();
-            } else {
+        // Timeout: If listener doesn't fire within 2 seconds, check directly and redirect
+        listenerTimeout = setTimeout(function() {
+          if (!listenerFired && !redirectExecuted) {
+            console.warn('⚠️ Auth state check timeout - checking directly');
+            unsubscribe(); // Clean up listener
+            
+            // Final direct check
+            try {
+              const user = firebase.auth().currentUser;
+              if (user) {
+                redirectToHome();
+              } else {
+                redirectToLogin();
+              }
+            } catch (error) {
+              console.error('❌ Error checking auth:', error);
+              // On error, default to login
               redirectToLogin();
             }
           }
-        }, 1000);
+        }, 2000); // 2 second timeout
       }
       
       // Start routing immediately
