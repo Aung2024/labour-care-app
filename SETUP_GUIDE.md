@@ -4,10 +4,44 @@
 
 ### Prerequisites
 - GitHub account with access to this repository
+- **Cursor IDE** (AI-powered code editor) - https://cursor.sh
 - Git installed
 - Node.js (v14+)
 - Android Studio
 - Android device or emulator
+
+---
+
+## Using Cursor IDE (Recommended)
+
+Cursor is an AI-powered code editor that can help you develop faster. Here's how to use it with this project:
+
+### Opening the Project in Cursor
+1. Download and install Cursor from https://cursor.sh
+2. Open Cursor
+3. File → Open Folder → Select `labour-care-app` folder
+4. Cursor will index the codebase automatically
+
+### Using Cursor AI
+- Press `Cmd+K` (Mac) or `Ctrl+K` (Windows) to open the AI command bar
+- Press `Cmd+L` (Mac) or `Ctrl+L` (Windows) to open AI chat
+- Ask questions like:
+  - "How does the authentication work in this app?"
+  - "Help me fix this error: [paste error]"
+  - "Add a new feature to validate phone numbers"
+
+### Cursor + Git
+- Cursor has built-in Git support (bottom left corner)
+- You can commit, push, pull directly from Cursor
+- Or use the integrated terminal (`Ctrl+`` or `Cmd+``)
+
+### Cursor + Terminal
+- Open terminal: View → Terminal (or `Ctrl+`` / `Cmd+``)
+- Run sync commands directly:
+  ```bash
+  ./quick-sync.sh
+  cd android && ./gradlew assembleDebug
+  ```
 
 ---
 
