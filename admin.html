@@ -23,6 +23,21 @@
       </div>
     </div>
     
+    <!-- All Users Management Section -->
+    <div class="card mb-4">
+      <div class="card-header bg-danger text-white">
+        <i class="fas fa-users-cog me-2"></i>User Account Management
+        <small class="float-end">⚠️ Delete accounts and all associated data</small>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-warning">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Warning:</strong> Deleting a user account will permanently delete the account and ALL patients created by that user. This action cannot be undone.
+        </div>
+        <div id="allUsers">Loading...</div>
+      </div>
+    </div>
+    
     <!-- Debug Section (remove in production) -->
     <div class="card mb-4">
       <div class="card-header">Debug Information</div>
@@ -38,6 +53,9 @@
     MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
   </footer>
   <script>
+    // Initialize Firestore
+    const db = firebase.firestore();
+    
     // Only allow superadmin/admin
     firebase.auth().onAuthStateChanged(async function(user) {
       if (!user) {
@@ -66,6 +84,7 @@
         
         console.log('User authorized as Super Admin, loading pending users');
         loadPendingUsers();
+        loadAllUsers();
       } catch (error) {
         console.error('Error checking user authorization:', error);
         firebase.auth().signOut();
@@ -182,6 +201,261 @@
         debugDiv.innerHTML = debugHtml;
       } catch (error) {
         document.getElementById('debugInfo').innerHTML = `<div class="alert alert-danger">Debug error: ${error.message}</div>`;
+      }
+    }
+
+    // Load all users for account management
+    async function loadAllUsers() {
+      try {
+        const allUsersDiv = document.getElementById('allUsers');
+        allUsersDiv.innerHTML = '<div class="text-muted">Loading users...</div>';
+        
+        const allUsersSnap = await db.collection('users').get();
+        console.log('Total users:', allUsersSnap.size);
+        
+        if (allUsersSnap.empty) {
+          allUsersDiv.innerHTML = '<div class="text-muted">No users found.</div>';
+          return;
+        }
+        
+        // Get current user ID to prevent self-deletion
+        const currentUser = firebase.auth().currentUser;
+        const currentUserId = currentUser ? currentUser.uid : null;
+        
+        let html = `
+          <div class="table-responsive">
+            <table class="table table-sm table-hover">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Township</th>
+                  <th>Status</th>
+                  <th>Patient Count</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
+        
+        // Load patient counts for each user
+        const usersWithCounts = [];
+        for (const doc of allUsersSnap.docs) {
+          const userData = doc.data();
+          const userId = doc.id;
+          
+          // Count patients created by this user (check both field names)
+          let patientCount = 0;
+          try {
+            const newQuery = await db.collection('patients').where('created_by', '==', userId).get();
+            const oldQuery = await db.collection('patients').where('createdBy', '==', userId).get();
+            
+            const patientIds = new Set();
+            newQuery.forEach(d => patientIds.add(d.id));
+            oldQuery.forEach(d => patientIds.add(d.id));
+            patientCount = patientIds.size;
+          } catch (error) {
+            console.error(`Error counting patients for user ${userId}:`, error);
+          }
+          
+          usersWithCounts.push({
+            id: userId,
+            data: userData,
+            patientCount: patientCount
+          });
+        }
+        
+        // Sort by name
+        usersWithCounts.sort((a, b) => {
+          const nameA = (a.data.name || a.data.email || '').toLowerCase();
+          const nameB = (b.data.name || b.data.email || '').toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+        
+        usersWithCounts.forEach(user => {
+          const isCurrentUser = user.id === currentUserId;
+          const statusBadge = user.data.approved 
+            ? '<span class="badge bg-success">Approved</span>' 
+            : '<span class="badge bg-warning">Pending</span>';
+          
+          html += `
+            <tr ${isCurrentUser ? 'class="table-info"' : ''}>
+              <td>${user.data.name || 'N/A'}</td>
+              <td>${user.data.email || 'N/A'}</td>
+              <td>${user.data.role || 'N/A'}</td>
+              <td>${user.data.township || 'N/A'}</td>
+              <td>${statusBadge}</td>
+              <td>
+                <span class="badge ${user.patientCount > 0 ? 'bg-primary' : 'bg-secondary'}">
+                  ${user.patientCount} patient${user.patientCount !== 1 ? 's' : ''}
+                </span>
+              </td>
+              <td>
+                ${isCurrentUser 
+                  ? '<span class="text-muted"><i class="fas fa-info-circle"></i> Current User</span>' 
+                  : `<button class="btn btn-danger btn-sm" onclick='confirmDeleteUser("${user.id}", "${(user.data.name || user.data.email || 'User').replace(/'/g, "\\'")}", ${user.patientCount})'>
+                      <i class="fas fa-trash-alt me-1"></i>Delete
+                    </button>`
+                }
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += `
+              </tbody>
+            </table>
+          </div>
+        `;
+        
+        allUsersDiv.innerHTML = html;
+      } catch (error) {
+        console.error("Error loading all users:", error);
+        document.getElementById('allUsers').innerHTML = `<div class="alert alert-danger">Error loading users: ${error.message}</div>`;
+      }
+    }
+
+    // Confirm and delete user account with all patients
+    async function confirmDeleteUser(userId, userName, patientCount) {
+      // First confirmation
+      const firstConfirm = confirm(
+        `⚠️ WARNING: This will permanently delete:\n\n` +
+        `• User account: ${userName}\n` +
+        `• ${patientCount} patient record${patientCount !== 1 ? 's' : ''} created by this user\n` +
+        `• ALL associated data (ANC visits, lab tests, labour care, etc.)\n\n` +
+        `This action CANNOT be undone!\n\n` +
+        `Are you sure you want to continue?`
+      );
+      
+      if (!firstConfirm) return;
+      
+      // Second confirmation with type-to-confirm
+      const userInput = prompt(
+        `🔴 FINAL WARNING: You are about to permanently delete:\n\n` +
+        `• Account: ${userName}\n` +
+        `• ${patientCount} patient record${patientCount !== 1 ? 's' : ''}\n\n` +
+        `Type "DELETE" exactly to confirm:`
+      );
+      
+      if (userInput !== 'DELETE') {
+        alert('Deletion cancelled. Account remains intact.');
+        return;
+      }
+      
+      // Proceed with deletion
+      await deleteUserAccount(userId, userName, patientCount);
+    }
+
+    // Delete user account and all their patients
+    async function deleteUserAccount(userId, userName, patientCount) {
+      try {
+        // Show loading state
+        const allUsersDiv = document.getElementById('allUsers');
+        allUsersDiv.innerHTML = `
+          <div class="text-center py-4">
+            <div class="spinner-border text-danger" role="status">
+              <span class="visually-hidden">Deleting...</span>
+            </div>
+            <p class="mt-3">Deleting account and ${patientCount} patient record${patientCount !== 1 ? 's' : ''}...</p>
+          </div>
+        `;
+        
+        console.log(`Starting deletion of user ${userId} and ${patientCount} patients...`);
+        
+        // Step 1: Get all patients created by this user (check both field names)
+        const patientIds = new Set();
+        
+        try {
+          const newQuery = await db.collection('patients').where('created_by', '==', userId).get();
+          newQuery.forEach(doc => patientIds.add(doc.id));
+          console.log(`Found ${newQuery.size} patients with created_by field`);
+        } catch (error) {
+          console.warn('Error querying created_by:', error);
+        }
+        
+        try {
+          const oldQuery = await db.collection('patients').where('createdBy', '==', userId).get();
+          oldQuery.forEach(doc => patientIds.add(doc.id));
+          console.log(`Found ${oldQuery.size} patients with createdBy field`);
+        } catch (error) {
+          console.warn('Error querying createdBy:', error);
+        }
+        
+        console.log(`Total unique patients to delete: ${patientIds.size}`);
+        
+        // Step 2: Delete all patients and their subcollections
+        let deletedPatients = 0;
+        const subcollections = ['antenatal_visits', 'lab_tests', 'labour_care', 'postpartum_visits', 'baby_records', 'vaccinations'];
+        
+        for (const patientId of patientIds) {
+          try {
+            // Delete all subcollections first
+            for (const subcollection of subcollections) {
+              try {
+                const subSnapshot = await db.collection('patients').doc(patientId).collection(subcollection).get();
+                if (!subSnapshot.empty) {
+                  const batch = db.batch();
+                  subSnapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                  });
+                  await batch.commit();
+                  console.log(`Deleted ${subSnapshot.size} documents from ${subcollection} for patient ${patientId}`);
+                }
+              } catch (error) {
+                console.warn(`Subcollection ${subcollection} may not exist for patient ${patientId}:`, error);
+              }
+            }
+            
+            // Delete the patient document
+            await db.collection('patients').doc(patientId).delete();
+            deletedPatients++;
+            console.log(`Deleted patient ${patientId}`);
+          } catch (error) {
+            console.error(`Error deleting patient ${patientId}:`, error);
+          }
+        }
+        
+        // Step 3: Delete the user account
+        await db.collection('users').doc(userId).delete();
+        console.log(`Deleted user account ${userId}`);
+        
+        // Step 4: Delete Firebase Auth user (if possible)
+        try {
+          // Note: This requires Admin SDK, which we don't have in client-side code
+          // The user document is deleted, but the auth account may remain
+          // This is acceptable - the user won't be able to log in without the user document
+          console.log('Note: Firebase Auth account deletion requires Admin SDK');
+        } catch (error) {
+          console.warn('Could not delete Firebase Auth account (requires Admin SDK):', error);
+        }
+        
+        // Success message
+        document.getElementById('adminMsg').innerHTML = `
+          <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>Success!</strong> Deleted account "${userName}" and ${deletedPatients} patient record${deletedPatients !== 1 ? 's' : ''}.
+          </div>
+        `;
+        
+        // Reload the users list
+        setTimeout(() => {
+          document.getElementById('adminMsg').innerHTML = '';
+          loadAllUsers();
+        }, 3000);
+        
+      } catch (error) {
+        console.error("Error deleting user account:", error);
+        document.getElementById('adminMsg').innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-circle me-2"></i>
+            <strong>Error:</strong> Failed to delete account: ${error.message}
+          </div>
+        `;
+        setTimeout(() => {
+          document.getElementById('adminMsg').innerHTML = '';
+          loadAllUsers(); // Reload even on error
+        }, 5000);
       }
     }
   </script>
