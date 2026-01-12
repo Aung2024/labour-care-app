@@ -688,6 +688,15 @@
           <i class="fas fa-hands-holding-child me-1"></i> Postnatal
         </div>
       </div>
+      <!-- Midwife Filter (Super Admin only) -->
+      <div id="midwifeFilterContainer" style="display: none; margin-top: 1rem;">
+        <label for="midwifeFilter" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
+          <i class="fas fa-user-nurse me-1"></i> Filter by Midwife:
+        </label>
+        <select id="midwifeFilter" class="form-select" style="max-width: 400px;" onchange="handleMidwifeFilterChange()">
+          <option value="all">All Midwives</option>
+        </select>
+      </div>
       <!-- Data Masking Toggle Container -->
       <div id="maskingToggleContainer" style="display: flex; justify-content: flex-end; margin-top: 0.5rem;"></div>
     </div>
@@ -789,6 +798,8 @@
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
+    let selectedMidwifeId = 'all'; // For Super Admin midwife filter
+    let allMidwives = []; // Store all midwives for Super Admin
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
@@ -828,6 +839,14 @@
         console.error('❌ Error loading user role:', error);
         console.warn('⚠️ Defaulting to Midwife role - app may have limited functionality');
         userRole = 'Midwife'; // Default to Midwife if role load fails
+      }
+      
+      // Show/hide midwife filter for Super Admin
+      if (userRole === 'Super Admin' || userRole === 'admin') {
+        document.getElementById('midwifeFilterContainer').style.display = 'block';
+        await loadMidwives();
+      } else {
+        document.getElementById('midwifeFilterContainer').style.display = 'none';
       }
       
       // Load recent patients
@@ -953,22 +972,68 @@
           }
         } else if (userRole === 'Super Admin' || userRole === 'admin') {
           console.log('Loading as Super Admin (all patients)...');
-          // Super Admin sees all patients
-          const snapshot = await smartFirestoreQuery(
-            Promise.resolve(query),
-            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-          );
           
-          allPatients = [];
-          if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-            snapshot.forEach(doc => {
-              if (doc && doc.id && doc.data) {
-                allPatients.push({ id: doc.id, ...doc.data() });
+          // If a specific midwife is selected, filter by that midwife
+          if (selectedMidwifeId && selectedMidwifeId !== 'all') {
+            console.log('Filtering by selected midwife:', selectedMidwifeId);
+            try {
+              // Try both field names for compatibility
+              const newQuery = db.collection('patients').where('created_by', '==', selectedMidwifeId);
+              const newSnap = await smartFirestoreQuery(
+                Promise.resolve(newQuery),
+                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+              );
+              
+              const oldQuery = db.collection('patients').where('createdBy', '==', selectedMidwifeId);
+              const oldSnap = await smartFirestoreQuery(
+                Promise.resolve(oldQuery),
+                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+              );
+              
+              // Combine results
+              allPatients = [];
+              const patientMap = new Map();
+              
+              if (newSnap && typeof newSnap.forEach === 'function' && !newSnap.empty) {
+                newSnap.forEach(doc => {
+                  if (doc && doc.id && doc.data) {
+                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                  }
+                });
               }
-            });
-            console.log('✅ Loaded', allPatients.length, 'patients for Super Admin');
+              
+              if (oldSnap && typeof oldSnap.forEach === 'function' && !oldSnap.empty) {
+                oldSnap.forEach(doc => {
+                  if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                  }
+                });
+              }
+              
+              allPatients = Array.from(patientMap.values());
+              console.log('✅ Loaded', allPatients.length, 'patients for selected midwife');
+            } catch (error) {
+              console.error('❌ Error loading patients for selected midwife:', error);
+              allPatients = [];
+            }
           } else {
-            console.warn('⚠️ Super Admin query returned empty result');
+            // Super Admin sees all patients when "All Midwives" is selected
+            const snapshot = await smartFirestoreQuery(
+              Promise.resolve(query),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            
+            allPatients = [];
+            if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+              snapshot.forEach(doc => {
+                if (doc && doc.id && doc.data) {
+                  allPatients.push({ id: doc.id, ...doc.data() });
+                }
+              });
+              console.log('✅ Loaded', allPatients.length, 'patients for Super Admin (all midwives)');
+            } else {
+              console.warn('⚠️ Super Admin query returned empty result');
+            }
           }
         } else {
           console.warn('⚠️ Unknown user role:', userRole, '- defaulting to no access');
@@ -1500,6 +1565,129 @@
       
       // Save to localStorage
       localStorage.setItem('recentPatients', JSON.stringify(recentPatients));
+    }
+
+    // Load all midwives for Super Admin filter
+    async function loadMidwives() {
+      try {
+        console.log('Loading midwives for Super Admin filter...');
+        const db = firebase.firestore();
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        
+        // Query all users with role 'Midwife' or 'midwife'
+        const midwivesQuery = db.collection('users')
+          .where('role', 'in', ['Midwife', 'midwife']);
+        
+        const snapshot = await smartFirestoreQuery(
+          Promise.resolve(midwivesQuery),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        
+        allMidwives = [];
+        if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+          snapshot.forEach(doc => {
+            if (doc && doc.id && doc.data) {
+              const userData = doc.data();
+              allMidwives.push({
+                id: doc.id,
+                name: userData.name || userData.email || 'Unknown',
+                email: userData.email || ''
+              });
+            }
+          });
+          
+          // Sort by name
+          allMidwives.sort((a, b) => {
+            const nameA = a.name.toLowerCase();
+            const nameB = b.name.toLowerCase();
+            return nameA.localeCompare(nameB);
+          });
+          
+          // Populate the dropdown
+          const midwifeFilter = document.getElementById('midwifeFilter');
+          if (midwifeFilter) {
+            // Clear existing options except "All Midwives"
+            midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
+            
+            // Add each midwife as an option
+            allMidwives.forEach(midwife => {
+              const option = document.createElement('option');
+              option.value = midwife.id;
+              option.textContent = midwife.name + (midwife.email ? ` (${midwife.email})` : '');
+              midwifeFilter.appendChild(option);
+            });
+            
+            console.log('✅ Loaded', allMidwives.length, 'midwives for filter');
+          }
+        } else {
+          console.warn('⚠️ No midwives found');
+        }
+      } catch (error) {
+        console.error('❌ Error loading midwives:', error);
+        // If 'in' operator is not supported, try alternative approach
+        if (error.code === 'invalid-argument' || error.message.includes('in')) {
+          console.log('Trying alternative method to load midwives...');
+          try {
+            const db = firebase.firestore();
+            const allUsersQuery = db.collection('users');
+            const allUsersSnap = await smartFirestoreQuery(
+              Promise.resolve(allUsersQuery),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            
+            allMidwives = [];
+            if (allUsersSnap && typeof allUsersSnap.forEach === 'function' && !allUsersSnap.empty) {
+              allUsersSnap.forEach(doc => {
+                if (doc && doc.id && doc.data) {
+                  const userData = doc.data();
+                  const role = userData.role || '';
+                  if (role === 'Midwife' || role === 'midwife') {
+                    allMidwives.push({
+                      id: doc.id,
+                      name: userData.name || userData.email || 'Unknown',
+                      email: userData.email || ''
+                    });
+                  }
+                }
+              });
+              
+              // Sort by name
+              allMidwives.sort((a, b) => {
+                const nameA = a.name.toLowerCase();
+                const nameB = b.name.toLowerCase();
+                return nameA.localeCompare(nameB);
+              });
+              
+              // Populate the dropdown
+              const midwifeFilter = document.getElementById('midwifeFilter');
+              if (midwifeFilter) {
+                midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
+                allMidwives.forEach(midwife => {
+                  const option = document.createElement('option');
+                  option.value = midwife.id;
+                  option.textContent = midwife.name + (midwife.email ? ` (${midwife.email})` : '');
+                  midwifeFilter.appendChild(option);
+                });
+              }
+              
+              console.log('✅ Loaded', allMidwives.length, 'midwives (alternative method)');
+            }
+          } catch (altError) {
+            console.error('❌ Alternative method also failed:', altError);
+          }
+        }
+      }
+    }
+
+    // Handle midwife filter change
+    function handleMidwifeFilterChange() {
+      const midwifeFilter = document.getElementById('midwifeFilter');
+      if (midwifeFilter) {
+        selectedMidwifeId = midwifeFilter.value;
+        console.log('Midwife filter changed to:', selectedMidwifeId);
+        // Reload patients with the new filter
+        loadPatients();
+      }
     }
 
     // Calculate Gestational Age from LMP
