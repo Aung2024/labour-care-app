@@ -928,37 +928,55 @@
       }
     });
 
-    // Check for existing session on page load
+    // Check for existing session on page load (only once)
+    let sessionCheckDone = false;
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOM loaded, checking Firebase auth state...');
       
-      // Check if user is already logged in
-      firebase.auth().onAuthStateChanged(function(user) {
+      // Check if user is already logged in (only check once)
+      if (sessionCheckDone) return;
+      
+      const unsubscribe = firebase.auth().onAuthStateChanged(function(user) {
+        if (sessionCheckDone) {
+          unsubscribe();
+          return;
+        }
+        
         console.log('Auth state changed:', user ? 'User logged in' : 'No user');
         if (user) {
           // User is already authenticated, check session expiry
           // Skip session check if user is currently logging in
           if (isLoggingIn) {
             console.log('User is logging in, skipping session check');
+            unsubscribe();
             return;
           }
           
+          // Mark as done to prevent multiple checks
+          sessionCheckDone = true;
+          unsubscribe();
+          
           // Add a small delay to avoid race condition with login process
           setTimeout(() => {
-            if (checkSessionExpiry()) {
-              // Valid session, redirect to dashboard
-              console.log('Valid session found, redirecting...');
-              window.location.replace("home.html");
-            } else {
-              // Session expired, sign out
-              console.log('Session expired, signing out...');
-              firebase.auth().signOut();
-              clearSession();
+            // Double-check we're still on login page (not already redirected)
+            if (window.location.pathname.includes('login.html')) {
+              if (checkSessionExpiry()) {
+                // Valid session, redirect to dashboard
+                console.log('Valid session found, redirecting...');
+                window.location.replace("home.html");
+              } else {
+                // Session expired, sign out
+                console.log('Session expired, signing out...');
+                firebase.auth().signOut();
+                clearSession();
+              }
             }
           }, 1000); // 1 second delay
         } else {
           console.log('No authenticated user, login form ready');
           isLoggingIn = false; // Reset flag when no user
+          sessionCheckDone = true;
+          unsubscribe();
         }
       });
     });
