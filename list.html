@@ -621,6 +621,39 @@
       }
     }
 
+    /* Filter Badge Styling */
+    #activeFilterBadge .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border-radius: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    #activeFilterBadge .btn-close {
+      background: none;
+      border: none;
+      opacity: 0.8;
+      cursor: pointer;
+      padding: 0.25rem;
+      margin-left: 0.25rem;
+    }
+    
+    #activeFilterBadge .btn-close:hover {
+      opacity: 1;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+    }
+    
+    #patientCountBadge {
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 12px;
+    }
+
     /* Touch-friendly buttons */
     @media (hover: none) and (pointer: coarse) {
       .patient-card {
@@ -690,12 +723,24 @@
       </div>
       <!-- Midwife Filter (Super Admin only) -->
       <div id="midwifeFilterContainer" style="display: none; margin-top: 1rem;">
-        <label for="midwifeFilter" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
-          <i class="fas fa-user-nurse me-1"></i> Filter by Midwife:
-        </label>
-        <select id="midwifeFilter" class="form-select" style="max-width: 400px;" onchange="handleMidwifeFilterChange()">
-          <option value="all">All Midwives</option>
-        </select>
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 250px;">
+            <label for="midwifeFilter" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
+              <i class="fas fa-user-nurse me-1"></i> Filter by Midwife:
+            </label>
+            <select id="midwifeFilter" class="form-select" style="max-width: 400px;" onchange="handleMidwifeFilterChange()">
+              <option value="all">All Midwives</option>
+            </select>
+          </div>
+          <!-- Active Filter Indicator -->
+          <div id="activeFilterBadge" style="display: none; margin-top: 1.75rem;">
+            <span class="badge bg-primary" style="font-size: 0.9rem; padding: 0.5rem 1rem;">
+              <i class="fas fa-filter me-1"></i>
+              <span id="activeFilterText">Filtered</span>
+              <button id="clearFilterBtn" class="btn-close btn-close-white ms-2" style="font-size: 0.7rem; opacity: 0.8;" onclick="clearMidwifeFilter()" aria-label="Clear filter"></button>
+            </span>
+          </div>
+        </div>
       </div>
       <!-- Data Masking Toggle Container -->
       <div id="maskingToggleContainer" style="display: flex; justify-content: flex-end; margin-top: 0.5rem;"></div>
@@ -735,6 +780,7 @@
         </div>
       </div>
       <span id="sectionTitleText">All Patients</span>
+      <span id="patientCountBadge" class="badge bg-light text-dark ms-2" style="font-size: 0.85rem; display: none;"></span>
     </h3>
 
     <!-- Loading State -->
@@ -845,6 +891,8 @@
       if (userRole === 'Super Admin' || userRole === 'admin') {
         document.getElementById('midwifeFilterContainer').style.display = 'block';
         await loadMidwives();
+        // Update filter indicator after loading midwives
+        updateFilterIndicator();
       } else {
         document.getElementById('midwifeFilterContainer').style.display = 'none';
       }
@@ -1052,6 +1100,11 @@
 
         filteredPatients = [...allPatients];
         
+        // Update filter indicator after loading (for Super Admin)
+        if (userRole === 'Super Admin' || userRole === 'admin') {
+          updateFilterIndicator();
+        }
+        
         document.getElementById('loadingContainer').style.display = 'none';
         
         if (allPatients.length === 0) {
@@ -1103,6 +1156,9 @@
       const list = document.getElementById('patientsList');
       grid.innerHTML = '';
       list.innerHTML = '';
+      
+      // Update patient count badge
+      updatePatientCountBadge();
       
       if (filteredPatients.length === 0) {
         document.getElementById('patientsGrid').style.display = 'none';
@@ -1685,8 +1741,75 @@
       if (midwifeFilter) {
         selectedMidwifeId = midwifeFilter.value;
         console.log('Midwife filter changed to:', selectedMidwifeId);
+        
+        // Update filter indicator
+        updateFilterIndicator();
+        
+        // Show loading state
+        document.getElementById('loadingContainer').style.display = 'block';
+        document.getElementById('patientsGrid').style.display = 'none';
+        document.getElementById('patientsList').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'none';
+        
         // Reload patients with the new filter
         loadPatients();
+      }
+    }
+    
+    // Update filter indicator badge
+    function updateFilterIndicator() {
+      const activeFilterBadge = document.getElementById('activeFilterBadge');
+      const activeFilterText = document.getElementById('activeFilterText');
+      
+      if (selectedMidwifeId && selectedMidwifeId !== 'all') {
+        // Find the selected midwife name
+        const selectedMidwife = allMidwives.find(m => m.id === selectedMidwifeId);
+        const midwifeName = selectedMidwife ? selectedMidwife.name : 'Selected Midwife';
+        
+        // Show filter badge
+        if (activeFilterBadge) {
+          activeFilterBadge.style.display = 'block';
+        }
+        if (activeFilterText) {
+          activeFilterText.textContent = `Filtered: ${midwifeName}`;
+        }
+      } else {
+        // Hide filter badge
+        if (activeFilterBadge) {
+          activeFilterBadge.style.display = 'none';
+        }
+      }
+    }
+    
+    // Clear midwife filter
+    function clearMidwifeFilter() {
+      const midwifeFilter = document.getElementById('midwifeFilter');
+      if (midwifeFilter) {
+        midwifeFilter.value = 'all';
+        selectedMidwifeId = 'all';
+        updateFilterIndicator();
+        
+        // Show loading state
+        document.getElementById('loadingContainer').style.display = 'block';
+        document.getElementById('patientsGrid').style.display = 'none';
+        document.getElementById('patientsList').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'none';
+        
+        // Reload all patients
+        loadPatients();
+      }
+    }
+
+    // Update patient count badge
+    function updatePatientCountBadge() {
+      const countBadge = document.getElementById('patientCountBadge');
+      if (countBadge) {
+        if (filteredPatients.length > 0) {
+          countBadge.textContent = `${filteredPatients.length} patient${filteredPatients.length !== 1 ? 's' : ''}`;
+          countBadge.style.display = 'inline-block';
+        } else {
+          countBadge.style.display = 'none';
+        }
       }
     }
 
