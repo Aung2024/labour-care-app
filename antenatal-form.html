@@ -1395,11 +1395,11 @@
           }
         }
 
-        // Load History Taking fields from first visit only (these should persist across visits)
-        await loadHistoryTakingFromFirstVisit();
-
-        // Don't load previous visit data - start each new visit with a fresh form
-        // await loadExistingVisitData();
+        // Load History Taking fields from previous visit (most recent visit)
+        await loadHistoryTakingFromPreviousVisit();
+        
+        // Load TD from previous visit
+        await loadTDFromPreviousVisit();
 
       } catch (error) {
         console.error('Error loading patient info:', error);
@@ -1538,6 +1538,155 @@
         
       } catch (error) {
         console.error('Error loading History Taking from first visit:', error);
+        // Don't show alert - just log the error as this is non-critical
+      }
+    }
+
+    async function loadHistoryTakingFromPreviousVisit() {
+      try {
+        console.log('Loading History Taking fields from previous visit for patient:', patientId);
+        
+        // Get the most recent visit (ordered by visitDate descending, limit 1)
+        const previousVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .limit(1)
+          .get();
+        
+        if (previousVisitSnapshot.empty) {
+          console.log('No previous visit found - skipping History Taking load');
+          return;
+        }
+        
+        const previousVisit = previousVisitSnapshot.docs[0].data();
+        console.log('Previous visit data loaded:', previousVisit);
+        
+        // Helper function to safely set element value
+        const setValue = (id, value) => {
+          const el = document.getElementById(id);
+          if (el && value !== undefined && value !== null && value !== '') {
+            // Handle date fields
+            if (el.type === 'date') {
+              let dateValue = value;
+              if (dateValue && typeof dateValue.toDate === 'function') {
+                dateValue = dateValue.toDate().toISOString().split('T')[0];
+              } else if (dateValue && typeof dateValue === 'string') {
+                dateValue = dateValue.split('T')[0];
+              }
+              el.value = dateValue || '';
+            } else {
+              el.value = value;
+            }
+          }
+        };
+        
+        // Load LMP Status
+        if (previousVisit.lmpStatus) {
+          const lmpRadio = document.getElementById(previousVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
+          if (lmpRadio) {
+            lmpRadio.checked = true;
+            toggleLMPFields();
+          }
+        }
+        
+        // Load LMP date
+        if (previousVisit.lmp) {
+          setValue('lmp', previousVisit.lmp);
+          calculateGestationalAgeAndEDD();
+        }
+        
+        // Load EDD
+        if (previousVisit.edd) {
+          setValue('edd', previousVisit.edd);
+        }
+        
+        // Load manual GA/EDD if LMP unknown
+        if (previousVisit.manualGestationalAge) {
+          setValue('manualGestationalAge', previousVisit.manualGestationalAge);
+        }
+        if (previousVisit.manualEdd) {
+          setValue('manualEdd', previousVisit.manualEdd);
+        }
+        
+        // Load Gestational Age Display (calculated)
+        if (previousVisit.gestationalAge) {
+          // Convert decimal GA to weeks and days format
+          const gaValue = parseFloat(previousVisit.gestationalAge);
+          if (!isNaN(gaValue)) {
+            const weeks = Math.floor(gaValue);
+            const days = Math.round((gaValue - weeks) * 7);
+            const currentLang = localStorage.getItem('appLanguage') || 'mm';
+            const displayValue = currentLang === 'en' 
+              ? `${weeks} weeks and ${days} days`
+              : `${weeks} ပတ် ${days} ရက်`;
+            setValue('gestationalAgeDisplay', displayValue);
+          }
+        }
+        
+        // Load Early ANC Visit checkbox
+        if (previousVisit.early_anc_visit !== undefined) {
+          const earlyAncCheckbox = document.getElementById('earlyAncVisit');
+          if (earlyAncCheckbox) {
+            earlyAncCheckbox.checked = previousVisit.early_anc_visit;
+          }
+        }
+        
+        // Load Past History Status
+        if (previousVisit.pastHistoryStatus) {
+          const historyRadio = document.querySelector(`input[name="pastHistoryStatus"][value="${previousVisit.pastHistoryStatus}"]`);
+          if (historyRadio) {
+            historyRadio.checked = true;
+            togglePastHistoryNotes();
+          }
+        }
+        
+        // Load Past History Notes
+        if (previousVisit.pastHistoryNotes) {
+          setValue('pastHistoryNotes', previousVisit.pastHistoryNotes);
+        }
+        
+        console.log('History Taking fields loaded from previous visit');
+        
+      } catch (error) {
+        console.error('Error loading History Taking from previous visit:', error);
+        // Don't show alert - just log the error as this is non-critical
+      }
+    }
+
+    async function loadTDFromPreviousVisit() {
+      try {
+        console.log('Loading TD from previous visit for patient:', patientId);
+        
+        // Get the most recent visit (ordered by visitDate descending, limit 1)
+        const previousVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .limit(1)
+          .get();
+        
+        if (previousVisitSnapshot.empty) {
+          console.log('No previous visit found - skipping TD load');
+          return;
+        }
+        
+        const previousVisit = previousVisitSnapshot.docs[0].data();
+        
+        // Load TD (Tetanus Diphtheria) - check both tetanusToxoid and td fields
+        const tdValue = previousVisit.tetanusToxoid || previousVisit.td;
+        if (tdValue) {
+          const tdSelect = document.getElementById('tetanusToxoid');
+          if (tdSelect) {
+            tdSelect.value = tdValue;
+            console.log('TD loaded from previous visit:', tdValue);
+          }
+        }
+        
+      } catch (error) {
+        console.error('Error loading TD from previous visit:', error);
         // Don't show alert - just log the error as this is non-critical
       }
     }
