@@ -537,18 +537,18 @@
             <div class="header-left">
               <h1 class="app-title">
                 <i class="fas fa-chart-line me-2"></i>
-                <span id="dashboardTitle">Dashboard</span>
-              </h1>
+                  <span id="dashboardTitle">Dashboard</span>
+                </h1>
               <p class="page-subtitle mb-0" id="dashboardSubtitle">Your patient performance and statistics</p>
-            </div>
+              </div>
             <div class="header-right">
               <a href="home.html" class="btn btn-outline-light btn-sm me-2">
                 <i class="fas fa-home me-2"></i>Home
               </a>
               <span id="userInfo" class="text-white-50 me-2"></span>
-              <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
-                <i class="fas fa-sign-out-alt me-2"></i>Logout
-              </button>
+                  <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                  </button>
             </div>
           </div>
         </div>
@@ -645,7 +645,7 @@
             </div>
           </div>
         </div>
-        
+
         <!-- LCG Completed Metric -->
         <div class="row mb-4">
           <div class="col-md-3 mb-3">
@@ -1187,16 +1187,18 @@
               }
             };
 
-            const [
-              antenatalVisitsSnap,
-              postpartumVisitsSnap,
-              testRecordsSnap,
-              summaryDoc,
-              birthRecordDoc,
-              endTreatmentDoc,
-              transferRecordDoc,
-              outcomeRecordDoc
-            ] = await Promise.all([
+          const [
+            antenatalVisitsSnap,
+            postpartumVisitsSnap,
+            testRecordsSnap,
+            summaryDoc,
+            startingTimeDoc,
+            secondStageDoc,
+            birthRecordDoc,
+            endTreatmentDoc,
+            transferRecordDoc,
+            outcomeRecordDoc
+          ] = await Promise.all([
               queryWithTimeout(
                 patientRef.collection('antenatal_visits')
                   .orderBy('visitDate', 'desc')
@@ -1217,6 +1219,12 @@
               ),
               queryWithTimeout(
                 patientRef.collection('records').doc('summary').get({ source: 'server' })
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('startingTime').get({ source: 'server' })
+              ),
+              queryWithTimeout(
+                patientRef.collection('records').doc('secondStage').get({ source: 'server' })
               ),
               queryWithTimeout(
                 patientRef.collection('records').doc('birthRecord').get({ source: 'server' })
@@ -1264,6 +1272,8 @@
             postpartumVisits,
             testRecords,
             summary: summaryDoc && summaryDoc.exists ? summaryDoc.data() || {} : null,
+            startingTimeDoc: startingTimeDoc && startingTimeDoc.exists ? startingTimeDoc.data() || {} : null,
+            secondStageDoc: secondStageDoc && secondStageDoc.exists ? secondStageDoc.data() || {} : null,
             birthRecord,
             endTreatment,
             transferRecord,
@@ -2601,8 +2611,33 @@
           });
           
           // Check for LCG completed: both first stage (startingTime) and second stage (secondStageTime) must be filled
-          const hasFirstStage = summary.startingTime || summary.activeFirstStage_Time;
-          const hasSecondStage = summary.secondStageTime || summary.secondStage_Time;
+          // Helper function to check if a time value is valid (not empty, null, or undefined)
+          const isValidTime = (timeValue) => {
+            if (!timeValue) return false;
+            if (typeof timeValue === 'string') {
+              return timeValue.trim() !== '';
+            }
+            return true;
+          };
+          
+          // Check summary document for first stage time
+          let hasFirstStage = isValidTime(summary.startingTime) || isValidTime(summary.activeFirstStage_Time);
+          
+          // Check summary document for second stage time
+          let hasSecondStage = isValidTime(summary.secondStageTime) || isValidTime(summary.secondStage_Time);
+          
+          // Also check separate startingTime document if summary doesn't have it
+          if (!hasFirstStage && patient.startingTimeDoc) {
+            hasFirstStage = isValidTime(patient.startingTimeDoc.startingTime);
+          }
+          
+          // Also check separate secondStage document if summary doesn't have it
+          if (!hasSecondStage && patient.secondStageDoc) {
+            // Check for secondStageStartTime (Classic LCG format) or secondStageTime
+            hasSecondStage = isValidTime(patient.secondStageDoc.secondStageStartTime) || 
+                            isValidTime(patient.secondStageDoc.secondStageTime) ||
+                            (patient.secondStageDoc.isSecondStageActive && isValidTime(patient.secondStageDoc.secondStageStartTime));
+          }
           
           if (hasFirstStage && hasSecondStage) {
             lcgCompleted++;
