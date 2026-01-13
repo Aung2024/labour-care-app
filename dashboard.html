@@ -2597,6 +2597,8 @@
         let lcgCompleted = 0; // Count clients with both first and second stage times
         const monthlyLCG = {};
 
+        console.log('🔍 Loading Intrapartum Metrics for', patientsData.length, 'patients');
+        
         patientsData.forEach(patient => {
           const summary = patient.summary || {};
           let hasLCG = false;
@@ -2615,7 +2617,8 @@
           const isValidTime = (timeValue) => {
             if (!timeValue) return false;
             if (typeof timeValue === 'string') {
-              return timeValue.trim() !== '';
+              const trimmed = timeValue.trim();
+              return trimmed !== '' && trimmed !== 'null' && trimmed !== 'undefined';
             }
             return true;
           };
@@ -2627,12 +2630,12 @@
           let hasSecondStage = isValidTime(summary.secondStageTime) || isValidTime(summary.secondStage_Time);
           
           // Also check separate startingTime document if summary doesn't have it
-          if (!hasFirstStage && patient.startingTimeDoc) {
+          if (!hasFirstStage && patient.startingTimeDoc && patient.startingTimeDoc !== null) {
             hasFirstStage = isValidTime(patient.startingTimeDoc.startingTime);
           }
           
           // Also check separate secondStage document if summary doesn't have it
-          if (!hasSecondStage && patient.secondStageDoc) {
+          if (!hasSecondStage && patient.secondStageDoc && patient.secondStageDoc !== null) {
             // Check for secondStageStartTime (Classic LCG format) or secondStageTime
             hasSecondStage = isValidTime(patient.secondStageDoc.secondStageStartTime) || 
                             isValidTime(patient.secondStageDoc.secondStageTime) ||
@@ -2641,6 +2644,30 @@
           
           if (hasFirstStage && hasSecondStage) {
             lcgCompleted++;
+            console.log('✅ LCG Completed patient:', patient.id, {
+              hasFirstStage,
+              hasSecondStage,
+              summaryStartingTime: summary.startingTime,
+              summaryActiveFirstStage: summary.activeFirstStage_Time,
+              summarySecondStageTime: summary.secondStageTime,
+              summarySecondStage_Time: summary.secondStage_Time,
+              startingTimeDoc: patient.startingTimeDoc,
+              secondStageDoc: patient.secondStageDoc
+            });
+          } else {
+            // Debug logging for patients that should have LCG completed
+            if (hasFirstStage || hasSecondStage) {
+              console.log('⚠️ Partial LCG data for patient:', patient.id, {
+                hasFirstStage,
+                hasSecondStage,
+                summaryStartingTime: summary.startingTime,
+                summaryActiveFirstStage: summary.activeFirstStage_Time,
+                summarySecondStageTime: summary.secondStageTime,
+                summarySecondStage_Time: summary.secondStage_Time,
+                startingTimeDoc: patient.startingTimeDoc,
+                secondStageDoc: patient.secondStageDoc
+              });
+            }
           }
           
           if (hasLCG) {
@@ -2652,9 +2679,22 @@
           }
         });
 
-        document.getElementById('intrapartumLCGApplied').textContent = lcgApplied;
-        document.getElementById('lcgCompletedClients').textContent = lcgCompleted;
-        await loadIntrapartumLCGTrendChart(monthlyLCG);
+        // Only update elements that exist (intrapartumLCGApplied was removed with sections)
+        const lcgCompletedElement = document.getElementById('lcgCompletedClients');
+        if (lcgCompletedElement) {
+          lcgCompletedElement.textContent = lcgCompleted;
+        }
+        const lcgAppliedElement = document.getElementById('intrapartumLCGApplied');
+        if (lcgAppliedElement) {
+          lcgAppliedElement.textContent = lcgApplied;
+        }
+        console.log('✅ LCG Metrics calculated:', { lcgApplied, lcgCompleted, totalPatients: patientsData.length });
+        
+        // Only load chart if element exists
+        const chartElement = document.getElementById('intrapartumLCGTrendChart');
+        if (chartElement) {
+          await loadIntrapartumLCGTrendChart(monthlyLCG);
+        }
         
       } catch (error) {
         console.error('Error loading Intrapartum metrics:', error);
