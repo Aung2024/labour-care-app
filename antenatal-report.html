@@ -506,6 +506,58 @@
       background: #e9ecef;
       font-weight: 600;
     }
+
+    .lab-table td.alert-positive {
+      background-color: #fee2e2;
+      color: #dc2626;
+      font-weight: 600;
+    }
+
+    .lab-table td.alert-positive {
+      background-color: #fee2e2;
+      color: #dc2626;
+      font-weight: 600;
+    }
+
+    .lab-table td.rh-negative {
+      background-color: #fee2e2;
+      color: #dc2626;
+      font-weight: 600;
+    }
+
+    .rh-negative-alert {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      border: 2px solid #dc2626;
+      border-left: 5px solid #dc2626;
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 15px;
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
+    }
+
+    .rh-negative-alert h6 {
+      color: #991b1b;
+      font-weight: 700;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+
+    .rh-negative-alert p {
+      color: #991b1b;
+      margin-bottom: 8px;
+      line-height: 1.6;
+    }
+
+    .rh-negative-alert ul {
+      margin: 0;
+      padding-left: 20px;
+      color: #991b1b;
+    }
+
+    .rh-negative-alert li {
+      margin-bottom: 6px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -601,6 +653,11 @@
       <div class="lab-section">
         <h5><i class="fas fa-flask me-2"></i>Laboratory Test Results</h5>
         <div id="labTestsContainer"></div>
+      </div>
+
+      <!-- RH Negative Alert -->
+      <div id="rhNegativeAlertSection" class="mt-4" style="display: none;">
+        <!-- RH negative alerts will be populated here -->
       </div>
 
       <!-- High Risk Assessment -->
@@ -740,6 +797,7 @@
         populatePatientInfo();
         populateVisitsTable();
         populateLabTests();
+        populateRhNegativeAlerts();
         populateGBVInfo();
         generateRecommendations();
         
@@ -1263,6 +1321,46 @@
         const visitNo = index + 1;
         const testDate = test.testDate ? new Date(test.testDate).toLocaleDateString() : 'N/A';
         const ga = test.gestationalAge ? `${test.gestationalAge} weeks` : (calculateGAFromLMP(test.testDate) || 'N/A');
+        
+        // Helper function to check if a result is positive/alert-worthy
+        const isPositiveResult = (result, testType) => {
+          if (!result || result === '-' || result === 'N/A') return false;
+          const value = result.toString().trim();
+          
+          // HIV, Syphilis, Hepatitis B, Hepatitis C: Reactive, Positive, Detected
+          if (['hiv', 'syphilis', 'hepatitisB', 'hepatitisC'].includes(testType)) {
+            const positives = ['Reactive', 'Positive', 'Detected'];
+            return positives.some(p => value === p || value.toLowerCase() === p.toLowerCase());
+          }
+          
+          // Malaria: Positive, Detected
+          if (testType === 'malaria') {
+            const positives = ['Positive', 'Detected'];
+            return positives.some(p => value === p || value.toLowerCase() === p.toLowerCase());
+          }
+          
+          // RH: Rh negative
+          if (testType === 'rh') {
+            return value === 'Rh negative' || value === 'negative' || value.toLowerCase().includes('negative');
+          }
+          
+          return false;
+        };
+        
+        // Check each test result for highlighting
+        const hivResult = test.hivResult || '-';
+        const malariaResult = test.malariaResult || '-';
+        const syphilisResult = test.syphilisResult || '-';
+        const hepatitisBResult = test.hepatitisBResult || '-';
+        const hepatitisCResult = test.hepatitisCResult || '-';
+        const rhFactor = test.rhFactor || '-';
+        
+        const hivClass = isPositiveResult(hivResult, 'hiv') ? 'alert-positive' : '';
+        const malariaClass = isPositiveResult(malariaResult, 'malaria') ? 'alert-positive' : '';
+        const syphilisClass = isPositiveResult(syphilisResult, 'syphilis') ? 'alert-positive' : '';
+        const hepatitisBClass = isPositiveResult(hepatitisBResult, 'hepatitisB') ? 'alert-positive' : '';
+        const hepatitisCClass = isPositiveResult(hepatitisCResult, 'hepatitisC') ? 'alert-positive' : '';
+        const rhClass = isPositiveResult(rhFactor, 'rh') ? 'alert-positive' : '';
 
         tableHTML += `
           <tr>
@@ -1270,14 +1368,14 @@
             <td>${testDate}</td>
             <td>${ga}</td>
             <td>${test.labName || '-'}</td>
-            <td>${test.hivResult || '-'}</td>
-            <td>${test.malariaResult || '-'}</td>
-            <td>${test.syphilisResult || '-'}</td>
-            <td>${test.hepatitisBResult || '-'}</td>
-            <td>${test.hepatitisCResult || '-'}</td>
+            <td class="${hivClass}">${hivResult}</td>
+            <td class="${malariaClass}">${malariaResult}</td>
+            <td class="${syphilisClass}">${syphilisResult}</td>
+            <td class="${hepatitisBClass}">${hepatitisBResult}</td>
+            <td class="${hepatitisCClass}">${hepatitisCResult}</td>
             <td>${test.hemoglobinResult || '-'}</td>
             <td>${test.bloodGroup || '-'}</td>
-            <td>${test.rhFactor || '-'}</td>
+            <td class="${rhClass}">${rhFactor}</td>
             <td>${test.treatmentGiven || '-'}</td>
           </tr>
         `;
@@ -1285,6 +1383,110 @@
 
       tableHTML += '</tbody></table>';
       container.innerHTML = tableHTML;
+    }
+
+    function populateRhNegativeAlerts() {
+      const alertSection = document.getElementById('rhNegativeAlertSection');
+      if (!alertSection) return;
+
+      // Helper function to check if a result is positive/alert-worthy
+      const isPositiveResult = (result, testType) => {
+        if (!result || result === '-' || result === 'N/A') return false;
+        const value = result.toString().trim();
+        
+        // HIV, Syphilis, Hepatitis B, Hepatitis C: Reactive, Positive, Detected
+        if (['hiv', 'syphilis', 'hepatitisB', 'hepatitisC'].includes(testType)) {
+          const positives = ['Reactive', 'Positive', 'Detected'];
+          return positives.some(p => value === p || value.toLowerCase() === p.toLowerCase());
+        }
+        
+        // Malaria: Positive, Detected
+        if (testType === 'malaria') {
+          const positives = ['Positive', 'Detected'];
+          return positives.some(p => value === p || value.toLowerCase() === p.toLowerCase());
+        }
+        
+        // RH: Rh negative
+        if (testType === 'rh') {
+          return value === 'Rh negative' || value === 'negative' || value.toLowerCase().includes('negative');
+        }
+        
+        return false;
+      };
+
+      // Find all tests with positive/alert results
+      const alertTests = [];
+      labTests.forEach(test => {
+        const alerts = [];
+        const testDate = test.testDate ? new Date(test.testDate).toLocaleDateString() : 'N/A';
+        
+        if (isPositiveResult(test.hivResult, 'hiv')) {
+          alerts.push(`HIV: ${test.hivResult}`);
+        }
+        if (isPositiveResult(test.malariaResult, 'malaria')) {
+          alerts.push(`Malaria: ${test.malariaResult}`);
+        }
+        if (isPositiveResult(test.syphilisResult, 'syphilis')) {
+          alerts.push(`Syphilis: ${test.syphilisResult}`);
+        }
+        if (isPositiveResult(test.hepatitisBResult, 'hepatitisB')) {
+          alerts.push(`Hepatitis B: ${test.hepatitisBResult}`);
+        }
+        if (isPositiveResult(test.hepatitisCResult, 'hepatitisC')) {
+          alerts.push(`Hepatitis C: ${test.hepatitisCResult}`);
+        }
+        if (isPositiveResult(test.rhFactor, 'rh')) {
+          alerts.push(`RH: ${test.rhFactor}`);
+        }
+        
+        if (alerts.length > 0) {
+          alertTests.push({
+            date: testDate,
+            alerts: alerts,
+            bloodGroup: test.bloodGroup || 'Unknown',
+            rhFactor: test.rhFactor || '-'
+          });
+        }
+      });
+
+      if (alertTests.length === 0) {
+        alertSection.style.display = 'none';
+        return;
+      }
+
+      // Show alert section
+      alertSection.style.display = 'block';
+
+      let alertHTML = `
+        <div class="rh-negative-alert">
+          <h6><i class="fas fa-exclamation-triangle me-2"></i>Positive Test Results & Alerts</h6>
+          <p><strong>Warning:</strong> This patient has positive test results that require attention and follow-up care.</p>
+          <p><strong>Test Results with Positive Findings:</strong></p>
+          <ul>
+      `;
+
+      alertTests.forEach((testAlert, index) => {
+        alertHTML += `<li><strong>Test Date: ${testAlert.date}</strong> - ${testAlert.alerts.join(', ')}`;
+        if (testAlert.rhFactor && isPositiveResult(testAlert.rhFactor, 'rh')) {
+          alertHTML += ` (Blood Group: ${testAlert.bloodGroup})`;
+        }
+        alertHTML += `</li>`;
+      });
+
+      alertHTML += `
+          </ul>
+          <p><strong>Clinical Recommendations:</strong></p>
+          <ul>
+            <li>Review all positive test results and provide appropriate counseling</li>
+            <li>Initiate treatment protocols as indicated for positive findings</li>
+            <li>For RH negative patients: Monitor for Rh incompatibility if partner is RH positive, consider Rh immunoglobulin (Rhogam) administration at 28 weeks and after delivery if indicated</li>
+            <li>Coordinate with specialists and blood bank as needed</li>
+            <li>Ensure patient education and follow-up care</li>
+          </ul>
+        </div>
+      `;
+
+      alertSection.innerHTML = alertHTML;
     }
 
     function calculateGAFromLMP(testDateValue) {
