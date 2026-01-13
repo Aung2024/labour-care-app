@@ -896,9 +896,10 @@
       }, 50);
     }
 
-    // Calculate postpartum period
+    // Calculate postpartum period based on visit date (not current date)
     function calculatePostpartumPeriod() {
       const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
+      const visitDateInput = document.getElementById('visitDate');
       const postpartumDaysEl = document.getElementById('postpartumDays');
       const postpartumHoursEl = document.getElementById('postpartumHours');
       
@@ -927,10 +928,21 @@
           return;
         }
         
-        const now = new Date();
-        const diffMs = now - deliveryDate;
+        // Use visit date if available, otherwise use current date
+        let referenceDate = new Date();
+        if (visitDateInput && visitDateInput.value) {
+          // Get visit date and combine with current time for accurate calculation
+          const visitDate = new Date(visitDateInput.value);
+          if (!isNaN(visitDate.getTime())) {
+            // Use visit date with current time (or end of day) for calculation
+            referenceDate = new Date(visitDate);
+            referenceDate.setHours(23, 59, 59, 999); // End of visit day
+          }
+        }
         
-        // Check if delivery date is in the future
+        const diffMs = referenceDate - deliveryDate;
+        
+        // Check if delivery date is in the future relative to visit date
         if (diffMs < 0) {
           postpartumDaysEl.textContent = '0';
           postpartumHoursEl.textContent = '0';
@@ -1024,6 +1036,8 @@
         
         // Set up event listeners
         const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
+        const visitDateInput = document.getElementById('visitDate');
+        
         if (deliveredDateTimeInput) {
           deliveredDateTimeInput.addEventListener('change', calculatePostpartumPeriod);
           deliveredDateTimeInput.addEventListener('input', calculatePostpartumPeriod);
@@ -1031,6 +1045,11 @@
           if (deliveredDateTimeInput.value) {
             calculatePostpartumPeriod();
           }
+        }
+        
+        // Recalculate postpartum period when visit date changes
+        if (visitDateInput) {
+          visitDateInput.addEventListener('change', calculatePostpartumPeriod);
         }
         
         const contraceptionCheckbox = document.getElementById('contraception');
@@ -1066,7 +1085,7 @@
       }
     }
 
-    // Load delivery date/time from first visit or baby.html birth record
+    // Load delivery date/time from first visit, baby.html birth record, or newborn care page
     async function loadDeliveryDateTimeFromFirstVisit() {
       try {
         const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
@@ -1078,29 +1097,86 @@
         const db = firebase.firestore();
         let deliveryDate = null;
         
-        // First, try to load from baby.html birth record
+        // First, try to load from newborn care page (newborn_care collection)
         try {
-          const birthRecordDoc = await db.collection('patients')
-            .doc(currentPatient.id)
-            .collection('records')
-            .doc('birthRecord')
-            .get();
+          let newbornCareSnapshot;
+          try {
+            // Try ordering by timestamp first
+            newbornCareSnapshot = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('newborn_care')
+              .orderBy('timestamp', 'desc')
+              .limit(1)
+              .get();
+          } catch (error) {
+            // If timestamp ordering fails, just get any document (usually only one per patient)
+            newbornCareSnapshot = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('newborn_care')
+              .limit(1)
+              .get();
+          }
           
-          if (birthRecordDoc.exists) {
-            const birthData = birthRecordDoc.data();
-            if (birthData.birthTime) {
-              // Handle Firestore Timestamp or string date
-              if (birthData.birthTime.toDate) {
-                deliveryDate = birthData.birthTime.toDate();
-              } else if (birthData.birthTime instanceof Date) {
-                deliveryDate = birthData.birthTime;
+          if (!newbornCareSnapshot.empty) {
+            const newbornData = newbornCareSnapshot.docs[0].data();
+            if (newbornData.birth_time) {
+              // Handle Firestore Timestamp, datetime-local string, or Date
+              if (newbornData.birth_time.toDate) {
+                deliveryDate = newbornData.birth_time.toDate();
+              } else if (newbornData.birth_time instanceof Date) {
+                deliveryDate = newbornData.birth_time;
+              } else if (typeof newbornData.birth_time === 'string') {
+                // Handle datetime-local format (YYYY-MM-DDTHH:mm)
+                deliveryDate = new Date(newbornData.birth_time);
+              } else if (newbornData.birth_time.seconds) {
+                // Handle Firestore timestamp with seconds
+                deliveryDate = new Date(newbornData.birth_time.seconds * 1000);
               } else {
-                deliveryDate = new Date(birthData.birthTime);
+                deliveryDate = new Date(newbornData.birth_time);
+              }
+              
+              if (deliveryDate && !isNaN(deliveryDate.getTime())) {
+                console.log('Loaded delivery date/time from newborn care page');
+              } else {
+                deliveryDate = null;
               }
             }
           }
         } catch (error) {
-          console.log('No birth record found, checking postpartum visits...');
+          console.log('No newborn care data found, checking other sources...', error);
+        }
+        
+        // If not found, try to load from baby.html birth record
+        if (!deliveryDate) {
+          try {
+            const birthRecordDoc = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('records')
+              .doc('birthRecord')
+              .get();
+            
+            if (birthRecordDoc.exists) {
+              const birthData = birthRecordDoc.data();
+              if (birthData.birthTime) {
+                // Handle Firestore Timestamp or string date
+                if (birthData.birthTime.toDate) {
+                  deliveryDate = birthData.birthTime.toDate();
+                } else if (birthData.birthTime instanceof Date) {
+                  deliveryDate = birthData.birthTime;
+                } else {
+                  deliveryDate = new Date(birthData.birthTime);
+                }
+                
+                if (deliveryDate && !isNaN(deliveryDate.getTime())) {
+                  console.log('Loaded delivery date/time from birth record');
+                } else {
+                  deliveryDate = null;
+                }
+              }
+            }
+          } catch (error) {
+            console.log('No birth record found, checking postpartum visits...');
+          }
         }
         
         // If no birth record, check first postpartum visit

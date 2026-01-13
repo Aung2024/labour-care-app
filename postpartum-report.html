@@ -536,7 +536,7 @@
               <th>Hb</th>
               <th>Breast</th>
               <th>Nipple</th>
-              <th>Milk</th>
+              <th>BF</th>
               <th>Uterus</th>
               <th>Lochia</th>
               <th>Episiot</th>
@@ -728,11 +728,44 @@
       document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
       document.getElementById("patientPhone").textContent = currentPatient.phone || 'Not provided';
       
-      if (currentPatient.deliveryDate) {
-        const deliveryDate = new Date(currentPatient.deliveryDate);
+      // Load delivery date and days postpartum from first PNC visit
+      let deliveryDate = null;
+      
+      if (postpartumVisits.length > 0) {
+        // Get the first visit (earliest visit)
+        const firstVisit = postpartumVisits[0];
+        
+        if (firstVisit.deliveredDateTime) {
+          // Handle Firestore Timestamp, Date object, or string
+          if (firstVisit.deliveredDateTime.toDate) {
+            deliveryDate = firstVisit.deliveredDateTime.toDate();
+          } else if (firstVisit.deliveredDateTime instanceof Date) {
+            deliveryDate = firstVisit.deliveredDateTime;
+          } else if (typeof firstVisit.deliveredDateTime === 'string') {
+            deliveryDate = new Date(firstVisit.deliveredDateTime);
+          } else if (firstVisit.deliveredDateTime.seconds) {
+            deliveryDate = new Date(firstVisit.deliveredDateTime.seconds * 1000);
+          } else {
+            deliveryDate = new Date(firstVisit.deliveredDateTime);
+          }
+        }
+      }
+      
+      // Fallback to patient record if not found in visits
+      if (!deliveryDate && currentPatient.deliveryDate) {
+        if (currentPatient.deliveryDate.toDate) {
+          deliveryDate = currentPatient.deliveryDate.toDate();
+        } else if (currentPatient.deliveryDate instanceof Date) {
+          deliveryDate = currentPatient.deliveryDate;
+        } else {
+          deliveryDate = new Date(currentPatient.deliveryDate);
+        }
+      }
+      
+      if (deliveryDate && !isNaN(deliveryDate.getTime())) {
         document.getElementById("deliveryDate").textContent = deliveryDate.toLocaleDateString();
         
-        // Calculate days postpartum
+        // Calculate days postpartum from delivery date to today
         const today = new Date();
         const diffTime = today - deliveryDate;
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
