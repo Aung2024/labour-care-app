@@ -923,6 +923,14 @@
       document.getElementById("patientLMP").textContent = lmp ? lmp : 'Not recorded';
       document.getElementById("patientEDD").textContent = edd ? edd : 'Not calculated';
       
+      // Check if LMP is unknown - if so, show "Unknown" for GA
+      const isLMPUnknown = !lmp || lmp === 'unknown' || lmp === 'Unknown' || lmp === 'Not recorded';
+      
+      if (isLMPUnknown) {
+        document.getElementById("currentGA").textContent = 'Unknown';
+        return;
+      }
+      
       if (lmp && lmp !== 'Not recorded' && lmp !== 'Unknown') {
         let lmpDate;
         // Handle different LMP formats
@@ -956,30 +964,8 @@
         }
       }
       
-
-      // Fallback to stored GA if LMP not available
-      const latestGA = manualGA || latestVisit?.gestationalAge;
-      if (latestGA) {
-        let gaText;
-        if (typeof latestGA === 'number') {
-          const weeks = Math.floor(latestGA);
-          const days = Math.round((latestGA - weeks) * 7);
-          gaText = `${weeks}w ${days}d`;
-          if (weeks > 42) {
-            const currentLang = localStorage.getItem('appLanguage') || 'mm';
-            if (currentLang === 'en') {
-              gaText += ' (Post-term - Woman may have already delivered)';
-            } else {
-              gaText += ' (ကိုယ်ဝန်ရင့်နေပြီ - မိခင်သည် မွေးဖွားပြီးဖြစ်နိုင်သည်)';
-            }
-          }
-        } else {
-          gaText = latestGA;
-        }
-        document.getElementById("currentGA").textContent = gaText;
-      } else {
-        document.getElementById("currentGA").textContent = 'Not calculated';
-      }
+      // If we get here, LMP is not available or invalid
+      document.getElementById("currentGA").textContent = 'Unknown';
     }
 
     function populateVisitsTable() {
@@ -1003,15 +989,21 @@
         const visitDateObj = getVisitDateObj(visit);
         
         // Calculate GA based on visit date (not current date)
-        // Always calculate from LMP and visit date for accuracy
+        // Check if LMP is unknown first
         let gaValue = '-';
         let gaWeeks = 0;
         let gaDays = 0;
         let gaCalculated = false;
         
-        if (visitDateObj) {
-          // Get LMP from visit or patient record
-          const lmp = visit.lmp || currentPatient.lmp;
+        // Get LMP from visit or patient record
+        const lmp = visit.lmp || currentPatient.lmp;
+        const isLMPUnknown = !lmp || lmp === 'unknown' || lmp === 'Unknown' || lmp === 'Not recorded';
+        
+        // If LMP is unknown, show "Unknown" for GA
+        if (isLMPUnknown) {
+          gaValue = 'Unknown';
+        } else if (visitDateObj) {
+          // LMP is known, calculate GA from LMP and visit date
           if (lmp && lmp !== 'unknown' && lmp !== 'Unknown' && lmp !== 'Not recorded') {
             try {
               let lmpDate;
@@ -1049,8 +1041,8 @@
           }
         }
         
-        // Fallback to stored GA value only if calculation failed
-        if (!gaCalculated) {
+        // Only use stored GA if LMP is known but calculation failed
+        if (!gaCalculated && !isLMPUnknown) {
           const storedGA = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks;
           if (storedGA) {
             // Convert stored GA to weeks and days format
@@ -1071,6 +1063,8 @@
             } else if (typeof storedGA === 'string') {
               gaValue = storedGA;
             }
+          } else {
+            gaValue = 'Unknown';
           }
         }
         
