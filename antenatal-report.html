@@ -899,7 +899,49 @@
       antenatalVisits.forEach((visit, index) => {
         const visitNumber = visit.visitNumber || index + 1;
         const visitDate = formatVisitDate(visit);
-        const gaValue = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks || '-';
+        const visitDateObj = getVisitDateObj(visit);
+        
+        // Calculate GA based on visit date (not current date)
+        // First try to use stored GA value
+        let gaValue = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks;
+        
+        // If no stored GA, calculate from LMP and visit date
+        if (!gaValue && visitDateObj) {
+          // Get LMP from visit or patient record
+          const lmp = visit.lmp || currentPatient.lmp;
+          if (lmp && lmp !== 'unknown' && lmp !== 'Unknown' && lmp !== 'Not recorded') {
+            try {
+              let lmpDate;
+              // Handle different LMP formats (Firestore timestamp, string, etc.)
+              if (lmp.toDate) {
+                lmpDate = lmp.toDate();
+              } else if (lmp.seconds) {
+                lmpDate = new Date(lmp.seconds * 1000);
+              } else {
+                lmpDate = new Date(lmp);
+              }
+              
+              if (!isNaN(lmpDate) && !isNaN(visitDateObj)) {
+                const diffTime = visitDateObj - lmpDate;
+                if (diffTime >= 0) {
+                  const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+                  const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+                  gaValue = `${diffWeeks}w ${diffDays}d`;
+                }
+              }
+            } catch (error) {
+              console.error('Error calculating GA from visit date:', error);
+            }
+          }
+        }
+        
+        // Format stored GA value if it's a number
+        if (gaValue && typeof gaValue === 'number') {
+          gaValue = `${gaValue} weeks`;
+        }
+        
+        gaValue = gaValue || '-';
+        
         const tdValue = visit.tetanusToxoid || visit.td || '-';
         const temperature = visit.temperature ? `${visit.temperature}${visit.temperatureUnit || '°C'}` : '-';
         const fetalMovement = visit.fetalMovement || '-';
