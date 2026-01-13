@@ -866,19 +866,61 @@
       document.getElementById("patientEDD").textContent = edd ? edd : 'Not calculated';
       
       if (lmp && lmp !== 'Not recorded' && lmp !== 'Unknown') {
-        const lmpDate = new Date(lmp);
+        let lmpDate;
+        // Handle different LMP formats
+        if (lmp.toDate) {
+          lmpDate = lmp.toDate();
+        } else if (lmp.seconds) {
+          lmpDate = new Date(lmp.seconds * 1000);
+        } else {
+          lmpDate = new Date(lmp);
+        }
+        
         if (!isNaN(lmpDate)) {
           const today = new Date();
           const diffTime = today - lmpDate;
           const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
           const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-          document.getElementById("currentGA").textContent = `${diffWeeks}w ${diffDays}d`;
+          
+          // Add warning for post-term pregnancies (>42 weeks)
+          let currentGAText = `${diffWeeks}w ${diffDays}d`;
+          if (diffWeeks > 42) {
+            const currentLang = localStorage.getItem('appLanguage') || 'mm';
+            if (currentLang === 'en') {
+              currentGAText += ' (Post-term - Woman may have already delivered)';
+            } else {
+              currentGAText += ' (ကိုယ်ဝန်ရင့်ကျော်နေပြီ - မိခင်သည် မွေးဖွားပြီးဖြစ်နိုင်သည်)';
+            }
+          }
+          
+          document.getElementById("currentGA").textContent = currentGAText;
           return;
         }
       }
       
+      // Fallback to stored GA if LMP not available
       const latestGA = manualGA || latestVisit?.gestationalAge;
-      document.getElementById("currentGA").textContent = latestGA ? `${latestGA} weeks` : 'Not calculated';
+      if (latestGA) {
+        let gaText;
+        if (typeof latestGA === 'number') {
+          const weeks = Math.floor(latestGA);
+          const days = Math.round((latestGA - weeks) * 7);
+          gaText = `${weeks}w ${days}d`;
+          if (weeks > 42) {
+            const currentLang = localStorage.getItem('appLanguage') || 'mm';
+            if (currentLang === 'en') {
+              gaText += ' (Post-term - Woman may have already delivered)';
+            } else {
+              gaText += ' (ကိုယ်ဝန်ရင့်ကျော်နေပြီ - မိခင်သည် မွေးဖွားပြီးဖြစ်နိုင်သည်)';
+            }
+          }
+        } else {
+          gaText = latestGA;
+        }
+        document.getElementById("currentGA").textContent = gaText;
+      } else {
+        document.getElementById("currentGA").textContent = 'Not calculated';
+      }
     }
 
     function populateVisitsTable() {
@@ -902,11 +944,13 @@
         const visitDateObj = getVisitDateObj(visit);
         
         // Calculate GA based on visit date (not current date)
-        // First try to use stored GA value
-        let gaValue = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks;
+        // Always calculate from LMP and visit date for accuracy
+        let gaValue = '-';
+        let gaWeeks = 0;
+        let gaDays = 0;
+        let gaCalculated = false;
         
-        // If no stored GA, calculate from LMP and visit date
-        if (!gaValue && visitDateObj) {
+        if (visitDateObj) {
           // Get LMP from visit or patient record
           const lmp = visit.lmp || currentPatient.lmp;
           if (lmp && lmp !== 'unknown' && lmp !== 'Unknown' && lmp !== 'Not recorded') {
@@ -924,9 +968,20 @@
               if (!isNaN(lmpDate) && !isNaN(visitDateObj)) {
                 const diffTime = visitDateObj - lmpDate;
                 if (diffTime >= 0) {
-                  const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-                  const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-                  gaValue = `${diffWeeks}w ${diffDays}d`;
+                  gaWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+                  gaDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+                  gaValue = `${gaWeeks}w ${gaDays}d`;
+                  gaCalculated = true;
+                  
+                  // Add warning for post-term pregnancies (>42 weeks)
+                  if (gaWeeks > 42) {
+                    const currentLang = localStorage.getItem('appLanguage') || 'mm';
+                    if (currentLang === 'en') {
+                      gaValue += ' (Post-term)';
+                    } else {
+                      gaValue += ' (ကိုယ်ဝန်ရင့်ကျော်)';
+                    }
+                  }
                 }
               }
             } catch (error) {
@@ -935,12 +990,30 @@
           }
         }
         
-        // Format stored GA value if it's a number
-        if (gaValue && typeof gaValue === 'number') {
-          gaValue = `${gaValue} weeks`;
+        // Fallback to stored GA value only if calculation failed
+        if (!gaCalculated) {
+          const storedGA = visit.gestationalAge || visit.manualGestationalAge || visit.gestationWeeks;
+          if (storedGA) {
+            // Convert stored GA to weeks and days format
+            if (typeof storedGA === 'number') {
+              gaWeeks = Math.floor(storedGA);
+              gaDays = Math.round((storedGA - gaWeeks) * 7);
+              gaValue = `${gaWeeks}w ${gaDays}d`;
+              
+              // Add warning for post-term pregnancies (>42 weeks)
+              if (gaWeeks > 42) {
+                const currentLang = localStorage.getItem('appLanguage') || 'mm';
+                if (currentLang === 'en') {
+                  gaValue += ' (Post-term)';
+                } else {
+                  gaValue += ' (ကိုယ်ဝန်ရင့်ကျော်)';
+                }
+              }
+            } else if (typeof storedGA === 'string') {
+              gaValue = storedGA;
+            }
+          }
         }
-        
-        gaValue = gaValue || '-';
         
         const tdValue = visit.tetanusToxoid || visit.td || '-';
         const temperature = visit.temperature ? `${visit.temperature}${visit.temperatureUnit || '°C'}` : '-';
