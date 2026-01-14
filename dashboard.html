@@ -743,6 +743,29 @@
             </div>
           </div>
         </div>
+
+        <!-- Deliveries Method Section -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <h5 class="mb-3" style="color: #475569; font-weight: 600; font-size: 1.1rem;">
+              <i class="fas fa-baby me-2" style="color: #3b82f6;"></i>Deliveries Method
+            </h5>
+          </div>
+        </div>
+        <div class="row mb-4">
+          <div class="col-md-6 mb-3">
+            <div class="stat-card primary">
+              <div class="stat-number" id="homeDeliveriesClients">0</div>
+              <div class="stat-label">Total number of home deliveries by BHS</div>
+            </div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <div class="stat-card info">
+              <div class="stat-number" id="institutionalDeliveriesClients">0</div>
+              <div class="stat-label">Total number of institutional deliveries by BHS</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Standard Analytics (for Midwives) -->
@@ -1285,7 +1308,8 @@
             birthRecordDoc,
             endTreatmentDoc,
             transferRecordDoc,
-            outcomeRecordDoc
+            outcomeRecordDoc,
+            newbornCareSnap
           ] = await Promise.all([
               queryWithTimeout(
                 patientRef.collection('antenatal_visits')
@@ -1325,6 +1349,11 @@
               ),
               queryWithTimeout(
                 patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' })
+              ),
+              queryWithTimeout(
+                patientRef.collection('newborn_care')
+                  .limit(1)
+                  .get({ source: 'server' })
               )
             ]);
 
@@ -1352,6 +1381,10 @@
           const endTreatment = recordMatchesDate(endTreatmentData, ['outcomeDate', 'timestamp', 'date']) ? endTreatmentData : null;
           const transferRecord = recordMatchesDate(transferRecordData, ['transferDate', 'timestamp', 'date']) ? transferRecordData : null;
           const outcomeRecord = recordMatchesDate(outcomeRecordData, ['outcomeDate', 'timestamp', 'date']) ? outcomeRecordData : null;
+          
+          // Get newborn care data (for birthplace)
+          const newbornCareData = newbornCareSnap && !newbornCareSnap.empty ? 
+            { id: newbornCareSnap.docs[0].id, data: newbornCareSnap.docs[0].data() || {} } : null;
 
           const entry = {
             id: doc.id,
@@ -1365,7 +1398,8 @@
             birthRecord,
             endTreatment,
             transferRecord,
-            outcomeRecord
+            outcomeRecord,
+            newbornCare: newbornCareData
           };
 
           entry.matchesDateFilter = patientMatchesDateFilter(entry);
@@ -1383,6 +1417,7 @@
             endTreatment: null,
             transferRecord: null,
             outcomeRecord: null,
+            newbornCare: null,
             matchesDateFilter: patientMatchesDateFilter({ profile })
           };
           return fallbackEntry;
@@ -2529,6 +2564,8 @@
         let malariaPositiveClients = 0; // Count patients with Malaria positive
         let hepatitisBPositiveClients = 0; // Count patients with Hepatitis B positive
         let hepatitisCPositiveClients = 0; // Count patients with Hepatitis C positive
+        let homeDeliveriesClients = 0; // Count patients with home deliveries
+        let institutionalDeliveriesClients = 0; // Count patients with institutional deliveries
 
         const monthlyShortInterval = {};
         const monthlyHighRisk = {};
@@ -2764,6 +2801,17 @@
           if (patientHasHepatitisCPositive) {
             hepatitisCPositiveClients++;
           }
+          
+          // Count deliveries by birthplace from newborn_care
+          const newbornCare = patient.newbornCare?.data;
+          if (newbornCare && newbornCare.birthplace) {
+            const birthplace = (newbornCare.birthplace || '').toLowerCase().trim();
+            if (birthplace === 'home') {
+              homeDeliveriesClients++;
+            } else if (birthplace === 'facility') {
+              institutionalDeliveriesClients++;
+            }
+          }
         });
 
         // Update number boxes
@@ -2818,6 +2866,30 @@
         if (hepatitisBPositiveEl) hepatitisBPositiveEl.textContent = hepatitisBPositiveClients;
         const hepatitisCPositiveEl = document.getElementById('hepatitisCPositiveClients');
         if (hepatitisCPositiveEl) hepatitisCPositiveEl.textContent = hepatitisCPositiveClients;
+        
+        // Update deliveries method metrics (show "No Records Yet" if zero)
+        const homeDeliveriesEl = document.getElementById('homeDeliveriesClients');
+        if (homeDeliveriesEl) {
+          homeDeliveriesEl.textContent = homeDeliveriesClients > 0 ? homeDeliveriesClients : 'No Records Yet';
+          if (homeDeliveriesClients === 0) {
+            homeDeliveriesEl.style.color = '#9ca3af';
+            homeDeliveriesEl.style.fontSize = '1.2rem';
+          } else {
+            homeDeliveriesEl.style.color = '';
+            homeDeliveriesEl.style.fontSize = '';
+          }
+        }
+        const institutionalDeliveriesEl = document.getElementById('institutionalDeliveriesClients');
+        if (institutionalDeliveriesEl) {
+          institutionalDeliveriesEl.textContent = institutionalDeliveriesClients > 0 ? institutionalDeliveriesClients : 'No Records Yet';
+          if (institutionalDeliveriesClients === 0) {
+            institutionalDeliveriesEl.style.color = '#9ca3af';
+            institutionalDeliveriesEl.style.fontSize = '1.2rem';
+          } else {
+            institutionalDeliveriesEl.style.color = '';
+            institutionalDeliveriesEl.style.fontSize = '';
+          }
+        }
 
         // Load charts only if elements exist (some sections were removed)
         const ancVisitsOverviewChartEl = document.getElementById('ancVisitsOverviewChart');
