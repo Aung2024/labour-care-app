@@ -2966,7 +2966,7 @@
                 <span class="flag-icon">🇲🇲</span> MM
               </button>
             </div>
-            <a href="index.html" class="btn btn-secondary btn-sm">
+            <a href="home.html" class="btn btn-secondary btn-sm">
               <i class="fas fa-home me-2"></i><span class="lang-text" data-en="Home" data-mm="ပင်မစာမျက်နှာ">Home</span>
             </a>
             <button class="btn btn-secondary btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
@@ -3171,6 +3171,32 @@
 
 
 
+        <!-- Voice Input Section -->
+        <div class="voice-input-section" style="margin: 2rem 0; padding: 1.5rem; background: #f8fafc; border-radius: 12px; border: 2px dashed #e5e7eb;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div style="flex: 1; min-width: 200px;">
+              <h5 style="margin: 0 0 0.5rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-microphone" style="color: var(--primary-color);"></i>
+                <span class="lang-text" data-en="Voice Input" data-mm="အသံဖြင့် ဖြည့်သွင်းရန်">Voice Input</span>
+              </h5>
+              <p style="margin: 0; color: #6b7280; font-size: 0.875rem;" class="lang-text" data-en="Click the button and speak patient information. Example: 'Patient name is Aye Aye Mar, age 28, phone 09123456789, address 123 Main Street.'" data-mm="ခလုတ်ကို နှိပ်ပြီး လူနာအချက်အလက်များကို ပြောပါ။">Click the button and speak patient information. Example: 'Patient name is Aye Aye Mar, age 28, phone 09123456789, address 123 Main Street.'</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <button type="button" id="voiceInputBtn" class="btn" style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; border: none; padding: 1rem 2rem; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);">
+                <i class="fas fa-microphone me-2"></i>
+                <span class="lang-text" data-en="Start Voice Input" data-mm="အသံဖြင့် စတင်ရန်">Start Voice Input</span>
+              </button>
+            </div>
+          </div>
+          <div id="voiceStatus" style="margin-top: 1rem; padding: 0.75rem; border-radius: 8px; display: none; background: white; border-left: 4px solid var(--primary-color);">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: #1f2937;">
+              <i class="fas fa-circle" style="color: var(--primary-color); animation: pulse 1.5s infinite;"></i>
+              <span id="voiceStatusText" class="lang-text" data-en="Listening..." data-mm="နားထောင်နေသည်...">Listening...</span>
+            </div>
+            <div id="voiceTranscript" style="margin-top: 0.5rem; padding: 0.75rem; background: #f9fafb; border-radius: 6px; color: #6b7280; font-size: 0.875rem; font-style: italic; min-height: 2rem;"></div>
+          </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="action-buttons">
           <button type="submit" class="btn btn-primary">
@@ -3191,5 +3217,346 @@
   <footer class="footer">
     <p>MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.</p>
   </footer>
+
+  <!-- Voice Input Script -->
+  <script>
+    // Web Speech API Implementation
+    (function() {
+      'use strict';
+
+      // Check browser support
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (!SpeechRecognition) {
+        console.warn('Speech Recognition API not supported in this browser');
+        const voiceBtn = document.getElementById('voiceInputBtn');
+        if (voiceBtn) {
+          voiceBtn.disabled = true;
+          voiceBtn.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="Voice Input Not Supported" data-mm="အသံဖြင့် ဖြည့်သွင်းခြင်း မပံ့ပိုးပါ">Voice Input Not Supported</span>';
+          voiceBtn.style.opacity = '0.6';
+          voiceBtn.style.cursor = 'not-allowed';
+        }
+        return;
+      }
+
+      let recognition = null;
+      let isListening = false;
+      const voiceBtn = document.getElementById('voiceInputBtn');
+      const voiceStatus = document.getElementById('voiceStatus');
+      const voiceStatusText = document.getElementById('voiceStatusText');
+      const voiceTranscript = document.getElementById('voiceTranscript');
+
+      // Initialize speech recognition
+      function initSpeechRecognition() {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = function() {
+          isListening = true;
+          voiceStatus.style.display = 'block';
+          voiceStatusText.textContent = 'Listening...';
+          voiceBtn.innerHTML = '<i class="fas fa-stop me-2"></i><span class="lang-text" data-en="Stop Voice Input" data-mm="ရပ်တန့်ရန်">Stop Voice Input</span>';
+          voiceBtn.style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
+          voiceTranscript.textContent = '';
+        };
+
+        recognition.onresult = function(event) {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          voiceTranscript.textContent = finalTranscript || interimTranscript;
+
+          if (finalTranscript) {
+            parseAndFillForm(finalTranscript);
+          }
+        };
+
+        recognition.onerror = function(event) {
+          console.error('Speech recognition error:', event.error);
+          let errorMsg = 'Error occurred. ';
+          switch(event.error) {
+            case 'no-speech':
+              errorMsg += 'No speech detected. Please try again.';
+              break;
+            case 'audio-capture':
+              errorMsg += 'No microphone found. Please check your microphone.';
+              break;
+            case 'not-allowed':
+              errorMsg += 'Microphone permission denied. Please allow microphone access.';
+              break;
+            default:
+              errorMsg += event.error;
+          }
+          voiceStatusText.textContent = errorMsg;
+          voiceStatus.style.borderLeftColor = '#dc2626';
+          stopListening();
+        };
+
+        recognition.onend = function() {
+          if (isListening) {
+            // Automatically restart if still listening
+            try {
+              recognition.start();
+            } catch (e) {
+              stopListening();
+            }
+          }
+        };
+      }
+
+      // Parse spoken text and fill form fields
+      function parseAndFillForm(text) {
+        const lowerText = text.toLowerCase();
+        const fields = {};
+
+        // Extract name (patterns: "name is X", "patient name X", "name X")
+        const namePatterns = [
+          /(?:patient\s+)?name\s+(?:is\s+)?([a-z\s]+?)(?:\s+age|\s+phone|\s+address|$)/i,
+          /name\s+is\s+([a-z\s]+?)(?:\s+age|\s+phone|\s+address|$)/i
+        ];
+        for (const pattern of namePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.name = match[1].trim();
+            break;
+          }
+        }
+
+        // Extract age (patterns: "age X", "aged X", "X years old")
+        const agePatterns = [
+          /age\s+(?:is\s+)?(\d+)/i,
+          /aged\s+(\d+)/i,
+          /(\d+)\s+years?\s+old/i
+        ];
+        for (const pattern of agePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.age = parseInt(match[1]);
+            break;
+          }
+        }
+
+        // Extract phone (patterns: "phone X", "phone number X", "contact X")
+        const phonePatterns = [
+          /phone\s+(?:number\s+)?(?:is\s+)?([0-9\s\-\(\)]+)/i,
+          /contact\s+(?:number\s+)?(?:is\s+)?([0-9\s\-\(\)]+)/i,
+          /mobile\s+(?:number\s+)?(?:is\s+)?([0-9\s\-\(\)]+)/i
+        ];
+        for (const pattern of phonePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.phone = match[1].replace(/\s+/g, '').trim();
+            break;
+          }
+        }
+
+        // Extract address (patterns: "address X", "lives at X", "from X")
+        const addressPatterns = [
+          /address\s+(?:is\s+)?(.+?)(?:\s+phone|\s+age|$)/i,
+          /lives?\s+at\s+(.+?)(?:\s+phone|\s+age|$)/i,
+          /from\s+(.+?)(?:\s+phone|\s+age|$)/i
+        ];
+        for (const pattern of addressPatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.address = match[1].trim();
+            break;
+          }
+        }
+
+        // Extract emergency contact name
+        const emergencyNamePatterns = [
+          /emergency\s+contact\s+(?:name\s+)?(?:is\s+)?([a-z\s]+?)(?:\s+phone|\s+age|$)/i,
+          /contact\s+person\s+(?:is\s+)?([a-z\s]+?)(?:\s+phone|\s+age|$)/i
+        ];
+        for (const pattern of emergencyNamePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.emergencyContact = match[1].trim();
+            break;
+          }
+        }
+
+        // Extract emergency phone
+        const emergencyPhonePatterns = [
+          /emergency\s+phone\s+(?:number\s+)?(?:is\s+)?([0-9\s\-\(\)]+)/i,
+          /emergency\s+contact\s+phone\s+(?:number\s+)?(?:is\s+)?([0-9\s\-\(\)]+)/i
+        ];
+        for (const pattern of emergencyPhonePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.emergencyPhone = match[1].replace(/\s+/g, '').trim();
+            break;
+          }
+        }
+
+        // Extract gravida (G)
+        const gravidaPatterns = [
+          /gravida\s+(?:is\s+)?(\d+)/i,
+          /g\s*(\d+)/i,
+          /(?:pregnancy\s+)?number\s+(\d+)/i
+        ];
+        for (const pattern of gravidaPatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.gravida = parseInt(match[1]);
+            break;
+          }
+        }
+
+        // Extract parity (P)
+        const parityPatterns = [
+          /parity\s+(?:is\s+)?(\d+)/i,
+          /p\s*(\d+)/i,
+          /(?:delivered\s+)?(\d+)\s+times?/i
+        ];
+        for (const pattern of parityPatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            fields.parity = parseInt(match[1]);
+            break;
+          }
+        }
+
+        // Fill form fields
+        if (fields.name) {
+          const nameField = document.getElementById('name');
+          if (nameField) {
+            nameField.value = capitalizeWords(fields.name);
+            nameField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.age) {
+          const ageField = document.getElementById('age');
+          if (ageField && fields.age >= 12 && fields.age <= 50) {
+            ageField.value = fields.age;
+            ageField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.phone) {
+          const phoneField = document.getElementById('phone');
+          if (phoneField) {
+            phoneField.value = fields.phone;
+            phoneField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.address) {
+          const addressField = document.getElementById('patientAddress');
+          if (addressField) {
+            addressField.value = capitalizeWords(fields.address);
+            addressField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.emergencyContact) {
+          const emergencyContactField = document.getElementById('emergencyContact');
+          if (emergencyContactField) {
+            emergencyContactField.value = capitalizeWords(fields.emergencyContact);
+            emergencyContactField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.emergencyPhone) {
+          const emergencyPhoneField = document.getElementById('emergencyPhone');
+          if (emergencyPhoneField) {
+            emergencyPhoneField.value = fields.emergencyPhone;
+            emergencyPhoneField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+
+        if (fields.gravida) {
+          const gravidaField = document.getElementById('gravidaSelect');
+          if (gravidaField && fields.gravida >= 1 && fields.gravida <= 10) {
+            gravidaField.value = fields.gravida;
+            gravidaField.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+
+        if (fields.parity) {
+          const parityField = document.getElementById('parityPrimarySelect');
+          if (parityField && fields.parity >= 0 && fields.parity <= 10) {
+            parityField.value = fields.parity;
+            parityField.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+
+        // Show success message
+        if (Object.keys(fields).length > 0) {
+          voiceStatusText.innerHTML = '<i class="fas fa-check-circle me-2" style="color: var(--primary-color);"></i><span class="lang-text" data-en="Form fields filled! Review and click Save." data-mm="ဖောင်ဖြည့်သွင်းပြီးပါပြီ။ စစ်ဆေးပြီး သိမ်းဆည်းရန် နှိပ်ပါ။">Form fields filled! Review and click Save.</span>';
+          voiceStatus.style.borderLeftColor = 'var(--primary-color)';
+        }
+      }
+
+      // Helper function to capitalize words
+      function capitalizeWords(str) {
+        return str.split(' ').map(word => {
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        }).join(' ');
+      }
+
+      // Start listening
+      function startListening() {
+        if (!recognition) {
+          initSpeechRecognition();
+        }
+        
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error('Error starting recognition:', e);
+          voiceStatusText.textContent = 'Error starting voice input. Please try again.';
+          voiceStatus.style.display = 'block';
+          voiceStatus.style.borderLeftColor = '#dc2626';
+        }
+      }
+
+      // Stop listening
+      function stopListening() {
+        isListening = false;
+        if (recognition) {
+          recognition.stop();
+        }
+        voiceBtn.innerHTML = '<i class="fas fa-microphone me-2"></i><span class="lang-text" data-en="Start Voice Input" data-mm="အသံဖြင့် စတင်ရန်">Start Voice Input</span>';
+        voiceBtn.style.background = 'linear-gradient(135deg, var(--primary-color), var(--secondary-color))';
+        voiceStatus.style.display = 'none';
+      }
+
+      // Button click handler
+      if (voiceBtn) {
+        voiceBtn.addEventListener('click', function() {
+          if (isListening) {
+            stopListening();
+          } else {
+            startListening();
+          }
+        });
+      }
+
+      // Add pulse animation for listening indicator
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `;
+      document.head.appendChild(style);
+
+    })();
+  </script>
 </body>
 </html>
