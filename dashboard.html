@@ -1239,30 +1239,66 @@
       document.getElementById('postnatalPatients').textContent = stats.postnatalPatients || 0;
     }
 
-    // Load midwife filter for TMO
+    // Load midwife filter for TMO and Super Admin
     async function loadMidwifeFilter() {
       try {
         const midwifeFilter = document.getElementById('midwifeFilter');
+        if (!midwifeFilter) {
+          console.warn('Midwife filter element not found');
+          return;
+        }
+        
         midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
         
-        console.log('Loading midwives for township:', userTownship);
+        let midwivesSnap;
         
-        // Get all midwives in the township
-        const midwivesSnap = await firebase.firestore()
-          .collection('users')
-          .where('role', '==', 'Midwife')
-          .where('township', '==', userTownship)
-          .get();
+        if (userRole === 'Super Admin' || userRole === 'admin') {
+          // Super Admin: Get all midwives
+          console.log('Loading all midwives for Super Admin');
+          midwivesSnap = await firebase.firestore()
+            .collection('users')
+            .where('role', '==', 'Midwife')
+            .get();
+        } else if (userRole === 'TMO') {
+          // TMO: Get only midwives in their township
+          console.log('Loading midwives for township:', userTownship);
+          midwivesSnap = await firebase.firestore()
+            .collection('users')
+            .where('role', '==', 'Midwife')
+            .where('township', '==', userTownship)
+            .get();
+        } else {
+          // For other roles, don't load midwife filter
+          console.log('Midwife filter not available for role:', userRole);
+          return;
+        }
         
         console.log('Found midwives:', midwivesSnap.size);
         
+        // Sort midwives by name for better UX
+        const midwives = [];
         midwivesSnap.forEach(doc => {
           const userData = doc.data();
-          console.log('Adding midwife:', userData.name || userData.email);
-          
+          midwives.push({
+            id: doc.id,
+            name: userData.name || userData.email || 'Unknown Midwife',
+            township: userData.township || 'Unknown Township'
+          });
+        });
+        
+        // Sort by name
+        midwives.sort((a, b) => a.name.localeCompare(b.name));
+        
+        // Add options to filter
+        midwives.forEach(midwife => {
           const option = document.createElement('option');
-          option.value = doc.id;
-          option.textContent = userData.name || userData.email || 'Unknown Midwife';
+          option.value = midwife.id;
+          // For Super Admin, show township info too
+          if (userRole === 'Super Admin' || userRole === 'admin') {
+            option.textContent = `${midwife.name} (${midwife.township || 'Unknown'})`;
+          } else {
+            option.textContent = midwife.name;
+          }
           midwifeFilter.appendChild(option);
         });
         
@@ -1567,14 +1603,15 @@
 
         let dataset = analyticsData.patients || [];
 
-        if (userRole === 'TMO') {
-          if (selectedMidwife && selectedMidwife !== 'all') {
-            dataset = dataset.filter(patient => {
-              const createdBy = patient.profile.created_by || patient.profile.createdBy;
-              return createdBy === selectedMidwife;
-            });
-          }
+        // Apply midwife filter for TMO and Super Admin
+        if ((userRole === 'TMO' || userRole === 'Super Admin' || userRole === 'admin') && selectedMidwife && selectedMidwife !== 'all') {
+          dataset = dataset.filter(patient => {
+            const createdBy = patient.profile.created_by || patient.profile.createdBy;
+            return createdBy === selectedMidwife;
+          });
+          console.log(`Filtered to midwife ${selectedMidwife}: ${dataset.length} patients`);
         } else if (userRole && userRole.toLowerCase() === 'midwife') {
+          // Midwife always sees only their own patients
           dataset = dataset.filter(patient => {
             const createdBy = patient.profile.created_by || patient.profile.createdBy;
             return createdBy === currentUser.uid;
@@ -2285,10 +2322,16 @@
     // Load new analytics based on user role
     async function loadNewAnalytics() {
       try {
-        if (userRole === 'TMO') {
-          // Show TMO analytics with charts
+        if (userRole === 'TMO' || userRole === 'Super Admin' || userRole === 'admin') {
+          // Show TMO analytics with charts for TMO and Super Admin
           document.getElementById('tmoAnalytics').style.display = 'block';
           document.getElementById('standardAnalytics').style.display = 'none';
+          
+          // Show and load midwife filter for TMO and Super Admin
+          const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
+          if (midwifeFilterCard) {
+            midwifeFilterCard.style.display = 'block';
+          }
           
           // Load midwife filter options
           await loadMidwifeFilter();
@@ -2302,7 +2345,10 @@
           document.getElementById('standardAnalytics').style.display = 'none';
           
           // Hide the midwife filter for midwives (they only see their own data)
-          document.getElementById('midwifeFilter').closest('.analytics-card').style.display = 'none';
+          const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
+          if (midwifeFilterCard) {
+            midwifeFilterCard.style.display = 'none';
+          }
           
           // Load TMO analytics with current user's patients
           await loadTMOAnalytics();
