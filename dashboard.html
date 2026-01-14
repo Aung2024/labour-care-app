@@ -654,6 +654,18 @@
               <div class="stat-label">Total LCG completed clients</div>
             </div>
           </div>
+          <div class="col-md-3 mb-3">
+            <div class="stat-card success">
+              <div class="stat-number" id="labTestCompletedClients">0</div>
+              <div class="stat-label">Lab Test Completed Patients</div>
+            </div>
+          </div>
+          <div class="col-md-3 mb-3">
+            <div class="stat-card primary">
+              <div class="stat-number" id="ultrasoundServicesClients">0</div>
+              <div class="stat-label">Total Ultrasound services received Patients</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2431,6 +2443,8 @@
         let usgServices = 0;
         let basicLabTests = 0;
         let tbScreening = 0;
+        let labTestCompletedClients = 0; // Count patients with all 8 basic tests completed
+        let ultrasoundServicesClients = 0; // Count patients with ultrasound services received
 
         const monthlyShortInterval = {};
         const monthlyHighRisk = {};
@@ -2525,14 +2539,37 @@
             monthlyShortInterval[month] = (monthlyShortInterval[month] || 0) + 1;
           }
           
-          // Lab tests
+          // Lab tests - track per patient for completed tests
+          let patientHasAll8Tests = false;
+          let patientHasUltrasound = false;
+          
           tests.forEach(({ data = {} }) => {
-            // USG services (check if any ultrasound was done)
-            if (data.usgDone === 'Yes' || data.ultrasoundDone === 'Yes') {
+            // Check if patient has all 8 basic tests completed (not "No Test Yet")
+            const hasHIV = data.hivResult && data.hivResult !== '' && data.hivResult !== 'No Test Yet';
+            const hasMalaria = data.malariaResult && data.malariaResult !== '' && data.malariaResult !== 'No Test Yet';
+            const hasSyphilis = data.syphilisResult && data.syphilisResult !== '' && data.syphilisResult !== 'No Test Yet';
+            const hasHepB = data.hepatitisBResult && data.hepatitisBResult !== '' && data.hepatitisBResult !== 'No Test Yet';
+            const hasHepC = data.hepatitisCResult && data.hepatitisCResult !== '' && data.hepatitisCResult !== 'No Test Yet';
+            const hasHemoglobin = data.hemoglobinResult && data.hemoglobinResult !== '' && data.hemoglobinResult !== null && !isNaN(parseFloat(data.hemoglobinResult));
+            const hasBloodGroup = data.bloodGroup && data.bloodGroup !== '' && data.bloodGroup !== 'No Test Yet';
+            const hasRhFactor = data.rhFactor && data.rhFactor !== '' && data.rhFactor !== 'No Test Yet';
+            
+            // Check if all 8 tests are completed
+            if (hasHIV && hasMalaria && hasSyphilis && hasHepB && hasHepC && hasHemoglobin && hasBloodGroup && hasRhFactor) {
+              patientHasAll8Tests = true;
+            }
+            
+            // Check for ultrasound services
+            if (data.ultrasoundServices === 'Yes') {
+              patientHasUltrasound = true;
+            }
+            
+            // USG services (check if any ultrasound was done) - legacy field support
+            if (data.usgDone === 'Yes' || data.ultrasoundDone === 'Yes' || data.ultrasoundServices === 'Yes') {
               usgServices++;
             }
             
-            // Basic lab tests (all required tests completed)
+            // Basic lab tests (all required tests completed) - legacy calculation
             if (data.hivDone === 'Yes' && data.syphilisDone === 'Yes' && 
                 (data.hemoglobin || data.hbDone === 'Yes')) {
               basicLabTests++;
@@ -2556,6 +2593,16 @@
               monthlyCoinfection.hepC[testMonth] = (monthlyCoinfection.hepC[testMonth] || 0) + 1;
             }
           });
+          
+          // Count unique patients with all 8 tests completed
+          if (patientHasAll8Tests) {
+            labTestCompletedClients++;
+          }
+          
+          // Count unique patients with ultrasound services
+          if (patientHasUltrasound) {
+            ultrasoundServicesClients++;
+          }
         });
 
         // Update number boxes
@@ -2584,6 +2631,12 @@
         if (ancBasicLabTestsEl) ancBasicLabTestsEl.textContent = basicLabTests;
         const ancTBScreeningEl = document.getElementById('ancTBScreening');
         if (ancTBScreeningEl) ancTBScreeningEl.textContent = tbScreening;
+        
+        // Update new metrics
+        const labTestCompletedEl = document.getElementById('labTestCompletedClients');
+        if (labTestCompletedEl) labTestCompletedEl.textContent = labTestCompletedClients;
+        const ultrasoundServicesEl = document.getElementById('ultrasoundServicesClients');
+        if (ultrasoundServicesEl) ultrasoundServicesEl.textContent = ultrasoundServicesClients;
 
         // Load charts only if elements exist (some sections were removed)
         const ancVisitsOverviewChartEl = document.getElementById('ancVisitsOverviewChart');
