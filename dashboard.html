@@ -288,6 +288,12 @@
       .clinical-table tbody td {
         padding: 8px 6px;
       }
+      
+      /* Make co-infection cards stack on mobile */
+      .col-md-2-4 {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+      }
     }
     
     /* Premium Enhancements */
@@ -664,6 +670,76 @@
             <div class="stat-card primary">
               <div class="stat-number" id="ultrasoundServicesClients">0</div>
               <div class="stat-label">Total Ultrasound services received Patients</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anemia Prevalence Section -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <h5 class="mb-3" style="color: #475569; font-weight: 600; font-size: 1.1rem;">
+              <i class="fas fa-tint me-2" style="color: #ef4444;"></i>Anemia Prevalence
+            </h5>
+          </div>
+        </div>
+        <div class="row mb-4">
+          <div class="col-md-4 mb-3">
+            <div class="stat-card danger">
+              <div class="stat-number" id="severeAnemiaClients">0</div>
+              <div class="stat-label">Severe Anemia (&lt;7 mg/dl)</div>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="stat-card warning">
+              <div class="stat-number" id="mildAnemiaClients">0</div>
+              <div class="stat-label">Mild Anemia (7-11 mg/dl)</div>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="stat-card success">
+              <div class="stat-number" id="noAnemiaClients">0</div>
+              <div class="stat-label">No Anemia (&gt;11 mg/dl)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Co-infection Prevalence Section -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <h5 class="mb-3" style="color: #475569; font-weight: 600; font-size: 1.1rem;">
+              <i class="fas fa-virus me-2" style="color: #ef4444;"></i>Co-infection Prevalence
+            </h5>
+          </div>
+        </div>
+        <div class="row mb-4">
+          <div class="col-md-2-4 mb-3" style="flex: 0 0 20%; max-width: 20%;">
+            <div class="stat-card danger">
+              <div class="stat-number" id="hivPositiveClients">0</div>
+              <div class="stat-label">HIV Positive</div>
+            </div>
+          </div>
+          <div class="col-md-2-4 mb-3" style="flex: 0 0 20%; max-width: 20%;">
+            <div class="stat-card danger">
+              <div class="stat-number" id="syphilisPositiveClients">0</div>
+              <div class="stat-label">Syphilis Positive</div>
+            </div>
+          </div>
+          <div class="col-md-2-4 mb-3" style="flex: 0 0 20%; max-width: 20%;">
+            <div class="stat-card danger">
+              <div class="stat-number" id="malariaPositiveClients">0</div>
+              <div class="stat-label">Malaria Positive</div>
+            </div>
+          </div>
+          <div class="col-md-2-4 mb-3" style="flex: 0 0 20%; max-width: 20%;">
+            <div class="stat-card danger">
+              <div class="stat-number" id="hepatitisBPositiveClients">0</div>
+              <div class="stat-label">Hepatitis B Positive</div>
+            </div>
+          </div>
+          <div class="col-md-2-4 mb-3" style="flex: 0 0 20%; max-width: 20%;">
+            <div class="stat-card danger">
+              <div class="stat-number" id="hepatitisCPositiveClients">0</div>
+              <div class="stat-label">Hepatitis C Positive</div>
             </div>
           </div>
         </div>
@@ -2445,6 +2521,14 @@
         let tbScreening = 0;
         let labTestCompletedClients = 0; // Count patients with all 8 basic tests completed
         let ultrasoundServicesClients = 0; // Count patients with ultrasound services received
+        let severeAnemiaClients = 0; // Count patients with severe anemia (<7 mg/dl)
+        let mildAnemiaClients = 0; // Count patients with mild anemia (7-11 mg/dl)
+        let noAnemiaClients = 0; // Count patients with no anemia (>11 mg/dl)
+        let hivPositiveClients = 0; // Count patients with HIV positive
+        let syphilisPositiveClients = 0; // Count patients with Syphilis positive
+        let malariaPositiveClients = 0; // Count patients with Malaria positive
+        let hepatitisBPositiveClients = 0; // Count patients with Hepatitis B positive
+        let hepatitisCPositiveClients = 0; // Count patients with Hepatitis C positive
 
         const monthlyShortInterval = {};
         const monthlyHighRisk = {};
@@ -2542,6 +2626,12 @@
           // Lab tests - track per patient for completed tests
           let patientHasAll8Tests = false;
           let patientHasUltrasound = false;
+          let patientAnemiaStatus = null; // Track worst anemia status: 'severe', 'mild', or 'none'
+          let patientHasHIVPositive = false; // Track if patient has HIV positive
+          let patientHasSyphilisPositive = false; // Track if patient has Syphilis positive
+          let patientHasMalariaPositive = false; // Track if patient has Malaria positive
+          let patientHasHepatitisBPositive = false; // Track if patient has Hepatitis B positive
+          let patientHasHepatitisCPositive = false; // Track if patient has Hepatitis C positive
           
           tests.forEach(({ data = {} }) => {
             // Check if patient has all 8 basic tests completed (not "No Test Yet")
@@ -2562,6 +2652,51 @@
             // Check for ultrasound services
             if (data.ultrasoundServices === 'Yes') {
               patientHasUltrasound = true;
+            }
+            
+            // Check anemia status from hemoglobin result
+            const hbValue = parseFloat(data.hemoglobinResult);
+            if (!isNaN(hbValue) && hbValue > 0) {
+              if (hbValue < 7) {
+                // Severe anemia - highest priority
+                patientAnemiaStatus = 'severe';
+              } else if (hbValue >= 7 && hbValue <= 11) {
+                // Mild anemia - only set if not already severe
+                if (patientAnemiaStatus !== 'severe') {
+                  patientAnemiaStatus = 'mild';
+                }
+              } else if (hbValue > 11) {
+                // No anemia - only set if no anemia status yet
+                if (!patientAnemiaStatus) {
+                  patientAnemiaStatus = 'none';
+                }
+              }
+            }
+            
+            // Check for positive infection results
+            const hivResult = (data.hivResult || '').toLowerCase();
+            if (hivResult === 'reactive' || hivResult === 'positive') {
+              patientHasHIVPositive = true;
+            }
+            
+            const syphilisResult = (data.syphilisResult || '').toLowerCase();
+            if (syphilisResult === 'reactive' || syphilisResult === 'positive') {
+              patientHasSyphilisPositive = true;
+            }
+            
+            const malariaResult = (data.malariaResult || '').toLowerCase();
+            if (malariaResult === 'positive') {
+              patientHasMalariaPositive = true;
+            }
+            
+            const hepatitisBResult = (data.hepatitisBResult || '').toLowerCase();
+            if (hepatitisBResult === 'reactive' || hepatitisBResult === 'positive') {
+              patientHasHepatitisBPositive = true;
+            }
+            
+            const hepatitisCResult = (data.hepatitisCResult || '').toLowerCase();
+            if (hepatitisCResult === 'reactive' || hepatitisCResult === 'positive') {
+              patientHasHepatitisCPositive = true;
             }
             
             // USG services (check if any ultrasound was done) - legacy field support
@@ -2603,6 +2738,32 @@
           if (patientHasUltrasound) {
             ultrasoundServicesClients++;
           }
+          
+          // Count patients by anemia status (worst status takes priority)
+          if (patientAnemiaStatus === 'severe') {
+            severeAnemiaClients++;
+          } else if (patientAnemiaStatus === 'mild') {
+            mildAnemiaClients++;
+          } else if (patientAnemiaStatus === 'none') {
+            noAnemiaClients++;
+          }
+          
+          // Count patients with positive infection results
+          if (patientHasHIVPositive) {
+            hivPositiveClients++;
+          }
+          if (patientHasSyphilisPositive) {
+            syphilisPositiveClients++;
+          }
+          if (patientHasMalariaPositive) {
+            malariaPositiveClients++;
+          }
+          if (patientHasHepatitisBPositive) {
+            hepatitisBPositiveClients++;
+          }
+          if (patientHasHepatitisCPositive) {
+            hepatitisCPositiveClients++;
+          }
         });
 
         // Update number boxes
@@ -2637,6 +2798,26 @@
         if (labTestCompletedEl) labTestCompletedEl.textContent = labTestCompletedClients;
         const ultrasoundServicesEl = document.getElementById('ultrasoundServicesClients');
         if (ultrasoundServicesEl) ultrasoundServicesEl.textContent = ultrasoundServicesClients;
+        
+        // Update anemia prevalence metrics
+        const severeAnemiaEl = document.getElementById('severeAnemiaClients');
+        if (severeAnemiaEl) severeAnemiaEl.textContent = severeAnemiaClients;
+        const mildAnemiaEl = document.getElementById('mildAnemiaClients');
+        if (mildAnemiaEl) mildAnemiaEl.textContent = mildAnemiaClients;
+        const noAnemiaEl = document.getElementById('noAnemiaClients');
+        if (noAnemiaEl) noAnemiaEl.textContent = noAnemiaClients;
+        
+        // Update co-infection prevalence metrics
+        const hivPositiveEl = document.getElementById('hivPositiveClients');
+        if (hivPositiveEl) hivPositiveEl.textContent = hivPositiveClients;
+        const syphilisPositiveEl = document.getElementById('syphilisPositiveClients');
+        if (syphilisPositiveEl) syphilisPositiveEl.textContent = syphilisPositiveClients;
+        const malariaPositiveEl = document.getElementById('malariaPositiveClients');
+        if (malariaPositiveEl) malariaPositiveEl.textContent = malariaPositiveClients;
+        const hepatitisBPositiveEl = document.getElementById('hepatitisBPositiveClients');
+        if (hepatitisBPositiveEl) hepatitisBPositiveEl.textContent = hepatitisBPositiveClients;
+        const hepatitisCPositiveEl = document.getElementById('hepatitisCPositiveClients');
+        if (hepatitisCPositiveEl) hepatitisCPositiveEl.textContent = hepatitisCPositiveClients;
 
         // Load charts only if elements exist (some sections were removed)
         const ancVisitsOverviewChartEl = document.getElementById('ancVisitsOverviewChart');
