@@ -13,6 +13,13 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <!-- Load smartFirestoreQuery if available for optimized queries -->
+  <script>
+    // Ensure smartFirestoreQuery is available globally
+    if (typeof smartFirestoreQuery === 'undefined' && window.smartFirestoreQuery) {
+      window.smartFirestoreQuery = window.smartFirestoreQuery;
+    }
+  </script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -399,7 +406,7 @@
       <div id="emptyState" class="empty-state" style="display: none;">
         <i class="fas fa-trophy"></i>
         <p>
-          <span class="lang-text" data-en="No midwives found" data-mm="သားဖွားဆရာမများ မတွေ့ရှိပါ">No midwives found</span>
+          No midwives found
         </p>
       </div>
 
@@ -411,6 +418,7 @@
               <th class="rank-cell">Rank</th>
               <th>Midwife</th>
               <th class="text-center">Township</th>
+              <th class="text-center">Patients</th>
               <th class="score-cell">Total Score</th>
             </tr>
           </thead>
@@ -606,35 +614,65 @@
         allMidwives = [];
         const midwifeArray = Array.from(allMidwifeDocs.values());
         
+        // Update loading message with progress
+        const updateLoadingMessage = (current, total) => {
+          const loadingText = document.querySelector('#loadingContainer p');
+          if (loadingText) {
+            loadingText.textContent = `Calculating scores... ${current}/${total} midwives`;
+          }
+        };
+        
         // Calculate scores for each midwife with progress updates
-        for (let i = 0; i < midwifeArray.length; i++) {
-          const midwifeDoc = midwifeArray[i];
-          const midwifeData = midwifeDoc.data();
-          const midwifeId = midwifeDoc.id;
+        // Process in smaller batches to show progress
+        const BATCH_SIZE = 3;
+        for (let i = 0; i < midwifeArray.length; i += BATCH_SIZE) {
+          const batch = midwifeArray.slice(i, i + BATCH_SIZE);
+          updateLoadingMessage(i + 1, midwifeArray.length);
           
-          console.log(`Calculating score for midwife ${i + 1}/${midwifeArray.length}: ${midwifeData.name || midwifeData.email}`);
-          
-          try {
-            const score = await Promise.race([
-              calculateMidwifeScore(midwifeId),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Score calculation timeout')), 30000))
-            ]);
+          // Process batch in parallel
+          const batchResults = await Promise.all(batch.map(async (midwifeDoc) => {
+            const midwifeData = midwifeDoc.data();
+            const midwifeId = midwifeDoc.id;
+            const midwifeName = midwifeData.name || midwifeData.email || 'Unknown';
             
-            allMidwives.push({
-              id: midwifeId,
-              name: midwifeData.name || midwifeData.email || 'Unknown',
-              township: midwifeData.township || 'Unknown',
-              score: score || 0
-            });
-          } catch (error) {
-            console.error(`Error calculating score for midwife ${midwifeId}:`, error);
-            // Still add the midwife with 0 score if calculation fails
-            allMidwives.push({
-              id: midwifeId,
-              name: midwifeData.name || midwifeData.email || 'Unknown',
-              township: midwifeData.township || 'Unknown',
-              score: 0
-            });
+            console.log(`[${i + 1}/${midwifeArray.length}] Calculating score for: ${midwifeName} (${midwifeId})`);
+            
+            try {
+              const result = await Promise.race([
+                calculateMidwifeScore(midwifeId),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Score calculation timeout')), 60000))
+              ]);
+              
+              // Handle both old format (number) and new format (object)
+              const scoreResult = typeof result === 'object' ? result : { score: result || 0, patientCount: 0 };
+              
+              console.log(`[${midwifeName}] Final score: ${scoreResult.score}, Patients: ${scoreResult.patientCount}`);
+              
+              return {
+                id: midwifeId,
+                name: midwifeName,
+                township: midwifeData.township || 'Unknown',
+                score: scoreResult.score || 0,
+                patientCount: scoreResult.patientCount || 0
+              };
+            } catch (error) {
+              console.error(`[${midwifeName}] Error calculating score:`, error);
+              // Return with 0 score if calculation fails
+              return {
+                id: midwifeId,
+                name: midwifeName,
+                township: midwifeData.township || 'Unknown',
+                score: 0,
+                patientCount: 0
+              };
+            }
+          }));
+          
+          allMidwives.push(...batchResults);
+          
+          // Small delay to keep UI responsive
+          if (i + BATCH_SIZE < midwifeArray.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
 
@@ -654,177 +692,214 @@
 
     async function calculateMidwifeScore(midwifeId) {
       let totalScore = 0;
+      let patientCount = 0;
 
       try {
-        // Get all patients created by this midwife with timeout
-        const [newFormatSnap, oldFormatSnap] = await Promise.all([
-          firebase.firestore().collection('patients').where('created_by', '==', midwifeId).get().catch(() => ({ forEach: () => {}, docs: [] })),
-          firebase.firestore().collection('patients').where('createdBy', '==', midwifeId).get().catch(() => ({ forEach: () => {}, docs: [] }))
-        ]);
+        console.log(`[${midwifeId}] Starting score calculation...`);
+        
+        // Get all patients created by this midwife - use same logic as list.html
+        let newFormatSnap, oldFormatSnap;
+        const db = firebase.firestore();
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        
+        try {
+          const newQuery = db.collection('patients').where('created_by', '==', midwifeId);
+          // Use smartFirestoreQuery if available (from firebase.js)
+          if (typeof smartFirestoreQuery !== 'undefined') {
+            newFormatSnap = await smartFirestoreQuery(
+              Promise.resolve(newQuery),
+              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
+            );
+          } else {
+            newFormatSnap = await newQuery.get();
+          }
+          console.log(`[${midwifeId}] created_by query: ${newFormatSnap.size || 0} patients`);
+        } catch (error) {
+          console.error(`[${midwifeId}] Error querying created_by:`, error);
+          newFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
+        }
+        
+        try {
+          const oldQuery = db.collection('patients').where('createdBy', '==', midwifeId);
+          // Use smartFirestoreQuery if available
+          if (typeof smartFirestoreQuery !== 'undefined') {
+            oldFormatSnap = await smartFirestoreQuery(
+              Promise.resolve(oldQuery),
+              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
+            );
+          } else {
+            oldFormatSnap = await oldQuery.get();
+          }
+          console.log(`[${midwifeId}] createdBy query: ${oldFormatSnap.size || 0} patients`);
+        } catch (error) {
+          console.error(`[${midwifeId}] Error querying createdBy:`, error);
+          oldFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
+        }
 
         const patientIds = new Set();
-        if (newFormatSnap && newFormatSnap.forEach) {
-          newFormatSnap.forEach(doc => patientIds.add(doc.id));
+        const patientDocs = new Map();
+        
+        if (newFormatSnap && typeof newFormatSnap.forEach === 'function' && !newFormatSnap.empty) {
+          newFormatSnap.forEach(doc => {
+            patientIds.add(doc.id);
+            patientDocs.set(doc.id, doc);
+          });
+          console.log(`[${midwifeId}] Found ${newFormatSnap.size} patients with created_by field`);
         }
-        if (oldFormatSnap && oldFormatSnap.forEach) {
-          oldFormatSnap.forEach(doc => patientIds.add(doc.id));
+        
+        if (oldFormatSnap && typeof oldFormatSnap.forEach === 'function' && !oldFormatSnap.empty) {
+          oldFormatSnap.forEach(doc => {
+            patientIds.add(doc.id);
+            if (!patientDocs.has(doc.id)) {
+              patientDocs.set(doc.id, doc);
+            }
+          });
+          console.log(`[${midwifeId}] Found ${oldFormatSnap.size} patients with createdBy field`);
         }
 
         const patients = Array.from(patientIds);
+        patientCount = patients.length;
+        console.log(`[${midwifeId}] Total unique patients: ${patientCount}`);
+
         if (patients.length === 0) {
+          console.log(`[${midwifeId}] No patients found, returning 0`);
           return 0;
         }
 
-        // Process each patient with error handling
-        for (const patientId of patients) {
-          try {
-            const patientRef = firebase.firestore().collection('patients').doc(patientId);
-            
-            // Get patient data with timeout
-            const patientDoc = await Promise.race([
-              patientRef.get(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-            ]);
-            
-            if (!patientDoc.exists) continue;
-            
-            const patientData = patientDoc.data();
-            
-            // a) 1 point for each registered patient
-            totalScore += 1;
-            
-            // b) 2 points for complete patient registration
-            if (isPatientRegistrationComplete(patientData)) {
-              totalScore += 2;
-            }
-            
-            // Get ANC visits with timeout
-            const ancVisitsSnap = await Promise.race([
-              patientRef.collection('antenatal_visits').get(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-            ]).catch(() => ({ docs: [] }));
-            
-            const ancVisits = ancVisitsSnap.docs ? ancVisitsSnap.docs.map(doc => doc.data()) : [];
-            
-            // c) ANC visit points
-            if (ancVisits.length >= 1) {
-              totalScore += 1; // At least 1 ANC visit
-              if (ancVisits.length >= 4) {
-                totalScore += 1; // 4 or more visits
-              }
-              if (ancVisits.length >= 8) {
-                totalScore += 1; // 8 or more visits
-              }
-            }
-            
-            // d) 2 points for complete ANC form
-            if (ancVisits.length >= 1 && isANCFormComplete(ancVisits)) {
-              totalScore += 2;
-            }
-            
-            // e) 1 point for LCG completed (with timeout)
+        // Process patients in batches for better performance
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < patients.length; i += BATCH_SIZE) {
+          const batch = patients.slice(i, i + BATCH_SIZE);
+          
+          // Process batch in parallel
+          const batchScores = await Promise.all(batch.map(async (patientId) => {
+            let patientScore = 0;
             try {
-              const [summaryDoc, startingTimeDoc, secondStageDoc] = await Promise.all([
-                Promise.race([patientRef.collection('records').doc('summary').get(), new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))]).catch(() => ({ exists: false })),
-                Promise.race([patientRef.collection('records').doc('startingTime').get(), new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))]).catch(() => ({ exists: false })),
-                Promise.race([patientRef.collection('records').doc('secondStage').get(), new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))]).catch(() => ({ exists: false }))
+              const patientDoc = patientDocs.get(patientId);
+              let patientData;
+              
+              if (patientDoc && patientDoc.data) {
+                patientData = patientDoc.data();
+              } else {
+                // Fallback: fetch patient document
+                const patientRef = firebase.firestore().collection('patients').doc(patientId);
+                const doc = await Promise.race([
+                  patientRef.get(),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+                ]);
+                if (!doc.exists) return 0;
+                patientData = doc.data();
+              }
+              
+              // a) 1 point for each registered patient
+              patientScore += 1;
+              
+              // b) 2 points for complete patient registration
+              if (isPatientRegistrationComplete(patientData)) {
+                patientScore += 2;
+              }
+              
+              const patientRef = firebase.firestore().collection('patients').doc(patientId);
+              
+              // Batch all subcollection queries in parallel
+              const [
+                ancVisitsSnap,
+                pncVisitsSnap,
+                labTestsSnap,
+                immediateCareSnap,
+                newbornCareSnap,
+                summaryDoc,
+                startingTimeDoc,
+                secondStageDoc,
+                transferRecordDoc
+              ] = await Promise.all([
+                patientRef.collection('antenatal_visits').get().catch(() => ({ docs: [], size: 0 })),
+                patientRef.collection('postpartum_visits').get().catch(() => ({ docs: [], size: 0 })),
+                patientRef.collection('testRecords').get().catch(() => ({ size: 0 })),
+                patientRef.collection('immediate_newborn_care').get().catch(() => ({ size: 0 })),
+                patientRef.collection('newborn_care').get().catch(() => ({ size: 0 })),
+                patientRef.collection('records').doc('summary').get().catch(() => ({ exists: false })),
+                patientRef.collection('records').doc('startingTime').get().catch(() => ({ exists: false })),
+                patientRef.collection('records').doc('secondStage').get().catch(() => ({ exists: false })),
+                patientRef.collection('records').doc('transferRecord').get().catch(() => ({ exists: false }))
               ]);
               
-              if (isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
-                totalScore += 1;
+              const ancVisits = ancVisitsSnap.docs ? ancVisitsSnap.docs.map(doc => doc.data()) : [];
+              
+              // c) ANC visit points
+              if (ancVisits.length >= 1) {
+                patientScore += 1; // At least 1 ANC visit
+                if (ancVisits.length >= 4) {
+                  patientScore += 1; // 4 or more visits
+                }
+                if (ancVisits.length >= 8) {
+                  patientScore += 1; // 8 or more visits
+                }
               }
-            } catch (error) {
-              // Skip LCG check if it times out
-            }
-            
-            // Get PNC visits with timeout
-            try {
-              const pncVisitsSnap = await Promise.race([
-                patientRef.collection('postpartum_visits').get(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-              ]).catch(() => ({ docs: [] }));
+              
+              // d) 2 points for complete ANC form
+              if (ancVisits.length >= 1 && isANCFormComplete(ancVisits)) {
+                patientScore += 2;
+              }
+              
+              // e) 1 point for LCG completed
+              if (isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
+                patientScore += 1;
+              }
               
               const pncVisits = pncVisitsSnap.docs ? pncVisitsSnap.docs.map(doc => doc.data()) : [];
               
               // f) 1 point for at least 1 PNC visit
               if (pncVisits.length >= 1) {
-                totalScore += 1;
+                patientScore += 1;
               }
               
               // g) 1 point for complete PNC info
               if (pncVisits.length >= 1 && isPNCFormComplete(pncVisits)) {
-                totalScore += 1;
+                patientScore += 1;
               }
-            } catch (error) {
-              // Skip PNC check if it times out
-            }
-            
-            // h) 1 point for at least 1 lab test (with timeout)
-            try {
-              const labTestsSnap = await Promise.race([
-                patientRef.collection('testRecords').get(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-              ]).catch(() => ({ size: 0 }));
               
+              // h) 1 point for at least 1 lab test
               if (labTestsSnap.size >= 1) {
-                totalScore += 1;
+                patientScore += 1;
               }
-            } catch (error) {
-              // Skip lab test check if it times out
-            }
-            
-            // i) 1 point for immediate-newborn-care (with timeout)
-            try {
-              const immediateCareSnap = await Promise.race([
-                patientRef.collection('immediate_newborn_care').get(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-              ]).catch(() => ({ size: 0 }));
               
+              // i) 1 point for immediate-newborn-care
               if (immediateCareSnap.size >= 1) {
-                totalScore += 1;
+                patientScore += 1;
               }
-            } catch (error) {
-              // Skip immediate care check if it times out
-            }
-            
-            // j) 1 point for newborn care (with timeout)
-            try {
-              const newbornCareSnap = await Promise.race([
-                patientRef.collection('newborn_care').get(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-              ]).catch(() => ({ size: 0 }));
               
+              // j) 1 point for newborn care
               if (newbornCareSnap.size >= 1) {
-                totalScore += 1;
+                patientScore += 1;
               }
-            } catch (error) {
-              // Skip newborn care check if it times out
-            }
-            
-            // k) 1 point for transfer record (with timeout)
-            try {
-              const transferRecordDoc = await Promise.race([
-                patientRef.collection('records').doc('transferRecord').get(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-              ]).catch(() => ({ exists: false }));
               
+              // k) 1 point for transfer record
               if (transferRecordDoc.exists) {
-                totalScore += 1;
+                patientScore += 1;
               }
+              
+              return patientScore;
             } catch (error) {
-              // Skip transfer record check if it times out
+              console.warn(`[${midwifeId}] Error processing patient ${patientId}:`, error);
+              // Return base score (1 point for registration) even if other checks fail
+              return 1;
             }
-          } catch (error) {
-            // Continue to next patient if this one fails
-            console.warn(`Error processing patient ${patientId}:`, error);
-          }
+          }));
+          
+          // Sum up batch scores
+          const batchTotal = batchScores.reduce((sum, score) => sum + score, 0);
+          totalScore += batchTotal;
         }
 
+        console.log(`[${midwifeId}] Score calculation complete: ${totalScore} points from ${patientCount} patients`);
       } catch (error) {
-        console.error(`Error calculating score for midwife ${midwifeId}:`, error);
+        console.error(`[${midwifeId}] Error calculating score:`, error);
+        // Return at least the patient count as base score
+        return { score: patientCount, patientCount: patientCount };
       }
 
-      return totalScore;
+      return { score: totalScore, patientCount: patientCount };
     }
 
     function isPatientRegistrationComplete(patientData) {
@@ -912,6 +987,7 @@
             </div>
           </td>
           <td class="text-center">${midwife.township}</td>
+          <td class="text-center">${midwife.patientCount || 0}</td>
           <td class="score-cell">${midwife.score}</td>
         `;
 
