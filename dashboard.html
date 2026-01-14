@@ -859,6 +859,25 @@
             </div>
           </div>
         </div>
+
+        <!-- Charts Section -->
+        <div class="row mb-3">
+          <div class="col-md-12">
+            <h5 class="mb-3" style="color: #475569; font-weight: 600; font-size: 1.1rem;">
+              <i class="fas fa-chart-bar me-2" style="color: #3b82f6;"></i>Data Visualization Charts
+            </h5>
+          </div>
+        </div>
+        <div class="row mb-4">
+          <div class="col-md-6 mb-3">
+            <div class="chart-card">
+              <h5><i class="fas fa-user-clock me-2"></i>Age Distribution</h5>
+              <div class="chart-container">
+                <canvas id="ageDistributionChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Standard Analytics (for Midwives) -->
@@ -1656,6 +1675,9 @@
         
         // Load Outcome metrics
         await loadOutcomeMetrics(dataset);
+        
+        // Load Charts
+        await loadCharts(dataset);
         
       } catch (error) {
         console.error('Error loading TMO analytics:', error);
@@ -3920,6 +3942,126 @@
           }
         }
       });
+    }
+
+    // Load Charts Section
+    async function loadCharts(patientsData) {
+      try {
+        await loadAgeDistributionChart(patientsData);
+      } catch (error) {
+        console.error('Error loading charts:', error);
+      }
+    }
+
+    // Age Distribution Chart
+    async function loadAgeDistributionChart(patientsData) {
+      try {
+        const ctx = document.getElementById('ageDistributionChart');
+        if (!ctx) return;
+
+        // Define age groups
+        const ageGroups = {
+          '<18': 0,
+          '18-24': 0,
+          '25-29': 0,
+          '30-34': 0,
+          '35-39': 0,
+          '40+': 0
+        };
+
+        // Count patients in each age group
+        patientsData.forEach(patient => {
+          const age = parseInt(patient.profile?.age) || 0;
+          
+          if (age > 0) {
+            if (age < 18) {
+              ageGroups['<18']++;
+            } else if (age >= 18 && age <= 24) {
+              ageGroups['18-24']++;
+            } else if (age >= 25 && age <= 29) {
+              ageGroups['25-29']++;
+            } else if (age >= 30 && age <= 34) {
+              ageGroups['30-34']++;
+            } else if (age >= 35 && age <= 39) {
+              ageGroups['35-39']++;
+            } else if (age >= 40) {
+              ageGroups['40+']++;
+            }
+          }
+        });
+
+        // Destroy existing chart if it exists
+        if (chartInstances['ageDistributionChart']) {
+          chartInstances['ageDistributionChart'].destroy();
+        }
+
+        // Create new chart
+        chartInstances['ageDistributionChart'] = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: Object.keys(ageGroups),
+            datasets: [{
+              label: 'Number of Patients',
+              data: Object.values(ageGroups),
+              backgroundColor: [
+                '#ef4444', // <18 - Red (high risk)
+                '#f59e0b', // 18-24 - Orange
+                '#10b981', // 25-29 - Green (optimal)
+                '#3b82f6', // 30-34 - Blue
+                '#8b5cf6', // 35-39 - Purple
+                '#ec4899'  // 40+ - Pink (higher risk)
+              ],
+              borderColor: '#ffffff',
+              borderWidth: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              },
+              title: {
+                display: true,
+                text: `Age Distribution (${patientsData.length} patients)`,
+                font: { size: 14, weight: 'bold' }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const total = patientsData.length;
+                    const count = context.parsed.y;
+                    const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                    return `${count} patients (${percentage}%)`;
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  stepSize: 1
+                },
+                title: {
+                  display: true,
+                  text: 'Number of Patients'
+                }
+              },
+              x: {
+                title: {
+                  display: true,
+                  text: 'Age Groups (years)'
+                }
+              }
+            }
+          }
+        });
+
+      } catch (error) {
+        console.error('Error loading Age Distribution chart:', error);
+      }
     }
 
     // Go back function

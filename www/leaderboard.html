@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10b981">
+  <title>Leaderboard - Scoreboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --gold-color: #ffc107;
+      --silver-color: #c0c0c0;
+      --bronze-color: #cd7f32;
+    }
+
+    body {
+      background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      padding: 2rem 0;
+    }
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 2rem;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      margin-bottom: 2rem;
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .page-title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .leaderboard-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+
+    .leaderboard-card {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+    }
+
+    .leaderboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .leaderboard-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .score-info-btn {
+      background: linear-gradient(135deg, var(--gold-color), #ff9800);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .score-info-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+    }
+
+    .leaderboard-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .leaderboard-table thead {
+      background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+      border-radius: 10px;
+    }
+
+    .leaderboard-table th {
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 0.875rem;
+      letter-spacing: 0.5px;
+    }
+
+    .leaderboard-table tbody tr {
+      border-bottom: 1px solid #e5e7eb;
+      transition: all 0.2s ease;
+    }
+
+    .leaderboard-table tbody tr:hover {
+      background: #f8fafc;
+      transform: scale(1.01);
+    }
+
+    .leaderboard-table tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    .rank-cell {
+      font-weight: 700;
+      font-size: 1.25rem;
+      text-align: center;
+      width: 80px;
+    }
+
+    .rank-1 {
+      color: var(--gold-color);
+    }
+
+    .rank-2 {
+      color: var(--silver-color);
+    }
+
+    .rank-3 {
+      color: var(--bronze-color);
+    }
+
+    .medal-icon {
+      font-size: 1.5rem;
+    }
+
+    .midwife-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .midwife-avatar {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .midwife-details {
+      flex: 1;
+    }
+
+    .midwife-name {
+      font-weight: 600;
+      color: #1f2937;
+      font-size: 1.1rem;
+    }
+
+    .midwife-township {
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+
+    .score-cell {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      text-align: center;
+    }
+
+    .loading-container {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+
+    .spinner-border {
+      width: 3rem;
+      height: 3rem;
+      border-width: 0.3rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #6b7280;
+    }
+
+    .empty-state i {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(5px);
+    }
+
+    .modal-content {
+      background-color: white;
+      margin: 5% auto;
+      padding: 2rem;
+      border-radius: 20px;
+      max-width: 800px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      position: relative;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .modal-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 50%;
+      transition: all 0.2s ease;
+    }
+
+    .modal-close:hover {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+
+    .score-rule {
+      background: #f8fafc;
+      border-left: 4px solid var(--primary-color);
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border-radius: 8px;
+    }
+
+    .score-rule-title {
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .score-rule-points {
+      display: inline-block;
+      background: var(--primary-color);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      margin-right: 0.5rem;
+    }
+
+    .score-rule-description {
+      color: #4b5563;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      .leaderboard-table {
+        font-size: 0.875rem;
+      }
+
+      .leaderboard-table th,
+      .leaderboard-table td {
+        padding: 0.75rem 0.5rem;
+      }
+
+      .rank-cell {
+        width: 60px;
+        font-size: 1rem;
+      }
+
+      .score-cell {
+        font-size: 1.25rem;
+      }
+
+      .midwife-avatar {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+      }
+
+      .modal-content {
+        margin: 10% auto;
+        padding: 1.5rem;
+        max-width: 95%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="leaderboard-container">
+    <!-- Header -->
+    <div class="header-section">
+      <div class="header-content">
+        <h1 class="page-title">
+          <i class="fas fa-trophy"></i>
+          <span class="lang-text" data-en="Leaderboard" data-mm="ခေါင်းဆောင်များ">Leaderboard</span>
+        </h1>
+        <div>
+          <a href="home.html" class="btn btn-outline-light btn-sm me-2">
+            <i class="fas fa-home me-2"></i><span class="lang-text" data-en="Home" data-mm="ပင်မစာမျက်နှာ">Home</span>
+          </a>
+          <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+            <i class="fas fa-sign-out-alt me-2"></i><span class="lang-text" data-en="Logout" data-mm="ထွက်ရန်">Logout</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Card -->
+    <div class="leaderboard-card">
+      <div class="leaderboard-header">
+        <h2 class="leaderboard-title">
+          <i class="fas fa-medal"></i>
+          <span class="lang-text" data-en="Midwife Rankings" data-mm="သားဖွားဆရာမများ အဆင့်သတ်မှတ်ချက်">Midwife Rankings</span>
+        </h2>
+        <button class="score-info-btn" onclick="openScoreInfoModal()">
+          <i class="fas fa-info-circle"></i>
+          <span class="lang-text" data-en="How Scores Work" data-mm="အမှတ်များ မည်သို့ အလုပ်လုပ်သည်">How Scores Work</span>
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      <div id="loadingContainer" class="loading-container">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-3 text-muted">
+          <span class="lang-text" data-en="Loading leaderboard..." data-mm="ခေါင်းဆောင်များ ဖွင့်နေသည်...">Loading leaderboard...</span>
+        </p>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state" style="display: none;">
+        <i class="fas fa-trophy"></i>
+        <p>
+          <span class="lang-text" data-en="No midwives found" data-mm="သားဖွားဆရာမများ မတွေ့ရှိပါ">No midwives found</span>
+        </p>
+      </div>
+
+      <!-- Leaderboard Table -->
+      <div id="leaderboardContent" style="display: none;">
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th class="rank-cell">
+                <span class="lang-text" data-en="Rank" data-mm="အဆင့်">Rank</span>
+              </th>
+              <th>
+                <span class="lang-text" data-en="Midwife" data-mm="သားဖွားဆရာမ">Midwife</span>
+              </th>
+              <th class="text-center">
+                <span class="lang-text" data-en="Township" data-mm="မြို့နယ်">Township</span>
+              </th>
+              <th class="score-cell">
+                <span class="lang-text" data-en="Total Score" data-mm="စုစုပေါင်း အမှတ်">Total Score</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardTableBody">
+            <!-- Leaderboard rows will be inserted here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Score Info Modal -->
+  <div id="scoreInfoModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">
+          <i class="fas fa-info-circle"></i>
+          <span class="lang-text" data-en="How Scores Are Calculated" data-mm="အမှတ်များ မည်သို့ တွက်ချက်သည်">How Scores Are Calculated</span>
+        </h3>
+        <button class="modal-close" onclick="closeScoreInfoModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Patient Registration" data-mm="လူနာ မှတ်ပုံတင်ခြင်း">Patient Registration</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each registered patient" data-mm="မှတ်ပုံတင်ထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each registered patient</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+2</span>
+            <span class="lang-text" data-en="Complete Patient Registration" data-mm="လူနာ မှတ်ပုံတင်ခြင်း ပြီးစီးခြင်း">Complete Patient Registration</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="2 points for each registered patient with all information filled up" data-mm="အချက်အလက်အားလုံး ဖြည့်သွင်းထားသော မှတ်ပုံတင်ထားသော လူနာ တစ်ဦးစီအတွက် ၂ မှတ်">2 points for each registered patient with all information filled up</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1, +1, +1</span>
+            <span class="lang-text" data-en="ANC Visits" data-mm="ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှု လည်ပတ်မှုများ">ANC Visits</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with at least 1 ANC visit. Extra 1 point for each patient with 4 or more ANC visits. Extra 1 point for each patient with 8 or more ANC visits." data-mm="ANC လည်ပတ်မှု အနည်းဆုံး ၁ ခု ရှိသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်။ ANC လည်ပတ်မှု ၄ ခု သို့မဟုတ် ပိုများသော လူနာ တစ်ဦးစီအတွက် အပိုဆု ၁ မှတ်။ ANC လည်ပတ်မှု ၈ ခု သို့မဟုတ် ပိုများသော လူနာ တစ်ဦးစီအတွက် အပိုဆု ၁ မှတ်။">1 point for each patient with at least 1 ANC visit. Extra 1 point for each patient with 4 or more ANC visits. Extra 1 point for each patient with 8 or more ANC visits.</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+2</span>
+            <span class="lang-text" data-en="Complete ANC Form" data-mm="ANC ဖောင်ပြီးစီးခြင်း">Complete ANC Form</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="2 points for each patient with at least 1 ANC visit and have all ANC form filled up" data-mm="ANC လည်ပတ်မှု အနည်းဆုံး ၁ ခု ရှိပြီး ANC ဖောင်အားလုံး ဖြည့်သွင်းထားသော လူနာ တစ်ဦးစီအတွက် ၂ မှတ်">2 points for each patient with at least 1 ANC visit and have all ANC form filled up</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="LCG Completed" data-mm="LCG ပြီးစီးခြင်း">LCG Completed</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each LCG completed patient" data-mm="LCG ပြီးစီးထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each LCG completed patient</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="PNC Visit" data-mm="မွေးဖွားပြီးစောင့်ရှောက်မှု လည်ပတ်မှု">PNC Visit</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with at least 1 PNC visit" data-mm="PNC လည်ပတ်မှု အနည်းဆုံး ၁ ခု ရှိသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with at least 1 PNC visit</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Complete PNC Info" data-mm="PNC အချက်အလက် ပြီးစီးခြင်း">Complete PNC Info</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with at least 1 PNC visit and have all PNC info filled up" data-mm="PNC လည်ပတ်မှု အနည်းဆုံး ၁ ခု ရှိပြီး PNC အချက်အလက်အားလုံး ဖြည့်သွင်းထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with at least 1 PNC visit and have all PNC info filled up</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Lab Test" data-mm="ဓာတ်ခွဲစမ်းသပ်မှု">Lab Test</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with at least 1 lab test saved" data-mm="ဓာတ်ခွဲစမ်းသပ်မှု အနည်းဆုံး ၁ ခု သိမ်းဆည်းထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with at least 1 lab test saved</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Immediate Newborn Care" data-mm="ကလေးမွေးဖွားပြီး ချက်ချင်း စောင့်ရှောက်မှု">Immediate Newborn Care</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with immediate-newborn-care page saved" data-mm="ကလေးမွေးဖွားပြီး ချက်ချင်း စောင့်ရှောက်မှု စာမျက်နှာ သိမ်းဆည်းထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with immediate-newborn-care page saved</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Newborn Care" data-mm="ကလေး စောင့်ရှောက်မှု">Newborn Care</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with newborn care page saved" data-mm="ကလေး စောင့်ရှောက်မှု စာမျက်နှာ သိမ်းဆည်းထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with newborn care page saved</span>
+          </div>
+        </div>
+
+        <div class="score-rule">
+          <div class="score-rule-title">
+            <span class="score-rule-points">+1</span>
+            <span class="lang-text" data-en="Transfer Record" data-mm="လွှဲပြောင်းမှု မှတ်တမ်း">Transfer Record</span>
+          </div>
+          <div class="score-rule-description">
+            <span class="lang-text" data-en="1 point for each patient with transfer record saved" data-mm="လွှဲပြောင်းမှု မှတ်တမ်း သိမ်းဆည်းထားသော လူနာ တစ်ဦးစီအတွက် ၁ မှတ်">1 point for each patient with transfer record saved</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let userRole = null;
+    let allMidwives = [];
+
+    // Initialize page
+    firebase.auth().onAuthStateChanged(async function(user) {
+      if (user) {
+        currentUser = user;
+        await loadUserData();
+        await loadLeaderboard();
+      } else {
+        window.location.href = 'login.html';
+      }
+    });
+
+    async function loadUserData() {
+      try {
+        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          userRole = userDoc.data().role;
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+      }
+    }
+
+    async function loadLeaderboard() {
+      try {
+        document.getElementById('loadingContainer').style.display = 'block';
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('leaderboardContent').style.display = 'none';
+
+        // Get all midwives
+        const midwivesSnapshot = await firebase.firestore()
+          .collection('users')
+          .where('role', '==', 'Midwife')
+          .get();
+
+        if (midwivesSnapshot.empty) {
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'block';
+          return;
+        }
+
+        allMidwives = [];
+        
+        // Calculate scores for each midwife
+        for (const midwifeDoc of midwivesSnapshot.docs) {
+          const midwifeData = midwifeDoc.data();
+          const midwifeId = midwifeDoc.id;
+          
+          const score = await calculateMidwifeScore(midwifeId);
+          
+          allMidwives.push({
+            id: midwifeId,
+            name: midwifeData.name || midwifeData.email || 'Unknown',
+            township: midwifeData.township || 'Unknown',
+            score: score
+          });
+        }
+
+        // Sort by score (descending)
+        allMidwives.sort((a, b) => b.score - a.score);
+
+        // Display leaderboard
+        displayLeaderboard();
+
+      } catch (error) {
+        console.error('Error loading leaderboard:', error);
+        document.getElementById('loadingContainer').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'block';
+      }
+    }
+
+    async function calculateMidwifeScore(midwifeId) {
+      let totalScore = 0;
+
+      try {
+        // Get all patients created by this midwife
+        const [newFormatSnap, oldFormatSnap] = await Promise.all([
+          firebase.firestore().collection('patients').where('created_by', '==', midwifeId).get(),
+          firebase.firestore().collection('patients').where('createdBy', '==', midwifeId).get()
+        ]);
+
+        const patientIds = new Set();
+        newFormatSnap.forEach(doc => patientIds.add(doc.id));
+        oldFormatSnap.forEach(doc => patientIds.add(doc.id));
+
+        const patients = Array.from(patientIds);
+
+        // Process each patient
+        for (const patientId of patients) {
+          const patientRef = firebase.firestore().collection('patients').doc(patientId);
+          
+          // Get patient data
+          const patientDoc = await patientRef.get();
+          if (!patientDoc.exists) continue;
+          
+          const patientData = patientDoc.data();
+          
+          // a) 1 point for each registered patient
+          totalScore += 1;
+          
+          // b) 2 points for complete patient registration (check if all required fields are filled)
+          if (isPatientRegistrationComplete(patientData)) {
+            totalScore += 2;
+          }
+          
+          // Get ANC visits
+          const ancVisitsSnap = await patientRef.collection('antenatal_visits').get();
+          const ancVisits = ancVisitsSnap.docs.map(doc => doc.data());
+          
+          // c) ANC visit points
+          if (ancVisits.length >= 1) {
+            totalScore += 1; // At least 1 ANC visit
+            if (ancVisits.length >= 4) {
+              totalScore += 1; // 4 or more visits
+            }
+            if (ancVisits.length >= 8) {
+              totalScore += 1; // 8 or more visits
+            }
+          }
+          
+          // d) 2 points for complete ANC form
+          if (ancVisits.length >= 1 && isANCFormComplete(ancVisits)) {
+            totalScore += 2;
+          }
+          
+          // e) 1 point for LCG completed
+          const summaryDoc = await patientRef.collection('records').doc('summary').get();
+          const startingTimeDoc = await patientRef.collection('records').doc('startingTime').get();
+          const secondStageDoc = await patientRef.collection('records').doc('secondStage').get();
+          
+          if (isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
+            totalScore += 1;
+          }
+          
+          // Get PNC visits
+          const pncVisitsSnap = await patientRef.collection('postpartum_visits').get();
+          const pncVisits = pncVisitsSnap.docs.map(doc => doc.data());
+          
+          // f) 1 point for at least 1 PNC visit
+          if (pncVisits.length >= 1) {
+            totalScore += 1;
+          }
+          
+          // g) 1 point for complete PNC info
+          if (pncVisits.length >= 1 && isPNCFormComplete(pncVisits)) {
+            totalScore += 1;
+          }
+          
+          // h) 1 point for at least 1 lab test
+          const labTestsSnap = await patientRef.collection('testRecords').get();
+          if (labTestsSnap.size >= 1) {
+            totalScore += 1;
+          }
+          
+          // i) 1 point for immediate-newborn-care
+          const immediateCareSnap = await patientRef.collection('immediate_newborn_care').get();
+          if (immediateCareSnap.size >= 1) {
+            totalScore += 1;
+          }
+          
+          // j) 1 point for newborn care
+          const newbornCareSnap = await patientRef.collection('newborn_care').get();
+          if (newbornCareSnap.size >= 1) {
+            totalScore += 1;
+          }
+          
+          // k) 1 point for transfer record
+          const transferRecordDoc = await patientRef.collection('records').doc('transferRecord').get();
+          if (transferRecordDoc.exists) {
+            totalScore += 1;
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error calculating score for midwife ${midwifeId}:`, error);
+      }
+
+      return totalScore;
+    }
+
+    function isPatientRegistrationComplete(patientData) {
+      // Check if all essential fields are filled
+      const requiredFields = ['name', 'age', 'phone', 'address', 'township', 'village'];
+      return requiredFields.every(field => {
+        const value = patientData[field] || patientData[field + 'Number'];
+        return value && value.toString().trim() !== '';
+      });
+    }
+
+    function isANCFormComplete(ancVisits) {
+      // Check if at least one visit has all essential fields filled
+      return ancVisits.some(visit => {
+        const visitData = visit.data || visit;
+        return visitData.visitDate && 
+               visitData.lmp !== undefined && 
+               visitData.visitNumber !== undefined;
+      });
+    }
+
+    function isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc) {
+      const isValidTime = (timeValue) => {
+        if (!timeValue) return false;
+        if (typeof timeValue === 'string') {
+          const trimmed = timeValue.trim();
+          return trimmed !== '' && trimmed !== 'null' && trimmed !== 'undefined';
+        }
+        return true;
+      };
+
+      const summaryData = summaryDoc.exists ? summaryDoc.data() : {};
+      const startingTimeData = startingTimeDoc.exists ? startingTimeDoc.data() : {};
+      const secondStageData = secondStageDoc.exists ? secondStageDoc.data() : {};
+
+      const hasFirstStage = isValidTime(summaryData.startingTime) || 
+                          isValidTime(summaryData.activeFirstStage_Time) ||
+                          isValidTime(startingTimeData.startingTime);
+
+      const hasSecondStage = isValidTime(summaryData.secondStageTime) || 
+                            isValidTime(summaryData.secondStage_Time) ||
+                            isValidTime(secondStageData.secondStageStartTime) ||
+                            isValidTime(secondStageData.secondStageTime);
+
+      return hasFirstStage && hasSecondStage;
+    }
+
+    function isPNCFormComplete(pncVisits) {
+      // Check if at least one visit has essential fields filled
+      return pncVisits.some(visit => {
+        const visitData = visit.data || visit;
+        return visitData.visitDate && visitData.deliveredDateTime;
+      });
+    }
+
+    function displayLeaderboard() {
+      const tbody = document.getElementById('leaderboardTableBody');
+      tbody.innerHTML = '';
+
+      allMidwives.forEach((midwife, index) => {
+        const rank = index + 1;
+        const row = document.createElement('tr');
+        
+        let rankCell = '';
+        if (rank === 1) {
+          rankCell = '<td class="rank-cell rank-1"><span class="medal-icon">🥇</span></td>';
+        } else if (rank === 2) {
+          rankCell = '<td class="rank-cell rank-2"><span class="medal-icon">🥈</span></td>';
+        } else if (rank === 3) {
+          rankCell = '<td class="rank-cell rank-3"><span class="medal-icon">🥉</span></td>';
+        } else {
+          rankCell = `<td class="rank-cell">${rank}</td>`;
+        }
+
+        const initials = midwife.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'MW';
+
+        row.innerHTML = `
+          ${rankCell}
+          <td>
+            <div class="midwife-info">
+              <div class="midwife-avatar">${initials}</div>
+              <div class="midwife-details">
+                <div class="midwife-name">${midwife.name}</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-center">${midwife.township}</td>
+          <td class="score-cell">${midwife.score}</td>
+        `;
+
+        tbody.appendChild(row);
+      });
+
+      document.getElementById('loadingContainer').style.display = 'none';
+      document.getElementById('leaderboardContent').style.display = 'block';
+    }
+
+    function openScoreInfoModal() {
+      document.getElementById('scoreInfoModal').style.display = 'block';
+    }
+
+    function closeScoreInfoModal() {
+      document.getElementById('scoreInfoModal').style.display = 'none';
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('scoreInfoModal');
+      if (event.target === modal) {
+        closeScoreInfoModal();
+      }
+    }
+
+    // Language switching
+    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+
+    function switchLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      
+      document.querySelectorAll('.lang-text').forEach(el => {
+        const enText = el.getAttribute('data-en');
+        const mmText = el.getAttribute('data-mm');
+        if (lang === 'en' && enText) {
+          el.textContent = enText;
+        } else if (lang === 'mm' && mmText) {
+          el.textContent = mmText;
+        }
+      });
+    }
+
+    // Initialize language on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      switchLanguage(currentLanguage);
+    });
+  </script>
+</body>
+</html>
