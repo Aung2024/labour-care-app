@@ -2015,13 +2015,27 @@
     }
     
     function shareSummary() {
-      const currentUrl = window.location.href;
-      navigator.clipboard.writeText(currentUrl).then(() => {
+      const url = new URL(window.location.href);
+      const isLocalOrigin =
+        url.protocol === 'file:' ||
+        url.origin === 'null' ||
+        /localhost|127\.0\.0\.1/i.test(url.origin);
+      const fileName = url.pathname.split('/').pop();
+      const safePath = fileName ? `/${fileName}` : '/summary-view.html';
+      const fallbackBase =
+        typeof firebaseConfig !== 'undefined' && firebaseConfig.authDomain
+          ? `https://${firebaseConfig.authDomain}`
+          : 'https://labourcare-2481a.firebaseapp.com';
+      const shareUrl = isLocalOrigin
+        ? `${fallbackBase}${safePath}${url.search}${url.hash}`
+        : url.href;
+
+      navigator.clipboard.writeText(shareUrl).then(() => {
         alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
       }).catch(() => {
         // Fallback for older browsers
         const textArea = document.createElement('textarea');
-        textArea.value = currentUrl;
+        textArea.value = shareUrl;
         document.body.appendChild(textArea);
         textArea.select();
         document.execCommand('copy');

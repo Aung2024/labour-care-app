@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --secondary-color: #1e40af;
+      --success-color: #059669;
+      --warning-color: #d97706;
+      --danger-color: #dc2626;
+      --info-color: #0891b2;
+      --light-bg: #f8fafc;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --card-hover-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .header-section {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .brand-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: 0.5rem;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .brand-subtitle {
+      font-size: 1.1rem;
+      color: #64748b;
+      margin-bottom: 1.5rem;
+    }
+
+    .user-info {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--card-shadow);
+    }
+
+    .user-details {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .user-avatar {
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+
+    .care-modules {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .care-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .care-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    }
+
+    .care-card:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--card-hover-shadow);
+    }
+
+    .care-card.antenatal::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .care-card.labour::before { background: linear-gradient(90deg, #dc2626, #b91c1c); }
+    .care-card.postnatal::before { background: linear-gradient(90deg, #7c3aed, #6d28d9); }
+    .care-card.baby::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .care-card.registration::before { background: linear-gradient(90deg, #0891b2, #0e7490); }
+    .care-card.dashboard::before { background: linear-gradient(90deg, #6b7280, #4b5563); }
+
+    .care-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.8;
+    }
+
+    .care-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .care-description {
+      color: #6b7280;
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+
+    .care-stats {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+
+    .care-action {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-block;
+      transition: all 0.3s ease;
+      width: 100%;
+      text-align: center;
+    }
+
+    .care-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+      color: white;
+    }
+
+    .care-action.antenatal { background: linear-gradient(135deg, #10b981, #059669); }
+    .care-action.labour { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+    .care-action.postnatal { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+    .care-action.baby { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .care-action.registration { background: linear-gradient(135deg, #0891b2, #0e7490); }
+    .care-action.dashboard { background: linear-gradient(135deg, #6b7280, #4b5563); }
+    .care-action.management { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+
+    .quick-actions {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .quick-actions-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .quick-actions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .quick-action-btn {
+      background: white;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 1rem;
+      text-decoration: none;
+      color: #374151;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+
+    .quick-action-btn:hover {
+      border-color: var(--primary-color);
+      background: #f8fafc;
+      color: var(--primary-color);
+      transform: translateY(-2px);
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-antenatal { background: #d1fae5; color: #065f46; }
+    .status-labour { background: #fee2e2; color: #991b1b; }
+    .status-postnatal { background: #ede9fe; color: #5b21b6; }
+    .status-baby { background: #fef3c7; color: #92400e; }
+    .status-other { background: #f3f4f6; color: #374151; }
+    .status-transferred { background: #dbeafe; color: #1e40af; }
+
+    .footer {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      color: white;
+      text-align: center;
+      padding: 2rem;
+      margin-top: 2rem;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    @media (max-width: 768px) {
+      .main-container {
+        padding: 1rem;
+      }
+      
+      .care-modules {
+        grid-template-columns: 1fr;
+      }
+      
+      .user-info {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+      
+      .brand-title {
+        font-size: 2rem;
+      }
+    }
+  </style>
+  <script>
+    let currentUser = null;
+    let userRole = null;
+    let patientStats = {
+      antenatal: 0,
+      labour: 0,
+      postnatal: 0,
+      baby: 0,
+      other: 0,
+      transferred: 0
+    };
+
+    firebase.auth().onAuthStateChanged(function(user) {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUser = user;
+        loadUserData();
+      }
+    });
+
+    function loadUserData() {
+      db.collection("users").doc(currentUser.uid).get().then(doc => {
+        if (doc.exists) {
+          const userData = doc.data();
+          userRole = userData.role;
+          
+          document.getElementById("userEmail").textContent = currentUser.email;
+          document.getElementById("userRole").textContent = userData.role;
+          
+          // Show admin link if Super Admin
+          const adminCard = document.getElementById("adminCard");
+          if (userRole === "Super Admin" && adminCard) {
+            adminCard.style.display = "block";
+          }
+          
+          // Load patient stats after user role is loaded
+          loadPatientStats();
+        }
+      });
+    }
+
+    async function loadPatientStats() {
+      try {
+        // Reset stats
+        patientStats = {
+          antenatal: 0,
+          labour: 0,
+          postnatal: 0,
+          baby: 0,
+          other: 0,
+          transferred: 0,
+          total: 0
+        };
+
+        if (!currentUser || !userRole) {
+          console.log('User not loaded yet, skipping stats');
+          return;
+        }
+
+        // Get user's township for TMO role
+        let userTownship = null;
+        if (userRole === "TMO") {
+          const userDoc = await db.collection("users").doc(currentUser.uid).get();
+          if (userDoc.exists) {
+            userTownship = userDoc.data().township;
+          }
+        }
+
+        let querySnapshot;
+        
+        // Load patient statistics based on user role
+        if (userRole === "Super Admin" || userRole === "admin") {
+          // Super Admin sees all patients
+          querySnapshot = await db.collection("patients").get();
+        } else if (userRole === "TMO") {
+          // TMO sees patients from their township
+          querySnapshot = await db.collection("patients").where("township", "==", userTownship).get();
+        } else if (userRole === "Midwife" || userRole === "midwife") {
+          // Midwife sees only patients they created
+          const snapNew = await db.collection("patients").where("created_by", "==", currentUser.uid).get();
+          const snapOld = await db.collection("patients").where("createdBy", "==", currentUser.uid).get();
+          
+          // Combine both snapshots
+          const combinedDocs = new Map();
+          snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
+          snapOld.forEach(doc => {
+            if (!combinedDocs.has(doc.id)) {
+              combinedDocs.set(doc.id, doc);
+            }
+          });
+          
+          // Process combined results
+          await Promise.all(Array.from(combinedDocs.values()).map(async (doc) => {
+            const data = doc.data();
+            // Map legacy statuses to new 3-status system
+            let status = data.status || data.treatmentStatus || 'antenatal';
+            if (status === 'active') status = 'antenatal';
+            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
+              status = 'postnatal';
+            }
+            
+            if (patientStats.hasOwnProperty(status)) {
+              patientStats[status]++;
+            }
+            
+            // Check if this postnatal patient has a birth record (counts as baby)
+            if (status === 'postnatal') {
+              try {
+                const birthRecord = await db.collection("patients")
+                  .doc(doc.id)
+                  .collection("records")
+                  .doc("birthRecord")
+                  .get();
+                
+                if (birthRecord.exists) {
+                  patientStats.baby++;
+                }
+              } catch (error) {
+                console.log('No birth record for patient:', doc.id);
+              }
+            }
+            
+            patientStats.total++;
+          }));
+          
+          updateStatsDisplay();
+          return;
+        } else {
+          // No access for other roles
+          updateStatsDisplay();
+          return;
+        }
+
+        // Process query results for Super Admin and TMO
+        await Promise.all(querySnapshot.docs.map(async (doc) => {
+          const data = doc.data();
+          // Map legacy statuses to new 3-status system
+          let status = data.status || data.treatmentStatus || 'antenatal';
+          if (status === 'active') status = 'antenatal';
+          if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
+            status = 'postnatal';
+          }
+          
+          if (patientStats.hasOwnProperty(status)) {
+            patientStats[status]++;
+          }
+          
+          // Check if this postnatal patient has a birth record (counts as baby)
+          if (status === 'postnatal') {
+            try {
+              const birthRecord = await db.collection("patients")
+                .doc(doc.id)
+                .collection("records")
+                .doc("birthRecord")
+                .get();
+              
+              if (birthRecord.exists) {
+                patientStats.baby++;
+              }
+            } catch (error) {
+              console.log('No birth record for patient:', doc.id);
+            }
+          }
+          
+          patientStats.total++;
+        }));
+
+        updateStatsDisplay();
+      } catch (error) {
+        console.error('Error loading patient stats:', error);
+      }
+    }
+
+    function updateStatsDisplay() {
+      // Update stats in each care card
+      document.querySelectorAll('.stat-number').forEach(stat => {
+        const type = stat.getAttribute('data-type');
+        if (type === 'total') {
+          stat.textContent = patientStats.total || 0;
+        } else if (patientStats[type] !== undefined) {
+          stat.textContent = patientStats[type];
+        }
+      });
+    }
+
+    function navigateToCare(careType) {
+      switch(careType) {
+        case 'registration':
+          window.location.href = 'patient-enhanced.html';
+          break;
+        case 'antenatal':
+          window.location.href = 'antenatal-care.html';
+          break;
+        case 'labour':
+          window.location.href = 'labour-care.html';
+          break;
+        case 'postnatal':
+          window.location.href = 'postpartum-care.html';
+          break;
+        case 'baby':
+          window.location.href = 'baby-care.html';
+          break;
+        case 'patients':
+          window.location.href = 'list.html';
+          break;
+        case 'dashboard':
+          window.location.href = 'dashboard.html';
+          break;
+        case 'admin':
+          window.location.href = 'admin.html';
+          break;
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+</head>
+<body>
+  <div class="main-container">
+    <!-- Header Section -->
+    <div class="header-section">
+      <div class="text-center mb-4">
+        <h1 class="brand-title">
+          <i class="fas fa-heartbeat me-3"></i>
+          Maternal & Child Health Care System
+        </h1>
+        <p class="brand-subtitle">
+          Comprehensive healthcare management for mothers and babies throughout their journey
+        </p>
+      </div>
+      
+      <div class="user-info">
+        <div class="user-details">
+          <div class="user-avatar">
+            <i class="fas fa-user-md"></i>
+          </div>
+          <div>
+            <div id="userEmail" class="fw-bold"></div>
+            <div id="userRole" class="small"></div>
+          </div>
+        </div>
+        <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); window.location='login.html';">
+          <i class="fas fa-sign-out-alt me-2"></i>Logout
+        </button>
+      </div>
+    </div>
+
+    <!-- Care Modules Grid -->
+    <div class="care-modules">
+      <!-- Patient Registration -->
+      <div class="care-card registration" onclick="navigateToCare('registration')">
+        <div class="care-icon">
+          <i class="fas fa-user-plus"></i>
+        </div>
+        <h3 class="care-title">Patient Registration</h3>
+        <p class="care-description">
+          Register new patients with comprehensive information for all care modules including antenatal, labour, postnatal, and baby care.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="total">-</div>
+            <div class="stat-label">Total Patients</div>
+          </div>
+        </div>
+        <a href="#" class="care-action registration" onclick="event.preventDefault(); navigateToCare('registration');">
+          <i class="fas fa-plus me-2"></i>Register New Patient
+        </a>
+      </div>
+
+      <!-- Antenatal Care -->
+      <div class="care-card antenatal" onclick="navigateToCare('antenatal')">
+        <div class="care-icon">
+          <i class="fas fa-baby-carriage"></i>
+        </div>
+        <h3 class="care-title">Antenatal Care</h3>
+        <p class="care-description">
+          Comprehensive prenatal care management including checkups, tests, appointments, and pregnancy monitoring.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="antenatal">0</div>
+            <div class="stat-label">Active Patients</div>
+          </div>
+        </div>
+        <a href="#" class="care-action antenatal" onclick="event.preventDefault(); navigateToCare('antenatal');">
+          <i class="fas fa-stethoscope me-2"></i>Start Antenatal Care
+        </a>
+      </div>
+
+      <!-- Labour Care -->
+      <div class="care-card labour" onclick="navigateToCare('labour')">
+        <div class="care-icon">
+          <i class="fas fa-heartbeat"></i>
+        </div>
+        <h3 class="care-title">Labour Care</h3>
+        <p class="care-description">
+          Active labour monitoring and management using WHO Labour Care Guide protocols for safe delivery.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="labour">0</div>
+            <div class="stat-label">In Labour</div>
+          </div>
+        </div>
+        <a href="#" class="care-action labour" onclick="event.preventDefault(); navigateToCare('labour');">
+          <i class="fas fa-play me-2"></i>Start Labour Care
+        </a>
+      </div>
+
+      <!-- Postnatal Care -->
+      <div class="care-card postnatal" onclick="navigateToCare('postnatal')">
+        <div class="care-icon">
+          <i class="fas fa-hands-holding-child"></i>
+        </div>
+        <h3 class="care-title">Postnatal Care</h3>
+        <p class="care-description">
+          Post-delivery care and recovery monitoring for mothers including health checks and follow-up care.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="postnatal">0</div>
+            <div class="stat-label">Recovering</div>
+          </div>
+        </div>
+        <a href="#" class="care-action postnatal" onclick="event.preventDefault(); navigateToCare('postnatal');">
+          <i class="fas fa-heart me-2"></i>Start Postnatal Care
+        </a>
+      </div>
+
+      <!-- Baby Care -->
+      <div class="care-card baby" onclick="navigateToCare('baby')">
+        <div class="care-icon">
+          <i class="fas fa-baby"></i>
+        </div>
+        <h3 class="care-title">Baby Care</h3>
+        <p class="care-description">
+          Newborn care management including growth tracking, vaccination schedules, and developmental milestones.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="baby">0</div>
+            <div class="stat-label">Babies</div>
+          </div>
+        </div>
+        <a href="#" class="care-action baby" onclick="event.preventDefault(); navigateToCare('baby');">
+          <i class="fas fa-child me-2"></i>Start Baby Care
+        </a>
+      </div>
+
+      <!-- Dashboard -->
+      <div class="care-card dashboard" onclick="navigateToCare('dashboard')">
+        <div class="care-icon">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <h3 class="care-title">Analytics Dashboard</h3>
+        <p class="care-description">
+          Comprehensive analytics and reporting for all care modules with insights and performance metrics.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number">-</div>
+            <div class="stat-label">Reports</div>
+          </div>
+        </div>
+        <a href="#" class="care-action dashboard" onclick="event.preventDefault(); navigateToCare('dashboard');">
+          <i class="fas fa-chart-bar me-2"></i>View Dashboard
+        </a>
+      </div>
+
+      <!-- Patient Management -->
+      <div class="care-card management" onclick="navigateToCare('patients')">
+        <div class="care-icon">
+          <i class="fas fa-users"></i>
+        </div>
+        <h3 class="care-title">Patient Management</h3>
+        <p class="care-description">
+          Comprehensive patient management hub for viewing, editing, and managing all patient records.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" data-type="total">0</div>
+            <div class="stat-label">All Patients</div>
+          </div>
+        </div>
+        <a href="#" class="care-action management" onclick="event.preventDefault(); navigateToCare('patients');">
+          <i class="fas fa-list me-2"></i>View All Patients
+        </a>
+      </div>
+
+      <!-- Admin Dashboard (Super Admin only) -->
+      <div class="care-card dashboard" id="adminCard" style="display: none;" onclick="navigateToCare('admin')">
+        <div class="care-icon">
+          <i class="fas fa-shield-alt"></i>
+        </div>
+        <h3 class="care-title">Admin Dashboard</h3>
+        <p class="care-description">
+          System administration and user management for Super Administrators.
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number">-</div>
+            <div class="stat-label">Admin Tools</div>
+          </div>
+        </div>
+        <a href="#" class="care-action dashboard" onclick="event.preventDefault(); navigateToCare('admin');">
+          <i class="fas fa-cog me-2"></i>Admin Panel
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="mb-0">
+        <i class="fas fa-heart me-2"></i>
+        MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
