@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="my">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Antenatal Education - Maternal & Child Health Care System</title>
+  <title>ကိုယ်ဝန်ဆောင် ပညာပေးခြင်း - Maternal & Child Health Care System</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -14,12 +14,16 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/patient-session.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
       --secondary-color: #059669;
       --light-bg: #f0fdf4;
       --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --card-hover-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.06);
+      --highlight-border: #059669;
+      --highlight-bg: rgba(16, 185, 129, 0.12);
     }
 
     body {
@@ -34,22 +38,105 @@
       margin-bottom: 2rem;
     }
 
-    .education-card {
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 1rem;
-      box-shadow: var(--card-shadow);
-      border-left: 4px solid var(--primary-color);
+    .education-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
     }
 
-    .btn-education {
-      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-      border: none;
+    .education-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: var(--card-shadow);
+      border-left: 5px solid var(--primary-color);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      position: relative;
+    }
+
+    .education-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--card-hover-shadow);
+      color: inherit;
+    }
+
+    .education-card.recommended {
+      border-left-color: var(--highlight-border);
+      background: var(--highlight-bg);
+      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.2);
+    }
+
+    .education-card.recommended::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 48px 48px 0;
+      border-color: transparent var(--highlight-border) transparent transparent;
+      border-radius: 0 16px 0 0;
+    }
+
+    .education-card.recommended .recommended-badge {
+      display: block;
+    }
+
+    .recommended-badge {
+      display: none;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: var(--highlight-border);
       color: white;
-      padding: 0.75rem 1.5rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
       border-radius: 8px;
-      font-weight: 500;
+      z-index: 1;
+    }
+
+    .education-card .card-icon {
+      font-size: 2.5rem;
+      color: var(--primary-color);
+      margin-bottom: 1rem;
+    }
+
+    .education-card.recommended .card-icon {
+      color: var(--secondary-color);
+    }
+
+    .education-card .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .education-card .card-hint {
+      font-size: 0.85rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+
+    .ga-banner {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(5, 150, 105, 0.3);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.95rem;
+      color: #065f46;
+    }
+
+    .ga-banner i {
+      margin-right: 0.5rem;
     }
 
     .footer {
@@ -73,13 +160,13 @@
         <div class="col-md-8">
           <h1 class="mb-2">
             <i class="fas fa-graduation-cap me-3"></i>
-            Antenatal Education
+            ကိုယ်ဝန်ဆောင် ပညာပေးခြင်း
           </h1>
-          <p class="mb-0">Pregnancy education and resources for expectant mothers</p>
+          <p class="mb-0">မိခင်နှင့် ကလေးကျန်းမာရေးအတွက် ပညာပေးအကြောင်းအရာများ</p>
         </div>
         <div class="col-md-4 text-end">
           <a href="antenatal-care.html" class="btn btn-outline-light btn-sm">
-            <i class="fas fa-arrow-left me-2"></i>Back to Antenatal Care
+            <i class="fas fa-arrow-left me-2"></i>ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှုသို့ ပြန်ရန်
           </a>
         </div>
       </div>
@@ -87,13 +174,43 @@
   </div>
 
   <div class="container">
-    <div class="text-center py-5">
-      <i class="fas fa-book-open fa-4x text-muted mb-3"></i>
-      <h3 class="text-muted">Educational Resources</h3>
-      <p class="text-muted">This feature will be available in future updates.</p>
-      <p class="text-muted mb-4">Educational materials and resources for pregnancy care will be added here.</p>
-      <a href="antenatal-care.html" class="btn btn-education">
-        <i class="fas fa-arrow-left me-2"></i>Back to Antenatal Care
+    <!-- Gestational age banner (shown when GA is known) -->
+    <div id="gaBanner" class="ga-banner" style="display: none;">
+      <i class="fas fa-info-circle"></i>
+      <span id="gaBannerText"></span>
+    </div>
+
+    <div class="education-grid">
+      <!-- 1) ကိုယ်ဝန်ဆောင် ကျန်းမာရေး -->
+      <a href="education-pregnancy-health.html" class="education-card" id="card-pregnancy-health" data-ga-range="0-12">
+        <span class="recommended-badge">အကြံပြုထားသည်</span>
+        <div class="card-icon"><i class="fas fa-baby-carriage"></i></div>
+        <div class="card-title">ကိုယ်ဝန်ဆောင် ကျန်းမာရေး</div>
+        <div class="card-hint">ကိုယ်ဝန်ဆောင်ကာလ အစောပိုင်း (၁၂ ပတ်အထိ) အတွက် အထူးသင့်လျော်သည်</div>
+      </a>
+
+      <!-- 2) မိခင်နို့ တိုက်ကျွေးခြင်း -->
+      <a href="education-breastfeeding.html" class="education-card" id="card-breastfeeding" data-ga-range="27-42">
+        <span class="recommended-badge">အကြံပြုထားသည်</span>
+        <div class="card-icon"><i class="fas fa-child"></i></div>
+        <div class="card-title">မိခင်နို့ တိုက်ကျွေးခြင်း</div>
+        <div class="card-hint">ကိုယ်ဝန်ဆောင်ကာလ နောက်ပိုင်း (၂၇ ပတ်မှ စ၍) အတွက် အထူးသင့်လျော်သည်</div>
+      </a>
+
+      <!-- 3) မိခင်နှင့် အာဟာရ -->
+      <a href="education-nutrition.html" class="education-card" id="card-nutrition" data-ga-range="13-26">
+        <span class="recommended-badge">အကြံပြုထားသည်</span>
+        <div class="card-icon"><i class="fas fa-apple-alt"></i></div>
+        <div class="card-title">မိခင်နှင့် အာဟာရ</div>
+        <div class="card-hint">ကိုယ်ဝန်ဆောင်ကာလ အလယ် (၁၃–၂၆ ပတ်) အတွက် အထူးသင့်လျော်သည်</div>
+      </a>
+
+      <!-- 4) မိမိကိုယ်ကိုယ် စောင့်ရှောက်ခြင်း -->
+      <a href="education-self-care.html" class="education-card" id="card-self-care" data-ga-range="13-26">
+        <span class="recommended-badge">အကြံပြုထားသည်</span>
+        <div class="card-icon"><i class="fas fa-heart"></i></div>
+        <div class="card-title">မိမိကိုယ်ကိုယ် စောင့်ရှောက်ခြင်း</div>
+        <div class="card-hint">ကိုယ်ဝန်ဆောင်ကာလ အလယ် (၁၃–၂၆ ပတ်) အတွက် အထူးသင့်လျော်သည်</div>
       </a>
     </div>
   </div>
@@ -106,5 +223,63 @@
       </p>
     </div>
   </footer>
+
+  <script>
+    (function() {
+      // Get gestational age from URL param (?ga=28) or from session patient data
+      function getGestationalAgeWeeks() {
+        const params = new URLSearchParams(window.location.search);
+        const gaParam = params.get('ga');
+        if (gaParam !== null && gaParam !== '') {
+          const n = parseFloat(gaParam);
+          if (!isNaN(n) && n >= 0 && n <= 45) return Math.floor(n);
+        }
+        try {
+          const patient = typeof getSelectedPatient === 'function' ? getSelectedPatient() : null;
+          if (patient && patient.data) {
+            const ga = patient.data.gestational_age;
+            if (ga != null && ga !== '') {
+              const n = parseFloat(ga);
+              if (!isNaN(n) && n >= 0 && n <= 45) return Math.floor(n);
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return null;
+      }
+
+      // Which card IDs to highlight for a given GA (weeks). One or more cards can be recommended.
+      // 0-12: pregnancy health; 13-26: nutrition + self-care; 27+: breastfeeding
+      function getRecommendedCardIds(gaWeeks) {
+        if (gaWeeks == null) return [];
+        if (gaWeeks <= 12) return ['card-pregnancy-health'];
+        if (gaWeeks <= 26) return ['card-nutrition', 'card-self-care'];
+        return ['card-breastfeeding'];
+      }
+
+      function applyHighlight(gaWeeks) {
+        const cardIds = getRecommendedCardIds(gaWeeks);
+        document.querySelectorAll('.education-card').forEach(function(card) {
+          card.classList.remove('recommended');
+          if (cardIds.indexOf(card.id) !== -1) card.classList.add('recommended');
+        });
+      }
+
+      function showGaBanner(gaWeeks) {
+        const banner = document.getElementById('gaBanner');
+        const text = document.getElementById('gaBannerText');
+        if (!banner || !text) return;
+        if (gaWeeks == null) {
+          banner.style.display = 'none';
+          return;
+        }
+        text.textContent = 'လူနာ ကိုယ်ဝန်ဆောင်ကာလ ' + gaWeeks + ' ပတ် ဖြစ်သောကြောင့် အောက်ပါ အကြောင်းအရာများကို အထူး အကြံပြုပါသည်။';
+        banner.style.display = 'block';
+      }
+
+      const ga = getGestationalAgeWeeks();
+      applyHighlight(ga);
+      showGaBanner(ga);
+    })();
+  </script>
 </body>
 </html>
