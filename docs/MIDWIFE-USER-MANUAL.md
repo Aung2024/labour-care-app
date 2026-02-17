@@ -9,6 +9,7 @@
 
 ## How to Use This Manual
 
+- **App sitemap:** See [docs/APP-SITEMAP.md](APP-SITEMAP.md) for a full visual and hierarchical sitemap of all screens and navigation flows.
 - **Screenshot placeholders** are written as: `[Screenshot: brief description]`. Replace each with the actual screenshot for that step.
 - **Recommendations** and **Guidelines** appear at the end of sections or in the final chapter—use them to get the most from the app.
 - **Tip** and **Note** callouts highlight best practices and important behaviour.
