@@ -465,21 +465,21 @@
         { key: 'Duration_of_contractions', label: 'Duration of contractions (sec)', type: 'number', min: 0, max: 120 }
       ],
       cervix: [
-        { key: 'Cervix_Plot_10', label: 'Cervix 10cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_9', label: 'Cervix 9cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_8', label: 'Cervix 8cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_7', label: 'Cervix 7cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_6', label: 'Cervix 6cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_5', label: 'Cervix 5cm', type: 'checkbox', options: [['X','Mark']] },
-        { key: 'Cervix_Plot_P', label: 'Pushing began', type: 'checkbox', options: [['P','Mark']] }
+        { key: 'Cervix_Plot_10', label: 'Cervix 10cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_9', label: 'Cervix 9cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_8', label: 'Cervix 8cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_7', label: 'Cervix 7cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_6', label: 'Cervix 6cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_5', label: 'Cervix 5cm', type: 'radio', group: 'cervix', options: [['X','Mark']] },
+        { key: 'Cervix_Plot_P', label: 'Pushing began', type: 'radio', group: 'cervix', options: [['P','Mark']] }
       ],
       descent: [
-        { key: 'Descent_Plot_5', label: 'Descent -5', type: 'checkbox', options: [['O','Mark']] },
-        { key: 'Descent_Plot_4', label: 'Descent -4', type: 'checkbox', options: [['O','Mark']] },
-        { key: 'Descent_Plot_3', label: 'Descent -3', type: 'checkbox', options: [['O','Mark']] },
-        { key: 'Descent_Plot_2', label: 'Descent -2', type: 'checkbox', options: [['O','Mark']] },
-        { key: 'Descent_Plot_1', label: 'Descent -1', type: 'checkbox', options: [['O','Mark']] },
-        { key: 'Descent_Plot_0', label: 'Descent 0', type: 'checkbox', options: [['O','Mark']] }
+        { key: 'Descent_Plot_5', label: 'Descent -5', type: 'radio', group: 'descent', options: [['O','Mark']] },
+        { key: 'Descent_Plot_4', label: 'Descent -4', type: 'radio', group: 'descent', options: [['O','Mark']] },
+        { key: 'Descent_Plot_3', label: 'Descent -3', type: 'radio', group: 'descent', options: [['O','Mark']] },
+        { key: 'Descent_Plot_2', label: 'Descent -2', type: 'radio', group: 'descent', options: [['O','Mark']] },
+        { key: 'Descent_Plot_1', label: 'Descent -1', type: 'radio', group: 'descent', options: [['O','Mark']] },
+        { key: 'Descent_Plot_0', label: 'Descent 0', type: 'radio', group: 'descent', options: [['O','Mark']] }
       ],
       meds: [
         { key: 'Medication_Oxytocin', label: 'Oxytocin (U/L, drops/min)', type: 'text', placeholder: 'e.g. 5 U/L, 20 drops/min' },
@@ -828,13 +828,26 @@
               </div>
             `;
           } else if (f.type === 'checkbox') {
-            const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X'; // Get the marker value (X, O, P)
+            const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X';
             const isChecked = storedValue === markerValue;
             return `
               <div class="form-field">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                   <input type="checkbox" name="${inputName}" value="${markerValue}" ${isChecked ? 'checked' : ''} 
                     onchange="updateValue('${inputName}', this.checked ? '${markerValue}' : ''); autoSave()" 
+                    style="width: 20px; height: 20px;">
+                  <span>${translatedLabel}</span>
+                </label>
+              </div>
+            `;
+          } else if (f.type === 'radio') {
+            const markerValue = f.options && f.options.length > 0 ? f.options[0][0] : 'X';
+            const isChecked = storedValue === markerValue;
+            return `
+              <div class="form-field">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                  <input type="checkbox" name="${inputName}" value="${markerValue}" data-group="${f.group}_${timeKey}" ${isChecked ? 'checked' : ''} 
+                    onchange="selectPlotValue(this, '${inputName}', '${markerValue}', '${f.group}', '${timeKey}')" 
                     style="width: 20px; height: 20px;">
                   <span>${translatedLabel}</span>
                 </label>
@@ -1035,6 +1048,22 @@
       
       // Also visually highlight alert fields in the current section
       highlightAlertFields();
+    }
+
+    function selectPlotValue(clickedEl, selectedKey, markerValue, group, timeKey) {
+      const groupId = `${group}_${timeKey}`;
+      const isChecked = clickedEl.checked;
+
+      document.querySelectorAll(`input[data-group="${groupId}"]`).forEach(cb => {
+        if (cb !== clickedEl) {
+          cb.checked = false;
+          const fieldKey = cb.name;
+          state.data[fieldKey] = '';
+        }
+      });
+
+      state.data[selectedKey] = isChecked ? markerValue : '';
+      autoSave();
     }
     
     // Highlight alert fields in the UI
