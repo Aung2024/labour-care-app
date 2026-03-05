@@ -604,11 +604,15 @@
       }
     });
 
+    let userRegion = null;
+
     async function loadUserData() {
       try {
         const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
         if (userDoc.exists) {
-          userRole = userDoc.data().role;
+          const data = userDoc.data();
+          userRole = data.role;
+          userRegion = data.region || null;
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -623,11 +627,20 @@
 
         console.log('Loading leaderboard...');
 
-        // Get all midwives - check both 'Midwife' and 'midwife' roles
-        const [midwivesSnap1, midwivesSnap2] = await Promise.all([
-          firebase.firestore().collection('users').where('role', '==', 'Midwife').get(),
-          firebase.firestore().collection('users').where('role', '==', 'midwife').get()
-        ]);
+        let midwivesSnap1, midwivesSnap2;
+        if (userRole === 'Regional Officer' && userRegion) {
+          // Regional Officer: only midwives in their region
+          midwivesSnap1 = await firebase.firestore().collection('users')
+            .where('role', '==', 'Midwife').where('region', '==', userRegion).get();
+          midwivesSnap2 = await firebase.firestore().collection('users')
+            .where('role', '==', 'midwife').where('region', '==', userRegion).get();
+        } else {
+          // All midwives for Super Admin, TMO, Midwife
+          [midwivesSnap1, midwivesSnap2] = await Promise.all([
+            firebase.firestore().collection('users').where('role', '==', 'Midwife').get(),
+            firebase.firestore().collection('users').where('role', '==', 'midwife').get()
+          ]);
+        }
 
         // Combine both snapshots
         const allMidwifeDocs = new Map();
