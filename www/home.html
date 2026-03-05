@@ -583,9 +583,13 @@
             townshipReportCard.style.display = "block";
           }
           
-          // Show CME card if Midwife or Regional Officer
+          // Show CME card if Midwife or Regional Officer (case-insensitive for role)
           const cmeCard = document.getElementById("cmeCard");
-          if ((userRole === "Midwife" || userRole === "midwife" || userRole === "Regional Officer") && cmeCard) {
+          const isCmeEligible = userRole && (
+            userRole === "Midwife" || userRole === "midwife" ||
+            (typeof userRole === "string" && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer")
+          );
+          if (isCmeEligible && cmeCard) {
             cmeCard.style.display = "block";
           }
           
@@ -670,9 +674,10 @@
           return;
         }
 
-        // Get user's township for TMO role with timeout
+        // Get user's township/region for TMO/Regional Officer with timeout
         let userTownship = null;
-        if (userRole === "TMO") {
+        let userRegion = null;
+        if (userRole === "TMO" || (userRole && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer")) {
           try {
             const userQuery = db.collection("users").doc(currentUser.uid);
             const userDoc = await smartFirestoreQuery(
@@ -680,10 +685,12 @@
               { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
             );
             if (userDoc && userDoc.exists) {
-              userTownship = userDoc.data().township;
+              const d = userDoc.data();
+              userTownship = d.township || null;
+              userRegion = d.region || null;
             }
           } catch (error) {
-            console.warn('Could not load township, using cached data if available');
+            console.warn('Could not load township/region, using cached data if available');
           }
         }
 
@@ -702,6 +709,18 @@
           // TMO sees patients from their township
           if (userTownship) {
             const patientsQuery = db.collection("patients").where("township", "==", userTownship);
+            querySnapshot = await smartFirestoreQuery(
+              Promise.resolve(patientsQuery),
+              { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
+            );
+          } else {
+            updateStatsDisplay();
+            return;
+          }
+        } else if (userRole && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer") {
+          // Regional Officer sees patients from their region
+          if (userRegion) {
+            const patientsQuery = db.collection("patients").where("region", "==", userRegion);
             querySnapshot = await smartFirestoreQuery(
               Promise.resolve(patientsQuery),
               { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
