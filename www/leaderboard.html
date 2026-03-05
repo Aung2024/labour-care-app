@@ -606,13 +606,19 @@
 
     let userRegion = null;
 
+    function isRegionalOfficer() {
+      if (!userRole || typeof userRole !== 'string') return false;
+      return userRole.toLowerCase().replace(/\s+/g, ' ').trim() === 'regional officer';
+    }
+
     async function loadUserData() {
       try {
         const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
         if (userDoc.exists) {
           const data = userDoc.data();
           userRole = data.role;
-          userRegion = data.region || null;
+          userRegion = (data.region || '').trim() || null;
+          console.log('Leaderboard user:', { role: userRole, region: userRegion, isRegionalOfficer: isRegionalOfficer() });
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -625,15 +631,23 @@
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('leaderboardContent').style.display = 'none';
 
-        console.log('Loading leaderboard...');
+        console.log('Loading leaderboard...', { userRole, userRegion, isRegionalOfficer: isRegionalOfficer() });
 
         let midwivesSnap1, midwivesSnap2;
-        if (userRole === 'Regional Officer' && userRegion) {
+        if (isRegionalOfficer() && userRegion) {
           // Regional Officer: only midwives in their region
+          console.log('Filtering by region:', userRegion);
           midwivesSnap1 = await firebase.firestore().collection('users')
             .where('role', '==', 'Midwife').where('region', '==', userRegion).get();
           midwivesSnap2 = await firebase.firestore().collection('users')
             .where('role', '==', 'midwife').where('region', '==', userRegion).get();
+        } else if (isRegionalOfficer() && !userRegion) {
+          // Regional Officer without region set - show empty with message
+          console.warn('Regional Officer has no region set in profile');
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('emptyState').innerHTML = '<i class="fas fa-exclamation-triangle"></i><p>No region set in your profile.</p><p class="text-muted small">Please ask your administrator to add your region (e.g. Yangon Region, Mandalay Region) to your user profile.</p>';
+          return;
         } else {
           // All midwives for Super Admin, TMO, Midwife
           [midwivesSnap1, midwivesSnap2] = await Promise.all([
