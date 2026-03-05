@@ -929,6 +929,7 @@
     let currentUser = null;
     let userRole = null;
     let userTownship = null;
+    let userRegion = null;
     let dateFilter = { start: null, end: null };
 
     function parseDateValue(value) {
@@ -1090,9 +1091,11 @@
         const userData = userDoc.data();
         userRole = userData.role;
         userTownship = userData.township;
+        userRegion = userData.region;
         
         console.log('User role:', userRole);
         console.log('User township:', userTownship);
+        console.log('User region:', userRegion);
         
         // Load user info in header
         document.getElementById("userInfo").textContent = `${currentUser.email} (${userData.role})`;
@@ -1125,6 +1128,10 @@
         case 'Super Admin':
           title.innerHTML = '<i class="fas fa-crown"></i> Super Admin Dashboard';
           subtitle.textContent = 'Global overview and system management';
+          break;
+        case 'Regional Officer':
+          title.innerHTML = '<i class="fas fa-map-marked-alt"></i> Regional Officer Dashboard';
+          subtitle.textContent = `Region: ${userRegion || 'Not set'}`;
           break;
         case 'TMO':
           title.innerHTML = '<i class="fas fa-hospital"></i> TMO Dashboard';
@@ -1198,6 +1205,8 @@
         let stats = emptyStats();
 
         if (userRole === 'Super Admin' || userRole === 'admin') {
+          stats = getGlobalStatistics();
+        } else if (userRole === 'Regional Officer') {
           stats = getGlobalStatistics();
         } else if (userRole === 'TMO') {
           stats = getTownshipStatistics(userTownship);
@@ -1277,6 +1286,14 @@
           midwivesSnap = await firebase.firestore()
             .collection('users')
             .where('role', '==', 'Midwife')
+            .get();
+        } else if (userRole === 'Regional Officer' && userRegion) {
+          // Regional Officer: Get midwives in their region
+          console.log('Loading midwives for region:', userRegion);
+          midwivesSnap = await firebase.firestore()
+            .collection('users')
+            .where('role', '==', 'Midwife')
+            .where('region', '==', userRegion)
             .get();
         } else if (userRole === 'TMO') {
           // TMO: Get only midwives in their township
@@ -1394,7 +1411,16 @@
       const db = firebase.firestore();
       let patientDocs = [];
         
-        if (userRole === 'TMO') {
+        if (userRole === 'Regional Officer') {
+        if (userRegion) {
+          const snapshot = await db.collection('patients')
+                .where('region', '==', userRegion)
+                .get();
+          patientDocs = snapshot.docs;
+        } else {
+          patientDocs = [];
+        }
+      } else if (userRole === 'TMO' && userTownship) {
         const snapshot = await db.collection('patients')
               .where('township', '==', userTownship)
               .get();
@@ -1411,6 +1437,7 @@
         });
         patientDocs = Array.from(combined.values());
           } else {
+        // Super Admin or fallback: all patients
         const snapshot = await db.collection('patients').get();
         patientDocs = snapshot.docs;
       }
@@ -1622,8 +1649,8 @@
 
         let dataset = analyticsData.patients || [];
 
-        // Apply midwife filter for TMO and Super Admin
-        if ((userRole === 'TMO' || userRole === 'Super Admin' || userRole === 'admin') && selectedMidwife && selectedMidwife !== 'all') {
+        // Apply midwife filter for TMO, Regional Officer, and Super Admin
+        if ((userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin') && selectedMidwife && selectedMidwife !== 'all') {
           dataset = dataset.filter(patient => {
             const createdBy = patient.profile.created_by || patient.profile.createdBy;
             return createdBy === selectedMidwife;
@@ -2344,12 +2371,12 @@
     // Load new analytics based on user role
     async function loadNewAnalytics() {
       try {
-        if (userRole === 'TMO' || userRole === 'Super Admin' || userRole === 'admin') {
-          // Show TMO analytics with charts for TMO and Super Admin
+        if (userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin') {
+          // Show TMO-style analytics with charts for TMO, Regional Officer, and Super Admin
           document.getElementById('tmoAnalytics').style.display = 'block';
           document.getElementById('standardAnalytics').style.display = 'none';
           
-          // Show and load midwife filter for TMO and Super Admin
+          // Show and load midwife filter for TMO, Regional Officer, and Super Admin
           const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
           if (midwifeFilterCard) {
             midwifeFilterCard.style.display = 'block';
