@@ -47,6 +47,19 @@ async function searchDuplicatesByPhone(phoneNumber, options = {}) {
           .where('phoneNumber', '==', normalizedPhone)
           .where('createdBy', '==', options.userId)
       ];
+    } else if (options.userRole === 'Regional Officer' && options.region) {
+      // Regional Officer: only check patients in their region
+      baseQueries = [
+        db.collection('patients')
+          .where('phone', '==', normalizedPhone)
+          .where('region', '==', options.region),
+        db.collection('patients')
+          .where('phoneNumber', '==', normalizedPhone)
+          .where('region', '==', options.region),
+        db.collection('patients')
+          .where('phone_number', '==', normalizedPhone)
+          .where('region', '==', options.region)
+      ];
     } else if (options.userRole === 'TMO' && options.township) {
       // TMO: only check patients in their township
       baseQueries = [
@@ -177,6 +190,9 @@ async function searchDuplicatesByNameAge(name, age, ageTolerance = 2, filterCrit
           console.warn('Error fetching patients for name/age search:', error);
           return [];
         }
+      } else if (filterCriteria.type === 'region') {
+        // Regional Officer: filter by region
+        query = query.where('region', '==', filterCriteria.value);
       } else if (filterCriteria.type === 'township') {
         // TMO: filter by township
         query = query.where('township', '==', filterCriteria.value);
@@ -345,6 +361,8 @@ async function checkForDuplicates(patientData, options = {}) {
     let filterCriteria = null;
     if (options.userRole === 'Midwife' && options.userId) {
       filterCriteria = { type: 'created_by', value: options.userId };
+    } else if (options.userRole === 'Regional Officer' && options.region) {
+      filterCriteria = { type: 'region', value: options.region };
     } else if (options.userRole === 'TMO' && options.township) {
       filterCriteria = { type: 'township', value: options.township };
     }

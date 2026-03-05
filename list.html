@@ -979,6 +979,48 @@
             console.error('Error details:', error.message, error.code);
             allPatients = [];
           }
+        } else if (userRole === 'Regional Officer') {
+          try {
+            console.log('Loading as Regional Officer...');
+            const userQuery = db.collection('users').doc(currentUser.uid);
+            const userDoc = await smartFirestoreQuery(
+              Promise.resolve(userQuery),
+              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+            );
+            
+            if (userDoc && userDoc.exists) {
+              const userRegion = userDoc.data().region;
+              console.log('Regional Officer Region:', userRegion);
+              if (userRegion) {
+                query = query.where('region', '==', userRegion);
+                const snapshot = await smartFirestoreQuery(
+                  Promise.resolve(query),
+                  { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+                );
+                allPatients = [];
+                if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+                  snapshot.forEach(doc => {
+                    if (doc && doc.id && doc.data) {
+                      allPatients.push({ id: doc.id, ...doc.data() });
+                    }
+                  });
+                  console.log('✅ Loaded', allPatients.length, 'patients for Regional Officer');
+                } else {
+                  console.warn('⚠️ Regional Officer query returned empty result');
+                }
+              } else {
+                console.warn('⚠️ Regional Officer user document missing region');
+                allPatients = [];
+              }
+            } else {
+              console.warn('⚠️ Regional Officer user document not found');
+              allPatients = [];
+            }
+          } catch (error) {
+            console.error('❌ Error loading Regional Officer patients:', error);
+            console.error('Error details:', error.message, error.code);
+            allPatients = [];
+          }
         } else if (userRole === 'TMO') {
           try {
             console.log('Loading as TMO...');

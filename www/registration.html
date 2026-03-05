@@ -525,6 +525,12 @@
               </label>
             </div>
             <div class="role-option">
+              <input type="radio" name="role" id="role-regional" value="Regional Officer" required>
+              <label for="role-regional">
+                <i class="fas fa-map-marked-alt me-2"></i>Regional Officer
+              </label>
+            </div>
+            <div class="role-option">
               <input type="radio" name="role" id="role-tmo" value="TMO" required>
               <label for="role-tmo">
                 <i class="fas fa-user-md me-2"></i>TMO (Township Medical Officer)
@@ -675,6 +681,11 @@
       });
       
       function updateRoleSelection() {
+        const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
+        const townshipGroup = document.querySelector('.form-group');
+        const townshipSelect = document.getElementById('townshipSelect');
+        const regionSelect = document.getElementById('regionSelect');
+        
         roleOptions.forEach(option => {
           const radio = option.querySelector('input[type="radio"]');
           if (radio.checked) {
@@ -683,6 +694,17 @@
             option.classList.remove('selected');
           }
         });
+        
+        if (selectedRole === 'Regional Officer') {
+          townshipSelect.required = false;
+          townshipSelect.disabled = true;
+          townshipSelect.value = '';
+          townshipSelect.innerHTML = '<option value="">All townships in region</option>';
+        } else {
+          townshipSelect.required = true;
+          townshipSelect.disabled = !regionSelect.value;
+          if (regionSelect.value) updateTownships();
+        }
       }
     });
 
@@ -1029,16 +1051,21 @@
       const regionSelect = document.getElementById('regionSelect');
       const townshipSelect = document.getElementById('townshipSelect');
       const selectedRegion = regionSelect.value;
+      const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
       
-      // Clear and disable township select
+      if (selectedRole === 'Regional Officer') {
+        townshipSelect.innerHTML = '<option value="">All townships in region</option>';
+        townshipSelect.disabled = true;
+        townshipSelect.required = false;
+        return;
+      }
+      
       townshipSelect.innerHTML = '<option value="">Select Township</option>';
       townshipSelect.disabled = true;
       
       if (selectedRegion && myanmarRegions[selectedRegion]) {
-        // Enable township select and populate options
         townshipSelect.disabled = false;
-        
-        // Add township options
+        townshipSelect.required = true;
         myanmarRegions[selectedRegion].forEach(township => {
           const option = document.createElement('option');
           option.value = township;
@@ -1065,11 +1092,18 @@
       
       const data = Object.fromEntries(new FormData(form));
       
-      // Validate required fields
-      if (!data.region || !data.township) {
+      // Validate required fields (township optional for Regional Officer)
+      const isRegionalOfficer = data.role === 'Regional Officer';
+      if (!data.region) {
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
-        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please select both region and township.</div>';
+        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please select your region.</div>';
+        return;
+      }
+      if (!isRegionalOfficer && !data.township) {
+        submitButton.innerHTML = originalButtonText;
+        submitButton.disabled = false;
+        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please select your township.</div>';
         return;
       }
       
@@ -1081,13 +1115,13 @@
         return;
       }
       
-              // Additional validation for township
-        if (!data.township || data.township.trim() === '') {
+      // Township required for non-Regional Officer roles
+      if (!isRegionalOfficer && (!data.township || data.township.trim() === '')) {
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Township cannot be empty.</div>';
-          return;
-        }
+        return;
+      }
         
         // Ensure township is a valid string
         if (typeof data.township !== 'string') {

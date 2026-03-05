@@ -4,6 +4,7 @@
  * 
  * Roles:
  * - Super Admin: Full access to all features
+ * - Regional Officer: Can view all patients in their region
  * - TMO: Township Medical Officer - can view all patients in their township
  * - Midwife: Can only view/manage their own patients
  */
@@ -47,6 +48,50 @@ const ROLE_PERMISSIONS = {
     accessAdminPanel: true,
     manageFacilities: true,
     viewSystemStats: true
+  },
+  
+  'Regional Officer': {
+    // Patient Management
+    viewAllPatients: false, // Only region patients
+    viewRegionPatients: true,
+    createPatient: true,
+    editAnyPatient: false, // Only region patients
+    editRegionPatients: true,
+    deleteAnyPatient: false,
+    viewAnyPatientDetails: false, // Only region patients
+    viewRegionPatientDetails: true,
+    
+    // User Management
+    viewAllUsers: false,
+    viewRegionUsers: true,
+    approveUsers: false,
+    rejectUsers: false,
+    editUserRoles: false,
+    deleteUsers: false,
+    
+    // Reports
+    viewAllReports: false,
+    viewRegionReports: true,
+    viewTownshipReports: true,
+    exportData: true,
+    
+    // Settings
+    viewSettings: true,
+    editSettings: true,
+    viewAuditLogs: false,
+    
+    // Care Entry
+    createAnyCareRecord: true,
+    editAnyCareRecord: false,
+    deleteAnyCareRecord: false,
+    
+    // Transfer
+    transferAnyPatient: true, // Region patients
+    
+    // Admin Features
+    accessAdminPanel: false,
+    manageFacilities: false,
+    viewSystemStats: false
   },
   
   'TMO': {
@@ -144,6 +189,7 @@ const ROLE_PERMISSIONS = {
 let currentUserRole = null;
 let currentUserId = null;
 let currentUserTownship = null;
+let currentUserRegion = null;
 
 /**
  * Initialize RBAC manager
@@ -173,7 +219,8 @@ async function initRBAC() {
     if (userData) {
       currentUserRole = userData.role || 'Midwife';
       currentUserTownship = userData.township || null;
-      console.log('✅ RBAC initialized - Role:', currentUserRole, 'Township:', currentUserTownship);
+      currentUserRegion = userData.region || null;
+      console.log('✅ RBAC initialized - Role:', currentUserRole, 'Township:', currentUserTownship, 'Region:', currentUserRegion);
     } else {
       console.warn('⚠️ User data not found, defaulting to Midwife');
       currentUserRole = 'Midwife';
@@ -217,6 +264,13 @@ function canAccessResource(resourceType, resourceId, resourceData = null) {
   
   // For patient resources
   if (resourceType === 'patient') {
+    if (currentUserRole === 'Regional Officer') {
+      if (resourceData && resourceData.region === currentUserRegion) {
+        return true;
+      }
+      return false;
+    }
+    
     if (currentUserRole === 'TMO') {
       // TMO can access patients in their township
       if (resourceData && resourceData.township === currentUserTownship) {
@@ -238,6 +292,10 @@ function canAccessResource(resourceType, resourceId, resourceData = null) {
   
   // For care records
   if (resourceType === 'careRecord') {
+    if (currentUserRole === 'Regional Officer') {
+      return true; // Would need patient data to verify region
+    }
+    
     if (currentUserRole === 'TMO') {
       // TMO can access records for township patients
       return true; // Would need patient data to verify township
@@ -271,10 +329,24 @@ function getCurrentTownship() {
 }
 
 /**
+ * Get current user region
+ */
+function getCurrentRegion() {
+  return currentUserRegion;
+}
+
+/**
  * Check if user is Super Admin
  */
 function isSuperAdmin() {
   return currentUserRole === 'Super Admin';
+}
+
+/**
+ * Check if user is Regional Officer
+ */
+function isRegionalOfficer() {
+  return currentUserRole === 'Regional Officer';
 }
 
 /**
@@ -343,7 +415,9 @@ window.RBAC = {
   canAccessResource: canAccessResource,
   getCurrentRole: getCurrentRole,
   getCurrentTownship: getCurrentTownship,
+  getCurrentRegion: getCurrentRegion,
   isSuperAdmin: isSuperAdmin,
+  isRegionalOfficer: isRegionalOfficer,
   isTMO: isTMO,
   isMidwife: isMidwife,
   applyRBACToUI: applyRBACToUI,
@@ -366,6 +440,7 @@ if (typeof firebase !== 'undefined' && firebase.auth) {
       currentUserRole = null;
       currentUserId = null;
       currentUserTownship = null;
+      currentUserRegion = null;
     }
   });
 }

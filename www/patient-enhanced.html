@@ -2568,6 +2568,7 @@
         const currentUser = firebase.auth().currentUser;
         let userRole = 'Midwife'; // Default
         let userTownship = null;
+        let userRegion = null;
         
         if (currentUser) {
           try {
@@ -2576,6 +2577,7 @@
               const userData = userDoc.data();
               userRole = userData.role || 'Midwife';
               userTownship = userData.township || null;
+              userRegion = userData.region || null;
             }
           } catch (error) {
             console.warn('Error getting user role:', error);
@@ -2589,7 +2591,8 @@
         }, {
           userRole: userRole,
           userId: currentUser ? currentUser.uid : null,
-          township: userTownship
+          township: userTownship,
+          region: userRegion
         });
         
         if (duplicateCheck.hasDuplicates) {
@@ -2679,24 +2682,32 @@
         
         const userData = userDoc.exists ? userDoc.data() : {};
         const userTownship = userData.township || "";
+        const userRegion = userData.region || "";
+        const userRole = userData.role || 'Midwife';
         const facilityCode = userData.facility_code || '003'; // Default to 003 (Other) if not set
-        console.log('Township to assign to patient:', userTownship);
-        console.log('Facility code from user data:', facilityCode);
+        console.log('Township and region to assign to patient:', userTownship, userRegion);
         
-        // Validate township
-        if (!userTownship || userTownship.trim() === '') {
+        // Validate township (optional for Regional Officer - they use region)
+        if (userRole !== 'Regional Officer' && (!userTownship || userTownship.trim() === '')) {
           console.error('User township is empty or invalid:', userTownship);
           document.getElementById("message").innerHTML = 
             '<div class="alert alert-warning">⚠️ Warning: Your township is not set. Please contact an administrator to set your township.</div>';
           
-          // Reset button state on township validation error
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+          return;
+        }
+        if (userRole === 'Regional Officer' && !userRegion) {
+          console.error('Regional Officer missing region');
+          document.getElementById("message").innerHTML = 
+            '<div class="alert alert-warning">⚠️ Warning: Your region is not set. Please contact an administrator.</div>';
           submitBtn.innerHTML = originalText;
           submitBtn.disabled = false;
           return;
         }
         
-        // Add township and timestamp (using snake_case only to avoid duplicates)
         data.township = userTownship;
+        data.region = userRegion;
         
         console.log('Setting created_by field:', user.uid);
         console.log('Registration date:', data.registration_date);
@@ -2752,6 +2763,7 @@
           name: data.name,
           age: parseInt(data.age),
           township: data.township,
+          region: data.region,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),
           created_by: user.uid,
           status: 'registered', // NEW: Initial status is "Registered"
@@ -2832,6 +2844,7 @@
           tsp_code: processedData.tsp_code || null,
           patient_unique_id: processedData.patient_unique_id || null,
           township: userTownship,
+          region: userRegion,
           created_by: user.uid
         };
 
