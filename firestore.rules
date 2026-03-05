@@ -12,15 +12,19 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
         
-      // Allow TMO to read users in their township
-      allow read: if request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO" && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township;
+      // Allow TMO to read users in their township (must check TMO role)
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township;
       
-      // Allow all authenticated users to read basic user info (name, township, role, email) for leaderboard
-      // This is safe as it only exposes public profile information needed for the leaderboard
+      // Allow all authenticated users to read basic user info for leaderboard
       allow read: if request.auth != null;
       
       // Explicit allow for Regional Officer to read users (leaderboard - midwives in their region)
-      allow read: if request.auth != null
+      allow read: if
+        request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Regional Officer";
     }
@@ -32,6 +36,8 @@ service cloud.firestore {
     
     // Patients collection
     match /patients/{patientId} {
+      // Allow public read for share links (summary-view.html - clinicians share patient summary URLs)
+      allow read: if true;
       // Allow authenticated users to read/write patient documents
       allow read, write: if request.auth != null;
       
@@ -40,9 +46,11 @@ service cloud.firestore {
         allow read, write: if request.auth != null;
       }
       
-      // Allow access to records subcollection (includes summary, startingTime, secondStage documents)
+      // Allow access to records subcollection (summary, startingTime, secondStage, birthRecord)
       match /records/{recordId} {
-        allow read, write: if request.auth != null;
+        // Allow public read for share links (summary-view.html)
+        allow read: if true;
+        allow write: if request.auth != null;
       }
       
       // Allow access to medication subcollection
@@ -85,24 +93,21 @@ service cloud.firestore {
         allow read, write: if request.auth != null;
       }
       
-      // Allow access to labour_care subcollection (if used)
+      // Allow access to labour_care subcollection
       match /labour_care/{recordId} {
         allow read, write: if request.auth != null;
       }
       
-      // Allow access to lab_tests subcollection (if used)
+      // Allow access to lab_tests subcollection
       match /lab_tests/{testId} {
         allow read, write: if request.auth != null;
       }
       
       // Allow access to consents subcollection (patient consent records)
       match /consents/{consentId} {
-        // Allow authenticated healthcare providers to read consent records (for audit purposes)
         allow read: if request.auth != null;
-        
-        // Allow users to write consent if they are the provider who collected it
-        allow write: if 
-          request.auth != null 
+        allow write: if
+          request.auth != null
           && (
             request.resource.data.providerId == request.auth.uid
             || (
@@ -112,93 +117,60 @@ service cloud.firestore {
           );
       }
       
-      // Catch-all rule for any other subcollections under patients
-      // This ensures iOS devices can access nested data structures
+      // Catch-all for any other subcollections under patients
       match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null;
       }
     }
     
-    // Provider Consents collection (stores provider consent records)
+    // Provider Consents collection
     match /provider_consents/{userId} {
-      // Allow users to read/write their own consent
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      // Allow Super Admin to read all provider consents (for audit purposes)
       allow read: if
         request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
     }
     
-    // Feedback collection (for pilot feedback from midwives)
+    // Feedback collection
     match /feedback/{feedbackId} {
-      // Allow authenticated users to create feedback
       allow create: if request.auth != null;
-      
-      // Allow Super Admin to read all feedback
       allow read: if
         request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
-      
-      // Allow users to read their own feedback
-      allow read: if request.auth != null && request.auth.uid == resource.data.submittedBy;
+      allow read: if request.auth != null && resource.data.submittedBy == request.auth.uid;
     }
     
-    // Audit Logs collection (security and compliance)
+    // Audit Logs collection
     match /audit_logs/{logId} {
-      // Allow authenticated users to create audit logs (for their own actions)
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      
-      // Allow unauthenticated events (like failed login attempts) to be logged
-      // This is safe because we're only logging authentication failures
-      allow create: if 
-        request.resource.data.unauthenticated == true 
+      allow create: if
+        request.resource.data.unauthenticated == true
         && request.resource.data.action in ['login_failed', 'account_locked'];
-      
-      // Allow Super Admin to read all audit logs
       allow read: if
         request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
-      
-      // Users can read their own audit logs
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      
-      // No updates or deletes allowed (immutable audit trail)
       allow update, delete: if false;
     }
     
-    // Account Lockouts collection (security)
+    // Account Lockouts collection
     match /account_lockouts/{userId} {
-      // Allow reads without auth (needed to check lockout status before login)
-      // Safe: data is limited to lockout attempts for the supplied email/userId
       allow read: if true;
-      
-      // Allow unauthenticated writes for lockout tracking before login
-      // Keep the data minimal: attempts, lockoutUntil, lockoutCount, timestamps
       allow create, update: if true;
-      
-      // Allow Super Admin to read all lockouts
       allow read: if
         request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
-      
-      // Allow deletion (for clearing lockouts)
       allow delete: if request.auth != null;
     }
     
-    // Password History collection (security)
+    // Password History collection
     match /password_history/{userId} {
-      // Allow system to create/update password history
       allow create, update: if request.auth != null && request.auth.uid == userId;
-      
-      // Allow users to read their own password history
       allow read: if request.auth != null && request.auth.uid == userId;
-      
-      // No deletes allowed (for security audit)
       allow delete: if false;
     }
   }
