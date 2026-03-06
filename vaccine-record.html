@@ -68,21 +68,19 @@
       transition: all 0.3s ease;
     }
     .btn-save:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35); color: white; }
-    .vaccine-option {
-      padding: 1rem 1.25rem;
+    .vaccine-select-premium {
       border: 2px solid #e5e7eb;
       border-radius: 12px;
-      cursor: pointer;
+      padding: 0.875rem 1rem;
+      font-size: 1rem;
+      background: white;
       transition: all 0.2s ease;
-      margin-bottom: 0.75rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
     }
-    .vaccine-option:hover { border-color: var(--primary-color); background: rgba(16, 185, 129, 0.05); }
-    .vaccine-option.selected { border-color: var(--primary-color); background: rgba(16, 185, 129, 0.1); }
-    .vaccine-option input { width: 20px; height: 20px; cursor: pointer; }
-    .vaccine-icon { font-size: 1.5rem; color: var(--primary-color); }
+    .vaccine-select-premium:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+      outline: none;
+    }
     .btn-back {
       background: rgba(255,255,255,0.2);
       color: white;
@@ -122,8 +120,9 @@
       <form id="vaccineForm">
         <div class="mb-4">
           <label class="form-label lang-text" data-en="Select Vaccine" data-mm="ကာကွယ်ဆေး ရွေးချယ်ပါ">Select Vaccine</label>
-          <p class="text-muted small mb-3 lang-text" data-en="Record any vaccine regardless of baby age" data-mm="ကလေးအသက်မရွေး မည်သည့်ကာကွယ်ဆေးကိုမဆို မှတ်တမ်းတင်နိုင်ပါသည်">Record any vaccine regardless of baby age</p>
-          <div id="vaccineOptions"></div>
+          <select id="vaccineSelect" class="form-select form-select-lg vaccine-select-premium" required>
+            <option value="">-- Select vaccine --</option>
+          </select>
         </div>
         <div class="mb-4">
           <label for="dateGiven" class="form-label lang-text" data-en="Date Given" data-mm="ထိုးသည့်ရက်">Date Given</label>
@@ -141,7 +140,7 @@
   </div>
 
   <script>
-    const db = firebase.firestore();
+    // db is already defined globally by firebase.js - do not redeclare
     let patientId, babyName, babyBirthDate;
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient');
@@ -209,25 +208,15 @@
     }
 
     function renderVaccineOptions() {
-      const container = document.getElementById('vaccineOptions');
-      container.innerHTML = VACCINES.map(v => `
-        <label class="vaccine-option">
-          <input type="radio" name="vaccine" value="${v.id}" required>
-          <span class="vaccine-icon">${v.type === 'oral' ? '💧' : '💉'}</span>
-          <span>${lang === 'mm' ? v.nameMm : v.name}</span>
-        </label>
-      `).join('');
-      container.querySelectorAll('.vaccine-option').forEach(el => {
-        el.addEventListener('click', () => {
-          container.querySelectorAll('.vaccine-option').forEach(o => o.classList.remove('selected'));
-          el.classList.add('selected');
-        });
-      });
+      const select = document.getElementById('vaccineSelect');
+      if (!select) return;
+      select.innerHTML = '<option value="">-- ' + (lang === 'mm' ? 'ကာကွယ်ဆေး ရွေးချယ်ပါ' : 'Select vaccine') + ' --</option>' +
+        VACCINES.map(v => `<option value="${v.id}">${lang === 'mm' ? v.nameMm : v.name}</option>`).join('');
     }
 
     document.getElementById('vaccineForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const vaccineId = document.querySelector('input[name="vaccine"]:checked')?.value;
+      const vaccineId = document.getElementById('vaccineSelect')?.value;
       const vaccine = VACCINES.find(v => v.id === vaccineId);
       const dateGiven = document.getElementById('dateGiven').value;
       const notes = document.getElementById('notes').value.trim();
