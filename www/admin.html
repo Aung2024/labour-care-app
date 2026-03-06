@@ -9,6 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-functions.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
 </head>
@@ -38,6 +39,33 @@
       </div>
     </div>
     
+    <!-- Update Email Modal -->
+    <div class="modal fade" id="updateEmailModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-envelope me-2"></i>Update User Email</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted mb-2">User: <strong id="updateEmailUserName"></strong></p>
+            <p class="text-muted small mb-3">This changes the sign-in email. The user will need to use the new email to log in.</p>
+            <div class="mb-3">
+              <label for="newEmailInput" class="form-label">New Email</label>
+              <input type="email" class="form-control" id="newEmailInput" placeholder="newemail@example.com" required>
+              <div id="updateEmailError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="updateEmailSubmitBtn" onclick="submitUpdateEmail()">
+              <i class="fas fa-save me-1"></i>Update Email
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Debug Section (remove in production) -->
     <div class="card mb-4">
       <div class="card-header">Debug Information</div>
@@ -290,6 +318,9 @@
                 </span>
               </td>
               <td>
+                <button class="btn btn-outline-primary btn-sm me-1" onclick='openUpdateEmailModal("${user.id}", "${(user.data.email || '').replace(/"/g, '&quot;')}", "${(user.data.name || user.data.email || 'User').replace(/"/g, '&quot;')}")'>
+                  <i class="fas fa-envelope me-1"></i>Update Email
+                </button>
                 ${isCurrentUser 
                   ? '<span class="text-muted"><i class="fas fa-info-circle"></i> Current User</span>' 
                   : `<button class="btn btn-danger btn-sm" onclick='confirmDeleteUser("${user.id}", "${(user.data.name || user.data.email || 'User').replace(/'/g, "\\'")}", ${user.patientCount})'>
@@ -454,6 +485,80 @@
           document.getElementById('adminMsg').innerHTML = '';
           loadAllUsers(); // Reload even on error
         }, 5000);
+      }
+    }
+
+    // Update Email modal - requires Firebase Cloud Function to be deployed
+    let updateEmailUserId = null;
+
+    function openUpdateEmailModal(userId, currentEmail, userName) {
+      updateEmailUserId = userId;
+      document.getElementById('updateEmailUserName').textContent = userName || 'User';
+      const inputEl = document.getElementById('newEmailInput');
+      if (inputEl) {
+        inputEl.value = currentEmail || '';
+        inputEl.placeholder = 'Enter new email address';
+      }
+      document.getElementById('updateEmailError').textContent = '';
+      document.getElementById('updateEmailError').classList.add('d-none');
+      const modal = new bootstrap.Modal(document.getElementById('updateEmailModal'));
+      modal.show();
+    }
+
+    async function submitUpdateEmail() {
+      const newEmail = (document.getElementById('newEmailInput') || {}).value.trim();
+      const errorEl = document.getElementById('updateEmailError');
+      const submitBtn = document.getElementById('updateEmailSubmitBtn');
+
+      if (!newEmail) {
+        errorEl.textContent = 'Please enter an email address.';
+        errorEl.classList.remove('d-none');
+        return;
+      }
+
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newEmail)) {
+        errorEl.textContent = 'Please enter a valid email address.';
+        errorEl.classList.remove('d-none');
+        return;
+      }
+
+      if (!updateEmailUserId) {
+        errorEl.textContent = 'Error: No user selected.';
+        errorEl.classList.remove('d-none');
+        return;
+      }
+
+      try {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+        errorEl.classList.add('d-none');
+
+        const updateUserEmailFn = firebase.functions().httpsCallable('updateUserEmail');
+        const result = await updateUserEmailFn({ userId: updateEmailUserId, newEmail: newEmail });
+
+        if (result.data && result.data.success) {
+          document.getElementById('adminMsg').innerHTML = `
+            <div class="alert alert-success">
+              <i class="fas fa-check-circle me-2"></i>
+              Email updated successfully. The user can now sign in with: ${newEmail}
+            </div>
+          `;
+          bootstrap.Modal.getInstance(document.getElementById('updateEmailModal')).hide();
+          loadAllUsers();
+          setTimeout(() => { document.getElementById('adminMsg').innerHTML = ''; }, 4000);
+        } else {
+          throw new Error(result.data?.error || 'Unknown error');
+        }
+      } catch (error) {
+        console.error('Error updating email:', error);
+        const msg = error.message || (error.details ? error.details : 'Failed to update email. Make sure the Cloud Function is deployed.');
+        errorEl.textContent = msg;
+        errorEl.classList.remove('d-none');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save me-2"></i>Update Email';
       }
     }
   </script>
