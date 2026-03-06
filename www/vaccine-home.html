@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10b981">
+  <title>Immunization - Maternal & Child Health Care System</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --card-hover-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .medical-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .app-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .page-subtitle { font-size: 0.9rem; opacity: 0.9; }
+    .main-container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+    .patient-info-bar {
+      background: white;
+      border-radius: 15px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--card-shadow);
+      border-left: 5px solid var(--primary-color);
+    }
+    .patient-name { font-size: 1.25rem; font-weight: 600; color: var(--primary-color); }
+    .info-label { font-size: 0.8rem; color: #6b7280; }
+    .info-value { font-size: 1rem; font-weight: 600; color: #374151; }
+    .hub-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .hub-card {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      border-top: 4px solid var(--primary-color);
+      position: relative;
+      overflow: hidden;
+    }
+    .hub-card:hover {
+      transform: translateY(-6px);
+      box-shadow: var(--card-hover-shadow);
+    }
+    .hub-card.record::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .hub-card.records::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+    .hub-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .hub-card:hover::before { opacity: 1; }
+    .hub-card-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+    }
+    .hub-card.record .hub-card-icon { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
+    .hub-card.records .hub-card-icon { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+    .hub-card-title { font-size: 1.35rem; font-weight: 700; color: #1f2937; margin-bottom: 0.5rem; }
+    .hub-card-desc { font-size: 0.95rem; color: #6b7280; line-height: 1.5; }
+    .btn-back {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.5);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-back:hover { background: rgba(255,255,255,0.3); color: white; }
+    .footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.9rem;
+      margin-top: 2rem;
+    }
+    .footer a { color: inherit; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <!-- Header (consistent with patient-care-hub) -->
+  <div class="medical-header">
+    <div class="header-content">
+      <div>
+        <h1 class="app-title">
+          <i class="fas fa-syringe me-2"></i>
+          <span class="lang-text" data-en="Immunization" data-mm="ကာကွယ်ဆေးထိုးခြင်း">Immunization</span>
+        </h1>
+        <p class="page-subtitle lang-text" data-en="Record vaccines & view Plan vs Actual" data-mm="ကာကွယ်ဆေးမှတ်သားပြီး အစီအစဉ် နှင့် လက်တွေ့ ကြည့်ရှုရန်">Record vaccines & view Plan vs Actual</p>
+      </div>
+      <a href="#" class="btn-back" onclick="goBack(); return false;">
+        <i class="fas fa-arrow-left"></i>
+        <span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="main-container">
+    <!-- Patient/Baby Info Bar -->
+    <div id="patientInfoBar" class="patient-info-bar" style="display: none;">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <div class="patient-name mb-1" id="patientName">-</div>
+          <div class="row g-2">
+            <div class="col-auto">
+              <span class="info-label lang-text" data-en="Baby:" data-mm="ကလေး:">Baby:</span>
+              <span class="info-value ms-1" id="babyName">-</span>
+            </div>
+            <div class="col-auto">
+              <span class="info-label lang-text" data-en="Birth:" data-mm="မွေးရက်:">Birth:</span>
+              <span class="info-value ms-1" id="birthDate">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loadingState" class="text-center py-5 text-white">
+      <div class="spinner-border" role="status"></div>
+      <p class="mt-2 lang-text" data-en="Loading..." data-mm="ခေတ္တစောင့်ပါ...">Loading...</p>
+    </div>
+
+    <!-- Hub Cards -->
+    <div id="hubCards" class="hub-cards" style="display: none;">
+      <a href="#" id="recordCard" class="hub-card record">
+        <div class="hub-card-icon">
+          <i class="fas fa-plus-circle"></i>
+        </div>
+        <h3 class="hub-card-title lang-text" data-en="Record New Vaccine" data-mm="ကာကွယ်ဆေးအသစ် မှတ်သားရန်">Record New Vaccine</h3>
+        <p class="hub-card-desc lang-text" data-en="Add a new vaccination record for this baby. Record any vaccine regardless of age." data-mm="ဤကလေးအတွက် ကာကွယ်ဆေးအသစ် ထည့်သွင်းပါ။ အသက်မရွေး မှတ်သားနိုင်သည်။">Add a new vaccination record for this baby. Record any vaccine regardless of age.</p>
+      </a>
+      <a href="#" id="recordsCard" class="hub-card records">
+        <div class="hub-card-icon">
+          <i class="fas fa-clipboard-list"></i>
+        </div>
+        <h3 class="hub-card-title lang-text" data-en="Vaccine Records" data-mm="ကာကွယ်ဆေး မှတ်တမ်းများ">Vaccine Records</h3>
+        <p class="hub-card-desc lang-text" data-en="View Plan vs Actual – compare scheduled vaccines with what was administered." data-mm="အစီအစဉ် နှင့် လက်တွေ့ ကြည့်ရှုပါ – စီစဉ်ထားသော ကာကွယ်ဆေးများနှင့် ထိုးပြီးသော ဆေးများကို နှိုင်းယှဉ်ပါ။">View Plan vs Actual – compare scheduled vaccines with what was administered.</p>
+      </a>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <i class="fas fa-heart me-1"></i> MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
+    <p class="mb-0 mt-1"><a href="privacy-policy.html" target="_blank">Privacy Policy</a></p>
+  </footer>
+
+  <script>
+    let patientId = null;
+    let currentUser = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    function goBack() {
+      if (patientId) {
+        window.location.href = `patient-care-hub.html?patient=${patientId}`;
+      } else {
+        window.location.href = 'list.html';
+      }
+    }
+
+    document.getElementById('recordCard').addEventListener('click', function(e) {
+      e.preventDefault();
+      if (patientId) {
+        window.location.href = `vaccine-record.html?patient=${patientId}`;
+      } else {
+        alert('No patient selected.');
+      }
+    });
+
+    document.getElementById('recordsCard').addEventListener('click', function(e) {
+      e.preventDefault();
+      if (patientId) {
+        window.location.href = `vaccine-records.html?patient=${patientId}`;
+      } else {
+        alert('No patient selected.');
+      }
+    });
+
+    firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) {
+        window.location.href = 'login.html';
+        return;
+      }
+      currentUser = user;
+      if (!patientId) {
+        document.getElementById('loadingState').innerHTML = '<p class="text-white">No patient ID. <a href="list.html" class="text-white text-decoration-underline">Select a patient</a>.</p>';
+        return;
+      }
+      await loadPatientData();
+    });
+
+    async function loadPatientData() {
+      try {
+        const patientDoc = await firebase.firestore().collection('patients').doc(patientId).get();
+        if (!patientDoc.exists) {
+          document.getElementById('loadingState').innerHTML = '<p class="text-danger">Patient not found.</p>';
+          return;
+        }
+        const patientData = patientDoc.data();
+        document.getElementById('patientName').textContent = patientData.name || 'Patient';
+
+        let babyName = '-';
+        let birthDate = '-';
+        const newbornSnap = await firebase.firestore().collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
+        if (!newbornSnap.empty) {
+          const nb = newbornSnap.docs[0].data();
+          babyName = nb.baby_name || '-';
+          if (nb.birth_time) {
+            const t = nb.birth_time.toDate ? nb.birth_time.toDate() : new Date(nb.birth_time);
+            birthDate = t.toLocaleDateString();
+          }
+        }
+        if (babyName === '-') {
+          const incSnap = await firebase.firestore().collection('patients').doc(patientId).collection('immediate_newborn_care').limit(1).get();
+          if (!incSnap.empty) {
+            const inc = incSnap.docs[0].data();
+            babyName = inc.baby_name || 'Baby';
+          }
+        }
+
+        document.getElementById('babyName').textContent = babyName;
+        document.getElementById('birthDate').textContent = birthDate;
+        document.getElementById('patientInfoBar').style.display = 'block';
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('hubCards').style.display = 'grid';
+      } catch (err) {
+        console.error(err);
+        document.getElementById('loadingState').innerHTML = '<p class="text-danger">Error loading data.</p>';
+      }
+    }
+  </script>
+</body>
+</html>

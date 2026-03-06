@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10b981">
+  <title>Record Vaccine - Maternal & Child Health Care System</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --card-hover-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding-bottom: 2rem;
+    }
+    .medical-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .app-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .page-subtitle { font-size: 0.9rem; opacity: 0.9; }
+    .main-container { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+    .form-card {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: var(--card-shadow);
+      border-left: 5px solid var(--primary-color);
+      margin-bottom: 1.5rem;
+    }
+    .form-label { font-weight: 600; color: #374151; }
+    .btn-save {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border: none;
+      padding: 0.875rem 2rem;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    .btn-save:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35); color: white; }
+    .vaccine-option {
+      padding: 1rem 1.25rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .vaccine-option:hover { border-color: var(--primary-color); background: rgba(16, 185, 129, 0.05); }
+    .vaccine-option.selected { border-color: var(--primary-color); background: rgba(16, 185, 129, 0.1); }
+    .vaccine-option input { width: 20px; height: 20px; cursor: pointer; }
+    .vaccine-icon { font-size: 1.5rem; color: var(--primary-color); }
+    .btn-back {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.5);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-back:hover { background: rgba(255,255,255,0.3); color: white; }
+  </style>
+</head>
+<body>
+  <header class="medical-header">
+    <div class="header-content">
+      <div>
+        <h1 class="app-title"><i class="fas fa-syringe me-2"></i><span class="lang-text" data-en="Record New Vaccine" data-mm="ကာကွယ်ဆေး အသစ် မှတ်တမ်းတင်ရန်">Record New Vaccine</span></h1>
+        <p class="page-subtitle lang-text" data-en="Record immunization for this baby" data-mm="ဤကလေးအတွက် ကာကွယ်ဆေးထိုး မှတ်တမ်းတင်ပါ">Record immunization for this baby</p>
+      </div>
+      <a href="#" class="btn-back" onclick="goBack(); return false;">
+        <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
+      </a>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div id="babyInfoBar" class="form-card mb-3" style="display:none;">
+      <h6 class="text-muted mb-2"><i class="fas fa-baby me-2"></i><span class="lang-text" data-en="Baby" data-mm="ကလေး">Baby</span></h6>
+      <p class="mb-0"><strong id="babyNameDisplay">-</strong> <span id="babyAgeDisplay" class="text-muted"></span></p>
+    </div>
+
+    <div class="form-card">
+      <form id="vaccineForm">
+        <div class="mb-4">
+          <label class="form-label lang-text" data-en="Select Vaccine" data-mm="ကာကွယ်ဆေး ရွေးချယ်ပါ">Select Vaccine</label>
+          <p class="text-muted small mb-3 lang-text" data-en="Record any vaccine regardless of baby age" data-mm="ကလေးအသက်မရွေး မည်သည့်ကာကွယ်ဆေးကိုမဆို မှတ်တမ်းတင်နိုင်ပါသည်">Record any vaccine regardless of baby age</p>
+          <div id="vaccineOptions"></div>
+        </div>
+        <div class="mb-4">
+          <label for="dateGiven" class="form-label lang-text" data-en="Date Given" data-mm="ထိုးသည့်ရက်">Date Given</label>
+          <input type="date" id="dateGiven" class="form-control form-control-lg" required>
+        </div>
+        <div class="mb-4">
+          <label for="notes" class="form-label lang-text" data-en="Notes (optional)" data-mm="မှတ်ချက် (ရွေးချယ်နိုင်သည်)">Notes (optional)</label>
+          <textarea id="notes" class="form-control" rows="2" placeholder="Batch number, site, reactions..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-save w-100" id="submitBtn">
+          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Record" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Record</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const db = firebase.firestore();
+    let patientId, babyName, babyBirthDate;
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+
+    const VACCINES = [
+      { id: 'bcg', name: 'BCG', nameMm: 'ဘီစီဂျီ', type: 'injection' },
+      { id: 'hepb', name: 'Hepatitis B', nameMm: 'အသည်းရောင်အသားဝါ (ဘီ)', type: 'injection' },
+      { id: 'polio1', name: 'Polio (1st)', nameMm: 'ပိုလီယို (ပထမ)', type: 'oral' },
+      { id: 'polio2', name: 'Polio (2nd)', nameMm: 'ပိုလီယို (ဒုတိယ)', type: 'oral' },
+      { id: 'polio3', name: 'Polio (3rd)', nameMm: 'ပိုလီယို (တတိယ)', type: 'oral' },
+      { id: 'rota1', name: 'Rota (1st)', nameMm: 'ရိုတာ (ပထမ)', type: 'oral' },
+      { id: 'rota2', name: 'Rota (2nd)', nameMm: 'ရိုတာ (ဒုတိယ)', type: 'oral' },
+      { id: 'pcv1', name: 'PCV (1st)', nameMm: 'ပီစီဗီ (ပထမ)', type: 'injection' },
+      { id: 'pcv2', name: 'PCV (2nd)', nameMm: 'ပီစီဗီ (ဒုတိယ)', type: 'injection' },
+      { id: 'pcv3', name: 'PCV (3rd)', nameMm: 'ပီစီဗီ (တတိယ)', type: 'injection' },
+      { id: 'pentavalent1', name: 'Pentavalent (1st)', nameMm: 'ငါးမျိုးစပ် (ပထမ)', type: 'injection' },
+      { id: 'pentavalent2', name: 'Pentavalent (2nd)', nameMm: 'ငါးမျိုးစပ် (ဒုတိယ)', type: 'injection' },
+      { id: 'pentavalent3', name: 'Pentavalent (3rd)', nameMm: 'ငါးမျိုးစပ် (တတိယ)', type: 'injection' },
+      { id: 'pentavalent4', name: 'Pentavalent (4th)', nameMm: 'ငါးမျိုးစပ် (စတုတ္ထ)', type: 'injection' },
+      { id: 'polio_inj', name: 'Polio Injection', nameMm: 'ပိုလီယိုထိုးဆေး', type: 'injection' },
+      { id: 'mr1', name: 'Measles-Rubella (1st)', nameMm: 'ဝက်သက်-ဂျိုက်သိုး (ပထမ)', type: 'injection' },
+      { id: 'mr2', name: 'Measles-Rubella (2nd)', nameMm: 'ဝက်သက်-ဂျိုက်သိုး (ဒုတိယ)', type: 'injection' },
+      { id: 'je', name: 'Japanese Encephalitis', nameMm: 'ဂျပန်ဦးနှောက်ရောင်', type: 'injection' },
+      { id: 'hpv1', name: 'HPV (1st)', nameMm: 'အိတ်ချ်ပီဗီ (ပထမ)', type: 'injection' },
+      { id: 'hpv2', name: 'HPV (2nd)', nameMm: 'အိတ်ချ်ပီဗီ (ဒုတိယ)', type: 'injection' },
+      { id: 'vitamin_k', name: 'Vitamin K', nameMm: 'ဗီတာမင် ကေ', type: 'injection' },
+      { id: 'other', name: 'Other', nameMm: 'အခြား', type: 'other' }
+    ];
+
+    const lang = localStorage.getItem('appLanguage') || 'en';
+    document.querySelectorAll('.lang-text').forEach(el => {
+      el.textContent = el.dataset[lang] || el.dataset.en || el.textContent;
+    });
+
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) { window.location.href = 'login.html'; return; }
+      if (!patientId) { alert('No patient ID'); goBack(); return; }
+      await loadBabyInfo();
+      renderVaccineOptions();
+      document.getElementById('dateGiven').valueAsDate = new Date();
+    });
+
+    async function loadBabyInfo() {
+      try {
+        const newbornSnap = await db.collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
+        if (!newbornSnap.empty) {
+          const d = newbornSnap.docs[0].data();
+          babyName = d.baby_name || 'Baby';
+          if (d.birth_time) {
+            babyBirthDate = d.birth_time.toDate ? d.birth_time.toDate() : new Date(d.birth_time.seconds * 1000);
+          }
+        }
+        if (!babyName) babyName = 'Baby';
+        document.getElementById('babyNameDisplay').textContent = babyName;
+        document.getElementById('babyAgeDisplay').textContent = babyBirthDate ? `(${formatAge(babyBirthDate)})` : '';
+        document.getElementById('babyInfoBar').style.display = 'block';
+      } catch (e) { console.warn(e); }
+    }
+
+    function formatAge(birth) {
+      const d = Math.floor((Date.now() - birth) / 86400000);
+      if (d < 30) return `${d} days`;
+      if (d < 365) return `${Math.floor(d/30)} months`;
+      return `${Math.floor(d/365)} years`;
+    }
+
+    function renderVaccineOptions() {
+      const container = document.getElementById('vaccineOptions');
+      container.innerHTML = VACCINES.map(v => `
+        <label class="vaccine-option">
+          <input type="radio" name="vaccine" value="${v.id}" required>
+          <span class="vaccine-icon">${v.type === 'oral' ? '💧' : '💉'}</span>
+          <span>${lang === 'mm' ? v.nameMm : v.name}</span>
+        </label>
+      `).join('');
+      container.querySelectorAll('.vaccine-option').forEach(el => {
+        el.addEventListener('click', () => {
+          container.querySelectorAll('.vaccine-option').forEach(o => o.classList.remove('selected'));
+          el.classList.add('selected');
+        });
+      });
+    }
+
+    document.getElementById('vaccineForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const vaccineId = document.querySelector('input[name="vaccine"]:checked')?.value;
+      const vaccine = VACCINES.find(v => v.id === vaccineId);
+      const dateGiven = document.getElementById('dateGiven').value;
+      const notes = document.getElementById('notes').value.trim();
+      if (!vaccine || !dateGiven) return;
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+      try {
+        await db.collection('patients').doc(patientId).collection('vaccinations').add({
+          vaccineId,
+          vaccineName: vaccine.name,
+          vaccineNameMm: vaccine.nameMm,
+          type: vaccine.type,
+          dateGiven,
+          notes: notes || null,
+          recordedBy: firebase.auth().currentUser.uid,
+          recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        alert(lang === 'mm' ? 'ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ။' : 'Vaccine record saved successfully.');
+        window.location.href = `vaccine-home.html?patient=${patientId}`;
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Record" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Record</span>';
+      }
+    });
+
+    function goBack() {
+      window.location.href = `vaccine-home.html?patient=${patientId}`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#10b981">
+  <title>Vaccine Records - Plan vs Actual | MNCH Care</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <style>
+    :root {
+      --primary-color: #10b981;
+      --secondary-color: #059669;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --card-hover-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .medical-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .app-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .page-subtitle { font-size: 0.9rem; opacity: 0.9; }
+    .main-container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+    .card-premium {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--card-shadow);
+      border-left: 5px solid var(--primary-color);
+    }
+    .plan-actual-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .plan-actual-table th, .plan-actual-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .plan-actual-table th {
+      background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+      font-weight: 600;
+      color: #374151;
+    }
+    .plan-actual-table tr:hover { background: #f9fafb; }
+    .badge-plan { background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }
+    .badge-actual { background: #d1fae5; color: #065f46; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }
+    .badge-missing { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }
+    .btn-back {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.5);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .btn-back:hover { background: rgba(255,255,255,0.3); color: white; }
+    .footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.9rem;
+    }
+    .footer a { color: inherit; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="medical-header">
+    <div class="header-content">
+      <div>
+        <h1 class="app-title"><i class="fas fa-clipboard-list me-2"></i><span class="lang-text" data-en="Vaccine Records" data-mm="ကာကွယ်ဆေးမှတ်တမ်း">Vaccine Records</span></h1>
+        <p class="page-subtitle lang-text" data-en="Plan vs Actual - Myanmar Routine Immunization" data-mm="အစီအစဉ် နှင့် လက်တွေ့ - မြန်မာ ပုံမှန် ကာကွယ်ဆေး">Plan vs Actual - Myanmar Routine Immunization</p>
+      </div>
+      <a href="#" class="btn-back" onclick="goBack(); return false;">
+        <i class="fas fa-arrow-left"></i>
+        <span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
+      </a>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div id="babyInfoBar" class="card-premium" style="display:none;">
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        <div><strong class="lang-text" data-en="Baby:" data-mm="ကလေး:">Baby:</strong> <span id="babyName">-</span></div>
+        <div><strong class="lang-text" data-en="Birth:" data-mm="မွေးရက်:">Birth:</strong> <span id="birthDate">-</span></div>
+        <div><strong class="lang-text" data-en="Age:" data-mm="အသက်:">Age:</strong> <span id="currentAge">-</span></div>
+      </div>
+    </div>
+
+    <div id="loadingState" class="card-premium text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-3 text-muted lang-text" data-en="Loading records..." data-mm="မှတ်တမ်းများ ခေတ္တစောင့်ပါ...">Loading records...</p>
+    </div>
+
+    <div id="recordsCard" class="card-premium" style="display:none;">
+      <h5 class="mb-4"><i class="fas fa-balance-scale me-2 text-primary"></i><span class="lang-text" data-en="Plan vs Actual" data-mm="အစီအစဉ် နှင့် လက်တွေ့">Plan vs Actual</span></h5>
+      <div class="table-responsive">
+        <table class="plan-actual-table">
+          <thead>
+            <tr>
+              <th class="lang-text" data-en="Age (Plan)" data-mm="အသက် (အစီအစဉ်)">Age (Plan)</th>
+              <th class="lang-text" data-en="Vaccine" data-mm="ကာကွယ်ဆေး">Vaccine</th>
+              <th class="lang-text" data-en="Status" data-mm="အခြေအနေ">Status</th>
+              <th class="lang-text" data-en="Date Given (Actual)" data-mm="ထိုးသည့်ရက် (လက်တွေ့)">Date Given (Actual)</th>
+            </tr>
+          </thead>
+          <tbody id="recordsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="emptyState" class="card-premium text-center py-5" style="display:none;">
+      <i class="fas fa-syringe fa-3x text-muted mb-3"></i>
+      <p class="text-muted lang-text" data-en="No vaccine records yet. Record vaccines from the Immunization home." data-mm="ကာကွယ်ဆေးမှတ်တမ်း မရှိသေးပါ။ ကာကွယ်ဆေးထိုးခြင်း ပင်မမှ မှတ်တမ်းတင်ပါ။">No vaccine records yet. Record vaccines from the Immunization home.</p>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p class="mb-0"><i class="fas fa-heart me-2"></i>MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.</p>
+    <p class="mb-0 mt-2"><a href="privacy-policy.html" target="_blank">Privacy Policy</a></p>
+  </footer>
+
+  <script>
+    const db = firebase.firestore();
+    let patientId, babyName, babyBirthDate;
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient');
+    let currentLanguage = localStorage.getItem('appLanguage') || 'en';
+
+    const SCHEDULE_PLAN = [
+      { age: 'At Birth', ageMm: 'မွေးပြီးပြီးချင်း', vaccines: ['BCG', 'Hepatitis B'] },
+      { age: '2 Months', ageMm: '၂ လ', vaccines: ['Polio (1st)', 'Rota (1st)', 'PCV (1st)', 'Pentavalent (1st)'] },
+      { age: '4 Months', ageMm: '၄ လ', vaccines: ['Polio (2nd)', 'Rota (2nd)', 'PCV (2nd)', 'Polio Injection', 'Pentavalent (2nd)'] },
+      { age: '6 Months', ageMm: '၆ လ', vaccines: ['Polio (3rd)', 'PCV (3rd)', 'Pentavalent (3rd)'] },
+      { age: '9 Months', ageMm: '၉ လ', vaccines: ['Measles-Rubella (1st)', 'Japanese Encephalitis'] },
+      { age: '1.5 Years', ageMm: '၁ နှစ်ခွဲ', vaccines: ['Measles-Rubella (2nd)', 'Pentavalent (4th)'] },
+      { age: '6 Years', ageMm: '၆ နှစ်', vaccines: ['HPV (1st)'] },
+      { age: '10 Years', ageMm: '၁၀ နှစ်', vaccines: ['HPV (2nd)'] }
+    ];
+
+    function goBack() {
+      if (patientId) window.location.href = `vaccine-home.html?patient=${patientId}`;
+      else window.history.back();
+    }
+
+    document.querySelectorAll('.lang-text').forEach(el => {
+      const t = el.dataset[currentLanguage] || el.dataset.en || el.textContent;
+      el.textContent = t;
+    });
+
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) { window.location.href = 'login.html'; return; }
+      if (!patientId) { alert('No patient ID'); goBack(); return; }
+      await loadData();
+    });
+
+    async function loadData() {
+      try {
+        const patientDoc = await db.collection('patients').doc(patientId).get();
+        if (!patientDoc.exists) { alert('Patient not found'); goBack(); return; }
+
+        const newbornSnap = await db.collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
+        if (!newbornSnap.empty) {
+          const d = newbornSnap.docs[0].data();
+          babyName = d.baby_name || 'Not recorded';
+          if (d.birth_time) {
+            babyBirthDate = d.birth_time.toDate ? d.birth_time.toDate() : new Date(d.birth_time.seconds * 1000);
+          }
+        }
+        if (!babyName) {
+          const immSnap = await db.collection('patients').doc(patientId).collection('immediate_newborn_care').limit(1).get();
+          if (!immSnap.empty) babyName = immSnap.docs[0].data().baby_name || 'Not recorded';
+        }
+
+        document.getElementById('babyName').textContent = babyName || '-';
+        document.getElementById('birthDate').textContent = babyBirthDate ? babyBirthDate.toLocaleDateString() : '-';
+        document.getElementById('currentAge').textContent = babyBirthDate ? calcAge(babyBirthDate) : '-';
+        document.getElementById('babyInfoBar').style.display = 'block';
+
+        const vaccSnap = await db.collection('patients').doc(patientId).collection('vaccinations').orderBy('dateGiven', 'desc').get();
+        const actualMap = {};
+        const planVaccineNames = new Set();
+        SCHEDULE_PLAN.forEach(row => row.vaccines.forEach(v => planVaccineNames.add(v)));
+
+        vaccSnap.forEach(doc => {
+          const d = doc.data();
+          const name = (d.vaccineName || '').trim();
+          if (!actualMap[name]) actualMap[name] = [];
+          const dateVal = d.dateGiven;
+          const dateStr = typeof dateVal === 'string' ? dateVal : (dateVal && dateVal.toDate ? dateVal.toDate().toLocaleDateString() : '-');
+          actualMap[name].push({ date: dateStr, id: doc.id });
+        });
+
+        const tbody = document.getElementById('recordsTableBody');
+        tbody.innerHTML = '';
+        let hasAny = false;
+        SCHEDULE_PLAN.forEach(row => {
+          const ageText = currentLanguage === 'mm' ? row.ageMm : row.age;
+          row.vaccines.forEach(v => {
+            const actual = actualMap[v];
+            const given = actual && actual.length ? actual[0].date : null;
+            const status = given ? 'given' : 'pending';
+            hasAny = hasAny || !!given;
+            tbody.innerHTML += `
+              <tr>
+                <td><span class="badge-plan">${ageText}</span></td>
+                <td>${v}</td>
+                <td><span class="badge-${status === 'given' ? 'actual' : 'missing'}">${status === 'given' ? (currentLanguage === 'mm' ? 'ထိုးပြီး' : 'Given') : (currentLanguage === 'mm' ? 'မထိုးရသေး' : 'Pending')}</span></td>
+                <td>${given || '-'}</td>
+              </tr>`;
+          });
+        });
+
+        // Additional vaccines (recorded but not in plan - e.g. Vitamin K, Other)
+        Object.keys(actualMap).filter(n => !planVaccineNames.has(n)).forEach(vaccName => {
+          const actual = actualMap[vaccName];
+          const given = actual && actual.length ? actual[0].date : '-';
+          hasAny = true;
+          tbody.innerHTML += `
+            <tr>
+              <td><span class="badge-plan">${currentLanguage === 'mm' ? 'အခြား' : 'Other'}</span></td>
+              <td>${vaccName}</td>
+              <td><span class="badge-actual">${currentLanguage === 'mm' ? 'ထိုးပြီး' : 'Given'}</span></td>
+              <td>${given}</td>
+            </tr>`;
+        });
+
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('recordsCard').style.display = 'block';
+        if (vaccSnap.empty && !hasAny) {
+          document.getElementById('emptyState').style.display = 'block';
+        }
+      } catch (e) {
+        console.error(e);
+        document.getElementById('loadingState').innerHTML = '<p class="text-danger">Error loading records.</p>';
+      }
+    }
+
+    function calcAge(birth) {
+      const now = new Date();
+      const d = Math.floor((now - birth) / (1000 * 60 * 60 * 24));
+      if (d < 30) return `${d} days`;
+      if (d < 365) return `${Math.floor(d / 30)} months`;
+      return `${Math.floor(d / 365)} years`;
+    }
+  </script>
+</body>
+</html>
