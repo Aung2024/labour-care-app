@@ -1016,6 +1016,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
 
   <script>
     // Language switching
@@ -1241,6 +1242,20 @@
         );
 
         if (!patientDoc || !patientDoc.exists) {
+          // Firestore doc not found -- try cached_patients fallback
+          if (window.OfflineManager) {
+            const cached = await window.OfflineManager.getCachedPatient(patientId);
+            if (cached) {
+              selectedPatient = cached;
+              if (!selectedPatient.id) selectedPatient.id = patientId;
+              sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+              displayPatientInfo();
+              document.getElementById('loadingContainer').style.display = 'none';
+              document.getElementById('patientInfoBar').style.display = 'block';
+              document.getElementById('careCardsContainer').style.display = 'grid';
+              return;
+            }
+          }
           sessionStorage.removeItem('selectedPatientId');
           sessionStorage.removeItem('selectedPatientData');
           document.getElementById('loadingContainer').style.display = 'none';
@@ -1261,6 +1276,22 @@
 
       } catch (error) {
         console.error('Error loading patient data:', error);
+        // Firestore query failed (likely offline) -- try cached_patients fallback
+        if (window.OfflineManager) {
+          const cachedFallback = await window.OfflineManager.getCachedPatient(
+            sessionStorage.getItem('selectedPatientId')
+          );
+          if (cachedFallback) {
+            selectedPatient = cachedFallback;
+            if (!selectedPatient.id) selectedPatient.id = sessionStorage.getItem('selectedPatientId');
+            sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+            displayPatientInfo();
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('patientInfoBar').style.display = 'block';
+            document.getElementById('careCardsContainer').style.display = 'grid';
+            return;
+          }
+        }
         alert('Error loading patient data: ' + error.message);
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('noPatientContainer').style.display = 'block';

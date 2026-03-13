@@ -6,7 +6,7 @@
   'use strict';
 
   const DB_NAME = 'mch_offline_db';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const OFFLINE_MODE_KEY = 'offlineMode';
 
   const STORE_NAMES = [
@@ -17,6 +17,8 @@
     'pending_newborn_records',
     'offline_user_profile'
   ];
+
+  const CACHED_PATIENTS_STORE = 'cached_patients';
 
   let dbInstance = null;
 
@@ -33,6 +35,9 @@
             db.createObjectStore(name, { keyPath: 'localId' });
           }
         });
+        if (!db.objectStoreNames.contains(CACHED_PATIENTS_STORE)) {
+          db.createObjectStore(CACHED_PATIENTS_STORE, { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = (event) => {
@@ -224,6 +229,53 @@
     }
   }
 
+  // --------------- Cached patients (downloaded for offline use) ---------------
+
+  async function cachePatientForOffline(patientData) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const record = {
+        ...patientData,
+        id: patientData.id,
+        cachedAt: new Date().toISOString()
+      };
+      const tx = db.transaction(CACHED_PATIENTS_STORE, 'readwrite');
+      tx.objectStore(CACHED_PATIENTS_STORE).put(record);
+      tx.oncomplete = () => resolve(record);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function getCachedPatients() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHED_PATIENTS_STORE, 'readonly');
+      const request = tx.objectStore(CACHED_PATIENTS_STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function getCachedPatient(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHED_PATIENTS_STORE, 'readonly');
+      const request = tx.objectStore(CACHED_PATIENTS_STORE).get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function removeCachedPatient(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHED_PATIENTS_STORE, 'readwrite');
+      tx.objectStore(CACHED_PATIENTS_STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
   // --------------- UI helpers ---------------
 
   function updateOfflineUI(enabled) {
@@ -383,6 +435,10 @@
     clearSyncedRecords,
     cacheUserProfile,
     getCachedUserProfile,
+    cachePatientForOffline,
+    getCachedPatients,
+    getCachedPatient,
+    removeCachedPatient,
     updateSyncBadge,
     updateOfflineUI,
     generateLocalId,

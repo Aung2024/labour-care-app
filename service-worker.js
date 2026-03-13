@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v5';
+const CACHE_NAME = 'mch-care-v6';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -48,6 +48,7 @@ const FILES_TO_CACHE = [
   './js/session-manager.js',
   './js/audit-logger.js',
   './js/offline-manager.js',
+  './js/offline-status-bar.js',
   './js/sync-manager.js',
   './js/clinical-validator.js',
   './js/data-linkage.js',
