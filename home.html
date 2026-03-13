@@ -36,6 +36,8 @@
   <script src="js/consent-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/sync-manager.js"></script>
   <style>
     :root {
       --primary-color: #2563eb;
@@ -1025,6 +1027,12 @@
         </p>
       </div>
       
+      <!-- Offline Mode Banner -->
+      <div id="offlineBanner" style="display:none;background:linear-gradient(90deg,#d97706,#f59e0b);color:#fff;padding:10px 20px;border-radius:12px;margin-bottom:1rem;text-align:center;font-weight:500;font-size:0.95rem;">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <span class="lang-text" data-en="Offline Mode Active — Data will be saved locally. Tap Sync when online." data-mm="အော့ဖ်လိုင်း မုဒ် ဖွင့်ထားသည် — ဒေတာကို စက်ထဲတွင် သိမ်းဆည်းမည်။ အွန်လိုင်းဖြစ်သောအခါ Sync နှိပ်ပါ။">Offline Mode Active — Data will be saved locally. Tap Sync when online.</span>
+      </div>
+
       <div class="user-info">
         <div class="user-details">
           <div class="user-avatar">
@@ -1035,7 +1043,20 @@
             <div id="userRole" class="small"></div>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+          <!-- Offline Mode Toggle -->
+          <button class="btn btn-outline-warning btn-sm" id="offlineModeBtn" onclick="toggleOfflineMode()" title="Toggle Offline Mode" style="display:flex;align-items:center;gap:4px;">
+            <i class="fas fa-plug-circle-xmark me-1"></i>
+            <span class="lang-text" data-en="Offline" data-mm="အော့ဖ်လိုင်း">Offline</span>
+          </button>
+
+          <!-- Sync Button -->
+          <button class="btn btn-outline-info btn-sm" id="syncBtn" onclick="syncOfflineData()" title="Sync offline data to cloud" style="display:none;align-items:center;gap:4px;">
+            <i class="fas fa-sync me-1"></i>
+            <span class="lang-text" data-en="Sync" data-mm="စင့်ခ်">Sync</span>
+            <span class="badge bg-danger rounded-pill" id="syncBadge" style="display:none;font-size:0.7rem;">0</span>
+          </button>
+
           <div class="language-switcher">
             <button class="language-btn" data-lang="en" onclick="switchLanguage('en')">
               <span>🇬🇧</span> ENG
@@ -1201,5 +1222,30 @@
       </p>
     </div>
   </footer>
+
+  <script>
+    function toggleOfflineMode() {
+      if (!window.OfflineManager) return;
+      const current = window.OfflineManager.isOfflineMode();
+      if (!current) {
+        if (!confirm('Switch to Offline Mode?\n\nYou can register patients and save ANC, PNC, LCG, and newborn data locally.\n\nDashboards and reports will be unavailable.\nRemember to Sync when you are back online.')) return;
+      }
+      window.OfflineManager.setOfflineMode(!current);
+    }
+
+    function syncOfflineData() {
+      if (!window.SyncManager) return;
+      window.SyncManager.startSync();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.OfflineManager) {
+        window.OfflineManager.updateSyncBadge();
+        if (window.OfflineManager.isOfflineMode()) {
+          window.OfflineManager.updateOfflineUI(true);
+        }
+      }
+    });
+  </script>
 </body>
 </html>

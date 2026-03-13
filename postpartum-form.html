@@ -17,6 +17,7 @@
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
   <style>
     :root {
       --primary-color: #7c3aed;
@@ -1253,6 +1254,67 @@
     document.getElementById('postpartumForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
+      // OFFLINE MODE: Save PNC visit to IndexedDB
+      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+        try {
+          const getCheckboxValue = (id) => { const cb = document.getElementById(id); return cb && cb.checked ? 'Yes' : 'No'; };
+          const contraceptiveMethods = [];
+          document.querySelectorAll('input[name="contraceptiveMethod"]:checked').forEach(cb => contraceptiveMethods.push(cb.value));
+
+          const offlinePnc = {
+            _isOffline: true,
+            patientId: currentPatient?.id || sessionStorage.getItem('selectedPatientId'),
+            visitDate: document.getElementById('visitDate').value,
+            visitNumber: parseInt(document.getElementById('visitNumber').value),
+            deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
+            postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
+            postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
+            temperature: document.getElementById('temperature').value || null,
+            bloodPressure: document.getElementById('bloodPressure').value || null,
+            pulseRate: document.getElementById('pulseRate').value || null,
+            breastEngorgement: getCheckboxValue('breastEngorgement'),
+            nippleCondition: document.getElementById('nippleCondition').value,
+            breastMilkProduction: getCheckboxValue('breastMilkProduction'),
+            uterusInvolution: document.getElementById('uterusInvolution').value,
+            vaginalBleeding: document.getElementById('vaginalBleeding').value,
+            dischargeSmell: document.getElementById('dischargeSmell').value,
+            episiotomyHealing: document.getElementById('episiotomyHealing').value,
+            urination: document.getElementById('urination').value,
+            constipation: getCheckboxValue('constipation'),
+            mentalHealthAssessment: document.getElementById('mentalHealthAssessment').value,
+            vitaminBComplex: document.getElementById('vitaminBComplex').checked,
+            vitaminA: document.getElementById('vitaminA').checked,
+            ironFolic: document.getElementById('ironFolic').checked,
+            contraception: getCheckboxValue('contraception'),
+            contraceptiveMethods: contraceptiveMethods,
+            dangerSigns: {
+              heavyBleeding: document.getElementById('heavyBleeding').checked,
+              severeHeadache: document.getElementById('severeHeadache').checked,
+              convulsions: document.getElementById('convulsions').checked,
+              breathingProblems: document.getElementById('breathingProblems').checked,
+              feverFatigue: document.getElementById('feverFatigue').checked,
+              breastEngorgementDanger: document.getElementById('breastEngorgementDanger').checked,
+              urinaryProblems: document.getElementById('urinaryProblems').checked,
+              woundInflammation: document.getElementById('woundInflammation').checked,
+              foulDischarge: document.getElementById('foulDischarge').checked
+            },
+            otherSymptoms: document.getElementById('otherSymptoms').value,
+            treatment: document.getElementById('treatment').value,
+            clinicalNotes: document.getElementById('clinicalNotes').value,
+            createdBy: currentUser.uid
+          };
+
+          await window.OfflineManager.saveOfflineRecord('pending_pnc_visits', offlinePnc);
+          alert('Postpartum visit saved offline! Remember to Sync when online.');
+          window.location.href = 'postpartum-care.html';
+          return;
+        } catch (offErr) {
+          console.error('Offline PNC save error:', offErr);
+          alert('Error saving offline: ' + offErr.message);
+          return;
+        }
+      }
+
       try {
         // Get contraceptive methods
         const contraceptiveMethods = [];
