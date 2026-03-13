@@ -48,18 +48,9 @@
         '<i class="fas fa-wifi" style="margin-right:6px;font-size:0.75rem;"></i>' +
         '<span>ONLINE</span>';
       bar.style.opacity = '1';
-      setTimeout(function () {
-        if (!isOffline() && bar) {
-          bar.style.opacity = '0';
-          setTimeout(function () {
-            if (!isOffline() && bar) {
-              bar.style.height = '0';
-              bar.style.overflow = 'hidden';
-              document.body.style.paddingTop = '0';
-            }
-          }, 300);
-        }
-      }, 3000);
+      bar.style.height = BAR_HEIGHT;
+      bar.style.overflow = '';
+      document.body.style.paddingTop = BAR_HEIGHT;
     }
   }
 

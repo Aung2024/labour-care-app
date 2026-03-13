@@ -307,6 +307,36 @@
       return;
     }
 
+    // OFFLINE: Load from sessionStorage / IndexedDB
+    const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+    const isOfflinePatient = patientId.startsWith('OFFLINE-');
+
+    if (isOffline || isOfflinePatient) {
+      const cachedData = sessionStorage.getItem('selectedPatientData');
+      if (cachedData) {
+        currentPatientData = JSON.parse(cachedData);
+      } else if (window.OfflineManager) {
+        if (isOfflinePatient) {
+          const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+          const match = pending.find(r => r.localId === patientId);
+          if (match) currentPatientData = match.data;
+        } else {
+          const cached = await window.OfflineManager.getCachedPatient(patientId);
+          if (cached) currentPatientData = cached;
+        }
+      }
+      if (!currentPatientData) {
+        alert('Patient data not available offline.');
+        window.location.href = 'list.html';
+        return;
+      }
+      document.getElementById('patientName').textContent = currentPatientData.name || 'Unknown';
+      document.getElementById('patientAge').textContent = currentPatientData.age || '-';
+      document.getElementById('patientParity').textContent = currentPatientData.parity || '-';
+      return;
+    }
+
+    // ONLINE: Load from Firestore
     try {
       // Load patient document
       const patientDoc = await firebase.firestore()

@@ -922,6 +922,45 @@
 
     // Load patients from Firestore with optimization
     async function loadPatients() {
+      // OFFLINE MODE: Load from IndexedDB instead of Firestore
+      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+        try {
+          console.log('Loading patients in OFFLINE mode from IndexedDB...');
+          allPatients = [];
+
+          const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+          pending.forEach(rec => {
+            const p = { id: rec.localId, ...rec.data, _offlineType: 'pending' };
+            allPatients.push(p);
+          });
+
+          let cached = [];
+          try { cached = await window.OfflineManager.getCachedPatients(); } catch (e) {}
+          cached.forEach(p => {
+            allPatients.push({ ...p, _offlineType: 'cached' });
+          });
+
+          filteredPatients = [...allPatients];
+          document.getElementById('loadingContainer').style.display = 'none';
+
+          if (allPatients.length === 0) {
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('emptyMessage').textContent =
+              'No offline patients available. Register a new patient or use "Prepare for Offline" while online to download patients.';
+          } else {
+            console.log('✅ Loaded', allPatients.length, 'offline patients');
+            displayPatients();
+          }
+        } catch (error) {
+          console.error('Error loading offline patients:', error);
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('emptyMessage').textContent = 'Error loading offline patients: ' + error.message;
+        }
+        return;
+      }
+
+      // ONLINE MODE: Load from Firestore
       try {
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
@@ -1329,10 +1368,17 @@
       // Apply data masking
       const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
       
+      let offlineBadge = '';
+      if (patient._offlineType === 'pending') {
+        offlineBadge = '<span class="badge bg-warning text-dark" style="font-size:0.65rem;margin-left:6px;">Pending Sync</span>';
+      } else if (patient._offlineType === 'cached') {
+        offlineBadge = '<span class="badge bg-success" style="font-size:0.65rem;margin-left:6px;">Downloaded</span>';
+      }
+
       card.innerHTML = `
         <div class="patient-header">
           <div>
-            <div class="patient-name">${displayName}</div>
+            <div class="patient-name">${displayName}${offlineBadge}</div>
           </div>
           <span class="status-badge ${statusClass}">${displayStatus}</span>
         </div>

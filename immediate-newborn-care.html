@@ -186,6 +186,8 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
 
   <script>
     let selectedPatient = null;
@@ -206,22 +208,46 @@
       }
 
       // Load patient data
-      try {
-        const patientDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .get();
+      const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      const isOfflinePatient = patientId.startsWith('OFFLINE-');
 
-        if (!patientDoc.exists) {
-          alert('Patient not found. Redirecting to patient list...');
-          window.location.href = 'list.html';
+      if (isOffline || isOfflinePatient) {
+        const cachedData = sessionStorage.getItem('selectedPatientData');
+        if (cachedData) {
+          selectedPatient = JSON.parse(cachedData);
+          selectedPatient.id = patientId;
+        } else if (window.OfflineManager) {
+          if (isOfflinePatient) {
+            const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+            const match = pending.find(r => r.localId === patientId);
+            if (match) selectedPatient = { id: patientId, ...match.data };
+          } else {
+            const cached = await window.OfflineManager.getCachedPatient(patientId);
+            if (cached) selectedPatient = cached;
+          }
+        }
+        if (!selectedPatient) {
+          alert('Patient data not available offline.');
           return;
         }
+      } else {
+        try {
+          const patientDoc = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .get();
 
-        selectedPatient = { id: patientDoc.id, ...patientDoc.data() };
-      } catch (error) {
-        console.error('Error loading patient:', error);
-        alert('Error loading patient data');
+          if (!patientDoc.exists) {
+            alert('Patient not found. Redirecting to patient list...');
+            window.location.href = 'list.html';
+            return;
+          }
+
+          selectedPatient = { id: patientDoc.id, ...patientDoc.data() };
+        } catch (error) {
+          console.error('Error loading patient:', error);
+          alert('Error loading patient data');
+        }
       }
     });
 

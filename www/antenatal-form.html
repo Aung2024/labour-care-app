@@ -1355,7 +1355,46 @@
           return;
         }
 
-        // Load patient data
+        // OFFLINE: Load patient from sessionStorage / IndexedDB
+        const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOfflinePatient = patientId.startsWith('OFFLINE-');
+
+        if (isOffline || isOfflinePatient) {
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            currentPatient = JSON.parse(cachedData);
+          } else if (window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = match.data;
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = cached;
+            }
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            return;
+          }
+          document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+          visitCount = 1;
+          document.getElementById('visitNumber').value = visitCount;
+          clearFormFields();
+          setToday('visitDate');
+          if (currentPatient.lmp) {
+            const lmpInput = document.getElementById('lmp');
+            if (lmpInput) {
+              let lmpDate = currentPatient.lmp;
+              if (lmpDate && typeof lmpDate === 'string') lmpDate = lmpDate.split('T')[0];
+              lmpInput.value = lmpDate || '';
+              calculateGestationalAgeAndEDD();
+            }
+          }
+          return;
+        }
+
+        // ONLINE: Load patient data from Firestore
         const patientDoc = await firebase.firestore()
           .collection("patients")
           .doc(patientId)

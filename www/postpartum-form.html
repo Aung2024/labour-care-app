@@ -1011,6 +1011,40 @@
           return;
         }
         
+        // OFFLINE: Load from sessionStorage / IndexedDB
+        const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOfflinePatient = patientId.startsWith('OFFLINE-');
+
+        if (isOffline || isOfflinePatient) {
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            currentPatient = JSON.parse(cachedData);
+            currentPatient.id = patientId;
+          } else if (window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = { id: patientId, ...match.data };
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = cached;
+            }
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            window.location.href = 'postpartum-care.html';
+            return;
+          }
+          document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+          document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+          document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
+          const today = new Date().toISOString().split('T')[0];
+          document.getElementById('visitDate').value = today;
+          showLoading(false);
+          return;
+        }
+
+        // ONLINE: Load from Firestore
         const db = firebase.firestore();
         const patientDoc = await db.collection('patients').doc(patientId).get();
         
