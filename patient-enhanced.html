@@ -2608,9 +2608,19 @@
 
           await window.OfflineManager.saveOfflineRecord('pending_patients', offlinePatient);
 
-          messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-wifi-slash me-2"></i><strong>Saved Offline!</strong> Patient "<strong>${data.name}</strong>" saved locally with temporary ID <code>${tempId}</code>. Remember to <strong>Sync</strong> when you are back online.</div>`;
-          if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
-          form.reset();
+          // Set sessionStorage so patient-care-hub can load this offline patient
+          const offlinePatientForSession = { id: tempId, ...offlinePatient };
+          sessionStorage.setItem('selectedPatientId', tempId);
+          sessionStorage.setItem('selectedPatientData', JSON.stringify(offlinePatientForSession));
+
+          // Ask midwife: continue to care or register another?
+          if (confirm(`Patient "${data.name}" saved offline!\n\nWould you like to continue providing care for this patient?\n\n(OK = Go to Care Hub, Cancel = Register another patient)`)) {
+            window.location.href = 'patient-care-hub.html';
+          } else {
+            messageDiv.innerHTML = `<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i><strong>Saved Offline!</strong> Patient "<strong>${data.name}</strong>" saved locally. You can select them from the Offline Patients list on the home page.</div>`;
+            if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
+            form.reset();
+          }
           return;
         } catch (offlineErr) {
           console.error('Offline save error:', offlineErr);

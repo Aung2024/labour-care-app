@@ -1209,6 +1209,26 @@
       </div>
     </div>
 
+    <!-- Offline Patients Section (visible only in offline mode) -->
+    <div id="offlinePatientsSection" style="display:none;margin-top:2rem;">
+      <div style="background:rgba(255,255,255,0.95);border-radius:16px;padding:1.5rem;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+        <h4 style="margin-bottom:1rem;color:#1f2937;">
+          <i class="fas fa-users me-2" style="color:#d97706;"></i>
+          <span class="lang-text" data-en="Offline Patients (Pending Sync)" data-mm="အော့ဖ်လိုင်း လူနာများ (စင့်ခ် မလုပ်ရသေးပါ)">Offline Patients (Pending Sync)</span>
+        </h4>
+        <p style="font-size:0.9rem;color:#6b7280;margin-bottom:1rem;">
+          <span class="lang-text" data-en="Select a patient below to continue providing care (ANC, PNC, LCG, Newborn)." data-mm="စောင့်ရှောက်မှု ဆက်လက်ပေးရန် အောက်မှ လူနာကို ရွေးချယ်ပါ။">Select a patient below to continue providing care (ANC, PNC, LCG, Newborn).</span>
+        </p>
+        <div id="offlinePatientsList" style="display:flex;flex-direction:column;gap:0.75rem;">
+          <!-- Populated by JS -->
+        </div>
+        <div id="noOfflinePatients" style="display:none;text-align:center;padding:1rem;color:#9ca3af;">
+          <i class="fas fa-info-circle me-2"></i>
+          <span class="lang-text" data-en="No offline patients yet. Register a patient first." data-mm="အော့ဖ်လိုင်း လူနာ မရှိသေးပါ။ လူနာ မှတ်ပုံတင်ပါ။">No offline patients yet. Register a patient first.</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <footer class="footer">
@@ -1238,12 +1258,63 @@
       window.SyncManager.startSync();
     }
 
+    function selectOfflinePatient(localId, patientJson) {
+      const patient = JSON.parse(decodeURIComponent(patientJson));
+      patient.id = localId;
+      sessionStorage.setItem('selectedPatientId', localId);
+      sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
+      window.location.href = 'patient-care-hub.html';
+    }
+
+    async function loadOfflinePatients() {
+      const section = document.getElementById('offlinePatientsSection');
+      const listEl = document.getElementById('offlinePatientsList');
+      const noDataEl = document.getElementById('noOfflinePatients');
+      if (!section || !listEl || !window.OfflineManager) return;
+
+      // Always show section in offline mode, or if there are pending patients
+      const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+
+      if (!window.OfflineManager.isOfflineMode() && pending.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = 'block';
+
+      if (pending.length === 0) {
+        listEl.innerHTML = '';
+        noDataEl.style.display = 'block';
+        return;
+      }
+
+      noDataEl.style.display = 'none';
+      listEl.innerHTML = pending.map(rec => {
+        const p = rec.data;
+        const encoded = encodeURIComponent(JSON.stringify(p));
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;background:#fffbeb;border:1px solid #fbbf24;border-radius:12px;cursor:pointer;transition:background 0.2s;" onclick="selectOfflinePatient('${rec.localId}', '${encoded}')" onmouseover="this.style.background='#fef3c7'" onmouseout="this.style.background='#fffbeb'">
+            <div>
+              <div style="font-weight:600;color:#1f2937;">${p.name || 'Unknown'}</div>
+              <div style="font-size:0.85rem;color:#6b7280;">Age: ${p.age || '-'} | Parity: ${p.parity || '-'}</div>
+              <div style="font-size:0.8rem;color:#d97706;"><i class="fas fa-clock me-1"></i>${new Date(rec.createdAt).toLocaleString()}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <span class="badge bg-warning text-dark" style="font-size:0.75rem;">Offline</span>
+              <i class="fas fa-chevron-right" style="color:#d97706;"></i>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
       if (window.OfflineManager) {
         window.OfflineManager.updateSyncBadge();
         if (window.OfflineManager.isOfflineMode()) {
           window.OfflineManager.updateOfflineUI(true);
         }
+        loadOfflinePatients();
       }
     });
   </script>

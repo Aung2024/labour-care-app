@@ -1015,6 +1015,7 @@
   <script src="js/page-performance.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
 
   <script>
     // Language switching
@@ -1192,13 +1193,44 @@
         const patientId = sessionStorage.getItem('selectedPatientId');
         
         if (!patientId) {
-          // No patient selected
           document.getElementById('loadingContainer').style.display = 'none';
           document.getElementById('noPatientContainer').style.display = 'block';
           return;
         }
 
-        // Load patient from Firestore - use smart query for Safari compatibility
+        // OFFLINE PATIENT: Load from sessionStorage instead of Firestore
+        if (patientId.startsWith('OFFLINE-')) {
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            selectedPatient = JSON.parse(cachedData);
+            if (!selectedPatient.id) selectedPatient.id = patientId;
+            displayPatientInfo();
+            // Skip loadCareStats for offline patients (no Firestore data yet)
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('patientInfoBar').style.display = 'block';
+            document.getElementById('careCardsContainer').style.display = 'grid';
+            return;
+          }
+          // Try loading from IndexedDB if sessionStorage lost
+          if (window.OfflineManager) {
+            const pendingPatients = await window.OfflineManager.getPendingRecords('pending_patients');
+            const match = pendingPatients.find(r => r.localId === patientId);
+            if (match) {
+              selectedPatient = { id: patientId, ...match.data };
+              sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+              displayPatientInfo();
+              document.getElementById('loadingContainer').style.display = 'none';
+              document.getElementById('patientInfoBar').style.display = 'block';
+              document.getElementById('careCardsContainer').style.display = 'grid';
+              return;
+            }
+          }
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('noPatientContainer').style.display = 'block';
+          return;
+        }
+
+        // ONLINE PATIENT: Load from Firestore as normal
         const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
         const patientQuery = firebase.firestore()
           .collection('patients')
@@ -1209,7 +1241,6 @@
         );
 
         if (!patientDoc || !patientDoc.exists) {
-          // Patient not found
           sessionStorage.removeItem('selectedPatientId');
           sessionStorage.removeItem('selectedPatientData');
           document.getElementById('loadingContainer').style.display = 'none';
@@ -1219,10 +1250,8 @@
 
         selectedPatient = { id: patientDoc.id, ...patientDoc.data() };
         
-        // Save to session storage
         sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
 
-        // Display patient info and care cards
         displayPatientInfo();
         await loadCareStats();
         
