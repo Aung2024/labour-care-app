@@ -940,6 +940,7 @@
   <script src="js/duplicate-detector.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script>
     const REGION_TSP_DATA = [
       {
@@ -2556,6 +2557,69 @@
         return;
       }
       
+      // OFFLINE MODE: Save to IndexedDB and skip Firestore entirely
+      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+        try {
+          const profile = await window.OfflineManager.getCachedUserProfile();
+          if (!profile) {
+            messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>No cached user profile. Please go online, toggle Offline Mode once, then try again.</div>';
+            if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
+            return;
+          }
+
+          const tempId = window.OfflineManager.generateLocalId();
+          const locationMeta = getLocationMetadataByTownship(profile.township);
+          const regionShort = (locationMeta && locationMeta.regionShort) || 'UNK';
+          const tspCode = (locationMeta && locationMeta.tspCode) || 'UNK';
+
+          const gravidaVal = data.gravida_value ? parseInt(data.gravida_value, 10) : null;
+          const parityPrimVal = data.parity_primary ? parseInt(data.parity_primary, 10) : null;
+          const paritySecVal = data.parity_secondary ? parseInt(data.parity_secondary, 10) : null;
+          const ageVal = parseInt(data.age, 10);
+          const ageRisk = (Number.isFinite(ageVal) && (ageVal < 17 || ageVal >= 40)) ? 'Yes' : 'No';
+
+          const offlinePatient = {
+            localId: tempId,
+            _isOffline: true,
+            name: data.name,
+            age: parseInt(data.age),
+            township: profile.township,
+            region: profile.region,
+            created_by: profile.uid,
+            status: 'registered',
+            parity: data.parity || '',
+            registration_date: data.registration_date || null,
+            gravida: Number.isFinite(gravidaVal) ? gravidaVal : null,
+            parity_primary: Number.isFinite(parityPrimVal) ? parityPrimVal : null,
+            parity_secondary: Number.isFinite(paritySecVal) ? paritySecVal : null,
+            age_risk: ageRisk,
+            maternal_age_risk: ageRisk === 'Yes',
+            region_short_code: regionShort,
+            tsp_code: tspCode,
+            facility_code: profile.facility_code || '003',
+            patient_unique_id: tempId,
+            phone: data.phone || null,
+            patient_address: data.patientAddress || null,
+            emergency_contact: data.emergencyContact || null,
+            emergency_phone: data.emergencyPhone || null,
+            hasConsent: true,
+            consentStatus: 'consented'
+          };
+
+          await window.OfflineManager.saveOfflineRecord('pending_patients', offlinePatient);
+
+          messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-wifi-slash me-2"></i><strong>Saved Offline!</strong> Patient "<strong>${data.name}</strong>" saved locally with temporary ID <code>${tempId}</code>. Remember to <strong>Sync</strong> when you are back online.</div>`;
+          if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
+          form.reset();
+          return;
+        } catch (offlineErr) {
+          console.error('Offline save error:', offlineErr);
+          messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error saving offline: ${offlineErr.message}</div>`;
+          if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
+          return;
+        }
+      }
+
       // STEP 1: Check for duplicate patients
       if (!window.DuplicateDetector) {
         console.error('❌ DuplicateDetector not loaded! Check if js/duplicate-detector.js is included.');

@@ -19,6 +19,7 @@
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -2204,6 +2205,48 @@
           const num = parseFloat(el.value);
           return isNaN(num) ? null : num;
         };
+
+        // OFFLINE MODE: Save ANC visit to IndexedDB
+        if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+          const getInt = (id) => { const el = document.getElementById(id); if (!el || !el.value || el.value.trim() === '') return null; const n = parseInt(el.value); return isNaN(n) ? null : n; };
+          const getChecked = (id) => { const el = document.getElementById(id); return el ? (el.checked || false) : false; };
+
+          const offlineVisit = {
+            _isOffline: true,
+            patientId: patientId,
+            visitNumber: visitCount,
+            visitDate: getValue('visitDate'),
+            weight: getNumber('weight'),
+            bloodPressure: getValue('bloodPressure'),
+            pulseRate: getInt('pulseRate'),
+            anemiaStatus: getValue('anemiaStatus'),
+            pittingEdema: getValue('pittingEdema'),
+            lmp: getValue('lmp'),
+            edd: getValue('edd'),
+            gestationalAge: getValue('gestationalAge') || null,
+            temperature: getValue('temperature'),
+            bloodGroup: getValue('bloodGroup'),
+            rhesusFactor: getValue('rhesusFactor'),
+            urineProtein: getValue('urineProtein'),
+            urineSugar: getValue('urineSugar'),
+            otherFindings: getValue('otherFindings'),
+            fetalLie: getValue('fetalLie'),
+            fetalMovement: (() => { const c = document.querySelector('input[name="fetalMovement"]:checked'); return c ? c.value : ''; })(),
+            high_risk: (() => { const c = document.querySelector('input[name="highRisk"]:checked'); return c ? c.value : 'no'; })(),
+            risk_factors: Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value),
+            risk_notes: getValue('riskNotes') || null,
+            early_anc_visit: getChecked('earlyAncVisit'),
+            mentalHealthStatus: getValue('mentalHealthStatus'),
+            otherMedications: getValue('otherMedications'),
+            recordedBy: currentUser?.uid || ''
+          };
+
+          await window.OfflineManager.saveOfflineRecord('pending_anc_visits', offlineVisit);
+          showSuccessMessage('ANC visit saved offline! Remember to Sync when online.');
+          clearFormFields();
+          if (submitButton) { submitButton.disabled = false; submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>'; }
+          return;
+        }
         
         // STEP 1: Clinical Data Validation (LMP, EDD, GA)
         if (window.ClinicalValidator) {

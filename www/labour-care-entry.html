@@ -411,6 +411,7 @@
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script src="languages/language-manager.js"></script>
   <script>
     // Prevent language manager from creating the default switcher
@@ -1145,6 +1146,36 @@
       if (!state.patientId) {
         if (!silent) alert('No patient ID');
         return;
+      }
+
+      // OFFLINE MODE: Save LCG data to IndexedDB
+      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+        try {
+          const cleanedData = {};
+          Object.keys(state.data).forEach(key => {
+            if (state.data[key] !== undefined) cleanedData[key] = state.data[key];
+          });
+
+          const offlineLcg = {
+            _isOffline: true,
+            _docName: 'summary',
+            patientId: state.patientId,
+            ...cleanedData,
+            startingTime: state.startTime || null
+          };
+
+          if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
+            offlineLcg.secondStageTime = state.secondStageTime;
+          }
+
+          await window.OfflineManager.saveOfflineRecord('pending_lcg_records', offlineLcg);
+          if (!silent) showToast('Saved offline');
+          return;
+        } catch (offErr) {
+          console.error('Offline LCG save error:', offErr);
+          if (!silent) alert('Error saving offline: ' + offErr.message);
+          return;
+        }
       }
       
       try {
