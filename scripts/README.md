@@ -1,8 +1,6 @@
 # Admin Scripts
 
-## Update User Email
-
-Updates a user's sign-in email in Firebase Auth and Firestore. No Blaze plan required.
+Admin scripts for Labour Care app. Require Firebase service account key. No Blaze plan required.
 
 ### Setup (one-time)
 
@@ -19,11 +17,40 @@ Updates a user's sign-in email in Firebase Auth and Firestore. No Blaze plan req
    npm install
    ```
 
-### Usage
+---
 
-**Option A: Command line**
+## Reset User Password
+
+Resets a user's password and clears account lockout. Use when a user forgets their password and can't receive reset emails (e.g. fake/placeholder emails).
+
+**Command line:**
 ```bash
-cd scripts
+node reset-user-password.js <userId|email> <newPassword>
+```
+
+**Examples:**
+```bash
+node reset-user-password.js midwife@facility.local TempPass123!
+node reset-user-password.js RTMufBmHXfTv2iHM0ztY4HumBV73 NewSecret456!
+```
+
+**Interactive (prompts for input):**
+```bash
+node reset-user-password.js
+```
+
+You can pass either:
+- **Email** (e.g. `midwife@facility.local`) – the sign-in identifier
+- **User ID** (Firebase Auth UID) – from Firebase Console or Firestore `users` doc ID
+
+---
+
+## Update User Email
+
+Updates a user's sign-in email in Firebase Auth and Firestore.
+
+**Command line:**
+```bash
 node update-user-email.js <userId> <newEmail>
 ```
 
@@ -32,9 +59,8 @@ Example:
 node update-user-email.js RTMufBmHXfTv2iHM0ztY4HumBV73 npt@gmail.com
 ```
 
-**Option B: Interactive (prompts for input)**
+**Interactive (prompts for input):**
 ```bash
-cd scripts
 node update-user-email.js
 ```
 
@@ -42,6 +68,8 @@ node update-user-email.js
 
 - **Firebase Console** → Authentication → Users → click a user → copy the **User UID**
 - **Firestore** → `users` collection → the document ID is the user ID
+
+---
 
 ### Security
 
