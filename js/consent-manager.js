@@ -12,6 +12,12 @@ const PROVIDER_RE_CONSENT_DAYS = 90; // 3 months
  * @returns {Promise<{hasConsent: boolean, needsReconsent: boolean, consentData: object|null}>}
  */
 async function checkProviderConsent(userId) {
+  // Skip Firestore check when offline -- assume consent is valid
+  if ((window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+      localStorage.getItem('offlineMode') === 'true') {
+    return { hasConsent: true, needsReconsent: false, consentData: null };
+  }
+
   try {
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
     const consentQuery = firebase.firestore()

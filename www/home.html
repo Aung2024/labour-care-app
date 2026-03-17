@@ -517,18 +517,21 @@
       // Ensure body is visible (auth verified)
       document.body.classList.add('auth-verified');
       
-      // Check provider consent (non-blocking)
-      try {
-        if (window.ConsentManager) {
-          const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
-          if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
-            window.location.href = "provider-consent.html";
-            return;
+      // Check provider consent (skip when offline -- Firestore interceptor returns false negatives)
+      const _offline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+                       localStorage.getItem('offlineMode') === 'true';
+      if (!_offline) {
+        try {
+          if (window.ConsentManager) {
+            const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
+            if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
+              window.location.href = "provider-consent.html";
+              return;
+            }
           }
+        } catch (error) {
+          console.error('Error checking provider consent:', error);
         }
-      } catch (error) {
-        console.error('Error checking provider consent:', error);
-        // Continue to app if consent check fails (graceful degradation)
       }
       
       // Load user data (non-blocking)
@@ -554,6 +557,15 @@
     
     async function loadUserData() {
       try {
+        // Skip Firestore queries when offline
+        const _off = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+                     localStorage.getItem('offlineMode') === 'true';
+        if (_off) {
+          document.getElementById("userEmail").textContent = currentUser.email || 'User';
+          document.getElementById("userRole").textContent = 'Offline Mode';
+          return;
+        }
+
         // OPTIMIZED: Use user cache to avoid redundant queries
         let userData;
         if (window.UserCache) {

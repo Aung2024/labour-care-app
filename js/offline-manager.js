@@ -495,10 +495,6 @@
     }
   }
 
-  // Install Firestore interceptor IMMEDIATELY (before DOMContentLoaded)
-  // so it's active before any onAuthStateChanged callbacks fire
-  installFirestoreInterceptor();
-
   // Auto-init when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
