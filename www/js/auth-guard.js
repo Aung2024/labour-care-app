@@ -167,7 +167,7 @@ async function verifyUserInFirestore(userId) {
     // Skip Firestore verification when offline mode is active
     if ((window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
         localStorage.getItem('offlineMode') === 'true') {
-      console.log('✅ Skipping Firestore verification (offline mode)');
+      console.log('✅ [AuthGuard] Skipping Firestore verification (offline mode). userId=', userId);
       return true;
     }
 
@@ -278,6 +278,11 @@ function redirectToLogin() {
   if (currentPage === 'login.html' || currentPage === '') {
     return;
   }
+  
+  console.log('⚠️ [AuthGuard] redirectToLogin called from page:',
+    currentPage,
+    'offlineMode=', localStorage.getItem('offlineMode'),
+    'hasOfflineManager=', !!window.OfflineManager);
   
   // Small delay to allow page to render (prevents blank page)
   setTimeout(() => {
