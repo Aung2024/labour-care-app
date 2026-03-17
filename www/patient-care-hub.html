@@ -1231,6 +1231,29 @@
           return;
         }
 
+        // CACHED PATIENT in offline mode: Load from sessionStorage/IndexedDB instantly
+        if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            selectedPatient = JSON.parse(cachedData);
+            if (!selectedPatient.id) selectedPatient.id = patientId;
+          } else {
+            const cached = await window.OfflineManager.getCachedPatient(patientId);
+            if (cached) {
+              selectedPatient = cached;
+              if (!selectedPatient.id) selectedPatient.id = patientId;
+              sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+            }
+          }
+          if (selectedPatient) {
+            displayPatientInfo();
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('patientInfoBar').style.display = 'block';
+            document.getElementById('careCardsContainer').style.display = 'grid';
+            return;
+          }
+        }
+
         // ONLINE PATIENT: Load from Firestore as normal
         const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
         const patientQuery = firebase.firestore()
