@@ -1265,7 +1265,7 @@
       
       state.patientId = patientId;
 
-      // OFFLINE: Load patient name from sessionStorage, skip Firestore queries
+      // OFFLINE: Load patient name + any pending LCG data from IndexedDB, skip Firestore queries
       const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
       const isOfflinePatient = patientId.startsWith('OFFLINE-');
 
@@ -1275,6 +1275,37 @@
           const p = JSON.parse(cachedData);
           document.getElementById('patientName').textContent = p.name || 'Patient';
         }
+        
+        // Try to load any pending LCG records for this patient from IndexedDB
+        try {
+          if (window.OfflineManager && window.OfflineManager.getPendingRecords) {
+            const allPending = await window.OfflineManager.getPendingRecords('pending_lcg_records');
+            // Find the latest record for this patient (in case there are multiple)
+            const matches = allPending.filter(r => r.data && r.data.patientId === patientId);
+            if (matches.length > 0) {
+              matches.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+              const latest = matches[matches.length - 1].data || matches[matches.length - 1];
+
+              // Hydrate state from offline data
+              state.data = { ...(latest || {}) };
+              state.startTime = latest.startingTime || latest.startTime || null;
+              state.secondStageTime = latest.secondStageTime || null;
+
+              // Initialize time grid if we have a start time
+              if (state.startTime) {
+                generateTimepoints(state.startTime, state.secondStageTime || undefined);
+                if (state.timepoints.length > 0) {
+                  state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+                  currentIndex = 0;
+                }
+              }
+            }
+          }
+        } catch (offlineErr) {
+          console.error('Offline LCG load error:', offlineErr);
+        }
+
+        // Render using whatever state we have (empty or populated from offline)
         renderAllCards();
         return;
       }
