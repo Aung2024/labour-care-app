@@ -396,12 +396,93 @@
     }, 4000);
   }
 
+  // --------------- Global Firestore interceptor ---------------
+  // When offline mode is active, intercept ALL Firestore .get() calls
+  // and return empty results instantly instead of hitting the network.
+
+  function installFirestoreInterceptor() {
+    if (typeof firebase === 'undefined' || !firebase.firestore) return;
+
+    var db;
+    try { db = firebase.firestore(); } catch (e) { return; }
+
+    // Mock DocumentSnapshot (for doc().get())
+    function MockDocSnapshot(id) {
+      this.exists = false;
+      this.id = id || '';
+      this.data = function () { return undefined; };
+      this.get = function () { return undefined; };
+    }
+
+    // Mock QuerySnapshot (for collection().get() / where().get())
+    // Also includes .exists=false so it works when callers treat it as a DocumentSnapshot
+    function MockQuerySnapshot() {
+      this.empty = true;
+      this.size = 0;
+      this.docs = [];
+      this.exists = false;
+      this.forEach = function () {};
+      this.data = function () { return undefined; };
+    }
+
+    // Patch DocumentReference.prototype.get
+    var DocRefProto = Object.getPrototypeOf(db.collection('_').doc('_'));
+    if (DocRefProto && DocRefProto.get && !DocRefProto._originalGet) {
+      DocRefProto._originalGet = DocRefProto.get;
+      DocRefProto.get = function (opts) {
+        if (isOfflineMode()) {
+          return Promise.resolve(new MockDocSnapshot(this.id));
+        }
+        return DocRefProto._originalGet.call(this, opts);
+      };
+    }
+
+    // Patch Query.prototype.get (covers collection().get(), where().get(), orderBy().get(), etc.)
+    var queryRef = db.collection('_').where('__x', '==', '1');
+    var QueryProto = Object.getPrototypeOf(queryRef);
+    if (QueryProto && QueryProto.get && !QueryProto._originalGet) {
+      QueryProto._originalGet = QueryProto.get;
+      QueryProto.get = function (opts) {
+        if (isOfflineMode()) {
+          return Promise.resolve(new MockQuerySnapshot());
+        }
+        return QueryProto._originalGet.call(this, opts);
+      };
+    }
+
+    // Patch CollectionReference.prototype.get (inherits from Query but may have its own)
+    var CollRefProto = Object.getPrototypeOf(db.collection('_'));
+    if (CollRefProto && CollRefProto.get && !CollRefProto._originalGet && CollRefProto !== QueryProto) {
+      CollRefProto._originalGet = CollRefProto.get;
+      CollRefProto.get = function (opts) {
+        if (isOfflineMode()) {
+          return Promise.resolve(new MockQuerySnapshot());
+        }
+        return CollRefProto._originalGet.call(this, opts);
+      };
+    }
+
+    // Patch smartFirestoreQuery to short-circuit when offline
+    if (window.smartFirestoreQuery && !window._originalSmartFirestoreQuery) {
+      window._originalSmartFirestoreQuery = window.smartFirestoreQuery;
+      window.smartFirestoreQuery = async function (queryPromise, options) {
+        if (isOfflineMode()) {
+          return new MockQuerySnapshot();
+        }
+        return window._originalSmartFirestoreQuery(queryPromise, options);
+      };
+    }
+
+    console.log('[OfflineManager] Firestore interceptor installed');
+  }
+
   // --------------- Initialization ---------------
 
   async function init() {
     try {
       await openDB();
       setupConnectionListeners();
+      installFirestoreInterceptor();
 
       if (isOfflineMode()) {
         updateOfflineUI(true);

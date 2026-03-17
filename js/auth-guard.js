@@ -164,6 +164,13 @@ function initAuthGuard() {
  */
 async function verifyUserInFirestore(userId) {
   try {
+    // Skip Firestore verification when offline mode is active
+    if ((window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+        localStorage.getItem('offlineMode') === 'true') {
+      console.log('✅ Skipping Firestore verification (offline mode)');
+      return true;
+    }
+
     // Check cache first
     if (isCacheValid() && USER_VERIFICATION_CACHE.data?.userId === userId) {
       console.log('✅ Using cached user verification');
