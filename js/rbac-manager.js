@@ -283,8 +283,10 @@ function canAccessResource(resourceType, resourceId, resourceData = null) {
     if (currentUserRole === 'Midwife') {
       // Midwife can only access their own patients
       if (resourceData) {
+        const careTeam = Array.isArray(resourceData.care_team_midwife_ids) ? resourceData.care_team_midwife_ids : [];
         return resourceData.created_by === currentUserId || 
-               resourceData.createdBy === currentUserId;
+               resourceData.createdBy === currentUserId ||
+               careTeam.includes(currentUserId);
       }
       return false; // Conservative: deny if we can't verify
     }

@@ -690,6 +690,9 @@
         <div class="page-subtitle">Choose a patient to access comprehensive care management</div>
       </div>
       <div class="header-right">
+        <a href="transfer-requests.html" class="btn btn-outline-info btn-sm me-2">
+          <i class="fas fa-share-square me-1"></i> Transfer Requests
+        </a>
         <button class="btn btn-outline-warning btn-sm me-2" id="offlineSelectBtn" onclick="toggleOfflineSelectMode()">
           <i class="fas fa-download me-1"></i> Prepare for Offline
         </button>
@@ -1045,6 +1048,14 @@
               { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
             console.log('createdBy query result:', oldSnap?.empty ? 'empty' : `${oldSnap?.size || 0} docs`);
+
+            const sharedQuery = db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid);
+            console.log('Trying care_team_midwife_ids query...');
+            const sharedSnap = await smartFirestoreQuery(
+              Promise.resolve(sharedQuery),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            console.log('care_team query result:', sharedSnap?.empty ? 'empty' : `${sharedSnap?.size || 0} docs`);
             
             // Combine results
             allPatients = [];
@@ -1074,6 +1085,19 @@
               console.log('✅ Added', count, 'patients from createdBy field');
             } else {
               console.log('⚠️ createdBy query returned empty or invalid result');
+            }
+
+            if (sharedSnap && typeof sharedSnap.forEach === 'function' && !sharedSnap.empty) {
+              let count = 0;
+              sharedSnap.forEach(doc => {
+                if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                  patientMap.set(doc.id, { id: doc.id, ...doc.data(), _sharedAccess: true });
+                  count++;
+                }
+              });
+              console.log('✅ Added', count, 'patients from care_team_midwife_ids');
+            } else {
+              console.log('⚠️ care_team_midwife_ids query returned empty or invalid result');
             }
             
             allPatients = Array.from(patientMap.values());
@@ -1431,6 +1455,8 @@
         offlineBadge = '<span class="badge bg-warning text-dark" style="font-size:0.65rem;margin-left:6px;">Pending Sync</span>';
       } else if (patient._offlineType === 'cached') {
         offlineBadge = '<span class="badge bg-success" style="font-size:0.65rem;margin-left:6px;">Downloaded</span>';
+      } else if (patient._sharedAccess) {
+        offlineBadge = '<span class="badge bg-info text-dark" style="font-size:0.65rem;margin-left:6px;">Shared</span>';
       }
       var offlineHint = '';
       if (patient._offlineType === 'cached') {

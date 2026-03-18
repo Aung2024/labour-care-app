@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Transfer Requests</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    body { font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, sans-serif; background: linear-gradient(135deg,#667eea 0%, #764ba2 100%); min-height: 100vh; }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 1rem; }
+    .head { background: linear-gradient(135deg,#10b981,#059669); color: #fff; border-radius: 16px; padding: 1rem; box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+    .tabs { margin-top: 1rem; display: flex; gap: .5rem; }
+    .tabb { border: none; border-radius: 999px; padding: .4rem .9rem; font-weight: 600; }
+    .tabb.active { background: #10b981; color: #fff; }
+    .cardx { margin-top: .8rem; background: #fff; border-radius: 14px; padding: .9rem; box-shadow: 0 8px 20px rgba(0,0,0,.12); }
+    .meta { color: #6b7280; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head d-flex justify-content-between align-items-center gap-2 flex-wrap">
+      <div>
+        <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-share-square me-2"></i>Transfer Requests</div>
+        <div style="opacity:.9;font-size:.9rem;">Accept requests to gain patient access</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="transfer-patient.html" class="btn btn-light btn-sm"><i class="fas fa-plus me-1"></i>New Transfer</a>
+        <a href="home.html" class="btn btn-outline-light btn-sm"><i class="fas fa-home me-1"></i>Home</a>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabIncoming" class="tabb active" onclick="switchTab('incoming')">Incoming</button>
+      <button id="tabSent" class="tabb" onclick="switchTab('sent')">Sent</button>
+    </div>
+    <div id="listWrap"></div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/audit-logger.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script>
+    let currentUser = null;
+    let activeTab = 'incoming';
+
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) return;
+      currentUser = user;
+      await loadRequests();
+    });
+
+    function switchTab(tab) {
+      activeTab = tab;
+      document.getElementById('tabIncoming').classList.toggle('active', tab === 'incoming');
+      document.getElementById('tabSent').classList.toggle('active', tab === 'sent');
+      loadRequests();
+    }
+
+    async function loadRequests() {
+      const wrap = document.getElementById('listWrap');
+      wrap.innerHTML = '<div class="cardx"><i class="fas fa-spinner fa-spin me-2"></i>Loading...</div>';
+      try {
+        const db = firebase.firestore();
+        let snap;
+        if (activeTab === 'incoming') {
+          snap = await db.collection('patient_transfer_requests')
+            .where('targetMidwifeIds', 'array-contains', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+        } else {
+          snap = await db.collection('patient_transfer_requests')
+            .where('fromMidwifeId', '==', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+        }
+        if (snap.empty) {
+          wrap.innerHTML = '<div class="cardx text-muted">No transfer requests.</div>';
+          return;
+        }
+        const rows = [];
+        snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+        wrap.innerHTML = rows.map((r) => renderRow(r)).join('');
+      } catch (e) {
+        console.error(e);
+        wrap.innerHTML = '<div class="cardx text-danger">Failed to load requests: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderRow(r) {
+      const canAct = activeTab === 'incoming' && r.status === 'pending';
+      const createdAt = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleString() : '-';
+      const toText = (r.recipients || []).map((x) => x.name || x.uid).join(', ');
+      return `
+        <div class="cardx">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-bold">${escapeHtml(r.patientName || 'Unknown Patient')} <span class="text-muted">(${escapeHtml(r.patientId || '-')})</span></div>
+              <div class="meta">From: ${escapeHtml(r.fromMidwifeName || r.fromMidwifeEmail || '-')}</div>
+              <div class="meta">To: ${escapeHtml(toText || '-')}</div>
+              <div class="meta">Status: <strong>${escapeHtml(r.status || 'pending')}</strong> • ${escapeHtml(createdAt)}</div>
+              ${r.notes ? `<div class="meta">Note: ${escapeHtml(r.notes)}</div>` : ''}
+            </div>
+            ${canAct ? `
+              <div class="d-flex flex-column gap-2">
+                <button class="btn btn-success btn-sm" onclick="acceptReq('${r.id}')">Accept</button>
+                <button class="btn btn-outline-danger btn-sm" onclick="rejectReq('${r.id}')">Reject</button>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    async function acceptReq(id) {
+      try {
+        await firebase.firestore().runTransaction(async (tx) => {
+          const reqRef = firebase.firestore().collection('patient_transfer_requests').doc(id);
+          const reqSnap = await tx.get(reqRef);
+          if (!reqSnap.exists) throw new Error('Request not found');
+          const req = reqSnap.data();
+          if (req.status !== 'pending') throw new Error('Request already processed');
+          const patientRef = firebase.firestore().collection('patients').doc(req.patientId);
+          const patientSnap = await tx.get(patientRef);
+          if (!patientSnap.exists) throw new Error('Patient not found');
+          const ids = Array.from(new Set([req.fromMidwifeId, ...(req.targetMidwifeIds || [])].filter(Boolean)));
+          tx.update(patientRef, {
+            care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(...ids)
+          });
+          tx.update(reqRef, {
+            status: 'accepted',
+            acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            acceptedBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+          });
+        });
+        if (window.AuditLogger && AuditLogger.logAuditEvent) {
+          AuditLogger.logAuditEvent('transfer_request_accepted', 'transfer_request', id, {});
+        }
+        await AppDialog.alert('Transfer accepted. You now have full access to this patient.', { title: 'Accepted' });
+        loadRequests();
+      } catch (e) {
+        console.error(e);
+        AppDialog.alert('Unable to accept: ' + e.message, { title: 'Error' });
+      }
+    }
+
+    async function rejectReq(id) {
+      try {
+        await firebase.firestore().collection('patient_transfer_requests').doc(id).update({
+          status: 'rejected',
+          rejectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          rejectedBy: currentUser.uid
+        });
+        if (window.AuditLogger && AuditLogger.logAuditEvent) {
+          AuditLogger.logAuditEvent('transfer_request_rejected', 'transfer_request', id, {});
+        }
+        loadRequests();
+      } catch (e) {
+        console.error(e);
+        AppDialog.alert('Unable to reject: ' + e.message, { title: 'Error' });
+      }
+    }
+
+    function escapeHtml(v) {
+      return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
+</body>
+</html>

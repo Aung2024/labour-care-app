@@ -752,7 +752,7 @@
         } else if (userRole === "Midwife" || userRole === "midwife") {
           // Midwife sees only patients they created - use smart query for iOS
           // OPTIMIZED: Use shorter timeout and skip birth record checks for faster loading
-          let snapNew, snapOld;
+          let snapNew, snapOld, snapShared;
           try {
             const newQuery = db.collection("patients").where("created_by", "==", currentUser.uid);
             snapNew = await smartFirestoreQuery(
@@ -774,6 +774,17 @@
             console.warn('Could not load old format patients:', error);
             snapOld = { forEach: () => {}, docs: [], empty: true };
           }
+
+          try {
+            const sharedQuery = db.collection("patients").where("care_team_midwife_ids", "array-contains", currentUser.uid);
+            snapShared = await smartFirestoreQuery(
+              Promise.resolve(sharedQuery),
+              { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
+            );
+          } catch (error) {
+            console.warn('Could not load shared-access patients:', error);
+            snapShared = { forEach: () => {}, docs: [], empty: true };
+          }
           
           // Combine both snapshots
           const combinedDocs = new Map();
@@ -782,6 +793,13 @@
           }
           if (snapOld && !snapOld.empty) {
             snapOld.forEach(doc => {
+              if (!combinedDocs.has(doc.id)) {
+                combinedDocs.set(doc.id, doc);
+              }
+            });
+          }
+          if (snapShared && !snapShared.empty) {
+            snapShared.forEach(doc => {
               if (!combinedDocs.has(doc.id)) {
                 combinedDocs.set(doc.id, doc);
               }
@@ -945,6 +963,12 @@
             break;
           case 'select-patient':
             window.location.href = 'list.html';
+            break;
+          case 'transfer-patient':
+            window.location.href = 'transfer-patient.html';
+            break;
+          case 'transfer-requests':
+            window.location.href = 'transfer-requests.html';
             break;
           case 'dashboard':
             window.location.href = 'dashboard.html';
@@ -1125,6 +1149,34 @@
         </div>
         <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('select-patient');">
           <i class="fas fa-hand-pointer me-2"></i><span class="lang-text" data-en="Select Patient" data-mm="လူနာ ရွေးချယ်ရန်">Select Patient</span>
+        </a>
+      </div>
+
+      <!-- Transfer Patient -->
+      <div class="care-card primary" onclick="navigateToCare('transfer-patient')">
+        <div class="care-icon">
+          <i class="fas fa-share-square"></i>
+        </div>
+        <h3 class="care-title"><span class="lang-text" data-en="Transfer Patient" data-mm="လူနာလွှဲပြောင်းရန်">Transfer Patient</span></h3>
+        <p class="care-description">
+          <span class="lang-text" data-en="Send patient transfer requests to other midwives by region and township." data-mm="Region / Township ဖြင့် အခြား သားဖွားဆရာမများထံ လူနာလွှဲပြောင်း တောင်းဆိုချက် ပို့နိုင်သည်။">Send patient transfer requests to other midwives by region and township.</span>
+        </p>
+        <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('transfer-patient');">
+          <i class="fas fa-paper-plane me-2"></i><span class="lang-text" data-en="Start Transfer" data-mm="လွှဲပြောင်းစတင်ရန်">Start Transfer</span>
+        </a>
+      </div>
+
+      <!-- Transfer Requests -->
+      <div class="care-card primary" onclick="navigateToCare('transfer-requests')">
+        <div class="care-icon">
+          <i class="fas fa-inbox"></i>
+        </div>
+        <h3 class="care-title"><span class="lang-text" data-en="Transfer Requests" data-mm="လွှဲပြောင်း တောင်းဆိုချက်များ">Transfer Requests</span></h3>
+        <p class="care-description">
+          <span class="lang-text" data-en="Review and accept incoming transfer requests to gain patient access." data-mm="ဝင်လာသော လွှဲပြောင်းတောင်းဆိုချက်များကို လက်ခံပြီး လူနာဝင်ရောက်ခွင့် ရယူပါ။">Review and accept incoming transfer requests to gain patient access.</span>
+        </p>
+        <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('transfer-requests');">
+          <i class="fas fa-check-circle me-2"></i><span class="lang-text" data-en="Review Requests" data-mm="တောင်းဆိုချက်များ ကြည့်ရန်">Review Requests</span>
         </a>
       </div>
 
