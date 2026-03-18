@@ -413,6 +413,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="languages/language-manager.js"></script>
   <script>
     // Prevent language manager from creating the default switcher
@@ -1274,30 +1275,33 @@
         if (cachedData) {
           const p = JSON.parse(cachedData);
           document.getElementById('patientName').textContent = p.name || 'Patient';
+        } else if (window.OfflineManager && window.OfflineManager.getCachedPatient) {
+          const cp = await window.OfflineManager.getCachedPatient(patientId);
+          if (cp && cp.name) document.getElementById('patientName').textContent = cp.name;
         }
-        
-        // Try to load any pending LCG records for this patient from IndexedDB
+
         try {
-          if (window.OfflineManager && window.OfflineManager.getPendingRecords) {
-            const allPending = await window.OfflineManager.getPendingRecords('pending_lcg_records');
-            // Find the latest record for this patient (in case there are multiple)
-            const matches = allPending.filter(r => r.data && r.data.patientId === patientId);
+          const lcg =
+            window.OfflineManager && window.OfflineManager.getOfflineLcgForPatient
+              ? await window.OfflineManager.getOfflineLcgForPatient(patientId)
+              : null;
+          if (lcg && lcg.startingTime) {
+            state.startTime = lcg.startingTime;
+            state.secondStageTime = lcg.secondStageTime || null;
+          }
+          if (window.OfflineManager && window.OfflineManager.getAllRecords) {
+            const allLcg = await window.OfflineManager.getAllRecords('pending_lcg_records');
+            const matches = (allLcg || []).filter(
+              (r) => r.data && String(r.data.patientId) === String(patientId)
+            );
             if (matches.length > 0) {
-              matches.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-              const latest = matches[matches.length - 1].data || matches[matches.length - 1];
-
-              // Hydrate state from offline data
+              matches.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+              const latest = matches[matches.length - 1].data;
               state.data = { ...(latest || {}) };
-              state.startTime = latest.startingTime || latest.startTime || null;
-              state.secondStageTime = latest.secondStageTime || null;
-
-              // Initialize time grid if we have a start time
-              if (state.startTime) {
-                generateTimepoints(state.startTime, state.secondStageTime || undefined);
-                if (state.timepoints.length > 0) {
-                  state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
-                  currentIndex = 0;
-                }
+              const st = latest.startingTime || latest.startTime;
+              if (st) {
+                state.startTime = st;
+                state.secondStageTime = latest.secondStageTime || state.secondStageTime || null;
               }
             }
           }
@@ -1305,7 +1309,24 @@
           console.error('Offline LCG load error:', offlineErr);
         }
 
-        // Same UI refresh as online Firestore path (renderAllCards never existed)
+        if (!state.startTime) {
+          const msg =
+            'No LCG data on this device for this patient. Use Prepare for Offline while online, or complete Labour Care Setup once online.';
+          if (window.AppDialog && AppDialog.alert) {
+            await AppDialog.alert(msg, { title: 'LCG not available offline' });
+          } else {
+            alert(msg);
+          }
+          window.location.href = 'patient-care-hub.html';
+          return;
+        }
+
+        generateTimepoints(state.startTime, state.secondStageTime || undefined);
+        if (state.timepoints && state.timepoints.length > 0) {
+          state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+          currentIndex = 0;
+        }
+
         const fsEl = document.getElementById('firstStageTime');
         if (fsEl) fsEl.textContent = state.startTime || '-';
         if (state.secondStageTime) {
@@ -1318,35 +1339,9 @@
           const bar = document.getElementById('secondStageEntryBar');
           if (bar) bar.style.display = state.startTime ? 'flex' : 'none';
         }
-
-        if (state.startTime) {
-          if (!state.timepoints || state.timepoints.length === 0) {
-            generateTimepoints(state.startTime, state.secondStageTime || undefined);
-          }
-          if (state.timepoints && state.timepoints.length > 0) {
-            if (!state.activeTimepoint) {
-              state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
-              currentIndex = 0;
-            }
-            updateUI();
-            renderTimePills();
-            renderSections();
-          }
-        } else {
-          generateTimepoints('08:00');
-          state.startTime = '08:00';
-          if (fsEl) fsEl.textContent = state.startTime;
-          document.getElementById('secondStageInfo').style.display = 'none';
-          const bar2 = document.getElementById('secondStageEntryBar');
-          if (bar2) bar2.style.display = 'flex';
-          if (state.timepoints && state.timepoints.length > 0) {
-            state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
-            currentIndex = 0;
-            updateUI();
-            renderTimePills();
-            renderSections();
-          }
-        }
+        updateUI();
+        renderTimePills();
+        renderSections();
         return;
       }
       

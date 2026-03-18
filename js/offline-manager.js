@@ -266,6 +266,52 @@
     });
   }
 
+  /**
+   * Latest LCG first/second stage times for a patient while offline.
+   * Sources: pending_lcg_records (any record), then cached patient (lcgStartingTime from Prepare for Offline).
+   */
+  async function getOfflineLcgForPatient(patientId) {
+    if (!patientId) return null;
+    try {
+      const db = await openDB();
+      const allLcg = await new Promise((resolve, reject) => {
+        const tx = db.transaction('pending_lcg_records', 'readonly');
+        const req = tx.objectStore('pending_lcg_records').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = (e) => reject(e.target.error);
+      });
+      const matches = allLcg.filter((r) => {
+        const d = r.data;
+        return d && String(d.patientId) === String(patientId);
+      });
+      if (matches.length > 0) {
+        matches.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+        const latest = matches[matches.length - 1].data;
+        const st = latest.startingTime || latest.startTime;
+        if (st) {
+          return {
+            startingTime: st,
+            secondStageTime: latest.secondStageTime || null
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[OfflineManager] getOfflineLcgForPatient pending scan failed', e);
+    }
+    try {
+      const cached = await getCachedPatient(patientId);
+      if (cached && cached.lcgStartingTime) {
+        return {
+          startingTime: cached.lcgStartingTime,
+          secondStageTime: cached.lcgSecondStageTime || null
+        };
+      }
+    } catch (e2) {
+      console.warn('[OfflineManager] getOfflineLcgForPatient cache read failed', e2);
+    }
+    return null;
+  }
+
   async function removeCachedPatient(id) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -295,17 +341,15 @@
         offlineBtn.classList.add('btn-outline-warning');
         offlineBtn.querySelector('i').className = 'fas fa-plug-circle-xmark me-1';
       }
-      // Dynamic label: "Go Online" when offline, "Go Offline" when online
-      const label = document.getElementById('offlineModeBtnLabel') || offlineBtn.querySelector('.lang-text');
+      const label = document.getElementById('offlineModeBtnLabel');
       if (label) {
-        const lang = (typeof localStorage !== 'undefined' && localStorage.getItem('appLanguage')) || document.querySelector('.language-btn.active')?.getAttribute('data-lang') || 'en';
+        const lang =
+          (typeof localStorage !== 'undefined' && localStorage.getItem('appLanguage')) ||
+          document.querySelector('.language-btn.active')?.getAttribute('data-lang') ||
+          'en';
         if (enabled) {
-          label.setAttribute('data-en', 'Go Online');
-          label.setAttribute('data-mm', 'အွန်လိုင်းသို့');
           label.textContent = lang === 'mm' ? 'အွန်လိုင်းသို့' : 'Go Online';
         } else {
-          label.setAttribute('data-en', 'Go Offline');
-          label.setAttribute('data-mm', 'အော့ဖ်လိုင်းသို့');
           label.textContent = lang === 'mm' ? 'အော့ဖ်လိုင်းသို့' : 'Go Offline';
         }
       }
@@ -531,6 +575,7 @@
     cachePatientForOffline,
     getCachedPatients,
     getCachedPatient,
+    getOfflineLcgForPatient,
     removeCachedPatient,
     updateSyncBadge,
     updateOfflineUI,

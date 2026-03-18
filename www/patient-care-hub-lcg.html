@@ -56,6 +56,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script>
     firebase.auth().onAuthStateChanged(function(user){
       if (!user) { window.location.href='login.html'; return; }
@@ -68,7 +70,23 @@
     async function openCarousel(){
       const pid = sessionStorage.getItem('selectedPatientId');
       if (!pid) return alert('No patient selected');
-      
+
+      const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      if (isOffline || String(pid).startsWith('OFFLINE-')) {
+        const lcg = window.OfflineManager.getOfflineLcgForPatient
+          ? await window.OfflineManager.getOfflineLcgForPatient(pid)
+          : null;
+        if (lcg && lcg.startingTime) {
+          window.location.href = `labour-care-entry.html?patient=${pid}`;
+          return;
+        }
+        const msg =
+          'No LCG data on this device for this patient. While online, use Prepare for Offline on the list or complete Labour Care Setup once.';
+        if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: 'LCG not available offline' });
+        else alert(msg);
+        return;
+      }
+
       try {
         // Check if Active First Stage time already exists
         const base = firebase.firestore().collection("patients").doc(pid);

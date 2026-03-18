@@ -2090,12 +2090,35 @@
 
       try {
         let savedCount = 0;
+        const dbFs = firebase.firestore();
         for (const pid of selectedPatientIds) {
-          const patient = allPatients.find(p => p.id === pid);
-          if (patient) {
-            await OfflineManager.cachePatientForOffline(patient);
-            savedCount++;
+          const patient = { ...(allPatients.find(p => p.id === pid) || {}) };
+          if (!patient.id) continue;
+          try {
+            const base = dbFs.collection('patients').doc(pid);
+            const summaryDoc = await base.collection('records').doc('summary').get();
+            let lcgStartingTime = null;
+            let lcgSecondStageTime = null;
+            if (summaryDoc.exists) {
+              const sd = summaryDoc.data();
+              lcgStartingTime = sd.startingTime || sd.activeFirstStage_Time || null;
+              lcgSecondStageTime = sd.secondStageTime || sd.secondStage_Time || null;
+            }
+            const stDoc = await base.collection('records').doc('startingTime').get();
+            if (stDoc.exists && stDoc.data().startingTime) {
+              lcgStartingTime = stDoc.data().startingTime;
+            }
+            const s2 = await base.collection('records').doc('secondStage').get();
+            if (s2.exists && s2.data().secondStageStartTime) {
+              lcgSecondStageTime = s2.data().secondStageStartTime;
+            }
+            if (lcgStartingTime) patient.lcgStartingTime = lcgStartingTime;
+            if (lcgSecondStageTime) patient.lcgSecondStageTime = lcgSecondStageTime;
+          } catch (lcgErr) {
+            console.warn('LCG snapshot for offline cache:', pid, lcgErr);
           }
+          await OfflineManager.cachePatientForOffline(patient);
+          savedCount++;
         }
 
         btn.disabled = false;

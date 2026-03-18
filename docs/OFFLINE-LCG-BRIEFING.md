@@ -2,47 +2,50 @@
 
 ## What you need to know
 
-Labour Care Guide (LCG) can be used **offline** (e.g. when there is no internet or poor connection). To do this, you must **prepare the patient for offline** while online, and **set the first stage time** (Labour Care Setup) before or after going offline. Then you can open Labour Care Entry and record care as usual; data is saved on the device and will sync when you are back online.
+LCG can be used **offline** if the device already has **Active First Stage Start Time** (and optional second stage) stored for that patient.
+
+**Easiest path:** While **online**, on the patient list use **Prepare for Offline** (select patient → **Save**). The app copies the patient **and** their LCG start times from the server when they exist—so if LCG was already started online, you usually **do not** need to open Labour Care Setup again offline.
+
+If there is **no** LCG time on the device for that patient, **Start LCG** offline will show a message explaining what to do (go online once to save the patient for offline after LCG setup, or complete setup online).
 
 ---
 
 ## Steps to use LCG offline
 
-### 1. **While you have internet (before going to the facility or before connection drops)**
+### 1. While you have internet
 
-- Open the app and go to **Select Patient** (list page).
-- Select the patient(s) you will need for labour care.
-- Tap **Save** so they are **saved for offline use**.
-- Optionally: open the patient → **Labour Care** → **Labour Care Setup**. Enter **Active First Stage Start Time** (and Second Stage if applicable) and save. This stores the times on your device so the LCG time grid works offline.
+1. **Prepare for Offline**  
+   - **Select Patient** → turn on **Prepare for Offline** → select the patient(s) → **Save**.  
+   - This saves the patient and, when available, **LCG first/second stage times** from the system.
 
-### 2. **Going offline (when you know you won’t have internet)**
+2. **If LCG has not been started yet for this patient online**  
+   - Open the patient → **Labour Care** → **Labour Care Setup** → enter **Active First Stage Start Time** → save (online).  
+   - Then **Prepare for Offline** again for that patient so the times are stored on the device.
 
-- On the **Home** page, tap the **“Go Offline”** button (top right). The bar at the top will turn **orange** and show “Offline Mode Active”.
-- You can also just turn off Wi‑Fi / data; the app will treat you as offline.
+### 2. Going offline
 
-### 3. **Using LCG when offline**
+- On **Home**, tap **Go Offline** (button later shows **Go Online** while offline).  
+- Or use the app after Wi‑Fi/data is off (with offline mode on).
 
-- From Home, open **Select Patient** and choose a patient you **saved for offline**.
-- Go to **Labour Care**.
-- **Labour Care Setup**  
-  - If you already set first stage time while online, it is already available.  
-  - If not: open **Labour Care Setup**, enter **Active First Stage Start Time**, then save. (You need at least this time for the LCG grid to work.)
-- Open **Labour Care Entry**. The time grid and forms will load from the data saved on your device. Record care as usual; everything is saved locally.
+### 3. Using LCG offline
 
-### 4. **When you are back online**
+- Open the patient from the list → **Start LCG**.  
+- If LCG times are on the device → you go **straight to Labour Care Entry** (time grid).  
+- If not → a clear message appears; you must prepare again **while online** as above.
 
-- On the **Home** page, tap **“Go Online”** (the same button; its text changes when you are offline).
-- Tap **Sync** to upload locally saved data to the cloud. Do this when you have a stable connection.
+### 4. When back online
+
+- Tap **Go Online** → **Sync** to upload local data.
 
 ---
 
-## Summary for midwives
+## Summary
 
-| Do this | Why |
+| Action | Why |
 |--------|-----|
-| **Save the patient for offline** on the list page (Select Patient → Save) | So the patient is available when offline. |
-| **Set Active First Stage Start Time** in Labour Care Setup (before or after going offline) | The LCG time grid needs this time to show the correct intervals. |
-| Use **“Go Offline”** on Home when you know you won’t have internet | Puts the app in offline mode so it doesn’t try to use the network. |
-| Use **“Go Online”** and **Sync** when you have internet again | Sends all offline records to the server. |
+| **Save for offline** on the list (with internet) | Stores patient + LCG times from server when they exist. |
+| **Labour Care Setup online** (if no LCG yet) | Creates first stage time so it can be cached next save. |
+| **Go Offline** on Home | App uses local data instead of relying on the network. |
+| **Go Online** + **Sync** | Sends offline work to the server. |
 
-**Minimum for LCG offline:** Save the patient for offline **and** set **Active First Stage Start Time** in Labour Care Setup. After that, Labour Care Entry works offline with the correct time grid.
+**Minimum for LCG offline:** Patient **saved for offline** while online, with **Active First Stage Start Time** already in the system (so it is copied to the phone). Then **Start LCG** opens the entry page directly offline.

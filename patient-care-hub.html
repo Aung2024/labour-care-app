@@ -1017,6 +1017,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
 
   <script>
     // Language switching
@@ -1855,10 +1856,29 @@
       
       const patientId = selectedPatient.id;
 
-      // OFFLINE: Go directly to setup page (no Firestore to check)
       const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
       if (isOffline || patientId.startsWith('OFFLINE-')) {
-        window.location.href = 'labour-care-setup.html?patient=' + patientId;
+        if (window.OfflineManager && window.OfflineManager.getOfflineLcgForPatient) {
+          const lcg = await window.OfflineManager.getOfflineLcgForPatient(patientId);
+          if (lcg && lcg.startingTime) {
+            window.location.href = 'labour-care-entry.html?patient=' + patientId;
+            return;
+          }
+        }
+        const msgEn =
+          'No Labour Care Guide (LCG) data is stored on this device for this patient.\n\n' +
+          'While online: use Prepare for Offline on the patient list (saves LCG times), or open Labour Care Setup once and save.\n\n' +
+          'Then you can use LCG offline.';
+        const msgMm =
+          'ဤလူနာအတွက် ဤစက်တွင် LCG အချက်အလက် မသိမ်းထားပါ။\n\n' +
+          'အွန်လိုင်းတွင် လူနာစာရင်းမှ Prepare for Offline သို့မဟုတ် Labour Care Setup တစ်ကြိမ် သိမ်းပါ။\n\n' +
+          'ထို့နောက် အော့ဖ်လိုင်းတွင် LCG သုံးနိုင်ပါသည်။';
+        const msg = currentLanguage === 'mm' ? msgMm : msgEn;
+        if (window.AppDialog && AppDialog.alert) {
+          AppDialog.alert(msg, { title: currentLanguage === 'mm' ? 'LCG မရနိုင်ပါ' : 'LCG not available offline' });
+        } else {
+          alert(msg);
+        }
         return;
       }
 

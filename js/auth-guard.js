@@ -137,10 +137,16 @@ function initAuthGuard() {
       // Verify user exists in Firestore (with caching)
       // Don't block page load - verify asynchronously
       verifyUserInFirestore(user.uid).then((isValid) => {
-        if (!isValid) {
+        const offlineNow =
+          (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+          localStorage.getItem('offlineMode') === 'true';
+        const treatAsOffline = offlineNow || typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (!isValid && !treatAsOffline) {
           console.warn('⚠️ User not found in Firestore - redirecting to login');
           firebase.auth().signOut();
           redirectToLogin();
+        } else if (!isValid && treatAsOffline) {
+          console.warn('⚠️ User verification inconclusive while offline — keeping session for offline use');
         } else {
           console.log('✅ User verified in Firestore');
         }
