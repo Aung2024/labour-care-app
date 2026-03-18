@@ -1520,7 +1520,26 @@
       const bar = document.getElementById('secondStageEntryBar');
       if (bar) bar.style.display = 'none';
 
+      // Regenerate timepoints but keep current entered data (state.data) and keep the user on a valid timepoint.
+      const prevActive = state.activeTimepoint;
       generateTimepoints(state.startTime, state.secondStageTime);
+
+      const newTimes = (state.timepoints || []).map(tp => tp.time || tp);
+      if (!prevActive || !newTimes.includes(prevActive)) {
+        // Prefer landing on second stage start if present in the grid, otherwise the first pill.
+        if (state.secondStageTime && newTimes.includes(state.secondStageTime)) {
+          state.activeTimepoint = state.secondStageTime;
+          currentIndex = newTimes.indexOf(state.secondStageTime);
+        } else {
+          state.activeTimepoint = newTimes[0] || null;
+          currentIndex = 0;
+        }
+      } else {
+        state.activeTimepoint = prevActive;
+        currentIndex = Math.max(0, newTimes.indexOf(prevActive));
+      }
+
+      updateUI();
       renderTimePills();
       renderSections();
       await saveData(true);
