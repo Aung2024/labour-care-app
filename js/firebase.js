@@ -26,8 +26,8 @@ const isSafariBrowser = isSafariDesktop || isIOS;
 // CRITICAL for Android native apps and networks with firewall restrictions
 try {
   db.settings({
+    merge: true,
     experimentalForceLongPolling: true,
-    // useFetchStreams can cause issues on some Safari versions, so keep it false
     useFetchStreams: false,
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
   });
