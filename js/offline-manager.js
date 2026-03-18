@@ -295,6 +295,20 @@
         offlineBtn.classList.add('btn-outline-warning');
         offlineBtn.querySelector('i').className = 'fas fa-plug-circle-xmark me-1';
       }
+      // Dynamic label: "Go Online" when offline, "Go Offline" when online
+      const label = document.getElementById('offlineModeBtnLabel') || offlineBtn.querySelector('.lang-text');
+      if (label) {
+        const lang = (typeof localStorage !== 'undefined' && localStorage.getItem('appLanguage')) || document.querySelector('.language-btn.active')?.getAttribute('data-lang') || 'en';
+        if (enabled) {
+          label.setAttribute('data-en', 'Go Online');
+          label.setAttribute('data-mm', 'အွန်လိုင်းသို့');
+          label.textContent = lang === 'mm' ? 'အွန်လိုင်းသို့' : 'Go Online';
+        } else {
+          label.setAttribute('data-en', 'Go Offline');
+          label.setAttribute('data-mm', 'အော့ဖ်လိုင်းသို့');
+          label.textContent = lang === 'mm' ? 'အော့ဖ်လိုင်းသို့' : 'Go Offline';
+        }
+      }
     }
 
     if (syncBtn) {
@@ -484,9 +498,7 @@
       setupConnectionListeners();
       installFirestoreInterceptor();
 
-      if (isOfflineMode()) {
-        updateOfflineUI(true);
-      }
+      updateOfflineUI(isOfflineMode());
 
       updateSyncBadge();
       console.log('[OfflineManager] Initialized');

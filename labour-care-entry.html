@@ -1305,8 +1305,48 @@
           console.error('Offline LCG load error:', offlineErr);
         }
 
-        // Render using whatever state we have (empty or populated from offline)
-        renderAllCards();
+        // Same UI refresh as online Firestore path (renderAllCards never existed)
+        const fsEl = document.getElementById('firstStageTime');
+        if (fsEl) fsEl.textContent = state.startTime || '-';
+        if (state.secondStageTime) {
+          document.getElementById('secondStageTime').textContent = state.secondStageTime;
+          document.getElementById('secondStageInfo').style.display = 'flex';
+          const bar = document.getElementById('secondStageEntryBar');
+          if (bar) bar.style.display = 'none';
+        } else {
+          document.getElementById('secondStageInfo').style.display = 'none';
+          const bar = document.getElementById('secondStageEntryBar');
+          if (bar) bar.style.display = state.startTime ? 'flex' : 'none';
+        }
+
+        if (state.startTime) {
+          if (!state.timepoints || state.timepoints.length === 0) {
+            generateTimepoints(state.startTime, state.secondStageTime || undefined);
+          }
+          if (state.timepoints && state.timepoints.length > 0) {
+            if (!state.activeTimepoint) {
+              state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+              currentIndex = 0;
+            }
+            updateUI();
+            renderTimePills();
+            renderSections();
+          }
+        } else {
+          generateTimepoints('08:00');
+          state.startTime = '08:00';
+          if (fsEl) fsEl.textContent = state.startTime;
+          document.getElementById('secondStageInfo').style.display = 'none';
+          const bar2 = document.getElementById('secondStageEntryBar');
+          if (bar2) bar2.style.display = 'flex';
+          if (state.timepoints && state.timepoints.length > 0) {
+            state.activeTimepoint = state.timepoints[0].time || state.timepoints[0];
+            currentIndex = 0;
+            updateUI();
+            renderTimePills();
+            renderSections();
+          }
+        }
         return;
       }
       
