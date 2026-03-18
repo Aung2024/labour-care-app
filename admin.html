@@ -348,14 +348,24 @@
     // Confirm and delete user account with all patients
     async function confirmDeleteUser(userId, userName, patientCount) {
       // First confirmation
-      const firstConfirm = confirm(
-        `⚠️ WARNING: This will permanently delete:\n\n` +
-        `• User account: ${userName}\n` +
-        `• ${patientCount} patient record${patientCount !== 1 ? 's' : ''} created by this user\n` +
-        `• ALL associated data (ANC visits, lab tests, labour care, etc.)\n\n` +
-        `This action CANNOT be undone!\n\n` +
-        `Are you sure you want to continue?`
-      );
+      const firstConfirm = window.AppDialog && AppDialog.confirm
+        ? await AppDialog.confirm(
+            `⚠️ WARNING: This will permanently delete:\n\n` +
+            `• User account: ${userName}\n` +
+            `• ${patientCount} patient record${patientCount !== 1 ? 's' : ''} created by this user\n` +
+            `• ALL associated data (ANC visits, lab tests, labour care, etc.)\n\n` +
+            `This action CANNOT be undone!\n\n` +
+            `Are you sure you want to continue?`,
+            { title: 'Delete User & Patients' }
+          )
+        : confirm(
+            `⚠️ WARNING: This will permanently delete:\n\n` +
+            `• User account: ${userName}\n` +
+            `• ${patientCount} patient record${patientCount !== 1 ? 's' : ''} created by this user\n` +
+            `• ALL associated data (ANC visits, lab tests, labour care, etc.)\n\n` +
+            `This action CANNOT be undone!\n\n` +
+            `Are you sure you want to continue?`
+          );
       
       if (!firstConfirm) return;
       
@@ -488,57 +498,77 @@
       }
     }
 
-    // Update Email - requires Firebase Cloud Function (run: firebase deploy --only functions)
-    let updateEmailTargetUserId = null;
+    // Update Email modal - requires Firebase Cloud Function to be deployed
+    let updateEmailUserId = null;
 
     function openUpdateEmailModal(userId, currentEmail, userName) {
-      updateEmailTargetUserId = userId;
-      document.getElementById('updateEmailUserName').textContent = userName;
-      document.getElementById('newEmailInput').value = currentEmail || '';
-      document.getElementById('updateEmailError').style.display = 'none';
+      updateEmailUserId = userId;
+      document.getElementById('updateEmailUserName').textContent = userName || 'User';
+      const inputEl = document.getElementById('newEmailInput');
+      if (inputEl) {
+        inputEl.value = currentEmail || '';
+        inputEl.placeholder = 'Enter new email address';
+      }
       document.getElementById('updateEmailError').textContent = '';
+      document.getElementById('updateEmailError').classList.add('d-none');
       const modal = new bootstrap.Modal(document.getElementById('updateEmailModal'));
       modal.show();
     }
 
     async function submitUpdateEmail() {
-      const newEmail = document.getElementById('newEmailInput').value.trim();
-      const errEl = document.getElementById('updateEmailError');
-      const btn = document.getElementById('updateEmailSubmitBtn');
+      const newEmail = (document.getElementById('newEmailInput') || {}).value.trim();
+      const errorEl = document.getElementById('updateEmailError');
+      const submitBtn = document.getElementById('updateEmailSubmitBtn');
 
       if (!newEmail) {
-        errEl.textContent = 'Please enter a valid email address.';
-        errEl.style.display = 'block';
+        errorEl.textContent = 'Please enter an email address.';
+        errorEl.classList.remove('d-none');
         return;
       }
 
-      if (!updateEmailTargetUserId) {
-        errEl.textContent = 'No user selected.';
-        errEl.style.display = 'block';
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newEmail)) {
+        errorEl.textContent = 'Please enter a valid email address.';
+        errorEl.classList.remove('d-none');
         return;
       }
 
-      errEl.style.display = 'none';
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Updating...';
+      if (!updateEmailUserId) {
+        errorEl.textContent = 'Error: No user selected.';
+        errorEl.classList.remove('d-none');
+        return;
+      }
 
       try {
-        const updateUserEmailFn = firebase.functions().httpsCallable('updateUserEmail');
-        await updateUserEmailFn({ userId: updateEmailTargetUserId, newEmail: newEmail });
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+        errorEl.classList.add('d-none');
 
-        document.getElementById('adminMsg').innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i>Email updated successfully. The user must now sign in with the new email.</div>';
-        bootstrap.Modal.getInstance(document.getElementById('updateEmailModal')).hide();
-        loadAllUsers();
-        setTimeout(() => { document.getElementById('adminMsg').innerHTML = ''; }, 3000);
+        const updateUserEmailFn = firebase.functions().httpsCallable('updateUserEmail');
+        const result = await updateUserEmailFn({ userId: updateEmailUserId, newEmail: newEmail });
+
+        if (result.data && result.data.success) {
+          document.getElementById('adminMsg').innerHTML = `
+            <div class="alert alert-success">
+              <i class="fas fa-check-circle me-2"></i>
+              Email updated successfully. The user can now sign in with: ${newEmail}
+            </div>
+          `;
+          bootstrap.Modal.getInstance(document.getElementById('updateEmailModal')).hide();
+          loadAllUsers();
+          setTimeout(() => { document.getElementById('adminMsg').innerHTML = ''; }, 4000);
+        } else {
+          throw new Error(result.data?.error || 'Unknown error');
+        }
       } catch (error) {
-        const msg = (error.message || String(error)).includes('not deployed') || (error.message || '').includes('functions')
-          ? 'Update Email requires deploying Cloud Functions. Run: firebase deploy --only functions'
-          : (error.message || String(error));
-        errEl.textContent = msg;
-        errEl.style.display = 'block';
+        console.error('Error updating email:', error);
+        const msg = error.message || (error.details ? error.details : 'Failed to update email. Make sure the Cloud Function is deployed.');
+        errorEl.textContent = msg;
+        errorEl.classList.remove('d-none');
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save me-1"></i>Update Email';
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save me-2"></i>Update Email';
       }
     }
   </script>

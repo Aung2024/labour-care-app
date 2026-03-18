@@ -347,13 +347,19 @@ function validatePatientRegistration(patientData) {
  * @param {Array<string>} errors - Array of error messages
  * @param {Function} onOverride - Callback when user chooses to override
  */
-function showValidationError(errors, onOverride) {
+async function showValidationError(errors, onOverride) {
   const errorMessage = errors.join('\n');
   
-  const userChoice = confirm(
-    `Validation Errors Found:\n\n${errorMessage}\n\n` +
-    'Do you want to continue anyway? (Click OK to override, Cancel to go back and fix)'
-  );
+  const userChoice = window.AppDialog && AppDialog.confirm
+    ? await AppDialog.confirm(
+        `Validation Errors Found:\n\n${errorMessage}\n\n` +
+        'Do you want to continue anyway? (OK = override, Cancel = go back and fix)',
+        { title: 'Validation Warnings' }
+      )
+    : confirm(
+        `Validation Errors Found:\n\n${errorMessage}\n\n` +
+        'Do you want to continue anyway? (Click OK to override, Cancel to go back and fix)'
+      );
   
   if (userChoice && onOverride) {
     const justification = prompt('Please provide a reason for overriding validation (required):');
