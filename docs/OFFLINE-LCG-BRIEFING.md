@@ -31,7 +31,9 @@ If there is **no** LCG time on the device for that patient, **Start LCG** offlin
 
 - Open the patient from the list → **Start LCG**.  
 - If LCG times are on the device → you go **straight to Labour Care Entry** (time grid).  
-- If not → a clear message appears; you must prepare again **while online** as above.
+- If not → a short message appears, then **Labour Care Setup** opens so you can enter Active First Stage time offline; or prepare again **while online** (see above).
+
+On the patient list, a green line **“Saved for offline”** under the status shows who is downloaded on this device.
 
 ### 4. When back online
 

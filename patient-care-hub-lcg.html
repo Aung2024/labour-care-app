@@ -73,17 +73,29 @@
 
       const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
       if (isOffline || String(pid).startsWith('OFFLINE-')) {
-        const lcg = window.OfflineManager.getOfflineLcgForPatient
+        function hasLcgStart(t) {
+          return t != null && String(t).trim() !== '' && String(t).trim() !== 'undefined';
+        }
+        let lcg = window.OfflineManager.getOfflineLcgForPatient
           ? await window.OfflineManager.getOfflineLcgForPatient(pid)
           : null;
-        if (lcg && lcg.startingTime) {
+        if (!hasLcgStart(lcg && lcg.startingTime)) {
+          try {
+            const sd = JSON.parse(sessionStorage.getItem('selectedPatientData') || '{}');
+            if (hasLcgStart(sd.lcgStartingTime)) {
+              lcg = { startingTime: String(sd.lcgStartingTime).trim(), secondStageTime: sd.lcgSecondStageTime || null };
+            }
+          } catch (e) {}
+        }
+        if (hasLcgStart(lcg && lcg.startingTime)) {
           window.location.href = `labour-care-entry.html?patient=${pid}`;
           return;
         }
         const msg =
-          'No LCG data on this device for this patient. While online, use Prepare for Offline on the list or complete Labour Care Setup once.';
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: 'LCG not available offline' });
+          'Enter Active First Stage on the next screen, or while online use Prepare for Offline to copy server LCG times.';
+        if (window.AppDialog && AppDialog.alert) await AppDialog.alert(msg, { title: 'LCG setup' });
         else alert(msg);
+        window.location.href = `labour-care-setup.html?patient=${pid}`;
         return;
       }
 

@@ -401,6 +401,15 @@
       color: #374151;
     }
 
+    .offline-device-hint {
+      display: block;
+      font-size: 0.68rem;
+      color: #059669;
+      font-weight: 600;
+      margin-top: 4px;
+      line-height: 1.2;
+    }
+
     .patient-highlight-grid,
     .patient-stat-grid {
       display: grid;
@@ -858,6 +867,53 @@
     let userRole = null;
     let allPatients = [];
     let filteredPatients = [];
+    let cachedOfflinePatientIds = new Set();
+
+    async function refreshCachedOfflinePatientIds() {
+      cachedOfflinePatientIds = new Set();
+      if (!window.OfflineManager || !OfflineManager.getCachedPatients) return;
+      try {
+        const arr = await OfflineManager.getCachedPatients();
+        (arr || []).forEach(function (p) {
+          if (p && p.id != null) cachedOfflinePatientIds.add(String(p.id));
+        });
+      } catch (e) {
+        console.warn('refreshCachedOfflinePatientIds', e);
+      }
+    }
+
+    function listInAppModal(title, message) {
+      return new Promise(function (resolve) {
+        var wrap = document.createElement('div');
+        wrap.setAttribute('role', 'dialog');
+        wrap.style.cssText =
+          'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;';
+        var esc = (message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        wrap.innerHTML =
+          '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden;">' +
+          '<div style="padding:14px 18px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:600;font-size:1rem;">' +
+          (title || 'Notice').replace(/</g, '') +
+          '</div>' +
+          '<div style="padding:18px;color:#374151;font-size:0.95rem;line-height:1.5;">' +
+          esc +
+          '</div>' +
+          '<div style="padding:12px 18px 18px;text-align:right;border-top:1px solid #f3f4f6;">' +
+          '<button type="button" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:10px 24px;border-radius:999px;font-weight:600;cursor:pointer;">OK</button>' +
+          '</div></div>';
+        function close() {
+          wrap.remove();
+          resolve();
+        }
+        wrap.querySelector('button').onclick = function (e) {
+          e.preventDefault();
+          close();
+        };
+        wrap.onclick = function (e) {
+          if (e.target === wrap) close();
+        };
+        document.body.appendChild(wrap);
+      });
+    }
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
@@ -1227,6 +1283,7 @@
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
           console.log('✅ Displaying', allPatients.length, 'patients');
+          await refreshCachedOfflinePatientIds();
           displayPatients();
         }
         
@@ -1375,13 +1432,22 @@
       } else if (patient._offlineType === 'cached') {
         offlineBadge = '<span class="badge bg-success" style="font-size:0.65rem;margin-left:6px;">Downloaded</span>';
       }
+      var offlineHint = '';
+      if (patient._offlineType === 'cached') {
+        offlineHint = '<span class="offline-device-hint">On this device</span>';
+      } else if (!patient._offlineType && cachedOfflinePatientIds.has(String(patient.id))) {
+        offlineHint = '<span class="offline-device-hint">Saved for offline</span>';
+      }
 
       card.innerHTML = `
         <div class="patient-header">
           <div>
             <div class="patient-name">${displayName}${offlineBadge}</div>
           </div>
-          <span class="status-badge ${statusClass}">${displayStatus}</span>
+          <div style="text-align:right;">
+            <span class="status-badge ${statusClass}">${displayStatus}</span>
+            ${offlineHint}
+          </div>
         </div>
       <div class="patient-highlight-grid">
         <div class="info-chip">
@@ -1452,6 +1518,13 @@
       // Apply data masking
       const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
 
+      var rowOfflineHint = '';
+      if (patient._offlineType === 'cached') {
+        rowOfflineHint = '<span class="offline-device-hint">On this device</span>';
+      } else if (!patient._offlineType && cachedOfflinePatientIds.has(String(patient.id))) {
+        rowOfflineHint = '<span class="offline-device-hint">Saved for offline</span>';
+      }
+
       row.innerHTML = `
         <td>
           <div class="fw-semibold text-dark mb-1">${displayName}</div>
@@ -1461,6 +1534,7 @@
           <span class="status-pill ${statusClass}">
             <i class="fas fa-circle" style="font-size: 0.5rem;"></i> ${displayStatus}
           </span>
+          ${rowOfflineHint}
         </td>
         <td class="actions-cell">
           <button class="btn btn-secondary btn-sm" data-patient-id="${patient.id}" onclick="event.stopPropagation(); handleEditPatient(this)">
@@ -1505,32 +1579,35 @@
       }
     }
 
-    // Select patient and save to session
+    // Select patient and save to session (merge LCG times from device cache for offline LCG)
     function selectPatient(patient) {
       console.log('Selecting patient:', patient);
-      
-      // Save to session storage
-      sessionStorage.setItem('selectedPatientId', patient.id);
-      sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
-      
-      // Add to recent patients
-      addToRecentPatients(patient);
-      
-      // Redirect: OG doctors to LCG-only hub if email ends with @test.com
-      try {
-        const user = firebase && firebase.auth ? firebase.auth().currentUser : null;
-        const email = user && user.email ? user.email : '';
-        if (email && /@test\.com$/i.test(email)) {
-          sessionStorage.setItem('lcgOnly', '1');
-          window.location.href = 'patient-care-hub-lcg.html';
-          return;
+      (async function () {
+        var p = Object.assign({}, patient);
+        try {
+          if (window.OfflineManager && OfflineManager.getCachedPatient) {
+            var c = await OfflineManager.getCachedPatient(patient.id);
+            if (c && c.lcgStartingTime) p.lcgStartingTime = c.lcgStartingTime;
+            if (c && c.lcgSecondStageTime) p.lcgSecondStageTime = c.lcgSecondStageTime;
+          }
+        } catch (e) {}
+        sessionStorage.setItem('selectedPatientId', p.id);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(p));
+        addToRecentPatients(p);
+        try {
+          var user = firebase && firebase.auth ? firebase.auth().currentUser : null;
+          var email = user && user.email ? user.email : '';
+          if (email && /@test\.com$/i.test(email)) {
+            sessionStorage.setItem('lcgOnly', '1');
+            window.location.href = 'patient-care-hub-lcg.html';
+            return;
+          }
+        } catch (e) {
+          console.warn('Email check failed, defaulting to full hub.', e);
         }
-      } catch (e) {
-        console.warn('Email check failed, defaulting to full hub.', e);
-      }
-      // Default: full hub
-      sessionStorage.removeItem('lcgOnly');
-      window.location.href = 'patient-care-hub.html';
+        sessionStorage.removeItem('lcgOnly');
+        window.location.href = 'patient-care-hub.html';
+      })();
     }
 
     // Edit patient (legacy function for backward compatibility)
@@ -2124,11 +2201,17 @@
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-download me-1"></i> Save for Offline';
         const msg = savedCount + ' patient' + (savedCount !== 1 ? 's' : '') + ' saved for offline use. You can access them from the Home page when offline.';
-        if (window.AppDialog && AppDialog.alert) {
-          AppDialog.alert(msg, { title: 'Saved for Offline' });
-        } else {
-          alert(msg);
+        try {
+          if (window.AppDialog && typeof AppDialog.alert === 'function') {
+            await AppDialog.alert(msg, { title: 'Saved for Offline' });
+          } else {
+            await listInAppModal('Saved for Offline', msg);
+          }
+        } catch (e) {
+          await listInAppModal('Saved for Offline', msg);
         }
+        await refreshCachedOfflinePatientIds();
+        displayPatients();
         cancelOfflineSelectMode();
       } catch (error) {
         console.error('Error saving patients for offline:', error);

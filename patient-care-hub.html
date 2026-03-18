@@ -1858,27 +1858,46 @@
 
       const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
       if (isOffline || patientId.startsWith('OFFLINE-')) {
+        function hasLcgStart(t) {
+          return t != null && String(t).trim() !== '' && String(t).trim() !== 'undefined';
+        }
+        let lcg = null;
         if (window.OfflineManager && window.OfflineManager.getOfflineLcgForPatient) {
-          const lcg = await window.OfflineManager.getOfflineLcgForPatient(patientId);
-          if (lcg && lcg.startingTime) {
-            window.location.href = 'labour-care-entry.html?patient=' + patientId;
-            return;
-          }
+          lcg = await window.OfflineManager.getOfflineLcgForPatient(patientId);
+        }
+        if (!hasLcgStart(lcg && lcg.startingTime)) {
+          try {
+            const raw = sessionStorage.getItem('selectedPatientData');
+            if (raw) {
+              const sd = JSON.parse(raw);
+              if (hasLcgStart(sd.lcgStartingTime)) {
+                lcg = {
+                  startingTime: String(sd.lcgStartingTime).trim(),
+                  secondStageTime: sd.lcgSecondStageTime || null
+                };
+              }
+            }
+          } catch (e) {}
+        }
+        if (hasLcgStart(lcg && lcg.startingTime)) {
+          window.location.href = 'labour-care-entry.html?patient=' + patientId;
+          return;
         }
         const msgEn =
-          'No Labour Care Guide (LCG) data is stored on this device for this patient.\n\n' +
-          'While online: use Prepare for Offline on the patient list (saves LCG times), or open Labour Care Setup once and save.\n\n' +
-          'Then you can use LCG offline.';
+          'No first-stage time on this device for this patient.\n\n' +
+          'Next: Labour Care Setup — enter Active First Stage time and save (works offline).\n\n' +
+          'Tip while online: use Prepare for Offline on the list to copy LCG times from the server.';
         const msgMm =
-          'ဤလူနာအတွက် ဤစက်တွင် LCG အချက်အလက် မသိမ်းထားပါ။\n\n' +
-          'အွန်လိုင်းတွင် လူနာစာရင်းမှ Prepare for Offline သို့မဟုတ် Labour Care Setup တစ်ကြိမ် သိမ်းပါ။\n\n' +
-          'ထို့နောက် အော့ဖ်လိုင်းတွင် LCG သုံးနိုင်ပါသည်။';
+          'ဤလူနာအတွက် ဤစက်တွင် ပထမအဆင့် စတင်ချိန် မရှိသေးပါ။\n\n' +
+          'နောက်တစ်ဆင့် Labour Care Setup တွင် စတင်ချိန် ထည့်ပြီး သိမ်းပါ။\n\n' +
+          'အွန်လိုင်းတွင် Prepare for Offline သုံးပါ။';
         const msg = currentLanguage === 'mm' ? msgMm : msgEn;
         if (window.AppDialog && AppDialog.alert) {
-          AppDialog.alert(msg, { title: currentLanguage === 'mm' ? 'LCG မရနိုင်ပါ' : 'LCG not available offline' });
+          await AppDialog.alert(msg, { title: currentLanguage === 'mm' ? 'LCG စတင်ရန်' : 'Set up LCG offline' });
         } else {
           alert(msg);
         }
+        window.location.href = 'labour-care-setup.html?patient=' + patientId;
         return;
       }
 
