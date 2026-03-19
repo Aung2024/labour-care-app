@@ -245,7 +245,7 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   console.log('Final GA display:', gaDisplay);
   
   container.innerHTML = `
-    <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div class="patient-banner" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
       <div style="flex: 1;">
         <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.25rem;">
           ${data.name || 'Unknown Patient'}
@@ -255,7 +255,7 @@ async function displayPatientBanner(containerId = 'patientBanner') {
         </div>
       </div>
       <div>
-        <button class="btn btn-light btn-sm" onclick="window.location.href='patient-care-hub.html'" style="font-weight: 600;">
+        <button class="btn btn-outline-light btn-sm" onclick="window.location.href='patient-care-hub.html'" style="font-weight: 600;">
           <i class="fas fa-arrow-left me-1"></i> Back to Patient Hub
         </button>
       </div>
