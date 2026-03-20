@@ -654,6 +654,16 @@
       if (typeof populateOverview === 'function' && currentPatient) {
         populateOverview();
       }
+      // Reload ANC, Newborn, PNC report iframes with new language (Labour/LCG stays English only)
+      ['anc', 'newborn', 'postpartum'].forEach(tab => {
+        iframesLoaded[tab] = false;
+        const panel = document.getElementById(`panel-${tab}`);
+        const isActive = panel && panel.classList.contains('active');
+        if (isActive && panel.querySelector('iframe')) {
+          panel.innerHTML = '';
+          loadReportIframe(tab);
+        }
+      });
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -833,11 +843,13 @@
 
     function loadReportIframe(tabName) {
       const panel = document.getElementById(`panel-${tabName}`);
+      const lang = currentLanguage || 'mm';
+      const langParam = tabName === 'labour' ? '' : `&lang=${lang}`;
       const reportUrls = {
-        anc: `antenatal-report.html?patient=${patientId}`,
+        anc: `antenatal-report.html?patient=${patientId}${langParam}`,
         labour: `summary-view.html?patient=${patientId}`,
-        newborn: `newborn-report.html?patient=${patientId}`,
-        postpartum: `postpartum-report.html?patient=${patientId}`
+        newborn: `newborn-report.html?patient=${patientId}${langParam}`,
+        postpartum: `postpartum-report.html?patient=${patientId}${langParam}`
       };
 
       const url = reportUrls[tabName];
@@ -864,12 +876,13 @@
     }
 
     function printAllReports() {
-      // Open each report in new tabs for reliable printing
+      const lang = currentLanguage || 'mm';
+      const langParam = `&lang=${lang}`;
       const reports = [
-        { name: 'ANC', url: `antenatal-report.html?patient=${patientId}` },
+        { name: 'ANC', url: `antenatal-report.html?patient=${patientId}${langParam}` },
         { name: 'Labour', url: `summary-view.html?patient=${patientId}` },
-        { name: 'Newborn', url: `newborn-report.html?patient=${patientId}` },
-        { name: 'Postpartum', url: `postpartum-report.html?patient=${patientId}` }
+        { name: 'Newborn', url: `newborn-report.html?patient=${patientId}${langParam}` },
+        { name: 'Postpartum', url: `postpartum-report.html?patient=${patientId}${langParam}` }
       ];
 
       // Filter to only reports with data
