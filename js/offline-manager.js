@@ -366,7 +366,6 @@
   function disableOnlineOnlyFeatures(offlineActive) {
     const onlineOnlyCards = [
       { selector: '.care-card.dashboard', label: 'Online only' },
-      { selector: '#townshipReportCard', label: 'Online only' },
       { selector: '#adminCard', label: 'Online only' },
       { selector: '.care-card.scoreboard', label: 'Online only' }
     ];

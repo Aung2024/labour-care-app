@@ -3,6 +3,24 @@
  * Validates clinical data for consistency and integrity
  */
 
+/** YYYY-MM-DD as local calendar date (avoids UTC midnight shift from Date.parse). */
+function parseClinicalDateOnly(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
+  const s = String(value).trim().split('T')[0];
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10) - 1;
+    const d = parseInt(m[3], 10);
+    return new Date(y, mo, d, 12, 0, 0, 0);
+  }
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * Validate EDD (Expected Due Date) and LMP (Last Menstrual Period) consistency
  * @param {string|Date} lmp - Last Menstrual Period date
@@ -15,8 +33,8 @@ function validateEDDLMP(lmp, edd) {
   }
   
   try {
-    const lmpDate = lmp ? new Date(lmp) : null;
-    const eddDate = edd ? new Date(edd) : null;
+    const lmpDate = lmp ? parseClinicalDateOnly(lmp) : null;
+    const eddDate = edd ? parseClinicalDateOnly(edd) : null;
     
     // If only one is provided, that's okay (we can calculate the other)
     if (!lmpDate && eddDate) {
@@ -80,9 +98,12 @@ function validateGestationalAge(gestationalAge, lmp, currentDate = new Date()) {
   // If LMP is provided, validate against it
   if (lmp) {
     try {
-      const lmpDate = new Date(lmp);
-      const current = new Date(currentDate);
-      const daysSinceLMP = Math.floor((current - lmpDate) / (1000 * 60 * 60 * 24));
+      const lmpDate = parseClinicalDateOnly(lmp);
+      const current = parseClinicalDateOnly(currentDate) || parseClinicalDateOnly(new Date());
+      if (!lmpDate || !current) {
+        return { isValid: true, error: null };
+      }
+      const daysSinceLMP = Math.floor((current - lmpDate) / 86400000);
       const weeksSinceLMP = daysSinceLMP / 7;
       
       // Allow 2 weeks tolerance

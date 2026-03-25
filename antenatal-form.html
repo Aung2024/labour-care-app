@@ -1629,9 +1629,9 @@
           setValue('manualEdd', firstVisit.manualEdd);
         }
         
-        // Load Gestational Age Display (calculated)
-        if (firstVisit.gestationalAge) {
-          // Convert decimal GA to weeks and days format
+        // GA from an old visit must not overwrite LMP-based GA when LMP is known (new visit = new "today")
+        const skipStoredGA = firstVisit.lmpStatus !== 'unknown' && firstVisit.lmp;
+        if (!skipStoredGA && firstVisit.gestationalAge) {
           const gaValue = parseFloat(firstVisit.gestationalAge);
           if (!isNaN(gaValue)) {
             const weeks = Math.floor(gaValue);
@@ -1742,9 +1742,8 @@
           setValue('manualEdd', previousVisit.manualEdd);
         }
         
-        // Load Gestational Age Display (calculated)
-        if (previousVisit.gestationalAge) {
-          // Convert decimal GA to weeks and days format
+        const skipStoredGAPrev = previousVisit.lmpStatus !== 'unknown' && previousVisit.lmp;
+        if (!skipStoredGAPrev && previousVisit.gestationalAge) {
           const gaValue = parseFloat(previousVisit.gestationalAge);
           if (!isNaN(gaValue)) {
             const weeks = Math.floor(gaValue);
@@ -2004,22 +2003,17 @@
     }
 
     function calculateGestationalAge() {
-      if (currentPatient?.lmp) {
-        const lmpDate = new Date(currentPatient.lmp);
-        const today = new Date();
-        const diffTime = today - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        const displayGA = document.getElementById('gestationalAgeDisplay');
-        if (displayGA) {
-          // Display as "X weeks and Y days" format
-          const currentLang = localStorage.getItem('appLanguage') || 'mm';
-          if (currentLang === 'en') {
-            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
-          } else {
-            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
-          }
-        }
+      if (!currentPatient?.lmp) return;
+      let lmpStr = currentPatient.lmp;
+      if (typeof lmpStr === 'string') lmpStr = lmpStr.split('T')[0];
+      else if (lmpStr && typeof lmpStr.toDate === 'function') {
+        lmpStr = lmpStr.toDate().toISOString().split('T')[0];
+      }
+      const lmpInput = document.getElementById('lmp');
+      if (lmpInput && lmpInput.value) {
+        calculateGestationalAgeFromLMP(lmpInput.value);
+      } else if (lmpStr) {
+        calculateGestationalAgeFromLMP(lmpStr);
       }
     }
 
@@ -2048,36 +2042,63 @@
       }
     }
 
+    /** Parse YYYY-MM-DD as local calendar date (avoids UTC shift from new Date('YYYY-MM-DD')). */
+    function parseDateOnlyLocal(iso) {
+      if (!iso || typeof iso !== 'string') return null;
+      const part = iso.trim().split('T')[0];
+      const m = part.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return new Date(iso);
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10) - 1;
+      const d = parseInt(m[3], 10);
+      return new Date(y, mo, d, 12, 0, 0, 0);
+    }
+
+    function formatDateYMD(d) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${day}`;
+    }
+
+    /** Completed weeks + days from LMP to reference date (visit date or today). */
     function calculateGestationalAgeAndEDD() {
       const lmpInput = document.getElementById('lmp');
       const eddInput = document.getElementById('edd');
       
       if (lmpInput?.value && eddInput) {
-        const lmpDate = new Date(lmpInput.value);
-        
-        // Calculate EDD (LMP + 280 days)
-        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
-        eddInput.value = eddDate.toISOString().split('T')[0];
-        
-        // Update gestational age display
+        const lmpDate = parseDateOnlyLocal(lmpInput.value);
+        if (!lmpDate || isNaN(lmpDate.getTime())) return;
+
+        // EDD: LMP + 280 days (Naegel)
+        const eddDate = new Date(lmpDate.getTime() + 280 * 86400000);
+        eddInput.value = formatDateYMD(eddDate);
+
         calculateGestationalAgeFromLMP(lmpInput.value);
       }
     }
 
     function calculateGestationalAgeFromLMP(lmpValue) {
       if (lmpValue) {
-        const lmpDate = new Date(lmpValue);
-        // Use visit date if available, otherwise use current date
+        const lmpDate = parseDateOnlyLocal(lmpValue);
+        if (!lmpDate || isNaN(lmpDate.getTime())) return;
+
         const visitDateInput = document.getElementById('visitDate');
-        const referenceDate = visitDateInput && visitDateInput.value 
-          ? new Date(visitDateInput.value) 
-          : new Date();
-        const diffTime = referenceDate - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        let referenceDate;
+        if (visitDateInput && visitDateInput.value) {
+          referenceDate = parseDateOnlyLocal(visitDateInput.value);
+        } else {
+          const n = new Date();
+          referenceDate = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 12, 0, 0, 0);
+        }
+        if (!referenceDate || isNaN(referenceDate.getTime())) return;
+
+        const totalDays = Math.floor((referenceDate - lmpDate) / 86400000);
+        const diffWeeks = Math.floor(totalDays / 7);
+        const diffDays = totalDays % 7;
+
         const displayGA = document.getElementById('gestationalAgeDisplay');
         if (displayGA) {
-          // Display as "X weeks and Y days" format
           const currentLang = localStorage.getItem('appLanguage') || 'mm';
           if (currentLang === 'en') {
             displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
@@ -2086,6 +2107,16 @@
           }
         }
       }
+    }
+
+    /** Decimal weeks for validation (same basis as display). */
+    function gestationalAgeDecimalFromLMPAndVisit(lmpStr, visitStr) {
+      const l = parseDateOnlyLocal(lmpStr);
+      const v = parseDateOnlyLocal(visitStr);
+      if (!l || !v || isNaN(l.getTime()) || isNaN(v.getTime())) return null;
+      const totalDays = Math.floor((v - l) / 86400000);
+      if (totalDays < 0) return null;
+      return totalDays / 7;
     }
 
     function calculateEDDFromGA() {
@@ -2386,17 +2417,18 @@
           const displayGA = getValue('gestationalAgeDisplay');
           const visitDate = getValue('visitDate');
           
-          // Parse gestational age from display format if needed
+          // Prefer computed GA from LMP + visit date when LMP known (avoids stale display / parse issues)
           let gestationalAge = null;
           if (manualGA !== null) {
             gestationalAge = manualGA;
+          } else if (lmp && visitDate && document.getElementById('lmpKnown')?.checked) {
+            gestationalAge = gestationalAgeDecimalFromLMPAndVisit(lmp, visitDate);
           } else if (displayGA) {
-            // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
             const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
             const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
             if (weeksMatch && daysMatch) {
-              const weeks = parseInt(weeksMatch[1]);
-              const days = parseInt(daysMatch[1]);
+              const weeks = parseInt(weeksMatch[1], 10);
+              const days = parseInt(daysMatch[1], 10);
               gestationalAge = weeks + (days / 7);
             }
           }

@@ -65,22 +65,11 @@
   }
 
   function setOfflineMode(enabled) {
-    const wasOffline = isOfflineMode();
     localStorage.setItem(OFFLINE_MODE_KEY, enabled ? 'true' : 'false');
     updateOfflineUI(enabled);
 
     if (enabled) {
       cacheUserProfile();
-    } else if (wasOffline) {
-      // Firestore/auth listeners often stay in “offline” behaviour until a full reload
-      setTimeout(function () {
-        try {
-          const page = (window.location.pathname || '').split('/').pop() || '';
-          if (page !== 'login.html' && page !== '') window.location.reload();
-        } catch (e) {
-          window.location.reload();
-        }
-      }, 150);
     }
   }
 
@@ -377,7 +366,6 @@
   function disableOnlineOnlyFeatures(offlineActive) {
     const onlineOnlyCards = [
       { selector: '.care-card.dashboard', label: 'Online only' },
-      { selector: '#townshipReportCard', label: 'Online only' },
       { selector: '#adminCard', label: 'Online only' },
       { selector: '.care-card.scoreboard', label: 'Online only' }
     ];
