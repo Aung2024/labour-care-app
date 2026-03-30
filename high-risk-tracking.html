@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#dc2626">
+  <title>High Risk Tracking - MNCH</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/high-risk-utils.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/data-masking.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <style>
+    body {
+      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      margin: 0;
+    }
+    .page-header {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: #fff;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    .main-wrap { max-width: 1200px; margin: 0 auto; padding: 1.25rem; }
+    .card-panel {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.08);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .table-wrap { overflow-x: auto; }
+    .badge-overdue { background: #dc2626; }
+    .badge-warn { background: #ea580c; }
+    .badge-ok { background: #059669; }
+    .lang-btn { border: 1px solid rgba(255,255,255,.5); background: transparent; color: #fff; border-radius: 8px; padding: 4px 10px; font-size: 0.8rem; }
+    .lang-btn.active { background: rgba(255,255,255,.25); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div>
+        <button type="button" class="btn btn-light btn-sm me-2" onclick="location.href='home.html'">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <span class="fw-bold hrt-title">High Risk Tracking</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="lang-btn" data-lang="en" onclick="setLang('en')">ENG</button>
+        <button type="button" class="lang-btn active" data-lang="mm" onclick="setLang('mm')">MM</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <div id="offlineBanner" class="alert alert-warning d-none" role="alert"></div>
+    <div class="card-panel">
+      <p class="small text-muted mb-0 hrt-info"></p>
+    </div>
+    <div id="loadingState" class="card-panel text-center py-5">
+      <div class="spinner-border text-danger" role="status"></div>
+      <p class="mt-2 mb-0 hrt-loading">Loading…</p>
+    </div>
+    <div id="emptyState" class="card-panel text-center py-5 d-none">
+      <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+      <p class="mb-0 hrt-empty"></p>
+    </div>
+    <div id="tableState" class="card-panel d-none">
+      <div class="table-wrap">
+        <table class="table table-sm table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th class="col-name"></th>
+              <th class="col-edd"></th>
+              <th class="col-last"></th>
+              <th class="col-days"></th>
+              <th class="col-factors"></th>
+              <th class="col-cues"></th>
+              <th class="col-action"></th>
+            </tr>
+          </thead>
+          <tbody id="hrtBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var FOLLOWUP_ALERT_DAYS = 14;
+    var FOLLOWUP_WARN_DAYS = 28;
+    var CONCURRENCY = 8;
+
+    var T = {
+      en: {
+        title: 'High Risk Tracking',
+        info: 'Listed patients have at least one ANC visit with “high risk” (Risk+) recorded. Profile-only flags are not used. Shows antenatal patients (not in labour/postnatal).',
+        loading: 'Loading patients and ANC visits…',
+        empty: 'No high-risk antenatal patients in your access scope, or none with ANC data yet.',
+        offline: 'High Risk Tracking needs an internet connection to load antenatal visits from the server.',
+        colName: 'Patient',
+        colEdd: 'EDD / GA',
+        colLast: 'Last ANC',
+        colDays: 'Days since ANC',
+        colFactors: 'Risk factors',
+        colCues: 'Cues',
+        colAction: 'Open',
+        openHub: 'Care hub',
+        noVisits: 'No visits',
+        days: 'days',
+        referral: 'Referral',
+        danger: 'Danger signs',
+        anemia: 'Anemia (exam)',
+        bp: 'BP high',
+        protein: 'Urine protein+',
+        sugar: 'Urine sugar+'
+      },
+      mm: {
+        title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
+        info: 'ဤစာရင်းတွင် ANC မှတ်တမ်းတစ်ခုခုတွင် “အန္တရာယ်မြင့်” ဟု မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ ပရိုဖိုင်တွင်သာ မှတ်ထားခြင်းကို မသုံးပါ။ ကိုယ်ဝန်ဆောင်ချိန် (မီးဖွားမီး / မီးပွားနောက် မဟုတ်) လူနာများသာ ပါဝင်သည်။',
+        loading: 'လူနာနှင့် ANC မှတ်တမ်းများ ဖတ်နေသည်…',
+        empty: 'သင့်အမြင်အောက်တွင် အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိ သို့မဟုတ် ANC မှတ်တမ်း မရှိသေးပါ။',
+        offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက်ချိတ်ဆက်မှု လိုအပ်သည်။',
+        colName: 'လူနာ',
+        colEdd: 'မီးဖွားရက် / ကိုယ်ဝန်အပတ်',
+        colLast: 'နောက်ဆုံး ANC',
+        colDays: 'ANC မလာတာ ရက်',
+        colFactors: 'အန္တရာယ်အချက်များ',
+        colCues: 'သတိပေးချက်များ',
+        colAction: 'ဖွင့်ရန်',
+        openHub: 'စောင့်ရှောက်ရေး',
+        noVisits: 'မှတ်တမ်း မရှိ',
+        days: 'ရက်',
+        referral: 'လွှဲပြောင်း',
+        danger: 'အန္တရာယ်အချက်များ',
+        anemia: 'သွေးအားနည်း (စစ်ဆေး)',
+        bp: 'သွေးပေါင်မြင့်',
+        protein: 'စစ်သွေးအာဟာရ ပရိုတင်း+',
+        sugar: 'စစ်သွေးအာဟာရ သကြား+'
+      }
+    };
+
+    var lang = localStorage.getItem('appLanguage') || 'mm';
+
+    function tr(key) {
+      var pack = T[lang] || T.mm;
+      return pack[key] != null ? pack[key] : (T.en[key] || key);
+    }
+
+    function applyStaticI18n() {
+      document.querySelector('.hrt-title').textContent = tr('title');
+      document.querySelector('.hrt-info').textContent = tr('info');
+      document.querySelector('.hrt-loading').textContent = tr('loading');
+      document.querySelector('.hrt-empty').textContent = tr('empty');
+      document.querySelectorAll('.lang-btn').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+      });
+      document.querySelector('.col-name').textContent = tr('colName');
+      document.querySelector('.col-edd').textContent = tr('colEdd');
+      document.querySelector('.col-last').textContent = tr('colLast');
+      document.querySelector('.col-days').textContent = tr('colDays');
+      document.querySelector('.col-factors').textContent = tr('colFactors');
+      document.querySelector('.col-cues').textContent = tr('colCues');
+      document.querySelector('.col-action').textContent = tr('colAction');
+    }
+
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('appLanguage', l);
+      applyStaticI18n();
+      if (window._hrtRows) renderTable(window._hrtRows);
+    }
+
+    function isRegionalOfficerRole(role) {
+      if (!role || typeof role !== 'string') return false;
+      return role === 'Regional Officer' || role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer';
+    }
+
+    function isAntenatalPatient(p) {
+      var s = (p.status || 'registered').toLowerCase();
+      if (s.indexOf('labour') !== -1) return false;
+      if (s.indexOf('postnatal') !== -1 || s.indexOf('postpartum') !== -1) return false;
+      return true;
+    }
+
+    function formatDateVal(v) {
+      if (v == null) return '—';
+      var d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+    }
+
+    function parseBloodPressure(str) {
+      if (!str || typeof str !== 'string') return null;
+      var m = str.trim().match(/^(\d+)\s*\/\s*(\d+)/);
+      if (!m) return null;
+      return { sys: parseInt(m[1], 10), dia: parseInt(m[2], 10) };
+    }
+
+    function clinicalCueTags(latest) {
+      if (!latest) return [];
+      var tags = [];
+      var ref = latest.referral;
+      if (ref === 'Yes' || ref === 'yes') tags.push({ cls: 'bg-info text-dark', t: tr('referral') });
+      if (latest.dangerSignsPresent === 'yes' || latest.dangerSignsPresent === 'Yes') tags.push({ cls: 'bg-danger', t: tr('danger') });
+      if (latest.anemiaStatus === 'Yes' || latest.anemiaStatus === 'yes') tags.push({ cls: 'bg-warning text-dark', t: tr('anemia') });
+      var bp = parseBloodPressure(latest.bloodPressure);
+      if (bp && (bp.sys >= 140 || bp.dia >= 90)) tags.push({ cls: 'bg-danger', t: tr('bp') });
+      var up = (latest.urineProtein || '').toLowerCase();
+      if (up.indexOf('++') !== -1 || up === 'positive' || up === 'trace++') tags.push({ cls: 'bg-warning text-dark', t: tr('protein') });
+      var us = (latest.urineSugar || '').toLowerCase();
+      if (us.indexOf('++') !== -1 || us === 'positive') tags.push({ cls: 'bg-warning text-dark', t: tr('sugar') });
+      var hb = latest.hemoglobin != null ? parseFloat(latest.hemoglobin) : NaN;
+      if (!isNaN(hb) && hb < 11) tags.push({ cls: 'bg-warning text-dark', t: 'Hb<11' });
+      return tags;
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function fetchPatientsForRole(db, currentUser, userRole) {
+      var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      var query = db.collection('patients');
+      var allPatients = [];
+
+      if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
+        var patientMap = new Map();
+        var newSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('created_by', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var oldSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('createdBy', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var sharedSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        [newSnap, oldSnap, sharedSnap].forEach(function (snap) {
+          if (snap && typeof snap.forEach === 'function' && !snap.empty) {
+            snap.forEach(function (doc) {
+              if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+              }
+            });
+          }
+        });
+        allPatients = Array.from(patientMap.values());
+      } else if (userRole === 'Regional Officer' || isRegionalOfficerRole(userRole)) {
+        var uDoc = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc && uDoc.exists) {
+          var reg = uDoc.data().region;
+          if (reg) {
+            var rs = await smartFirestoreQuery(
+              Promise.resolve(query.where('region', '==', reg)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (rs && typeof rs.forEach === 'function' && !rs.empty) {
+              rs.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'TMO') {
+        var uDoc2 = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc2 && uDoc2.exists) {
+          var tw = uDoc2.data().township;
+          if (tw) {
+            var ts = await smartFirestoreQuery(
+              Promise.resolve(query.where('township', '==', tw)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (ts && typeof ts.forEach === 'function' && !ts.empty) {
+              ts.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'Super Admin' || userRole === 'admin') {
+        var snapshot = await smartFirestoreQuery(
+          Promise.resolve(query),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+          snapshot.forEach(function (doc) {
+            if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+          });
+        }
+      }
+
+      return allPatients;
+    }
+
+    async function fetchVisitsForPatient(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
+      var snap;
+      try {
+        snap = await ref.orderBy('visitDate', 'asc').get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'asc').get();
+        } catch (e2) {
+          snap = await ref.get();
+        }
+      }
+      var visits = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          visits.push({ id: d.id, data: d.data() || {} });
+        });
+      }
+      return visits;
+    }
+
+    async function mapWithConcurrency(items, limit, fn) {
+      var out = [];
+      for (var i = 0; i < items.length; i += limit) {
+        var batch = items.slice(i, i + limit);
+        var part = await Promise.all(batch.map(fn));
+        out.push.apply(out, part);
+      }
+      return out;
+    }
+
+    function renderTable(rows) {
+      var tbody = document.getElementById('hrtBody');
+      tbody.innerHTML = '';
+      rows.forEach(function (r) {
+        var days = r.daysSince;
+        var badgeClass = 'badge-ok';
+        if (days == null) badgeClass = 'badge-warn';
+        else if (days > FOLLOWUP_WARN_DAYS) badgeClass = 'badge-overdue';
+        else if (days > FOLLOWUP_ALERT_DAYS) badgeClass = 'badge-warn';
+
+        var daysCell;
+        if (days == null) {
+          daysCell = '<span class="text-muted">' + escapeHtml(tr('noVisits')) + '</span>';
+        } else {
+          daysCell = '<span class="badge ' + badgeClass + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
+        }
+
+        var factors = r.factorsUnique.length ? r.factorsUnique.map(function (f) {
+          return '<span class="badge bg-secondary me-1 mb-1">' + escapeHtml(f) + '</span>';
+        }).join(' ') : '—';
+
+        var cues = clinicalCueTags(r.latestData);
+        var cuesHtml = cues.length
+          ? cues.map(function (c) {
+              return '<span class="badge ' + c.cls + ' me-1 mb-1">' + escapeHtml(c.t) + '</span>';
+            }).join(' ')
+          : '—';
+
+        var rawName = r.patient.name || r.patient.patientName || '—';
+        var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
+        var trEl = document.createElement('tr');
+        trEl.innerHTML =
+          '<td><strong>' + name + '</strong></td>' +
+          '<td>' + escapeHtml(r.eddGa) + '</td>' +
+          '<td>' + escapeHtml(r.lastAncStr) + '</td>' +
+          '<td>' + daysCell + '</td>' +
+          '<td>' + factors + '</td>' +
+          '<td>' + cuesHtml + '</td>' +
+          '<td><a class="btn btn-sm btn-danger" href="patient-care-hub.html?patient=' +
+          encodeURIComponent(r.patient.id) +
+          '">' +
+          escapeHtml(tr('openHub')) +
+          '</a></td>';
+        tbody.appendChild(trEl);
+      });
+    }
+
+    function eddGaDisplay(p) {
+      var edd = p.edd ? formatDateVal(p.edd) : '—';
+      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
+      return edd + ' / ' + ga;
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      if (!user) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      applyStaticI18n();
+
+      var offline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      if (offline) {
+        document.getElementById('offlineBanner').textContent = tr('offline');
+        document.getElementById('offlineBanner').classList.remove('d-none');
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+        return;
+      }
+
+      var db = firebase.firestore();
+      var userRole = 'Midwife';
+      try {
+        var userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
+        if (!userData) {
+          var uq = await smartFirestoreQuery(
+            Promise.resolve(db.collection('users').doc(user.uid)),
+            { preferCache: /iPhone|iPad|iPod/.test(navigator.userAgent), timeout: 8000, retries: 2, fallbackToCache: true }
+          );
+          userData = uq && uq.exists ? uq.data() : null;
+        }
+        if (userData && userData.role) userRole = userData.role;
+      } catch (e) {
+        console.warn('HRT role load', e);
+      }
+
+      try {
+        var patients = await fetchPatientsForRole(db, user, userRole);
+        var antenatalOnly = patients.filter(isAntenatalPatient);
+
+        var enriched = await mapWithConcurrency(antenatalOnly, CONCURRENCY, async function (p) {
+          var visits = await fetchVisitsForPatient(db, p.id);
+          var bundle = { antenatalVisits: visits };
+          if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
+
+          var factors = window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
+          var seen = new Set();
+          var factorsUnique = [];
+          factors.forEach(function (f) {
+            if (f && !seen.has(f)) {
+              seen.add(f);
+              factorsUnique.push(f);
+            }
+          });
+
+          var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
+          var latestData = window.HighRiskUtils.getLatestAncVisitData(bundle);
+          var lastAncStr = lastMs ? formatDateVal(new Date(lastMs)) : tr('noVisits');
+          var daysSince = null;
+          if (lastMs != null) {
+            daysSince = Math.floor((Date.now() - lastMs) / 86400000);
+          }
+
+          return {
+            patient: p,
+            factorsUnique: factorsUnique,
+            lastAncStr: lastAncStr,
+            daysSince: daysSince,
+            latestData: latestData,
+            eddGa: eddGaDisplay(p)
+          };
+        });
+
+        var rows = enriched.filter(Boolean);
+        rows.sort(function (a, b) {
+          var da = a.daysSince;
+          var db_ = b.daysSince;
+          if (da == null && db_ == null) return 0;
+          if (da == null) return 1;
+          if (db_ == null) return -1;
+          return db_ - da;
+        });
+
+        window._hrtRows = rows;
+
+        document.getElementById('loadingState').classList.add('d-none');
+        if (rows.length === 0) {
+          document.getElementById('emptyState').classList.remove('d-none');
+        } else {
+          document.getElementById('tableState').classList.remove('d-none');
+          renderTable(rows);
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+        document.querySelector('.hrt-empty').textContent = (err && err.message) || String(err);
+      }
+    });
+  </script>
+</body>
+</html>

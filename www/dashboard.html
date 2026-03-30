@@ -1192,6 +1192,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/high-risk-utils.js"></script>
   <script src="js/auth-guard.js"></script>
  
   
@@ -1320,28 +1321,30 @@
       }
     }
 
-    /**
-     * High Risk must be taken from ANC data: patient has Risk+ ticked in any ANC visit.
-     * Does NOT use profile.high_risk or text input - ANC visit high_risk field only.
-     */
+    /** @see js/high-risk-utils.js — ANC visit high_risk only */
     function isPatientHighRisk(patient) {
-      const visits = patient.antenatalVisits || [];
-      return visits.some(({ data = {} }) => {
-        const hr = data.high_risk || data.highRisk;
+      if (window.HighRiskUtils && window.HighRiskUtils.isPatientHighRisk) {
+        return window.HighRiskUtils.isPatientHighRisk(patient);
+      }
+      var visits = (patient && patient.antenatalVisits) || [];
+      return visits.some(function (v) {
+        var d = v && v.data !== undefined ? v.data : v;
+        var hr = d.high_risk || d.highRisk;
         return hr === 'yes' || hr === 'Yes';
       });
     }
 
-    /**
-     * Get risk factors from ANC visits where Risk+ is ticked (for chart breakdown).
-     */
     function getPatientRiskFactorsFromANC(patient) {
-      const visits = patient.antenatalVisits || [];
-      const factors = [];
-      visits.forEach(({ data = {} }) => {
-        const hr = data.high_risk || data.highRisk;
-        if ((hr === 'yes' || hr === 'Yes') && data.risk_factors && Array.isArray(data.risk_factors)) {
-          factors.push(...data.risk_factors);
+      if (window.HighRiskUtils && window.HighRiskUtils.getPatientRiskFactorsFromANC) {
+        return window.HighRiskUtils.getPatientRiskFactorsFromANC(patient);
+      }
+      var visits = (patient && patient.antenatalVisits) || [];
+      var factors = [];
+      visits.forEach(function (v) {
+        var d = v && v.data !== undefined ? v.data : v;
+        var hr = d.high_risk || d.highRisk;
+        if ((hr === 'yes' || hr === 'Yes') && d.risk_factors && Array.isArray(d.risk_factors)) {
+          factors.push.apply(factors, d.risk_factors);
         }
       });
       return factors;

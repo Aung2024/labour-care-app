@@ -1,9 +1,10 @@
 
-const CACHE_NAME = 'mch-care-v8';
+const CACHE_NAME = 'mch-care-v9';
 const FILES_TO_CACHE = [
   './',
   './index.html',
   './home.html',
+  './high-risk-tracking.html',
   './list.html',
   './login.html',
   './registration.html',
@@ -42,6 +43,7 @@ const FILES_TO_CACHE = [
   './settings.html',
   './manifest.json',
   './js/firebase.js',
+  './js/high-risk-utils.js',
   './js/patient-session.js',
   './js/status-manager.js',
   './js/auth-guard.js',
