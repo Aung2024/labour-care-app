@@ -20,32 +20,283 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <style>
+    :root {
+      --hrt-surface: #ffffff;
+      --hrt-border: #e2e8f0;
+      --hrt-header-bg: #f1f5f9;
+      --hrt-header-text: #334155;
+      --hrt-row-hover: #f8fafc;
+      --hrt-row-stripe: #fafbfc;
+      --hrt-text: #0f172a;
+      --hrt-muted: #64748b;
+      --hrt-accent: #b91c1c;
+      --hrt-accent-soft: #fef2f2;
+      --hrt-phone: #2563eb;
+      --hrt-radius: 12px;
+      --hrt-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 20px rgba(15, 23, 42, 0.06);
+    }
+
     body {
       font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(145deg, #5b67c9 0%, #6b4d8c 45%, #4c1d95 100%);
       min-height: 100vh;
       margin: 0;
+      color: var(--hrt-text);
+      -webkit-font-smoothing: antialiased;
     }
+
     .page-header {
-      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      background: linear-gradient(135deg, #b91c1c 0%, #991b1b 50%, #7f1d1d 100%);
       color: #fff;
-      padding: 1.25rem 1.5rem;
-      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      padding: 1rem 1.35rem;
+      box-shadow: 0 4px 24px rgba(127, 29, 29, 0.35);
     }
-    .main-wrap { max-width: 1200px; margin: 0 auto; padding: 1.25rem; }
+
+    .main-wrap {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2rem;
+    }
+
     .card-panel {
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: 0 4px 14px rgba(0,0,0,.08);
-      padding: 1.25rem;
+      background: var(--hrt-surface);
+      border-radius: var(--hrt-radius);
+      box-shadow: var(--hrt-shadow);
+      border: 1px solid rgba(255,255,255,0.65);
+      padding: 1.25rem 1.35rem;
       margin-bottom: 1rem;
     }
-    .table-wrap { overflow-x: auto; }
-    .badge-overdue { background: #dc2626; }
-    .badge-warn { background: #ea580c; }
-    .badge-ok { background: #059669; }
-    .lang-btn { border: 1px solid rgba(255,255,255,.5); background: transparent; color: #fff; border-radius: 8px; padding: 4px 10px; font-size: 0.8rem; }
-    .lang-btn.active { background: rgba(255,255,255,.25); font-weight: 600; }
+
+    #tableState.card-panel {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .hrt-info-banner {
+      padding: 1rem 1.35rem;
+      border-bottom: 1px solid var(--hrt-border);
+      background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+    }
+
+    .hrt-info-banner .hrt-info {
+      color: var(--hrt-muted);
+      font-size: 0.875rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .table-wrap::-webkit-scrollbar { height: 8px; }
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    .hrt-table {
+      font-size: 0.8125rem;
+      line-height: 1.45;
+      color: var(--hrt-text);
+      margin: 0;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 1100px;
+    }
+
+    .hrt-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--hrt-header-bg);
+      color: var(--hrt-header-text);
+      font-weight: 600;
+      font-size: 0.6875rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.85rem 0.75rem;
+      border-bottom: 2px solid var(--hrt-border);
+      white-space: nowrap;
+      vertical-align: middle;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
+    }
+
+    .hrt-table tbody td {
+      padding: 0.75rem 0.75rem;
+      border-bottom: 1px solid var(--hrt-border);
+      vertical-align: top;
+    }
+
+    .hrt-table tbody tr:nth-child(even) td {
+      background: var(--hrt-row-stripe);
+    }
+
+    .hrt-table tbody tr:hover td {
+      background: var(--hrt-row-hover);
+    }
+
+    .hrt-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .hrt-col-name { min-width: 8.5rem; max-width: 11rem; color: #1e293b; }
+    .hrt-patient-name { font-weight: 600; letter-spacing: -0.01em; }
+    .hrt-col-phone { min-width: 6.5rem; white-space: nowrap; }
+    .hrt-col-phone a {
+      color: var(--hrt-phone);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid transparent;
+    }
+    .hrt-col-phone a:hover { border-bottom-color: var(--hrt-phone); }
+
+    .hrt-col-edd { min-width: 8.5rem; max-width: 10rem; }
+    .hrt-col-date { min-width: 5.5rem; white-space: nowrap; }
+    .hrt-col-days { min-width: 5rem; text-align: center; }
+    .hrt-col-risks { min-width: 9rem; max-width: 14rem; }
+    .hrt-col-cues { min-width: 6.5rem; max-width: 10rem; }
+    .hrt-col-action {
+      min-width: 7.5rem;
+      width: 7.5rem;
+      text-align: center;
+      vertical-align: middle !important;
+    }
+    .hrt-table thead th.hrt-col-action { text-align: center; }
+
+    .hrt-edd-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      align-items: flex-start;
+    }
+    .hrt-edd-date { font-weight: 600; color: #1e293b; }
+    .hrt-edd-ga { font-size: 0.75rem; color: var(--hrt-muted); }
+    .hrt-edd-flag {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: #fff7ed;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+      line-height: 1.3;
+      max-width: 100%;
+    }
+
+    .hrt-empty {
+      color: #cbd5e1;
+      font-weight: 300;
+      font-size: 1.1rem;
+    }
+
+    .hrt-pill-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .hrt-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      line-height: 1.35;
+      padding: 0.28rem 0.5rem;
+      border-radius: 6px;
+      max-width: 100%;
+      word-break: break-word;
+      border: 1px solid transparent;
+    }
+    .hrt-pill--anc {
+      background: #f1f5f9;
+      color: #334155;
+      border-color: #e2e8f0;
+    }
+    .hrt-pill--lcg {
+      background: #eff6ff;
+      color: #1e40af;
+      border-color: #bfdbfe;
+    }
+    .hrt-pill--pnc {
+      background: #f5f3ff;
+      color: #5b21b6;
+      border-color: #ddd6fe;
+    }
+    .hrt-pill--other {
+      background: #fffbeb;
+      color: #92400e;
+      border-color: #fde68a;
+    }
+
+    .hrt-day-pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.35rem 0.55rem;
+      border-radius: 999px;
+      min-width: 3.25rem;
+      text-align: center;
+    }
+    .hrt-day-pill--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .hrt-day-pill--warn { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+    .hrt-day-pill--overdue { background: var(--hrt-accent-soft); color: #991b1b; border: 1px solid #fecaca; }
+
+    .hrt-cue-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.28rem 0.45rem;
+      border-radius: 6px;
+      margin: 0 0.25rem 0.25rem 0;
+    }
+    .hrt-cue-pill.danger { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .hrt-cue-pill.warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .hrt-cue-pill.info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    .hrt-btn-hub {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      color: #fff !important;
+      text-decoration: none !important;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      border: none;
+      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .hrt-btn-hub:hover {
+      color: #fff !important;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(185, 28, 28, 0.45);
+    }
+    .hrt-btn-hub i { font-size: 0.85rem; opacity: 0.95; }
+
+    .lang-btn {
+      border: 1px solid rgba(255,255,255,.45);
+      background: rgba(255,255,255,.12);
+      color: #fff;
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 0.8rem;
+      transition: background 0.15s ease;
+    }
+    .lang-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
+    .lang-btn.active { background: rgba(255,255,255,.28); font-weight: 600; }
+
+    @media (max-width: 768px) {
+      .main-wrap { padding: 0.75rem 0.5rem 1.5rem; }
+      .hrt-table { font-size: 0.78rem; }
+    }
   </style>
 </head>
 <body>
@@ -79,20 +330,20 @@
     </div>
     <div id="tableState" class="card-panel d-none">
       <div class="table-wrap">
-        <table class="table table-sm table-hover align-middle">
-          <thead class="table-light">
+        <table class="hrt-table w-100">
+          <thead>
             <tr>
-              <th class="col-name"></th>
-              <th class="col-phone"></th>
-              <th class="col-edd"></th>
-              <th class="col-last"></th>
-              <th class="col-days"></th>
-              <th class="col-risk-anc"></th>
-              <th class="col-risk-lcg"></th>
-              <th class="col-risk-pnc"></th>
-              <th class="col-risk-other"></th>
-              <th class="col-cues"></th>
-              <th class="col-action"></th>
+              <th class="hrt-col-name col-name"></th>
+              <th class="hrt-col-phone col-phone"></th>
+              <th class="hrt-col-edd col-edd"></th>
+              <th class="hrt-col-date col-last"></th>
+              <th class="hrt-col-days col-days"></th>
+              <th class="hrt-col-risks col-risk-anc"></th>
+              <th class="hrt-col-risks col-risk-lcg"></th>
+              <th class="hrt-col-risks col-risk-pnc"></th>
+              <th class="hrt-col-risks col-risk-other"></th>
+              <th class="hrt-col-cues col-cues"></th>
+              <th class="hrt-col-action col-action"></th>
             </tr>
           </thead>
           <tbody id="hrtBody"></tbody>
@@ -125,6 +376,7 @@
         colCues: 'Cues',
         colAction: 'Open',
         openHub: 'Care hub',
+        openHubBtn: 'Open hub',
         noVisits: 'No visits',
         days: 'days',
         referral: 'Referral',
@@ -151,7 +403,8 @@
         colRiskOther: 'အခြား',
         colCues: 'သတိပေးချက်များ',
         colAction: 'ဖွင့်ရန်',
-        openHub: ' Care Hub ကိုသွားပါ',
+        openHub: 'Care Hub ကိုသွားပါ',
+        openHubBtn: 'Hub ဖွင့်ရန်',
         noVisits: 'မှတ်တမ်း မရှိ',
         days: 'ရက်',
         referral: 'လွှဲပြောင်း',
@@ -360,11 +613,86 @@
       return uniqueStrings((registrationRisks || []).concat(labSnippets || []));
     }
 
-    function factorCellHtml(arr) {
-      if (!arr || !arr.length) return '—';
-      return arr.map(function (f) {
-        return '<span class="badge bg-secondary me-1 mb-1 text-wrap text-start" style="max-width:240px;white-space:normal;">' + escapeHtml(f) + '</span>';
-      }).join(' ');
+    var HRT_RISK_LABELS = {
+      maternal_age_18_or_35: 'Maternal age <18 or >35 years',
+      maternal_age_18_or_40: 'Maternal age <18 or ≥40 years',
+      parity_5: 'Parity ≥ 5',
+      multiple_pregnancy: 'Multiple pregnancy',
+      previous_complications: 'History of complications in previous pregnancies',
+      previous_stillbirths: 'Previous stillbirths or neonatal deaths',
+      previous_preterm: 'Previous preterm births',
+      obstructed_labour: 'History of obstructed / prolonged labour or CS',
+      uterine_scar: 'Uterine scar',
+      hypertension: 'Hypertension',
+      diabetes: 'Diabetes mellitus',
+      cardiac_disease: 'Cardiac disease',
+      tuberculosis: 'Tuberculosis',
+      epilepsy: 'Epilepsy',
+      kidney_disease: 'Kidney disease',
+      hiv: 'HIV infection',
+      previous_congenital_anomalies: 'Previous child with congenital anomalies',
+      short_interval_pregnancy: 'Short interval between pregnancies',
+      placenta_previa_abruption: 'Placenta previa / abruption',
+      other_medical_conditions: 'Other medical conditions'
+    };
+
+    function humanizeRiskLabel(s) {
+      var t = String(s == null ? '' : s).trim();
+      if (!t) return t;
+      if (HRT_RISK_LABELS[t]) return HRT_RISK_LABELS[t];
+      var noSpace = t.replace(/\s+/g, '');
+      if (HRT_RISK_LABELS[noSpace]) return HRT_RISK_LABELS[noSpace];
+      if (/:/.test(t)) return t;
+      if (/_/.test(t)) {
+        return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+      }
+      return t;
+    }
+
+    function factorCellHtml(arr, variant) {
+      if (!arr || !arr.length) return '<span class="hrt-empty">—</span>';
+      var mod = variant ? ' hrt-pill--' + variant : ' hrt-pill--anc';
+      return '<div class="hrt-pill-wrap">' + arr.map(function (f) {
+        return '<span class="hrt-pill' + mod + '">' + escapeHtml(humanizeRiskLabel(f)) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    function cuePillClass(bootstrapCls) {
+      var c = bootstrapCls || '';
+      if (c.indexOf('bg-danger') !== -1) return 'hrt-cue-pill danger';
+      if (c.indexOf('bg-warning') !== -1) return 'hrt-cue-pill warning';
+      if (c.indexOf('bg-info') !== -1) return 'hrt-cue-pill info';
+      return 'hrt-cue-pill warning';
+    }
+
+    function eddCellHtml(p) {
+      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
+      var gaEsc = escapeHtml(ga);
+      if (!p.edd) {
+        return '<div class="hrt-edd-stack"><span class="hrt-edd-date">—</span><span class="hrt-edd-ga">' + gaEsc + '</span></div>';
+      }
+      var d = window.EddDisplay && window.EddDisplay.parseEddToDate(p.edd);
+      var dateStr;
+      if (d && !isNaN(d.getTime())) {
+        dateStr = d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+      } else {
+        dateStr = String(p.edd);
+      }
+      var past = false;
+      if (d && !isNaN(d.getTime())) {
+        var t0 = new Date();
+        t0.setHours(0, 0, 0, 0);
+        var ed0 = new Date(d.getTime());
+        ed0.setHours(0, 0, 0, 0);
+        past = ed0 < t0;
+      }
+      var flagText = past
+        ? (lang === 'mm' ? 'EDD ကျော်လွန် · မွေးဖွားပြီး ဖြစ်နိုင်' : 'Past EDD · may have delivered')
+        : '';
+      return '<div class="hrt-edd-stack">' +
+        '<span class="hrt-edd-date">' + escapeHtml(dateStr) + '</span>' +
+        (past ? '<span class="hrt-edd-flag">' + escapeHtml(flagText) + '</span>' : '') +
+        '<span class="hrt-edd-ga">' + gaEsc + '</span></div>';
     }
 
     async function fetchPatientsForRole(db, currentUser, userRole) {
@@ -532,57 +860,50 @@
       tbody.innerHTML = '';
       rows.forEach(function (r) {
         var days = r.daysSince;
-        var badgeClass = 'badge-ok';
-        if (days == null) badgeClass = 'badge-warn';
-        else if (days > FOLLOWUP_WARN_DAYS) badgeClass = 'badge-overdue';
-        else if (days > FOLLOWUP_ALERT_DAYS) badgeClass = 'badge-warn';
+        var daysPill = 'hrt-day-pill--ok';
+        if (days == null) {
+          daysPill = '';
+        } else if (days > FOLLOWUP_WARN_DAYS) {
+          daysPill = 'hrt-day-pill--overdue';
+        } else if (days > FOLLOWUP_ALERT_DAYS) {
+          daysPill = 'hrt-day-pill--warn';
+        }
 
         var daysCell;
         if (days == null) {
-          daysCell = '<span class="text-muted">' + escapeHtml(tr('noVisits')) + '</span>';
+          daysCell = '<span class="text-muted small">' + escapeHtml(tr('noVisits')) + '</span>';
         } else {
-          daysCell = '<span class="badge ' + badgeClass + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
+          daysCell = '<span class="hrt-day-pill ' + daysPill + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
         }
 
         var cues = clinicalCueTags(r.latestData);
         var cuesHtml = cues.length
-          ? cues.map(function (c) {
-              return '<span class="badge ' + c.cls + ' me-1 mb-1">' + escapeHtml(c.t) + '</span>';
-            }).join(' ')
-          : '—';
+          ? '<div class="hrt-pill-wrap">' + cues.map(function (c) {
+              return '<span class="' + cuePillClass(c.cls) + '">' + escapeHtml(c.t) + '</span>';
+            }).join('') + '</div>'
+          : '<span class="hrt-empty">—</span>';
 
         var rawName = r.patient.name || r.patient.patientName || '—';
         var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
         var trEl = document.createElement('tr');
         trEl.innerHTML =
-          '<td><strong>' + name + '</strong></td>' +
-          '<td>' + phoneCellHtml(r.patient) + '</td>' +
-          '<td>' + escapeHtml(r.eddGa) + '</td>' +
-          '<td>' + escapeHtml(r.lastAncStr) + '</td>' +
-          '<td>' + daysCell + '</td>' +
-          '<td>' + factorCellHtml(r.factorsUnique) + '</td>' +
-          '<td>' + factorCellHtml(r.riskLcg) + '</td>' +
-          '<td>' + factorCellHtml(r.riskPnc) + '</td>' +
-          '<td>' + factorCellHtml(mergeOtherColumn(extractRegistrationRisks(r.patient), r.labRisks)) + '</td>' +
-          '<td>' + cuesHtml + '</td>' +
-          '<td><a class="btn btn-sm btn-danger" href="patient-care-hub.html?patient=' +
+          '<td class="hrt-col-name"><span class="hrt-patient-name">' + name + '</span></td>' +
+          '<td class="hrt-col-phone">' + phoneCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-edd">' + eddCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-date">' + escapeHtml(r.lastAncStr) + '</td>' +
+          '<td class="hrt-col-days">' + daysCell + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.factorsUnique, 'anc') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.riskLcg, 'lcg') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.riskPnc, 'pnc') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(mergeOtherColumn(extractRegistrationRisks(r.patient), r.labRisks), 'other') + '</td>' +
+          '<td class="hrt-col-cues">' + cuesHtml + '</td>' +
+          '<td class="hrt-col-action"><a class="hrt-btn-hub" href="patient-care-hub.html?patient=' +
           encodeURIComponent(r.patient.id) +
-          '">' +
-          escapeHtml(tr('openHub')) +
-          '</a></td>';
+          '" title="' + escapeHtml(tr('openHub')) + '"><i class="fas fa-hand-holding-medical"></i><span>' +
+          escapeHtml(tr('openHubBtn')) +
+          '</span></a></td>';
         tbody.appendChild(trEl);
       });
-    }
-
-    function eddGaDisplay(p) {
-      var eddFmt = '—';
-      if (p.edd) {
-        eddFmt = window.EddDisplay
-          ? window.EddDisplay.formatEddWithStatus(p.edd, { lang: lang })
-          : formatDateVal(p.edd);
-      }
-      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
-      return eddFmt + ' / ' + ga;
     }
 
     function phoneCellHtml(patient) {
@@ -677,8 +998,7 @@
             labRisks: labRisks,
             lastAncStr: lastAncStr,
             daysSince: daysSince,
-            latestData: latestData,
-            eddGa: eddGaDisplay(p)
+            latestData: latestData
           };
         });
 
