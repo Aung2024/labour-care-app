@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/edd-display.js"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/data-masking.js"></script>
@@ -82,10 +83,14 @@
           <thead class="table-light">
             <tr>
               <th class="col-name"></th>
+              <th class="col-phone"></th>
               <th class="col-edd"></th>
               <th class="col-last"></th>
               <th class="col-days"></th>
-              <th class="col-factors"></th>
+              <th class="col-risk-anc"></th>
+              <th class="col-risk-lcg"></th>
+              <th class="col-risk-pnc"></th>
+              <th class="col-risk-other"></th>
               <th class="col-cues"></th>
               <th class="col-action"></th>
             </tr>
@@ -104,15 +109,19 @@
     var T = {
       en: {
         title: 'High Risk Tracking',
-        info: 'Listed patients have at least one ANC visit with “high risk” (Risk+) recorded. Profile-only flags are not used. Shows antenatal patients (not in labour/postnatal).',
+        info: 'Listed patients have at least one ANC visit with “high risk” (Risk+) recorded. Extra columns pull LCG summary risk text, PNC danger signs, registration/lab data when present. Antenatal patients only.',
         loading: 'Loading patients and ANC visits…',
         empty: 'No high-risk antenatal patients in your access scope, or none with ANC data yet.',
         offline: 'High Risk Tracking needs an internet connection to load antenatal visits from the server.',
         colName: 'Patient',
+        colPhone: 'Phone',
         colEdd: 'EDD / GA',
         colLast: 'Last ANC',
         colDays: 'Days since ANC',
-        colFactors: 'Risk factors',
+        colRiskAnc: 'Risks (ANC)',
+        colRiskLcg: 'Risks (LCG)',
+        colRiskPnc: 'Risks (PNC)',
+        colRiskOther: 'Other (reg. / labs)',
         colCues: 'Cues',
         colAction: 'Open',
         openHub: 'Care hub',
@@ -127,26 +136,30 @@
       },
       mm: {
         title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
-        info: 'ဤစာရင်းတွင် ANC မှတ်တမ်းတစ်ခုခုတွင် “အန္တရာယ်မြင့်” ဟု မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ ပရိုဖိုင်တွင်သာ မှတ်ထားခြင်းကို မသုံးပါ။ ကိုယ်ဝန်ဆောင်ချိန် (မီးဖွားမီး / မီးပွားနောက် မဟုတ်) လူနာများသာ ပါဝင်သည်။',
-        loading: 'လူနာနှင့် ANC မှတ်တမ်းများ ဖတ်နေသည်…',
-        empty: 'သင့်အမြင်အောက်တွင် အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိ သို့မဟုတ် ANC မှတ်တမ်း မရှိသေးပါ။',
+        info: 'ဤစာရင်းတွင် High Risk သတ်မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ လိုအပ်လျှင် ဖုန်းခေါ်ပြီး Follow up လိုက်ပေးပါ။',
+        loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
+        empty: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိသေးပါ။',
         offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက်ချိတ်ဆက်မှု လိုအပ်သည်။',
         colName: 'လူနာ',
+        colPhone: 'ဖုန်းနံပါတ်',
         colEdd: 'မီးဖွားရက် / ကိုယ်ဝန်အပတ်',
         colLast: 'နောက်ဆုံး ANC',
         colDays: 'ANC မလာတာ ရက်',
-        colFactors: 'အန္တရာယ်အချက်များ',
+        colRiskAnc: 'ANC အန္တရာယ်များ',
+        colRiskLcg: 'LCG အန္တရာယ်များ',
+        colRiskPnc: 'PNC အန္တရာယ်များ',
+        colRiskOther: 'အခြား',
         colCues: 'သတိပေးချက်များ',
         colAction: 'ဖွင့်ရန်',
-        openHub: 'စောင့်ရှောက်ရေး',
+        openHub: ' Care Hub ကိုသွားပါ',
         noVisits: 'မှတ်တမ်း မရှိ',
         days: 'ရက်',
         referral: 'လွှဲပြောင်း',
-        danger: 'အန္တရာယ်အချက်များ',
-        anemia: 'သွေးအားနည်း (စစ်ဆေး)',
+        danger: 'အန္တရာယ်များ',
+        anemia: 'သွေးအားနည်း',
         bp: 'သွေးပေါင်မြင့်',
-        protein: 'စစ်သွေးအာဟာရ ပရိုတင်း+',
-        sugar: 'စစ်သွေးအာဟာရ သကြား+'
+        protein: 'ဆီးတွင်း ပရိုတင်းမြင့်',
+        sugar: 'သွေးတွင်း သကြားဓာတ်များ'
       }
     };
 
@@ -166,10 +179,14 @@
         b.classList.toggle('active', b.getAttribute('data-lang') === lang);
       });
       document.querySelector('.col-name').textContent = tr('colName');
+      document.querySelector('.col-phone').textContent = tr('colPhone');
       document.querySelector('.col-edd').textContent = tr('colEdd');
       document.querySelector('.col-last').textContent = tr('colLast');
       document.querySelector('.col-days').textContent = tr('colDays');
-      document.querySelector('.col-factors').textContent = tr('colFactors');
+      document.querySelector('.col-risk-anc').textContent = tr('colRiskAnc');
+      document.querySelector('.col-risk-lcg').textContent = tr('colRiskLcg');
+      document.querySelector('.col-risk-pnc').textContent = tr('colRiskPnc');
+      document.querySelector('.col-risk-other').textContent = tr('colRiskOther');
       document.querySelector('.col-cues').textContent = tr('colCues');
       document.querySelector('.col-action').textContent = tr('colAction');
     }
@@ -232,6 +249,122 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    function uniqueStrings(arr) {
+      var seen = new Set();
+      var out = [];
+      (arr || []).forEach(function (x) {
+        var s = x == null ? '' : String(x).trim();
+        if (s && !seen.has(s)) {
+          seen.add(s);
+          out.push(s);
+        }
+      });
+      return out;
+    }
+
+    function extractLcgRisksFromSummary(summaryData) {
+      if (!summaryData) return [];
+      var rf = summaryData.risk_factors;
+      if (Array.isArray(rf)) return uniqueStrings(rf.map(String));
+      if (typeof rf === 'string' && rf.trim()) {
+        return uniqueStrings(rf.split(/[\n,;]+/).map(function (s) { return s.trim(); }));
+      }
+      return [];
+    }
+
+    var PNC_DANGER_KEYS = [
+      ['heavyBleeding', 'Heavy bleeding'],
+      ['severeHeadache', 'Severe headache'],
+      ['convulsions', 'Convulsions'],
+      ['breathingProblems', 'Breathing difficulty'],
+      ['feverFatigue', 'Fever / severe fatigue'],
+      ['breastEngorgementDanger', 'Breast problem (danger)'],
+      ['urinaryProblems', 'Urinary problems'],
+      ['woundInflammation', 'Wound inflammation'],
+      ['foulDischarge', 'Foul-smelling discharge']
+    ];
+
+    function extractPncRisksFromVisits(visitDocs) {
+      var out = [];
+      (visitDocs || []).forEach(function (vd) {
+        var ds = vd.dangerSigns;
+        if (!ds || typeof ds !== 'object') return;
+        PNC_DANGER_KEYS.forEach(function (pair) {
+          var v = ds[pair[0]];
+          if (v === true || v === 'Yes' || v === 'yes') out.push(pair[1]);
+        });
+      });
+      return uniqueStrings(out);
+    }
+
+    var LAB_RESULT_FIELDS = [
+      ['hivResult', 'HIV'],
+      ['malariaResult', 'Malaria'],
+      ['syphilisResult', 'Syphilis'],
+      ['hepatitisBResult', 'Hepatitis B'],
+      ['hepatitisCResult', 'Hepatitis C'],
+      ['rbsResult', 'RBS'],
+      ['hemoglobinResult', 'Hb'],
+      ['urineProtein', 'Urine protein'],
+      ['urineSugar', 'Urine sugar']
+    ];
+
+    function isConcerningLabValue(val) {
+      if (val == null) return false;
+      var s = String(val).trim();
+      if (!s) return false;
+      if (/^(negative|not\s+detected|non[- ]?reactive|normal|clear|no)$/i.test(s)) return false;
+      return /positive|reactive|detected|\+\+|^\s*\+|severe|critical/i.test(s);
+    }
+
+    function extractLabRiskSnippets(testDataList) {
+      var out = [];
+      (testDataList || []).forEach(function (d) {
+        LAB_RESULT_FIELDS.forEach(function (pair) {
+          var key = pair[0];
+          var label = pair[1];
+          var v = d[key];
+          if (key === 'hemoglobinResult' && v != null && v !== '') {
+            var hn = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+            if (!isNaN(hn) && hn < 11) {
+              out.push(label + ': ' + String(v).trim());
+              return;
+            }
+          }
+          if (isConcerningLabValue(v)) out.push(label + ': ' + String(v).trim());
+        });
+      });
+      return uniqueStrings(out).slice(0, 12);
+    }
+
+    function extractRegistrationRisks(patient) {
+      var out = [];
+      if (patient.high_risk === 'yes' || patient.high_risk === true) {
+        out.push(lang === 'mm' ? 'မှတ်ပုံတင်: အန္တရာယ်မြင့်' : 'Registration: high risk');
+      }
+      if (Array.isArray(patient.risk_factors)) {
+        patient.risk_factors.forEach(function (f) {
+          if (f) out.push(String(f));
+        });
+      }
+      if (patient.risk_notes && String(patient.risk_notes).trim()) {
+        var n = String(patient.risk_notes).trim();
+        out.push(n.length > 100 ? n.slice(0, 100) + '…' : n);
+      }
+      return uniqueStrings(out);
+    }
+
+    function mergeOtherColumn(registrationRisks, labSnippets) {
+      return uniqueStrings((registrationRisks || []).concat(labSnippets || []));
+    }
+
+    function factorCellHtml(arr) {
+      if (!arr || !arr.length) return '—';
+      return arr.map(function (f) {
+        return '<span class="badge bg-secondary me-1 mb-1 text-wrap text-start" style="max-width:240px;white-space:normal;">' + escapeHtml(f) + '</span>';
+      }).join(' ');
     }
 
     async function fetchPatientsForRole(db, currentUser, userRole) {
@@ -337,6 +470,53 @@
       return visits;
     }
 
+    async function fetchPostpartumVisitsRaw(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('postpartum_visits');
+      var snap;
+      try {
+        snap = await ref.orderBy('visitDate', 'desc').limit(20).get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'desc').limit(20).get();
+        } catch (e2) {
+          snap = await ref.limit(20).get();
+        }
+      }
+      var list = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          list.push(d.data() || {});
+        });
+      }
+      return list;
+    }
+
+    async function fetchLabourSummaryRaw(db, patientId) {
+      var doc = await db.collection('patients').doc(patientId).collection('records').doc('summary').get();
+      return doc && doc.exists ? doc.data() || {} : null;
+    }
+
+    async function fetchLabRecordsRaw(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('testRecords');
+      var snap;
+      try {
+        snap = await ref.orderBy('testDate', 'desc').limit(12).get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'desc').limit(12).get();
+        } catch (e2) {
+          snap = await ref.limit(12).get();
+        }
+      }
+      var list = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          list.push(d.data() || {});
+        });
+      }
+      return list;
+    }
+
     async function mapWithConcurrency(items, limit, fn) {
       var out = [];
       for (var i = 0; i < items.length; i += limit) {
@@ -364,10 +544,6 @@
           daysCell = '<span class="badge ' + badgeClass + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
         }
 
-        var factors = r.factorsUnique.length ? r.factorsUnique.map(function (f) {
-          return '<span class="badge bg-secondary me-1 mb-1">' + escapeHtml(f) + '</span>';
-        }).join(' ') : '—';
-
         var cues = clinicalCueTags(r.latestData);
         var cuesHtml = cues.length
           ? cues.map(function (c) {
@@ -380,10 +556,14 @@
         var trEl = document.createElement('tr');
         trEl.innerHTML =
           '<td><strong>' + name + '</strong></td>' +
+          '<td>' + phoneCellHtml(r.patient) + '</td>' +
           '<td>' + escapeHtml(r.eddGa) + '</td>' +
           '<td>' + escapeHtml(r.lastAncStr) + '</td>' +
           '<td>' + daysCell + '</td>' +
-          '<td>' + factors + '</td>' +
+          '<td>' + factorCellHtml(r.factorsUnique) + '</td>' +
+          '<td>' + factorCellHtml(r.riskLcg) + '</td>' +
+          '<td>' + factorCellHtml(r.riskPnc) + '</td>' +
+          '<td>' + factorCellHtml(mergeOtherColumn(extractRegistrationRisks(r.patient), r.labRisks)) + '</td>' +
           '<td>' + cuesHtml + '</td>' +
           '<td><a class="btn btn-sm btn-danger" href="patient-care-hub.html?patient=' +
           encodeURIComponent(r.patient.id) +
@@ -395,9 +575,24 @@
     }
 
     function eddGaDisplay(p) {
-      var edd = p.edd ? formatDateVal(p.edd) : '—';
+      var eddFmt = '—';
+      if (p.edd) {
+        eddFmt = window.EddDisplay
+          ? window.EddDisplay.formatEddWithStatus(p.edd, { lang: lang })
+          : formatDateVal(p.edd);
+      }
       var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
-      return edd + ' / ' + ga;
+      return eddFmt + ' / ' + ga;
+    }
+
+    function phoneCellHtml(patient) {
+      var raw = patient.phone || patient.emergency_phone || patient.phoneNumber || '';
+      raw = String(raw).trim();
+      if (!raw) return '—';
+      var display = window.DataMasking ? window.DataMasking.maskPhoneNumber(raw, true) : raw;
+      var tel = raw.replace(/[^\d+]/g, '');
+      if (!tel) return escapeHtml(display);
+      return '<a href="tel:' + escapeHtml(tel) + '">' + escapeHtml(display) + '</a>';
     }
 
     firebase.auth().onAuthStateChanged(async function (user) {
@@ -442,15 +637,27 @@
           var bundle = { antenatalVisits: visits };
           if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
 
+          var pncDocs = [];
+          var summaryData = null;
+          var labList = [];
+          try {
+            var triple = await Promise.all([
+              fetchPostpartumVisitsRaw(db, p.id),
+              fetchLabourSummaryRaw(db, p.id),
+              fetchLabRecordsRaw(db, p.id)
+            ]);
+            pncDocs = triple[0];
+            summaryData = triple[1];
+            labList = triple[2];
+          } catch (e) {
+            console.warn('HRT extra fetches', p.id, e);
+          }
+
           var factors = window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
-          var seen = new Set();
-          var factorsUnique = [];
-          factors.forEach(function (f) {
-            if (f && !seen.has(f)) {
-              seen.add(f);
-              factorsUnique.push(f);
-            }
-          });
+          var factorsUnique = uniqueStrings(factors);
+          var riskLcg = extractLcgRisksFromSummary(summaryData);
+          var riskPnc = extractPncRisksFromVisits(pncDocs);
+          var labRisks = extractLabRiskSnippets(labList);
 
           var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
           var latestData = window.HighRiskUtils.getLatestAncVisitData(bundle);
@@ -463,6 +670,9 @@
           return {
             patient: p,
             factorsUnique: factorsUnique,
+            riskLcg: riskLcg,
+            riskPnc: riskPnc,
+            labRisks: labRisks,
             lastAncStr: lastAncStr,
             daysSince: daysSince,
             latestData: latestData,

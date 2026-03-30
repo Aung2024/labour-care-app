@@ -10,6 +10,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/edd-display.js"></script>
   <script src="js/auth-guard.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -772,12 +773,23 @@
       document.getElementById('patientPhone').textContent = currentPatient.phone || '-';
       document.getElementById('patientStatus').textContent = currentPatient.status || '-';
 
+      const ovEddLang = currentLanguage === 'mm' ? 'mm' : 'en';
       if (currentPatient.lmp && currentPatient.lmp !== 'unknown') {
         const lmpDate = new Date(currentPatient.lmp);
         document.getElementById('patientLMP').textContent = lmpDate.toLocaleDateString(currentLanguage === 'mm' ? 'my-MM' : undefined);
-        const edd = new Date(lmpDate);
-        edd.setDate(edd.getDate() + 280);
-        document.getElementById('patientEDD').textContent = edd.toLocaleDateString(currentLanguage === 'mm' ? 'my-MM' : undefined);
+        const eddCalc = new Date(lmpDate);
+        eddCalc.setDate(eddCalc.getDate() + 280);
+        document.getElementById('patientEDD').textContent = window.EddDisplay
+          ? window.EddDisplay.formatEddWithStatus(eddCalc, { lang: ovEddLang, notSetText: '-' })
+          : eddCalc.toLocaleDateString(currentLanguage === 'mm' ? 'my-MM' : undefined);
+      } else if (currentPatient.edd) {
+        document.getElementById('patientLMP').textContent = '-';
+        document.getElementById('patientEDD').textContent = window.EddDisplay
+          ? window.EddDisplay.formatEddWithStatus(currentPatient.edd, { lang: ovEddLang, notSetText: '-' })
+          : String(currentPatient.edd);
+      } else {
+        document.getElementById('patientLMP').textContent = '-';
+        document.getElementById('patientEDD').textContent = '-';
       }
 
       // Care summary
