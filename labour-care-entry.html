@@ -407,6 +407,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
@@ -1266,18 +1268,33 @@
       
       state.patientId = patientId;
 
-      // OFFLINE: Load patient name + any pending LCG data from IndexedDB, skip Firestore queries
-      const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const legacyToggle = window.OfflineManager && window.OfflineManager.isOfflineMode();
       const isOfflinePatient = patientId.startsWith('OFFLINE-');
+      const isOffline = networkOff || legacyToggle || isOfflinePatient;
 
-      if (isOffline || isOfflinePatient) {
+      if (isOffline) {
+        let mirrored = null;
+        if (networkOff && window.LabourCareOffline && patientId && !isOfflinePatient) {
+          mirrored = await LabourCareOffline.getPatientPayload(patientId);
+        }
         const cachedData = sessionStorage.getItem('selectedPatientData');
-        if (cachedData) {
-          const p = JSON.parse(cachedData);
-          document.getElementById('patientName').textContent = p.name || 'Patient';
+        const p = cachedData ? JSON.parse(cachedData) : null;
+        if (mirrored && mirrored.name) {
+          document.getElementById('patientName').textContent = mirrored.name;
+        } else if (p && p.name) {
+          document.getElementById('patientName').textContent = p.name;
         } else if (window.OfflineManager && window.OfflineManager.getCachedPatient) {
           const cp = await window.OfflineManager.getCachedPatient(patientId);
           if (cp && cp.name) document.getElementById('patientName').textContent = cp.name;
+        }
+        const rootForLcg = mirrored || p || null;
+        if (rootForLcg) {
+          const st0 = rootForLcg.lcgStartingTime || rootForLcg.lcg_starting_time;
+          if (st0 != null && String(st0).trim() !== '' && String(st0).trim() !== 'undefined') {
+            state.startTime = String(st0).trim();
+            state.secondStageTime = rootForLcg.lcgSecondStageTime || rootForLcg.lcg_second_stage_time || null;
+          }
         }
 
         try {

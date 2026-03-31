@@ -28,6 +28,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js" crossorigin="anonymous"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <!-- Auth guard will handle authentication check -->
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
@@ -38,7 +40,6 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/sync-manager.js"></script>
-  <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
@@ -67,6 +68,19 @@
     body.auth-verified {
       opacity: 1;
       visibility: visible;
+    }
+
+    #labourCareOfflineBanner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: #fef3c7;
+      color: #78350f;
+      border-bottom: 1px solid #f59e0b;
+      font-size: 0.95rem;
     }
 
     .main-container {
@@ -520,9 +534,10 @@
       // Ensure body is visible (auth verified)
       document.body.classList.add('auth-verified');
       
-      // Check provider consent (skip when offline -- Firestore interceptor returns false negatives)
+      // Check provider consent (skip when no network or legacy offline toggle)
       const _offline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
-                       localStorage.getItem('offlineMode') === 'true';
+                       localStorage.getItem('offlineMode') === 'true' ||
+                       (typeof navigator !== 'undefined' && navigator.onLine === false);
       if (!_offline) {
         try {
           if (window.ConsentManager) {
@@ -560,12 +575,27 @@
     
     async function loadUserData() {
       try {
-        // Skip Firestore queries when offline
+        // Skip Firestore when no network or legacy manual offline mode
         const _off = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
-                     localStorage.getItem('offlineMode') === 'true';
+                     localStorage.getItem('offlineMode') === 'true' ||
+                     (typeof navigator !== 'undefined' && navigator.onLine === false);
         if (_off) {
           document.getElementById("userEmail").textContent = currentUser.email || 'User';
-          document.getElementById("userRole").textContent = 'Offline Mode';
+          let roleDisplay = 'Midwife';
+          userRole = 'Midwife';
+          if (window.UserCache) {
+            const ud = UserCache.getCached(currentUser.uid);
+            if (ud && ud.role) {
+              userRole = ud.role;
+              roleDisplay = ud.role === 'TMO' ? 'Township Dashboard'
+                : (ud.role && ud.role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer') ? 'Regional Dashboard'
+                : ud.role;
+            }
+          }
+          document.getElementById("userRole").textContent = roleDisplay;
+          setTimeout(function () {
+            loadPatientStats();
+          }, 300);
           return;
         }
 
@@ -662,6 +692,34 @@
       }
     }
 
+    function scheduleFullMirrorPull() {
+      if (navigator.onLine && window.LabourCareOffline && currentUser && userRole) {
+        const tsPull = userRole === 'TMO' ? (localStorage.getItem('userTownship') || null) : null;
+        LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
+      }
+    }
+
+    async function labourCareHomeSync() {
+      const btn = document.getElementById('labourCareSyncBtn');
+      if (btn) btn.disabled = true;
+      try {
+        if (!currentUser || !userRole) {
+          alert('Please wait for the app to finish loading.');
+          return;
+        }
+        const ts = userRole === 'TMO' ? (localStorage.getItem('userTownship') || null) : null;
+        await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
+        await LabourCareOffline.flushOutbox();
+        LabourCareOffline.setOfflineBanner(false);
+        await loadPatientStats();
+        alert('Sync complete.');
+      } catch (e) {
+        alert('Sync failed: ' + (e && e.message ? e.message : e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     async function loadPatientStats() {
       // Don't load stats if page not initialized
       if (!pageInitialized) {
@@ -687,6 +745,41 @@
 
         if (!currentUser || !userRole) {
           console.log('User not loaded yet, skipping stats');
+          return;
+        }
+
+        if (!navigator.onLine && window.LabourCareOffline) {
+          let ts = null;
+          if (userRole === 'TMO') {
+            ts = localStorage.getItem('userTownship') || null;
+          } else if (userRole && userRole.toLowerCase().replace(/\s+/g, ' ') === 'regional officer') {
+            ts = localStorage.getItem('userRegion') || null;
+            if (!ts && window.UserCache) {
+              const u = UserCache.getCached(currentUser.uid);
+              if (u && u.region) ts = u.region;
+            }
+          }
+          const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
+          for (let i = 0; i < list.length; i++) {
+            const data = list[i];
+            let status = data.status || data.treatmentStatus || 'antenatal';
+            if (status === 'active') status = 'antenatal';
+            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
+              status = 'postnatal';
+            }
+            if (patientStats.hasOwnProperty(status)) {
+              patientStats[status]++;
+            }
+            if (status === 'postnatal') {
+              const rec = await OfflineStore.getDocument('patients/' + data.id + '/records/birthRecord');
+              if (rec && rec.payload) {
+                patientStats.baby++;
+              }
+            }
+            patientStats.total++;
+          }
+          updateStatsDisplay();
+          LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
           return;
         }
 
@@ -855,6 +948,7 @@
           }
           
           updateStatsDisplay();
+          scheduleFullMirrorPull();
           return;
         } else {
           // No access for other roles
@@ -866,6 +960,7 @@
         // OPTIMIZED: Process in batches to avoid blocking UI
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
+          scheduleFullMirrorPull();
           return;
         }
         
@@ -920,6 +1015,7 @@
         }
 
         updateStatsDisplay();
+        scheduleFullMirrorPull();
       } catch (error) {
         console.error('Error loading patient stats:', error);
         // Still update display with zeros so page doesn't look broken
@@ -1049,6 +1145,10 @@
   </script>
 </head>
 <body>
+  <div id="labourCareOfflineBanner" role="status">
+    <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
+    <button type="button" class="btn btn-sm btn-dark" id="labourCareSyncBtn">Sync now</button>
+  </div>
   <div class="main-container">
     <!-- Header Section -->
     <div class="header-section">
@@ -1064,12 +1164,6 @@
         </p>
       </div>
       
-      <!-- Offline Mode Banner -->
-      <div id="offlineBanner" style="display:none;background:linear-gradient(90deg,#d97706,#f59e0b);color:#fff;padding:10px 20px;border-radius:12px;margin-bottom:1rem;text-align:center;font-weight:500;font-size:0.95rem;">
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        <span class="lang-text" data-en="Offline Mode Active — Data will be saved locally. Tap Sync when online." data-mm="အော့ဖ်လိုင်း မုဒ် ဖွင့်ထားသည် — ဒေတာကို စက်ထဲတွင် သိမ်းဆည်းမည်။ အွန်လိုင်းဖြစ်သောအခါ Sync နှိပ်ပါ။">Offline Mode Active — Data will be saved locally. Tap Sync when online.</span>
-      </div>
-
       <div class="user-info">
         <div class="user-details">
           <div class="user-avatar">
@@ -1081,19 +1175,6 @@
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-          <!-- Offline Mode Toggle -->
-          <button class="btn btn-outline-warning btn-sm" id="offlineModeBtn" onclick="toggleOfflineMode()" title="Toggle Offline Mode" style="display:flex;align-items:center;gap:4px;">
-            <i class="fas fa-plug-circle-xmark me-1"></i>
-            <span id="offlineModeBtnLabel">Go Offline</span>
-          </button>
-
-          <!-- Sync Button -->
-          <button class="btn btn-outline-info btn-sm" id="syncBtn" onclick="syncOfflineData()" title="Sync offline data to cloud" style="display:none;align-items:center;gap:4px;">
-            <i class="fas fa-sync me-1"></i>
-            <span class="lang-text" data-en="Sync" data-mm="စင့်ခ်">Sync</span>
-            <span class="badge bg-danger rounded-pill" id="syncBadge" style="display:none;font-size:0.7rem;">0</span>
-          </button>
-
           <div class="language-switcher">
             <button class="language-btn" data-lang="en" onclick="switchLanguage('en')">
               <span>🇬🇧</span> ENG
@@ -1283,30 +1364,14 @@
   </footer>
 
   <script>
-    function toggleOfflineMode() {
-      if (!window.OfflineManager) return;
-      const current = window.OfflineManager.isOfflineMode();
-      // When turning ON offline mode, show a clear in-app notice.
-      if (!current && window.AppDialog && AppDialog.alert) {
-        AppDialog.alert(
-          'Offline Mode is now ON.\n\nYou can register patients and save ANC, PNC, LCG, and newborn data locally.\n\nDashboards and reports will be unavailable. Remember to Sync when you are back online.',
-          { title: 'Offline Mode Enabled' }
-        );
-      }
-      window.OfflineManager.setOfflineMode(!current);
-    }
-
-    function syncOfflineData() {
-      if (!window.SyncManager) return;
-      window.SyncManager.startSync();
-    }
-
     document.addEventListener('DOMContentLoaded', function () {
-      if (window.OfflineManager) {
-        window.OfflineManager.updateSyncBadge();
-        if (window.OfflineManager.isOfflineMode()) {
-          window.OfflineManager.updateOfflineUI(true);
-        }
+      try {
+        localStorage.removeItem('offlineMode');
+      } catch (e) {}
+      const sb = document.getElementById('labourCareSyncBtn');
+      if (sb) sb.addEventListener('click', labourCareHomeSync);
+      if (!navigator.onLine && window.LabourCareOffline) {
+        LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
       }
     });
   </script>

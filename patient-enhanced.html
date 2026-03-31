@@ -935,6 +935,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/clinical-validator.js"></script>
   <script src="js/duplicate-detector.js"></script>
@@ -2513,6 +2516,8 @@
       form.addEventListener("submit", async (e) => {
       console.log('Form submit event triggered');
       e.preventDefault();
+
+      const networkOffline = typeof navigator !== 'undefined' && !navigator.onLine;
       
       // Get button reference and show loading state
       let submitBtn = form.querySelector('button[type="submit"]');
@@ -2638,12 +2643,12 @@
         }
       }
 
-      // STEP 1: Check for duplicate patients
+      // STEP 1: Check for duplicate patients (skip when no network — duplicate check needs server)
       if (!window.DuplicateDetector) {
         console.error('❌ DuplicateDetector not loaded! Check if js/duplicate-detector.js is included.');
       }
       
-      if (window.DuplicateDetector) {
+      if (window.DuplicateDetector && !networkOffline) {
         console.log('🔍 Checking for duplicate patients...');
         
         // Get current user info for role-based filtering
@@ -2752,17 +2757,35 @@
           return;
         }
         
-        // Fetch the user's township from Firestore
+        let userData = {};
+        if (networkOffline) {
+          if (typeof UserCache !== 'undefined') {
+            userData = UserCache.getCached(user.uid);
+            if (!userData) {
+              try {
+                userData = await UserCache.get(user.uid);
+              } catch (err) {
+                userData = null;
+              }
+            }
+          }
+          if (!userData) {
+            document.getElementById("message").innerHTML =
+              '<div class="alert alert-warning"><i class="fas fa-wifi me-2"></i>Connect online once so your profile loads on this device. Then you can register patients while offline.</div>';
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+          }
+        } else {
         const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
         console.log('User document exists:', userDoc.exists);
-        
         if (userDoc.exists) {
-          const userData = userDoc.data();
-          console.log('User data:', userData);
-          console.log('User township from Firestore:', userData.township);
+          const ud = userDoc.data();
+          console.log('User data:', ud);
+          console.log('User township from Firestore:', ud.township);
         }
-        
-        const userData = userDoc.exists ? userDoc.data() : {};
+        userData = userDoc.exists ? userDoc.data() : {};
+        }
         const userTownship = userData.township || "";
         const userRegion = userData.region || "";
         const userRole = userData.role || 'Midwife';
@@ -2810,6 +2833,11 @@
           data.patientUniqueId = patientUniqueIdHidden.value;
         }
         if (!data.patientUniqueId) {
+          if (networkOffline) {
+            data.patientUniqueId = `GEN-${Date.now()}`;
+            if (patientUniqueIdHidden) patientUniqueIdHidden.value = data.patientUniqueId;
+            if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = data.patientUniqueId;
+          } else {
           try {
             const idResult = await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode, facilityCode);
             data.patientUniqueId = idResult.uniqueId;
@@ -2818,6 +2846,7 @@
           } catch (idError) {
             console.error('Failed to generate patient unique ID:', idError);
             data.patientUniqueId = data.patientUniqueId || `GEN-${Date.now()}`;
+          }
           }
         } else {
           if (patientUniqueIdHidden) patientUniqueIdHidden.value = data.patientUniqueId;

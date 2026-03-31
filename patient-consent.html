@@ -390,6 +390,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/user-cache.js"></script>
   <script src="js/consent-manager.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
@@ -577,10 +578,25 @@
           consentData.patientName = patientName;
         }
 
-        // Get provider info
-        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-        const providerName = userDoc.exists ? (userDoc.data().name || currentUser.email) : currentUser.email;
-        const facility = userDoc.exists ? (userDoc.data().facility_code || null) : null;
+        // Get provider info (cache / Firestore — works offline when profile was cached)
+        const smartQ = typeof smartFirestoreQuery !== 'undefined' ? smartFirestoreQuery : window.smartFirestoreQuery;
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+        let userDocData = typeof UserCache !== 'undefined' ? UserCache.getCached(currentUser.uid) : null;
+        if (!userDocData && smartQ) {
+          const uq = firebase.firestore().collection('users').doc(currentUser.uid);
+          const userSnap = await smartQ(Promise.resolve(uq), {
+            preferCache: isIOS,
+            timeout: 8000,
+            retries: 1,
+            fallbackToCache: true
+          });
+          userDocData = userSnap && userSnap.exists ? userSnap.data() : null;
+          if (userDocData && typeof UserCache !== 'undefined' && UserCache.cache) {
+            UserCache.cache(currentUser.uid, userDocData);
+          }
+        }
+        const providerName = userDocData ? (userDocData.name || currentUser.email) : currentUser.email;
+        const facility = userDocData ? (userDocData.facility_code || null) : null;
 
         // Get IP address
         const ipAddress = await ConsentManager.getClientIP();
@@ -592,8 +608,7 @@
         let patientId = patientData.id || null;
         
         if (!patientId) {
-          const userDocPt = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-          const userDataPt = userDocPt.exists ? userDocPt.data() : {};
+          const userDataPt = userDocData || {};
           const userTownship = userDataPt.township || '';
 
           patientId = firebase.firestore().collection('patients').doc().id;
@@ -629,6 +644,12 @@
           }
         }
 
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          sessionStorage.removeItem('pendingPatientData');
+          window.location.href = 'home.html';
+          return;
+        }
+
         // Save consent
         const saved = await ConsentManager.savePatientConsent(
           patientId,
@@ -641,8 +662,7 @@
           // Clear pending data
           sessionStorage.removeItem('pendingPatientData');
           
-          // Redirect to index.html after successful registration
-          window.location.href = 'index.html';
+          window.location.href = 'home.html';
         } else {
           alert('Error saving consent. Please try again.');
           acceptBtn.disabled = false;
@@ -671,9 +691,23 @@
       refuseBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div> Processing...';
 
       try {
-        // Save patient with no consent status
-        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-        const userData = userDoc.exists ? userDoc.data() : {};
+        const smartQ = typeof smartFirestoreQuery !== 'undefined' ? smartFirestoreQuery : window.smartFirestoreQuery;
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+        let userData = typeof UserCache !== 'undefined' ? UserCache.getCached(currentUser.uid) : null;
+        if (!userData && smartQ) {
+          const uq = firebase.firestore().collection('users').doc(currentUser.uid);
+          const snap = await smartQ(Promise.resolve(uq), {
+            preferCache: isIOS,
+            timeout: 8000,
+            retries: 1,
+            fallbackToCache: true
+          });
+          userData = snap && snap.exists ? snap.data() : {};
+          if (userData && typeof UserCache !== 'undefined' && UserCache.cache) {
+            UserCache.cache(currentUser.uid, userData);
+          }
+        }
+        userData = userData || {};
         const userTownship = userData.township || '';
 
         const newPid = firebase.firestore().collection('patients').doc().id;

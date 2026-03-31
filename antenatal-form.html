@@ -14,6 +14,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/clinical-validator.js"></script>
   <script src="js/data-linkage.js"></script>
@@ -1445,15 +1447,22 @@
           return;
         }
 
-        // OFFLINE: Load patient from sessionStorage / IndexedDB
-        const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        // OFFLINE: mirror + sessionStorage / legacy OfflineManager cache
+        const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const legacyToggle = window.OfflineManager && window.OfflineManager.isOfflineMode();
         const isOfflinePatient = patientId.startsWith('OFFLINE-');
+        const isOffline = networkOff || legacyToggle || isOfflinePatient;
 
-        if (isOffline || isOfflinePatient) {
+        if (isOffline) {
+          currentPatient = null;
+          if (networkOff && window.LabourCareOffline && patientId && !isOfflinePatient) {
+            const pl = await LabourCareOffline.getPatientPayload(patientId);
+            if (pl) currentPatient = pl;
+          }
           const cachedData = sessionStorage.getItem('selectedPatientData');
-          if (cachedData) {
+          if (!currentPatient && cachedData) {
             currentPatient = JSON.parse(cachedData);
-          } else if (window.OfflineManager) {
+          } else if (!currentPatient && window.OfflineManager) {
             if (isOfflinePatient) {
               const pending = await window.OfflineManager.getPendingRecords('pending_patients');
               const match = pending.find(r => r.localId === patientId);

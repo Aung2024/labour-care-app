@@ -158,11 +158,17 @@
             const d = e.data;
             const r = (role || "").toLowerCase();
             if (r === "midwife" || r === "") {
-              if (d.created_by === uid || d.createdBy === uid) {
+              const team = d.care_team_midwife_ids;
+              const onTeam = Array.isArray(team) && team.indexOf(uid) !== -1;
+              if (d.created_by === uid || d.createdBy === uid || onTeam) {
                 out.push({ id: e.id, ...d });
               }
             } else if (role === "TMO") {
               if (township && d.township === township) {
+                out.push({ id: e.id, ...d });
+              }
+            } else if (r.replace(/\s+/g, " ") === "regional officer") {
+              if (township && d.region === township) {
                 out.push({ id: e.id, ...d });
               }
             } else if (role === "Super Admin" || role === "admin") {

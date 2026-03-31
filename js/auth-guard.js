@@ -170,7 +170,13 @@ function initAuthGuard() {
  */
 async function verifyUserInFirestore(userId) {
   try {
-    // Skip Firestore verification when offline mode is active
+    // No network: keep session (IndexedDB mirror + Firestore cache); do not treat as invalid user
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      console.log('✅ [AuthGuard] Skipping Firestore verification (network offline). userId=', userId);
+      return true;
+    }
+
+    // Skip Firestore verification when legacy manual offline toggle was active
     if ((window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
         localStorage.getItem('offlineMode') === 'true') {
       console.log('✅ [AuthGuard] Skipping Firestore verification (offline mode). userId=', userId);
