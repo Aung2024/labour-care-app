@@ -292,6 +292,9 @@
                 const withTs = Object.assign({}, payload, {
                   updated_at: firebase.firestore.FieldValue.serverTimestamp()
                 });
+                if (withTs.created_at == null && withTs.createdAt == null) {
+                  withTs.created_at = firebase.firestore.FieldValue.serverTimestamp();
+                }
                 return ref.set(withTs, { merge: true }).then(function () {
                   processed++;
                   return OfflineStore.deleteOutbox(item.id);

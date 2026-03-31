@@ -404,16 +404,19 @@
     let canvas = null;
     let isDrawing = false;
 
-    // Get patient data from URL or sessionStorage
+    // Get patient data from URL or sessionStorage (URL may be encoded; sessionStorage is raw JSON)
     function getPatientData() {
       const urlParams = new URLSearchParams(window.location.search);
-      const patientDataStr = urlParams.get('data') || sessionStorage.getItem('pendingPatientData');
-      
-      if (patientDataStr) {
+      let raw = urlParams.get('data');
+      if (!raw) raw = sessionStorage.getItem('pendingPatientData');
+      if (!raw || !String(raw).trim()) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (e1) {
         try {
-          return JSON.parse(decodeURIComponent(patientDataStr));
-        } catch (e) {
-          console.error('Error parsing patient data:', e);
+          return JSON.parse(decodeURIComponent(raw));
+        } catch (e2) {
+          console.error('Error parsing patient data:', e2);
         }
       }
       return null;
@@ -637,11 +640,25 @@
             firestorePayload
           );
 
+          const sessionPayload = Object.assign({}, patientData, {
+            id: patientId,
+            created_by: currentUser.uid,
+            township: userTownship,
+            status: 'registered',
+            hasConsent: true,
+            consentStatus: 'consented'
+          });
+          sessionStorage.setItem('selectedPatientId', patientId);
+          sessionStorage.setItem('selectedPatientData', JSON.stringify(sessionPayload));
+
           if (syncResult.cloudOk) {
             alert('Saved successfully on local and cloud.');
           } else {
             alert('Saved successfully on local storage — please sync later!');
           }
+        } else if (patientId) {
+          sessionStorage.setItem('selectedPatientId', patientId);
+          sessionStorage.setItem('selectedPatientData', JSON.stringify(Object.assign({}, patientData, { id: patientId })));
         }
 
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -761,8 +778,29 @@
       }
     }
 
+    function waitForCurrentUserOffline(maxMs) {
+      return new Promise(function (resolve) {
+        var u = firebase.auth().currentUser;
+        if (u) {
+          resolve(u);
+          return;
+        }
+        var deadline = Date.now() + (maxMs || 3000);
+        var t = setInterval(function () {
+          u = firebase.auth().currentUser;
+          if (u || Date.now() >= deadline) {
+            clearInterval(t);
+            resolve(u || null);
+          }
+        }, 150);
+      });
+    }
+
     // Initialize
     firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        user = await waitForCurrentUserOffline(4000);
+      }
       if (!user) {
         window.location.href = 'login.html';
         return;

@@ -3,6 +3,37 @@
  * Handles patient selection and session storage across care pages
  */
 
+/**
+ * When offline, repopulate selectedPatientData from IndexedDB mirror if missing or corrupt.
+ */
+async function hydratePatientSessionFromMirror() {
+  const patientId = sessionStorage.getItem('selectedPatientId');
+  if (!patientId) return false;
+  try {
+    const existing = sessionStorage.getItem('selectedPatientData');
+    if (existing) {
+      JSON.parse(existing);
+      return true;
+    }
+  } catch (e) {
+    sessionStorage.removeItem('selectedPatientData');
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine) return false;
+  if (!window.LabourCareOffline || typeof LabourCareOffline.getPatientPayload !== 'function') {
+    return false;
+  }
+  try {
+    const pl = await LabourCareOffline.getPatientPayload(patientId);
+    if (!pl) return false;
+    const merged = Object.assign({ id: patientId }, pl);
+    sessionStorage.setItem('selectedPatientData', JSON.stringify(merged));
+    return true;
+  } catch (err) {
+    console.warn('hydratePatientSessionFromMirror:', err);
+    return false;
+  }
+}
+
 // Check if patient is selected in session
 function checkPatientSession() {
   const patientId = sessionStorage.getItem('selectedPatientId');
@@ -107,7 +138,9 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   });
   
   // Skip Firestore queries when offline -- use registration data only
-  const _isOfflineMode = window.OfflineManager && window.OfflineManager.isOfflineMode();
+  const _isOfflineMode =
+    (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+    (typeof navigator !== 'undefined' && navigator.onLine === false);
   if (!_isOfflineMode) {
     // Try to get LMP and GA from latest antenatal visit for most accurate calculation
     try {
@@ -263,16 +296,16 @@ async function displayPatientBanner(containerId = 'patientBanner') {
   `;
 }
 
-// Initialize on page load (call this at the end of care pages)
-function initializePatientSession(requirePatient = true) {
-  if (requirePatient) {
-    const patient = checkPatientSession();
-    if (!patient) {
-      return null;
-    }
-    return patient;
-  } else {
+// Initialize on page load (call this at the end of care pages). Await when offline mirror may be needed.
+async function initializePatientSession(requirePatient = true) {
+  if (!requirePatient) {
     return getSelectedPatient();
   }
+  await hydratePatientSessionFromMirror();
+  const patient = checkPatientSession();
+  if (!patient) {
+    return null;
+  }
+  return patient;
 }
 
