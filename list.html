@@ -29,7 +29,7 @@
     }
 
     body {
-      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Inter', sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       padding: 0;
@@ -401,15 +401,6 @@
       color: #374151;
     }
 
-    .offline-device-hint {
-      display: block;
-      font-size: 0.68rem;
-      color: #059669;
-      font-weight: 600;
-      margin-top: 4px;
-      line-height: 1.2;
-    }
-
     .patient-highlight-grid,
     .patient-stat-grid {
       display: grid;
@@ -630,39 +621,6 @@
       }
     }
 
-    /* Filter Badge Styling */
-    #activeFilterBadge .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      font-size: 0.9rem;
-      font-weight: 500;
-      border-radius: 20px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    
-    #activeFilterBadge .btn-close {
-      background: none;
-      border: none;
-      opacity: 0.8;
-      cursor: pointer;
-      padding: 0.25rem;
-      margin-left: 0.25rem;
-    }
-    
-    #activeFilterBadge .btn-close:hover {
-      opacity: 1;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 50%;
-    }
-    
-    #patientCountBadge {
-      font-weight: 500;
-      padding: 0.35rem 0.75rem;
-      border-radius: 12px;
-    }
-
     /* Touch-friendly buttons */
     @media (hover: none) and (pointer: coarse) {
       .patient-card {
@@ -679,9 +637,26 @@
 
     @media (max-width: 576px) {
     }
+
+    #labourCareOfflineBanner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: #fef3c7;
+      color: #78350f;
+      border-bottom: 1px solid #f59e0b;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
+  <div id="labourCareOfflineBanner" role="status">
+    <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
+    <button type="button" class="btn btn-sm btn-dark" id="labourCareSyncBtnList">Sync now</button>
+  </div>
   <!-- Header -->
   <div class="medical-header">
     <div class="header-content">
@@ -690,15 +665,12 @@
         <div class="page-subtitle">Choose a patient to access comprehensive care management</div>
       </div>
       <div class="header-right">
-        <a href="transfer-requests.html" class="btn btn-outline-info btn-sm me-2">
-          <i class="fas fa-share-square me-1"></i> Transfer Requests
-        </a>
-        <button class="btn btn-outline-warning btn-sm me-2" id="offlineSelectBtn" onclick="toggleOfflineSelectMode()">
-          <i class="fas fa-download me-1"></i> Prepare for Offline
-        </button>
-        <a href="home.html" class="btn btn-outline-light btn-sm me-2">
+        <a href="index.html" class="btn btn-outline-light btn-sm me-2">
           <i class="fas fa-home me-2"></i>Home
         </a>
+        <button type="button" class="btn btn-outline-light btn-sm me-2" id="labourCareSyncBtnListHeader">
+          <i class="fas fa-sync-alt me-2"></i>Sync
+        </button>
         <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); sessionStorage.clear(); window.location='login.html';">
           <i class="fas fa-sign-out-alt me-2"></i>Logout
         </button>
@@ -736,29 +708,6 @@
           <i class="fas fa-hands-holding-child me-1"></i> Postnatal
         </div>
       </div>
-      <!-- Midwife Filter (Super Admin only) -->
-      <div id="midwifeFilterContainer" style="display: none; margin-top: 1rem;">
-        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 250px;">
-            <label for="midwifeFilter" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
-              <i class="fas fa-user-nurse me-1"></i> Filter by Midwife:
-            </label>
-            <select id="midwifeFilter" class="form-select" style="max-width: 400px;" onchange="handleMidwifeFilterChange()">
-              <option value="all">All Midwives</option>
-            </select>
-          </div>
-          <!-- Active Filter Indicator -->
-          <div id="activeFilterBadge" style="display: none; margin-top: 1.75rem;">
-            <span class="badge bg-primary" style="font-size: 0.9rem; padding: 0.5rem 1rem;">
-              <i class="fas fa-filter me-1"></i>
-              <span id="activeFilterText">Filtered</span>
-              <button id="clearFilterBtn" class="btn-close btn-close-white ms-2" style="font-size: 0.7rem; opacity: 0.8;" onclick="clearMidwifeFilter()" aria-label="Clear filter"></button>
-            </span>
-          </div>
-        </div>
-      </div>
-      <!-- Data Masking Toggle Container -->
-      <div id="maskingToggleContainer" style="display: flex; justify-content: flex-end; margin-top: 0.5rem;"></div>
     </div>
 
     <!-- Recent Patients Section -->
@@ -795,7 +744,6 @@
         </div>
       </div>
       <span id="sectionTitleText">All Patients</span>
-      <span id="patientCountBadge" class="badge bg-light text-dark ms-2" style="font-size: 0.85rem; display: none;"></span>
     </h3>
 
     <!-- Loading State -->
@@ -832,17 +780,6 @@
   </div>
 
   <!-- Footer -->
-  <!-- Floating action bar for offline patient selection -->
-  <div id="offlineActionBar" style="display:none;position:fixed;bottom:0;left:0;width:100%;background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;padding:12px 20px;z-index:99998;box-shadow:0 -4px 16px rgba(0,0,0,0.2);display:none;align-items:center;justify-content:space-between;">
-    <span id="offlineSelectCount" style="font-weight:600;font-size:0.95rem;">0 patients selected</span>
-    <div>
-      <button class="btn btn-light btn-sm me-2" onclick="cancelOfflineSelectMode()">Cancel</button>
-      <button class="btn btn-dark btn-sm" onclick="saveSelectedForOffline()">
-        <i class="fas fa-download me-1"></i> Save for Offline
-      </button>
-    </div>
-  </div>
-
   <footer class="footer">
     <div class="container">
       <p class="mb-0">
@@ -856,73 +793,17 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/edd-display.js"></script>
-  <script src="js/auth-guard.js"></script>
-  <script src="js/user-cache.js"></script>
-  <script src="js/data-masking.js"></script>
-  <script src="js/session-manager.js"></script>
-  <script src="js/audit-logger.js"></script>
-  <script src="js/offline-manager.js"></script>
-  <script src="js/offline-status-bar.js"></script>
-  <script src="js/ui-dialogs.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
 
   <script>
     let currentUser = null;
     let userRole = null;
     let allPatients = [];
     let filteredPatients = [];
-    let cachedOfflinePatientIds = new Set();
-
-    async function refreshCachedOfflinePatientIds() {
-      cachedOfflinePatientIds = new Set();
-      if (!window.OfflineManager || !OfflineManager.getCachedPatients) return;
-      try {
-        const arr = await OfflineManager.getCachedPatients();
-        (arr || []).forEach(function (p) {
-          if (p && p.id != null) cachedOfflinePatientIds.add(String(p.id));
-        });
-      } catch (e) {
-        console.warn('refreshCachedOfflinePatientIds', e);
-      }
-    }
-
-    function listInAppModal(title, message) {
-      return new Promise(function (resolve) {
-        var wrap = document.createElement('div');
-        wrap.setAttribute('role', 'dialog');
-        wrap.style.cssText =
-          'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;';
-        var esc = (message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-        wrap.innerHTML =
-          '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden;">' +
-          '<div style="padding:14px 18px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:600;font-size:1rem;">' +
-          (title || 'Notice').replace(/</g, '') +
-          '</div>' +
-          '<div style="padding:18px;color:#374151;font-size:0.95rem;line-height:1.5;">' +
-          esc +
-          '</div>' +
-          '<div style="padding:12px 18px 18px;text-align:right;border-top:1px solid #f3f4f6;">' +
-          '<button type="button" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;padding:10px 24px;border-radius:999px;font-weight:600;cursor:pointer;">OK</button>' +
-          '</div></div>';
-        function close() {
-          wrap.remove();
-          resolve();
-        }
-        wrap.querySelector('button').onclick = function (e) {
-          e.preventDefault();
-          close();
-        };
-        wrap.onclick = function (e) {
-          if (e.target === wrap) close();
-        };
-        document.body.appendChild(wrap);
-      });
-    }
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
-    let selectedMidwifeId = 'all'; // For Super Admin midwife filter
-    let allMidwives = []; // Store all midwives for Super Admin
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
@@ -936,23 +817,16 @@
       // Detect iOS
       const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
       
-      // OPTIMIZED: Get user role using cache to avoid redundant queries
+      // Get user role using smart query - CRITICAL: must succeed for app to work
       try {
-        let userData;
-        if (window.UserCache) {
-          userData = await window.UserCache.get(user.uid);
-        } else {
-          // Fallback to direct query
-          const userQuery = firebase.firestore().collection('users').doc(user.uid);
-          const userDoc = await smartFirestoreQuery(
-            Promise.resolve(userQuery),
-            { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
-          );
-          userData = userDoc && userDoc.exists ? userDoc.data() : null;
-        }
+        const userQuery = firebase.firestore().collection('users').doc(user.uid);
+        const userDoc = await smartFirestoreQuery(
+          Promise.resolve(userQuery),
+          { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
+        );
       
-        if (userData) {
-          userRole = userData.role;
+        if (userDoc && userDoc.exists) {
+        userRole = userDoc.data().role;
           console.log('✅ User role loaded:', userRole);
         } else {
           console.warn('⚠️ User document not found, defaulting to Midwife');
@@ -964,16 +838,6 @@
         userRole = 'Midwife'; // Default to Midwife if role load fails
       }
       
-      // Show/hide midwife filter for Super Admin
-      if (userRole === 'Super Admin' || userRole === 'admin') {
-        document.getElementById('midwifeFilterContainer').style.display = 'block';
-        await loadMidwives();
-        // Update filter indicator after loading midwives
-        updateFilterIndicator();
-      } else {
-        document.getElementById('midwifeFilterContainer').style.display = 'none';
-      }
-      
       // Load recent patients
       loadRecentPatients();
       
@@ -981,48 +845,46 @@
       await loadPatients();
     });
 
+    async function labourCareListSync() {
+      const btns = [document.getElementById('labourCareSyncBtnList'), document.getElementById('labourCareSyncBtnListHeader')];
+      btns.forEach(function (b) { if (b) b.disabled = true; });
+      try {
+        const ts = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+        await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
+        await LabourCareOffline.flushOutbox();
+        LabourCareOffline.setOfflineBanner(false);
+        await loadPatients();
+        alert('Sync complete.');
+      } catch (e) {
+        alert('Sync failed: ' + (e && e.message ? e.message : e));
+      }
+      btns.forEach(function (b) { if (b) b.disabled = false; });
+    }
+
     // Load patients from Firestore with optimization
     async function loadPatients() {
-      // OFFLINE MODE: Load from IndexedDB instead of Firestore
-      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-        try {
-          console.log('Loading patients in OFFLINE mode from IndexedDB...');
-          allPatients = [];
-
-          const pending = await window.OfflineManager.getPendingRecords('pending_patients');
-          pending.forEach(rec => {
-            const p = { id: rec.localId, ...rec.data, _offlineType: 'pending' };
-            allPatients.push(p);
+      try {
+        if (!navigator.onLine && window.LabourCareOffline) {
+          const ts = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+          const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
+          allPatients = list;
+          allPatients.sort(function (a, b) {
+            const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
+            const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
+            return dateB - dateA;
           });
-
-          let cached = [];
-          try { cached = await window.OfflineManager.getCachedPatients(); } catch (e) {}
-          cached.forEach(p => {
-            allPatients.push({ ...p, _offlineType: 'cached' });
-          });
-
-          filteredPatients = [...allPatients];
+          filteredPatients = allPatients.slice();
           document.getElementById('loadingContainer').style.display = 'none';
-
           if (allPatients.length === 0) {
             document.getElementById('emptyState').style.display = 'block';
-            document.getElementById('emptyMessage').textContent =
-              'No offline patients available. Register a new patient or use "Prepare for Offline" while online to download patients.';
+            document.getElementById('emptyMessage').textContent = 'No saved patients on this device. Connect and tap Sync to download.';
           } else {
-            console.log('✅ Loaded', allPatients.length, 'offline patients');
             displayPatients();
           }
-        } catch (error) {
-          console.error('Error loading offline patients:', error);
-          document.getElementById('loadingContainer').style.display = 'none';
-          document.getElementById('emptyState').style.display = 'block';
-          document.getElementById('emptyMessage').textContent = 'Error loading offline patients: ' + error.message;
+          LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
+          return;
         }
-        return;
-      }
 
-      // ONLINE MODE: Load from Firestore
-      try {
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
         const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -1049,14 +911,6 @@
               { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
             console.log('createdBy query result:', oldSnap?.empty ? 'empty' : `${oldSnap?.size || 0} docs`);
-
-            const sharedQuery = db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid);
-            console.log('Trying care_team_midwife_ids query...');
-            const sharedSnap = await smartFirestoreQuery(
-              Promise.resolve(sharedQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-            );
-            console.log('care_team query result:', sharedSnap?.empty ? 'empty' : `${sharedSnap?.size || 0} docs`);
             
             // Combine results
             allPatients = [];
@@ -1087,19 +941,6 @@
             } else {
               console.log('⚠️ createdBy query returned empty or invalid result');
             }
-
-            if (sharedSnap && typeof sharedSnap.forEach === 'function' && !sharedSnap.empty) {
-              let count = 0;
-              sharedSnap.forEach(doc => {
-                if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
-                  patientMap.set(doc.id, { id: doc.id, ...doc.data(), _sharedAccess: true });
-                  count++;
-                }
-              });
-              console.log('✅ Added', count, 'patients from care_team_midwife_ids');
-            } else {
-              console.log('⚠️ care_team_midwife_ids query returned empty or invalid result');
-            }
             
             allPatients = Array.from(patientMap.values());
             console.log('📊 Total combined patients:', allPatients.length);
@@ -1113,48 +954,6 @@
             }
           } catch (error) {
             console.error('Error loading midwife patients:', error);
-            console.error('Error details:', error.message, error.code);
-            allPatients = [];
-          }
-        } else if (userRole === 'Regional Officer') {
-          try {
-            console.log('Loading as Regional Officer...');
-            const userQuery = db.collection('users').doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
-            );
-            
-            if (userDoc && userDoc.exists) {
-              const userRegion = userDoc.data().region;
-              console.log('Regional Officer Region:', userRegion);
-              if (userRegion) {
-                query = query.where('region', '==', userRegion);
-                const snapshot = await smartFirestoreQuery(
-                  Promise.resolve(query),
-                  { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-                );
-                allPatients = [];
-                if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-                  snapshot.forEach(doc => {
-                    if (doc && doc.id && doc.data) {
-                      allPatients.push({ id: doc.id, ...doc.data() });
-                    }
-                  });
-                  console.log('✅ Loaded', allPatients.length, 'patients for Regional Officer');
-                } else {
-                  console.warn('⚠️ Regional Officer query returned empty result');
-                }
-              } else {
-                console.warn('⚠️ Regional Officer user document missing region');
-                allPatients = [];
-              }
-            } else {
-              console.warn('⚠️ Regional Officer user document not found');
-              allPatients = [];
-            }
-          } catch (error) {
-            console.error('❌ Error loading Regional Officer patients:', error);
             console.error('Error details:', error.message, error.code);
             allPatients = [];
           }
@@ -1199,68 +998,22 @@
           }
         } else if (userRole === 'Super Admin' || userRole === 'admin') {
           console.log('Loading as Super Admin (all patients)...');
+          // Super Admin sees all patients
+          const snapshot = await smartFirestoreQuery(
+            Promise.resolve(query),
+            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+          );
           
-          // If a specific midwife is selected, filter by that midwife
-          if (selectedMidwifeId && selectedMidwifeId !== 'all') {
-            console.log('Filtering by selected midwife:', selectedMidwifeId);
-            try {
-              // Try both field names for compatibility
-              const newQuery = db.collection('patients').where('created_by', '==', selectedMidwifeId);
-              const newSnap = await smartFirestoreQuery(
-                Promise.resolve(newQuery),
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-              );
-              
-              const oldQuery = db.collection('patients').where('createdBy', '==', selectedMidwifeId);
-              const oldSnap = await smartFirestoreQuery(
-                Promise.resolve(oldQuery),
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-              );
-              
-              // Combine results
-              allPatients = [];
-              const patientMap = new Map();
-              
-              if (newSnap && typeof newSnap.forEach === 'function' && !newSnap.empty) {
-                newSnap.forEach(doc => {
-                  if (doc && doc.id && doc.data) {
-                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-                  }
-                });
+          allPatients = [];
+          if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+            snapshot.forEach(doc => {
+              if (doc && doc.id && doc.data) {
+                allPatients.push({ id: doc.id, ...doc.data() });
               }
-              
-              if (oldSnap && typeof oldSnap.forEach === 'function' && !oldSnap.empty) {
-                oldSnap.forEach(doc => {
-                  if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
-                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-                  }
-                });
-              }
-              
-              allPatients = Array.from(patientMap.values());
-              console.log('✅ Loaded', allPatients.length, 'patients for selected midwife');
-            } catch (error) {
-              console.error('❌ Error loading patients for selected midwife:', error);
-              allPatients = [];
-            }
+            });
+            console.log('✅ Loaded', allPatients.length, 'patients for Super Admin');
           } else {
-            // Super Admin sees all patients when "All Midwives" is selected
-            const snapshot = await smartFirestoreQuery(
-              Promise.resolve(query),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-            );
-            
-            allPatients = [];
-            if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-              snapshot.forEach(doc => {
-                if (doc && doc.id && doc.data) {
-                  allPatients.push({ id: doc.id, ...doc.data() });
-                }
-              });
-              console.log('✅ Loaded', allPatients.length, 'patients for Super Admin (all midwives)');
-            } else {
-              console.warn('⚠️ Super Admin query returned empty result');
-            }
+            console.warn('⚠️ Super Admin query returned empty result');
           }
         } else {
           console.warn('⚠️ Unknown user role:', userRole, '- defaulting to no access');
@@ -1269,7 +1022,24 @@
         }
 
         console.log('✅ Loaded', allPatients.length, 'patients total');
-        
+
+        if (navigator.onLine && window.LabourCareOffline && allPatients.length) {
+          for (let m = 0; m < allPatients.length; m++) {
+            const row = allPatients[m];
+            const pid = row.id;
+            const copy = Object.assign({}, row);
+            delete copy.id;
+            await LabourCareOffline.ingestPatientRoot({
+              id: pid,
+              data: function () {
+                return copy;
+              }
+            });
+          }
+          const tsPull = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+          LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
+        }
+
         // Sort by creation date (newest first) - optimized
         allPatients.sort((a, b) => {
           const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
@@ -1278,11 +1048,6 @@
         });
 
         filteredPatients = [...allPatients];
-        
-        // Update filter indicator after loading (for Super Admin)
-        if (userRole === 'Super Admin' || userRole === 'admin') {
-          updateFilterIndicator();
-        }
         
         document.getElementById('loadingContainer').style.display = 'none';
         
@@ -1308,7 +1073,6 @@
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
           console.log('✅ Displaying', allPatients.length, 'patients');
-          await refreshCachedOfflinePatientIds();
           displayPatients();
         }
         
@@ -1329,16 +1093,10 @@
 
     // Display patients in current view
     function displayPatients() {
-      // Create masking toggle if it doesn't exist
-      createMaskingToggleIfNeeded();
-      
       const grid = document.getElementById('patientsGrid');
       const list = document.getElementById('patientsList');
       grid.innerHTML = '';
       list.innerHTML = '';
-      
-      // Update patient count badge
-      updatePatientCountBadge();
       
       if (filteredPatients.length === 0) {
         document.getElementById('patientsGrid').style.display = 'none';
@@ -1388,10 +1146,6 @@
       
       list.appendChild(table);
       }
-
-      if (offlineSelectMode) {
-        setTimeout(() => addCheckboxesToCards(), 50);
-      }
     }
 
     // Create patient card element
@@ -1400,15 +1154,7 @@
       
       const card = document.createElement('div');
       card.className = 'patient-card';
-      card.dataset.patientId = patient.id;
-      card.onclick = () => {
-        if (offlineSelectMode) {
-          const cb = card.querySelector('.offline-checkbox input');
-          if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
-          return;
-        }
-        selectPatient(patient);
-      };
+      card.onclick = () => selectPatient(patient);
       
       const status = patient.status || 'registered';
       let statusClass = status.toLowerCase();
@@ -1438,46 +1184,22 @@
         gaDisplay = ga ? `${ga} wks` : '-';
       }
       
-      // Format EDD (past due → explanatory suffix)
+      // Format EDD
       let eddDisplay = '-';
       if (patient.edd) {
-        const listLang = (localStorage.getItem('appLanguage') || 'mm') === 'mm' ? 'mm' : 'en';
-        eddDisplay = window.EddDisplay
-          ? window.EddDisplay.formatEddWithStatus(patient.edd, { lang: listLang, notSetText: '-' })
-          : formatDate(patient.edd);
+        eddDisplay = formatDate(patient.edd);
       }
     
     const parityDisplay = patient.parity || '-';
     const ageDisplay = patient.age ? `${patient.age} yrs` : '-';
     const riskDisplay = isHighRisk ? 'High Risk' : 'Normal';
       
-      // Apply data masking
-      const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
-      
-      let offlineBadge = '';
-      if (patient._offlineType === 'pending') {
-        offlineBadge = '<span class="badge bg-warning text-dark" style="font-size:0.65rem;margin-left:6px;">Pending Sync</span>';
-      } else if (patient._offlineType === 'cached') {
-        offlineBadge = '<span class="badge bg-success" style="font-size:0.65rem;margin-left:6px;">Downloaded</span>';
-      } else if (patient._sharedAccess) {
-        offlineBadge = '<span class="badge bg-info text-dark" style="font-size:0.65rem;margin-left:6px;">Shared</span>';
-      }
-      var offlineHint = '';
-      if (patient._offlineType === 'cached') {
-        offlineHint = '<span class="offline-device-hint">On this device</span>';
-      } else if (!patient._offlineType && cachedOfflinePatientIds.has(String(patient.id))) {
-        offlineHint = '<span class="offline-device-hint">Saved for offline</span>';
-      }
-
       card.innerHTML = `
         <div class="patient-header">
           <div>
-            <div class="patient-name">${displayName}${offlineBadge}</div>
+            <div class="patient-name">${patient.name || 'Unknown'}</div>
           </div>
-          <div style="text-align:right;">
-            <span class="status-badge ${statusClass}">${displayStatus}</span>
-            ${offlineHint}
-          </div>
+          <span class="status-badge ${statusClass}">${displayStatus}</span>
         </div>
       <div class="patient-highlight-grid">
         <div class="info-chip">
@@ -1518,15 +1240,7 @@
 
     function createPatientRow(patient) {
       const row = document.createElement('tr');
-      row.dataset.patientId = patient.id;
-      row.onclick = () => {
-        if (offlineSelectMode) {
-          const cb = row.querySelector('.offline-checkbox input');
-          if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
-          return;
-        }
-        selectPatient(patient);
-      };
+      row.onclick = () => selectPatient(patient);
       
       const status = (patient.status || 'registered').toLowerCase();
       let statusClass = status;
@@ -1544,27 +1258,16 @@
 
       const ageDisplay = patient.age ? `${patient.age} yrs` : '-';
       const parityDisplay = patient.parity || '-';
-      
-      // Apply data masking
-      const displayName = window.DataMasking ? window.DataMasking.maskName(patient.name, false) : (patient.name || 'Unknown');
-
-      var rowOfflineHint = '';
-      if (patient._offlineType === 'cached') {
-        rowOfflineHint = '<span class="offline-device-hint">On this device</span>';
-      } else if (!patient._offlineType && cachedOfflinePatientIds.has(String(patient.id))) {
-        rowOfflineHint = '<span class="offline-device-hint">Saved for offline</span>';
-      }
 
       row.innerHTML = `
         <td>
-          <div class="fw-semibold text-dark mb-1">${displayName}</div>
+          <div class="fw-semibold text-dark mb-1">${patient.name || 'Unknown'}</div>
           <div class="text-muted" style="font-size: 0.8rem;">${ageDisplay} · Parity: ${parityDisplay}</div>
         </td>
         <td>
           <span class="status-pill ${statusClass}">
             <i class="fas fa-circle" style="font-size: 0.5rem;"></i> ${displayStatus}
           </span>
-          ${rowOfflineHint}
         </td>
         <td class="actions-cell">
           <button class="btn btn-secondary btn-sm" data-patient-id="${patient.id}" onclick="event.stopPropagation(); handleEditPatient(this)">
@@ -1584,8 +1287,7 @@
         selectPatient(patient);
       } catch (error) {
         console.error('Error parsing patient data:', error);
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert('Error selecting patient: ' + error.message, { title: 'Error' });
-        else alert('Error selecting patient: ' + error.message);
+        alert('Error selecting patient: ' + error.message);
       }
     }
 
@@ -1596,48 +1298,43 @@
         console.log('Edit patient clicked, patientId:', patientId);
         
         if (!patientId || patientId === 'undefined' || patientId === 'null') {
-          if (window.AppDialog && AppDialog.alert) AppDialog.alert('No patient ID found. Please try again.', { title: 'Error' });
-          else alert('No patient ID found. Please try again.');
+          alert('No patient ID found. Please try again.');
           return;
         }
-
+        
         window.location.href = `edit-patient.html?id=${patientId}`;
       } catch (error) {
         console.error('Error navigating to edit patient:', error);
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert('Error opening patient edit page: ' + error.message, { title: 'Error' });
-        else alert('Error opening patient edit page: ' + error.message);
+        alert('Error opening patient edit page: ' + error.message);
       }
     }
 
-    // Select patient and save to session (merge LCG times from device cache for offline LCG)
+    // Select patient and save to session
     function selectPatient(patient) {
       console.log('Selecting patient:', patient);
-      (async function () {
-        var p = Object.assign({}, patient);
-        try {
-          if (window.OfflineManager && OfflineManager.getCachedPatient) {
-            var c = await OfflineManager.getCachedPatient(patient.id);
-            if (c && c.lcgStartingTime) p.lcgStartingTime = c.lcgStartingTime;
-            if (c && c.lcgSecondStageTime) p.lcgSecondStageTime = c.lcgSecondStageTime;
-          }
-        } catch (e) {}
-        sessionStorage.setItem('selectedPatientId', p.id);
-        sessionStorage.setItem('selectedPatientData', JSON.stringify(p));
-        addToRecentPatients(p);
-        try {
-          var user = firebase && firebase.auth ? firebase.auth().currentUser : null;
-          var email = user && user.email ? user.email : '';
-          if (email && /@test\.com$/i.test(email)) {
-            sessionStorage.setItem('lcgOnly', '1');
-            window.location.href = 'patient-care-hub-lcg.html';
-            return;
-          }
-        } catch (e) {
-          console.warn('Email check failed, defaulting to full hub.', e);
+      
+      // Save to session storage
+      sessionStorage.setItem('selectedPatientId', patient.id);
+      sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
+      
+      // Add to recent patients
+      addToRecentPatients(patient);
+      
+      // Redirect: OG doctors to LCG-only hub if email ends with @test.com
+      try {
+        const user = firebase && firebase.auth ? firebase.auth().currentUser : null;
+        const email = user && user.email ? user.email : '';
+        if (email && /@test\.com$/i.test(email)) {
+          sessionStorage.setItem('lcgOnly', '1');
+          window.location.href = 'patient-care-hub-lcg.html';
+          return;
         }
-        sessionStorage.removeItem('lcgOnly');
-        window.location.href = 'patient-care-hub.html';
-      })();
+      } catch (e) {
+        console.warn('Email check failed, defaulting to full hub.', e);
+      }
+      // Default: full hub
+      sessionStorage.removeItem('lcgOnly');
+      window.location.href = 'patient-care-hub.html';
     }
 
     // Edit patient (legacy function for backward compatibility)
@@ -1645,15 +1342,13 @@
       console.log('Edit patient clicked, patientId:', patientId);
       try {
         if (!patientId || patientId === 'undefined' || patientId === 'null') {
-          if (window.AppDialog && AppDialog.alert) AppDialog.alert('No patient ID found. Please try again.', { title: 'Error' });
-          else alert('No patient ID found. Please try again.');
+          alert('No patient ID found. Please try again.');
           return;
         }
         window.location.href = `edit-patient.html?id=${patientId}`;
       } catch (error) {
         console.error('Error navigating to edit patient:', error);
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert('Error opening patient edit page: ' + error.message, { title: 'Error' });
-        else alert('Error opening patient edit page: ' + error.message);
+        alert('Error opening patient edit page: ' + error.message);
       }
     }
 
@@ -1783,32 +1478,12 @@
 
     updateViewToggleUI();
 
-    // Function to create masking toggle
-    function createMaskingToggleIfNeeded() {
-      if (window.DataMasking && !document.getElementById('maskingToggle')) {
-        const toggleContainer = document.getElementById('maskingToggleContainer');
-        if (toggleContainer) {
-          try {
-            window.DataMasking.createToggle('maskingToggleContainer');
-            console.log('✅ Data masking toggle created');
-          } catch (error) {
-            console.error('Error creating masking toggle:', error);
-          }
-        } else {
-          console.warn('Masking toggle container not found');
-        }
-      }
-    }
-
-    // Try to create toggle on page load
-    window.addEventListener('DOMContentLoaded', () => {
-      setTimeout(createMaskingToggleIfNeeded, 500);
-    });
-
-    // Also try after auth state changes
-    if (window.DataMasking) {
-      setTimeout(createMaskingToggleIfNeeded, 1000);
-    }
+    (function wireListOfflineSync() {
+      var b1 = document.getElementById('labourCareSyncBtnList');
+      var b2 = document.getElementById('labourCareSyncBtnListHeader');
+      if (b1) b1.addEventListener('click', labourCareListSync);
+      if (b2) b2.addEventListener('click', labourCareListSync);
+    })();
 
     // Load recent patients from localStorage
     function loadRecentPatients() {
@@ -1860,196 +1535,6 @@
       localStorage.setItem('recentPatients', JSON.stringify(recentPatients));
     }
 
-    // Load all midwives for Super Admin filter
-    async function loadMidwives() {
-      try {
-        console.log('Loading midwives for Super Admin filter...');
-        const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        
-        // Query all users with role 'Midwife' or 'midwife'
-        const midwivesQuery = db.collection('users')
-          .where('role', 'in', ['Midwife', 'midwife']);
-        
-        const snapshot = await smartFirestoreQuery(
-          Promise.resolve(midwivesQuery),
-          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-        );
-        
-        allMidwives = [];
-        if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-          snapshot.forEach(doc => {
-            if (doc && doc.id && doc.data) {
-              const userData = doc.data();
-              allMidwives.push({
-                id: doc.id,
-                name: userData.name || userData.email || 'Unknown',
-                email: userData.email || ''
-              });
-            }
-          });
-          
-          // Sort by name
-          allMidwives.sort((a, b) => {
-            const nameA = a.name.toLowerCase();
-            const nameB = b.name.toLowerCase();
-            return nameA.localeCompare(nameB);
-          });
-          
-          // Populate the dropdown
-          const midwifeFilter = document.getElementById('midwifeFilter');
-          if (midwifeFilter) {
-            // Clear existing options except "All Midwives"
-            midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
-            
-            // Add each midwife as an option
-            allMidwives.forEach(midwife => {
-              const option = document.createElement('option');
-              option.value = midwife.id;
-              option.textContent = midwife.name + (midwife.email ? ` (${midwife.email})` : '');
-              midwifeFilter.appendChild(option);
-            });
-            
-            console.log('✅ Loaded', allMidwives.length, 'midwives for filter');
-          }
-        } else {
-          console.warn('⚠️ No midwives found');
-        }
-      } catch (error) {
-        console.error('❌ Error loading midwives:', error);
-        // If 'in' operator is not supported, try alternative approach
-        if (error.code === 'invalid-argument' || error.message.includes('in')) {
-          console.log('Trying alternative method to load midwives...');
-          try {
-            const db = firebase.firestore();
-            const allUsersQuery = db.collection('users');
-            const allUsersSnap = await smartFirestoreQuery(
-              Promise.resolve(allUsersQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-            );
-            
-            allMidwives = [];
-            if (allUsersSnap && typeof allUsersSnap.forEach === 'function' && !allUsersSnap.empty) {
-              allUsersSnap.forEach(doc => {
-                if (doc && doc.id && doc.data) {
-                  const userData = doc.data();
-                  const role = userData.role || '';
-                  if (role === 'Midwife' || role === 'midwife') {
-                    allMidwives.push({
-                      id: doc.id,
-                      name: userData.name || userData.email || 'Unknown',
-                      email: userData.email || ''
-                    });
-                  }
-                }
-              });
-              
-              // Sort by name
-              allMidwives.sort((a, b) => {
-                const nameA = a.name.toLowerCase();
-                const nameB = b.name.toLowerCase();
-                return nameA.localeCompare(nameB);
-              });
-              
-              // Populate the dropdown
-              const midwifeFilter = document.getElementById('midwifeFilter');
-              if (midwifeFilter) {
-                midwifeFilter.innerHTML = '<option value="all">All Midwives</option>';
-                allMidwives.forEach(midwife => {
-                  const option = document.createElement('option');
-                  option.value = midwife.id;
-                  option.textContent = midwife.name + (midwife.email ? ` (${midwife.email})` : '');
-                  midwifeFilter.appendChild(option);
-                });
-              }
-              
-              console.log('✅ Loaded', allMidwives.length, 'midwives (alternative method)');
-            }
-          } catch (altError) {
-            console.error('❌ Alternative method also failed:', altError);
-          }
-        }
-      }
-    }
-
-    // Handle midwife filter change
-    function handleMidwifeFilterChange() {
-      const midwifeFilter = document.getElementById('midwifeFilter');
-      if (midwifeFilter) {
-        selectedMidwifeId = midwifeFilter.value;
-        console.log('Midwife filter changed to:', selectedMidwifeId);
-        
-        // Update filter indicator
-        updateFilterIndicator();
-        
-        // Show loading state
-        document.getElementById('loadingContainer').style.display = 'block';
-        document.getElementById('patientsGrid').style.display = 'none';
-        document.getElementById('patientsList').style.display = 'none';
-        document.getElementById('emptyState').style.display = 'none';
-        
-        // Reload patients with the new filter
-        loadPatients();
-      }
-    }
-    
-    // Update filter indicator badge
-    function updateFilterIndicator() {
-      const activeFilterBadge = document.getElementById('activeFilterBadge');
-      const activeFilterText = document.getElementById('activeFilterText');
-      
-      if (selectedMidwifeId && selectedMidwifeId !== 'all') {
-        // Find the selected midwife name
-        const selectedMidwife = allMidwives.find(m => m.id === selectedMidwifeId);
-        const midwifeName = selectedMidwife ? selectedMidwife.name : 'Selected Midwife';
-        
-        // Show filter badge
-        if (activeFilterBadge) {
-          activeFilterBadge.style.display = 'block';
-        }
-        if (activeFilterText) {
-          activeFilterText.textContent = `Filtered: ${midwifeName}`;
-        }
-      } else {
-        // Hide filter badge
-        if (activeFilterBadge) {
-          activeFilterBadge.style.display = 'none';
-        }
-      }
-    }
-    
-    // Clear midwife filter
-    function clearMidwifeFilter() {
-      const midwifeFilter = document.getElementById('midwifeFilter');
-      if (midwifeFilter) {
-        midwifeFilter.value = 'all';
-        selectedMidwifeId = 'all';
-        updateFilterIndicator();
-        
-        // Show loading state
-        document.getElementById('loadingContainer').style.display = 'block';
-        document.getElementById('patientsGrid').style.display = 'none';
-        document.getElementById('patientsList').style.display = 'none';
-        document.getElementById('emptyState').style.display = 'none';
-        
-        // Reload all patients
-        loadPatients();
-      }
-    }
-
-    // Update patient count badge
-    function updatePatientCountBadge() {
-      const countBadge = document.getElementById('patientCountBadge');
-      if (countBadge) {
-        if (filteredPatients.length > 0) {
-          countBadge.textContent = `${filteredPatients.length} patient${filteredPatients.length !== 1 ? 's' : ''}`;
-          countBadge.style.display = 'inline-block';
-        } else {
-          countBadge.style.display = 'none';
-        }
-      }
-    }
-
     // Calculate Gestational Age from LMP
     function calculateGA(lmp) {
       if (!lmp || lmp === 'unknown') return null;
@@ -2089,167 +1574,6 @@
         month: 'short',
         year: 'numeric'
       });
-    }
-
-    // ===== Offline patient selection mode =====
-    let offlineSelectMode = false;
-    let selectedPatientIds = new Set();
-
-    function toggleOfflineSelectMode() {
-      offlineSelectMode = !offlineSelectMode;
-      const btn = document.getElementById('offlineSelectBtn');
-      const actionBar = document.getElementById('offlineActionBar');
-
-      if (offlineSelectMode) {
-        btn.classList.remove('btn-outline-warning');
-        btn.classList.add('btn-warning');
-        btn.innerHTML = '<i class="fas fa-times me-1"></i> Cancel Selection';
-        actionBar.style.display = 'flex';
-        selectedPatientIds.clear();
-        updateOfflineSelectCount();
-        addCheckboxesToCards();
-      } else {
-        cancelOfflineSelectMode();
-      }
-    }
-
-    function cancelOfflineSelectMode() {
-      offlineSelectMode = false;
-      selectedPatientIds.clear();
-      const btn = document.getElementById('offlineSelectBtn');
-      const actionBar = document.getElementById('offlineActionBar');
-      btn.classList.remove('btn-warning');
-      btn.classList.add('btn-outline-warning');
-      btn.innerHTML = '<i class="fas fa-download me-1"></i> Prepare for Offline';
-      actionBar.style.display = 'none';
-      removeCheckboxesFromCards();
-    }
-
-    function addCheckboxesToCards() {
-      document.querySelectorAll('.patient-card').forEach(card => {
-        if (card.querySelector('.offline-checkbox')) return;
-        const cb = document.createElement('div');
-        cb.className = 'offline-checkbox';
-        cb.style.cssText = 'position:absolute;top:10px;left:10px;z-index:10;';
-        cb.innerHTML = '<input type="checkbox" style="width:20px;height:20px;cursor:pointer;accent-color:#d97706;" onclick="event.stopPropagation();">';
-        card.style.position = 'relative';
-        card.prepend(cb);
-
-        const input = cb.querySelector('input');
-        input.addEventListener('change', function (e) {
-          e.stopPropagation();
-          const patientId = card.dataset.patientId;
-          if (this.checked) {
-            selectedPatientIds.add(patientId);
-            card.style.outline = '3px solid #d97706';
-          } else {
-            selectedPatientIds.delete(patientId);
-            card.style.outline = '';
-          }
-          updateOfflineSelectCount();
-        });
-      });
-
-      document.querySelectorAll('.patients-table tbody tr').forEach(row => {
-        if (row.querySelector('.offline-checkbox')) return;
-        const td = document.createElement('td');
-        td.className = 'offline-checkbox';
-        td.innerHTML = '<input type="checkbox" style="width:18px;height:18px;cursor:pointer;accent-color:#d97706;" onclick="event.stopPropagation();">';
-        row.prepend(td);
-
-        const input = td.querySelector('input');
-        input.addEventListener('change', function (e) {
-          e.stopPropagation();
-          const patientId = row.dataset.patientId;
-          if (this.checked) {
-            selectedPatientIds.add(patientId);
-            row.style.background = '#fef3c7';
-          } else {
-            selectedPatientIds.delete(patientId);
-            row.style.background = '';
-          }
-          updateOfflineSelectCount();
-        });
-      });
-    }
-
-    function removeCheckboxesFromCards() {
-      document.querySelectorAll('.offline-checkbox').forEach(el => el.remove());
-      document.querySelectorAll('.patient-card').forEach(c => c.style.outline = '');
-      document.querySelectorAll('.patients-table tbody tr').forEach(r => r.style.background = '');
-    }
-
-    function updateOfflineSelectCount() {
-      const el = document.getElementById('offlineSelectCount');
-      if (el) el.textContent = selectedPatientIds.size + ' patient' + (selectedPatientIds.size !== 1 ? 's' : '') + ' selected';
-    }
-
-    async function saveSelectedForOffline() {
-      if (selectedPatientIds.size === 0) {
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert('Please select at least one patient.', { title: 'Select Patients' });
-        else alert('Please select at least one patient.');
-        return;
-      }
-
-      const btn = document.querySelector('#offlineActionBar .btn-dark');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
-
-      try {
-        let savedCount = 0;
-        const dbFs = firebase.firestore();
-        for (const pid of selectedPatientIds) {
-          const patient = { ...(allPatients.find(p => p.id === pid) || {}) };
-          if (!patient.id) continue;
-          try {
-            const base = dbFs.collection('patients').doc(pid);
-            const summaryDoc = await base.collection('records').doc('summary').get();
-            let lcgStartingTime = null;
-            let lcgSecondStageTime = null;
-            if (summaryDoc.exists) {
-              const sd = summaryDoc.data();
-              lcgStartingTime = sd.startingTime || sd.activeFirstStage_Time || null;
-              lcgSecondStageTime = sd.secondStageTime || sd.secondStage_Time || null;
-            }
-            const stDoc = await base.collection('records').doc('startingTime').get();
-            if (stDoc.exists && stDoc.data().startingTime) {
-              lcgStartingTime = stDoc.data().startingTime;
-            }
-            const s2 = await base.collection('records').doc('secondStage').get();
-            if (s2.exists && s2.data().secondStageStartTime) {
-              lcgSecondStageTime = s2.data().secondStageStartTime;
-            }
-            if (lcgStartingTime) patient.lcgStartingTime = lcgStartingTime;
-            if (lcgSecondStageTime) patient.lcgSecondStageTime = lcgSecondStageTime;
-          } catch (lcgErr) {
-            console.warn('LCG snapshot for offline cache:', pid, lcgErr);
-          }
-          await OfflineManager.cachePatientForOffline(patient);
-          savedCount++;
-        }
-
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-download me-1"></i> Save for Offline';
-        const msg = savedCount + ' patient' + (savedCount !== 1 ? 's' : '') + ' saved for offline use. You can access them from the Home page when offline.';
-        try {
-          if (window.AppDialog && typeof AppDialog.alert === 'function') {
-            await AppDialog.alert(msg, { title: 'Saved for Offline' });
-          } else {
-            await listInAppModal('Saved for Offline', msg);
-          }
-        } catch (e) {
-          await listInAppModal('Saved for Offline', msg);
-        }
-        await refreshCachedOfflinePatientIds();
-        displayPatients();
-        cancelOfflineSelectMode();
-      } catch (error) {
-        console.error('Error saving patients for offline:', error);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-download me-1"></i> Save for Offline';
-        if (window.AppDialog && AppDialog.alert) AppDialog.alert('Error saving patients: ' + error.message, { title: 'Error' });
-        else alert('Error saving patients: ' + error.message);
-      }
     }
   </script>
 </body>

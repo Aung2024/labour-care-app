@@ -590,7 +590,7 @@
           <button class="btn-print" onclick="printReport()">
             <i class="fas fa-print"></i> Print Report
           </button>
-          <button class="btn btn-secondary" onclick="window.location.href='home.html'">
+          <button class="btn btn-secondary" onclick="window.location.href='index.html'">
             <i class="fas fa-arrow-left"></i> Back to Dashboard
           </button>
         </div>
@@ -610,7 +610,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/auth-guard.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
+  <script src="js/offline-report-helper.js"></script>
   
   <script>
     let currentUser = null;
@@ -634,7 +636,7 @@
       
       if (!userDoc.exists || userDoc.data().role !== 'TMO') {
         alert('Access denied. This report is only available for TMO users.');
-        window.location.href = "home.html";
+        window.location.href = "index.html";
         return;
       }
       
@@ -708,7 +710,34 @@
     // Collect all data for the report
     async function collectReportData() {
       console.log('Collecting report data...');
-      
+
+      if (typeof LabourCareOffline !== "undefined" && !navigator.onLine) {
+        const entries = await LabourCareOffline.buildAnalyticsPatientsFromMirror();
+        const inTown = entries.filter(function (e) {
+          return e.profile && e.profile.township === userTownship;
+        });
+        reportData.patients = inTown.map(function (entry) {
+          return Object.assign(
+            { id: entry.id },
+            entry.profile,
+            {
+              ancVisits: (entry.antenatalVisits || []).map(function (v) {
+                return v.data;
+              }),
+              testRecords: (entry.testRecords || []).map(function (v) {
+                return v.data;
+              }),
+              birthRecord: entry.birthRecord ? entry.birthRecord.data : null,
+              endTreatment: entry.endTreatment ? entry.endTreatment.data : null,
+              summary: entry.summary
+            }
+          );
+        });
+        reportData.midwives = [];
+        console.log('Report data collected (offline mirror):', reportData);
+        return;
+      }
+
       // Get all patients in township
       const patientsSnap = await firebase.firestore()
         .collection('patients')

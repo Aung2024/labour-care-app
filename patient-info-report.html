@@ -10,8 +10,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/edd-display.js"></script>
-  <script src="js/auth-guard.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
+  <script src="js/offline-report-helper.js"></script>
   <style>
     @media print {
       body * { visibility: hidden; }
@@ -355,11 +356,15 @@
           return;
         }
 
-        // Load patient data
-        const patientDoc = await firebase.firestore()
-          .collection("patients")
-          .doc(patientId)
-          .get();
+        let patientDoc;
+        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
+          patientDoc = await OfflineReportBridge.patientGet(patientId);
+        } else {
+          patientDoc = await firebase.firestore()
+            .collection("patients")
+            .doc(patientId)
+            .get();
+        }
 
         if (!patientDoc.exists) {
           alert('Patient not found.');
@@ -414,15 +419,7 @@
       // LMP and EDD
       document.getElementById('lmp').textContent = currentPatient.lmp ? 
         new Date(currentPatient.lmp).toLocaleDateString() : 'Not recorded';
-      var infoEdd = currentPatient.edd || currentPatient.manual_edd;
-      var infoEddLang = (localStorage.getItem('appLanguage') || 'en') === 'mm' ? 'mm' : 'en';
-      document.getElementById('edd').textContent = infoEdd
-        ? (window.EddDisplay ? window.EddDisplay.formatEddWithStatus(infoEdd, {
-            lang: infoEddLang,
-            allowRawString: true,
-            notSetText: 'Not calculated'
-          }) : infoEdd)
-        : 'Not calculated';
+      document.getElementById('edd').textContent = currentPatient.edd || currentPatient.manual_edd || 'Not calculated';
 
       // Current GA
       if (currentPatient.lmp) {
@@ -486,14 +483,20 @@
 
     async function loadCareSummary() {
       try {
-        // Count antenatal visits
-        const antenatalVisits = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('antenatal_visits')
-          .get();
-        
-        document.getElementById('antenatalVisits').textContent = antenatalVisits.size;
+        let antenatalSize = 0;
+        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
+          const antenatalVisits = await OfflineReportBridge.subcollectionGet(patientId, "antenatal_visits");
+          antenatalSize = antenatalVisits.size;
+        } else {
+          const antenatalVisits = await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('antenatal_visits')
+            .get();
+          antenatalSize = antenatalVisits.size;
+        }
+
+        document.getElementById('antenatalVisits').textContent = antenatalSize;
 
         // Count labour sessions (check if summary.html has been used)
         // This is a simplified check - you might want to track this differently
@@ -505,7 +508,7 @@
         document.getElementById('postnatalVisits').textContent = postnatalVisits;
 
         // Total reports (this would be tracked in a reports collection)
-        const totalReports = antenatalVisits.size + labourSessions + postnatalVisits;
+        const totalReports = antenatalSize + labourSessions + postnatalVisits;
         document.getElementById('totalReports').textContent = totalReports;
 
       } catch (error) {

@@ -11,16 +11,6 @@ var firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// --- Browser detection ---
-const ua = navigator.userAgent || "";
-const isIOS = /iPhone|iPad|iPod/.test(ua);
-const isSafariDesktop =
-  /Safari/.test(ua) &&
-  !/Chrome/.test(ua) &&
-  !/Edge/.test(ua) &&
-  !/Chromium/.test(ua);
-const isSafariBrowser = isSafariDesktop || isIOS;
-
 // --- Firestore settings: force long polling for all browsers ---
 // This helps when WebSockets are blocked by ISP / firewall.
 // CRITICAL for Android native apps and networks with firewall restrictions
@@ -37,27 +27,20 @@ try {
   console.warn("⚠️ Firestore settings error (non-critical):", error);
 }
 
-// --- Offline persistence ---
-// Safari / iOS + IndexedDB = a lot of problems
-// So: we completely skip persistence on Safari/iOS for stability
+// --- Offline persistence (Android WebView + iOS WKWebView / Capacitor) ---
+// Custom IndexedDB mirror in js/offline-sync.js is primary for parity; Firestore cache supplements.
 try {
-  if (isSafariBrowser) {
-    console.log("ℹ️ Skipping Firestore persistence on Safari/iOS for compatibility.");
-    // No enablePersistence() here – Firestore will still work online-only
-  } else {
-    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      if (err.code === "failed-precondition") {
-        console.warn("Persistence can only be enabled in one tab at a time.");
-      } else if (err.code === "unimplemented") {
-        console.warn("Persistence is not supported in this browser.");
-      } else {
-        console.warn("Error enabling persistence:", err);
-      }
-    });
-  }
+  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    if (err.code === "failed-precondition") {
+      console.warn("Persistence can only be enabled in one tab at a time.");
+    } else if (err.code === "unimplemented") {
+      console.warn("Persistence is not supported in this browser.");
+    } else {
+      console.warn("Error enabling persistence:", err);
+    }
+  });
 } catch (error) {
   console.warn("Persistence initialization error (non-critical):", error);
-  // App continues without persistence
 }
 
 // --- Domain connectivity test (unchanged, but SAFE) ---
