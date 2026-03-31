@@ -130,6 +130,22 @@
       });
     },
 
+    /** Normalize role strings from Firestore (spacing, case). */
+    normalizeRoleKey: function (role) {
+      return String(role || "")
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, " ");
+    },
+
+    /** Township (TMO) or region (Regional Officer) from localStorage for scoped pull/sync */
+    scopeFilterValueForRole: function (role) {
+      const r = LabourCareOffline.normalizeRoleKey(role);
+      if (r === "tmo") return localStorage.getItem("userTownship") || null;
+      if (r === "regional officer") return localStorage.getItem("userRegion") || null;
+      return null;
+    },
+
     /** Patients visible to role (from mirror only) */
     getMirroredPatientList: function (uid, role, township) {
       return OfflineStore.getAllByPrefix("patients/").then(function (rows) {
@@ -153,25 +169,29 @@
           })
         ).then(function (entries) {
           const out = [];
+          const nr = LabourCareOffline.normalizeRoleKey(role);
           entries.forEach(function (e) {
             if (!e || !e.data) return;
             const d = e.data;
-            const r = (role || "").toLowerCase();
-            if (r === "midwife" || r === "") {
-              const team = d.care_team_midwife_ids;
-              const onTeam = Array.isArray(team) && team.indexOf(uid) !== -1;
-              if (d.created_by === uid || d.createdBy === uid || onTeam) {
-                out.push({ id: e.id, ...d });
-              }
-            } else if (role === "TMO") {
-              if (township && d.township === township) {
-                out.push({ id: e.id, ...d });
-              }
-            } else if (r.replace(/\s+/g, " ") === "regional officer") {
-              if (township && d.region === township) {
-                out.push({ id: e.id, ...d });
-              }
-            } else if (role === "Super Admin" || role === "admin") {
+            const createdByMe = d.created_by === uid || d.createdBy === uid;
+            const team = d.care_team_midwife_ids;
+            const onTeam = Array.isArray(team) && team.indexOf(uid) !== -1;
+
+            let include = false;
+            if (nr === "super admin" || nr === "admin") {
+              include = true;
+            } else if (nr === "tmo") {
+              include = !!(township && d.township === township);
+            } else if (nr === "regional officer") {
+              include = !!(township && d.region === township);
+            } else if (nr === "midwife" || nr === "") {
+              include = createdByMe || onTeam;
+            } else {
+              // Any other role label (e.g. custom spelling): still show patients this user created offline
+              include = createdByMe || onTeam;
+            }
+
+            if (include) {
               out.push({ id: e.id, ...d });
             }
           });
@@ -312,6 +332,11 @@
 
     /** Full pull: patient roots for scope + deep subdocs for analytics (best-effort) */
     fullPullForScope: function (uid, role, township) {
+      if (!LabourCareOffline.isOnline()) {
+        return Promise.reject(
+          new Error("You are offline. Connect to the internet, then tap Sync again.")
+        );
+      }
       const db = firebase.firestore();
       const qFn = global.smartFirestoreQuery || function (p, o) {
         return p.then(function (qr) {
@@ -329,26 +354,11 @@
 
       let patientSnaps = [];
 
-      const r = (role || "").toLowerCase();
-      if (r === "midwife" || !role) {
-        return Promise.all([
-          runQuery(db.collection("patients").where("created_by", "==", uid)),
-          runQuery(db.collection("patients").where("createdBy", "==", uid))
-        ]).then(function (results) {
-          const map = {};
-          results.forEach(function (snap) {
-            if (snap && snap.forEach) {
-              snap.forEach(function (d) {
-                map[d.id] = d;
-              });
-            }
-          });
-          patientSnaps = Object.values(map);
-          return LabourCareOffline._deepMirrorPatients(patientSnaps);
-        });
-      }
-      if (role === "TMO" && township) {
-        return runQuery(db.collection("patients").where("township", "==", township)).then(function (snap) {
+      const r = LabourCareOffline.normalizeRoleKey(role);
+      const scope = township;
+
+      if (r === "super admin" || r === "admin") {
+        return runQuery(db.collection("patients")).then(function (snap) {
           patientSnaps = [];
           if (snap && snap.forEach) {
             snap.forEach(function (d) {
@@ -358,13 +368,41 @@
           return LabourCareOffline._deepMirrorPatients(patientSnaps);
         });
       }
-      return runQuery(db.collection("patients")).then(function (snap) {
-        patientSnaps = [];
-        if (snap && snap.forEach) {
-          snap.forEach(function (d) {
-            patientSnaps.push(d);
-          });
-        }
+      if (r === "regional officer" && scope) {
+        return runQuery(db.collection("patients").where("region", "==", scope)).then(function (snap) {
+          patientSnaps = [];
+          if (snap && snap.forEach) {
+            snap.forEach(function (d) {
+              patientSnaps.push(d);
+            });
+          }
+          return LabourCareOffline._deepMirrorPatients(patientSnaps);
+        });
+      }
+      if (r === "tmo" && scope) {
+        return runQuery(db.collection("patients").where("township", "==", scope)).then(function (snap) {
+          patientSnaps = [];
+          if (snap && snap.forEach) {
+            snap.forEach(function (d) {
+              patientSnaps.push(d);
+            });
+          }
+          return LabourCareOffline._deepMirrorPatients(patientSnaps);
+        });
+      }
+      return Promise.all([
+        runQuery(db.collection("patients").where("created_by", "==", uid)),
+        runQuery(db.collection("patients").where("createdBy", "==", uid))
+      ]).then(function (results) {
+        const map = {};
+        results.forEach(function (snap) {
+          if (snap && snap.forEach) {
+            snap.forEach(function (d) {
+              map[d.id] = d;
+            });
+          }
+        });
+        patientSnaps = Object.values(map);
         return LabourCareOffline._deepMirrorPatients(patientSnaps);
       });
     },

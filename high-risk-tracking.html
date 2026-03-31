@@ -107,7 +107,7 @@
 
       let list = [];
       if (!navigator.onLine && window.LabourCareOffline) {
-        const ts = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+        const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
         list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
       } else {
         const db = firebase.firestore();
@@ -156,6 +156,21 @@
           list = Object.values(map);
         }
 
+        if (window.LabourCareOffline) {
+          const tsM = LabourCareOffline.scopeFilterValueForRole(userRole);
+          const mirrorList = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, tsM);
+          const seenH = {};
+          list.forEach(function (p) {
+            seenH[p.id] = true;
+          });
+          mirrorList.forEach(function (p) {
+            if (!seenH[p.id]) {
+              seenH[p.id] = true;
+              list.push(p);
+            }
+          });
+        }
+
         if (navigator.onLine && window.LabourCareOffline && list.length) {
           for (var mi = 0; mi < list.length; mi++) {
             var row = list[mi];
@@ -169,7 +184,7 @@
               }
             });
           }
-          var tsPull = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+          var tsPull = LabourCareOffline.scopeFilterValueForRole(userRole);
           LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
         }
       }
@@ -213,7 +228,7 @@
           alert('Please wait for the app to finish loading.');
           return;
         }
-        var ts = userRole === 'TMO' ? localStorage.getItem('userTownship') : null;
+        var ts = LabourCareOffline.scopeFilterValueForRole(userRole);
         await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
         await LabourCareOffline.flushOutbox();
         LabourCareOffline.setOfflineBanner(false);
