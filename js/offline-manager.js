@@ -71,6 +71,61 @@
     };
   }
 
+  /**
+   * IndexedDB structured clone cannot store Firestore FieldValue sentinels.
+   * Queued payloads often include serverTimestamp() — without this, put() throws DataCloneError
+   * and offline ANC/PNC/newborn/LCG saves fail while pending_patients (no FieldValues) still work.
+   */
+  function isFirestoreFieldValue(val) {
+    if (!val || typeof val !== 'object') return false;
+    try {
+      if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
+        if (val instanceof firebase.firestore.FieldValue) return true;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    if (typeof val._methodName === 'string') {
+      var m = val._methodName;
+      return (
+        m === 'serverTimestamp' ||
+        m === 'increment' ||
+        m === 'arrayUnion' ||
+        m === 'arrayRemove' ||
+        m === 'deleteField'
+      );
+    }
+    return false;
+  }
+
+  function stripFirestoreFieldValues(input) {
+    if (input === null || input === undefined) return input;
+    if (isFirestoreFieldValue(input)) {
+      if (input._methodName === 'serverTimestamp') {
+        return new Date().toISOString();
+      }
+      return undefined;
+    }
+    if (typeof input !== 'object') return input;
+    if (Object.prototype.toString.call(input) === '[object Date]') {
+      return input.toISOString();
+    }
+    if (Array.isArray(input)) {
+      return input.map(function (item) {
+        var x = stripFirestoreFieldValues(item);
+        return x === undefined ? null : x;
+      });
+    }
+    var out = {};
+    Object.keys(input).forEach(function (key) {
+      var v = stripFirestoreFieldValues(input[key]);
+      if (v !== undefined) {
+        out[key] = v;
+      }
+    });
+    return out;
+  }
+
   // --------------- Public API ---------------
 
   function isOfflineMode() {
@@ -90,9 +145,10 @@
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const normalizedData = normalizeQueuedPayload(data, storeName);
+      const storableData = stripFirestoreFieldValues(normalizedData);
       const record = {
-        localId: normalizedData.localId || generateLocalId(),
-        data: normalizedData,
+        localId: storableData.localId || generateLocalId(),
+        data: storableData,
         createdAt: new Date().toISOString(),
         syncStatus: 'pending'
       };

@@ -19,6 +19,19 @@ async function hydratePatientSessionFromMirror() {
     sessionStorage.removeItem('selectedPatientData');
   }
   if (typeof navigator !== 'undefined' && navigator.onLine) return false;
+  if (patientId.startsWith('OFFLINE-') && window.OfflineManager && window.OfflineManager.getPendingRecords) {
+    try {
+      const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+      const match = pending.find(function (r) { return r.localId === patientId; });
+      if (match && match.data) {
+        const merged = Object.assign({ id: patientId }, match.data);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(merged));
+        return true;
+      }
+    } catch (e) {
+      console.warn('hydratePatientSessionFromOfflinePending:', e);
+    }
+  }
   if (!window.LabourCareOffline || typeof LabourCareOffline.getPatientPayload !== 'function') {
     return false;
   }
