@@ -2376,48 +2376,6 @@
           return isNaN(num) ? null : num;
         };
 
-        // OFFLINE MODE: Save ANC visit to IndexedDB
-        if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-          const getInt = (id) => { const el = document.getElementById(id); if (!el || !el.value || el.value.trim() === '') return null; const n = parseInt(el.value); return isNaN(n) ? null : n; };
-          const getChecked = (id) => { const el = document.getElementById(id); return el ? (el.checked || false) : false; };
-
-          const offlineVisit = {
-            _isOffline: true,
-            patientId: patientId,
-            visitNumber: visitCount,
-            visitDate: getValue('visitDate'),
-            weight: getNumber('weight'),
-            bloodPressure: getValue('bloodPressure'),
-            pulseRate: getInt('pulseRate'),
-            anemiaStatus: getValue('anemiaStatus'),
-            pittingEdema: getValue('pittingEdema'),
-            lmp: getValue('lmp'),
-            edd: getValue('edd'),
-            gestationalAge: getValue('gestationalAge') || null,
-            temperature: getValue('temperature'),
-            bloodGroup: getValue('bloodGroup'),
-            rhesusFactor: getValue('rhesusFactor'),
-            urineProtein: getValue('urineProtein'),
-            urineSugar: getValue('urineSugar'),
-            otherFindings: getValue('otherFindings'),
-            fetalLie: getValue('fetalLie'),
-            fetalMovement: (() => { const c = document.querySelector('input[name="fetalMovement"]:checked'); return c ? c.value : ''; })(),
-            high_risk: (() => { const c = document.querySelector('input[name="highRisk"]:checked'); return c ? c.value : 'no'; })(),
-            risk_factors: Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value),
-            risk_notes: getValue('riskNotes') || null,
-            early_anc_visit: getChecked('earlyAncVisit'),
-            mentalHealthStatus: getValue('mentalHealthStatus'),
-            otherMedications: getValue('otherMedications'),
-            recordedBy: currentUser?.uid || ''
-          };
-
-          await window.OfflineManager.saveOfflineRecord('pending_anc_visits', offlineVisit);
-          showSuccessMessage('ANC visit saved offline! Remember to Sync when online.');
-          clearFormFields();
-          if (submitButton) { submitButton.disabled = false; submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>'; }
-          return;
-        }
-        
         // STEP 1: Clinical Data Validation (LMP, EDD, GA)
         if (window.ClinicalValidator) {
           const lmp = getValue('lmp');
@@ -2521,13 +2479,15 @@
         };
         
         // Collect all form data with null-safe access
+        const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+
         const visitData = {
-          visitNumber: visitCount, // Use the calculated visit count instead of form input
+          visitNumber: shouldDeferVisitNumber ? null : visitCount,
           visitNumberOther: getValue('visitNumberOther'),
           visitDate: getValue('visitDate'),
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           healthFacility: currentPatient?.township || 'Unknown Facility',
-          totalAncVisits: visitCount - 1, // Previous visits count
+          totalAncVisits: shouldDeferVisitNumber ? null : (visitCount - 1),
           
           // Main table data
           weight: getNumber('weight'),
@@ -2660,59 +2620,65 @@
           otherMedications: getValue('otherMedications'),
           
           patientId: patientId,
-          recordedBy: currentUser?.uid || ''
+          recordedBy: currentUser?.uid || '',
+          _needsVisitNumber: shouldDeferVisitNumber,
+          syncState: 'pending'
         };
 
         console.log('Saving visit data:', visitData);
-        
-        // Save visit data to Firestore
-        const visitRef = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('antenatal_visits')
-          .add(visitData);
 
-        console.log('Visit saved with ID:', visitRef.id);
-
-        // Update patient's last antenatal visit
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .update({
-            lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
-            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-          });
-
-        console.log('Patient record updated');
-        
-        // Sync LMP/EDD to patient document for cross-form linkage
-        if (window.DataLinkage) {
-          const lmp = getValue('lmp');
-          const edd = getValue('edd') || getValue('manualEdd');
-          if (lmp || edd) {
-            try {
-              await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
-            } catch (error) {
-              console.warn('Error syncing LMP/EDD:', error);
-              // Non-critical error, don't block save
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_anc_visits',
+          visitData,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._needsVisitNumber;
+            delete cloudData.syncState;
+            if (!cloudData.visitNumber) cloudData.visitNumber = visitCount;
+            if (cloudData.totalAncVisits == null && cloudData.visitNumber) {
+              cloudData.totalAncVisits = Math.max(0, cloudData.visitNumber - 1);
             }
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+            const visitRef = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('antenatal_visits')
+              .add(cloudData);
+
+            await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .update({
+                lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+              });
+
+            if (window.DataLinkage) {
+              const lmp = getValue('lmp');
+              const edd = getValue('edd') || getValue('manualEdd');
+              if (lmp || edd) {
+                try {
+                  await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
+                } catch (error) {
+                  console.warn('Error syncing LMP/EDD:', error);
+                }
+              }
+            }
+
+            await StatusManager.checkAndUpdateToAntenatalCare(patientId);
+            return { cloudId: visitRef.id };
           }
-        }
+        );
 
-        // Update patient status to Antenatal Care (if first visit)
-        const statusUpdated = await StatusManager.checkAndUpdateToAntenatalCare(patientId);
-        if (statusUpdated) {
-          console.log('✅ Patient status updated to Antenatal Care');
+        if (saveResult.cloud) {
+          await loadVisitCount();
+          document.getElementById('visitNumber').value = visitCount;
+          showSuccessMessage('Visit data saved locally and synced to cloud.');
+        } else {
+          document.getElementById('visitNumber').value = '';
+          showSuccessMessage('Saved locally, sync later.');
         }
-
-        // Refresh the visit count to ensure accuracy and update visit number
-        await loadVisitCount();
-        document.getElementById('visitNumber').value = visitCount;
-        console.log('Visit count refreshed:', visitCount);
-        
-        // Show mobile-friendly success message
-        showSuccessMessage('Visit data saved successfully!');
-        console.log('Visit data saved:', visitRef.id);
         
         // Clear all form fields after successful save
         clearFormFields();

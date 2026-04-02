@@ -66,6 +66,7 @@
       patients: { synced: 0, errors: 0, details: [] },
       ancVisits: { synced: 0, errors: 0, details: [] },
       pncVisits: { synced: 0, errors: 0, details: [] },
+      labTests: { synced: 0, errors: 0, details: [] },
       lcgRecords: { synced: 0, errors: 0, details: [] },
       newbornRecords: { synced: 0, errors: 0, details: [] }
     };
@@ -127,25 +128,39 @@
       report('anc', 'Syncing ANC visits...');
       await syncSubRecords(
         'pending_anc_visits', 'antenatal_visits',
-        tempIdToRealId, results.ancVisits, report
+        tempIdToRealId, results.ancVisits, report,
+        { assignVisitNumber: true }
       );
 
       // Step 3: Sync PNC visits
       report('pnc', 'Syncing PNC visits...');
       await syncSubRecords(
         'pending_pnc_visits', 'postpartum_visits',
-        tempIdToRealId, results.pncVisits, report
+        tempIdToRealId, results.pncVisits, report,
+        { assignVisitNumber: true }
       );
 
-      // Step 4: Sync LCG records
+      // Step 4: Sync Lab test records
+      report('lab', 'Syncing lab tests...');
+      await syncSubRecords(
+        'pending_lab_tests', 'testRecords',
+        tempIdToRealId, results.labTests, report
+      );
+
+      // Step 5: Sync LCG records
       report('lcg', 'Syncing LCG records...');
       await syncLCGRecords(tempIdToRealId, results.lcgRecords, report);
 
-      // Step 5: Sync newborn records
+      // Step 6: Sync newborn records
       report('newborn', 'Syncing newborn records...');
       await syncSubRecords(
         'pending_newborn_records', 'immediate_newborn_care',
-        tempIdToRealId, results.newbornRecords, report
+        tempIdToRealId, results.newbornRecords, report,
+        {
+          collectionResolver: function (_record, visitData, fallbackCollection) {
+            return visitData._collection || fallbackCollection;
+          }
+        }
       );
 
       // Clean up synced records
@@ -163,7 +178,36 @@
     }
   }
 
-  async function syncSubRecords(storeName, firestoreSubCollection, tempIdToRealId, resultBucket, report) {
+  async function getNextVisitNumber(patientId, subCollection) {
+    const baseRef = firebase.firestore()
+      .collection('patients')
+      .doc(patientId)
+      .collection(subCollection);
+
+    try {
+      const latestSnap = await baseRef.orderBy('visitNumber', 'desc').limit(1).get();
+      if (!latestSnap.empty) {
+        const latest = latestSnap.docs[0].data();
+        const latestVisit = parseInt(latest.visitNumber, 10);
+        if (!isNaN(latestVisit) && latestVisit > 0) {
+          return latestVisit + 1;
+        }
+      }
+    } catch (error) {
+      console.warn('[SyncManager] Could not order by visitNumber, using count fallback:', error);
+    }
+
+    try {
+      const allSnap = await baseRef.get();
+      return (allSnap.size || 0) + 1;
+    } catch (error) {
+      console.warn('[SyncManager] Could not load existing visits, defaulting visitNumber=1:', error);
+      return 1;
+    }
+  }
+
+  async function syncSubRecords(storeName, firestoreSubCollection, tempIdToRealId, resultBucket, report, options) {
+    const opts = options || {};
     const pendingRecords = await window.OfflineManager.getPendingRecords(storeName);
 
     for (const record of pendingRecords) {
@@ -187,19 +231,46 @@
         delete visitData.localId;
         delete visitData._isOffline;
         delete visitData.offlinePatientId;
+        delete visitData._queueEntity;
 
         visitData.patientId = patientId;
         visitData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
         visitData.synced_from_offline = true;
         visitData.offline_created_at = record.createdAt;
 
-        const docRef = await firebase.firestore()
+        if (opts.assignVisitNumber) {
+          const hasVisitNumber = !isNaN(parseInt(visitData.visitNumber, 10));
+          if (!hasVisitNumber) {
+            const nextVisit = await getNextVisitNumber(patientId, firestoreSubCollection);
+            visitData.visitNumber = nextVisit;
+            if (firestoreSubCollection === 'antenatal_visits') {
+              visitData.totalAncVisits = Math.max(0, nextVisit - 1);
+            }
+          }
+          delete visitData._needsVisitNumber;
+        }
+
+        const targetCollection = typeof opts.collectionResolver === 'function'
+          ? opts.collectionResolver(record, visitData, firestoreSubCollection)
+          : firestoreSubCollection;
+        delete visitData._collection;
+        const targetDocId = visitData._docId || null;
+        delete visitData._docId;
+
+        const subRef = firebase.firestore()
           .collection('patients')
           .doc(patientId)
-          .collection(firestoreSubCollection)
-          .add(visitData);
+          .collection(targetCollection);
+        let cloudId = null;
+        if (targetDocId) {
+          await subRef.doc(targetDocId).set(visitData, { merge: true });
+          cloudId = targetDocId;
+        } else {
+          const docRef = await subRef.add(visitData);
+          cloudId = docRef.id;
+        }
 
-        await window.OfflineManager.markSynced(storeName, record.localId, docRef.id);
+        await window.OfflineManager.markSynced(storeName, record.localId, cloudId);
         resultBucket.synced++;
 
       } catch (err) {
@@ -316,8 +387,9 @@
       patients: { text: 'Syncing patients...', pct: 20 },
       anc: { text: 'Syncing ANC visits...', pct: 40 },
       pnc: { text: 'Syncing PNC visits...', pct: 60 },
-      lcg: { text: 'Syncing LCG records...', pct: 80 },
-      newborn: { text: 'Syncing newborn records...', pct: 90 },
+      lab: { text: 'Syncing lab tests...', pct: 75 },
+      lcg: { text: 'Syncing LCG records...', pct: 88 },
+      newborn: { text: 'Syncing newborn records...', pct: 95 },
       done: { text: 'Sync complete!', pct: 100 }
     };
 
@@ -340,9 +412,9 @@
     let html = '';
     if (result.success && result.results) {
       const r = result.results;
-      const totalSynced = r.patients.synced + r.ancVisits.synced + r.pncVisits.synced +
+      const totalSynced = r.patients.synced + r.ancVisits.synced + r.pncVisits.synced + r.labTests.synced +
         r.lcgRecords.synced + r.newbornRecords.synced;
-      const totalErrors = r.patients.errors + r.ancVisits.errors + r.pncVisits.errors +
+      const totalErrors = r.patients.errors + r.ancVisits.errors + r.pncVisits.errors + r.labTests.errors +
         r.lcgRecords.errors + r.newbornRecords.errors;
 
       html += `<div class="alert ${totalErrors > 0 ? 'alert-warning' : 'alert-success'}" style="font-size:0.9rem;">`;
@@ -354,6 +426,7 @@
       if (r.patients.synced > 0) html += `<li><i class="fas fa-user-plus text-success me-2"></i>${r.patients.synced} patients</li>`;
       if (r.ancVisits.synced > 0) html += `<li><i class="fas fa-notes-medical text-success me-2"></i>${r.ancVisits.synced} ANC visits</li>`;
       if (r.pncVisits.synced > 0) html += `<li><i class="fas fa-baby text-success me-2"></i>${r.pncVisits.synced} PNC visits</li>`;
+      if (r.labTests.synced > 0) html += `<li><i class="fas fa-vial text-success me-2"></i>${r.labTests.synced} lab tests</li>`;
       if (r.lcgRecords.synced > 0) html += `<li><i class="fas fa-heartbeat text-success me-2"></i>${r.lcgRecords.synced} LCG records</li>`;
       if (r.newbornRecords.synced > 0) html += `<li><i class="fas fa-child text-success me-2"></i>${r.newbornRecords.synced} newborn records</li>`;
       html += '</ul>';

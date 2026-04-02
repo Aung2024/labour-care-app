@@ -612,114 +612,79 @@
 
     const patientId = getPatientIdFromUrl();
 
-    // OFFLINE MODE: Save LCG setup to IndexedDB
-    if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-      try {
-        const offlineLcg = {
-          _isOffline: true,
-          _docName: 'summary',
-          patientId: patientId,
-          startingTime: firstStageStart,
-          secondStageTime: secondStageStart || null,
-          setupCompleted: true,
-          labour_onset: labourOnset || null,
-          active_labour: activeLabour || null,
-          ruptured_membrane: rupturedMembrane || null
-        };
-        await window.OfflineManager.saveOfflineRecord('pending_lcg_records', offlineLcg);
-        window.location.href = `labour-care-entry.html?patient=${patientId}`;
-        return;
-      } catch (offErr) {
-        console.error('Offline LCG setup save error:', offErr);
-        alert('Error saving offline: ' + offErr.message);
-        return;
-      }
-    }
-
     try {
-      // Save setup data to Firestore
-      await firebase.firestore()
-        .collection('patients')
-        .doc(patientId)
-        .update({
-          labour_onset: labourOnset || null,
-          active_labour: activeLabour || null,
-          ruptured_membrane: rupturedMembrane || null
-        });
+      const queuedLcg = {
+        _docName: 'summary',
+        patientId: patientId,
+        startingTime: firstStageStart,
+        secondStageTime: secondStageStart || null,
+        setupCompleted: true,
+        labour_onset: labourOnset || null,
+        active_labour: activeLabour || null,
+        ruptured_membrane: rupturedMembrane || null,
+        syncState: 'pending'
+      };
 
-      // Save time configuration to summary (for carousel entry page)
-      await firebase.firestore()
-        .collection('patients')
-        .doc(patientId)
-        .collection('records')
-        .doc('summary')
-        .set({
-          startingTime: firstStageStart,
-          secondStageTime: secondStageStart || null,
-          setupCompleted: true
-        }, { merge: true });
+      const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+        'pending_lcg_records',
+        queuedLcg,
+        async function () {
+          await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .update({
+              labour_onset: labourOnset || null,
+              active_labour: activeLabour || null,
+              ruptured_membrane: rupturedMembrane || null
+            });
 
-      // Also save to startingTime document (for Classic LCG compatibility)
-      if (firstStageStart) {
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('startingTime')
-          .set({
-            startingTime: firstStageStart,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-        
-        // Update patient status to In Labour when first stage time is saved
-        if (window.StatusManager && typeof window.StatusManager.checkAndUpdateToInLabour === 'function') {
-          try {
-            const statusUpdated = await window.StatusManager.checkAndUpdateToInLabour(patientId);
-          if (statusUpdated) {
-            console.log('✅ Patient status updated to In Labour');
+          await firebase.firestore()
+            .collection('patients')
+            .doc(patientId)
+            .collection('records')
+            .doc('summary')
+            .set({
+              startingTime: firstStageStart,
+              secondStageTime: secondStageStart || null,
+              setupCompleted: true
+            }, { merge: true });
+
+          if (firstStageStart) {
+            await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('records')
+              .doc('startingTime')
+              .set({
+                startingTime: firstStageStart,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+            if (window.StatusManager && typeof window.StatusManager.checkAndUpdateToInLabour === 'function') {
+              await window.StatusManager.checkAndUpdateToInLabour(patientId);
             }
-          } catch (statusError) {
-            console.error('Error updating patient status to In Labour:', statusError);
-            // Don't block the save process if status update fails
           }
-        } else {
-          console.warn('StatusManager or checkAndUpdateToInLabour function not available');
+
+          if (secondStageStart) {
+            await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('records')
+              .doc('secondStage')
+              .set({
+                secondStageStartTime: secondStageStart,
+                isSecondStageActive: true,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+          }
+
+          return { cloudId: 'summary' };
         }
+      );
+
+      if (!saveResult.cloud) {
+        alert('Saved locally, sync later.');
       }
 
-      // Save second stage if provided (for Classic LCG compatibility)
-      if (secondStageStart) {
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('secondStage')
-          .set({
-            secondStageStartTime: secondStageStart,
-            isSecondStageActive: true,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-        
-        // Update patient status to Postnatal Care when second stage time is saved
-        if (window.StatusManager && typeof window.StatusManager.checkAndUpdateToPostnatalCare === 'function') {
-          try {
-            const statusUpdated = await window.StatusManager.checkAndUpdateToPostnatalCare(
-            patientId,
-            'Second stage time recorded'
-          );
-          if (statusUpdated) {
-            console.log('✅ Patient status updated to Postnatal Care');
-          }
-          } catch (statusError) {
-            console.error('Error updating patient status to Postnatal Care:', statusError);
-            // Don't block the save process if status update fails
-          }
-        } else {
-          console.warn('StatusManager or checkAndUpdateToPostnatalCare function not available');
-        }
-      }
-
-      // Navigate to labour care entry carousel
       window.location.href = `labour-care-entry.html?patient=${patientId}`;
 
     } catch (error) {

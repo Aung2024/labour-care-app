@@ -13,6 +13,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -1128,30 +1129,44 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
         
-        const db = firebase.firestore();
-        console.log('About to save to Firestore...');
-        console.log('Test data:', testData);
-        
-        if (isEditMode) {
-          // Update existing test record
-          console.log('Updating existing test record:', currentTestId);
-          await db.collection('patients')
-            .doc(currentPatient.id)
-            .collection('testRecords')
-            .doc(currentTestId)
-            .update(testData);
-          
-          alert('Test results updated successfully!');
-        } else {
-          // Create new test record
-          console.log('Creating new test record for patient:', currentPatient.id);
-          await db.collection('patients')
-            .doc(currentPatient.id)
-            .collection('testRecords')
-            .add(testData);
-          
-          alert('Test results saved successfully!');
-        }
+        const queuedPayload = {
+          ...testData,
+          _collection: 'testRecords',
+          _docId: isEditMode ? currentTestId : null,
+          syncState: 'pending'
+        };
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_lab_tests',
+          queuedPayload,
+          async function (payload) {
+            const db = firebase.firestore();
+            const cloudData = { ...payload };
+            delete cloudData._collection;
+            delete cloudData._docId;
+            delete cloudData.syncState;
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+            if (isEditMode) {
+              await db.collection('patients')
+                .doc(currentPatient.id)
+                .collection('testRecords')
+                .doc(currentTestId)
+                .set(cloudData, { merge: true });
+              return { cloudId: currentTestId };
+            }
+
+            const ref = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('testRecords')
+              .add(cloudData);
+            return { cloudId: ref.id };
+          }
+        );
+
+        alert(saveResult.cloud
+          ? (isEditMode ? 'Test results updated locally and synced to cloud.' : 'Test results saved locally and synced to cloud.')
+          : 'Saved locally, sync later.'
+        );
         
         // Redirect back to tests page
         window.location.href = 'antenatal-tests.html';

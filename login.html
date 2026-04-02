@@ -538,31 +538,9 @@
     }
 
     function checkSessionExpiry() {
-      const rememberMe = localStorage.getItem('rememberMe');
-      const sessionExpiry = localStorage.getItem('sessionExpiry');
-      
-      console.log('Checking session expiry:', { rememberMe, sessionExpiry });
-      
-      if (rememberMe === 'true' && sessionExpiry) {
-        const expiryDate = new Date(sessionExpiry);
-        const now = new Date();
-        
-        console.log('Session expiry check:', { expiryDate, now, isExpired: now > expiryDate });
-        
-        if (now > expiryDate) {
-          // Session expired, clear everything
-          console.log('Session expired, clearing...');
-          clearSession();
-          return false;
-        }
-        console.log('Session valid');
-        return true;
-      }
-      
-      // If no remember me, check if user has basic session data
+      // Offline-first requirement: keep login persistent until explicit logout.
       const hasBasicSession = localStorage.getItem('uid') && localStorage.getItem('role');
-      console.log('No remember me, checking basic session:', hasBasicSession);
-      
+      console.log('Checking persistent session:', hasBasicSession);
       return hasBasicSession;
     }
 
@@ -666,9 +644,9 @@
           }
         }
         
-        // Set Firebase persistence to SESSION (session-only)
-        console.log('Setting SESSION persistence...');
-        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+        // Keep auth persistent across restarts until logout.
+        console.log('Setting LOCAL persistence...');
+        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
         
         console.log('Attempting Firebase sign in...');
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);

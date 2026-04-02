@@ -667,35 +667,6 @@
     async function saveImmediateCareData(event) {
       event.preventDefault();
       
-      // OFFLINE MODE: Save newborn care to IndexedDB
-      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-        try {
-          const breathingStatus = document.querySelector('input[name="breathing_status"]:checked');
-          const offlineNewborn = {
-            _isOffline: true,
-            patientId: patientId,
-            thorough_drying: document.getElementById('thorough_drying').checked,
-            spontaneous_breathing: breathingStatus && breathingStatus.value === 'spontaneous',
-            gasping_or_no_breathing: breathingStatus && breathingStatus.value === 'gasping_or_no_breathing',
-            skin_to_skin_contact: document.getElementById('skin_to_skin_contact').checked,
-            delayed_cord_clamping: document.getElementById('delayed_cord_clamping').checked,
-            support_early_exclusive_breastfeeding: document.getElementById('support_early_exclusive_breastfeeding').checked,
-            eye_care_teo: document.getElementById('eye_care_teo').checked,
-            cord_care_clean_dry: document.getElementById('cord_care_clean_dry').checked,
-            apgar_1min: document.getElementById('apgar_1min').value ? parseInt(document.getElementById('apgar_1min').value) : null,
-            apgar_5min: document.getElementById('apgar_5min').value ? parseInt(document.getElementById('apgar_5min').value) : null,
-            recordedBy: currentUser.uid
-          };
-          await window.OfflineManager.saveOfflineRecord('pending_newborn_records', offlineNewborn);
-          showSuccessMessage('Newborn care data saved offline! Remember to Sync when online.');
-          return;
-        } catch (offErr) {
-          console.error('Offline newborn save error:', offErr);
-          alert('Error saving offline: ' + offErr.message);
-          return;
-        }
-      }
-
       try {
         // Get breathing status from radio buttons
         const breathingStatus = document.querySelector('input[name="breathing_status"]:checked');
@@ -718,43 +689,46 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
-        // Check if record already exists
-        const existingDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('immediate_newborn_care')
-          .limit(1)
-          .get();
+        const queuedPayload = {
+          ...formData,
+          _collection: 'immediate_newborn_care',
+          syncState: 'pending'
+        };
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_newborn_records',
+          queuedPayload,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._collection;
+            delete cloudData.syncState;
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
 
-        if (!existingDoc.empty) {
-          // Update existing record
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('immediate_newborn_care')
-            .doc(existingDoc.docs[0].id)
-            .update(formData);
-        } else {
-          // Create new record
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('immediate_newborn_care')
-            .add(formData);
-        }
+            const collectionRef = firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('immediate_newborn_care');
 
-        // Update patient status to Birthed when immediate newborn care data is saved
-        if (window.StatusManager) {
-          const statusUpdated = await StatusManager.checkAndUpdateToBirthed(
-            patientId,
-            'Immediate newborn care data recorded'
-          );
-          if (statusUpdated) {
-            console.log('✅ Patient status updated to Birthed');
+            const existingDoc = await collectionRef.limit(1).get();
+            let cloudId = null;
+            if (!existingDoc.empty) {
+              cloudId = existingDoc.docs[0].id;
+              await collectionRef.doc(cloudId).set(cloudData, { merge: true });
+            } else {
+              const newRef = await collectionRef.add(cloudData);
+              cloudId = newRef.id;
+            }
+
+            if (window.StatusManager) {
+              await StatusManager.checkAndUpdateToBirthed(
+                patientId,
+                'Immediate newborn care data recorded'
+              );
+            }
+            return { cloudId };
           }
-        }
+        );
 
-        showSuccessMessage('Immediate newborn care data saved successfully!');
+        showSuccessMessage(saveResult.cloud ? 'Immediate newborn care saved locally and synced to cloud!' : 'Saved locally, sync later.');
         
       } catch (error) {
         console.error('Error saving immediate care data:', error);

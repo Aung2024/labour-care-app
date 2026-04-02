@@ -1322,67 +1322,6 @@
     document.getElementById('postpartumForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
-      // OFFLINE MODE: Save PNC visit to IndexedDB
-      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-        try {
-          const getCheckboxValue = (id) => { const cb = document.getElementById(id); return cb && cb.checked ? 'Yes' : 'No'; };
-          const contraceptiveMethods = [];
-          document.querySelectorAll('input[name="contraceptiveMethod"]:checked').forEach(cb => contraceptiveMethods.push(cb.value));
-
-          const offlinePnc = {
-            _isOffline: true,
-            patientId: currentPatient?.id || sessionStorage.getItem('selectedPatientId'),
-            visitDate: document.getElementById('visitDate').value,
-            visitNumber: parseInt(document.getElementById('visitNumber').value),
-            deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
-            postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
-            postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
-            temperature: document.getElementById('temperature').value || null,
-            bloodPressure: document.getElementById('bloodPressure').value || null,
-            pulseRate: document.getElementById('pulseRate').value || null,
-            breastEngorgement: getCheckboxValue('breastEngorgement'),
-            nippleCondition: document.getElementById('nippleCondition').value,
-            breastMilkProduction: getCheckboxValue('breastMilkProduction'),
-            uterusInvolution: document.getElementById('uterusInvolution').value,
-            vaginalBleeding: document.getElementById('vaginalBleeding').value,
-            dischargeSmell: document.getElementById('dischargeSmell').value,
-            episiotomyHealing: document.getElementById('episiotomyHealing').value,
-            urination: document.getElementById('urination').value,
-            constipation: getCheckboxValue('constipation'),
-            mentalHealthAssessment: document.getElementById('mentalHealthAssessment').value,
-            vitaminBComplex: document.getElementById('vitaminBComplex').checked,
-            vitaminA: document.getElementById('vitaminA').checked,
-            ironFolic: document.getElementById('ironFolic').checked,
-            contraception: getCheckboxValue('contraception'),
-            contraceptiveMethods: contraceptiveMethods,
-            dangerSigns: {
-              heavyBleeding: document.getElementById('heavyBleeding').checked,
-              severeHeadache: document.getElementById('severeHeadache').checked,
-              convulsions: document.getElementById('convulsions').checked,
-              breathingProblems: document.getElementById('breathingProblems').checked,
-              feverFatigue: document.getElementById('feverFatigue').checked,
-              breastEngorgementDanger: document.getElementById('breastEngorgementDanger').checked,
-              urinaryProblems: document.getElementById('urinaryProblems').checked,
-              woundInflammation: document.getElementById('woundInflammation').checked,
-              foulDischarge: document.getElementById('foulDischarge').checked
-            },
-            otherSymptoms: document.getElementById('otherSymptoms').value,
-            treatment: document.getElementById('treatment').value,
-            clinicalNotes: document.getElementById('clinicalNotes').value,
-            createdBy: currentUser.uid
-          };
-
-          await window.OfflineManager.saveOfflineRecord('pending_pnc_visits', offlinePnc);
-          alert('Postpartum visit saved offline! Remember to Sync when online.');
-          window.location.href = 'postpartum-care.html';
-          return;
-        } catch (offErr) {
-          console.error('Offline PNC save error:', offErr);
-          alert('Error saving offline: ' + offErr.message);
-          return;
-        }
-      }
-
       try {
         // Get contraceptive methods
         const contraceptiveMethods = [];
@@ -1396,9 +1335,11 @@
           return checkbox && checkbox.checked ? 'Yes' : 'No';
         };
         
+        const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+
         const formData = {
           visitDate: document.getElementById('visitDate').value,
-          visitNumber: parseInt(document.getElementById('visitNumber').value),
+          visitNumber: shouldDeferVisitNumber ? null : parseInt(document.getElementById('visitNumber').value),
           deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
           postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
           postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
@@ -1435,26 +1376,45 @@
           treatment: document.getElementById('treatment').value,
           clinicalNotes: document.getElementById('clinicalNotes').value,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          createdBy: currentUser.uid
+          createdBy: currentUser.uid,
+          _needsVisitNumber: shouldDeferVisitNumber,
+          syncState: 'pending'
         };
-        
-        const db = firebase.firestore();
-        await db.collection('patients')
-          .doc(currentPatient.id)
-          .collection('postpartum_visits')
-          .add(formData);
-        
-        // Update patient's last postpartum visit date
-        await db.collection('patients')
-          .doc(currentPatient.id)
-          .update({
-            lastPostpartumVisit: firebase.firestore.FieldValue.serverTimestamp()
-          });
 
-        // Update patient status to Postnatal Care
-        await StatusManager.checkAndUpdateToPostnatalCare(currentPatient.id, 'First postnatal visit recorded');
-        
-        alert('Postpartum visit saved successfully!');
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_pnc_visits',
+          formData,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._needsVisitNumber;
+            delete cloudData.syncState;
+            if (!cloudData.visitNumber) {
+              cloudData.visitNumber = parseInt(document.getElementById('visitNumber').value) || null;
+            }
+            cloudData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+            const db = firebase.firestore();
+            const ref = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('postpartum_visits')
+              .add(cloudData);
+
+            await db.collection('patients')
+              .doc(currentPatient.id)
+              .update({
+                lastPostpartumVisit: firebase.firestore.FieldValue.serverTimestamp()
+              });
+
+            await StatusManager.checkAndUpdateToPostnatalCare(currentPatient.id, 'First postnatal visit recorded');
+            return { cloudId: ref.id };
+          }
+        );
+
+        if (saveResult.cloud) {
+          alert('Postpartum visit saved locally and synced to cloud.');
+        } else {
+          alert('Saved locally, sync later.');
+        }
         window.location.href = 'postpartum-care.html';
         
       } catch (error) {

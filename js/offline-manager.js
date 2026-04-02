@@ -6,13 +6,14 @@
   'use strict';
 
   const DB_NAME = 'mch_offline_db';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const OFFLINE_MODE_KEY = 'offlineMode';
 
   const STORE_NAMES = [
     'pending_patients',
     'pending_anc_visits',
     'pending_pnc_visits',
+    'pending_lab_tests',
     'pending_lcg_records',
     'pending_newborn_records',
     'offline_user_profile'
@@ -58,6 +59,18 @@
     return `OFFLINE-${ts}-${rand}`;
   }
 
+  function shouldQueueForSync() {
+    return isOfflineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false);
+  }
+
+  function normalizeQueuedPayload(data, storeName) {
+    return {
+      ...data,
+      entityType: data.entityType || storeName,
+      syncState: data.syncState || 'pending'
+    };
+  }
+
   // --------------- Public API ---------------
 
   function isOfflineMode() {
@@ -76,9 +89,10 @@
   async function saveOfflineRecord(storeName, data) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
+      const normalizedData = normalizeQueuedPayload(data, storeName);
       const record = {
-        localId: data.localId || generateLocalId(),
-        data: data,
+        localId: normalizedData.localId || generateLocalId(),
+        data: normalizedData,
         createdAt: new Date().toISOString(),
         syncStatus: 'pending'
       };
@@ -95,6 +109,29 @@
         reject(e.target.error);
       };
     });
+  }
+
+  /**
+   * Canonical local-first writer:
+   * 1) Always writes to local pending queue
+   * 2) Tries cloud write immediately when network is available
+   * 3) Marks as synced and removes queue item on success
+   */
+  async function saveLocalFirstAndTryCloud(storeName, data, cloudWriteFn) {
+    const queued = await saveOfflineRecord(storeName, data);
+    if (shouldQueueForSync() || typeof cloudWriteFn !== 'function') {
+      return { local: true, cloud: false, queued: true, localId: queued.localId };
+    }
+
+    try {
+      const cloudMeta = await cloudWriteFn(queued.data, queued.localId);
+      await markSynced(storeName, queued.localId, cloudMeta && cloudMeta.cloudId ? cloudMeta.cloudId : null);
+      await deleteRecord(storeName, queued.localId);
+      return { local: true, cloud: true, queued: false, localId: queued.localId, cloudMeta: cloudMeta || null };
+    } catch (error) {
+      console.warn('[OfflineManager] Cloud write failed, keeping queued record:', error);
+      return { local: true, cloud: false, queued: true, localId: queued.localId, error };
+    }
   }
 
   async function getPendingRecords(storeName) {
@@ -563,6 +600,8 @@
     isOfflineMode,
     setOfflineMode,
     saveOfflineRecord,
+    saveLocalFirstAndTryCloud,
+    shouldQueueForSync,
     getPendingRecords,
     getAllRecords,
     getPendingCount,

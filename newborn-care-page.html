@@ -915,60 +915,47 @@
           recordedBy: currentUser.uid
         };
 
-        // OFFLINE MODE: Save newborn care to IndexedDB
-        if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-          try {
-            const offlineNewborn = {
-              _isOffline: true,
-              _collection: 'newborn_care',
-              ...formData
-            };
-            await window.OfflineManager.saveOfflineRecord('pending_newborn_records', offlineNewborn);
-            showSuccessMessage('Newborn care data saved offline! Remember to Sync when online.');
-            return;
-          } catch (offErr) {
-            console.error('Offline newborn care save error:', offErr);
-            alert('Error saving offline: ' + offErr.message);
-            return;
+        const queuedPayload = {
+          _collection: 'newborn_care',
+          ...formData,
+          syncState: 'pending'
+        };
+
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_newborn_records',
+          queuedPayload,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._collection;
+            delete cloudData.syncState;
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+            const collectionRef = firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('newborn_care');
+            const existingDoc = await collectionRef.limit(1).get();
+
+            let cloudId = null;
+            if (!existingDoc.empty) {
+              cloudId = existingDoc.docs[0].id;
+              await collectionRef.doc(cloudId).set(cloudData, { merge: true });
+            } else {
+              const created = await collectionRef.add(cloudData);
+              cloudId = created.id;
+            }
+
+            if (window.StatusManager) {
+              await StatusManager.checkAndUpdateToBirthed(
+                patientId,
+                'Newborn care data recorded'
+              );
+            }
+            return { cloudId };
           }
-        }
+        );
 
-        formData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-
-        // Check if record already exists
-        const existingDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('newborn_care')
-          .limit(1)
-          .get();
-
-        if (!existingDoc.empty) {
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('newborn_care')
-            .doc(existingDoc.docs[0].id)
-            .update(formData);
-        } else {
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('newborn_care')
-            .add(formData);
-        }
-
-        if (window.StatusManager) {
-          const statusUpdated = await StatusManager.checkAndUpdateToBirthed(
-            patientId,
-            'Newborn care data recorded'
-          );
-          if (statusUpdated) {
-            console.log('✅ Patient status updated to Birthed');
-          }
-        }
-
-        showSuccessMessage('Newborn care data saved successfully!');
+        showSuccessMessage(saveResult.cloud ? 'Newborn care saved locally and synced to cloud!' : 'Saved locally, sync later.');
         
       } catch (error) {
         console.error('Error saving newborn care data:', error);

@@ -1152,101 +1152,66 @@
         return;
       }
 
-      // OFFLINE MODE: Save LCG data to IndexedDB
-      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
-        try {
-          const cleanedData = {};
-          Object.keys(state.data).forEach(key => {
-            if (state.data[key] !== undefined) cleanedData[key] = state.data[key];
-          });
-
-          const offlineLcg = {
-            _isOffline: true,
-            _docName: 'summary',
-            patientId: state.patientId,
-            ...cleanedData,
-            startingTime: state.startTime || null
-          };
-
-          if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
-            offlineLcg.secondStageTime = state.secondStageTime;
-          }
-
-          await window.OfflineManager.saveOfflineRecord('pending_lcg_records', offlineLcg);
-          if (!silent) showToast('Saved offline');
-          return;
-        } catch (offErr) {
-          console.error('Offline LCG save error:', offErr);
-          if (!silent) alert('Error saving offline: ' + offErr.message);
-          return;
-        }
-      }
-      
       try {
-        const base = firebase.firestore().collection("patients").doc(state.patientId);
-        
-        // Clean state.data to remove any undefined values
         const cleanedData = {};
         Object.keys(state.data).forEach(key => {
-          if (state.data[key] !== undefined) {
-            cleanedData[key] = state.data[key];
-          }
+          if (state.data[key] !== undefined) cleanedData[key] = state.data[key];
         });
-        
-        // Build the data object to save
-        const summaryData = {
+
+        const offlineLcg = {
+          _docName: 'summary',
+          patientId: state.patientId,
           ...cleanedData,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          startingTime: state.startTime
+          startingTime: state.startTime || null,
+          syncState: 'pending'
         };
-        
-        // Only include secondStageTime if it exists, is not null, and is not empty
         if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
-          summaryData.secondStageTime = state.secondStageTime;
-        }
-        
-        // Save to summary document (for carousel entry page)
-        await base.collection("records").doc("summary").set(summaryData, { merge: true });
-
-        // Also save to startingTime document (for Classic LCG compatibility)
-        if (state.startTime) {
-          await base.collection("records").doc("startingTime").set({
-            startingTime: state.startTime,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-          
-          // Update patient status to In Labour when first stage time is saved
-          if (window.StatusManager) {
-            const statusUpdated = await StatusManager.checkAndUpdateToInLabour(state.patientId);
-            if (statusUpdated) {
-              console.log('✅ Patient status updated to In Labour');
-            }
-          }
+          offlineLcg.secondStageTime = state.secondStageTime;
         }
 
-        // Save second stage if exists (for Classic LCG compatibility)
-        if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
-          await base.collection("records").doc("secondStage").set({
-            secondStageStartTime: state.secondStageTime,
-            isSecondStageActive: true,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-          
-          // Update patient status to Birthed when second stage time is saved
-          if (window.StatusManager) {
-            const statusUpdated = await StatusManager.checkAndUpdateToBirthed(
-              state.patientId,
-              'Second stage time recorded'
-            );
-            if (statusUpdated) {
-              console.log('✅ Patient status updated to Birthed');
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_lcg_records',
+          offlineLcg,
+          async function () {
+            const base = firebase.firestore().collection("patients").doc(state.patientId);
+            const summaryData = {
+              ...cleanedData,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+              startingTime: state.startTime
+            };
+            if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
+              summaryData.secondStageTime = state.secondStageTime;
             }
+            await base.collection("records").doc("summary").set(summaryData, { merge: true });
+
+            if (state.startTime) {
+              await base.collection("records").doc("startingTime").set({
+                startingTime: state.startTime,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+              if (window.StatusManager) {
+                await StatusManager.checkAndUpdateToInLabour(state.patientId);
+              }
+            }
+
+            if (state.secondStageTime && typeof state.secondStageTime === 'string' && state.secondStageTime.trim() !== '') {
+              await base.collection("records").doc("secondStage").set({
+                secondStageStartTime: state.secondStageTime,
+                isSecondStageActive: true,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+              if (window.StatusManager) {
+                await StatusManager.checkAndUpdateToBirthed(
+                  state.patientId,
+                  'Second stage time recorded'
+                );
+              }
+            }
+            return { cloudId: 'summary' };
           }
-        }
-        
-        if (!silent) {
-          showToast('✓ Saved');
-        }
+        );
+
+        if (!silent) showToast(saveResult.cloud ? 'Saved locally and synced' : 'Saved locally, sync later');
       } catch (error) {
         console.error('Save error:', error);
         if (!silent) alert('Error saving: ' + error.message);

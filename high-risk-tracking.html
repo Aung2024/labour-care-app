@@ -37,7 +37,6 @@
 <body>
   <div id="labourCareOfflineBanner" role="status">
     <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
-    <button type="button" class="btn btn-sm btn-dark" id="labourCareSyncBtn">Sync now</button>
   </div>
   <div class="hrt-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
@@ -45,9 +44,6 @@
       <small class="opacity-75">Patients flagged high risk (LCG / PNC columns removed per request)</small>
     </div>
     <div class="d-flex gap-2">
-      <button type="button" class="btn btn-light btn-sm" id="labourCareSyncBtnHeader">
-        <i class="fas fa-sync-alt me-1"></i>Sync
-      </button>
       <button type="button" class="btn btn-light btn-sm" id="btnNotifySample">
         <i class="fas fa-bell me-1"></i>Sample alert
       </button>
@@ -218,30 +214,6 @@
       }
     }
 
-    async function labourCareHrtSync() {
-      var btns = [document.getElementById('labourCareSyncBtn'), document.getElementById('labourCareSyncBtnHeader')];
-      btns.forEach(function (b) {
-        if (b) b.disabled = true;
-      });
-      try {
-        if (!currentUser || !userRole) {
-          alert('Please wait for the app to finish loading.');
-          return;
-        }
-        var ts = LabourCareOffline.scopeFilterValueForRole(userRole);
-        await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
-        await LabourCareOffline.flushOutbox();
-        LabourCareOffline.setOfflineBanner(false);
-        await loadHighRisk();
-        alert('Sync complete.');
-      } catch (e) {
-        alert('Sync failed: ' + (e && e.message ? e.message : e));
-      }
-      btns.forEach(function (b) {
-        if (b) b.disabled = false;
-      });
-    }
-
     document.getElementById('btnNotifySample').addEventListener('click', async function () {
       if (!window.HRTPushSample) return;
       await HRTPushSample.requestBrowserPermission();
@@ -254,10 +226,6 @@
     });
 
     document.addEventListener('DOMContentLoaded', function () {
-      var b1 = document.getElementById('labourCareSyncBtn');
-      var b2 = document.getElementById('labourCareSyncBtnHeader');
-      if (b1) b1.addEventListener('click', labourCareHrtSync);
-      if (b2) b2.addEventListener('click', labourCareHrtSync);
       if (!navigator.onLine && window.LabourCareOffline) {
         LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
       }

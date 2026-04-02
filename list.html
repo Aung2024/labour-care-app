@@ -655,7 +655,6 @@
 <body>
   <div id="labourCareOfflineBanner" role="status">
     <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
-    <button type="button" class="btn btn-sm btn-dark" id="labourCareSyncBtnList">Sync now</button>
   </div>
   <!-- Header -->
   <div class="medical-header">
@@ -668,9 +667,6 @@
         <a href="index.html" class="btn btn-outline-light btn-sm me-2">
           <i class="fas fa-home me-2"></i>Home
         </a>
-        <button type="button" class="btn btn-outline-light btn-sm me-2" id="labourCareSyncBtnListHeader">
-          <i class="fas fa-sync-alt me-2"></i>Sync
-        </button>
         <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); sessionStorage.clear(); window.location='login.html';">
           <i class="fas fa-sign-out-alt me-2"></i>Logout
         </button>
@@ -845,20 +841,25 @@
       await loadPatients();
     });
 
-    async function labourCareListSync() {
-      const btns = [document.getElementById('labourCareSyncBtnList'), document.getElementById('labourCareSyncBtnListHeader')];
-      btns.forEach(function (b) { if (b) b.disabled = true; });
+    async function mergePendingPatients(baseList) {
+      if (!window.OfflineManager) return baseList;
       try {
-        const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
-        await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
-        await LabourCareOffline.flushOutbox();
-        LabourCareOffline.setOfflineBanner(false);
-        await loadPatients();
-        alert('Sync complete.');
-      } catch (e) {
-        alert('Sync failed: ' + (e && e.message ? e.message : e));
+        const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+        const seen = new Set((baseList || []).map(function (p) { return String(p.id); }));
+        pending.forEach(function (row) {
+          if (!seen.has(String(row.localId))) {
+            seen.add(String(row.localId));
+            baseList.push({
+              id: row.localId,
+              ...(row.data || {}),
+              _pendingSync: true
+            });
+          }
+        });
+      } catch (error) {
+        console.warn('Could not merge pending patients:', error);
       }
-      btns.forEach(function (b) { if (b) b.disabled = false; });
+      return baseList;
     }
 
     // Load patients from Firestore with optimization
@@ -867,7 +868,7 @@
         if (!navigator.onLine && window.LabourCareOffline) {
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
-          allPatients = list;
+          allPatients = await mergePendingPatients(list || []);
           allPatients.sort(function (a, b) {
             const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
             const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
@@ -881,7 +882,7 @@
           } else {
             displayPatients();
           }
-          LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
+          LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data from this device.');
           return;
         }
 
@@ -1074,6 +1075,7 @@
             }
           });
         }
+        allPatients = await mergePendingPatients(allPatients || []);
 
         console.log('✅ Loaded', allPatients.length, 'patients total');
 
@@ -1252,6 +1254,7 @@
         <div class="patient-header">
           <div>
             <div class="patient-name">${patient.name || 'Unknown'}</div>
+            ${patient._pendingSync ? '<div class="text-warning small"><i class="fas fa-clock me-1"></i>Pending sync</div>' : ''}
           </div>
           <span class="status-badge ${statusClass}">${displayStatus}</span>
         </div>
@@ -1317,6 +1320,7 @@
         <td>
           <div class="fw-semibold text-dark mb-1">${patient.name || 'Unknown'}</div>
           <div class="text-muted" style="font-size: 0.8rem;">${ageDisplay} · Parity: ${parityDisplay}</div>
+          ${patient._pendingSync ? '<div class="text-warning" style="font-size:0.75rem;"><i class="fas fa-clock me-1"></i>Pending sync</div>' : ''}
         </td>
         <td>
           <span class="status-pill ${statusClass}">
@@ -1531,13 +1535,6 @@
     });
 
     updateViewToggleUI();
-
-    (function wireListOfflineSync() {
-      var b1 = document.getElementById('labourCareSyncBtnList');
-      var b2 = document.getElementById('labourCareSyncBtnListHeader');
-      if (b1) b1.addEventListener('click', labourCareListSync);
-      if (b2) b2.addEventListener('click', labourCareListSync);
-    })();
 
     // Load recent patients from localStorage
     function loadRecentPatients() {
