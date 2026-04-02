@@ -12,9 +12,6 @@
   <script src="js/firebase.js"></script>
   <script src="js/edd-display.js"></script>
   <script src="js/auth-guard.js"></script>
-  <script src="js/offline-store.js"></script>
-  <script src="js/offline-sync.js"></script>
-  <script src="js/offline-report-helper.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -703,12 +700,7 @@
 
     async function loadOverviewData() {
       try {
-        let patientDoc;
-        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
-          patientDoc = await OfflineReportBridge.patientGet(patientId);
-        } else {
-          patientDoc = await reportDb.collection("patients").doc(patientId).get();
-        }
+        const patientDoc = await reportDb.collection("patients").doc(patientId).get();
         if (!patientDoc.exists) {
           alert("Patient not found!");
           goBack();
@@ -741,10 +733,6 @@
 
     async function countCollection(subcollection) {
       try {
-        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
-          const snap = await OfflineReportBridge.subcollectionGet(patientId, subcollection);
-          return snap.size;
-        }
         const snapshot = await reportDb.collection("patients").doc(patientId).collection(subcollection).get();
         return snapshot.size;
       } catch (e) {
@@ -754,13 +742,6 @@
 
     async function checkCollection(subcollection, docId) {
       try {
-        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
-          if (subcollection === "records") {
-            const doc = await OfflineReportBridge.recordsDocGet(patientId, docId);
-            return doc.exists;
-          }
-          return false;
-        }
         const doc = await reportDb.collection("patients").doc(patientId).collection(subcollection).doc(docId).get();
         return doc.exists;
       } catch (e) {
@@ -770,10 +751,6 @@
 
     async function checkSubcollectionExists(subcollection) {
       try {
-        if (typeof OfflineReportBridge !== "undefined" && OfflineReportBridge.isActive()) {
-          const snap = await OfflineReportBridge.subcollectionGet(patientId, subcollection);
-          return !snap.empty;
-        }
         const snapshot = await reportDb.collection("patients").doc(patientId).collection(subcollection).limit(1).get();
         return !snapshot.empty;
       } catch (e) {
