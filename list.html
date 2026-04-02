@@ -807,15 +807,28 @@
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) {
         window.location.href = "login.html";
         return;
       }
       
-      currentUser = user;
+      currentUser = resolvedUser;
       
       // Detect iOS
       const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);

@@ -338,13 +338,27 @@
       });
     }
 
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
+
     firebase.auth().onAuthStateChanged(async function(user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
       console.log('[ANC] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
-      if (!user) {
+      if (!resolvedUser) {
         console.log('[ANC] No user, redirecting to login.');
         window.location.href = "login.html";
       } else {
-        currentUser = user;
+        currentUser = resolvedUser;
         console.log('[ANC] User present, initializing page.');
         const patientSession = await initializePatientSession(true);
         if (patientSession) {

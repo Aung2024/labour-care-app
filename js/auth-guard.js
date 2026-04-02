@@ -56,6 +56,10 @@ function isCacheValid() {
   return age < USER_VERIFICATION_CACHE.TTL;
 }
 
+function hasLocalOfflineSession() {
+  return !!(localStorage.getItem('uid') && localStorage.getItem('role'));
+}
+
 /**
  * Initialize authentication guard
  * This function should be called on every page load
@@ -98,6 +102,17 @@ function initAuthGuard() {
     if (!user) {
       // User is not authenticated
       console.warn('⚠️ No authenticated user - redirecting to login');
+
+      const offlineNow =
+        ((window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+        localStorage.getItem('offlineMode') === 'true' ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false));
+      if (offlineNow && hasLocalOfflineSession()) {
+        console.log('✅ Offline session allowed by local cache');
+        hasUnsubscribed = true;
+        unsubscribe();
+        return;
+      }
       
       // For conditional pages, check if we're in a valid flow
       if (isConditionalPage()) {

@@ -2570,11 +2570,21 @@
       }
       
       // OFFLINE MODE: Save to IndexedDB and skip Firestore entirely
-      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+      if (window.OfflineManager && (window.OfflineManager.isOfflineMode() || networkOffline)) {
         try {
-          const profile = await window.OfflineManager.getCachedUserProfile();
+          let profile = await window.OfflineManager.getCachedUserProfile();
           if (!profile) {
-            messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>No cached user profile. Please go online, toggle Offline Mode once, then try again.</div>';
+            const authUser = firebase.auth().currentUser;
+            const uid = (authUser && authUser.uid) || localStorage.getItem('uid') || '';
+            profile = {
+              uid: uid,
+              township: localStorage.getItem('userTownship') || '',
+              region: localStorage.getItem('userRegion') || '',
+              facility_code: localStorage.getItem('facilityCode') || '003'
+            };
+          }
+          if (!profile || !profile.uid) {
+            messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Cannot identify logged-in user for offline save. Please login again.</div>';
             if (submitBtn) { submitBtn.innerHTML = originalText; submitBtn.disabled = false; }
             return;
           }
