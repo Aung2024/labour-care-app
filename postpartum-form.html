@@ -22,6 +22,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #7c3aed;
@@ -884,6 +885,11 @@
 
   <script src="js/form-wizard.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     
@@ -1012,10 +1018,24 @@
     }
 
     // Initialize Firebase and load data
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
+
     firebase.auth().onAuthStateChanged(async (user) => {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
       console.log('[PNC-FORM] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
-      if (user) {
-        currentUser = user;
+      if (resolvedUser) {
+        currentUser = resolvedUser;
         console.log('[PNC-FORM] User present, loading patient from URL.');
         await loadPatientFromURL();
       } else {

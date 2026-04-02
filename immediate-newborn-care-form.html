@@ -20,6 +20,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #667eea;
@@ -506,6 +507,11 @@
 
   <script src="js/form-wizard.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
@@ -532,12 +538,25 @@
     // Get patient ID from URL
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient');
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) {
         window.location.href = "login.html";
       } else {
-        currentUser = user;
+        currentUser = resolvedUser;
         await loadPatientInfo();
       }
     });
@@ -550,7 +569,8 @@
         }
 
         // OFFLINE: Load from sessionStorage / IndexedDB
-        const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOffline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+          (typeof navigator !== 'undefined' && navigator.onLine === false);
         const isOfflinePatient = patientId.startsWith('OFFLINE-');
 
         if (isOffline || isOfflinePatient) {

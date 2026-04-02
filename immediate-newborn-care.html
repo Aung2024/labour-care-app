@@ -188,14 +188,33 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
 
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let selectedPatient = null;
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
       console.log('[NEWBORN-HUB] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
-      if (!user) {
+      if (!resolvedUser) {
         console.log('[NEWBORN-HUB] No user, redirecting to login.');
         window.location.href = "login.html";
         return;
@@ -210,7 +229,8 @@
       }
 
       // Load patient data
-      const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      const isOffline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false);
       const isOfflinePatient = patientId.startsWith('OFFLINE-');
 
       if (isOffline || isOfflinePatient) {

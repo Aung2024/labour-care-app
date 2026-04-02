@@ -59,8 +59,26 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script>
-    firebase.auth().onAuthStateChanged(function(user){
-      if (!user) { window.location.href='login.html'; return; }
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
+    firebase.auth().onAuthStateChanged(async function(user){
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) { window.location.href='login.html'; return; }
       const selectedId = sessionStorage.getItem('selectedPatientId');
       const selected = sessionStorage.getItem('selectedPatientData');
       if (!selectedId || !selected) { window.location.href='list.html'; return; }
@@ -71,7 +89,8 @@
       const pid = sessionStorage.getItem('selectedPatientId');
       if (!pid) return alert('No patient selected');
 
-      const isOffline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      const isOffline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false);
       if (isOffline || String(pid).startsWith('OFFLINE-')) {
         function hasLcgStart(t) {
           return t != null && String(t).trim() !== '' && String(t).trim() !== 'undefined';
@@ -92,7 +111,7 @@
           return;
         }
         const msg =
-          'Enter Active First Stage on the next screen, or while online use Prepare for Offline to copy server LCG times.';
+          'No Active First Stage time was found on this device. Enter it on the next screen and continue.';
         if (window.AppDialog && AppDialog.alert) await AppDialog.alert(msg, { title: 'LCG setup' });
         else alert(msg);
         window.location.href = `labour-care-setup.html?patient=${pid}`;

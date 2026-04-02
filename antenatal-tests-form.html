@@ -14,6 +14,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -632,17 +633,35 @@
   </footer>
 
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     let allPatients = [];
     let isEditMode = false;
     let currentTestId = null;
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     // Initialize Firebase and load data
     document.addEventListener('DOMContentLoaded', function() {
-      firebase.auth().onAuthStateChanged(function(user) {
-        if (user) {
-          currentUser = user;
+      firebase.auth().onAuthStateChanged(async function(user) {
+        let resolvedUser = user;
+        if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+          resolvedUser = await waitForCurrentUserOffline(5000);
+        }
+        if (resolvedUser) {
+          currentUser = resolvedUser;
           loadPatientFromURL();
         } else {
           window.location.href = 'login.html';
@@ -686,6 +705,42 @@
         if (!patientId) {
           // Instead of redirecting, load all patients and show a selector
           await loadAllPatientsForSelection();
+          return;
+        }
+
+        const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const legacyOff = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOfflinePatient = patientId && patientId.startsWith('OFFLINE-');
+        if (networkOff || legacyOff || isOfflinePatient) {
+          currentPatient = null;
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            try {
+              currentPatient = JSON.parse(cachedData);
+              if (!currentPatient.id) currentPatient.id = patientId;
+            } catch (_e) {}
+          }
+          if (!currentPatient && window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = { id: patientId, ...(match.data || {}) };
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = { id: patientId, ...cached };
+            }
+          }
+          if (!currentPatient && window.LabourCareOffline && !isOfflinePatient) {
+            const mirrored = await LabourCareOffline.getPatientPayload(patientId);
+            if (mirrored) currentPatient = { id: patientId, ...mirrored };
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            await loadAllPatientsForSelection();
+            return;
+          }
+          await populatePatientInfo();
+          setCurrentDate();
           return;
         }
 
@@ -1189,7 +1244,7 @@
       (async () => {
         const ok = window.AppDialog && AppDialog.confirm
           ? await AppDialog.confirm('Are you sure you want to logout?', { title: 'Logout' })
-          : confirm('Are you sure you want to logout?');
+          : false;
         if (!ok) return;
 
         firebase.auth().signOut().then(() => {

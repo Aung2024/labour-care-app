@@ -24,6 +24,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -1377,6 +1378,11 @@
 
   <script src="js/form-wizard.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
@@ -1427,14 +1433,27 @@
     // Get patient ID from URL
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient');
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
-    firebase.auth().onAuthStateChanged(function(user) {
+    firebase.auth().onAuthStateChanged(async function(user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
       console.log('[ANC-FORM] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
-      if (!user) {
+      if (!resolvedUser) {
         console.log('[ANC-FORM] No user, redirecting to login.');
         window.location.href = "login.html";
       } else {
-        currentUser = user;
+        currentUser = resolvedUser;
         console.log('[ANC-FORM] User present, loading patient info.');
         loadPatientInfo();
       }
@@ -2423,10 +2442,7 @@
                     'Do you want to continue anyway?',
                     { title: 'Validation Warning' }
                   )
-                : confirm(
-                    `Validation Warning: ${eddLmpCheck.error}\n\n` +
-                    'Do you want to continue anyway?'
-                  );
+                : false;
               if (!continueAnyway) {
                 if (submitButton) {
                   submitButton.disabled = false;
@@ -2447,10 +2463,7 @@
                     'Do you want to continue anyway?',
                     { title: 'Validation Warning' }
                   )
-                : confirm(
-                    `Validation Warning: ${gaCheck.error}\n\n` +
-                    'Do you want to continue anyway?'
-                  );
+                : false;
               if (!continueAnyway) {
                 if (submitButton) {
                   submitButton.disabled = false;

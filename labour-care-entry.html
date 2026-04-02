@@ -418,6 +418,11 @@
   <script src="js/ui-dialogs.js"></script>
   <script src="languages/language-manager.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     // Prevent language manager from creating the default switcher
     window.noLanguageSwitcher = true;
     // ============================================================================
@@ -1307,13 +1312,13 @@
 
         if (!state.startTime) {
           const msg =
-            'No LCG data on this device for this patient. Use Prepare for Offline while online, or complete Labour Care Setup once online.';
+            'No LCG start time found on this device for this patient. Please complete Labour Care Setup and enter Active First Stage time.';
           if (window.AppDialog && AppDialog.alert) {
             await AppDialog.alert(msg, { title: 'LCG not available offline' });
           } else {
             alert(msg);
           }
-          window.location.href = 'patient-care-hub.html';
+          window.location.href = 'labour-care-setup.html?patient=' + patientId;
           return;
         }
 
@@ -1965,8 +1970,22 @@
     // ============================================================================
     // INITIALIZATION
     // ============================================================================
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
+
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) {
         window.location.href = "login.html";
         return;
       }

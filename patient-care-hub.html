@@ -1024,6 +1024,11 @@
   <script src="js/ui-dialogs.js"></script>
 
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     // Language switching
     let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
 
@@ -1181,15 +1186,28 @@
 
     let currentUser = null;
     let selectedPatient = null;
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) {
         window.location.href = "login.html";
         return;
       }
       
-      currentUser = user;
+      currentUser = resolvedUser;
       await loadPatientData();
     });
 
@@ -1319,8 +1337,6 @@
               return;
             }
           }
-          sessionStorage.removeItem('selectedPatientId');
-          sessionStorage.removeItem('selectedPatientData');
           document.getElementById('loadingContainer').style.display = 'none';
           document.getElementById('noPatientContainer').style.display = 'block';
           return;
@@ -1331,7 +1347,9 @@
         sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
 
         displayPatientInfo();
-        await loadCareStats();
+        loadCareStats().catch(function (e) {
+          console.warn('loadCareStats deferred error:', e);
+        });
         
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('patientInfoBar').style.display = 'block';
@@ -1925,13 +1943,11 @@
           return;
         }
         const msgEn =
-          'No first-stage time on this device for this patient.\n\n' +
-          'Next: Labour Care Setup — enter Active First Stage time and save (works offline).\n\n' +
-          'Tip while online: use Prepare for Offline on the list to copy LCG times from the server.';
+          'No first-stage time was found on this device for this patient.\n\n' +
+          'Next: Labour Care Setup — enter Active First Stage time and save.';
         const msgMm =
-          'ဤလူနာအတွက် ဤစက်တွင် ပထမအဆင့် စတင်ချိန် မရှိသေးပါ။\n\n' +
-          'နောက်တစ်ဆင့် Labour Care Setup တွင် စတင်ချိန် ထည့်ပြီး သိမ်းပါ။\n\n' +
-          'အွန်လိုင်းတွင် Prepare for Offline သုံးပါ။';
+          'ဤလူနာအတွက် ဤစက်တွင် ပထမအဆင့် စတင်ချိန် မတွေ့ပါ။\n\n' +
+          'နောက်တစ်ဆင့် Labour Care Setup တွင် Active First Stage time ထည့်ပြီး သိမ်းပါ။';
         const msg = currentLanguage === 'mm' ? msgMm : msgEn;
         if (window.AppDialog && AppDialog.alert) {
           await AppDialog.alert(msg, { title: currentLanguage === 'mm' ? 'LCG စတင်ရန်' : 'Set up LCG offline' });

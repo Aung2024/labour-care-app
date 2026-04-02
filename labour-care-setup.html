@@ -291,8 +291,14 @@
 <script src="js/audit-logger.js"></script>
 <script src="js/offline-manager.js"></script>
 <script src="js/offline-status-bar.js"></script>
+<script src="js/ui-dialogs.js"></script>
 
 <script>
+  if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+    window.alert = function(message) {
+      window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+    };
+  }
   // Get patient ID from URL
   function getPatientIdFromUrl() {
     const params = new URLSearchParams(window.location.search);
@@ -694,9 +700,23 @@
   }
 
   // Check authentication and load data
-  firebase.auth().onAuthStateChanged(function(user) {
+  async function waitForCurrentUserOffline(maxMs = 4000) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      const u = firebase.auth().currentUser;
+      if (u) return u;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    return null;
+  }
+
+  firebase.auth().onAuthStateChanged(async function(user) {
+    let resolvedUser = user;
+    if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      resolvedUser = await waitForCurrentUserOffline(5000);
+    }
     console.log('[LCG-SETUP] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
-    if (!user) {
+    if (!resolvedUser) {
       console.log('[LCG-SETUP] No user, redirecting to login.');
       window.location.href = 'login.html';
       return;
