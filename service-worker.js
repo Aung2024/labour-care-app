@@ -1,10 +1,11 @@
 
-const CACHE_NAME = 'mch-care-v10';
+const CACHE_NAME = 'mch-care-v12';
 const FILES_TO_CACHE = [
   './',
   './index.html',
   './home.html',
   './high-risk-tracking.html',
+  './overall-patient-report.html',
   './list.html',
   './login.html',
   './registration.html',
@@ -26,6 +27,7 @@ const FILES_TO_CACHE = [
   './labour-monitoring.html',
   './labour-emergencies.html',
   './summary.html',
+  './summary-view.html',
   './postpartum-care.html',
   './postpartum-form.html',
   './postpartum-history.html',
@@ -43,6 +45,7 @@ const FILES_TO_CACHE = [
   './settings.html',
   './manifest.json',
   './js/firebase.js',
+  './js/register-sw.js',
   './js/high-risk-utils.js',
   './js/edd-display.js',
   './js/patient-session.js',
@@ -53,15 +56,21 @@ const FILES_TO_CACHE = [
   './js/offline-manager.js',
   './js/offline-status-bar.js',
   './js/sync-manager.js',
+  './js/offline-store.js',
+  './js/offline-sync.js',
+  './js/offline-report-helper.js',
+  './js/ui-dialogs.js',
   './js/clinical-validator.js',
   './js/data-linkage.js',
   './js/duplicate-detector.js',
   './js/consent-manager.js',
   './js/rbac-manager.js',
   './js/user-cache.js',
+  './js/data-masking.js',
   './js/township-region.js',
   './js/page-performance.js',
   './css/style.css',
+  './css/form-wizard-dangers.css',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './languages/en.json',
@@ -69,21 +78,27 @@ const FILES_TO_CACHE = [
   './languages/language-manager.js'
 ];
 
-// Install event - cache resources
+// Install event - cache resources (per-URL: one 404 must not abort the whole precache)
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[Service Worker] Caching app shell');
-        return cache.addAll(FILES_TO_CACHE);
-      })
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[Service Worker] Caching app shell');
+      return Promise.all(
+        FILES_TO_CACHE.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[Service Worker] Skip precache (failed):', url, err && err.message);
+          })
+        )
+      );
+    })
       .then(() => {
-        console.log('[Service Worker] Successfully cached all resources');
+        console.log('[Service Worker] Precache pass finished');
         return self.skipWaiting();
       })
       .catch((error) => {
-        console.error('[Service Worker] Cache failed:', error);
+        console.error('[Service Worker] Install failed:', error);
+        return self.skipWaiting();
       })
   );
 });
@@ -109,42 +124,42 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch event - serve from cache, fallback to network
+// IMPORTANT: precache stores e.g. /antenatal-form.html but navigation is often
+// /antenatal-form.html?patient=... — default Cache.match does NOT ignore query string,
+// so offline navigations failed with ERR_FAILED until we use ignoreSearch: true.
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+  if (event.request.method !== 'GET') {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        if (response) {
-          return response;
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(event.request, { ignoreSearch: true });
+      if (cached) {
+        return cached;
+      }
+
+      try {
+        const response = await fetch(event.request);
+        if (response && response.status === 200 && response.type === 'basic') {
+          cache.put(event.request, response.clone());
         }
-        
-        // Clone the request
-        const fetchRequest = event.request.clone();
-        
-        return fetch(fetchRequest).then((response) => {
-          // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-          
-          // Clone the response
-          const responseToCache = response.clone();
-          
-          // Cache the new response
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-          
-          return response;
-        }).catch((error) => {
-          console.error('[Service Worker] Fetch failed:', error);
-          // Return a custom offline page if available
-          return caches.match('./index.html');
-        });
-      })
+        return response;
+      } catch (error) {
+        console.error('[Service Worker] Fetch failed:', error);
+        const docFallback =
+          event.request.mode === 'navigate' || event.request.destination === 'document'
+            ? await cache.match(event.request, { ignoreSearch: true })
+            : null;
+        if (docFallback) {
+          return docFallback;
+        }
+        return (await cache.match('./index.html')) || Response.error();
+      }
+    })()
   );
 });
