@@ -14,6 +14,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/register-sw.js"></script>
   <script src="js/patient-session.js"></script>
   <style>
     :root {
@@ -242,7 +244,6 @@
 
     async function loadSelectedPatient() {
       try {
-        // Get selected patient from session storage
         const patientId = sessionStorage.getItem('selectedPatientId');
         const patientName = sessionStorage.getItem('selectedPatientName');
         
@@ -252,28 +253,54 @@
           return;
         }
 
-        // Load patient data from Firestore
-        const patientDoc = await firebase.firestore()
-          .collection("patients")
-          .doc(patientId)
-          .get();
+        var loaded = false;
 
-        if (!patientDoc.exists) {
-          alert('Patient not found.');
+        if (navigator.onLine) {
+          try {
+            const patientDoc = await firebase.firestore()
+              .collection("patients")
+              .doc(patientId)
+              .get();
+            if (patientDoc.exists) {
+              selectedPatient = patientDoc.data();
+              selectedPatient.id = patientId;
+              loaded = true;
+            }
+          } catch (e) {
+            console.warn('Firestore patient load failed, trying offline fallback:', e);
+          }
+        }
+
+        if (!loaded) {
+          var cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            selectedPatient = JSON.parse(cachedData);
+            selectedPatient.id = patientId;
+            loaded = true;
+          } else if (window.OfflineManager) {
+            if (patientId.startsWith('OFFLINE-')) {
+              var pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              var match = pending.find(function (r) { return r.localId === patientId; });
+              if (match) { selectedPatient = { id: patientId, ...match.data }; loaded = true; }
+            } else {
+              var cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) { selectedPatient = cached; selectedPatient.id = patientId; loaded = true; }
+            }
+          }
+        }
+
+        if (!loaded) {
+          alert('Patient data not available. Please go back and select a patient.');
           window.location.href = 'list.html';
           return;
         }
 
-        selectedPatient = patientDoc.data();
-        selectedPatient.id = patientId;
-
-        // Display patient name
         document.getElementById('patientNameDisplay').textContent = 
           patientName || selectedPatient.name || 'Unknown Patient';
 
       } catch (error) {
         console.error('Error loading selected patient:', error);
-        alert(`Error loading patient information: ${error.message}`);
+        alert('Error loading patient information: ' + error.message);
       }
     }
 

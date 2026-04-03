@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v15';
+const CACHE_NAME = 'mch-care-v16';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -21,6 +21,10 @@ const FILES_TO_CACHE = [
   './antenatal-tests-form.html',
   './antenatal-tests-list.html',
   './antenatal-education.html',
+  './education-pregnancy-health.html',
+  './education-breastfeeding.html',
+  './education-nutrition.html',
+  './education-self-care.html',
   './newsummary.html',
   './feedback-form.html',
   './vaccine-home.html',
