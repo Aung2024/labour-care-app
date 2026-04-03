@@ -55,30 +55,6 @@
       font-size: 0.9rem;
     }
 
-    .language-switcher {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .language-switcher button {
-      min-width: 60px;
-      font-weight: 600;
-      font-size: 0.9rem;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      transition: all 0.3s ease;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-
-    .language-switcher button:hover {
-      background: rgba(255, 255, 255, 0.2);
-      border-color: rgba(255, 255, 255, 0.5);
-      transform: translateY(-1px);
-    }
-
     /* Mobile responsiveness for header */
     @media (max-width: 768px) {
       .header-section {
@@ -118,16 +94,6 @@
       
       .footer p {
         font-size: 0.75rem;
-      }
-      
-      .language-switcher {
-        gap: 0.25rem;
-      }
-      
-      .language-switcher button {
-        min-width: 50px;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
       }
       
       .d-flex.gap-3 {
@@ -225,10 +191,12 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 <script src="js/firebase.js"></script>
 <script src="js/auth-guard.js"></script>
+<script src="js/ui-dialogs.js"></script>
 <script src="js/network-diagnostics.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/lang-apply.js"></script>
 <script src="languages/language-manager.js"></script>
 </head>
 <body>
@@ -236,18 +204,11 @@
   <div class="header-section">
     <div class="container">
       <div class="row align-items-center">
-        <div class="col-md-10">
+        <div class="col-md-12">
           <h1 class="mb-2">
             <i class="fas fa-clipboard-list me-3"></i>
             <span data-i18n="pageSubtitle">Labour Care Summary</span>
           </h1>
-  </div>
-        <div class="col-md-2 text-end">
-          <div class="language-switcher">
-            <button class="btn btn-sm" onclick="toggleLanguage()">
-              <span id="languageToggle">EN</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -1486,7 +1447,7 @@
 
         // Get patient document with retry and server source
         const patientDoc = await retryFirestoreQuery(
-          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).get({ source: "server" })
+          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).get()
         );
         if (!patientDoc.exists) {
           document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
@@ -1558,7 +1519,7 @@
         // Load starting time and second stage data
         try {
           const startingTimeDoc = await retryFirestoreQuery(
-            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get({ source: "server" })
+            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("startingTime").get()
           );
           if (startingTimeDoc.exists) {
             const startingData = startingTimeDoc.data();
@@ -1579,7 +1540,7 @@
                   .doc(patientIdFromUrl)
                   .collection("records")
                   .doc("summary")
-                  .get({ source: "server" })
+                  .get()
               );
               
               if (recordsDoc.exists) {
@@ -1598,7 +1559,7 @@
 
               // Load medication data with retry
               const medicationSnap = await retryFirestoreQuery(
-                () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" })
+                () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get()
               );
               medicationSnap.forEach(doc => {
                 const d = doc.data();
@@ -1665,7 +1626,7 @@
           console.log('🔄 Loading second stage data...');
           
           const secondStageDoc = await retryFirestoreQuery(
-            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get({ source: "server" })
+            () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("records").doc("secondStage").get()
           );
           if (secondStageDoc.exists) {
             const secondStageData = secondStageDoc.data();
@@ -1745,7 +1706,7 @@
 
         // Load medication data with retry
         const medicationSnap = await retryFirestoreQuery(
-          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get({ source: "server" })
+          () => firebase.firestore().collection("patients").doc(patientIdFromUrl).collection("medication").get()
         );
         medicationSnap.forEach(doc => {
           const d = doc.data();
@@ -6014,20 +5975,6 @@
       }
       window.location.href = `transfer.html?patient=${encodeURIComponent(patientId)}&type=labour`;
     }
-
-    // Language toggle function
-    function toggleLanguage() {
-      const toggle = document.getElementById('languageToggle');
-      if (toggle.textContent === 'EN') {
-        toggle.textContent = 'MM';
-        // Add logic to switch to Myanmar language if needed
-      } else {
-        toggle.textContent = 'EN';
-        // Add logic to switch to English language if needed
-      }
-    }
-
-
 
     // Load medication data from Firestore
     async function loadMedicationData() {

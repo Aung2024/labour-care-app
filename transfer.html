@@ -306,52 +306,10 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
-    /* Language Switcher Styles */
-    .language-switcher {
-      display: flex;
-      gap: 5px;
-      align-items: center;
-    }
-
-    .language-btn {
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 5px 10px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: all 0.3s ease;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .language-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    .language-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .flag-icon {
-      width: 16px;
-      height: 12px;
-      object-fit: cover;
-      border-radius: 2px;
-    }
-
     @media (max-width: 768px) {
       .header-section .d-flex {
         flex-wrap: wrap;
         justify-content: flex-start;
-      }
-      
-      .language-switcher {
-        order: 2;
-        margin-top: 10px;
       }
       
       .header-section .btn-outline-light {
@@ -368,6 +326,9 @@
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/lang-apply.js"></script>
 </head>
 <body>
   <!-- Header Section -->
@@ -381,14 +342,6 @@
           </h1>
         </div>
         <div class="d-flex align-items-center gap-3">
-          <div class="language-switcher">
-            <button class="language-btn" data-lang="en" onclick="switchLanguage('en')">
-              <span>🇬🇧</span> ENG
-            </button>
-            <button class="language-btn active" data-lang="mm" onclick="switchLanguage('mm')">
-              <span>🇲🇲</span> MM
-            </button>
-          </div>
           <a href="patient-care-hub.html" class="btn btn-outline-light btn-sm">
             <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to Hub" data-mm="ပြန်သွားရန်">Back to Hub</span>
           </a>
@@ -525,60 +478,6 @@
   </footer>
 
   <script>
-    // Language switching
-    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
-
-    // Language switching function
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      
-      // Update active button
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      
-      // Update all text elements with lang-text class
-      document.querySelectorAll('.lang-text').forEach(el => {
-        const enText = el.getAttribute('data-en');
-        const mmText = el.getAttribute('data-mm');
-        if (lang === 'en' && enText) {
-          el.textContent = enText;
-        } else if (lang === 'mm' && mmText) {
-          el.textContent = mmText;
-        }
-      });
-      
-      // Update option elements in select dropdowns
-      document.querySelectorAll('select option[data-en]').forEach(option => {
-        const enText = option.getAttribute('data-en');
-        const mmText = option.getAttribute('data-mm');
-        if (lang === 'en' && enText) {
-          option.textContent = enText;
-        } else if (lang === 'mm' && mmText) {
-          option.textContent = mmText;
-        }
-      });
-      
-      // Update placeholders
-      const placeholders = {
-        'referralTime': { en: 'Select date and time', mm: 'ရက်စွဲနှင့် အချိန်ကို ရွေးချယ်ပါ' },
-        'referralFacility': { en: 'Enter facility name', mm: 'ဆေးရုံ/ကျန်းမာရေးဌာနအမည် ရိုက်ထည့်ပါ' },
-        'mainSymptoms': { en: 'Describe main symptoms, duration, and obstetric history if applicable', mm: 'အဓိကရောဂါလက္ခဏာများ၊ ကြာမြင့်ချိန်နှင့် မွေးဖွားရာဇဝင်များကို ဖော်ပြပါ' },
-        'treatmentBeforeReferral': { en: 'Describe treatment provided before referral', mm: 'မလွှဲပြောင်းမီ ကုသပေးမှုများကို ဖော်ပြပါ' },
-        'medications': { en: 'List medications given', mm: 'ပေးထားသော ဆေးဝါးများကို စာရင်းပြုစုပါ' },
-        'vitalSigns': { en: 'e.g., BP: 120/80, Pulse: 72, Temp: 37.5°C', mm: 'ဥပမာ - သွေးပေါင်ချိန်: 120/80, သွေးခုန်နှုန်း: 72, အပူချိန်: 37.5°C' },
-        'initial': { en: 'Signature / Initials', mm: 'လက်မှတ် / အမည်အတိုကောက်' }
-      };
-      
-      Object.keys(placeholders).forEach(id => {
-        const el = document.getElementById(id);
-        if (el && placeholders[id][lang]) {
-          el.placeholder = placeholders[id][lang];
-        }
-      });
-    }
-
     // Get patient ID from URL parameters
     function getPatientIdFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -601,18 +500,26 @@
           return;
         }
 
-        // Load patient data
-        const patientDoc = await firebase.firestore()
-          .collection("patients")
-          .doc(patientId)
-          .get();
-
-        if (!patientDoc.exists) {
-          document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+        var patientData = null;
+        if (navigator.onLine) {
+          try {
+            const patientDoc = await firebase.firestore()
+              .collection("patients").doc(patientId).get();
+            if (patientDoc.exists) patientData = patientDoc.data();
+          } catch (e) { console.warn('Firestore load failed:', e); }
+        }
+        if (!patientData) {
+          var cached = sessionStorage.getItem('selectedPatientData');
+          if (cached) patientData = JSON.parse(cached);
+          else if (window.OfflineManager) {
+            var c = await window.OfflineManager.getCachedPatient(patientId);
+            if (c) patientData = c;
+          }
+        }
+        if (!patientData) {
+          document.body.innerHTML = '<div class="alert alert-danger">Patient data not available.</div>';
           return;
         }
-
-        const patientData = patientDoc.data();
         
         // Populate simplified patient info display
         document.getElementById('patientName').textContent = patientData.name || 'Unknown Patient';
@@ -756,19 +663,6 @@
         window.location.href = `summary.html?patient=${patientId}`;
       }
     }
-
-    // Initialize language switcher
-    document.addEventListener('DOMContentLoaded', function() {
-      // Set initial language
-      switchLanguage(currentLanguage);
-      
-      // Add event listeners to language buttons
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          switchLanguage(this.dataset.lang);
-        });
-      });
-    });
 
     // Load data when page loads
     firebase.auth().onAuthStateChanged(function(user) {

@@ -519,6 +519,8 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/register-sw.js"></script>
   
   <script>
     // Global variables
@@ -701,15 +703,25 @@
         console.log('Loading summary data for patient:', patientId);
         const base = firebase.firestore().collection("patients").doc(patientId);
         
-        // Load patient basic info
-        const patientDoc = await base.get();
-        if (patientDoc.exists) {
-          patientData = patientDoc.data();
-          console.log('Patient data loaded:', patientData);
-          populatePatientInfo();
-        } else {
-          console.log('No patient document found');
+        var patientLoaded = false;
+        try {
+          const patientDoc = await base.get();
+          if (patientDoc.exists) {
+            patientData = patientDoc.data();
+            patientLoaded = true;
+          }
+        } catch (e) {
+          console.warn('Firestore patient load failed:', e);
         }
+        if (!patientLoaded) {
+          var cached = sessionStorage.getItem('selectedPatientData');
+          if (cached) { patientData = JSON.parse(cached); patientLoaded = true; }
+          else if (window.OfflineManager) {
+            var c = await window.OfflineManager.getCachedPatient(patientId);
+            if (c) { patientData = c; patientLoaded = true; }
+          }
+        }
+        if (patientData) populatePatientInfo();
         
         // Load summary records
         const summaryDoc = await base.collection("records").doc("summary").get();

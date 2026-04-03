@@ -514,48 +514,6 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
-    /* Language Switcher */
-    .language-switcher {
-      display: flex;
-      gap: 0.25rem;
-      align-items: center;
-      margin-right: 1rem;
-    }
-
-    .language-btn {
-      padding: 0.375rem 0.75rem;
-      font-size: 0.875rem;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      cursor: pointer;
-    }
-
-    .language-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .language-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-      border-color: rgba(255, 255, 255, 0.6);
-      font-weight: 600;
-    }
-
-    .flag-icon {
-      font-size: 1rem;
-    }
-
-    @media (max-width: 768px) {
-      .language-switcher {
-        margin-right: 0.5rem;
-      }
-    }
   </style>
   
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -563,7 +521,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
-
+  <script src="js/offline-manager.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/lang-apply.js"></script>
 </head>
 <body>
   <!-- Header Section -->
@@ -578,15 +538,6 @@
       </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-2">
-            <!-- Language Switcher -->
-            <div class="language-switcher">
-              <button type="button" class="btn btn-sm language-btn active" data-lang="en" title="English">
-                <span class="flag-icon">🇬🇧</span> ENG
-              </button>
-              <button type="button" class="btn btn-sm language-btn" data-lang="my" title="မြန်မာ">
-                <span class="flag-icon">🇲🇲</span> MM
-              </button>
-            </div>
             <a href="patient-care-hub.html" class="btn btn-outline-light btn-sm">
               <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to Hub" data-my="Hub သို့ ပြန်သွားရန်">Back to Hub</span>
             </a>
@@ -1017,57 +968,7 @@
   </footer>
 
   <script>
-    // Language switching
-    let currentLanguage = localStorage.getItem('appLanguage') || 'en';
-
-    // Language switching function
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      
-      // Update active button
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      
-      // Update all text elements with lang-text class
-      document.querySelectorAll('.lang-text').forEach(el => {
-        const text = el.dataset[lang] || el.dataset.en || el.textContent;
-        // Handle line breaks
-        el.innerHTML = text.replace(/&#10;/g, '<br>').replace(/\n/g, '<br>');
-      });
-      
-      // Update save button text if in edit mode
-      const saveBtn = document.querySelector('.btn-save-birth');
-      if (saveBtn) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const isEdit = urlParams.get('edit') === 'true';
-        if (isEdit) {
-          const updateText = lang === 'my' ? 'မွေးဖွားမှု မှတ်တမ်း ပြင်ဆင်ရန်' : 'Update Birth Record';
-          saveBtn.innerHTML = `<i class="fas fa-save"></i> ${updateText}`;
-        } else {
-          // Update the lang-text span in the button
-          const langTextSpan = saveBtn.querySelector('.lang-text');
-          if (langTextSpan) {
-            const text = langTextSpan.dataset[lang] || langTextSpan.dataset.en || langTextSpan.textContent;
-            langTextSpan.innerHTML = text.replace(/&#10;/g, '<br>').replace(/\n/g, '<br>');
-          }
-        }
-      }
-    }
-
-    // Initialize language switcher on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      // Set up language switcher button event listeners
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          switchLanguage(this.dataset.lang);
-        });
-      });
-      
-      // Set initial language
-      switchLanguage(currentLanguage);
-    });
+    const currentLanguage = localStorage.getItem('appLanguage') || 'en';
 
     // Get patient ID from URL parameters
     function getPatientIdFromUrl() {
@@ -1097,18 +998,26 @@
           return;
         }
 
-        // Load patient data
-        const patientDoc = await firebase.firestore()
-          .collection("patients")
-          .doc(patientId)
-          .get();
-
-        if (!patientDoc.exists) {
-          document.body.innerHTML = '<div class="alert alert-danger">Patient not found.</div>';
+        var patientData = null;
+        if (navigator.onLine) {
+          try {
+            const patientDoc = await firebase.firestore()
+              .collection("patients").doc(patientId).get();
+            if (patientDoc.exists) patientData = patientDoc.data();
+          } catch (e) { console.warn('Firestore load failed:', e); }
+        }
+        if (!patientData) {
+          var cached = sessionStorage.getItem('selectedPatientData');
+          if (cached) patientData = JSON.parse(cached);
+          else if (window.OfflineManager) {
+            var c = await window.OfflineManager.getCachedPatient(patientId);
+            if (c) patientData = c;
+          }
+        }
+        if (!patientData) {
+          document.body.innerHTML = '<div class="alert alert-danger">Patient data not available.</div>';
           return;
         }
-
-        const patientData = patientDoc.data();
         
         // Populate simplified patient info display
         document.getElementById('patientName').textContent = patientData.name || 'Unknown Patient';

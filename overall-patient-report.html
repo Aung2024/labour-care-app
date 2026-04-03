@@ -90,33 +90,6 @@
       align-items: center;
     }
 
-    .language-switcher {
-      display: flex;
-      gap: 4px;
-    }
-
-    .language-btn {
-      background: rgba(255,255,255,0.2);
-      border: 1px solid rgba(255,255,255,0.4);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .language-btn:hover {
-      background: rgba(255,255,255,0.3);
-      border-color: rgba(255,255,255,0.6);
-    }
-
-    .language-btn.active {
-      background: rgba(255,255,255,0.35);
-      border-color: rgba(255,255,255,0.7);
-    }
-
     .btn-print-all {
       background: linear-gradient(135deg, #10b981, #059669);
       border: none;
@@ -418,6 +391,7 @@
       .overview-panel { padding: 16px; }
     }
   </style>
+  <script src="js/lang-apply.js"></script>
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -432,10 +406,6 @@
       </div>
     </div>
     <div class="top-bar-right">
-      <div class="language-switcher">
-        <button type="button" class="language-btn" data-lang="en" onclick="switchLanguage('en')" title="English">ENG</button>
-        <button type="button" class="language-btn active" data-lang="mm" onclick="switchLanguage('mm')" title="မြန်မာ">MM</button>
-      </div>
       <button class="btn-print-all" onclick="printAllReports()">
         <i class="fas fa-print me-1"></i><span class="lang-text" data-en="Print All" data-mm="အားလုံး ပရင့်ထုတ်ရန်">Print All</span>
       </button>
@@ -618,7 +588,7 @@
     let reportDb;
     let iframesLoaded = {};
     let dataCounts = { anc: 0, labour: false, newborn: false, pnc: 0 };
-    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    const currentLanguage = localStorage.getItem('appLanguage') || 'mm';
 
     const t = {
       en: {
@@ -645,37 +615,8 @@
       }
     };
 
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      document.querySelectorAll('.lang-text').forEach(el => {
-        const text = el.dataset[lang] || el.dataset.en || el.textContent;
-        el.textContent = text;
-      });
-      if (typeof populateOverview === 'function' && currentPatient) {
-        populateOverview();
-      }
-      // Reload ANC, Newborn, PNC report iframes with new language (Labour/LCG stays English only)
-      ['anc', 'newborn', 'postpartum'].forEach(tab => {
-        iframesLoaded[tab] = false;
-        const panel = document.getElementById(`panel-${tab}`);
-        const isActive = panel && panel.classList.contains('active');
-        if (isActive && panel.querySelector('iframe')) {
-          panel.innerHTML = '';
-          loadReportIframe(tab);
-        }
-      });
-    }
-
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
-
-    document.addEventListener('DOMContentLoaded', function() {
-      switchLanguage(currentLanguage);
-    });
 
     firebase.auth().onAuthStateChanged(function(user) {
       if (!user) {

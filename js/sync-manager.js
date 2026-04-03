@@ -259,6 +259,8 @@
         delete visitData._isOffline;
         delete visitData.offlinePatientId;
         delete visitData._queueEntity;
+        delete visitData.syncState;
+        delete visitData.entityType;
 
         visitData.patientId = patientId;
         visitData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
@@ -346,6 +348,8 @@
         delete lcgData.localId;
         delete lcgData._isOffline;
         delete lcgData.offlinePatientId;
+        delete lcgData.syncState;
+        delete lcgData.entityType;
 
         const docName = lcgData._docName || 'summary';
         delete lcgData._docName;
