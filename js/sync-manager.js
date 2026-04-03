@@ -138,6 +138,19 @@
         }
       }
 
+      // Clean up OFFLINE- mirror entries so no duplicates appear in list
+      for (var oldTempId in tempIdToRealId) {
+        if (oldTempId.startsWith('OFFLINE-')) {
+          try {
+            if (window.OfflineStore && OfflineStore.deleteDocument) {
+              await OfflineStore.deleteDocument('patients/' + oldTempId);
+            }
+          } catch (e) {
+            console.warn('[SyncManager] Could not remove mirrored OFFLINE patient:', e);
+          }
+        }
+      }
+
       // Step 2: Sync ANC visits
       report('anc', 'Syncing ANC visits...');
       await syncSubRecords(
@@ -341,14 +354,30 @@
         lcgData.synced_from_offline = true;
         lcgData.offline_created_at = record.createdAt;
 
-        await firebase.firestore()
+        const recordsBase = firebase.firestore()
           .collection('patients')
           .doc(patientId)
-          .collection('records')
-          .doc(docName)
-          .set(lcgData, { merge: true });
+          .collection('records');
 
-        // Update patient status if starting time was saved
+        await recordsBase.doc(docName).set(lcgData, { merge: true });
+
+        if (docName === 'summary' && lcgData.startingTime) {
+          await recordsBase.doc('startingTime').set({
+            startingTime: lcgData.startingTime,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            synced_from_offline: true
+          }, { merge: true });
+        }
+
+        if (docName === 'summary' && lcgData.secondStageTime) {
+          await recordsBase.doc('secondStage').set({
+            secondStageStartTime: lcgData.secondStageTime,
+            isSecondStageActive: true,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            synced_from_offline: true
+          }, { merge: true });
+        }
+
         if (lcgData.startingTime && window.StatusManager) {
           try {
             await StatusManager.checkAndUpdateToInLabour(patientId);

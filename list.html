@@ -1107,12 +1107,17 @@
           const tsMerge = LabourCareOffline.scopeFilterValueForRole(userRole);
           const mirrorList = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, tsMerge);
           const seenIds = new Set(allPatients.map(function (p) { return p.id; }));
-          mirrorList.forEach(function (p) {
-            if (!seenIds.has(p.id)) {
-              seenIds.add(p.id);
-              allPatients.push(p);
+          for (var mi = 0; mi < mirrorList.length; mi++) {
+            var mp = mirrorList[mi];
+            if (String(mp.id).startsWith('OFFLINE-')) {
+              try { if (window.OfflineStore) OfflineStore.deleteDocument('patients/' + mp.id); } catch (e) { /* ignore */ }
+              continue;
             }
-          });
+            if (!seenIds.has(mp.id)) {
+              seenIds.add(mp.id);
+              allPatients.push(mp);
+            }
+          }
         }
         allPatients = await mergePendingPatients(allPatients || []);
 
@@ -1122,6 +1127,7 @@
           for (let m = 0; m < allPatients.length; m++) {
             const row = allPatients[m];
             const pid = row.id;
+            if (String(pid).startsWith('OFFLINE-')) continue;
             const copy = Object.assign({}, row);
             delete copy.id;
             await LabourCareOffline.ingestPatientRoot({
