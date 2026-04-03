@@ -109,6 +109,20 @@
 
           tempIdToRealId[tempId] = docRef.id;
 
+          // Remap sessionStorage so patient-care-hub finds the real ID
+          try {
+            if (sessionStorage.getItem('selectedPatientId') === tempId) {
+              sessionStorage.setItem('selectedPatientId', docRef.id);
+              var cachedPatientData = sessionStorage.getItem('selectedPatientData');
+              if (cachedPatientData) {
+                var parsed = JSON.parse(cachedPatientData);
+                parsed.id = docRef.id;
+                parsed.patient_unique_id = realPatientUniqueId;
+                sessionStorage.setItem('selectedPatientData', JSON.stringify(parsed));
+              }
+            }
+          } catch (e) { /* non-critical */ }
+
           await window.OfflineManager.markSynced('pending_patients', tempId, docRef.id);
           results.patients.synced++;
           results.patients.details.push({
@@ -273,6 +287,20 @@
         await window.OfflineManager.markSynced(storeName, record.localId, cloudId);
         resultBucket.synced++;
 
+        if (window.StatusManager) {
+          try {
+            if (storeName === 'pending_anc_visits') {
+              await StatusManager.checkAndUpdateToAntenatalCare(patientId);
+            } else if (storeName === 'pending_pnc_visits') {
+              await StatusManager.checkAndUpdateToPostnatalCare(patientId, 'PNC visit synced from offline');
+            } else if (storeName === 'pending_newborn_records') {
+              await StatusManager.checkAndUpdateToBirthed(patientId, 'Newborn care synced from offline');
+            }
+          } catch (statusErr) {
+            console.warn('[SyncManager] Status update failed (non-critical):', statusErr);
+          }
+        }
+
       } catch (err) {
         console.error(`[SyncManager] Error syncing ${storeName} record:`, err);
         resultBucket.errors++;
@@ -362,7 +390,7 @@
             <div id="syncProgressBar" style="background:linear-gradient(90deg,#2563eb,#059669);height:100%;width:0%;transition:width 0.5s ease;border-radius:8px;"></div>
           </div>
           <div id="syncResultArea" style="display:none;text-align:left;"></div>
-          <button id="syncCloseBtn" class="btn btn-primary" style="display:none;" onclick="document.getElementById('syncProgressModal').style.display='none'">
+          <button id="syncCloseBtn" class="btn btn-primary" style="display:none;" onclick="window.location.reload()">
             <i class="fas fa-check me-2"></i><span class="lang-text" data-en="Done" data-mm="ပြီးပါပြီ">Done</span>
           </button>
         </div>

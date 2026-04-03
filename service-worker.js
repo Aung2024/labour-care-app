@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v12';
+const CACHE_NAME = 'mch-care-v14';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -21,6 +21,9 @@ const FILES_TO_CACHE = [
   './antenatal-tests-form.html',
   './antenatal-tests-list.html',
   './antenatal-education.html',
+  './newsummary.html',
+  './feedback-form.html',
+  './vaccine-home.html',
   './labour-care.html',
   './labour-care-entry.html',
   './labour-care-setup.html',
@@ -69,6 +72,9 @@ const FILES_TO_CACHE = [
   './js/data-masking.js',
   './js/township-region.js',
   './js/page-performance.js',
+  './js/form-wizard.js',
+  './js/network-diagnostics.js',
+  './js/password-policy.js',
   './css/style.css',
   './css/form-wizard-dangers.css',
   './icons/icon-192.png',

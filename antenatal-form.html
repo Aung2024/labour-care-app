@@ -2685,23 +2685,15 @@
           }
         );
 
-        if (saveResult.cloud) {
-          await loadVisitCount();
-          document.getElementById('visitNumber').value = visitCount;
-          showSuccessMessage('Visit data saved locally and synced to cloud.');
+        var successMsg = saveResult.cloud
+          ? 'ANC visit saved and synced to cloud.'
+          : 'ANC visit saved locally. Please sync when online.';
+        if (window.AppDialog && AppDialog.alert) {
+          await AppDialog.alert(successMsg, { title: 'Saved' });
         } else {
-          document.getElementById('visitNumber').value = '';
-          showSuccessMessage('Saved locally, sync later.');
+          alert(successMsg);
         }
-        
-        // Clear all form fields after successful save
-        clearFormFields();
-        
-        // Reset button state
-        if (submitButton) {
-          submitButton.disabled = false;
-          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
-        }
+        window.location.href = 'antenatal-care.html';
 
       } catch (error) {
         console.error('Error saving visit data:', error);
@@ -2847,7 +2839,12 @@
       }, 2000);
     }
 
-    function generateAntenatalReport() {
+    async function generateAntenatalReport() {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        var msg = 'Reports are not available in offline mode. Please connect to the internet and try again.';
+        if (window.AppDialog && AppDialog.alert) { await AppDialog.alert(msg, { title: 'Offline' }); } else { alert(msg); }
+        return;
+      }
       window.location.href = `antenatal-report.html?patient=${patientId}`;
     }
 
