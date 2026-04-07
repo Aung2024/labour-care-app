@@ -962,6 +962,7 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/high-risk-utils.js"></script>
 
   <script>
     if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
@@ -1006,8 +1007,9 @@
         const statusEl = document.getElementById('patientStatus');
         if (statusEl) statusEl.innerHTML = statusBadge;
         
-        // Update risk level
-        const isHighRisk = selectedPatient.high_risk === 'yes' || selectedPatient.high_risk === true;
+        // Update risk level (registration check; ANC-based check runs after loadCareStats)
+        const isHighRisk = (window.HighRiskUtils && window.HighRiskUtils.hasRegistrationRisk(selectedPatient))
+          || selectedPatient.high_risk === 'yes' || selectedPatient.high_risk === true;
         const riskText = isHighRisk ? 
           (currentLanguage === 'en' ? 'High Risk' : 'အန္တရာယ်မြင့်') : 
           (currentLanguage === 'en' ? 'Normal' : 'ပုံမှန်');
@@ -1315,7 +1317,8 @@
       document.getElementById('patientStatus').innerHTML = statusBadge;
       
       // Risk level with translation
-      const isHighRisk = selectedPatient.high_risk === 'yes' || selectedPatient.high_risk === true;
+      const isHighRisk = (window.HighRiskUtils && window.HighRiskUtils.hasRegistrationRisk(selectedPatient))
+        || selectedPatient.high_risk === 'yes' || selectedPatient.high_risk === true;
       const riskText = isHighRisk ? 
         (currentLanguage === 'en' ? 'High Risk' : 'အန္တရာယ်မြင့်') : 
         (currentLanguage === 'en' ? 'Normal' : 'ပုံမှန်');
@@ -1356,7 +1359,29 @@
         const ancCount = ancCountSnap && ancCountSnap.size ? ancCountSnap.size : 0;
         
         document.getElementById('ancVisits').textContent = ancCount;
-        
+
+        // Check ANC visits for high-risk status (overrides registration-level check)
+        if (ancCountSnap && ancCountSnap.docs && ancCountSnap.docs.length > 0) {
+          let ancHighRisk = false;
+          if (window.HighRiskUtils) {
+            const visits = ancCountSnap.docs.map(d => ({ id: d.id, data: d.data() || {} }));
+            ancHighRisk = window.HighRiskUtils.isPatientHighRisk({ antenatalVisits: visits, registration: selectedPatient });
+          } else {
+            ancCountSnap.docs.forEach(d => {
+              const vd = d.data() || {};
+              if (vd.high_risk === 'yes' || vd.high_risk === 'Yes' || vd.highRisk === 'yes' || vd.highRisk === 'Yes') {
+                ancHighRisk = true;
+              }
+            });
+          }
+          if (ancHighRisk) {
+            const riskText = currentLanguage === 'en' ? 'High Risk' : '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1019\u103c\u1004\u103a\u1037';
+            const riskBadge = `<span class="risk-badge high">${riskText}</span>`;
+            const riskEl = document.getElementById('patientRisk');
+            if (riskEl) riskEl.innerHTML = riskBadge;
+          }
+        }
+
         // Update ANC action button text based on visit count
         const ancActionBtn = document.querySelector('.care-card.antenatal .care-action');
         if (ancCount > 0) {

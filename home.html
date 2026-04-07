@@ -1120,7 +1120,7 @@
           return st.indexOf('labour') === -1 && st.indexOf('postnatal') === -1 && st.indexOf('postpartum') === -1;
         });
 
-        var overdueCount = 0;
+        var unresolvedCount = 0;
         var batchSize = 8;
         for (var i = 0; i < antenatal.length; i += batchSize) {
           var batch = antenatal.slice(i, i + batchSize);
@@ -1132,20 +1132,28 @@
               catch(e) { try { snap = await ref.get(); } catch(e2) { return 0; } }
               var visits = [];
               if (snap && snap.docs) snap.docs.forEach(function(d) { visits.push({ id: d.id, data: d.data() || {} }); });
-              var bundle = { antenatalVisits: visits };
+              var bundle = { antenatalVisits: visits, registration: p };
               if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return 0;
-              var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
-              if (lastMs == null) return 0;
-              var daysSince = Math.floor((Date.now() - lastMs) / 86400000);
-              return daysSince > 14 ? 1 : 0;
+
+              // Check if resolved via hrt_actions
+              try {
+                var actSnap = await db.collection('patients').doc(p.id).collection('hrt_actions')
+                  .orderBy('recordedAt', 'desc').limit(1).get();
+                if (actSnap && actSnap.docs && actSnap.docs.length > 0) {
+                  var latestAction = actSnap.docs[0].data();
+                  if (latestAction && latestAction.type === 'resolved') return 0;
+                }
+              } catch(ae) {}
+
+              return 1;
             } catch(e) { return 0; }
           }));
-          results.forEach(function(r) { overdueCount += r; });
+          results.forEach(function(r) { unresolvedCount += r; });
         }
 
         var badge = document.getElementById('hrtBellBadge');
-        if (overdueCount > 0) {
-          badge.textContent = overdueCount > 99 ? '99+' : overdueCount;
+        if (unresolvedCount > 0) {
+          badge.textContent = unresolvedCount > 99 ? '99+' : unresolvedCount;
           badge.classList.remove('d-none');
         } else {
           badge.classList.add('d-none');
