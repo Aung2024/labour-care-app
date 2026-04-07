@@ -39,6 +39,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/high-risk-utils.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/sync-manager.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -471,6 +472,39 @@
         padding: 5px 10px;
       }
     }
+
+    .hrt-bell-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .hrt-bell-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.35);
+      color: #fff;
+      border-radius: 8px;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      text-decoration: none;
+    }
+    .hrt-bell-btn:hover { background: rgba(255,255,255,0.22); color: #fff; }
+    .hrt-bell-badge {
+      position: absolute; top: -4px; right: -4px;
+      min-width: 18px; height: 18px;
+      background: #dc2626; color: #fff;
+      font-size: 0.65rem; font-weight: 700;
+      border-radius: 999px; display: flex;
+      align-items: center; justify-content: center;
+      padding: 0 4px; border: 2px solid #1e40af;
+      animation: bellPulse 2s ease-in-out infinite;
+    }
+    .hrt-bell-badge.d-none { display: none !important; }
+    @keyframes bellPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
   </style>
   <script>
     let currentUser = null;
@@ -598,6 +632,7 @@
           document.getElementById("userRole").textContent = roleDisplay;
           setTimeout(function () {
             loadPatientStats();
+            setTimeout(loadHrtBellCount, 2000);
           }, 300);
           return;
         }
@@ -648,10 +683,9 @@
             settingsButton.style.display = "inline-block";
           }
           
-          // Load patient stats after user role is loaded (deferred for performance)
-          // Use setTimeout to defer this heavy operation
           setTimeout(() => {
             loadPatientStats();
+            setTimeout(loadHrtBellCount, 2000);
           }, 500);
         }
       } catch (error) {
@@ -1036,6 +1070,91 @@
       });
     }
 
+    async function loadHrtBellCount() {
+      if (!navigator.onLine || !currentUser || !userRole) return;
+      try {
+        var db = firebase.firestore();
+        var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        var allPatients = [];
+
+        if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
+          var pMap = new Map();
+          var snaps = await Promise.all([
+            smartFirestoreQuery(Promise.resolve(db.collection('patients').where('created_by', '==', currentUser.uid)),
+              { preferCache: isIOS, timeout: 6000, retries: 1, fallbackToCache: true }),
+            smartFirestoreQuery(Promise.resolve(db.collection('patients').where('createdBy', '==', currentUser.uid)),
+              { preferCache: isIOS, timeout: 6000, retries: 1, fallbackToCache: true }),
+            smartFirestoreQuery(Promise.resolve(db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid)),
+              { preferCache: isIOS, timeout: 6000, retries: 1, fallbackToCache: true })
+          ]);
+          snaps.forEach(function(s) {
+            if (s && typeof s.forEach === 'function' && !s.empty) {
+              s.forEach(function(d) { if (d && d.id && !pMap.has(d.id)) pMap.set(d.id, { id: d.id, ...d.data() }); });
+            }
+          });
+          allPatients = Array.from(pMap.values());
+        } else if (userRole === 'TMO') {
+          var u = window.UserCache ? window.UserCache.getCached(currentUser.uid) : null;
+          var tw = u && u.township;
+          if (tw) {
+            var s = await smartFirestoreQuery(Promise.resolve(db.collection('patients').where('township', '==', tw)),
+              { preferCache: isIOS, timeout: 6000, retries: 1, fallbackToCache: true });
+            if (s && !s.empty) s.forEach(function(d) { allPatients.push({ id: d.id, ...d.data() }); });
+          }
+        } else if (userRole === 'Regional Officer' || (userRole && userRole.toLowerCase().replace(/\s+/g,' ') === 'regional officer')) {
+          var u2 = window.UserCache ? window.UserCache.getCached(currentUser.uid) : null;
+          var rg = u2 && u2.region;
+          if (rg) {
+            var s2 = await smartFirestoreQuery(Promise.resolve(db.collection('patients').where('region', '==', rg)),
+              { preferCache: isIOS, timeout: 6000, retries: 1, fallbackToCache: true });
+            if (s2 && !s2.empty) s2.forEach(function(d) { allPatients.push({ id: d.id, ...d.data() }); });
+          }
+        } else if (userRole === 'Super Admin' || userRole === 'admin') {
+          var s3 = await smartFirestoreQuery(Promise.resolve(db.collection('patients')),
+            { preferCache: isIOS, timeout: 8000, retries: 1, fallbackToCache: true });
+          if (s3 && !s3.empty) s3.forEach(function(d) { allPatients.push({ id: d.id, ...d.data() }); });
+        }
+
+        var antenatal = allPatients.filter(function(p) {
+          var st = (p.status || 'registered').toLowerCase();
+          return st.indexOf('labour') === -1 && st.indexOf('postnatal') === -1 && st.indexOf('postpartum') === -1;
+        });
+
+        var overdueCount = 0;
+        var batchSize = 8;
+        for (var i = 0; i < antenatal.length; i += batchSize) {
+          var batch = antenatal.slice(i, i + batchSize);
+          var results = await Promise.all(batch.map(async function(p) {
+            try {
+              var ref = db.collection('patients').doc(p.id).collection('antenatal_visits');
+              var snap;
+              try { snap = await ref.orderBy('visitDate', 'asc').get(); }
+              catch(e) { try { snap = await ref.get(); } catch(e2) { return 0; } }
+              var visits = [];
+              if (snap && snap.docs) snap.docs.forEach(function(d) { visits.push({ id: d.id, data: d.data() || {} }); });
+              var bundle = { antenatalVisits: visits };
+              if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return 0;
+              var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
+              if (lastMs == null) return 0;
+              var daysSince = Math.floor((Date.now() - lastMs) / 86400000);
+              return daysSince > 14 ? 1 : 0;
+            } catch(e) { return 0; }
+          }));
+          results.forEach(function(r) { overdueCount += r; });
+        }
+
+        var badge = document.getElementById('hrtBellBadge');
+        if (overdueCount > 0) {
+          badge.textContent = overdueCount > 99 ? '99+' : overdueCount;
+          badge.classList.remove('d-none');
+        } else {
+          badge.classList.add('d-none');
+        }
+      } catch(e) {
+        console.warn('HRT bell count failed', e);
+      }
+    }
+
     // Debounce navigation to prevent rapid clicks
     let navigationInProgress = false;
     
@@ -1183,6 +1302,12 @@
             <button class="language-btn active" data-lang="mm" onclick="switchLanguage('mm')">
               <span>🇲🇲</span> MM
             </button>
+          </div>
+          <div class="hrt-bell-wrap">
+            <a href="high-risk-tracking.html" class="hrt-bell-btn" id="hrtBellBtn" title="High Risk Alerts">
+              <i class="fas fa-bell"></i>
+            </a>
+            <span class="hrt-bell-badge d-none" id="hrtBellBadge">0</span>
           </div>
           <button type="button" class="btn btn-outline-light btn-sm" id="labourCareSyncBtnHeader">
             <i class="fas fa-sync-alt me-2"></i><span class="lang-text" data-en="Sync" data-mm="စင့်ခ်">Sync</span>

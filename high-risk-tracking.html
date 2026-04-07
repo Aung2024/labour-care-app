@@ -19,6 +19,8 @@
   <script src="js/user-cache.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
+  <script src="js/lang-apply.js"></script>
+  <script src="js/register-sw.js"></script>
   <style>
     :root {
       --hrt-surface: #ffffff;
@@ -67,34 +69,43 @@
       margin-bottom: 1rem;
     }
 
-    #tableState.card-panel {
-      padding: 0;
-      overflow: hidden;
-    }
+    #tableState.card-panel { padding: 0; overflow: hidden; }
 
-    .hrt-info-banner {
-      padding: 1rem 1.35rem;
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.85rem 1.25rem;
       border-bottom: 1px solid var(--hrt-border);
       background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
     }
-
-    .hrt-info-banner .hrt-info {
+    .toolbar .hrt-info {
+      flex: 1 1 200px;
       color: var(--hrt-muted);
-      font-size: 0.875rem;
-      line-height: 1.55;
+      font-size: 0.8rem;
+      line-height: 1.5;
       margin: 0;
     }
-
-    .table-wrap {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
+    .btn-toggle-resolved {
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid var(--hrt-border);
+      border-radius: 8px;
+      padding: 0.4rem 0.85rem;
+      background: #fff;
+      color: var(--hrt-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
     }
+    .btn-toggle-resolved:hover { background: #f1f5f9; color: var(--hrt-text); }
+    .btn-toggle-resolved.active { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
 
+    /* Table desktop */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .table-wrap::-webkit-scrollbar { height: 8px; }
-    .table-wrap::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 4px;
-    }
+    .table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 
     .hrt-table {
       font-size: 0.8125rem;
@@ -103,199 +114,205 @@
       margin: 0;
       border-collapse: separate;
       border-spacing: 0;
-      min-width: 1100px;
+      min-width: 900px;
     }
-
     .hrt-table thead th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
+      position: sticky; top: 0; z-index: 2;
       background: var(--hrt-header-bg);
       color: var(--hrt-header-text);
-      font-weight: 600;
-      font-size: 0.6875rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      font-weight: 600; font-size: 0.6875rem;
+      letter-spacing: 0.04em; text-transform: uppercase;
       padding: 0.85rem 0.75rem;
       border-bottom: 2px solid var(--hrt-border);
-      white-space: nowrap;
-      vertical-align: middle;
-      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
+      white-space: nowrap; vertical-align: middle;
     }
-
     .hrt-table tbody td {
-      padding: 0.75rem 0.75rem;
+      padding: 0.75rem;
       border-bottom: 1px solid var(--hrt-border);
       vertical-align: top;
     }
+    .hrt-table tbody tr:nth-child(even) td { background: var(--hrt-row-stripe); }
+    .hrt-table tbody tr:hover td { background: var(--hrt-row-hover); }
+    .hrt-table tbody tr:last-child td { border-bottom: none; }
+    .hrt-table tbody tr.hrt-resolved td { opacity: 0.55; }
+    .hrt-table tbody tr.hrt-resolved .hrt-patient-name { text-decoration: line-through; }
 
-    .hrt-table tbody tr:nth-child(even) td {
-      background: var(--hrt-row-stripe);
+    .hrt-col-name { min-width: 9rem; max-width: 12rem; }
+    .hrt-patient-name { font-weight: 600; letter-spacing: -0.01em; color: #1e293b; }
+    .hrt-col-phone { min-width: 6rem; white-space: nowrap; }
+    .hrt-col-phone a { color: var(--hrt-phone); text-decoration: none; font-weight: 500; }
+    .hrt-col-phone a:hover { text-decoration: underline; }
+    .hrt-col-edd { min-width: 8rem; max-width: 10rem; }
+    .hrt-col-days { min-width: 4.5rem; text-align: center; }
+    .hrt-col-risks { min-width: 12rem; max-width: 22rem; }
+    .hrt-col-cues { min-width: 6rem; max-width: 10rem; }
+    .hrt-col-actions { min-width: 10rem; max-width: 14rem; }
+
+    /* Urgency dot */
+    .urgency-badge {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.03em; padding: 0.2rem 0.5rem 0.2rem 0.35rem;
+      border-radius: 999px; margin-bottom: 0.25rem;
+    }
+    .urgency-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .urgency-critical .urgency-dot { background: #dc2626; animation: pulse-dot 1.2s ease-in-out infinite; }
+    .urgency-critical { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .urgency-high .urgency-dot { background: #dc2626; }
+    .urgency-high { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .urgency-moderate .urgency-dot { background: #f59e0b; }
+    .urgency-moderate { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .urgency-on-track .urgency-dot { background: #10b981; }
+    .urgency-on-track { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.4); }
     }
 
-    .hrt-table tbody tr:hover td {
-      background: var(--hrt-row-hover);
-    }
-
-    .hrt-table tbody tr:last-child td {
-      border-bottom: none;
-    }
-
-    .hrt-col-name { min-width: 8.5rem; max-width: 11rem; color: #1e293b; }
-    .hrt-patient-name { font-weight: 600; letter-spacing: -0.01em; }
-    .hrt-col-phone { min-width: 6.5rem; white-space: nowrap; }
-    .hrt-col-phone a {
-      color: var(--hrt-phone);
-      text-decoration: none;
-      font-weight: 500;
-      border-bottom: 1px solid transparent;
-    }
-    .hrt-col-phone a:hover { border-bottom-color: var(--hrt-phone); }
-
-    .hrt-col-edd { min-width: 8.5rem; max-width: 10rem; }
-    .hrt-col-date { min-width: 5.5rem; white-space: nowrap; }
-    .hrt-col-days { min-width: 5rem; text-align: center; }
-    .hrt-col-risks { min-width: 9rem; max-width: 14rem; }
-    .hrt-col-cues { min-width: 6.5rem; max-width: 10rem; }
-    .hrt-col-action {
-      min-width: 7.5rem;
-      width: 7.5rem;
-      text-align: center;
-      vertical-align: middle !important;
-    }
-    .hrt-table thead th.hrt-col-action { text-align: center; }
-
-    .hrt-edd-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-      align-items: flex-start;
-    }
+    /* EDD stack */
+    .hrt-edd-stack { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-start; }
     .hrt-edd-date { font-weight: 600; color: #1e293b; }
     .hrt-edd-ga { font-size: 0.75rem; color: var(--hrt-muted); }
     .hrt-edd-flag {
-      display: inline-block;
-      font-size: 0.65rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      padding: 0.15rem 0.45rem;
-      border-radius: 4px;
-      background: #fff7ed;
-      color: #c2410c;
-      border: 1px solid #fed7aa;
-      line-height: 1.3;
-      max-width: 100%;
+      display: inline-block; font-size: 0.65rem; font-weight: 600;
+      letter-spacing: 0.02em; text-transform: uppercase;
+      padding: 0.15rem 0.45rem; border-radius: 4px;
+      background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
     }
 
-    .hrt-empty {
-      color: #cbd5e1;
-      font-weight: 300;
-      font-size: 1.1rem;
-    }
+    .hrt-empty { color: #cbd5e1; font-weight: 300; font-size: 1.1rem; }
 
-    .hrt-pill-wrap {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-    }
-
+    /* Pills */
+    .hrt-pill-wrap { display: flex; flex-wrap: wrap; gap: 0.3rem; }
     .hrt-pill {
-      display: inline-block;
-      font-size: 0.7rem;
-      font-weight: 500;
-      line-height: 1.35;
-      padding: 0.28rem 0.5rem;
-      border-radius: 6px;
-      max-width: 100%;
-      word-break: break-word;
-      border: 1px solid transparent;
+      display: inline-block; font-size: 0.68rem; font-weight: 500;
+      line-height: 1.35; padding: 0.22rem 0.45rem; border-radius: 6px;
+      max-width: 100%; word-break: break-word; border: 1px solid transparent;
     }
-    .hrt-pill--anc {
-      background: #f1f5f9;
-      color: #334155;
-      border-color: #e2e8f0;
-    }
-    .hrt-pill--lcg {
-      background: #eff6ff;
-      color: #1e40af;
-      border-color: #bfdbfe;
-    }
-    .hrt-pill--pnc {
-      background: #f5f3ff;
-      color: #5b21b6;
-      border-color: #ddd6fe;
-    }
-    .hrt-pill--other {
-      background: #fffbeb;
-      color: #92400e;
-      border-color: #fde68a;
-    }
+    .hrt-pill--anc { background: #f1f5f9; color: #334155; border-color: #e2e8f0; }
+    .hrt-pill--lcg { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+    .hrt-pill--pnc { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+    .hrt-pill--other { background: #fffbeb; color: #92400e; border-color: #fde68a; }
 
     .hrt-day-pill {
-      display: inline-block;
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.35rem 0.55rem;
-      border-radius: 999px;
-      min-width: 3.25rem;
-      text-align: center;
+      display: inline-block; font-size: 0.75rem; font-weight: 600;
+      padding: 0.3rem 0.5rem; border-radius: 999px; min-width: 3rem; text-align: center;
     }
     .hrt-day-pill--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
     .hrt-day-pill--warn { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
     .hrt-day-pill--overdue { background: var(--hrt-accent-soft); color: #991b1b; border: 1px solid #fecaca; }
 
     .hrt-cue-pill {
-      display: inline-block;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 0.28rem 0.45rem;
-      border-radius: 6px;
-      margin: 0 0.25rem 0.25rem 0;
+      display: inline-block; font-size: 0.68rem; font-weight: 600;
+      padding: 0.22rem 0.4rem; border-radius: 6px; margin: 0 0.2rem 0.2rem 0;
     }
     .hrt-cue-pill.danger { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
     .hrt-cue-pill.warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
     .hrt-cue-pill.info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 
-    .hrt-btn-hub {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.4rem;
-      white-space: nowrap;
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.5rem 0.75rem;
-      border-radius: 8px;
-      color: #fff !important;
-      text-decoration: none !important;
-      background: linear-gradient(135deg, #dc2626, #b91c1c);
-      border: none;
-      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.35);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    /* Action buttons */
+    .hrt-action-bar {
+      display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.35rem;
     }
-    .hrt-btn-hub:hover {
-      color: #fff !important;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(185, 28, 28, 0.45);
+    .hrt-act-btn {
+      width: 30px; height: 30px;
+      border-radius: 8px; border: 1px solid var(--hrt-border);
+      background: #fff; color: var(--hrt-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; cursor: pointer; transition: all 0.15s;
+      padding: 0;
     }
-    .hrt-btn-hub i { font-size: 0.85rem; opacity: 0.95; }
+    .hrt-act-btn:hover { background: #f1f5f9; color: var(--hrt-text); transform: translateY(-1px); }
+    .hrt-act-btn.act-called:hover { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .hrt-act-btn.act-home_visit:hover { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .hrt-act-btn.act-referred:hover { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .hrt-act-btn.act-medication:hover { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
+    .hrt-act-btn.act-counseled:hover { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    .hrt-act-btn.act-resolved:hover { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 
-    .lang-btn {
-      border: 1px solid rgba(255,255,255,.45);
-      background: rgba(255,255,255,.12);
-      color: #fff;
-      border-radius: 8px;
-      padding: 5px 12px;
-      font-size: 0.8rem;
-      transition: background 0.15s ease;
+    .hrt-last-action {
+      font-size: 0.7rem; color: var(--hrt-muted); line-height: 1.3;
+      display: flex; align-items: center; gap: 0.3rem;
     }
-    .lang-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
-    .lang-btn.active { background: rgba(255,255,255,.28); font-weight: 600; }
+    .hrt-last-action i { font-size: 0.65rem; }
+
+    .hrt-hub-link {
+      font-size: 0.7rem; color: var(--hrt-accent); font-weight: 600;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;
+      margin-top: 0.25rem;
+    }
+    .hrt-hub-link:hover { text-decoration: underline; color: #991b1b; }
+
+    .hrt-resolved-badge {
+      display: inline-block; font-size: 0.6rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 0.15rem 0.45rem; border-radius: 4px;
+      background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+    }
+
+    /* Follow-up overdue */
+    .hrt-followup-overdue {
+      font-size: 0.65rem; color: #b91c1c; font-weight: 600;
+      display: flex; align-items: center; gap: 0.2rem; margin-top: 0.15rem;
+    }
+
+    /* Mobile cards */
+    .hrt-cards { display: none; }
+    .hrt-card {
+      background: var(--hrt-surface);
+      border-radius: var(--hrt-radius);
+      box-shadow: var(--hrt-shadow);
+      border: 1px solid rgba(255,255,255,0.65);
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .hrt-card.hrt-resolved { opacity: 0.55; }
+    .hrt-card.hrt-resolved .hrt-patient-name { text-decoration: line-through; }
+    .hrt-card-header {
+      display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;
+    }
+    .hrt-card-header .hrt-patient-name { font-size: 0.95rem; flex: 1; }
+    .hrt-card-phone-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe;
+      display: flex; align-items: center; justify-content: center;
+      text-decoration: none; font-size: 0.9rem;
+    }
+    .hrt-card-meta {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 0.5rem; margin-bottom: 0.6rem; font-size: 0.8rem;
+    }
+    .hrt-card-meta .edd-text { color: var(--hrt-muted); }
+    .hrt-card-section { margin-bottom: 0.5rem; }
+    .hrt-card-section-label {
+      font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+      color: var(--hrt-muted); letter-spacing: 0.04em; margin-bottom: 0.2rem;
+    }
+    .hrt-card-actions {
+      display: flex; flex-wrap: wrap; gap: 0.35rem;
+      padding-top: 0.5rem; border-top: 1px solid var(--hrt-border);
+      margin-top: 0.5rem; align-items: center;
+    }
+    .hrt-card-actions .hrt-act-btn { width: 34px; height: 34px; font-size: 0.85rem; }
+    .hrt-card-actions .hrt-hub-link { margin-left: auto; }
+
+    /* Action modal */
+    .action-modal-type {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-size: 1rem; font-weight: 600; padding: 0.5rem 0.8rem;
+      border-radius: 10px; background: #f1f5f9; color: #334155;
+      margin-bottom: 0.75rem;
+    }
 
     @media (max-width: 768px) {
       .main-wrap { padding: 0.75rem 0.5rem 1.5rem; }
-      .hrt-table { font-size: 0.78rem; }
+      .hrt-desktop-table { display: none !important; }
+      .hrt-cards { display: block !important; }
+    }
+    @media (min-width: 769px) {
+      .hrt-cards { display: none !important; }
     }
   </style>
 </head>
@@ -308,111 +325,209 @@
         </button>
         <span class="fw-bold hrt-title">High Risk Tracking</span>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <button type="button" class="lang-btn" data-lang="en" onclick="setLang('en')">ENG</button>
-        <button type="button" class="lang-btn active" data-lang="mm" onclick="setLang('mm')">MM</button>
-      </div>
     </div>
   </header>
 
   <div class="main-wrap">
     <div id="offlineBanner" class="alert alert-warning d-none" role="alert"></div>
-    <div class="card-panel">
-      <p class="small text-muted mb-0 hrt-info"></p>
-    </div>
+
     <div id="loadingState" class="card-panel text-center py-5">
       <div class="spinner-border text-danger" role="status"></div>
-      <p class="mt-2 mb-0 hrt-loading">Loading…</p>
+      <p class="mt-2 mb-0 hrt-loading">Loading...</p>
     </div>
     <div id="emptyState" class="card-panel text-center py-5 d-none">
       <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
       <p class="mb-0 hrt-empty"></p>
     </div>
+
     <div id="tableState" class="card-panel d-none">
-      <div class="table-wrap">
+      <div class="toolbar">
+        <p class="hrt-info"></p>
+        <button type="button" class="btn-toggle-resolved" id="btnToggleResolved" onclick="toggleResolved()">
+          <i class="fas fa-eye me-1"></i><span id="resolvedLabel"></span>
+        </button>
+      </div>
+      <!-- Desktop table -->
+      <div class="table-wrap hrt-desktop-table">
         <table class="hrt-table w-100">
           <thead>
             <tr>
               <th class="hrt-col-name col-name"></th>
               <th class="hrt-col-phone col-phone"></th>
               <th class="hrt-col-edd col-edd"></th>
-              <th class="hrt-col-date col-last"></th>
               <th class="hrt-col-days col-days"></th>
-              <th class="hrt-col-risks col-risk-anc"></th>
-              <th class="hrt-col-risks col-risk-lcg"></th>
-              <th class="hrt-col-risks col-risk-pnc"></th>
-              <th class="hrt-col-risks col-risk-other"></th>
+              <th class="hrt-col-risks col-risks"></th>
               <th class="hrt-col-cues col-cues"></th>
-              <th class="hrt-col-action col-action"></th>
+              <th class="hrt-col-actions col-actions"></th>
             </tr>
           </thead>
           <tbody id="hrtBody"></tbody>
         </table>
       </div>
+      <!-- Mobile cards -->
+      <div class="hrt-cards" id="hrtCards"></div>
     </div>
   </div>
 
+  <!-- Action Modal -->
+  <div class="modal fade" id="actionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content" style="border-radius:16px;border:none;">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title action-modal-title fw-bold"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="action-modal-type" id="actionTypeDisplay">
+            <i class="fas fa-phone"></i> <span></span>
+          </div>
+          <div class="mb-3" id="resolvedReasonGroup" style="display:none;">
+            <label class="form-label fw-semibold action-label-reason"></label>
+            <select class="form-select" id="resolvedReasonSelect">
+              <option value="delivered_safely" class="opt-delivered"></option>
+              <option value="transferred" class="opt-transferred"></option>
+              <option value="risk_resolved" class="opt-risk-resolved"></option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold action-label-note"></label>
+            <textarea class="form-control" id="actionNote" rows="3" style="border-radius:10px;"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold action-label-followup"></label>
+            <input type="date" class="form-control" id="actionFollowUp" style="border-radius:10px;">
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" style="border-radius:10px;">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btnSaveAction" onclick="saveAction()" style="border-radius:10px;">
+            <i class="fas fa-save me-1"></i><span class="action-btn-save">Save</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     var FOLLOWUP_ALERT_DAYS = 14;
     var FOLLOWUP_WARN_DAYS = 28;
     var CONCURRENCY = 8;
+    var showResolved = false;
+    var _currentActionPatientId = null;
+    var _currentActionType = null;
+    var _currentUser = null;
+    var _currentUserName = '';
+
+    var ACTION_TYPES = {
+      called: { icon: 'fa-phone', color: '#2563eb' },
+      home_visit: { icon: 'fa-house-medical', color: '#047857' },
+      referred: { icon: 'fa-truck-medical', color: '#b91c1c' },
+      medication: { icon: 'fa-pills', color: '#7c3aed' },
+      counseled: { icon: 'fa-comments', color: '#b45309' },
+      resolved: { icon: 'fa-circle-check', color: '#047857' }
+    };
 
     var T = {
       en: {
         title: 'High Risk Tracking',
-        info: 'Listed patients have at least one ANC visit with “high risk” (Risk+) recorded. Extra columns pull LCG summary risk text, PNC danger signs, registration/lab data when present. Antenatal patients only.',
-        loading: 'Loading patients and ANC visits…',
-        empty: 'No high-risk antenatal patients in your access scope, or none with ANC data yet.',
-        offline: 'High Risk Tracking needs an internet connection to load antenatal visits from the server.',
+        info: 'Patients with at least one ANC visit marked "high risk." Track actions and close the follow-up cycle.',
+        loading: 'Loading patients and ANC visits...',
+        empty: 'No high-risk antenatal patients in your access scope.',
+        offline: 'High Risk Tracking needs an internet connection.',
         colName: 'Patient',
         colPhone: 'Phone',
         colEdd: 'EDD / GA',
-        colLast: 'Last ANC',
-        colDays: 'Days since ANC',
-        colRiskAnc: 'Risks (ANC)',
-        colRiskLcg: 'Risks (LCG)',
-        colRiskPnc: 'Risks (PNC)',
-        colRiskOther: 'Other (reg. / labs)',
-        colCues: 'Cues',
-        colAction: 'Open',
-        openHub: 'Care hub',
-        openHubBtn: 'Open hub',
+        colDays: 'Days',
+        colRisks: 'Risk Factors',
+        colCues: 'Alerts',
+        colActions: 'Actions',
         noVisits: 'No visits',
-        days: 'days',
+        days: 'd',
         referral: 'Referral',
         danger: 'Danger signs',
-        anemia: 'Anemia (exam)',
+        anemia: 'Anemia',
         bp: 'BP high',
-        protein: 'Urine protein+',
-        sugar: 'Urine sugar+'
+        protein: 'Protein+',
+        sugar: 'Sugar+',
+        urgCritical: 'Critical',
+        urgHigh: 'High',
+        urgModerate: 'Moderate',
+        urgOnTrack: 'On track',
+        actionCalled: 'Called',
+        actionHomeVisit: 'Home visit',
+        actionReferred: 'Referred',
+        actionMedication: 'Medication',
+        actionCounseled: 'Counseled',
+        actionResolved: 'Resolved',
+        actionModalTitle: 'Record Action',
+        actionNote: 'Notes (optional)',
+        actionFollowUp: 'Follow-up date (optional)',
+        resolvedReason: 'Reason',
+        reasonDelivered: 'Delivered safely',
+        reasonTransferred: 'Transferred to facility',
+        reasonRiskResolved: 'Risk resolved',
+        showResolved: 'Show resolved',
+        hideResolved: 'Hide resolved',
+        openHub: 'Care Hub',
+        save: 'Save',
+        resolvedBadge: 'Resolved',
+        followupOverdue: 'Follow-up overdue',
+        ago: 'ago',
+        justNow: 'just now',
+        minutesAgo: 'm ago',
+        hoursAgo: 'h ago',
+        daysAgo: 'd ago'
       },
       mm: {
-        title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
-        info: 'ဤစာရင်းတွင် High Risk သတ်မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ လိုအပ်လျှင် ဖုန်းခေါ်ပြီး Follow up လိုက်ပေးပါ။',
-        loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
-        empty: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိသေးပါ။',
-        offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက်ချိတ်ဆက်မှု လိုအပ်သည်။',
-        colName: 'လူနာ',
-        colPhone: 'ဖုန်းနံပါတ်',
-        colEdd: 'မီးဖွားရက် / ကိုယ်ဝန်အပတ်',
-        colLast: 'နောက်ဆုံး ANC',
-        colDays: 'ANC မလာတာ ရက်',
-        colRiskAnc: 'ANC အန္တရာယ်များ',
-        colRiskLcg: 'LCG အန္တရာယ်များ',
-        colRiskPnc: 'PNC အန္တရာယ်များ',
-        colRiskOther: 'အခြား',
-        colCues: 'သတိပေးချက်များ',
-        colAction: 'ဖွင့်ရန်',
-        openHub: 'Care Hub ကိုသွားပါ',
-        openHubBtn: 'Hub ဖွင့်ရန်',
-        noVisits: 'မှတ်တမ်း မရှိ',
-        days: 'ရက်',
-        referral: 'လွှဲပြောင်း',
-        danger: 'အန္တရာယ်များ',
-        anemia: 'သွေးအားနည်း',
-        bp: 'သွေးပေါင်မြင့်',
-        protein: 'ဆီးတွင်း ပရိုတင်းမြင့်',
-        sugar: 'သွေးတွင်း သကြားဓာတ်များ'
+        title: '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1019\u103c\u1004\u103a\u1037\u103a \u1000\u102d\u102f\u101a\u103a\u101d\u1014\u103a\u101e\u100a\u103a \u1005\u1031\u102c\u1004\u103a\u1037\u1000\u103c\u100a\u103a\u1037\u101b\u1031\u1038',
+        info: '\u1024\u1005\u102c\u101b\u1004\u103a\u1038\u1010\u103d\u1004\u103a High Risk \u101e\u1010\u103a\u1019\u103e\u1010\u103a\u1011\u102c\u1038\u101e\u1031\u102c \u1000\u102d\u102f\u101a\u103a\u101d\u1014\u103a\u101e\u100a\u103a\u1019\u103b\u102c\u1038 \u1015\u102b\u101d\u1004\u103a\u101e\u100a\u103a\u104b \u101c\u102d\u102f\u1021\u1015\u103a\u101c\u103b\u103e\u1004\u103a \u1016\u102f\u1014\u103a\u1038\u1001\u1031\u102b\u103a\u1015\u103c\u102e\u1038 Follow up \u101c\u102d\u102f\u1000\u103a\u1015\u1031\u1038\u1015\u102b\u104b',
+        loading: '\u101c\u1030\u1014\u102c\u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038\u1019\u103b\u102c\u1038 \u1016\u1010\u103a\u1014\u1031\u101e\u100a\u103a\u2026',
+        empty: '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1019\u103c\u1004\u103a\u1037\u103a \u1000\u102d\u102f\u101a\u103a\u101d\u1014\u103a\u101e\u100a\u103a \u1019\u101b\u103e\u102d\u101e\u1031\u1038\u1015\u102b\u104b',
+        offline: 'ANC \u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038\u1019\u103b\u102c\u1038 \u1016\u1010\u103a\u101b\u1014\u103a \u1021\u1004\u103a\u1010\u102c\u1014\u1000\u103a \u101c\u102d\u102f\u1021\u1015\u103a\u101e\u100a\u103a\u104b',
+        colName: '\u101c\u1030\u1014\u102c',
+        colPhone: '\u1016\u102f\u1014\u103a\u1038',
+        colEdd: '\u1019\u102e\u1038\u1016\u103d\u102c\u1038\u101b\u1000\u103a / GA',
+        colDays: '\u101b\u1000\u103a',
+        colRisks: '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1021\u1001\u103b\u1000\u103a\u1019\u103b\u102c\u1038',
+        colCues: '\u101e\u1010\u102d\u1015\u1031\u1038\u1001\u103b\u1000\u103a',
+        colActions: '\u101c\u102f\u1015\u103a\u1006\u1031\u102c\u1004\u103a\u1019\u103e\u102f',
+        noVisits: '\u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038 \u1019\u101b\u103e\u102d',
+        days: '\u101b\u1000\u103a',
+        referral: '\u101c\u103d\u103e\u1032\u1015\u103c\u1031\u102c\u1004\u103a\u1038',
+        danger: '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a',
+        anemia: '\u101e\u103d\u1031\u1038\u1021\u102c\u1038\u1014\u100a\u103a\u1038',
+        bp: '\u101e\u103d\u1031\u1038\u1015\u1031\u102b\u1004\u103a\u1019\u103c\u1004\u103a\u1037',
+        protein: '\u1015\u101b\u102d\u102f\u1010\u1004\u103a\u1038+',
+        sugar: '\u101e\u1000\u1039\u1000\u102c\u1038+',
+        urgCritical: '\u1021\u101b\u1031\u1038\u1015\u1031\u102b\u103a',
+        urgHigh: '\u1019\u103c\u1004\u103a\u1037',
+        urgModerate: '\u1021\u101e\u1004\u103a\u1037\u1021\u1010\u1004\u103a\u1037',
+        urgOnTrack: '\u1000\u1031\u102c\u1004\u103a\u1038',
+        actionCalled: '\u1016\u102f\u1014\u103a\u1038\u1001\u1031\u102b\u103a\u1015\u103c\u102e\u1038',
+        actionHomeVisit: '\u1021\u102d\u1019\u103a\u101e\u102d\u102f\u1037\u101e\u103d\u102c\u1038',
+        actionReferred: '\u101c\u103d\u103e\u1032\u1015\u103c\u1031\u102c\u1004\u103a\u1038',
+        actionMedication: '\u1006\u1031\u1038\u101d\u102b\u1038\u1015\u1031\u1038',
+        actionCounseled: '\u1021\u1000\u103c\u1036\u1015\u103c\u102f\u1015\u103c\u102e\u1038',
+        actionResolved: '\u1015\u103c\u102e\u1038\u1006\u102f\u1036\u1038',
+        actionModalTitle: '\u101c\u102f\u1015\u103a\u1006\u1031\u102c\u1004\u103a\u1019\u103e\u102f \u1019\u103e\u1010\u103a\u1010\u1019\u103a\u1038',
+        actionNote: '\u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a (\u101b\u103e\u102d\u101c\u103b\u103e\u1004\u103a)',
+        actionFollowUp: 'Follow-up \u101b\u1000\u103a\u1005\u103d\u1032 (\u101b\u103e\u102d\u101c\u103b\u103e\u1004\u103a)',
+        resolvedReason: '\u1021\u1000\u103c\u1031\u102c\u1004\u103a\u1038\u101b\u1004\u103a\u1038',
+        reasonDelivered: '\u1019\u102e\u1038\u1016\u103d\u102c\u1038\u1015\u103c\u102e\u1038 \u1000\u103b\u1014\u103a\u1038\u1019\u102c\u101b\u103e\u102d',
+        reasonTransferred: '\u1006\u1031\u1038\u101b\u102f\u1036\u101e\u102d\u102f\u1037 \u101c\u103d\u103e\u1032\u1015\u103c\u1031\u102c\u1004\u103a\u1038',
+        reasonRiskResolved: '\u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a \u1000\u103b\u1031\u102c\u103a\u101c\u103d\u1014\u103a',
+        showResolved: '\u1015\u103c\u102e\u1038\u1006\u102f\u1036\u1038\u1015\u103c\u102e\u1038 \u1015\u103c\u101b\u1014\u103a',
+        hideResolved: '\u1015\u103c\u102e\u1038\u1006\u102f\u1036\u1038\u1015\u103c\u102e\u1038 \u1016\u103d\u1000\u103a\u101b\u1014\u103a',
+        openHub: 'Care Hub',
+        save: '\u101e\u102d\u1019\u103a\u1038\u101b\u1014\u103a',
+        resolvedBadge: '\u1015\u103c\u102e\u1038\u1006\u102f\u1036\u1038',
+        followupOverdue: 'Follow-up \u1000\u103b\u1031\u102c\u103a\u101c\u103d\u1014\u103a',
+        ago: '\u1000',
+        justNow: '\u1021\u1001\u102f',
+        minutesAgo: '\u1019\u102d\u1014\u1005\u103a\u1000',
+        hoursAgo: '\u1014\u102c\u101b\u102e\u1000',
+        daysAgo: '\u101b\u1000\u103a\u1000'
       }
     };
 
@@ -428,27 +543,49 @@
       document.querySelector('.hrt-info').textContent = tr('info');
       document.querySelector('.hrt-loading').textContent = tr('loading');
       document.querySelector('.hrt-empty').textContent = tr('empty');
-      document.querySelectorAll('.lang-btn').forEach(function (b) {
-        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
-      });
-      document.querySelector('.col-name').textContent = tr('colName');
-      document.querySelector('.col-phone').textContent = tr('colPhone');
-      document.querySelector('.col-edd').textContent = tr('colEdd');
-      document.querySelector('.col-last').textContent = tr('colLast');
-      document.querySelector('.col-days').textContent = tr('colDays');
-      document.querySelector('.col-risk-anc').textContent = tr('colRiskAnc');
-      document.querySelector('.col-risk-lcg').textContent = tr('colRiskLcg');
-      document.querySelector('.col-risk-pnc').textContent = tr('colRiskPnc');
-      document.querySelector('.col-risk-other').textContent = tr('colRiskOther');
-      document.querySelector('.col-cues').textContent = tr('colCues');
-      document.querySelector('.col-action').textContent = tr('colAction');
+      var colName = document.querySelector('.col-name');
+      if (colName) colName.textContent = tr('colName');
+      var colPhone = document.querySelector('.col-phone');
+      if (colPhone) colPhone.textContent = tr('colPhone');
+      var colEdd = document.querySelector('.col-edd');
+      if (colEdd) colEdd.textContent = tr('colEdd');
+      var colDays = document.querySelector('.col-days');
+      if (colDays) colDays.textContent = tr('colDays');
+      var colRisks = document.querySelector('.col-risks');
+      if (colRisks) colRisks.textContent = tr('colRisks');
+      var colCues = document.querySelector('.col-cues');
+      if (colCues) colCues.textContent = tr('colCues');
+      var colActions = document.querySelector('.col-actions');
+      if (colActions) colActions.textContent = tr('colActions');
+
+      document.querySelector('.action-modal-title').textContent = tr('actionModalTitle');
+      document.querySelector('.action-label-note').textContent = tr('actionNote');
+      document.querySelector('.action-label-followup').textContent = tr('actionFollowUp');
+      document.querySelector('.action-label-reason').textContent = tr('resolvedReason');
+      document.querySelector('.opt-delivered').textContent = tr('reasonDelivered');
+      document.querySelector('.opt-transferred').textContent = tr('reasonTransferred');
+      document.querySelector('.opt-risk-resolved').textContent = tr('reasonRiskResolved');
+      document.querySelector('.action-btn-save').textContent = tr('save');
+      updateResolvedLabel();
+    }
+
+    function updateResolvedLabel() {
+      var cnt = window._resolvedCount || 0;
+      var el = document.getElementById('resolvedLabel');
+      if (!el) return;
+      if (showResolved) {
+        el.textContent = tr('hideResolved');
+      } else {
+        el.textContent = tr('showResolved') + (cnt > 0 ? ' (' + cnt + ')' : '');
+      }
+      document.getElementById('btnToggleResolved').classList.toggle('active', showResolved);
     }
 
     function setLang(l) {
       lang = l;
       localStorage.setItem('appLanguage', l);
       applyStaticI18n();
-      if (window._hrtRows) renderTable(window._hrtRows);
+      if (window._hrtRows) renderAll(window._hrtRows);
     }
 
     function isRegionalOfficerRole(role) {
@@ -464,10 +601,19 @@
     }
 
     function formatDateVal(v) {
-      if (v == null) return '—';
+      if (v == null) return '\u2014';
       var d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
-      if (isNaN(d.getTime())) return '—';
+      if (isNaN(d.getTime())) return '\u2014';
       return d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+    }
+
+    function relativeTime(ms) {
+      if (!ms) return '';
+      var diff = Date.now() - ms;
+      if (diff < 60000) return tr('justNow');
+      if (diff < 3600000) return Math.floor(diff / 60000) + tr('minutesAgo');
+      if (diff < 86400000) return Math.floor(diff / 3600000) + tr('hoursAgo');
+      return Math.floor(diff / 86400000) + tr('daysAgo');
     }
 
     function parseBloodPressure(str) {
@@ -495,13 +641,22 @@
       return tags;
     }
 
+    function computeUrgency(daysSince, cues) {
+      var hasDanger = cues.some(function(c) { return c.cls.indexOf('bg-danger') !== -1; });
+      if (daysSince != null && daysSince > FOLLOWUP_WARN_DAYS && hasDanger) return 'critical';
+      if ((daysSince != null && daysSince > FOLLOWUP_WARN_DAYS) || hasDanger) return 'high';
+      if (daysSince != null && daysSince > FOLLOWUP_ALERT_DAYS) return 'moderate';
+      return 'on-track';
+    }
+
+    function urgencyLabel(urg) {
+      var map = { 'critical': 'urgCritical', 'high': 'urgHigh', 'moderate': 'urgModerate', 'on-track': 'urgOnTrack' };
+      return tr(map[urg] || 'urgOnTrack');
+    }
+
     function escapeHtml(s) {
       if (s == null) return '';
-      return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     function uniqueStrings(arr) {
@@ -509,10 +664,7 @@
       var out = [];
       (arr || []).forEach(function (x) {
         var s = x == null ? '' : String(x).trim();
-        if (s && !seen.has(s)) {
-          seen.add(s);
-          out.push(s);
-        }
+        if (s && !seen.has(s)) { seen.add(s); out.push(s); }
       });
       return out;
     }
@@ -533,10 +685,10 @@
       ['convulsions', 'Convulsions'],
       ['breathingProblems', 'Breathing difficulty'],
       ['feverFatigue', 'Fever / severe fatigue'],
-      ['breastEngorgementDanger', 'Breast problem (danger)'],
+      ['breastEngorgementDanger', 'Breast problem'],
       ['urinaryProblems', 'Urinary problems'],
       ['woundInflammation', 'Wound inflammation'],
-      ['foulDischarge', 'Foul-smelling discharge']
+      ['foulDischarge', 'Foul discharge']
     ];
 
     function extractPncRisksFromVisits(visitDocs) {
@@ -553,15 +705,9 @@
     }
 
     var LAB_RESULT_FIELDS = [
-      ['hivResult', 'HIV'],
-      ['malariaResult', 'Malaria'],
-      ['syphilisResult', 'Syphilis'],
-      ['hepatitisBResult', 'Hepatitis B'],
-      ['hepatitisCResult', 'Hepatitis C'],
-      ['rbsResult', 'RBS'],
-      ['hemoglobinResult', 'Hb'],
-      ['urineProtein', 'Urine protein'],
-      ['urineSugar', 'Urine sugar']
+      ['hivResult', 'HIV'], ['malariaResult', 'Malaria'], ['syphilisResult', 'Syphilis'],
+      ['hepatitisBResult', 'Hep B'], ['hepatitisCResult', 'Hep C'], ['rbsResult', 'RBS'],
+      ['hemoglobinResult', 'Hb'], ['urineProtein', 'Urine protein'], ['urineSugar', 'Urine sugar']
     ];
 
     function isConcerningLabValue(val) {
@@ -576,15 +722,10 @@
       var out = [];
       (testDataList || []).forEach(function (d) {
         LAB_RESULT_FIELDS.forEach(function (pair) {
-          var key = pair[0];
-          var label = pair[1];
-          var v = d[key];
+          var key = pair[0], label = pair[1], v = d[key];
           if (key === 'hemoglobinResult' && v != null && v !== '') {
             var hn = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
-            if (!isNaN(hn) && hn < 11) {
-              out.push(label + ': ' + String(v).trim());
-              return;
-            }
+            if (!isNaN(hn) && hn < 11) { out.push(label + ': ' + String(v).trim()); return; }
           }
           if (isConcerningLabValue(v)) out.push(label + ': ' + String(v).trim());
         });
@@ -595,45 +736,39 @@
     function extractRegistrationRisks(patient) {
       var out = [];
       if (patient.high_risk === 'yes' || patient.high_risk === true) {
-        out.push(lang === 'mm' ? 'မှတ်ပုံတင်: အန္တရာယ်မြင့်' : 'Registration: high risk');
+        out.push(lang === 'mm' ? '\u1019\u103e\u1010\u103a\u1015\u102f\u1036\u1010\u1004\u103a: \u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1019\u103c\u1004\u103a\u1037' : 'Reg: high risk');
       }
       if (Array.isArray(patient.risk_factors)) {
-        patient.risk_factors.forEach(function (f) {
-          if (f) out.push(String(f));
-        });
+        patient.risk_factors.forEach(function (f) { if (f) out.push(String(f)); });
       }
       if (patient.risk_notes && String(patient.risk_notes).trim()) {
         var n = String(patient.risk_notes).trim();
-        out.push(n.length > 100 ? n.slice(0, 100) + '…' : n);
+        out.push(n.length > 80 ? n.slice(0, 80) + '\u2026' : n);
       }
       return uniqueStrings(out);
     }
 
-    function mergeOtherColumn(registrationRisks, labSnippets) {
-      return uniqueStrings((registrationRisks || []).concat(labSnippets || []));
-    }
-
     var HRT_RISK_LABELS = {
-      maternal_age_18_or_35: 'Maternal age <18 or >35 years',
-      maternal_age_18_or_40: 'Maternal age <18 or ≥40 years',
-      parity_5: 'Parity ≥ 5',
+      maternal_age_18_or_35: 'Age <18 or >35',
+      maternal_age_18_or_40: 'Age <18 or \u226540',
+      parity_5: 'Parity \u2265 5',
       multiple_pregnancy: 'Multiple pregnancy',
-      previous_complications: 'History of complications in previous pregnancies',
-      previous_stillbirths: 'Previous stillbirths or neonatal deaths',
-      previous_preterm: 'Previous preterm births',
-      obstructed_labour: 'History of obstructed / prolonged labour or CS',
+      previous_complications: 'Prev. complications',
+      previous_stillbirths: 'Prev. stillbirths/NND',
+      previous_preterm: 'Prev. preterm',
+      obstructed_labour: 'Prev. obstructed labour/CS',
       uterine_scar: 'Uterine scar',
       hypertension: 'Hypertension',
-      diabetes: 'Diabetes mellitus',
+      diabetes: 'Diabetes',
       cardiac_disease: 'Cardiac disease',
-      tuberculosis: 'Tuberculosis',
+      tuberculosis: 'TB',
       epilepsy: 'Epilepsy',
       kidney_disease: 'Kidney disease',
-      hiv: 'HIV infection',
-      previous_congenital_anomalies: 'Previous child with congenital anomalies',
-      short_interval_pregnancy: 'Short interval between pregnancies',
-      placenta_previa_abruption: 'Placenta previa / abruption',
-      other_medical_conditions: 'Other medical conditions'
+      hiv: 'HIV',
+      previous_congenital_anomalies: 'Prev. congenital anomalies',
+      short_interval_pregnancy: 'Short interval',
+      placenta_previa_abruption: 'Placenta previa/abruption',
+      other_medical_conditions: 'Other medical'
     };
 
     function humanizeRiskLabel(s) {
@@ -643,17 +778,25 @@
       var noSpace = t.replace(/\s+/g, '');
       if (HRT_RISK_LABELS[noSpace]) return HRT_RISK_LABELS[noSpace];
       if (/:/.test(t)) return t;
-      if (/_/.test(t)) {
-        return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
-      }
+      if (/_/.test(t)) return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
       return t;
     }
 
-    function factorCellHtml(arr, variant) {
-      if (!arr || !arr.length) return '<span class="hrt-empty">—</span>';
-      var mod = variant ? ' hrt-pill--' + variant : ' hrt-pill--anc';
-      return '<div class="hrt-pill-wrap">' + arr.map(function (f) {
-        return '<span class="hrt-pill' + mod + '">' + escapeHtml(humanizeRiskLabel(f)) + '</span>';
+    function mergedRiskPills(r) {
+      var all = [];
+      (r.factorsUnique || []).forEach(function(f) { all.push({ text: f, variant: 'anc' }); });
+      (r.riskLcg || []).forEach(function(f) { all.push({ text: f, variant: 'lcg' }); });
+      (r.riskPnc || []).forEach(function(f) { all.push({ text: f, variant: 'pnc' }); });
+      var regRisks = extractRegistrationRisks(r.patient);
+      var otherRisks = uniqueStrings(regRisks.concat(r.labRisks || []));
+      otherRisks.forEach(function(f) { all.push({ text: f, variant: 'other' }); });
+      return all;
+    }
+
+    function riskPillsHtml(pills) {
+      if (!pills || !pills.length) return '<span class="hrt-empty">\u2014</span>';
+      return '<div class="hrt-pill-wrap">' + pills.map(function(p) {
+        return '<span class="hrt-pill hrt-pill--' + p.variant + '">' + escapeHtml(humanizeRiskLabel(p.text)) + '</span>';
       }).join('') + '</div>';
     }
 
@@ -665,36 +808,288 @@
       return 'hrt-cue-pill warning';
     }
 
+    function cuesHtml(cues) {
+      if (!cues || !cues.length) return '<span class="hrt-empty">\u2014</span>';
+      return '<div class="hrt-pill-wrap">' + cues.map(function(c) {
+        return '<span class="' + cuePillClass(c.cls) + '">' + escapeHtml(c.t) + '</span>';
+      }).join('') + '</div>';
+    }
+
     function eddCellHtml(p) {
-      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
+      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '\u2014';
       var gaEsc = escapeHtml(ga);
       if (!p.edd) {
-        return '<div class="hrt-edd-stack"><span class="hrt-edd-date">—</span><span class="hrt-edd-ga">' + gaEsc + '</span></div>';
+        return '<div class="hrt-edd-stack"><span class="hrt-edd-date">\u2014</span><span class="hrt-edd-ga">' + gaEsc + '</span></div>';
       }
       var d = window.EddDisplay && window.EddDisplay.parseEddToDate(p.edd);
-      var dateStr;
-      if (d && !isNaN(d.getTime())) {
-        dateStr = d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
-      } else {
-        dateStr = String(p.edd);
-      }
+      var dateStr = (d && !isNaN(d.getTime())) ? d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined) : String(p.edd);
       var past = false;
       if (d && !isNaN(d.getTime())) {
-        var t0 = new Date();
-        t0.setHours(0, 0, 0, 0);
-        var ed0 = new Date(d.getTime());
-        ed0.setHours(0, 0, 0, 0);
+        var t0 = new Date(); t0.setHours(0,0,0,0);
+        var ed0 = new Date(d.getTime()); ed0.setHours(0,0,0,0);
         past = ed0 < t0;
       }
-      var flagText = past
-        ? (lang === 'mm' ? 'EDD ကျော်လွန် · မွေးဖွားပြီး ဖြစ်နိုင်' : 'Past EDD · may have delivered')
-        : '';
+      var flagText = past ? (lang === 'mm' ? 'EDD \u1000\u103b\u1031\u102c\u103a\u101c\u103d\u1014\u103a' : 'Past EDD') : '';
       return '<div class="hrt-edd-stack">' +
         '<span class="hrt-edd-date">' + escapeHtml(dateStr) + '</span>' +
         (past ? '<span class="hrt-edd-flag">' + escapeHtml(flagText) + '</span>' : '') +
         '<span class="hrt-edd-ga">' + gaEsc + '</span></div>';
     }
 
+    function phoneCellHtml(patient) {
+      var raw = patient.phone || patient.emergency_phone || patient.phoneNumber || '';
+      raw = String(raw).trim();
+      if (!raw) return '\u2014';
+      var display = window.DataMasking && typeof window.DataMasking.maskPhone === 'function'
+        ? window.DataMasking.maskPhone(raw, true) : raw;
+      var tel = raw.replace(/[^\d+]/g, '');
+      if (!tel) return escapeHtml(display);
+      return '<a href="tel:' + escapeHtml(tel) + '">' + escapeHtml(display) + '</a>';
+    }
+
+    function phoneHref(patient) {
+      var raw = patient.phone || patient.emergency_phone || patient.phoneNumber || '';
+      raw = String(raw).trim();
+      var tel = raw.replace(/[^\d+]/g, '');
+      return tel ? 'tel:' + tel : '';
+    }
+
+    function daysCellHtml(days) {
+      if (days == null) return '<span class="text-muted small">' + escapeHtml(tr('noVisits')) + '</span>';
+      var cls = 'hrt-day-pill--ok';
+      if (days > FOLLOWUP_WARN_DAYS) cls = 'hrt-day-pill--overdue';
+      else if (days > FOLLOWUP_ALERT_DAYS) cls = 'hrt-day-pill--warn';
+      return '<span class="hrt-day-pill ' + cls + '">' + days + tr('days') + '</span>';
+    }
+
+    function actionTypeIcon(type) {
+      var at = ACTION_TYPES[type];
+      return at ? at.icon : 'fa-circle-question';
+    }
+
+    function actionTypeLabel(type) {
+      var map = {
+        called: 'actionCalled', home_visit: 'actionHomeVisit', referred: 'actionReferred',
+        medication: 'actionMedication', counseled: 'actionCounseled', resolved: 'actionResolved'
+      };
+      return tr(map[type] || type);
+    }
+
+    function actionBarHtml(patientId) {
+      var types = ['called', 'home_visit', 'referred', 'medication', 'counseled', 'resolved'];
+      return '<div class="hrt-action-bar">' + types.map(function(t) {
+        return '<button type="button" class="hrt-act-btn act-' + t + '" ' +
+          'onclick="openActionModal(\'' + escapeHtml(patientId) + '\',\'' + t + '\')" ' +
+          'title="' + escapeHtml(actionTypeLabel(t)) + '">' +
+          '<i class="fas ' + actionTypeIcon(t) + '"></i></button>';
+      }).join('') + '</div>';
+    }
+
+    function lastActionHtml(actions) {
+      if (!actions || !actions.length) return '';
+      var a = actions[0];
+      var ms = a.recordedAt && typeof a.recordedAt.toDate === 'function' ? a.recordedAt.toDate().getTime() :
+               a.recordedAt ? new Date(a.recordedAt).getTime() : null;
+      return '<div class="hrt-last-action">' +
+        '<i class="fas ' + actionTypeIcon(a.type) + '"></i> ' +
+        escapeHtml(actionTypeLabel(a.type)) + ' ' + escapeHtml(relativeTime(ms)) +
+        '</div>';
+    }
+
+    function followUpHtml(actions) {
+      if (!actions || !actions.length) return '';
+      var latest = actions[0];
+      var fu = latest.followUpDate;
+      if (!fu) return '';
+      var d = fu && typeof fu.toDate === 'function' ? fu.toDate() : new Date(fu);
+      if (isNaN(d.getTime())) return '';
+      var today = new Date(); today.setHours(0,0,0,0);
+      var fd = new Date(d.getTime()); fd.setHours(0,0,0,0);
+      if (fd < today) {
+        return '<div class="hrt-followup-overdue"><i class="fas fa-clock"></i> ' + escapeHtml(tr('followupOverdue')) + '</div>';
+      }
+      return '';
+    }
+
+    function isResolved(row) {
+      if (!row.actions || !row.actions.length) return false;
+      return row.actions[0].type === 'resolved';
+    }
+
+    /* Render both table and cards */
+    function renderAll(rows) {
+      var resolved = [];
+      var active = [];
+      rows.forEach(function(r) {
+        if (isResolved(r)) resolved.push(r);
+        else active.push(r);
+      });
+      window._resolvedCount = resolved.length;
+      updateResolvedLabel();
+
+      var display = active.slice();
+      if (showResolved) display = display.concat(resolved);
+
+      renderTable(display, resolved.length > 0);
+      renderCards(display, resolved.length > 0);
+    }
+
+    function renderTable(rows) {
+      var tbody = document.getElementById('hrtBody');
+      tbody.innerHTML = '';
+      rows.forEach(function(r) {
+        var cues = clinicalCueTags(r.latestData);
+        var urg = isResolved(r) ? null : computeUrgency(r.daysSince, cues);
+        var rawName = r.patient.name || r.patient.patientName || '\u2014';
+        var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
+        var pills = mergedRiskPills(r);
+        var rRow = isResolved(r);
+
+        var tr = document.createElement('tr');
+        if (rRow) tr.className = 'hrt-resolved';
+        tr.innerHTML =
+          '<td class="hrt-col-name">' +
+            (urg ? '<span class="urgency-badge urgency-' + urg + '"><span class="urgency-dot"></span>' + escapeHtml(urgencyLabel(urg)) + '</span><br>' : '') +
+            '<span class="hrt-patient-name">' + name + '</span>' +
+            (rRow ? ' <span class="hrt-resolved-badge">' + escapeHtml(T[lang].resolvedBadge || 'Resolved') + '</span>' : '') +
+          '</td>' +
+          '<td class="hrt-col-phone">' + phoneCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-edd">' + eddCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-days">' + daysCellHtml(r.daysSince) + '</td>' +
+          '<td class="hrt-col-risks">' + riskPillsHtml(pills) + '</td>' +
+          '<td class="hrt-col-cues">' + cuesHtml(cues) + '</td>' +
+          '<td class="hrt-col-actions">' +
+            actionBarHtml(r.patient.id) +
+            lastActionHtml(r.actions) +
+            followUpHtml(r.actions) +
+            '<a class="hrt-hub-link" href="patient-care-hub.html?patient=' + encodeURIComponent(r.patient.id) + '">' +
+              '<i class="fas fa-hand-holding-medical"></i> ' + escapeHtml(T[lang].openHub || 'Care Hub') + '</a>' +
+          '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderCards(rows) {
+      var container = document.getElementById('hrtCards');
+      container.innerHTML = '';
+      rows.forEach(function(r) {
+        var cues = clinicalCueTags(r.latestData);
+        var urg = isResolved(r) ? null : computeUrgency(r.daysSince, cues);
+        var rawName = r.patient.name || r.patient.patientName || '\u2014';
+        var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
+        var pills = mergedRiskPills(r);
+        var rCard = isResolved(r);
+        var ph = phoneHref(r.patient);
+
+        var card = document.createElement('div');
+        card.className = 'hrt-card' + (rCard ? ' hrt-resolved' : '');
+        card.innerHTML =
+          '<div class="hrt-card-header">' +
+            (urg ? '<span class="urgency-badge urgency-' + urg + '"><span class="urgency-dot"></span>' + escapeHtml(urgencyLabel(urg)) + '</span>' : '') +
+            '<span class="hrt-patient-name">' + name + '</span>' +
+            (rCard ? ' <span class="hrt-resolved-badge">' + escapeHtml(T[lang].resolvedBadge || 'Resolved') + '</span>' : '') +
+            (ph ? '<a href="' + escapeHtml(ph) + '" class="hrt-card-phone-btn"><i class="fas fa-phone"></i></a>' : '') +
+          '</div>' +
+          '<div class="hrt-card-meta">' +
+            '<span class="edd-text">' + eddCellHtml(r.patient) + '</span>' +
+            daysCellHtml(r.daysSince) +
+          '</div>' +
+          '<div class="hrt-card-section"><div class="hrt-card-section-label">' + escapeHtml(T[lang].colRisks) + '</div>' + riskPillsHtml(pills) + '</div>' +
+          (cues.length ? '<div class="hrt-card-section"><div class="hrt-card-section-label">' + escapeHtml(T[lang].colCues) + '</div>' + cuesHtml(cues) + '</div>' : '') +
+          '<div class="hrt-card-actions">' +
+            actionBarHtml(r.patient.id) +
+            '<a class="hrt-hub-link" href="patient-care-hub.html?patient=' + encodeURIComponent(r.patient.id) + '">' +
+              '<i class="fas fa-hand-holding-medical"></i> ' + escapeHtml(T[lang].openHub || 'Care Hub') + '</a>' +
+          '</div>' +
+          lastActionHtml(r.actions) +
+          followUpHtml(r.actions);
+        container.appendChild(card);
+      });
+    }
+
+    function toggleResolved() {
+      showResolved = !showResolved;
+      updateResolvedLabel();
+      if (window._hrtRows) renderAll(window._hrtRows);
+    }
+
+    /* Action modal */
+    function openActionModal(patientId, actionType) {
+      _currentActionPatientId = patientId;
+      _currentActionType = actionType;
+      var disp = document.getElementById('actionTypeDisplay');
+      disp.innerHTML = '<i class="fas ' + actionTypeIcon(actionType) + '"></i> <span>' + escapeHtml(actionTypeLabel(actionType)) + '</span>';
+      document.getElementById('resolvedReasonGroup').style.display = actionType === 'resolved' ? 'block' : 'none';
+      document.getElementById('actionNote').value = '';
+      document.getElementById('actionFollowUp').value = '';
+      document.getElementById('resolvedReasonSelect').value = 'delivered_safely';
+      var modal = new bootstrap.Modal(document.getElementById('actionModal'));
+      modal.show();
+    }
+
+    async function saveAction() {
+      if (!_currentActionPatientId || !_currentActionType || !_currentUser) return;
+      var btn = document.getElementById('btnSaveAction');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+      var db = firebase.firestore();
+      var data = {
+        type: _currentActionType,
+        recordedBy: _currentUser.uid,
+        recordedByName: _currentUserName,
+        recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      var note = document.getElementById('actionNote').value.trim();
+      if (note) data.note = note;
+      var fuDate = document.getElementById('actionFollowUp').value;
+      if (fuDate) data.followUpDate = new Date(fuDate);
+      if (_currentActionType === 'resolved') {
+        data.resolvedReason = document.getElementById('resolvedReasonSelect').value;
+      }
+
+      try {
+        await db.collection('patients').doc(_currentActionPatientId).collection('hrt_actions').add(data);
+        var modal = bootstrap.Modal.getInstance(document.getElementById('actionModal'));
+        if (modal) modal.hide();
+        await refreshActions(_currentActionPatientId);
+        renderAll(window._hrtRows);
+      } catch (err) {
+        console.error('Save action failed', err);
+        alert((err && err.message) || 'Failed to save action');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-1"></i><span class="action-btn-save">' + escapeHtml(tr('save')) + '</span>';
+      }
+    }
+
+    async function refreshActions(patientId) {
+      if (!window._hrtRows) return;
+      var db = firebase.firestore();
+      for (var i = 0; i < window._hrtRows.length; i++) {
+        if (window._hrtRows[i].patient.id === patientId) {
+          window._hrtRows[i].actions = await fetchHrtActions(db, patientId);
+          break;
+        }
+      }
+    }
+
+    async function fetchHrtActions(db, patientId) {
+      try {
+        var snap = await db.collection('patients').doc(patientId).collection('hrt_actions')
+          .orderBy('recordedAt', 'desc').limit(5).get();
+        var list = [];
+        if (snap && snap.docs) {
+          snap.docs.forEach(function(d) { list.push(d.data() || {}); });
+        }
+        return list;
+      } catch (e) {
+        console.warn('fetchHrtActions', patientId, e);
+        return [];
+      }
+    }
+
+    /* Data fetching (same RBAC as before) */
     async function fetchPatientsForRole(db, currentUser, userRole) {
       var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
       var query = db.collection('patients');
@@ -773,49 +1168,32 @@
           });
         }
       }
-
       return allPatients;
     }
 
     async function fetchVisitsForPatient(db, patientId) {
       var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
       var snap;
-      try {
-        snap = await ref.orderBy('visitDate', 'asc').get();
-      } catch (e) {
-        try {
-          snap = await ref.orderBy('timestamp', 'asc').get();
-        } catch (e2) {
-          snap = await ref.get();
-        }
+      try { snap = await ref.orderBy('visitDate', 'asc').get(); }
+      catch (e) {
+        try { snap = await ref.orderBy('timestamp', 'asc').get(); }
+        catch (e2) { snap = await ref.get(); }
       }
       var visits = [];
-      if (snap && snap.docs) {
-        snap.docs.forEach(function (d) {
-          visits.push({ id: d.id, data: d.data() || {} });
-        });
-      }
+      if (snap && snap.docs) snap.docs.forEach(function(d) { visits.push({ id: d.id, data: d.data() || {} }); });
       return visits;
     }
 
     async function fetchPostpartumVisitsRaw(db, patientId) {
       var ref = db.collection('patients').doc(patientId).collection('postpartum_visits');
       var snap;
-      try {
-        snap = await ref.orderBy('visitDate', 'desc').limit(20).get();
-      } catch (e) {
-        try {
-          snap = await ref.orderBy('timestamp', 'desc').limit(20).get();
-        } catch (e2) {
-          snap = await ref.limit(20).get();
-        }
+      try { snap = await ref.orderBy('visitDate', 'desc').limit(20).get(); }
+      catch (e) {
+        try { snap = await ref.orderBy('timestamp', 'desc').limit(20).get(); }
+        catch (e2) { snap = await ref.limit(20).get(); }
       }
       var list = [];
-      if (snap && snap.docs) {
-        snap.docs.forEach(function (d) {
-          list.push(d.data() || {});
-        });
-      }
+      if (snap && snap.docs) snap.docs.forEach(function(d) { list.push(d.data() || {}); });
       return list;
     }
 
@@ -827,21 +1205,13 @@
     async function fetchLabRecordsRaw(db, patientId) {
       var ref = db.collection('patients').doc(patientId).collection('testRecords');
       var snap;
-      try {
-        snap = await ref.orderBy('testDate', 'desc').limit(12).get();
-      } catch (e) {
-        try {
-          snap = await ref.orderBy('timestamp', 'desc').limit(12).get();
-        } catch (e2) {
-          snap = await ref.limit(12).get();
-        }
+      try { snap = await ref.orderBy('testDate', 'desc').limit(12).get(); }
+      catch (e) {
+        try { snap = await ref.orderBy('timestamp', 'desc').limit(12).get(); }
+        catch (e2) { snap = await ref.limit(12).get(); }
       }
       var list = [];
-      if (snap && snap.docs) {
-        snap.docs.forEach(function (d) {
-          list.push(d.data() || {});
-        });
-      }
+      if (snap && snap.docs) snap.docs.forEach(function(d) { list.push(d.data() || {}); });
       return list;
     }
 
@@ -855,75 +1225,10 @@
       return out;
     }
 
-    function renderTable(rows) {
-      var tbody = document.getElementById('hrtBody');
-      tbody.innerHTML = '';
-      rows.forEach(function (r) {
-        var days = r.daysSince;
-        var daysPill = 'hrt-day-pill--ok';
-        if (days == null) {
-          daysPill = '';
-        } else if (days > FOLLOWUP_WARN_DAYS) {
-          daysPill = 'hrt-day-pill--overdue';
-        } else if (days > FOLLOWUP_ALERT_DAYS) {
-          daysPill = 'hrt-day-pill--warn';
-        }
-
-        var daysCell;
-        if (days == null) {
-          daysCell = '<span class="text-muted small">' + escapeHtml(tr('noVisits')) + '</span>';
-        } else {
-          daysCell = '<span class="hrt-day-pill ' + daysPill + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
-        }
-
-        var cues = clinicalCueTags(r.latestData);
-        var cuesHtml = cues.length
-          ? '<div class="hrt-pill-wrap">' + cues.map(function (c) {
-              return '<span class="' + cuePillClass(c.cls) + '">' + escapeHtml(c.t) + '</span>';
-            }).join('') + '</div>'
-          : '<span class="hrt-empty">—</span>';
-
-        var rawName = r.patient.name || r.patient.patientName || '—';
-        var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
-        var trEl = document.createElement('tr');
-        trEl.innerHTML =
-          '<td class="hrt-col-name"><span class="hrt-patient-name">' + name + '</span></td>' +
-          '<td class="hrt-col-phone">' + phoneCellHtml(r.patient) + '</td>' +
-          '<td class="hrt-col-edd">' + eddCellHtml(r.patient) + '</td>' +
-          '<td class="hrt-col-date">' + escapeHtml(r.lastAncStr) + '</td>' +
-          '<td class="hrt-col-days">' + daysCell + '</td>' +
-          '<td class="hrt-col-risks">' + factorCellHtml(r.factorsUnique, 'anc') + '</td>' +
-          '<td class="hrt-col-risks">' + factorCellHtml(r.riskLcg, 'lcg') + '</td>' +
-          '<td class="hrt-col-risks">' + factorCellHtml(r.riskPnc, 'pnc') + '</td>' +
-          '<td class="hrt-col-risks">' + factorCellHtml(mergeOtherColumn(extractRegistrationRisks(r.patient), r.labRisks), 'other') + '</td>' +
-          '<td class="hrt-col-cues">' + cuesHtml + '</td>' +
-          '<td class="hrt-col-action"><a class="hrt-btn-hub" href="patient-care-hub.html?patient=' +
-          encodeURIComponent(r.patient.id) +
-          '" title="' + escapeHtml(tr('openHub')) + '"><i class="fas fa-hand-holding-medical"></i><span>' +
-          escapeHtml(tr('openHubBtn')) +
-          '</span></a></td>';
-        tbody.appendChild(trEl);
-      });
-    }
-
-    function phoneCellHtml(patient) {
-      var raw = patient.phone || patient.emergency_phone || patient.phoneNumber || '';
-      raw = String(raw).trim();
-      if (!raw) return '—';
-      var display = window.DataMasking && typeof window.DataMasking.maskPhone === 'function'
-        ? window.DataMasking.maskPhone(raw, true)
-        : raw;
-      var tel = raw.replace(/[^\d+]/g, '');
-      if (!tel) return escapeHtml(display);
-      return '<a href="tel:' + escapeHtml(tel) + '">' + escapeHtml(display) + '</a>';
-    }
-
+    /* Main load */
     firebase.auth().onAuthStateChanged(async function (user) {
-      if (!user) {
-        window.location.href = 'login.html';
-        return;
-      }
-
+      if (!user) { window.location.href = 'login.html'; return; }
+      _currentUser = user;
       applyStaticI18n();
 
       var offline = window.OfflineManager && window.OfflineManager.isOfflineMode();
@@ -947,6 +1252,8 @@
           userData = uq && uq.exists ? uq.data() : null;
         }
         if (userData && userData.role) userRole = userData.role;
+        if (userData && userData.name) _currentUserName = userData.name;
+        else if (user.displayName) _currentUserName = user.displayName;
       } catch (e) {
         console.warn('HRT role load', e);
       }
@@ -960,18 +1267,18 @@
           var bundle = { antenatalVisits: visits };
           if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
 
-          var pncDocs = [];
-          var summaryData = null;
-          var labList = [];
+          var pncDocs = [], summaryData = null, labList = [], actions = [];
           try {
-            var triple = await Promise.all([
+            var quad = await Promise.all([
               fetchPostpartumVisitsRaw(db, p.id),
               fetchLabourSummaryRaw(db, p.id),
-              fetchLabRecordsRaw(db, p.id)
+              fetchLabRecordsRaw(db, p.id),
+              fetchHrtActions(db, p.id)
             ]);
-            pncDocs = triple[0];
-            summaryData = triple[1];
-            labList = triple[2];
+            pncDocs = quad[0];
+            summaryData = quad[1];
+            labList = quad[2];
+            actions = quad[3];
           } catch (e) {
             console.warn('HRT extra fetches', p.id, e);
           }
@@ -984,11 +1291,8 @@
 
           var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
           var latestData = window.HighRiskUtils.getLatestAncVisitData(bundle);
-          var lastAncStr = lastMs ? formatDateVal(new Date(lastMs)) : tr('noVisits');
           var daysSince = null;
-          if (lastMs != null) {
-            daysSince = Math.floor((Date.now() - lastMs) / 86400000);
-          }
+          if (lastMs != null) daysSince = Math.floor((Date.now() - lastMs) / 86400000);
 
           return {
             patient: p,
@@ -996,16 +1300,17 @@
             riskLcg: riskLcg,
             riskPnc: riskPnc,
             labRisks: labRisks,
-            lastAncStr: lastAncStr,
             daysSince: daysSince,
-            latestData: latestData
+            latestData: latestData,
+            actions: actions
           };
         });
 
         var rows = enriched.filter(Boolean);
         rows.sort(function (a, b) {
-          var da = a.daysSince;
-          var db_ = b.daysSince;
+          var aRes = isResolved(a), bRes = isResolved(b);
+          if (aRes !== bRes) return aRes ? 1 : -1;
+          var da = a.daysSince, db_ = b.daysSince;
           if (da == null && db_ == null) return 0;
           if (da == null) return 1;
           if (db_ == null) return -1;
@@ -1019,7 +1324,7 @@
           document.getElementById('emptyState').classList.remove('d-none');
         } else {
           document.getElementById('tableState').classList.remove('d-none');
-          renderTable(rows);
+          renderAll(rows);
         }
       } catch (err) {
         console.error(err);
