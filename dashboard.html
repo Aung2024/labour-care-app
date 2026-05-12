@@ -368,7 +368,7 @@
               </div>
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>Referral by Type</h5><div id="chart-referral-type"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>PPH Cases</h5><div id="chart-pph"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>Heavy bleeding (PNC)</h5><p class="text-muted small mb-2">From postpartum visits: danger sign &quot;Heavy vaginal bleeding&quot; or lochia &quot;Heavy bleeding&quot;.</p><div id="chart-pph"></div></div></div>
               </div>
             </div>
 
@@ -979,6 +979,7 @@
         var pncHasVitB = false, pncHasVitA = false, pncHasIronFolic = false, pncHasContra = false;
         var pncPatientForCharts = bucket === 'pnc' || pncVisits.length > 0;
         var dangerSignsForPatient = {};
+        var pncHeavyBleeding = false;
         pncVisits.forEach(function(v) {
           var d = v.data || {};
           if (d.vitaminBComplex === true) pncHasVitB = true;
@@ -986,11 +987,18 @@
           if (d.ironFolic === true) pncHasIronFolic = true;
           if (d.contraception === true || (d.contraceptiveMethod && d.contraceptiveMethod.length > 0)) pncHasContra = true;
           if (d.dangerSigns && typeof d.dangerSigns === 'object') {
+            if (d.dangerSigns.heavyBleeding === true) pncHeavyBleeding = true;
             Object.keys(d.dangerSigns).forEach(function(sign) {
               if (d.dangerSigns[sign] === true) dangerSignsForPatient[sign] = true;
             });
           }
+          var lochia = (d.vaginalBleeding != null ? String(d.vaginalBleeding) : '').trim().toLowerCase();
+          if (lochia === 'heavy bleeding') pncHeavyBleeding = true;
         });
+        if (pncVisits.length > 0) {
+          if (pncHeavyBleeding) m.pphCases++;
+          else m.noPph++;
+        }
         if (pncHasVitB) m.pncVitB++;
         if (pncHasVitA) m.pncVitA++;
         if (pncHasIronFolic) m.pncIronFolic++;
@@ -1052,12 +1060,6 @@
           if (tStatus.includes('labour')) m.labourTransfer++;
           else if (tStatus.includes('pnc') || tStatus.includes('postnatal')) m.pncTransfer++;
           else m.ancTransfer++;
-        }
-
-        // PPH
-        if (birthRec) {
-          if (birthRec.manualPPH === true || birthRec.pphDetected === true || birthRec.pphAutoDetected === true || birthRec.postpartumHemorrhage === true || (birthRec.totalBloodLoss && parseInt(birthRec.totalBloodLoss,10) >= 300)) m.pphCases++;
-          else m.noPph++;
         }
 
         // Maternal/Newborn outcomes
@@ -1454,15 +1456,22 @@
         dataLabels: { enabled: true }
       }));
 
-      // PPH
-      createChart('chart-pph', Object.assign({}, chartDefaults, {
-        chart: { type: 'donut', height: 300 },
-        series: [m.pphCases, m.noPph],
-        labels: ['PPH Cases', 'No PPH'],
-        colors: [COLORS.red, COLORS.green],
-        legend: { position: 'bottom' },
-        title: { text: 'PPH Cases' }
-      }));
+      // PNC heavy bleeding (same counters as m.pphCases / m.noPph; patients with ≥1 PNC visit only)
+      var pncHeavyDenom = m.pphCases + m.noPph;
+      if (pncHeavyDenom === 0) {
+        destroyChart('chart-pph');
+        var pphEl = document.getElementById('chart-pph');
+        if (pphEl) pphEl.innerHTML = '<div class="text-muted small p-3">No PNC visit data in this period — heavy bleeding cannot be assessed.</div>';
+      } else {
+        createChart('chart-pph', Object.assign({}, chartDefaults, {
+          chart: { type: 'donut', height: 300 },
+          series: [m.pphCases, m.noPph],
+          labels: ['Heavy bleeding', 'No heavy bleeding'],
+          colors: [COLORS.red, COLORS.green],
+          legend: { position: 'bottom' },
+          title: { text: 'PNC heavy bleeding (' + pncHeavyDenom + ' with PNC visits)' }
+        }));
+      }
 
       tabsRendered.referrals = true;
     }
