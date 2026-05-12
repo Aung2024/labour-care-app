@@ -1,9 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>Labour Care Dashboard</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10b981">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MNCH care App">
+  <meta name="description" content="Comprehensive maternal and child health care management system for midwives">
+  <title>MNCH care App Dashboard</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -197,8 +207,8 @@
               <div class="filter-body">
                 <div id="supervisorFilterGrid" class="supervisor-filter-grid" style="display:none;">
                   <div id="tmoFilterGroup" class="filter-select-group" style="display:none;">
-                    <label for="tmoFilter" class="form-label">Filter by TMO / Township</label>
-                    <select id="tmoFilter" class="form-select form-select-sm"><option value="all">All TMOs / Townships</option></select>
+                    <label for="tmoFilter" class="form-label">Filter by Township</label>
+                    <select id="tmoFilter" class="form-select form-select-sm"><option value="all">All Townships</option></select>
                   </div>
                   <div id="midwifeFilterGroup" class="filter-select-group" style="display:none;">
                     <label for="midwifeFilter" class="form-label">Filter by Midwife</label>
@@ -233,7 +243,7 @@
             <div class="col-6 col-md-4 col-lg-2"><div class="kpi-card kpi-success"><div class="kpi-value" id="kpiEarlyAnc">0</div><div class="kpi-label">Early ANC</div></div></div>
             <div class="col-6 col-md-4 col-lg-2"><div class="kpi-card kpi-info"><div class="kpi-value" id="kpiLcg">0</div><div class="kpi-label">LCG Completed</div></div></div>
             <div class="col-6 col-md-4 col-lg-2"><div class="kpi-card kpi-warning"><div class="kpi-value" id="kpiLab">0</div><div class="kpi-label">Lab Complete</div></div></div>
-            <div class="col-6 col-md-4 col-lg-2"><div class="kpi-card kpi-primary"><div class="kpi-value" id="kpiPnc48">0</div><div class="kpi-label">PNC 48h</div></div></div>
+            <div class="col-6 col-md-4 col-lg-2"><div class="kpi-card kpi-primary"><div class="kpi-value" id="kpiPnc42">0</div><div class="kpi-label">PNC 42 Days</div></div></div>
           </div>
 
           <!-- Tabs -->
@@ -857,7 +867,8 @@
           }
         }
 
-        // Lab tests
+        // Lab tests. "Lab Test Completed" now means all 8 basic tests plus ultrasound,
+        // so it reconciles with the separate Ultrasound Services count.
         var patientAll8 = false, patientUltrasound = false;
         var patientAnemiaStatus = null;
         var patientHiv = false, patientSyphilis = false, patientMalaria = false, patientHepB = false, patientHepC = false;
@@ -901,7 +912,7 @@
           if (hcR === 'reactive' || hcR === 'positive') m.monthlyCoinfection.hepC[tMonth] = (m.monthlyCoinfection.hepC[tMonth] || 0) + 1;
         });
 
-        if (patientAll8) m.labComplete++;
+        if (patientAll8 && patientUltrasound) m.labComplete++;
         if (patientUltrasound) m.ultrasound++;
         if (patientAnemiaStatus === 'severe') m.severeAnemia++;
         else if (patientAnemiaStatus === 'mild') m.mildAnemia++;
@@ -1066,7 +1077,7 @@
 
     function updateKPIAndStats(m) {
       setText('kpiTotal', m.total); setText('kpiHighRisk', m.highRisk); setText('kpiEarlyAnc', m.earlyAnc);
-      setText('kpiLcg', m.lcgCompleted); setText('kpiLab', m.labComplete); setText('kpiPnc48', m.pnc48h);
+      setText('kpiLcg', m.lcgCompleted); setText('kpiLab', m.labComplete); setText('kpiPnc42', m.pnc42d);
 
       setText('statTotal', m.total); setText('statNew', m.newClients); setText('statEarlyAnc', m.earlyAnc);
       setText('statHighRisk', m.highRisk); setText('statLcg', m.lcgCompleted); setText('statLab', m.labComplete);
@@ -1090,7 +1101,7 @@
         earlyAnc: { title: 'Early ANC Visit', content: [{ label: 'Clients with early ANC', value: m.earlyAnc }] },
         highRisk: { title: 'High Risk Clients', content: [{ label: 'Detected high-risk patients', value: m.highRisk }] },
         lcgCompleted: { title: 'LCG Completed', content: [{ label: 'First + second stage filled', value: m.lcgCompleted }] },
-        labComplete: { title: 'Lab Test Complete', content: [{ label: 'All 8 basic tests done', value: m.labComplete }] },
+        labComplete: { title: 'Lab Test Complete', content: [{ label: 'All 8 basic tests + ultrasound done', value: m.labComplete }] },
         ultrasound: { title: 'Ultrasound Services', content: [{ label: 'Received ultrasound', value: m.ultrasound }] }
       };
     }
@@ -1108,7 +1119,7 @@
       }
       if (m.noAnc > 0) cards.push('<div class="col-12 col-md-6 col-lg-4"><div class="insight-card insight-warning"><i class="fas fa-exclamation-triangle me-2"></i><strong>Coverage gap:</strong> ' + m.noAnc + ' clients (' + pct(m.noAnc) + '%) have no ANC visits</div></div>');
       cards.push('<div class="col-12 col-md-6 col-lg-4"><div class="insight-card"><i class="fas fa-clipboard-check me-2"></i><strong>' + m.with4Plus + '</strong> clients (' + pct(m.with4Plus) + '%) completed 4+ ANC visits</div></div>');
-      cards.push('<div class="col-12 col-md-6 col-lg-4"><div class="insight-card"><i class="fas fa-vial me-2"></i><strong>' + m.labComplete + '</strong> clients (' + pct(m.labComplete) + '%) have all 8 lab tests</div></div>');
+      cards.push('<div class="col-12 col-md-6 col-lg-4"><div class="insight-card"><i class="fas fa-vial me-2"></i><strong>' + m.labComplete + '</strong> clients (' + pct(m.labComplete) + '%) have all 8 lab tests plus ultrasound</div></div>');
       cards.push('<div class="col-12 col-md-6 col-lg-4"><div class="insight-card"><i class="fas fa-stopwatch me-2"></i><strong>' + m.lcgCompleted + '</strong> clients (' + pct(m.lcgCompleted) + '%) have LCG completed</div></div>');
       el.innerHTML = cards.join('');
     }
@@ -1489,20 +1500,20 @@
         var el = document.getElementById('tmoFilter');
         if (!group || !el || userRole !== 'Regional Officer' || !userRegion) return;
         group.style.display = 'block';
-        el.innerHTML = '<option value="all">All TMOs / Townships</option>';
+        el.innerHTML = '<option value="all">All Townships</option>';
 
         var snap = await firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion).get();
         var byTownship = new Map();
         snap.forEach(function(doc) {
           var d = doc.data() || {};
           if (!d.township) return;
-          if (!byTownship.has(d.township)) byTownship.set(d.township, d.name || d.email || d.township);
+          if (!byTownship.has(d.township)) byTownship.set(d.township, d.township);
         });
 
         Array.from(byTownship.keys()).sort().forEach(function(township) {
           var opt = document.createElement('option');
           opt.value = township;
-          opt.textContent = byTownship.get(township) + ' (' + township + ')';
+          opt.textContent = township;
           el.appendChild(opt);
         });
 
