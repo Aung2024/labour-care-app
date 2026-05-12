@@ -138,8 +138,10 @@ async function checkAndUpdateToBirthed(patientId, reason = 'Birth recorded') {
     
     const currentStatus = patientDoc.data().status;
     
-    // Update if patient is in "in_labour" status (not if already transferred or birthed)
-    if (currentStatus === PATIENT_STATUSES.IN_LABOUR) {
+    // Second stage means the patient has birthed, unless already in PNC or transferred.
+    if (currentStatus === PATIENT_STATUSES.REGISTERED ||
+        currentStatus === PATIENT_STATUSES.ANTENATAL ||
+        currentStatus === PATIENT_STATUSES.IN_LABOUR) {
       return await updatePatientStatus(
         patientId, 
         PATIENT_STATUSES.BIRTHED, 
@@ -157,9 +159,9 @@ async function checkAndUpdateToBirthed(patientId, reason = 'Birth recorded') {
 
 /**
  * Check if patient should be moved to Postnatal Care status
- * Called when any postnatal visit is recorded OR second stage time is recorded
+ * Called when any postnatal visit is recorded
  * @param {string} patientId - Patient document ID
- * @param {string} reason - Specific reason (postnatal visit or second stage)
+ * @param {string} reason - Specific reason (postnatal visit)
  */
 async function checkAndUpdateToPostnatalCare(patientId, reason = 'Postnatal activity') {
   try {
@@ -176,8 +178,11 @@ async function checkAndUpdateToPostnatalCare(patientId, reason = 'Postnatal acti
     
     const currentStatus = patientDoc.data().status;
     
-    // Update if patient is not already in postnatal care
-    if (currentStatus !== PATIENT_STATUSES.POSTNATAL) {
+    // PNC visit moves standard care statuses into postnatal care.
+    if (currentStatus === PATIENT_STATUSES.REGISTERED ||
+        currentStatus === PATIENT_STATUSES.ANTENATAL ||
+        currentStatus === PATIENT_STATUSES.IN_LABOUR ||
+        currentStatus === PATIENT_STATUSES.BIRTHED) {
       return await updatePatientStatus(
         patientId, 
         PATIENT_STATUSES.POSTNATAL, 

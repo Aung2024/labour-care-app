@@ -239,8 +239,8 @@
           <!-- Tabs -->
           <ul class="nav nav-tabs dashboard-tabs mb-3" id="dashboardTabs" role="tablist">
             <li class="nav-item" role="presentation"><button class="nav-link active" id="tab-overview" data-bs-toggle="tab" data-bs-target="#pane-overview" type="button" role="tab">Overview</button></li>
-            <li class="nav-item" role="presentation"><button class="nav-link" id="tab-anc" data-bs-toggle="tab" data-bs-target="#pane-anc" type="button" role="tab">ANC</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-aggregate" data-bs-toggle="tab" data-bs-target="#pane-aggregate" type="button" role="tab">Aggregate by TSP</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="tab-anc" data-bs-toggle="tab" data-bs-target="#pane-anc" type="button" role="tab">ANC</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-labour" data-bs-toggle="tab" data-bs-target="#pane-labour" type="button" role="tab">Labour</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-pnc" data-bs-toggle="tab" data-bs-target="#pane-pnc" type="button" role="tab">PNC & Newborn</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-referrals" data-bs-toggle="tab" data-bs-target="#pane-referrals" type="button" role="tab">Referrals</button></li>
@@ -330,11 +330,7 @@
               </div>
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-area"></i>LCG Completion Trend</h5><div id="chart-lcg-trend"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-prescription-bottle"></i>Oxytocin Usage</h5><div id="chart-oxytocin"></div></div></div>
-              </div>
-              <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-procedures"></i>Third Stage Management</h5><div id="chart-third-stage"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-notes-medical"></i>Treatment Outcomes</h5><div id="chart-outcomes"></div></div></div>
               </div>
             </div>
 
@@ -354,12 +350,11 @@
                 <div class="col-md-3 mb-3"><div class="stat-card success"><div class="stat-number" id="statLowBWKmc">0</div><div class="stat-label">Low BW + KMC</div></div></div>
               </div>
               <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-radar"></i>PNC Quality Indicators</h5><div id="chart-pnc-quality"></div></div></div>
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-weight"></i>Birth Weight Distribution</h5><div id="chart-birth-weight"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-clock"></i>PNC Timing (Days Postpartum)</h5><div id="chart-pnc-timing"></div></div></div>
               </div>
               <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-clock"></i>PNC Timing (Days Postpartum)</h5><div id="chart-pnc-timing"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-exclamation-triangle"></i>Danger Signs Prevalence</h5><div id="chart-danger-signs"></div></div></div>
+                <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-exclamation-triangle"></i>Danger Signs Prevalence</h5><div id="chart-danger-signs"></div></div></div>
               </div>
             </div>
 
@@ -374,10 +369,6 @@
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>Referral by Type</h5><div id="chart-referral-type"></div></div></div>
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>PPH Cases</h5><div id="chart-pph"></div></div></div>
-              </div>
-              <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-female"></i>Maternal Outcome</h5><div id="chart-maternal"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-baby"></i>Newborn Outcome</h5><div id="chart-newborn"></div></div></div>
               </div>
             </div>
 
@@ -650,8 +641,8 @@
 
     function statusBucket(profile) {
       var raw = (profile.status || profile.treatmentStatus || 'registered').toLowerCase().replace(/[_-]+/g, ' ');
-      if (raw.includes('birthed') || raw.includes('delivered')) return 'pnc';
       if (raw.includes('postnatal') || raw.includes('postpartum') || raw.includes('pnc')) return 'pnc';
+      if (raw.includes('birthed') || raw.includes('delivered')) return 'birthed';
       if (raw.includes('labour') || raw.includes('labor')) return 'labour';
       if (raw.includes('antenatal') || raw.includes('anc')) return 'anc';
       return 'registered';
@@ -660,6 +651,70 @@
     function isAncPatient(profile, visits) {
       var bucket = statusBucket(profile);
       return bucket === 'anc' || ((visits || []).length > 0 && bucket !== 'pnc');
+    }
+
+    function isAffirmative(value) {
+      if (value === true) return true;
+      if (typeof value === 'string') {
+        var normalized = value.toLowerCase().trim();
+        return normalized === 'yes' || normalized === 'y' || normalized === 'true';
+      }
+      return false;
+    }
+
+    function hasRecordData(record) {
+      if (!record) return false;
+      var data = record.data && typeof record.data === 'object' ? record.data : record;
+      return !!(data && typeof data === 'object' && Object.keys(data).length > 0);
+    }
+
+    function getBirthWeightKg(patient) {
+      var nb = patient.newbornCare && patient.newbornCare.data ? patient.newbornCare.data : {};
+      var birth = patient.birthRecord && patient.birthRecord.data ? patient.birthRecord.data : {};
+      var grams = parseFloat(nb.body_weight_gram || nb.birth_weight_gram || birth.body_weight_gram || birth.birth_weight_gram);
+      if (!isNaN(grams) && grams > 0) return grams / 1000;
+      var kg = parseFloat(nb.birth_weight_kg || nb.birthWeightKg || birth.birth_weight_kg || birth.birthWeightKg);
+      if (!isNaN(kg) && kg > 0) return kg;
+      var lb = parseFloat(nb.birth_weight_lb || nb.birthWeight || birth.birth_weight_lb || birth.birthWeight);
+      if (!isNaN(lb) && lb > 0) return lb / 2.20462;
+      return null;
+    }
+
+    function hasNewbornEvidence(patient, hasSecondStage) {
+      return hasRecordData(patient.newbornCare) ||
+        hasRecordData(patient.immediateNewbornCare) ||
+        hasRecordData(patient.birthRecord) ||
+        hasRecordData(patient.thirdStage) ||
+        hasSecondStage === true;
+    }
+
+    function getFirstPncDays(firstPnc, patient) {
+      var d = firstPnc || {};
+      var explicitDays = d.postpartumDays || d.postpartum_days || d.daysPostpartum || d.days_since_delivery;
+      if (explicitDays !== null && explicitDays !== undefined && explicitDays !== '') {
+        var parsed = Number(explicitDays);
+        if (!isNaN(parsed) && parsed >= 0) return parsed;
+      }
+      var visitDate = parseDateValue(d.visitDate || d.visit_date || d.timestamp || d.createdAt || d.created_at || d.date);
+      var deliveryDate = parseDateValue(d.deliveredDateTime || d.deliveryDate || d.delivery_date);
+      var birth = patient.birthRecord && patient.birthRecord.data ? patient.birthRecord.data : {};
+      if (!deliveryDate) deliveryDate = parseDateValue(birth.deliveryDate || birth.birthDate || birth.birthTime || birth.timestamp || birth.date);
+      if (visitDate && deliveryDate) {
+        var diffDays = Math.floor((visitDate.getTime() - deliveryDate.getTime()) / 86400000);
+        if (diffDays >= 0) return diffDays;
+      }
+      return null;
+    }
+
+    function addPncTimingGroup(m, days) {
+      if (days === null || days === undefined || isNaN(days)) { m.pncTimingGroups['Not recorded']++; return false; }
+      if (days <= 1) m.pncTimingGroups['0-1']++;
+      else if (days <= 3) m.pncTimingGroups['2-3']++;
+      else if (days <= 7) m.pncTimingGroups['4-7']++;
+      else if (days <= 14) m.pncTimingGroups['8-14']++;
+      else if (days <= 42) m.pncTimingGroups['15-42']++;
+      else m.pncTimingGroups['>42']++;
+      return true;
     }
 
     function computeAllMetrics(dataset) {
@@ -671,8 +726,8 @@
         homeDel: 0, instDel: 0, uterotonic: 0,
         pnc48h: 0, pnc42d: 0, nbRecords: 0, resuscitated: 0, lowBW: 0, lowBWKmc: 0,
         ancTransfer: 0, labourTransfer: 0, pncTransfer: 0,
-        // Status counts aligned with list.html user-facing filters.
-        statusAnc: 0, statusLabour: 0, statusPnc: 0, statusRegistered: 0,
+        // Status counts aligned with the standard patient status progression.
+        statusAnc: 0, statusLabour: 0, statusBirthed: 0, statusPnc: 0, statusRegistered: 0,
         // PNC quality (visit-level aggregation across all patients)
         pncVitB: 0, pncVitA: 0, pncIronFolic: 0, pncContraception: 0, pncDangerSigns: 0, pncVisitsTotal: 0,
         // Maternal/newborn outcomes
@@ -697,11 +752,11 @@
         // Township aggregates
         tspAggregates: {},
         // PNC timing
-        pncTimingGroups: { '0-1': 0, '2-3': 0, '4-7': 0, '8-14': 0, '15-42': 0, '>42': 0 },
+        pncTimingGroups: { '0-1': 0, '2-3': 0, '4-7': 0, '8-14': 0, '15-42': 0, '>42': 0, 'Not recorded': 0 },
         // Danger signs detail
         dangerSignCounts: {},
         // Birth weight groups
-        bwGroups: { '<1.5': 0, '1.5-2': 0, '2-2.5': 0, '2.5-3': 0, '3-3.5': 0, '3.5-4': 0, '>4': 0 },
+        bwGroups: { '<1.5': 0, '1.5-2': 0, '2-2.5': 0, '2.5-3': 0, '3-3.5': 0, '3.5-4': 0, '>4': 0, 'Not recorded': 0 },
         // With 4+ ANC
         with4Plus: 0, noAnc: 0
       };
@@ -724,6 +779,7 @@
         if (bucket === 'registered') m.statusRegistered++;
         else if (bucket === 'anc') m.statusAnc++;
         else if (bucket === 'labour') m.statusLabour++;
+        else if (bucket === 'birthed') m.statusBirthed++;
         else if (bucket === 'pnc') m.statusPnc++;
 
         // Age
@@ -885,7 +941,8 @@
 
         // Third stage management (uterotonic)
         var ts = patient.thirdStage;
-        if (ts && ts.oxytocinGiven === true) m.uterotonic++;
+        var birthRec = patient.birthRecord ? patient.birthRecord.data : null;
+        if ((ts && isAffirmative(ts.oxytocinGiven)) || (birthRec && (isAffirmative(birthRec.uterotonicGivenThirdStage) || isAffirmative(birthRec.uterotonic)))) m.uterotonic++;
 
         // Delivery location (from newborn_care)
         var nbCare = patient.newbornCare ? patient.newbornCare.data : null;
@@ -895,9 +952,11 @@
           else if (bp === 'facility') { m.instDel++; tspAgg.instDel++; }
         }
 
-        // PNC timing & quality
+        // PNC timing & danger signs
         m.pncVisitsTotal += pncVisits.length;
         var pncHasVitB = false, pncHasVitA = false, pncHasIronFolic = false, pncHasContra = false;
+        var pncPatientForCharts = bucket === 'pnc' || pncVisits.length > 0;
+        var dangerSignsForPatient = {};
         pncVisits.forEach(function(v) {
           var d = v.data || {};
           if (d.vitaminBComplex === true) pncHasVitB = true;
@@ -906,7 +965,7 @@
           if (d.contraception === true || (d.contraceptiveMethod && d.contraceptiveMethod.length > 0)) pncHasContra = true;
           if (d.dangerSigns && typeof d.dangerSigns === 'object') {
             Object.keys(d.dangerSigns).forEach(function(sign) {
-              if (d.dangerSigns[sign] === true) m.dangerSignCounts[sign] = (m.dangerSignCounts[sign] || 0) + 1;
+              if (d.dangerSigns[sign] === true) dangerSignsForPatient[sign] = true;
             });
           }
         });
@@ -915,37 +974,35 @@
         if (pncHasIronFolic) m.pncIronFolic++;
         if (pncHasContra) m.pncContraception++;
 
-        // PNC timing
-        if (pncVisits.length > 0) {
+        Object.keys(dangerSignsForPatient).forEach(function(sign) {
+          m.dangerSignCounts[sign] = (m.dangerSignCounts[sign] || 0) + 1;
+        });
+        if (pncPatientForCharts && Object.keys(dangerSignsForPatient).length === 0) {
+          m.dangerSignCounts['No danger signs recorded'] = (m.dangerSignCounts['No danger signs recorded'] || 0) + 1;
+        }
+
+        // PNC timing. Include PNC-status patients with missing visit timing as "Not recorded"
+        // so chart totals reconcile with the Status Distribution.
+        if (pncPatientForCharts) {
+          var days = null;
           var sortedPnc = pncVisits.slice().sort(function(a,b) {
             var dA = parseDateValue((a.data||{}).visitDate || (a.data||{}).timestamp);
             var dB = parseDateValue((b.data||{}).visitDate || (b.data||{}).timestamp);
             return (dA||0) - (dB||0);
           });
-          var firstPnc = sortedPnc[0].data || {};
-          var ppDays = firstPnc.postpartumDays;
-          if (ppDays !== null && ppDays !== undefined && ppDays !== '') {
-            var days = typeof ppDays === 'string' ? parseInt(ppDays) : Number(ppDays);
-            if (!isNaN(days) && days >= 0) {
-              if (days <= 1) m.pncTimingGroups['0-1']++;
-              else if (days <= 3) m.pncTimingGroups['2-3']++;
-              else if (days <= 7) m.pncTimingGroups['4-7']++;
-              else if (days <= 14) m.pncTimingGroups['8-14']++;
-              else if (days <= 42) m.pncTimingGroups['15-42']++;
-              else m.pncTimingGroups['>42']++;
-              if (days <= 2) m.pnc48h++;
-              if (days <= 42) { m.pnc42d++; tspAgg.pnc42d++; }
-            }
+          if (sortedPnc.length > 0) days = getFirstPncDays(sortedPnc[0].data || {}, patient);
+          if (addPncTimingGroup(m, days)) {
+            if (days <= 2) m.pnc48h++;
+            if (days <= 42) { m.pnc42d++; tspAgg.pnc42d++; }
           }
         }
         if (pncVisits.length > 0) tspAgg.newPncPatients++;
 
-        // Newborn care
-        if (patient.newbornCare && patient.newbornCare.data) {
+        // Newborn care. Count any birth/newborn evidence, not only newborn_care records.
+        if (hasNewbornEvidence(patient, hasSecond)) {
           m.nbRecords++;
-          var bwLb = patient.newbornCare.data.birth_weight_lb;
-          if (bwLb) {
-            var bwKg = bwLb / 2.20462;
+          var bwKg = getBirthWeightKg(patient);
+          if (bwKg) {
             if (bwKg < 1.5) m.bwGroups['<1.5']++;
             else if (bwKg < 2) m.bwGroups['1.5-2']++;
             else if (bwKg < 2.5) m.bwGroups['2-2.5']++;
@@ -955,15 +1012,17 @@
             else m.bwGroups['>4']++;
             if (bwKg < 2) {
               m.lowBW++;
-              var br = patient.birthRecord ? patient.birthRecord.data : null;
-              if (br && (br.kmcProvided === true || br.kangarooMotherCare === true)) m.lowBWKmc++;
+              var nb = patient.newbornCare && patient.newbornCare.data ? patient.newbornCare.data : null;
+              if ((birthRec && (isAffirmative(birthRec.kmcProvided) || isAffirmative(birthRec.kangarooMotherCare))) || (nb && (isAffirmative(nb.kmcProvided) || isAffirmative(nb.kangarooMotherCare)))) m.lowBWKmc++;
             }
+          } else {
+            m.bwGroups['Not recorded']++;
           }
         }
 
         // Resuscitation
         var immCare = patient.immediateNewbornCare ? patient.immediateNewbornCare.data : null;
-        if (immCare && immCare.gasping_or_no_breathing === true) m.resuscitated++;
+        if (immCare && isAffirmative(immCare.gasping_or_no_breathing)) m.resuscitated++;
 
         // Transfers
         if (patient.transferRecord) {
@@ -974,7 +1033,6 @@
         }
 
         // PPH
-        var birthRec = patient.birthRecord ? patient.birthRecord.data : null;
         if (birthRec) {
           if (birthRec.manualPPH === true || birthRec.pphDetected === true || birthRec.pphAutoDetected === true || birthRec.postpartumHemorrhage === true || (birthRec.totalBloodLoss && parseInt(birthRec.totalBloodLoss,10) >= 300)) m.pphCases++;
           else m.noPph++;
@@ -1027,7 +1085,7 @@
       setTextOrNoRecords('statPncTransfer', m.pncTransfer);
 
       statBreakdowns = {
-        totalClients: { title: 'Total Clients', content: [{ label: 'Total', value: m.total }, { label: 'Registered', value: m.statusRegistered }, { label: 'Antenatal Care', value: m.statusAnc }, { label: 'Labour Care', value: m.statusLabour }, { label: 'Postnatal Care', value: m.statusPnc }] },
+        totalClients: { title: 'Total Clients', content: [{ label: 'Total', value: m.total }, { label: 'Registered', value: m.statusRegistered }, { label: 'Antenatal Care', value: m.statusAnc }, { label: 'In Labour', value: m.statusLabour }, { label: 'Birthed', value: m.statusBirthed }, { label: 'Postnatal Care', value: m.statusPnc }] },
         newClients: { title: 'New Clients', content: [{ label: 'Registered in period', value: m.newClients }] },
         earlyAnc: { title: 'Early ANC Visit', content: [{ label: 'Clients with early ANC', value: m.earlyAnc }] },
         highRisk: { title: 'High Risk Clients', content: [{ label: 'Detected high-risk patients', value: m.highRisk }] },
@@ -1078,9 +1136,9 @@
       // Status Distribution
       createChart('chart-status', Object.assign({}, chartDefaults, {
         chart: { type: 'donut', height: 300 },
-        series: [m.statusRegistered, m.statusAnc, m.statusLabour, m.statusPnc],
-        labels: ['Registered', 'Antenatal Care', 'Labour Care', 'Postnatal Care'],
-        colors: [COLORS.gray, COLORS.blue, COLORS.yellow, COLORS.purple],
+        series: [m.statusRegistered, m.statusAnc, m.statusLabour, m.statusBirthed, m.statusPnc],
+        labels: ['Registered', 'Antenatal Care', 'In Labour', 'Birthed', 'Postnatal Care'],
+        colors: [COLORS.gray, COLORS.blue, COLORS.yellow, COLORS.green, COLORS.purple],
         legend: { position: 'bottom' },
         title: { text: 'Status Distribution' }
       }));
@@ -1206,75 +1264,30 @@
         }));
       }
 
-      // Oxytocin
-      createChart('chart-oxytocin', Object.assign({}, chartDefaults, {
-        chart: { type: 'donut', height: 300 },
-        series: [m.oxytocinYes, m.oxytocinNo],
-        labels: ['Oxytocin Used', 'No Oxytocin'],
-        colors: [COLORS.blue, COLORS.gray],
-        legend: { position: 'bottom' },
-        title: { text: 'Oxytocin Usage (' + m.total + ' patients)' }
-      }));
-
       // Third Stage Management
       createChart('chart-third-stage', Object.assign({}, chartDefaults, {
         chart: { type: 'donut', height: 300 },
-        series: [m.uterotonic, m.total - m.uterotonic],
+        series: [m.uterotonic, Math.max(m.nbRecords - m.uterotonic, 0)],
         labels: ['Uterotonic Given', 'Not Given'],
         colors: [COLORS.green, COLORS.gray],
         legend: { position: 'bottom' },
-        title: { text: 'Third Stage Management' }
-      }));
-
-      // Treatment Outcomes
-      var births = 0, transfers = 0, other = 0, noOutcome = 0;
-      currentDataset.forEach(function(p) {
-        var found = false;
-        var et = p.endTreatment ? p.endTreatment.data : null;
-        if (et && et.outcome) { if (et.outcome === 'birth') births++; else if (et.outcome === 'transfer') transfers++; else other++; found = true; }
-        if (!found && p.birthRecord) { births++; found = true; }
-        if (!found && p.transferRecord) { transfers++; found = true; }
-        if (!found && p.outcomeRecord) { other++; found = true; }
-        if (!found) noOutcome++;
-      });
-      createChart('chart-outcomes', Object.assign({}, chartDefaults, {
-        chart: { type: 'pie', height: 300 },
-        series: [births, transfers, other, noOutcome],
-        labels: ['Birth', 'Transfer', 'Other', 'No Outcome'],
-        colors: [COLORS.green, COLORS.red, COLORS.gray, COLORS.lightGray],
-        legend: { position: 'bottom' },
-        title: { text: 'Treatment Outcomes' }
+        title: { text: 'Third Stage Management (' + m.nbRecords + ' birth/newborn records)' }
       }));
 
       tabsRendered.labour = true;
     }
 
     function renderPNCCharts(m) {
-      // PNC Quality Radar
-      var pncTotal = m.total > 0 ? m.total : 1;
-      createChart('chart-pnc-quality', Object.assign({}, chartDefaults, {
-        chart: { type: 'radar', height: 320, toolbar: { show: false } },
-        series: [{ name: 'Coverage %', data: [
-          Math.round((m.pncVitB/pncTotal)*100), Math.round((m.pncVitA/pncTotal)*100),
-          Math.round((m.pncIronFolic/pncTotal)*100), Math.round((m.pncContraception/pncTotal)*100)
-        ] }],
-        xaxis: { categories: ['Vitamin B Complex', 'Vitamin A', 'Iron & Folic', 'Contraception'] },
-        colors: [COLORS.purple],
-        yaxis: { max: 100 },
-        title: { text: 'PNC Quality Indicators (%)' },
-        markers: { size: 4 }
-      }));
-
       // Birth Weight Distribution
       var bwKeys = Object.keys(m.bwGroups);
       var bwVals = bwKeys.map(function(k) { return m.bwGroups[k]; });
       createChart('chart-birth-weight', Object.assign({}, chartDefaults, {
         chart: { type: 'bar', height: 300, toolbar: { show: false } },
         series: [{ name: 'Newborns', data: bwVals }],
-        xaxis: { categories: bwKeys.map(function(k) { return k + ' kg'; }), title: { text: 'Weight Range' } },
+        xaxis: { categories: bwKeys.map(function(k) { return k === 'Not recorded' ? k : k + ' kg'; }), title: { text: 'Weight Range' } },
         colors: [COLORS.pink],
         plotOptions: { bar: { borderRadius: 4 } },
-        title: { text: 'Birth Weight Distribution' },
+        title: { text: 'Birth Weight Distribution (' + m.nbRecords + ' newborn records)' },
         dataLabels: { enabled: false }
       }));
 
@@ -1284,10 +1297,10 @@
       createChart('chart-pnc-timing', Object.assign({}, chartDefaults, {
         chart: { type: 'bar', height: 300, toolbar: { show: false } },
         series: [{ name: 'Patients', data: timingVals }],
-        xaxis: { categories: timingKeys.map(function(k) { return k + ' days'; }), title: { text: 'Days Postpartum' } },
+        xaxis: { categories: timingKeys.map(function(k) { return k === 'Not recorded' ? k : k + ' days'; }), title: { text: 'Days Postpartum' } },
         colors: [COLORS.blue],
         plotOptions: { bar: { borderRadius: 4 } },
-        title: { text: 'PNC Timing (First Visit)' },
+        title: { text: 'PNC Timing (First Visit, ' + m.statusPnc + ' PNC patients)' },
         dataLabels: { enabled: false }
       }));
 
@@ -1303,6 +1316,10 @@
           title: { text: 'Danger Signs Prevalence' },
           dataLabels: { enabled: true }
         }));
+      } else {
+        destroyChart('chart-danger-signs');
+        var dsEl = document.getElementById('chart-danger-signs');
+        if (dsEl) dsEl.innerHTML = '<div class="text-muted small p-3">No PNC danger-sign data recorded.</div>';
       }
 
       tabsRendered.pnc = true;
@@ -1328,26 +1345,6 @@
         colors: [COLORS.red, COLORS.green],
         legend: { position: 'bottom' },
         title: { text: 'PPH Cases' }
-      }));
-
-      // Maternal Outcome
-      createChart('chart-maternal', Object.assign({}, chartDefaults, {
-        chart: { type: 'donut', height: 300 },
-        series: [m.maternalAlive, m.maternalDead],
-        labels: ['Alive', 'Dead'],
-        colors: [COLORS.green, COLORS.red],
-        legend: { position: 'bottom' },
-        title: { text: 'Maternal Outcome' }
-      }));
-
-      // Newborn Outcome
-      createChart('chart-newborn', Object.assign({}, chartDefaults, {
-        chart: { type: 'donut', height: 300 },
-        series: [m.newbornAlive, m.newbornDead],
-        labels: ['Alive', 'Dead'],
-        colors: [COLORS.green, COLORS.red],
-        legend: { position: 'bottom' },
-        title: { text: 'Newborn Outcome' }
       }));
 
       tabsRendered.referrals = true;

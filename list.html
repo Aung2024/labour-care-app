@@ -310,6 +310,11 @@
       color: #991b1b;
     }
 
+    .status-pill.birthed {
+      background: #dcfce7;
+      color: #166534;
+    }
+
     .status-pill.postnatal {
       background: #ede9fe;
       color: #5b21b6;
@@ -389,6 +394,11 @@
     .status-badge.labour {
       background: #fee2e2;
       color: #991b1b;
+    }
+
+    .status-badge.birthed {
+      background: #dcfce7;
+      color: #166534;
     }
 
     .status-badge.postnatal {
@@ -697,8 +707,11 @@
         <div class="filter-chip" data-filter="antenatal" onclick="setStatusFilter('antenatal')">
           <i class="fas fa-baby-carriage me-1"></i> Antenatal
         </div>
-        <div class="filter-chip" data-filter="labour care" onclick="setStatusFilter('labour care')">
-          <i class="fas fa-heartbeat me-1"></i> Labour Care
+        <div class="filter-chip" data-filter="in labour" onclick="setStatusFilter('in labour')">
+          <i class="fas fa-heartbeat me-1"></i> In Labour
+        </div>
+        <div class="filter-chip" data-filter="birthed" onclick="setStatusFilter('birthed')">
+          <i class="fas fa-baby me-1"></i> Birthed
         </div>
         <div class="filter-chip" data-filter="postnatal" onclick="setStatusFilter('postnatal')">
           <i class="fas fa-hands-holding-child me-1"></i> Postnatal
@@ -1250,6 +1263,24 @@
       }
     }
 
+    function normalizePatientStatus(statusValue) {
+      const rawStatus = (statusValue || 'registered').toLowerCase().replace(/[_-]+/g, ' ');
+
+      if (rawStatus.includes('postnatal') || rawStatus.includes('postpartum') || rawStatus.includes('pnc')) {
+        return { key: 'postnatal', cssClass: 'postnatal', label: 'Postnatal Care' };
+      }
+      if (rawStatus.includes('birthed') || rawStatus.includes('delivered')) {
+        return { key: 'birthed', cssClass: 'birthed', label: 'Birthed' };
+      }
+      if (rawStatus.includes('labour') || rawStatus.includes('labor')) {
+        return { key: 'in labour', cssClass: 'labour', label: 'In Labour' };
+      }
+      if (rawStatus.includes('antenatal') || rawStatus.includes('anc')) {
+        return { key: 'antenatal', cssClass: 'antenatal', label: 'Antenatal Care' };
+      }
+      return { key: 'registered', cssClass: 'registered', label: 'Registered' };
+    }
+
     // Create patient card element
     function createPatientCard(patient) {
       console.log('Creating card for patient:', patient.name, 'ID:', patient.id);
@@ -1258,22 +1289,9 @@
       card.className = 'patient-card';
       card.onclick = () => selectPatient(patient);
       
-      const status = patient.status || 'registered';
-      let statusClass = status.toLowerCase();
-      
-      // Normalize status for display
-      let displayStatus = status;
-      if (status === 'registered') displayStatus = 'Registered';
-      else if (status === 'antenatal_care') displayStatus = 'Antenatal Care';
-      else if (status === 'labour_care') displayStatus = 'Labour Care';
-      else if (status === 'postnatal_care' || status === 'postpartum') displayStatus = 'Postnatal Care';
-      
-      // Map status to CSS classes
-      if (statusClass.includes('antenatal')) statusClass = 'antenatal';
-      else if (statusClass.includes('labour')) statusClass = 'labour';
-      else if (statusClass.includes('postnatal') || statusClass.includes('postpartum')) statusClass = 'postnatal';
-      else if (statusClass === 'registered') statusClass = 'registered';
-      else statusClass = 'antenatal'; // fallback
+      const normalizedStatus = normalizePatientStatus(patient.status);
+      const statusClass = normalizedStatus.cssClass;
+      const displayStatus = normalizedStatus.label;
       
     const isHighRisk = patient.high_risk === 'yes' || patient.high_risk === true;
       
@@ -1345,19 +1363,9 @@
       const row = document.createElement('tr');
       row.onclick = () => selectPatient(patient);
       
-      const status = (patient.status || 'registered').toLowerCase();
-      let statusClass = status;
-      if (statusClass.includes('antenatal')) statusClass = 'antenatal';
-      else if (statusClass.includes('labour')) statusClass = 'labour';
-      else if (statusClass.includes('postnatal') || statusClass.includes('postpartum')) statusClass = 'postnatal';
-      else if (statusClass === 'registered') statusClass = 'registered';
-      else statusClass = 'antenatal';
-      
-      let displayStatus = patient.status || 'Registered';
-      if (displayStatus === 'antenatal_care') displayStatus = 'Antenatal Care';
-      else if (displayStatus === 'labour_care') displayStatus = 'Labour Care';
-      else if (displayStatus === 'postnatal_care' || displayStatus === 'postpartum') displayStatus = 'Postnatal Care';
-      else if (displayStatus === 'registered') displayStatus = 'Registered';
+      const normalizedStatus = normalizePatientStatus(patient.status);
+      const statusClass = normalizedStatus.cssClass;
+      const displayStatus = normalizedStatus.label;
 
       const ageDisplay = patient.age ? `${patient.age} yrs` : '-';
       const parityDisplay = patient.parity || '-';
@@ -1484,13 +1492,7 @@
       filteredPatients = allPatients.filter(patient => {
         // Status filter
         if (currentStatusFilter !== 'all') {
-          const patientStatus = patient.status || 'registered';
-          // Handle different status formats
-          let normalizedStatus = patientStatus.toLowerCase();
-          if (normalizedStatus === 'antenatal_care') normalizedStatus = 'antenatal';
-          if (normalizedStatus === 'labour_care') normalizedStatus = 'labour care';
-          if (normalizedStatus === 'postnatal_care' || normalizedStatus === 'postpartum') normalizedStatus = 'postnatal';
-          
+          const normalizedStatus = normalizePatientStatus(patient.status).key;
           const normalizedFilter = currentStatusFilter.toLowerCase();
           if (normalizedStatus !== normalizedFilter) return false;
         }
