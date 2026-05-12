@@ -295,8 +295,7 @@
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-list-ul"></i>High Risk Factors Breakdown</h5><div id="chart-high-risk-factors"></div></div></div>
               </div>
               <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-pills"></i>Iron/Folic Acid &amp; Vitamin B Coverage</h5><div id="chart-iron-folic"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-vial"></i>Lab Screening (HIV, Syphilis &amp; co-infections)</h5><div id="hiv-screening-summary" class="small mb-2"></div><div id="chart-hiv-syphilis"></div></div></div>
+                <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-pills"></i>Iron/Folic Acid &amp; Vitamin B Coverage</h5><div id="chart-iron-folic"></div></div></div>
               </div>
             </div>
 
@@ -368,7 +367,7 @@
               </div>
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>Referral by Type</h5><div id="chart-referral-type"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>Heavy bleeding (PNC)</h5><p class="text-muted small mb-2">From postpartum visits: danger sign &quot;Heavy vaginal bleeding&quot; or lochia &quot;Heavy bleeding&quot;.</p><div id="chart-pph"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-comments"></i>Referral reason breakdown</h5><p class="text-muted small mb-2">Transfer form: structured reason or main symptoms. PNC: reason when referral is recorded as given.</p><div id="chart-referral-reasons"></div></div></div>
               </div>
             </div>
 
@@ -460,6 +459,22 @@
       var factors = [];
       (patient.antenatalVisits || []).forEach(function(v) { var d = v.data !== undefined ? v.data : v; var hr = d.high_risk || d.highRisk; if ((hr === 'yes' || hr === 'Yes') && d.risk_factors && Array.isArray(d.risk_factors)) factors.push.apply(factors, d.risk_factors); });
       return factors;
+    }
+
+    function getTransferReferralReasonKey(transferData) {
+      if (!transferData || typeof transferData !== 'object') return 'Not documented';
+      var rr = (transferData.referralReason || transferData.reasonForReferral || transferData.referral_reason || '').toString().trim().replace(/\s+/g, ' ');
+      if (rr) return rr.length > 120 ? rr.slice(0, 117) + '...' : rr;
+      var ms = (transferData.mainSymptoms || '').toString().trim().replace(/\s+/g, ' ');
+      if (ms) return ms.length > 120 ? ms.slice(0, 117) + '...' : ms;
+      return 'Not documented';
+    }
+
+    function bumpReferralReasonKey(m, key) {
+      var k = (key || '').toString().trim().replace(/\s+/g, ' ');
+      if (!k) k = 'Not documented';
+      if (k.length > 120) k = k.slice(0, 117) + '...';
+      m.referralReasonCounts[k] = (m.referralReasonCounts[k] || 0) + 1;
     }
 
     // ===================== CHART MANAGEMENT =====================
@@ -730,13 +745,13 @@
         pncVitB: 0, pncVitA: 0, pncIronFolic: 0, pncContraception: 0, pncDangerSigns: 0, pncVisitsTotal: 0,
         // Maternal/newborn outcomes
         maternalAlive: 0, maternalDead: 0, newbornAlive: 0, newbornDead: 0,
-        pphCases: 0, noPph: 0,
         oxytocinYes: 0, oxytocinNo: 0,
         ttComplete: 0, ttIncomplete: 0,
         folicGiven: 0, folicNotGiven: 0,
         hivScreenPositive: 0, syphilisScreenPositive: 0, hivScreenNegative: 0, notTested: 0,
         patientsWithLabRecord: 0, hivSyphScreenedPatients: 0,
         highRiskReasonCounts: {},
+        referralReasonCounts: {},
         // Visit distribution
         visits0: 0, visits1to3: 0, visits4plus: 0, visits8plus: 0,
         // For charts (monthly aggregation)
@@ -979,26 +994,23 @@
         var pncHasVitB = false, pncHasVitA = false, pncHasIronFolic = false, pncHasContra = false;
         var pncPatientForCharts = bucket === 'pnc' || pncVisits.length > 0;
         var dangerSignsForPatient = {};
-        var pncHeavyBleeding = false;
         pncVisits.forEach(function(v) {
           var d = v.data || {};
           if (d.vitaminBComplex === true) pncHasVitB = true;
           if (d.vitaminA === true) pncHasVitA = true;
           if (d.ironFolic === true) pncHasIronFolic = true;
           if (d.contraception === true || (d.contraceptiveMethod && d.contraceptiveMethod.length > 0)) pncHasContra = true;
+          var refG = d.referralGiven;
+          if (refG === 'Yes' || refG === 'yes') {
+            var pr = (d.referralReason || '').toString().trim().replace(/\s+/g, ' ');
+            bumpReferralReasonKey(m, pr || 'PNC referral — reason not documented');
+          }
           if (d.dangerSigns && typeof d.dangerSigns === 'object') {
-            if (d.dangerSigns.heavyBleeding === true) pncHeavyBleeding = true;
             Object.keys(d.dangerSigns).forEach(function(sign) {
               if (d.dangerSigns[sign] === true) dangerSignsForPatient[sign] = true;
             });
           }
-          var lochia = (d.vaginalBleeding != null ? String(d.vaginalBleeding) : '').trim().toLowerCase();
-          if (lochia === 'heavy bleeding') pncHeavyBleeding = true;
         });
-        if (pncVisits.length > 0) {
-          if (pncHeavyBleeding) m.pphCases++;
-          else m.noPph++;
-        }
         if (pncHasVitB) m.pncVitB++;
         if (pncHasVitA) m.pncVitA++;
         if (pncHasIronFolic) m.pncIronFolic++;
@@ -1060,6 +1072,8 @@
           if (tStatus.includes('labour')) m.labourTransfer++;
           else if (tStatus.includes('pnc') || tStatus.includes('postnatal')) m.pncTransfer++;
           else m.ancTransfer++;
+          var tdata = patient.transferRecord.data || {};
+          bumpReferralReasonKey(m, getTransferReferralReasonKey(tdata));
         }
 
         // Maternal/Newborn outcomes
@@ -1175,41 +1189,6 @@
       }));
     }
 
-    function renderHivScreeningSummary(m) {
-      var el = document.getElementById('hiv-screening-summary');
-      if (!el) return;
-      var pendingHivSyph = Math.max(0, m.total - m.hivSyphScreenedPatients);
-      el.innerHTML =
-        '<table class="table table-sm table-bordered mb-0 bg-light rounded">' +
-        '<thead><tr><th>Metric</th><th class="text-end">Count</th></tr></thead><tbody>' +
-        '<tr><td>Total clients</td><td class="text-end fw-semibold">' + m.total + '</td></tr>' +
-        '<tr><td>With any lab test record</td><td class="text-end">' + m.patientsWithLabRecord + '</td></tr>' +
-        '<tr><td>HIV &amp; syphilis both screened (≥1 result each)</td><td class="text-end">' + m.hivSyphScreenedPatients + '</td></tr>' +
-        '<tr><td>Pending HIV/syph pair</td><td class="text-end">' + pendingHivSyph + '</td></tr>' +
-        '<tr class="table-danger"><td>HIV reactive (ever)</td><td class="text-end">' + m.hivPos + '</td></tr>' +
-        '<tr class="table-danger"><td>Syphilis reactive (ever)</td><td class="text-end">' + m.syphilisPos + '</td></tr>' +
-        '<tr class="table-warning"><td>Hepatitis B reactive</td><td class="text-end">' + m.hepBPos + '</td></tr>' +
-        '<tr class="table-warning"><td>Hepatitis C reactive</td><td class="text-end">' + m.hepCPos + '</td></tr>' +
-        '<tr><td>Malaria positive</td><td class="text-end">' + m.malariaPos + '</td></tr>' +
-        '</tbody></table>';
-    }
-
-    function renderHivSyphilisBarChart(m) {
-      var notScreenedPair = Math.max(0, m.total - m.hivSyphScreenedPatients);
-      var cats = ['HIV+', 'Syphilis+', 'Hep B+', 'Hep C+', 'Malaria+', 'Screened HIV−/Syph−', 'No HIV+Syph screen'];
-      var data = [m.hivPos, m.syphilisPos, m.hepBPos, m.hepCPos, m.malariaPos, m.hivScreenNegative, notScreenedPair];
-      createChart('chart-hiv-syphilis', Object.assign({}, chartDefaults, {
-        chart: { type: 'bar', height: 360, toolbar: { show: false } },
-        series: [{ name: 'Patients', data: data }],
-        xaxis: { categories: cats, labels: { style: { fontSize: '11px' } } },
-        plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true, dataLabels: { position: 'center' } } },
-        colors: [COLORS.red, COLORS.yellow, COLORS.purple, COLORS.pink, COLORS.cyan, COLORS.green, COLORS.gray],
-        title: { text: 'Laboratory outcomes (patient-level)' },
-        dataLabels: { enabled: true },
-        legend: { show: false }
-      }));
-    }
-
     function tspStackedRows(m, key1, key2) {
       var agg = m.tspAggregates || {};
       return Object.keys(agg).map(function(t) {
@@ -1301,6 +1280,7 @@
     }
 
     function renderANCCharts(m) {
+      destroyChart('chart-hiv-syphilis');
       // ANC Visits Distribution
       createChart('chart-anc-visits', Object.assign({}, chartDefaults, {
         chart: { type: 'donut', height: 300 },
@@ -1322,9 +1302,6 @@
         legend: { position: 'bottom' },
         title: { text: 'Iron/Folic Acid Coverage (' + m.total + ' patients)' }
       }));
-
-      renderHivScreeningSummary(m);
-      renderHivSyphilisBarChart(m);
 
       tabsRendered.anc = true;
     }
@@ -1445,6 +1422,8 @@
     }
 
     function renderReferralsCharts(m) {
+      destroyChart('chart-pph');
+      destroyChart('chart-referral-reasons');
       // Referral by Type
       createChart('chart-referral-type', Object.assign({}, chartDefaults, {
         chart: { type: 'bar', height: 300, toolbar: { show: false } },
@@ -1456,20 +1435,23 @@
         dataLabels: { enabled: true }
       }));
 
-      // PNC heavy bleeding (same counters as m.pphCases / m.noPph; patients with ≥1 PNC visit only)
-      var pncHeavyDenom = m.pphCases + m.noPph;
-      if (pncHeavyDenom === 0) {
-        destroyChart('chart-pph');
-        var pphEl = document.getElementById('chart-pph');
-        if (pphEl) pphEl.innerHTML = '<div class="text-muted small p-3">No PNC visit data in this period — heavy bleeding cannot be assessed.</div>';
+      var reasonEntries = Object.entries(m.referralReasonCounts || {})
+        .filter(function(e) { return e[1] > 0; })
+        .sort(function(a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); })
+        .slice(0, 15);
+      if (!reasonEntries.length) {
+        var rrEl = document.getElementById('chart-referral-reasons');
+        if (rrEl) rrEl.innerHTML = '<div class="text-muted small p-3">No referral reason text in this period (transfer records or PNC referrals with reason).</div>';
       } else {
-        createChart('chart-pph', Object.assign({}, chartDefaults, {
-          chart: { type: 'donut', height: 300 },
-          series: [m.pphCases, m.noPph],
-          labels: ['Heavy bleeding', 'No heavy bleeding'],
-          colors: [COLORS.red, COLORS.green],
-          legend: { position: 'bottom' },
-          title: { text: 'PNC heavy bleeding (' + pncHeavyDenom + ' with PNC visits)' }
+        createChart('chart-referral-reasons', Object.assign({}, chartDefaults, {
+          chart: { type: 'bar', height: Math.max(300, reasonEntries.length * 32), toolbar: { show: false } },
+          series: [{ name: 'Count', data: reasonEntries.map(function(e) { return e[1]; }) }],
+          xaxis: { categories: reasonEntries.map(function(e) { return e[0]; }), labels: { style: { fontSize: '11px' } } },
+          colors: [COLORS.blue],
+          plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '72%' } },
+          title: { text: 'Referral reason breakdown' },
+          dataLabels: { enabled: reasonEntries.length < 18 },
+          legend: { show: false }
         }));
       }
 
