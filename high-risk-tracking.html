@@ -431,9 +431,9 @@
     var T = {
       en: {
         title: 'High Risk Tracking',
-        info: 'Patients with at least one ANC visit marked "high risk." Track actions and close the follow-up cycle.',
+        info: 'High-risk clients in your access scope (same detection rules as the dashboard). Track actions and close the follow-up cycle.',
         loading: 'Loading patients and ANC visits...',
-        empty: 'No high-risk antenatal patients in your access scope.',
+        empty: 'No high-risk patients in your access scope.',
         offline: 'High Risk Tracking needs an internet connection.',
         colName: 'Patient',
         colPhone: 'Phone',
@@ -481,9 +481,9 @@
       },
       mm: {
         title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
-        info: 'ဤစာရင်းတွင် High Risk သတ်မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ လိုအပ်လျှင် ဖုန်းခေါ်ပြီး Follow up လိုက်ပေးပါ။',
+        info: 'Dashboard နှင့် စည်းမျဉ်းတူသော အန္တရာယ်မြင့် လူနာများ (ANC/မီးဖွား/နောက်ပိုင်း စောင့်ရှောက်မှု)။ Follow up လိုက်ပါ။',
         loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
-        empty: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိသေးပါ။',
+        empty: 'သင့်အခွင့်အရေးအတွင်း အန္တရာယ်မြင့် လူနာ မရှိသေးပါ။',
         offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက် လိုအပ်သည်။',
         colName: 'လူနာ',
         colPhone: 'ဖုန်း',
@@ -591,13 +591,6 @@
     function isRegionalOfficerRole(role) {
       if (!role || typeof role !== 'string') return false;
       return role === 'Regional Officer' || role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer';
-    }
-
-    function isAntenatalPatient(p) {
-      var s = (p.status || 'registered').toLowerCase();
-      if (s.indexOf('labour') !== -1) return false;
-      if (s.indexOf('postnatal') !== -1 || s.indexOf('postpartum') !== -1) return false;
-      return true;
     }
 
     function formatDateVal(v) {
@@ -1260,11 +1253,11 @@
 
       try {
         var patients = await fetchPatientsForRole(db, user, userRole);
-        var antenatalOnly = patients.filter(isAntenatalPatient);
 
-        var enriched = await mapWithConcurrency(antenatalOnly, CONCURRENCY, async function (p) {
+        var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
           var visits = await fetchVisitsForPatient(db, p.id);
-          var bundle = { antenatalVisits: visits, registration: p };
+          var reg = p.profile || p.registration || p;
+          var bundle = { antenatalVisits: visits, registration: reg };
           if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
 
           var pncDocs = [], summaryData = null, labList = [], actions = [];
