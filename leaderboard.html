@@ -592,11 +592,25 @@
     let currentUser = null;
     let userRole = null;
     let userRegion = null;
+    let currentUserEmail = null;
     let allMidwives = [];
 
     function isRegionalOfficer() {
       if (!userRole || typeof userRole !== 'string') return false;
       return userRole.toLowerCase().replace(/\s+/g, ' ').trim() === 'regional officer';
+    }
+
+    function normalizeEmail(email) {
+      return String(email || '').trim().toLowerCase();
+    }
+
+    function isMohEmail(email) {
+      const normalized = normalizeEmail(email);
+      return normalized.includes('@') && normalized.endsWith('moh.com');
+    }
+
+    function shouldApplyMohOnlyFilter() {
+      return isMohEmail(currentUserEmail);
     }
 
     // Initialize page
@@ -617,7 +631,14 @@
           const data = userDoc.data();
           userRole = data.role;
           userRegion = (data.region || '').trim() || null;
-          console.log('Leaderboard user:', { role: userRole, region: userRegion, isRegionalOfficer: isRegionalOfficer() });
+          currentUserEmail = data.email || currentUser.email || '';
+          console.log('Leaderboard user:', {
+            role: userRole,
+            region: userRegion,
+            email: currentUserEmail,
+            isRegionalOfficer: isRegionalOfficer(),
+            mohOnlyView: shouldApplyMohOnlyFilter()
+          });
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -630,7 +651,13 @@
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('leaderboardContent').style.display = 'none';
 
-        console.log('Loading leaderboard...', { userRole, userRegion, isRegionalOfficer: isRegionalOfficer() });
+        console.log('Loading leaderboard...', {
+          userRole,
+          userRegion,
+          currentUserEmail,
+          isRegionalOfficer: isRegionalOfficer(),
+          mohOnlyView: shouldApplyMohOnlyFilter()
+        });
 
         let midwivesSnap1, midwivesSnap2;
         if (isRegionalOfficer() && userRegion) {
@@ -665,10 +692,26 @@
           return;
         }
 
-        console.log(`Found ${allMidwifeDocs.size} midwives`);
+        let midwifeArray = Array.from(allMidwifeDocs.values());
+        if (shouldApplyMohOnlyFilter()) {
+          midwifeArray = midwifeArray.filter((doc) => {
+            const data = doc.data ? doc.data() : {};
+            return isMohEmail(data.email);
+          });
+        }
+
+        if (midwifeArray.length === 0) {
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('emptyState').innerHTML = shouldApplyMohOnlyFilter()
+            ? '<i class="fas fa-filter"></i><p>No @moh.com midwife accounts found for leaderboard.</p>'
+            : '<i class="fas fa-trophy"></i><p>No midwives found</p>';
+          return;
+        }
+
+        console.log(`Found ${midwifeArray.length} midwives after filters`);
 
         allMidwives = [];
-        const midwifeArray = Array.from(allMidwifeDocs.values());
         
         // Update loading message with progress
         const updateLoadingMessage = (current, total) => {

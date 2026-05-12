@@ -571,7 +571,13 @@
         }
       } catch (error) {
         console.error('Error updating email:', error);
-        const msg = error.message || (error.details ? error.details : 'Failed to update email. Make sure the Cloud Function is deployed.');
+        let msg = error.message || (error.details ? error.details : 'Failed to update email.');
+        const raw = String((error && (error.message || error.details || error.code)) || '').toLowerCase();
+        if (raw.includes('internal') || raw.includes('404') || raw.includes('not found') || raw.includes('cors')) {
+          msg =
+            'Email update backend is not available. Cloud Function "updateUserEmail" is not deployed in this Firebase project (or project is not on Blaze plan). ' +
+            'Please deploy functions after enabling Blaze, or use the admin script.';
+        }
         errorEl.textContent = msg;
         errorEl.classList.remove('d-none');
       } finally {
