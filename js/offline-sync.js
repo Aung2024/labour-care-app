@@ -180,6 +180,8 @@
             let include = false;
             if (nr === "super admin" || nr === "admin") {
               include = true;
+            } else if (nr === "central") {
+              include = true;
             } else if (nr === "tmo") {
               include = !!(township && d.township === township);
             } else if (nr === "regional officer") {
@@ -358,6 +360,17 @@
       const scope = township;
 
       if (r === "super admin" || r === "admin") {
+        return runQuery(db.collection("patients")).then(function (snap) {
+          patientSnaps = [];
+          if (snap && snap.forEach) {
+            snap.forEach(function (d) {
+              patientSnaps.push(d);
+            });
+          }
+          return LabourCareOffline._deepMirrorPatients(patientSnaps);
+        });
+      }
+      if (r === "central") {
         return runQuery(db.collection("patients")).then(function (snap) {
           patientSnaps = [];
           if (snap && snap.forEach) {

@@ -3,25 +3,30 @@
  * Improves page load speed and navigation performance
  */
 
-// Track page load times
-const PAGE_LOAD_TRACKER = {
-  startTime: null,
-  loadTime: null
-};
-
 /**
  * Initialize performance optimizations
  */
 function initPerformanceOptimizations() {
-  // Track page load time
-  if (window.performance && window.performance.timing) {
-    PAGE_LOAD_TRACKER.startTime = window.performance.timing.navigationStart;
-    
-    window.addEventListener('load', () => {
-      PAGE_LOAD_TRACKER.loadTime = window.performance.timing.loadEventEnd - PAGE_LOAD_TRACKER.startTime;
-      console.log('📊 Page load time:', PAGE_LOAD_TRACKER.loadTime, 'ms');
-    });
-  }
+  // Track page load time (Navigation Timing Level 2; avoids bogus values from legacy timing)
+  window.addEventListener('load', () => {
+    let loadMs = null;
+    try {
+      const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      if (nav && typeof nav.loadEventEnd === 'number' && typeof nav.startTime === 'number') {
+        loadMs = Math.round(nav.loadEventEnd - nav.startTime);
+      } else if (window.performance && window.performance.timing) {
+        const t = window.performance.timing;
+        if (t.loadEventEnd > 0 && t.navigationStart > 0) {
+          loadMs = t.loadEventEnd - t.navigationStart;
+        }
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    if (loadMs != null && loadMs >= 0 && loadMs < 3600000) {
+      console.log('📊 Page load time:', loadMs, 'ms');
+    }
+  });
   
   // Optimize back/forward navigation
   optimizeNavigation();

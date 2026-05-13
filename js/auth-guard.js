@@ -236,7 +236,9 @@ async function verifyUserInFirestore(userId) {
     }
     
     // iOS/SAFARI COMPATIBLE: Use smartFirestoreQuery instead of direct .get()
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+    const isIOS =
+      /iPhone|iPad|iPod/.test(navigator.userAgent || "") ||
+      (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const userQuery = firebase.firestore()
       .collection('users')
       .doc(userId);

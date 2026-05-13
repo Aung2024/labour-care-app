@@ -674,7 +674,7 @@
         <div class="page-subtitle">Choose a patient to access comprehensive care management</div>
       </div>
       <div class="header-right">
-        <a href="index.html" class="btn btn-outline-light btn-sm me-2">
+        <a href="home.html" class="btn btn-outline-light btn-sm me-2">
           <i class="fas fa-home me-2"></i>Home
         </a>
         <button class="btn btn-outline-light btn-sm" onclick="firebase.auth().signOut(); localStorage.clear(); sessionStorage.clear(); window.location='login.html';">
@@ -808,6 +808,7 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/moh-scope-utils.js"></script>
 
   <script>
     if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
@@ -817,6 +818,14 @@
     }
     let currentUser = null;
     let userRole = null;
+    let currentViewerEmail = null;
+
+    function isLabourCareAppleMobileOrTablet() {
+      var ua = navigator.userAgent || "";
+      if (/iPhone|iPad|iPod/i.test(ua)) return true;
+      if (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) return true;
+      return false;
+    }
     let allPatients = [];
     let filteredPatients = [];
     let currentStatusFilter = 'all';
@@ -846,7 +855,7 @@
       currentUser = resolvedUser;
       
       // Detect iOS
-      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const isIOS = isLabourCareAppleMobileOrTablet();
       
       // Get user role using smart query - CRITICAL: must succeed for app to work
       try {
@@ -858,15 +867,18 @@
       
         if (userDoc && userDoc.exists) {
         userRole = userDoc.data().role;
+          currentViewerEmail = (userDoc.data().email || user.email || "").trim();
           console.log('✅ User role loaded:', userRole);
         } else {
           console.warn('⚠️ User document not found, defaulting to Midwife');
           userRole = 'Midwife'; // Default role
+          currentViewerEmail = (user && user.email) || '';
         }
       } catch (error) {
         console.error('❌ Error loading user role:', error);
         console.warn('⚠️ Defaulting to Midwife role - app may have limited functionality');
         userRole = 'Midwife'; // Default to Midwife if role load fails
+        currentViewerEmail = (user && user.email) || '';
       }
       
       // Load recent patients
@@ -907,6 +919,13 @@
           const mergedLocal = await mergePendingPatients(localList || []);
           if (mergedLocal.length > 0) {
             allPatients = mergedLocal.slice();
+            if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(currentViewerEmail || (currentUser && currentUser.email) || "") && allPatients.length) {
+              try {
+                allPatients = await MohScopeUtils.filterPatientsByMohCreatorEmails(allPatients, firebase.firestore(), smartFirestoreQuery);
+              } catch (e) {
+                console.warn("MOH scope filter skipped (fast path):", e);
+              }
+            }
             allPatients.sort(function (a, b) {
               const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
               const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
@@ -922,6 +941,13 @@
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
           allPatients = await mergePendingPatients(list || []);
+          if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(currentViewerEmail || (currentUser && currentUser.email) || "") && allPatients.length) {
+            try {
+              allPatients = await MohScopeUtils.filterPatientsByMohCreatorEmails(allPatients, firebase.firestore(), smartFirestoreQuery);
+            } catch (e) {
+              console.warn("MOH scope filter skipped (offline):", e);
+            }
+          }
           allPatients.sort(function (a, b) {
             const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
             const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
@@ -941,7 +967,7 @@
 
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const isIOS = isLabourCareAppleMobileOrTablet();
         let query = db.collection('patients');
 
         // Apply role-based filtering
@@ -1111,6 +1137,23 @@
           } else {
             console.warn('⚠️ Super Admin query returned empty result');
           }
+        } else if (userRole === 'Central') {
+          console.log('Loading as Central (all patients nationwide)...');
+          const snapshot = await smartFirestoreQuery(
+            Promise.resolve(query),
+            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+          );
+          allPatients = [];
+          if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+            snapshot.forEach(function (doc) {
+              if (doc && doc.id && doc.data) {
+                allPatients.push({ id: doc.id, ...doc.data() });
+              }
+            });
+            console.log('✅ Loaded', allPatients.length, 'patients for Central');
+          } else {
+            console.warn('⚠️ Central query returned empty result');
+          }
         } else {
           console.warn('⚠️ Unknown user role:', userRole, '- defaulting to no access');
           // Default: no access
@@ -1134,6 +1177,14 @@
           }
         }
         allPatients = await mergePendingPatients(allPatients || []);
+
+        if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(currentViewerEmail || (currentUser && currentUser.email) || "") && allPatients.length) {
+          try {
+            allPatients = await MohScopeUtils.filterPatientsByMohCreatorEmails(allPatients, firebase.firestore(), smartFirestoreQuery);
+          } catch (e) {
+            console.warn("MOH scope filter skipped:", e);
+          }
+        }
 
         console.log('✅ Loaded', allPatients.length, 'patients total');
 

@@ -139,7 +139,11 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
     fallbackToCache = true
   } = options;
 
-  const isIOSDetected = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+  const isIOSDetected =
+    /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+    (typeof navigator !== "undefined" &&
+      navigator.platform === "MacIntel" &&
+      navigator.maxTouchPoints > 1);
 
   // Prefer cache on iOS if requested
   if (preferCache && isIOSDetected) {

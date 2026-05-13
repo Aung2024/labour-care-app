@@ -35,6 +35,7 @@
   <script src="js/user-cache.js"></script>
   <script src="js/page-performance.js"></script>
   <script src="js/rbac-manager.js"></script>
+  <script src="js/moh-scope-utils.js"></script>
   <script src="js/consent-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -509,6 +510,7 @@
   <script>
     let currentUser = null;
     let userRole = null;
+    let currentViewerEmail = null;
     let patientStats = {
       antenatal: 0,
       labour: 0,
@@ -607,8 +609,26 @@
     // Start checking for auth after a short delay (let auth guard initialize first)
     setTimeout(waitForAuthAndLoad, 200);
 
-    // Get isIOS from firebase.js (already declared globally)
-    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    function isLabourCareAppleMobileOrTablet() {
+      const ua = navigator.userAgent || "";
+      if (/iPhone|iPad|iPod/i.test(ua)) return true;
+      if (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) return true;
+      return false;
+    }
+
+    // Prefer cache heuristics for Apple mobile/tablet (includes iPadOS desktop UA)
+    const isIOSDevice = isLabourCareAppleMobileOrTablet();
+
+    function applyHomeManagementHomeCards() {
+      const r = (userRole || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (r !== "tmo" && r !== "regional officer" && r !== "central") return;
+      ["homeCardPatientRegistration", "homeCardSelectPatient", "homeCardTransferPatient", "homeCardTransferRequests", "homeCardHighRisk"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "none";
+      });
+      const bell = document.querySelector(".hrt-bell-wrap");
+      if (bell) bell.style.display = "none";
+    }
     
     async function loadUserData() {
       try {
@@ -626,10 +646,14 @@
               userRole = ud.role;
               roleDisplay = ud.role === 'TMO' ? 'Township Dashboard'
                 : (ud.role && ud.role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer') ? 'Regional Dashboard'
+                : ud.role === 'Central' ? 'Central Dashboard'
                 : ud.role;
             }
+            if (ud && ud.email) currentViewerEmail = ud.email;
           }
+          currentViewerEmail = currentViewerEmail || currentUser.email || '';
           document.getElementById("userRole").textContent = roleDisplay;
+          applyHomeManagementHomeCards();
           setTimeout(function () {
             loadPatientStats();
             setTimeout(loadHrtBellCount, 2000);
@@ -653,13 +677,16 @@
         
         if (userData) {
           userRole = userData.role;
+          currentViewerEmail = userData.email || currentUser.email || '';
           
           document.getElementById("userEmail").textContent = currentUser.email;
           // Display labels: Regional Officer → Regional Dashboard, TMO → Township Dashboard
           const roleDisplay = userData.role === "TMO" ? "Township Dashboard"
             : (userData.role && userData.role.toLowerCase().replace(/\s+/g, " ") === "regional officer") ? "Regional Dashboard"
+            : userData.role === "Central" ? "Central Dashboard"
             : userData.role;
           document.getElementById("userRole").textContent = roleDisplay;
+          applyHomeManagementHomeCards();
           
           // Show admin link if Super Admin
           const adminCard = document.getElementById("adminCard");
@@ -693,6 +720,8 @@
         // Still show the page even if user data fails
         document.getElementById("userEmail").textContent = currentUser.email || 'User';
         document.getElementById("userRole").textContent = 'Loading...';
+        currentViewerEmail = currentUser.email || '';
+        applyHomeManagementHomeCards();
         // Try to load stats anyway (might work with cached data)
         loadPatientStats();
       }
@@ -795,8 +824,12 @@
             if (u && u.region) ts = u.region;
           }
           const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
-          for (let i = 0; i < list.length; i++) {
-            const data = list[i];
+          let listFiltered = list || [];
+          if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(currentViewerEmail || currentUser.email || "")) {
+            listFiltered = await MohScopeUtils.filterPatientsByMohCreatorEmails(listFiltered, firebase.firestore(), smartFirestoreQuery);
+          }
+          for (let i = 0; i < listFiltered.length; i++) {
+            const data = listFiltered[i];
             let status = data.status || data.treatmentStatus || 'antenatal';
             if (status === 'active') status = 'antenatal';
             if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
@@ -842,8 +875,8 @@
         
         // Load patient statistics based on user role with timeout handling
         // OPTIMIZED: Use shorter timeouts and batch processing
-        if (userRole === "Super Admin" || userRole === "admin") {
-          // Super Admin sees all patients
+        if (userRole === "Super Admin" || userRole === "admin" || userRole === "Central") {
+          // Super Admin / Central: all patients (Central is nationwide management)
           const patientsQuery = db.collection("patients");
           querySnapshot = await smartFirestoreQuery(
             Promise.resolve(patientsQuery),
@@ -991,16 +1024,29 @@
           return;
         }
 
-        // Process query results for Super Admin and TMO
-        // OPTIMIZED: Process in batches to avoid blocking UI
+        // Process query results for Super Admin, Central, TMO, and Regional Officer
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
           scheduleFullMirrorPull();
           return;
         }
         
-        const docsArray = querySnapshot.docs;
-        const batchSize = 20; // Larger batches for Super Admin/TMO
+        let docsArray = querySnapshot.docs.slice();
+        const viewerMoh = window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(currentViewerEmail || currentUser.email || "");
+        if (viewerMoh && docsArray.length) {
+          const plainObjs = docsArray.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+          const filteredPlain = await MohScopeUtils.filterPatientsByMohCreatorEmails(plainObjs, db, smartFirestoreQuery);
+          const idSet = new Set(filteredPlain.map(function (p) { return p.id; }));
+          docsArray = docsArray.filter(function (d) { return idSet.has(d.id); });
+        }
+
+        const batchSize = 20; // Larger batches for Super Admin/TMO/Regional/Central
+        
+        if (!docsArray.length) {
+          updateStatsDisplay();
+          scheduleFullMirrorPull();
+          return;
+        }
         
         for (let i = 0; i < docsArray.length; i += batchSize) {
           const batch = docsArray.slice(i, i + batchSize);
@@ -1072,6 +1118,8 @@
 
     async function loadHrtBellCount() {
       if (!navigator.onLine || !currentUser || !userRole) return;
+      const rSkip = (userRole || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (rSkip === "tmo" || rSkip === "regional officer" || rSkip === "central") return;
       try {
         var db = firebase.firestore();
         var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -1333,7 +1381,7 @@
     <!-- Care Modules Grid -->
     <div class="care-modules">
       <!-- Patient Registration -->
-      <div class="care-card registration" onclick="navigateToCare('registration')">
+      <div class="care-card registration" id="homeCardPatientRegistration" onclick="navigateToCare('registration')">
         <div class="care-icon">
           <i class="fas fa-user-plus"></i>
         </div>
@@ -1350,7 +1398,7 @@
       </div>
 
       <!-- Select Patient for Care -->
-      <div class="care-card primary" onclick="navigateToCare('select-patient')">
+      <div class="care-card primary" id="homeCardSelectPatient" onclick="navigateToCare('select-patient')">
         <div class="care-icon">
           <i class="fas fa-user-check"></i>
         </div>
@@ -1367,7 +1415,7 @@
       </div>
 
       <!-- Transfer Patient -->
-      <div class="care-card primary" onclick="navigateToCare('transfer-patient')">
+      <div class="care-card primary" id="homeCardTransferPatient" onclick="navigateToCare('transfer-patient')">
         <div class="care-icon">
           <i class="fas fa-share-square"></i>
         </div>
@@ -1381,7 +1429,7 @@
       </div>
 
       <!-- Transfer Requests -->
-      <div class="care-card primary" onclick="navigateToCare('transfer-requests')">
+      <div class="care-card primary" id="homeCardTransferRequests" onclick="navigateToCare('transfer-requests')">
         <div class="care-icon">
           <i class="fas fa-inbox"></i>
         </div>
@@ -1412,7 +1460,7 @@
       </div>
 
       <!-- High Risk Tracking (ANC visits with Risk+) -->
-      <div class="care-card high-risk" onclick="navigateToCare('high-risk-tracking')">
+      <div class="care-card high-risk" id="homeCardHighRisk" onclick="navigateToCare('high-risk-tracking')">
         <div class="care-icon" style="color: #dc2626;">
           <i class="fas fa-heart-pulse"></i>
         </div>

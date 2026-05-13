@@ -394,6 +394,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/moh-scope-utils.js"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/offline-store.js"></script>
@@ -403,7 +404,7 @@
 
   <script>
     // ===================== GLOBAL STATE =====================
-    var currentUser = null, userRole = null, userTownship = null, userRegion = null;
+    var currentUser = null, userRole = null, userTownship = null, userRegion = null, viewerEmail = '';
     var dateFilter = { start: null, end: null };
     var analyticsData = null, chartInstances = {}, statBreakdowns = {};
     var tabsRendered = { overview: false, anc: false, aggregate: false, labour: false, pnc: false, referrals: false };
@@ -549,6 +550,14 @@
         patientDocs = Array.from(combined.values());
       } else {
         patientDocs = (await db.collection('patients').get()).docs;
+      }
+
+      if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(viewerEmail) && patientDocs.length) {
+        var plainMoh = patientDocs.map(function(doc) { return Object.assign({ id: doc.id }, doc.data() || {}); });
+        var filteredMoh = await MohScopeUtils.filterPatientsByMohCreatorEmails(plainMoh, db, window.smartFirestoreQuery);
+        var keepMoh = {};
+        filteredMoh.forEach(function(p) { keepMoh[p.id] = true; });
+        patientDocs = patientDocs.filter(function(doc) { return keepMoh[doc.id]; });
       }
 
       if (!patientDocs.length) return { patients: [], totalPatients: 0 };
@@ -1631,6 +1640,7 @@
         el.innerHTML = '<option value="all">All Midwives</option>';
         var snap;
         if (userRole === 'Super Admin' || userRole === 'admin') snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
+        else if (userRole === 'Central') snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
         else if (userRole === 'Regional Officer' && userRegion) snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
         else if (userRole === 'TMO' && userTownship) snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
         else return;
@@ -1640,6 +1650,7 @@
         var midwives = [];
         snap.forEach(function(doc) {
           var d = doc.data() || {};
+          if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(viewerEmail) && !MohScopeUtils.isMohComEmail(d.email)) return;
           if (userRole === 'Regional Officer' && selectedTmo && selectedTmo !== 'all' && d.township !== selectedTmo) return;
           midwives.push({ id: doc.id, name: d.name || d.email || 'Unknown', township: d.township || '' });
         });
@@ -1647,7 +1658,7 @@
         midwives.forEach(function(mw) {
           var opt = document.createElement('option');
           opt.value = mw.id;
-          opt.textContent = (userRole === 'Super Admin' || userRole === 'admin' || userRole === 'Regional Officer') ? mw.name + ' (' + (mw.township || 'Unknown') + ')' : mw.name;
+          opt.textContent = (userRole === 'Super Admin' || userRole === 'admin' || userRole === 'Central' || userRole === 'Regional Officer') ? mw.name + ' (' + (mw.township || 'Unknown') + ')' : mw.name;
           el.appendChild(opt);
         });
 
@@ -1678,6 +1689,7 @@
       if (!title || !subtitle) return;
       switch (userRole) {
         case 'Super Admin': case 'admin': title.innerHTML = '<i class="fas fa-crown"></i> Super Admin Dashboard'; subtitle.textContent = 'Global overview'; break;
+        case 'Central': title.innerHTML = '<i class="fas fa-building-columns"></i> Central Dashboard'; subtitle.textContent = 'Nationwide overview'; break;
         case 'Regional Officer': title.innerHTML = '<i class="fas fa-map-marked-alt"></i> Regional Dashboard'; subtitle.textContent = 'Region: ' + (userRegion || 'Not set'); break;
         case 'TMO': title.innerHTML = '<i class="fas fa-hospital"></i> TMO Dashboard'; subtitle.textContent = 'Township: ' + (userTownship || 'Not set'); break;
         case 'Midwife': case 'midwife': title.innerHTML = '<i class="fas fa-user-nurse"></i> Midwife Dashboard'; subtitle.textContent = 'Your patient statistics'; break;
@@ -1693,11 +1705,12 @@
         if (!userDoc.exists) throw new Error('User profile not found');
         var userData = userDoc.data();
         userRole = userData.role; userTownship = userData.township; userRegion = userData.region;
+        viewerEmail = (userData.email || currentUser.email || '').trim();
         document.getElementById('userInfo').textContent = currentUser.email + ' (' + userRole + ')';
         updateDashboardHeader();
 
         // Show compact supervisory filters
-        if (userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin') {
+        if (userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin' || userRole === 'Central') {
           var supervisorGrid = document.getElementById('supervisorFilterGrid');
           if (supervisorGrid) supervisorGrid.style.display = 'grid';
           if (userRole === 'Regional Officer') await loadTmoFilter();

@@ -4,6 +4,7 @@
  * 
  * Roles:
  * - Super Admin: Full access to all features
+ * - Central: Nationwide management visibility (patient list scope uses @moh.com filter when the Central user is @moh.com)
  * - Regional Officer: Can view all patients in their region
  * - TMO: Township Medical Officer - can view all patients in their township
  * - Midwife: Can only view/manage their own patients
@@ -47,6 +48,38 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: true,
     manageFacilities: true,
+    viewSystemStats: true
+  },
+
+  Central: {
+    viewAllPatients: true,
+    createPatient: false,
+    editAnyPatient: false,
+    deleteAnyPatient: false,
+    viewAnyPatientDetails: true,
+
+    viewAllUsers: true,
+    approveUsers: false,
+    rejectUsers: false,
+    editUserRoles: false,
+    deleteUsers: false,
+
+    viewAllReports: true,
+    viewTownshipReports: true,
+    exportData: true,
+
+    viewSettings: true,
+    editSettings: true,
+    viewAuditLogs: false,
+
+    createAnyCareRecord: false,
+    editAnyCareRecord: false,
+    deleteAnyCareRecord: false,
+
+    transferAnyPatient: false,
+
+    accessAdminPanel: false,
+    manageFacilities: false,
     viewSystemStats: true
   },
   
@@ -261,6 +294,13 @@ function canAccessResource(resourceType, resourceId, resourceData = null) {
   if (currentUserRole === 'Super Admin') {
     return true;
   }
+
+  if (currentUserRole === 'Central') {
+    if (resourceType === 'patient' || resourceType === 'careRecord') {
+      return true;
+    }
+    return false;
+  }
   
   // For patient resources
   if (resourceType === 'patient') {
@@ -345,6 +385,22 @@ function isSuperAdmin() {
 }
 
 /**
+ * Check if user has the Central (nationwide management) role
+ */
+function isCentral() {
+  return currentUserRole === 'Central';
+}
+
+/**
+ * Management roles that use the dashboard-style home (no operational patient cards)
+ */
+function isManagementDashboardRole() {
+  if (!currentUserRole) return false;
+  var r = String(currentUserRole).toLowerCase().replace(/\s+/g, ' ').trim();
+  return r === 'tmo' || r === 'regional officer' || r === 'central';
+}
+
+/**
  * Check if user is Regional Officer
  */
 function isRegionalOfficer() {
@@ -419,6 +475,8 @@ window.RBAC = {
   getCurrentTownship: getCurrentTownship,
   getCurrentRegion: getCurrentRegion,
   isSuperAdmin: isSuperAdmin,
+  isCentral: isCentral,
+  isManagementDashboardRole: isManagementDashboardRole,
   isRegionalOfficer: isRegionalOfficer,
   isTMO: isTMO,
   isMidwife: isMidwife,

@@ -22,11 +22,14 @@ service cloud.firestore {
       // Allow all authenticated users to read basic user info for leaderboard
       allow read: if request.auth != null;
       
-      // Explicit allow for Regional Officer to read users (leaderboard - midwives in their region)
+      // Explicit allow for Regional Officer or Central to read users (leaderboard / supervision)
       allow read: if
         request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Regional Officer";
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Regional Officer"
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Central"
+        );
     }
     
     // Patient Counters collection (for patient ID generation)
@@ -123,14 +126,15 @@ service cloud.firestore {
       }
     }
 
-    // Patient Transfer Requests collection
+    // Patient Transfer Requests collection (ADD-ONLY, does not change existing patient rules)
     match /patient_transfer_requests/{requestId} {
-      // Sender creates request for themselves
+      // Sender creates transfer request
       allow create: if
         request.auth != null
         && request.resource.data.fromMidwifeId == request.auth.uid
         && request.resource.data.patientId is string
         && request.resource.data.targetMidwifeIds is list
+        && request.resource.data.targetMidwifeIds.size() > 0
         && request.resource.data.status == "pending";
 
       // Sender, listed recipients, and higher roles can read
@@ -146,11 +150,14 @@ service cloud.firestore {
               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Regional Officer"
+              || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Central"
             )
           )
         );
 
-      // Recipients can accept/reject; sender can cancel. Key identity fields cannot be changed.
+      // Recipient can accept/reject pending request.
+      // Sender can cancel pending request.
+      // Core identity fields are immutable.
       allow update: if
         request.auth != null
         && request.resource.data.patientId == resource.data.patientId
@@ -168,6 +175,9 @@ service cloud.firestore {
             && request.resource.data.status == "cancelled"
           )
         );
+
+      // No deletes in app flow
+      allow delete: if false;
     }
     
     // Provider Consents collection
