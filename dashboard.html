@@ -1848,9 +1848,34 @@
       try {
         currentUser = firebase.auth().currentUser;
         if (!currentUser) { location.href = 'login.html'; return; }
-        var userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-        if (!userDoc.exists) throw new Error('User profile not found');
-        var userData = userDoc.data();
+        var db = firebase.firestore();
+        var userRef = db.collection('users').doc(currentUser.uid);
+        var userDoc;
+        var smartQ = typeof smartFirestoreQuery === 'function' ? smartFirestoreQuery : window.smartFirestoreQuery;
+        if (typeof smartQ === 'function') {
+          userDoc = await smartQ(Promise.resolve(userRef), { preferCache: false, timeout: 20000, retries: 3, fallbackToCache: true });
+        } else {
+          userDoc = await userRef.get();
+        }
+        if (!userDoc || typeof userDoc.exists !== 'boolean') {
+          console.warn('Dashboard: user profile response inconclusive; retrying direct get()');
+          userDoc = await userRef.get();
+        }
+        var userData;
+        if (!userDoc || typeof userDoc.exists !== 'boolean') {
+          console.warn('Dashboard: using localStorage profile fallback (Safari/network)');
+          userData = {
+            role: localStorage.getItem('role') || '',
+            township: localStorage.getItem('userTownship') || '',
+            region: localStorage.getItem('userRegion') || '',
+            email: (localStorage.getItem('userEmail') || currentUser.email || '').trim()
+          };
+          if (!userData.role) throw new Error('User profile could not be loaded. Please try again or re-login.');
+        } else if (!userDoc.exists) {
+          throw new Error('User profile not found');
+        } else {
+          userData = userDoc.data();
+        }
         userRole = userData.role; userTownship = userData.township; userRegion = userData.region;
         viewerEmail = (userData.email || currentUser.email || '').trim();
         document.getElementById('userInfo').textContent = currentUser.email + ' (' + userRole + ')';

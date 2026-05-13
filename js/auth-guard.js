@@ -235,10 +235,7 @@ async function verifyUserInFirestore(userId) {
       return true;
     }
     
-    // iOS/SAFARI COMPATIBLE: Use smartFirestoreQuery instead of direct .get()
-    const isIOS =
-      /iPhone|iPad|iPod/.test(navigator.userAgent || "") ||
-      (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    // iOS/Safari: Use smartFirestoreQuery instead of direct .get()
     const userQuery = firebase.firestore()
       .collection('users')
       .doc(userId);
@@ -246,16 +243,23 @@ async function verifyUserInFirestore(userId) {
     // Use smartFirestoreQuery for iOS/Safari compatibility
     // Check both global and window scope
     const smartQuery = typeof smartFirestoreQuery !== 'undefined' ? smartFirestoreQuery : window.smartFirestoreQuery;
+    // Do not prefer cache for auth verification: empty cache + timeouts must not look like "no user".
+    // Safari/WebKit: smartFirestoreQuery's failure stub has no .exists; !undefined is true and wrongly signed users out.
     const userDoc = await smartQuery(
       Promise.resolve(userQuery),
-      { 
-        preferCache: isIOS, 
-        timeout: 8000, 
-        retries: 2, 
-        fallbackToCache: true 
+      {
+        preferCache: false,
+        timeout: 15000,
+        retries: 3,
+        fallbackToCache: true
       }
     );
-    
+
+    if (!userDoc || typeof userDoc.exists !== 'boolean') {
+      console.warn('⚠️ [AuthGuard] Inconclusive user profile response (network/Safari). Keeping session.');
+      return true;
+    }
+
     if (!userDoc.exists) {
       console.warn('⚠️ User document does not exist in Firestore');
       // Cache the negative result (shorter TTL for invalid users)

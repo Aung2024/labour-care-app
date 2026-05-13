@@ -650,10 +650,19 @@
           }
         }
         
-        // Keep auth persistent across restarts until logout.
-        console.log('Setting LOCAL persistence...');
-        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-        
+        // Keep auth persistent across restarts until logout (Safari may reject LOCAL in Private / strict storage).
+        console.log('Setting auth persistence...');
+        try {
+          await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        } catch (pe) {
+          console.warn('LOCAL persistence not available, trying SESSION:', pe && pe.message);
+          try {
+            await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+          } catch (pe2) {
+            console.warn('SESSION persistence also failed; continuing with default:', pe2 && pe2.message);
+          }
+        }
+
         console.log('Attempting Firebase sign in...');
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
         console.log('Firebase sign in successful:', userCred.user.uid);
@@ -673,7 +682,19 @@
         let userData = null;
         
         try {
-          const userDoc = await db.collection("users").doc(userCred.user.uid).get();
+          var userDoc;
+          if (typeof smartFirestoreQuery === 'function') {
+            userDoc = await smartFirestoreQuery(
+              Promise.resolve(db.collection("users").doc(userCred.user.uid)),
+              { preferCache: false, timeout: 20000, retries: 3, fallbackToCache: true }
+            );
+          } else {
+            userDoc = await db.collection("users").doc(userCred.user.uid).get();
+          }
+          if (!userDoc || typeof userDoc.exists !== 'boolean') {
+            console.warn('Firestore user profile response inconclusive; retrying direct get()');
+            userDoc = await db.collection("users").doc(userCred.user.uid).get();
+          }
           console.log('Firestore response:', userDoc.exists ? 'Document found' : 'Document not found');
           
           if (userDoc.exists) {
@@ -752,7 +773,11 @@
         
         // Reset login flag
         isLoggingIn = false;
-        
+
+        if (window.AuthGuard && typeof window.AuthGuard.clearCache === 'function') {
+          window.AuthGuard.clearCache();
+        }
+
         // Show success message briefly before redirect
         messageDiv.innerHTML = '<div class="alert alert-success">Welcome back! Redirecting...</div>';
         messageDiv.className = 'text-success';
@@ -896,7 +921,7 @@
           errorMessage = 'Network error. Please check your internet connection and try again.';
           alertClass = 'alert-warning';
           icon = 'fas fa-wifi';
-        } else if (err.code === 'auth/internal-error' || err.message.includes('INVALID_LOGIN_CREDENTIALS')) {
+        } else if (err.code === 'auth/internal-error' || (err.message && err.message.includes('INVALID_LOGIN_CREDENTIALS'))) {
           errorMessage = 'Invalid email or password. Please check your credentials and try again.';
           icon = 'fas fa-shield-alt';
         } else {

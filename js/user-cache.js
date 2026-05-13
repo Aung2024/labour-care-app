@@ -82,7 +82,7 @@ async function getUserData(userId, forceRefresh = false) {
       .doc(userId);
     
     // Use smartFirestoreQuery for iOS/Safari compatibility
-    const userDoc = await smartFirestoreQuery(
+    let userDoc = await smartFirestoreQuery(
       Promise.resolve(userQuery),
       { 
         preferCache: isIOS, 
@@ -91,7 +91,21 @@ async function getUserData(userId, forceRefresh = false) {
         fallbackToCache: true 
       }
     );
-    
+
+    if (!userDoc || userDoc._smartQueryFailed || typeof userDoc.exists !== 'boolean') {
+      console.warn('⚠️ User profile response inconclusive; retrying direct get()');
+      userDoc = await userQuery.get();
+    }
+
+    if (!userDoc || typeof userDoc.exists !== 'boolean') {
+      if (USER_DATA_CACHE.data && USER_DATA_CACHE.userId === userId) {
+        console.log('⚠️ Using expired cache (Firestore inconclusive)');
+        return USER_DATA_CACHE.data;
+      }
+      console.warn('⚠️ User document could not be verified');
+      return null;
+    }
+
     if (!userDoc.exists) {
       console.warn('⚠️ User document not found');
       return null;

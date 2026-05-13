@@ -225,7 +225,9 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
 
         console.error("❌ All query attempts failed. Returning empty result.");
         console.error("Error:", error.message, error.code);
+        // Not a real QuerySnapshot/DocumentSnapshot: no boolean `exists` (doc reads must not treat !undefined as missing).
         return {
+          _smartQueryFailed: true,
           empty: true,
           size: 0,
           forEach: () => {},
