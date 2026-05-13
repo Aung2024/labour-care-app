@@ -206,6 +206,10 @@
             <div class="collapse show filter-collapse" id="dashboardFilters">
               <div class="filter-body">
                 <div id="supervisorFilterGrid" class="supervisor-filter-grid" style="display:none;">
+                  <div id="centralRegionFilterGroup" class="filter-select-group" style="display:none;">
+                    <label for="centralRegionFilter" class="form-label">Filter by Region</label>
+                    <select id="centralRegionFilter" class="form-select form-select-sm"><option value="all">All Regions</option></select>
+                  </div>
                   <div id="tmoFilterGroup" class="filter-select-group" style="display:none;">
                     <label for="tmoFilter" class="form-label">Filter by Township</label>
                     <select id="tmoFilter" class="form-select form-select-sm"><option value="all">All Townships</option></select>
@@ -1484,14 +1488,21 @@
       var el = document.getElementById('activeFilterNotice');
       var tmoEl = document.getElementById('tmoFilter');
       var midwifeEl = document.getElementById('midwifeFilter');
+      var regEl = document.getElementById('centralRegionFilter');
       var hasTmo = tmoEl && tmoEl.value && tmoEl.value !== 'all';
       var hasMidwife = midwifeEl && midwifeEl.value && midwifeEl.value !== 'all';
-      if (el) el.style.display = (dateFilter.start || dateFilter.end || hasTmo || hasMidwife) ? 'block' : 'none';
+      var hasCentralRegion = userRole === 'Central' && regEl && regEl.value && regEl.value !== 'all';
+      if (el) el.style.display = (dateFilter.start || dateFilter.end || hasTmo || hasMidwife || hasCentralRegion) ? 'block' : 'none';
     }
 
     function getSelectedTmoTownship() {
       var tmoEl = document.getElementById('tmoFilter');
       return tmoEl && tmoEl.value ? tmoEl.value : 'all';
+    }
+
+    function getSelectedCentralRegion() {
+      var el = document.getElementById('centralRegionFilter');
+      return el && el.value ? el.value : 'all';
     }
 
     async function refreshDashboard() {
@@ -1503,8 +1514,19 @@
         var dataset = analyticsData.patients || [];
 
         // Apply supervisory filters if applicable
+        var selectedCentralRegion = getSelectedCentralRegion();
+        if (userRole === 'Central' && selectedCentralRegion && selectedCentralRegion !== 'all') {
+          dataset = dataset.filter(function(p) {
+            var pr = (p.profile && (p.profile.region || '')).trim();
+            return pr === selectedCentralRegion;
+          });
+        }
+
         var selectedTmo = getSelectedTmoTownship();
         if (userRole === 'Regional Officer' && selectedTmo && selectedTmo !== 'all') {
+          dataset = dataset.filter(function(p) { return p.profile && p.profile.township === selectedTmo; });
+        }
+        if (userRole === 'Central' && selectedTmo && selectedTmo !== 'all') {
           dataset = dataset.filter(function(p) { return p.profile && p.profile.township === selectedTmo; });
         }
 
@@ -1576,8 +1598,13 @@
       dateFilter = { start: null, end: null };
       var tmoEl = document.getElementById('tmoFilter');
       var midwifeEl = document.getElementById('midwifeFilter');
+      var centralReg = document.getElementById('centralRegionFilter');
       if (tmoEl) tmoEl.value = 'all';
       if (midwifeEl) midwifeEl.value = 'all';
+      if (centralReg) centralReg.value = 'all';
+      if (userRole === 'Central') {
+        await loadCentralTmoFilter();
+      }
       await loadMidwifeFilter();
       updateFilterNotice();
       await refreshDashboard();
@@ -1632,28 +1659,148 @@
       } catch (err) { console.error('TMO filter error:', err); }
     }
 
+    /** Central: regions that appear on at least one Midwife or TMO account */
+    async function loadCentralRegionFilter() {
+      try {
+        var group = document.getElementById('centralRegionFilterGroup');
+        var el = document.getElementById('centralRegionFilter');
+        if (!group || !el || userRole !== 'Central') return;
+        group.style.display = 'block';
+        el.innerHTML = '<option value="all">All Regions</option>';
+        var db = firebase.firestore();
+        var regions = new Map();
+        var snaps = await Promise.all([
+          db.collection('users').where('role', '==', 'Midwife').get(),
+          db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; }),
+          db.collection('users').where('role', '==', 'TMO').get()
+        ]);
+        snaps.forEach(function(snap) {
+          if (!snap || typeof snap.forEach !== 'function') return;
+          snap.forEach(function(doc) {
+            var d = doc.data() || {};
+            var r = (d.region || '').trim();
+            if (r) regions.set(r, r);
+          });
+        });
+        Array.from(regions.keys()).sort().forEach(function(r) {
+          var opt = document.createElement('option');
+          opt.value = r;
+          opt.textContent = r;
+          el.appendChild(opt);
+        });
+        var fresh = el.cloneNode(true);
+        el.parentNode.replaceChild(fresh, el);
+        fresh.addEventListener('change', async function() {
+          await loadCentralTmoFilter();
+          await loadMidwifeFilter();
+          await refreshDashboard();
+        });
+      } catch (err) { console.error('Central region filter error:', err); }
+    }
+
+    /** Central: townships from user accounts in scope (same UX as Regional township filter) */
+    async function loadCentralTmoFilter() {
+      try {
+        var group = document.getElementById('tmoFilterGroup');
+        var el = document.getElementById('tmoFilter');
+        var regEl = document.getElementById('centralRegionFilter');
+        if (!group || !el || userRole !== 'Central') return;
+        group.style.display = 'block';
+        el.innerHTML = '<option value="all">All Townships</option>';
+        var db = firebase.firestore();
+        var selRegion = regEl && regEl.value ? regEl.value : 'all';
+        var byTownship = new Map();
+
+        function addFromSnap(snap) {
+          if (!snap || typeof snap.forEach !== 'function') return;
+          snap.forEach(function(doc) {
+            var d = doc.data() || {};
+            if (!d.township) return;
+            if (selRegion !== 'all' && (d.region || '').trim() !== selRegion) return;
+            byTownship.set(d.township, d.township);
+          });
+        }
+
+        if (selRegion === 'all') {
+          var s1 = await db.collection('users').where('role', '==', 'Midwife').get();
+          var s1b = await db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; });
+          var s2 = await db.collection('users').where('role', '==', 'TMO').get();
+          addFromSnap(s1);
+          addFromSnap(s1b);
+          addFromSnap(s2);
+        } else {
+          addFromSnap(await db.collection('users').where('role', '==', 'TMO').where('region', '==', selRegion).get());
+          addFromSnap(await db.collection('users').where('role', '==', 'Midwife').where('region', '==', selRegion).get());
+          addFromSnap(await db.collection('users').where('role', '==', 'midwife').where('region', '==', selRegion).get().catch(function() { return { forEach: function() {} }; }));
+        }
+
+        Array.from(byTownship.keys()).sort().forEach(function(township) {
+          var opt = document.createElement('option');
+          opt.value = township;
+          opt.textContent = township;
+          el.appendChild(opt);
+        });
+        var fresh = el.cloneNode(true);
+        el.parentNode.replaceChild(fresh, el);
+        fresh.addEventListener('change', async function() {
+          await loadMidwifeFilter();
+          await refreshDashboard();
+        });
+      } catch (err) { console.error('Central township filter error:', err); }
+    }
+
     async function loadMidwifeFilter() {
       try {
         var el = document.getElementById('midwifeFilter');
         var group = document.getElementById('midwifeFilterGroup');
         if (!el || !group) return;
         el.innerHTML = '<option value="all">All Midwives</option>';
-        var snap;
-        if (userRole === 'Super Admin' || userRole === 'admin') snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
-        else if (userRole === 'Central') snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
-        else if (userRole === 'Regional Officer' && userRegion) snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
-        else if (userRole === 'TMO' && userTownship) snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
-        else return;
+        var snap = null;
+        var centralDocList = null;
+        if (userRole === 'Super Admin' || userRole === 'admin') {
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
+        } else if (userRole === 'Central') {
+          var selR = getSelectedCentralRegion();
+          var dbf = firebase.firestore();
+          centralDocList = [];
+          if (selR === 'all') {
+            (await dbf.collection('users').where('role','==','Midwife').get()).forEach(function(d) { centralDocList.push(d); });
+            try {
+              (await dbf.collection('users').where('role','==','midwife').get()).forEach(function(d) { centralDocList.push(d); });
+            } catch (e2) {}
+          } else {
+            (await dbf.collection('users').where('role','==','Midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
+            try {
+              (await dbf.collection('users').where('role','==','midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
+            } catch (e2) {}
+          }
+          var seenIds = new Set();
+          centralDocList = centralDocList.filter(function(d) {
+            if (seenIds.has(d.id)) return false;
+            seenIds.add(d.id);
+            return true;
+          });
+        } else if (userRole === 'Regional Officer' && userRegion) {
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
+        } else if (userRole === 'TMO' && userTownship) {
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
+        } else return;
 
         group.style.display = 'block';
         var selectedTmo = getSelectedTmoTownship();
         var midwives = [];
-        snap.forEach(function(doc) {
+        function considerMidwifeDoc(doc) {
           var d = doc.data() || {};
           if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(viewerEmail) && !MohScopeUtils.isMohComEmail(d.email)) return;
           if (userRole === 'Regional Officer' && selectedTmo && selectedTmo !== 'all' && d.township !== selectedTmo) return;
+          if (userRole === 'Central' && selectedTmo && selectedTmo !== 'all' && d.township !== selectedTmo) return;
           midwives.push({ id: doc.id, name: d.name || d.email || 'Unknown', township: d.township || '' });
-        });
+        }
+        if (centralDocList && centralDocList.length) {
+          centralDocList.forEach(considerMidwifeDoc);
+        } else if (snap) {
+          snap.forEach(considerMidwifeDoc);
+        }
         midwives.sort(function(a,b) { return a.name.localeCompare(b.name); });
         midwives.forEach(function(mw) {
           var opt = document.createElement('option');
