@@ -52,16 +52,27 @@
       if (!chunk.length) return Promise.resolve();
       return Promise.all(
         chunk.map(function (uid) {
-          return queryFn(Promise.resolve(db.collection("users").doc(uid)), {
+          var userRef = db.collection("users").doc(uid);
+          function applyUserSnap(snap) {
+            if (snap && typeof snap.exists === "boolean" && snap.exists) {
+              var em = (snap.data() && snap.data().email) || "";
+              if (isMohComEmail(em)) mohOk[uid] = true;
+            }
+          }
+          return queryFn(Promise.resolve(userRef), {
             preferCache: false,
             timeout: 6000,
             retries: 1,
             fallbackToCache: true
           })
             .then(function (snap) {
-              if (snap && snap.exists) {
-                var em = (snap.data() && snap.data().email) || "";
-                if (isMohComEmail(em)) mohOk[uid] = true;
+              applyUserSnap(snap);
+              if (
+                !snap ||
+                snap._smartQueryFailed ||
+                typeof snap.exists !== "boolean"
+              ) {
+                return userRef.get().then(applyUserSnap);
               }
             })
             .catch(function () {});

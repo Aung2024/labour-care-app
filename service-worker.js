@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v24';
+const CACHE_NAME = 'mch-care-v25';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -175,6 +175,12 @@ self.addEventListener('fetch', (event) => {
             : null;
         if (docFallback) {
           return docFallback;
+        }
+        const isDoc =
+          event.request.mode === 'navigate' || event.request.destination === 'document';
+        if (isDoc) {
+          const homeFb = await cache.match('./home.html', { ignoreSearch: true });
+          if (homeFb) return homeFb;
         }
         return (await cache.match('./index.html')) || Response.error();
       }
