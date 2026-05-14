@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v25';
+const CACHE_NAME = 'mch-care-v26';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -141,10 +141,8 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
-// IMPORTANT: precache stores e.g. /antenatal-form.html but navigation is often
-// /antenatal-form.html?patient=... — default Cache.match does NOT ignore query string,
-// so offline navigations failed with ERR_FAILED until we use ignoreSearch: true.
+// Fetch: network-first, then cache (offline).
+// Cache-first broke iPad PWA: stale login/home + old firebase.js → sign-in failures and layout glitches.
 self.addEventListener('fetch', (event) => {
   if (!event.request.url.startsWith(self.location.origin)) {
     return;
@@ -156,29 +154,27 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(event.request, { ignoreSearch: true });
-      if (cached) {
-        return cached;
-      }
-
       try {
         const response = await fetch(event.request);
         if (response && response.status === 200 && response.type === 'basic') {
-          cache.put(event.request, response.clone());
+          try {
+            await cache.put(event.request, response.clone());
+          } catch (putErr) {
+            console.warn('[Service Worker] cache.put skipped:', putErr && putErr.message);
+          }
         }
         return response;
       } catch (error) {
         console.error('[Service Worker] Fetch failed:', error);
-        const docFallback =
-          event.request.mode === 'navigate' || event.request.destination === 'document'
-            ? await cache.match(event.request, { ignoreSearch: true })
-            : null;
-        if (docFallback) {
-          return docFallback;
+        const cached = await cache.match(event.request, { ignoreSearch: true });
+        if (cached) {
+          return cached;
         }
         const isDoc =
           event.request.mode === 'navigate' || event.request.destination === 'document';
         if (isDoc) {
+          const loginFb = await cache.match('./login.html', { ignoreSearch: true });
+          if (loginFb) return loginFb;
           const homeFb = await cache.match('./home.html', { ignoreSearch: true });
           if (homeFb) return homeFb;
         }
