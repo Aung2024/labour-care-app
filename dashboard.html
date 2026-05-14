@@ -518,10 +518,11 @@
 
     /** WebKit/iOS: use smartFirestoreQuery (timeouts/retries) instead of raw .get() for dashboard reads. */
     function dashboardFirestoreGet(refOrQuery, optOverrides) {
-      var opts = { preferCache: false, timeout: 28000, retries: 3, fallbackToCache: true };
+      // Shorter deadlines on Android/desktop — fewer long waits when the network is fine.
+      var opts = { preferCache: false, timeout: 12000, retries: 2, fallbackToCache: true };
       if (dashboardIsAppleWebKitClient()) {
-        opts.timeout = 45000;
-        opts.retries = 4;
+        opts.timeout = 32000;
+        opts.retries = 3;
       }
       if (optOverrides && typeof optOverrides === 'object') {
         for (var k in optOverrides) {
@@ -600,7 +601,7 @@
 
       if (!patientDocs.length) return { patients: [], totalPatients: 0 };
 
-      var BATCH_SIZE = dashboardIsAppleWebKitClient() ? 5 : 10;
+      var BATCH_SIZE = dashboardIsAppleWebKitClient() ? 6 : 15;
       var patientData = [];
       var visitDateKeys = ['visitDate','visit_date','timestamp','createdAt','created_at','date'];
       var testDateKeys = ['testDate','timestamp','createdAt','created_at','date'];
@@ -613,23 +614,15 @@
           try {
             var recCol = ref.collection('records');
             var recordIds = ['summary', 'startingTime', 'secondStage', 'thirdStage', 'birthRecord', 'endTreatment', 'transferRecord', 'outcomeRecord'];
-            var recordSnaps;
-            if (dashboardIsAppleWebKitClient()) {
-              recordSnaps = [];
-              for (var ri = 0; ri < recordIds.length; ri++) {
-                recordSnaps.push(await dashboardFirestoreGet(recCol.doc(recordIds[ri])));
-              }
-            } else {
-              recordSnaps = await Promise.all(recordIds.map(function(rid) { return dashboardFirestoreGet(recCol.doc(rid)); }));
-            }
-            var results = await Promise.all([
+            var allSnaps = await Promise.all([
               dashboardFirestoreGet(ref.collection('antenatal_visits').orderBy('visitDate','desc').limit(20)),
               dashboardFirestoreGet(ref.collection('postpartum_visits').orderBy('visitDate','desc').limit(10)),
               dashboardFirestoreGet(ref.collection('testRecords').orderBy('testDate','desc').limit(5)),
               dashboardFirestoreGet(ref.collection('newborn_care').limit(1)),
               dashboardFirestoreGet(ref.collection('immediate_newborn_care').limit(1))
-            ]);
-            var ancSnap = results[0], pncSnap = results[1], testSnap = results[2], nbSnap = results[3], immNbSnap = results[4];
+            ].concat(recordIds.map(function(rid) { return dashboardFirestoreGet(recCol.doc(rid)); })));
+            var ancSnap = allSnaps[0], pncSnap = allSnaps[1], testSnap = allSnaps[2], nbSnap = allSnaps[3], immNbSnap = allSnaps[4];
+            var recordSnaps = allSnaps.slice(5);
 
             var records = {};
             if (Array.isArray(recordSnaps)) {
@@ -677,23 +670,19 @@
         }));
         patientData.push.apply(patientData, batchResults);
         if (i + BATCH_SIZE < patientDocs.length) {
-          var interBatchMs = dashboardIsAppleWebKitClient() ? 100 : 30;
-          await new Promise(function(r) { setTimeout(r, interBatchMs); });
+          var interBatchMs = dashboardIsAppleWebKitClient() ? 40 : 0;
+          if (interBatchMs) await new Promise(function(r) { setTimeout(r, interBatchMs); });
         }
       }
 
-      // Persist for offline use (defer on iOS — large IndexedDB writes can block the main thread after a heavy build)
+      // Persist for offline use — always defer so UI is not blocked by large IndexedDB writes (Android + desktop too).
       if (navigator.onLine && window.LabourCareOffline && currentUser) {
         var payload = { allPatientEntries: patientData };
-        if (dashboardIsAppleWebKitClient()) {
-          setTimeout(function() {
-            LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload).catch(function(e) {
-              console.warn('Analytics cache save skipped:', e);
-            });
-          }, 0);
-        } else {
-          try { await LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload); } catch (e) { console.warn('Analytics cache save skipped:', e); }
-        }
+        setTimeout(function() {
+          LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload).catch(function(e) {
+            console.warn('Analytics cache save skipped:', e);
+          });
+        }, 0);
       }
 
       var filtered = patientData.filter(function(p) { return p.matchesDateFilter; });
