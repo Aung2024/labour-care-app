@@ -841,6 +841,22 @@
       return null;
     }
 
+    /** Avoid treating smartFirestoreQuery failure stubs as missing user; prefer server for role doc. */
+    async function listLoadUserDocument(userQuery, isIOS) {
+      let doc = await smartFirestoreQuery(
+        Promise.resolve(userQuery),
+        { preferCache: false, timeout: isIOS ? 22000 : 14000, retries: 3, fallbackToCache: true }
+      );
+      if (!doc || doc._smartQueryFailed || typeof doc.exists !== 'boolean') {
+        try {
+          doc = await userQuery.get();
+        } catch (e) {
+          console.warn('[list] User doc direct get failed:', e);
+        }
+      }
+      return doc;
+    }
+
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
       let resolvedUser = user;
@@ -857,28 +873,33 @@
       // Detect iOS
       const isIOS = isLabourCareAppleMobileOrTablet();
       
-      // Get user role using smart query - CRITICAL: must succeed for app to work
+      // Get user role — must not treat inconclusive Firestore stubs as "no user" (iPad Chrome / WebKit).
       try {
-        const userQuery = firebase.firestore().collection('users').doc(user.uid);
-        const userDoc = await smartFirestoreQuery(
-          Promise.resolve(userQuery),
-          { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
-        );
-      
-        if (userDoc && userDoc.exists) {
-        userRole = userDoc.data().role;
-          currentViewerEmail = (userDoc.data().email || user.email || "").trim();
+        const userQuery = firebase.firestore().collection('users').doc(resolvedUser.uid);
+        const userDoc = await listLoadUserDocument(userQuery, isIOS);
+
+        if (userDoc && typeof userDoc.exists === 'boolean' && userDoc.exists) {
+          const data = userDoc.data();
+          userRole = data.role;
+          currentViewerEmail = (data.email || resolvedUser.email || '').trim();
           console.log('✅ User role loaded:', userRole);
         } else {
-          console.warn('⚠️ User document not found, defaulting to Midwife');
-          userRole = 'Midwife'; // Default role
-          currentViewerEmail = (user && user.email) || '';
+          const lr = (localStorage.getItem('role') || '').trim();
+          if (lr) {
+            userRole = lr;
+            currentViewerEmail = (localStorage.getItem('userEmail') || resolvedUser.email || '').trim();
+            console.warn('[list] User doc missing/inconclusive; using localStorage role:', userRole);
+          } else {
+            console.warn('⚠️ User document not found, defaulting to Midwife');
+            userRole = 'Midwife';
+            currentViewerEmail = (resolvedUser && resolvedUser.email) || '';
+          }
         }
       } catch (error) {
         console.error('❌ Error loading user role:', error);
         console.warn('⚠️ Defaulting to Midwife role - app may have limited functionality');
         userRole = 'Midwife'; // Default to Midwife if role load fails
-        currentViewerEmail = (user && user.email) || '';
+        currentViewerEmail = (resolvedUser && resolvedUser.email) || '';
       }
       
       // Load recent patients
@@ -980,7 +1001,7 @@
             console.log('Trying created_by query...');
             const newSnap = await smartFirestoreQuery(
               Promise.resolve(newQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
             );
             console.log('created_by query result:', newSnap?.empty ? 'empty' : `${newSnap?.size || 0} docs`);
             
@@ -988,7 +1009,7 @@
             console.log('Trying createdBy query...');
             const oldSnap = await smartFirestoreQuery(
               Promise.resolve(oldQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
             );
             console.log('createdBy query result:', oldSnap?.empty ? 'empty' : `${oldSnap?.size || 0} docs`);
             
@@ -1041,37 +1062,33 @@
           try {
             console.log('Loading as Regional Officer...');
             const userQuery = db.collection('users').doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
-            );
+            const userDoc = await listLoadUserDocument(userQuery, isIOS);
 
-            if (userDoc && userDoc.exists) {
-              const userRegion = userDoc.data().region;
-              console.log('Regional Officer Region:', userRegion);
-              if (userRegion) {
-                query = query.where('region', '==', userRegion);
-                const snapshot = await smartFirestoreQuery(
-                  Promise.resolve(query),
-                  { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-                );
-                allPatients = [];
-                if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-                  snapshot.forEach(function (doc) {
-                    if (doc && doc.id && doc.data) {
-                      allPatients.push({ id: doc.id, ...doc.data() });
-                    }
-                  });
-                  console.log('✅ Loaded', allPatients.length, 'patients for Regional Officer');
-                } else {
-                  console.warn('⚠️ Regional Officer query returned empty result');
-                }
+            let userRegion = null;
+            if (userDoc && typeof userDoc.exists === 'boolean' && userDoc.exists) {
+              userRegion = (userDoc.data() || {}).region;
+            }
+            if (!userRegion) userRegion = (localStorage.getItem('userRegion') || '').trim() || null;
+
+            if (userRegion) {
+              query = query.where('region', '==', userRegion);
+              const snapshot = await smartFirestoreQuery(
+                Promise.resolve(query),
+                { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
+              );
+              allPatients = [];
+              if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+                snapshot.forEach(function (doc) {
+                  if (doc && doc.id && doc.data) {
+                    allPatients.push({ id: doc.id, ...doc.data() });
+                  }
+                });
+                console.log('✅ Loaded', allPatients.length, 'patients for Regional Officer');
               } else {
-                console.warn('⚠️ Regional Officer user document missing region');
-                allPatients = [];
+                console.warn('⚠️ Regional Officer query returned empty result');
               }
             } else {
-              console.warn('⚠️ Regional Officer user document not found');
+              console.warn('⚠️ Regional Officer has no region (profile and localStorage)');
               allPatients = [];
             }
           } catch (error) {
@@ -1083,24 +1100,26 @@
           try {
             console.log('Loading as TMO...');
             const userQuery = db.collection('users').doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
-            );
-            
-            if (userDoc && userDoc.exists) {
-          const userTownship = userDoc.data().township;
+            const userDoc = await listLoadUserDocument(userQuery, isIOS);
+
+            let userTownship = null;
+            if (userDoc && typeof userDoc.exists === 'boolean' && userDoc.exists) {
+              userTownship = (userDoc.data() || {}).township;
+            }
+            if (!userTownship) userTownship = (localStorage.getItem('userTownship') || '').trim() || null;
+
+            if (userTownship) {
               console.log('TMO Township:', userTownship);
-          query = query.where('township', '==', userTownship);
-              
+              query = query.where('township', '==', userTownship);
+
               const snapshot = await smartFirestoreQuery(
                 Promise.resolve(query),
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+                { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
               );
-        
-        allPatients = [];
+
+              allPatients = [];
               if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-        snapshot.forEach(doc => {
+                snapshot.forEach(function (doc) {
                   if (doc && doc.id && doc.data) {
                     allPatients.push({ id: doc.id, ...doc.data() });
                   }
@@ -1123,7 +1142,7 @@
           // Super Admin sees all patients
           const snapshot = await smartFirestoreQuery(
             Promise.resolve(query),
-            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
           );
           
           allPatients = [];
@@ -1141,7 +1160,7 @@
           console.log('Loading as Central (all patients nationwide)...');
           const snapshot = await smartFirestoreQuery(
             Promise.resolve(query),
-            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            { preferCache: false, timeout: isIOS ? 14000 : 10000, retries: 2, fallbackToCache: true }
           );
           allPatients = [];
           if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
@@ -1189,21 +1208,32 @@
         console.log('✅ Loaded', allPatients.length, 'patients total');
 
         if (navigator.onLine && window.LabourCareOffline && allPatients.length) {
-          for (let m = 0; m < allPatients.length; m++) {
-            const row = allPatients[m];
-            const pid = row.id;
-            if (String(pid).startsWith('OFFLINE-')) continue;
-            const copy = Object.assign({}, row);
-            delete copy.id;
-            await LabourCareOffline.ingestPatientRoot({
-              id: pid,
-              data: function () {
-                return copy;
+          var ingestRows = allPatients.slice();
+          var pullUid = currentUser.uid;
+          var pullRole = userRole;
+          setTimeout(function () {
+            (async function () {
+              for (var m = 0; m < ingestRows.length; m++) {
+                var row = ingestRows[m];
+                var pid = row.id;
+                if (String(pid).startsWith('OFFLINE-')) continue;
+                try {
+                  var copy = Object.assign({}, row);
+                  delete copy.id;
+                  await LabourCareOffline.ingestPatientRoot({
+                    id: pid,
+                    data: function () {
+                      return copy;
+                    }
+                  });
+                } catch (e) {
+                  console.warn('[list] ingestPatientRoot skipped:', pid, e);
+                }
               }
-            });
-          }
-          const tsPull = LabourCareOffline.scopeFilterValueForRole(userRole);
-          LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
+              var tsPull = LabourCareOffline.scopeFilterValueForRole(pullRole);
+              LabourCareOffline.fullPullForScope(pullUid, pullRole, tsPull).catch(function () {});
+            })();
+          }, 0);
         }
 
         // Sort by creation date (newest first) - optimized
