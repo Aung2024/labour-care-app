@@ -34,8 +34,14 @@ async function checkProviderConsent(userId) {
         fallbackToCache: true 
       }
     );
-    
-    if (!consentDoc || !consentDoc.exists) {
+
+    // Inconclusive snapshot (e.g. smartFirestoreQuery failure stub): do not block the app.
+    if (!consentDoc || typeof consentDoc.exists !== 'boolean') {
+      console.warn('[ConsentManager] Provider consent read inconclusive; not blocking.');
+      return { hasConsent: true, needsReconsent: false, consentData: null };
+    }
+
+    if (!consentDoc.exists) {
       return { hasConsent: false, needsReconsent: false, consentData: null };
     }
     
@@ -53,7 +59,7 @@ async function checkProviderConsent(userId) {
     };
   } catch (error) {
     console.error('Error checking provider consent:', error);
-    return { hasConsent: false, needsReconsent: false, consentData: null };
+    return { hasConsent: true, needsReconsent: false, consentData: null };
   }
 }
 

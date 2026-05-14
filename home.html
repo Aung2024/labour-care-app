@@ -572,12 +572,19 @@
       
       // Ensure body is visible (auth verified)
       document.body.classList.add('auth-verified');
+
+      // Hide TMO / Regional / Central operational cards immediately (before async role load)
+      // so navigating from Dashboard does not flash Registration / Transfer etc. on slow devices.
+      applyHomeManagementHomeCardsFromLocalStorageHint();
       
-      // Check provider consent (skip when no network or legacy offline toggle)
+      // Check provider consent (skip when offline, or for roles that do not use midwife-style provider consent)
       const _offline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
                        localStorage.getItem('offlineMode') === 'true' ||
                        (typeof navigator !== 'undefined' && navigator.onLine === false);
-      if (!_offline) {
+      const roleHint = (localStorage.getItem('role') || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const skipProviderConsent = shouldSkipProviderConsentForRoleHint(roleHint);
+
+      if (!_offline && !skipProviderConsent) {
         try {
           if (window.ConsentManager) {
             const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
@@ -591,19 +598,19 @@
         }
       }
       
-      // Load user data (non-blocking)
-      loadUserData();
-      
-      // Show page content
-      if (mainContainer) {
-        mainContainer.style.opacity = '1';
-        mainContainer.style.pointerEvents = 'auto';
+      try {
+        await loadUserData();
+      } catch (e) {
+        console.error('Home loadUserData failed:', e);
+      } finally {
+        if (mainContainer) {
+          mainContainer.style.opacity = '1';
+          mainContainer.style.pointerEvents = 'auto';
+        }
+        document.querySelectorAll('.care-card').forEach(card => {
+          card.classList.remove('loading');
+        });
       }
-      
-      // Enable all cards
-      document.querySelectorAll('.care-card').forEach(card => {
-        card.classList.remove('loading');
-      });
     }
 
     // Start checking for auth after a short delay (let auth guard initialize first)
@@ -619,15 +626,35 @@
     // Prefer cache heuristics for Apple mobile/tablet (includes iPadOS desktop UA)
     const isIOSDevice = isLabourCareAppleMobileOrTablet();
 
-    function applyHomeManagementHomeCards() {
-      const r = (userRole || "").toLowerCase().replace(/\s+/g, " ").trim();
-      if (r !== "tmo" && r !== "regional officer" && r !== "central") return;
+    function hideManagementOperationalHomeCards() {
       ["homeCardPatientRegistration", "homeCardSelectPatient", "homeCardTransferPatient", "homeCardTransferRequests", "homeCardHighRisk"].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.style.display = "none";
       });
       const bell = document.querySelector(".hrt-bell-wrap");
       if (bell) bell.style.display = "none";
+    }
+
+    function applyHomeManagementHomeCardsFromLocalStorageHint() {
+      const hint = (localStorage.getItem("role") || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (hint !== "tmo" && hint !== "regional officer" && hint !== "central") return;
+      hideManagementOperationalHomeCards();
+    }
+
+    function shouldSkipProviderConsentForRoleHint(hint) {
+      return (
+        hint === "tmo" ||
+        hint === "regional officer" ||
+        hint === "central" ||
+        hint === "super admin" ||
+        hint === "admin"
+      );
+    }
+
+    function applyHomeManagementHomeCards() {
+      const r = (userRole || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (r !== "tmo" && r !== "regional officer" && r !== "central") return;
+      hideManagementOperationalHomeCards();
     }
     
     async function loadUserData() {
