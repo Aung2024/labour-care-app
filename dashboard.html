@@ -409,8 +409,6 @@
   <script>
     // ===================== GLOBAL STATE =====================
     var currentUser = null, userRole = null, userTownship = null, userRegion = null, viewerEmail = '';
-    var dashboardInitInFlight = false;
-    var dashboardInitializedUid = null;
     var dateFilter = { start: null, end: null };
     var analyticsData = null, chartInstances = {}, statBreakdowns = {};
     var tabsRendered = { overview: false, anc: false, aggregate: false, labour: false, pnc: false, referrals: false };
@@ -508,32 +506,6 @@
       return false;
     }
 
-    /** iPhone / iPad / iPadOS desktop UA — WebKit benefits from longer Firestore deadlines and smaller parallel batches. */
-    function dashboardIsAppleWebKitClient() {
-      var ua = navigator.userAgent || '';
-      if (/iPhone|iPad|iPod/i.test(ua)) return true;
-      if (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
-      return false;
-    }
-
-    /** WebKit/iOS: use smartFirestoreQuery (timeouts/retries) instead of raw .get() for dashboard reads. */
-    function dashboardFirestoreGet(refOrQuery, optOverrides) {
-      // Shorter deadlines on Android/desktop — fewer long waits when the network is fine.
-      var opts = { preferCache: false, timeout: 12000, retries: 2, fallbackToCache: true };
-      if (dashboardIsAppleWebKitClient()) {
-        opts.timeout = 32000;
-        opts.retries = 3;
-      }
-      if (optOverrides && typeof optOverrides === 'object') {
-        for (var k in optOverrides) {
-          if (Object.prototype.hasOwnProperty.call(optOverrides, k)) opts[k] = optOverrides[k];
-        }
-      }
-      var sq = typeof smartFirestoreQuery === 'function' ? smartFirestoreQuery : window.smartFirestoreQuery;
-      if (typeof sq === 'function') return sq(Promise.resolve(refOrQuery), opts);
-      return refOrQuery.get();
-    }
-
     async function buildAnalyticsData() {
       var db = firebase.firestore();
 
@@ -568,27 +540,20 @@
       // Online path: fetch from Firestore
       var patientDocs = [];
       if (userRole === 'Regional Officer' && userRegion) {
-        var snapR = await dashboardFirestoreGet(db.collection('patients').where('region','==',userRegion));
-        patientDocs = snapR && snapR.docs ? snapR.docs.slice() : [];
+        patientDocs = (await db.collection('patients').where('region','==',userRegion).get()).docs;
       } else if (userRole === 'TMO' && userTownship) {
-        var snapT = await dashboardFirestoreGet(db.collection('patients').where('township','==',userTownship));
-        patientDocs = snapT && snapT.docs ? snapT.docs.slice() : [];
+        patientDocs = (await db.collection('patients').where('township','==',userTownship).get()).docs;
       } else if (userRole && userRole.toLowerCase() === 'midwife') {
         var results = await Promise.all([
-          dashboardFirestoreGet(db.collection('patients').where('created_by','==',currentUser.uid)),
-          dashboardFirestoreGet(db.collection('patients').where('createdBy','==',currentUser.uid)),
-          dashboardFirestoreGet(db.collection('patients').where('care_team_midwife_ids','array-contains',currentUser.uid))
+          db.collection('patients').where('created_by','==',currentUser.uid).get(),
+          db.collection('patients').where('createdBy','==',currentUser.uid).get(),
+          db.collection('patients').where('care_team_midwife_ids','array-contains',currentUser.uid).get()
         ]);
         var combined = new Map();
-        results.forEach(function(s) {
-          if (s && typeof s.forEach === 'function') {
-            s.forEach(function(doc) { if (!combined.has(doc.id)) combined.set(doc.id, doc); });
-          }
-        });
+        results.forEach(function(s) { s.forEach(function(doc) { if (!combined.has(doc.id)) combined.set(doc.id, doc); }); });
         patientDocs = Array.from(combined.values());
       } else {
-        var snapAll = await dashboardFirestoreGet(db.collection('patients'));
-        patientDocs = snapAll && snapAll.docs ? snapAll.docs.slice() : [];
+        patientDocs = (await db.collection('patients').get()).docs;
       }
 
       if (window.MohScopeUtils && MohScopeUtils.shouldApplyMohPatientFilter(viewerEmail) && patientDocs.length) {
@@ -601,7 +566,7 @@
 
       if (!patientDocs.length) return { patients: [], totalPatients: 0 };
 
-      var BATCH_SIZE = dashboardIsAppleWebKitClient() ? 6 : 15;
+      var BATCH_SIZE = 10;
       var patientData = [];
       var visitDateKeys = ['visitDate','visit_date','timestamp','createdAt','created_at','date'];
       var testDateKeys = ['testDate','timestamp','createdAt','created_at','date'];
@@ -612,25 +577,19 @@
           var profile = doc.data() || {};
           var ref = db.collection('patients').doc(doc.id);
           try {
-            var recCol = ref.collection('records');
-            var recordIds = ['summary', 'startingTime', 'secondStage', 'thirdStage', 'birthRecord', 'endTreatment', 'transferRecord', 'outcomeRecord'];
-            var allSnaps = await Promise.all([
-              dashboardFirestoreGet(ref.collection('antenatal_visits').orderBy('visitDate','desc').limit(20)),
-              dashboardFirestoreGet(ref.collection('postpartum_visits').orderBy('visitDate','desc').limit(10)),
-              dashboardFirestoreGet(ref.collection('testRecords').orderBy('testDate','desc').limit(5)),
-              dashboardFirestoreGet(ref.collection('newborn_care').limit(1)),
-              dashboardFirestoreGet(ref.collection('immediate_newborn_care').limit(1))
-            ].concat(recordIds.map(function(rid) { return dashboardFirestoreGet(recCol.doc(rid)); })));
-            var ancSnap = allSnaps[0], pncSnap = allSnaps[1], testSnap = allSnaps[2], nbSnap = allSnaps[3], immNbSnap = allSnaps[4];
-            var recordSnaps = allSnaps.slice(5);
+            var results = await Promise.all([
+              ref.collection('antenatal_visits').orderBy('visitDate','desc').limit(20).get(),
+              ref.collection('postpartum_visits').orderBy('visitDate','desc').limit(10).get(),
+              ref.collection('testRecords').orderBy('testDate','desc').limit(5).get(),
+              ref.collection('records').get(),
+              ref.collection('newborn_care').limit(1).get(),
+              ref.collection('immediate_newborn_care').limit(1).get()
+            ]);
+            var ancSnap = results[0], pncSnap = results[1], testSnap = results[2];
+            var recordsSnap = results[3], nbSnap = results[4], immNbSnap = results[5];
 
             var records = {};
-            if (Array.isArray(recordSnaps)) {
-              recordIds.forEach(function(rid, idx) {
-                var snap = recordSnaps[idx];
-                if (snap && typeof snap.exists === 'boolean' && snap.exists) records[rid] = snap;
-              });
-            }
+            if (recordsSnap && !recordsSnap.empty) recordsSnap.forEach(function(d) { records[d.id] = d; });
 
             var getRecDoc = function(name) { var d = records[name]; return d && d.exists ? d.data() || {} : null; };
             var getRecEntry = function(name) { var d = records[name]; return d && d.exists ? { id: d.id, data: d.data() || {} } : null; };
@@ -669,20 +628,12 @@
           }
         }));
         patientData.push.apply(patientData, batchResults);
-        if (i + BATCH_SIZE < patientDocs.length) {
-          var interBatchMs = dashboardIsAppleWebKitClient() ? 40 : 0;
-          if (interBatchMs) await new Promise(function(r) { setTimeout(r, interBatchMs); });
-        }
+        if (i + BATCH_SIZE < patientDocs.length) await new Promise(function(r) { setTimeout(r, 30); });
       }
 
-      // Persist for offline use — always defer so UI is not blocked by large IndexedDB writes (Android + desktop too).
+      // Persist for offline use
       if (navigator.onLine && window.LabourCareOffline && currentUser) {
-        var payload = { allPatientEntries: patientData };
-        setTimeout(function() {
-          LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload).catch(function(e) {
-            console.warn('Analytics cache save skipped:', e);
-          });
-        }, 0);
+        try { await LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, { allPatientEntries: patientData }); } catch (e) { console.warn('Analytics cache save skipped:', e); }
       }
 
       var filtered = patientData.filter(function(p) { return p.matchesDateFilter; });
@@ -1684,7 +1635,7 @@
         group.style.display = 'block';
         el.innerHTML = '<option value="all">All Townships</option>';
 
-        var snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion));
+        var snap = await firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion).get();
         var byTownship = new Map();
         snap.forEach(function(doc) {
           var d = doc.data() || {};
@@ -1719,9 +1670,9 @@
         var db = firebase.firestore();
         var regions = new Map();
         var snaps = await Promise.all([
-          dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife')),
-          dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife')).catch(function() { return { forEach: function() {} }; }),
-          dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO'))
+          db.collection('users').where('role', '==', 'Midwife').get(),
+          db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; }),
+          db.collection('users').where('role', '==', 'TMO').get()
         ]);
         snaps.forEach(function(snap) {
           if (!snap || typeof snap.forEach !== 'function') return;
@@ -1771,16 +1722,16 @@
         }
 
         if (selRegion === 'all') {
-          var s1 = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife'));
-          var s1b = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife')).catch(function() { return { forEach: function() {} }; });
-          var s2 = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO'));
+          var s1 = await db.collection('users').where('role', '==', 'Midwife').get();
+          var s1b = await db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; });
+          var s2 = await db.collection('users').where('role', '==', 'TMO').get();
           addFromSnap(s1);
           addFromSnap(s1b);
           addFromSnap(s2);
         } else {
-          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO').where('region', '==', selRegion)));
-          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife').where('region', '==', selRegion)));
-          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife').where('region', '==', selRegion)).catch(function() { return { forEach: function() {} }; }));
+          addFromSnap(await db.collection('users').where('role', '==', 'TMO').where('region', '==', selRegion).get());
+          addFromSnap(await db.collection('users').where('role', '==', 'Midwife').where('region', '==', selRegion).get());
+          addFromSnap(await db.collection('users').where('role', '==', 'midwife').where('region', '==', selRegion).get().catch(function() { return { forEach: function() {} }; }));
         }
 
         Array.from(byTownship.keys()).sort().forEach(function(township) {
@@ -1807,20 +1758,20 @@
         var snap = null;
         var centralDocList = null;
         if (userRole === 'Super Admin' || userRole === 'admin') {
-          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife'));
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
         } else if (userRole === 'Central') {
           var selR = getSelectedCentralRegion();
           var dbf = firebase.firestore();
           centralDocList = [];
           if (selR === 'all') {
-            (await dashboardFirestoreGet(dbf.collection('users').where('role','==','Midwife'))).forEach(function(d) { centralDocList.push(d); });
+            (await dbf.collection('users').where('role','==','Midwife').get()).forEach(function(d) { centralDocList.push(d); });
             try {
-              (await dashboardFirestoreGet(dbf.collection('users').where('role','==','midwife'))).forEach(function(d) { centralDocList.push(d); });
+              (await dbf.collection('users').where('role','==','midwife').get()).forEach(function(d) { centralDocList.push(d); });
             } catch (e2) {}
           } else {
-            (await dashboardFirestoreGet(dbf.collection('users').where('role','==','Midwife').where('region','==',selR))).forEach(function(d) { centralDocList.push(d); });
+            (await dbf.collection('users').where('role','==','Midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
             try {
-              (await dashboardFirestoreGet(dbf.collection('users').where('role','==','midwife').where('region','==',selR))).forEach(function(d) { centralDocList.push(d); });
+              (await dbf.collection('users').where('role','==','midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
             } catch (e2) {}
           }
           var seenIds = new Set();
@@ -1830,9 +1781,9 @@
             return true;
           });
         } else if (userRole === 'Regional Officer' && userRegion) {
-          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion));
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
         } else if (userRole === 'TMO' && userTownship) {
-          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship));
+          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
         } else return;
 
         group.style.display = 'block';
@@ -1894,39 +1845,12 @@
     }
 
     async function initializeDashboard() {
-      currentUser = firebase.auth().currentUser;
-      if (!currentUser) { location.href = 'login.html'; return; }
-      if (dashboardInitInFlight) {
-        console.log('[Dashboard] Init already in progress, skipping duplicate.');
-        return;
-      }
-      if (dashboardInitializedUid === currentUser.uid) {
-        return;
-      }
-      dashboardInitInFlight = true;
       try {
-        var db = firebase.firestore();
-        var userRef = db.collection('users').doc(currentUser.uid);
-        var userDoc = await dashboardFirestoreGet(userRef);
-        if (!userDoc || typeof userDoc.exists !== 'boolean') {
-          console.warn('Dashboard: user profile response inconclusive; retrying direct get()');
-          userDoc = await userRef.get();
-        }
-        var userData;
-        if (!userDoc || typeof userDoc.exists !== 'boolean') {
-          console.warn('Dashboard: using localStorage profile fallback (Safari/network)');
-          userData = {
-            role: localStorage.getItem('role') || '',
-            township: localStorage.getItem('userTownship') || '',
-            region: localStorage.getItem('userRegion') || '',
-            email: (localStorage.getItem('userEmail') || currentUser.email || '').trim()
-          };
-          if (!userData.role) throw new Error('User profile could not be loaded. Please try again or re-login.');
-        } else if (!userDoc.exists) {
-          throw new Error('User profile not found');
-        } else {
-          userData = userDoc.data();
-        }
+        currentUser = firebase.auth().currentUser;
+        if (!currentUser) { location.href = 'login.html'; return; }
+        var userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+        if (!userDoc.exists) throw new Error('User profile not found');
+        var userData = userDoc.data();
         userRole = userData.role; userTownship = userData.township; userRegion = userData.region;
         viewerEmail = (userData.email || currentUser.email || '').trim();
         document.getElementById('userInfo').textContent = currentUser.email + ' (' + userRole + ')';
@@ -1936,18 +1860,12 @@
         if (userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin' || userRole === 'Central') {
           var supervisorGrid = document.getElementById('supervisorFilterGrid');
           if (supervisorGrid) supervisorGrid.style.display = 'grid';
-          if (userRole === 'Central') {
-            await loadCentralRegionFilter();
-            await loadCentralTmoFilter();
-          }
           if (userRole === 'Regional Officer') await loadTmoFilter();
           await loadMidwifeFilter();
         }
         initializeFilterPanel();
 
         await refreshDashboard();
-
-        dashboardInitializedUid = currentUser.uid;
 
         // Set up lazy tab listeners
         document.querySelectorAll('#dashboardTabs button[data-bs-toggle="tab"]').forEach(function(btn) {
@@ -1960,8 +1878,6 @@
       } catch (error) {
         console.error('Dashboard init error:', error);
         document.getElementById('loadingState').innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error: ' + error.message + '</div>';
-      } finally {
-        dashboardInitInFlight = false;
       }
     }
 
