@@ -611,19 +611,33 @@
           var profile = doc.data() || {};
           var ref = db.collection('patients').doc(doc.id);
           try {
+            var recCol = ref.collection('records');
+            var recordIds = ['summary', 'startingTime', 'secondStage', 'thirdStage', 'birthRecord', 'endTreatment', 'transferRecord', 'outcomeRecord'];
+            var recordSnaps;
+            if (dashboardIsAppleWebKitClient()) {
+              recordSnaps = [];
+              for (var ri = 0; ri < recordIds.length; ri++) {
+                recordSnaps.push(await dashboardFirestoreGet(recCol.doc(recordIds[ri])));
+              }
+            } else {
+              recordSnaps = await Promise.all(recordIds.map(function(rid) { return dashboardFirestoreGet(recCol.doc(rid)); }));
+            }
             var results = await Promise.all([
               dashboardFirestoreGet(ref.collection('antenatal_visits').orderBy('visitDate','desc').limit(20)),
               dashboardFirestoreGet(ref.collection('postpartum_visits').orderBy('visitDate','desc').limit(10)),
               dashboardFirestoreGet(ref.collection('testRecords').orderBy('testDate','desc').limit(5)),
-              dashboardFirestoreGet(ref.collection('records')),
               dashboardFirestoreGet(ref.collection('newborn_care').limit(1)),
               dashboardFirestoreGet(ref.collection('immediate_newborn_care').limit(1))
             ]);
-            var ancSnap = results[0], pncSnap = results[1], testSnap = results[2];
-            var recordsSnap = results[3], nbSnap = results[4], immNbSnap = results[5];
+            var ancSnap = results[0], pncSnap = results[1], testSnap = results[2], nbSnap = results[3], immNbSnap = results[4];
 
             var records = {};
-            if (recordsSnap && !recordsSnap.empty) recordsSnap.forEach(function(d) { records[d.id] = d; });
+            if (Array.isArray(recordSnaps)) {
+              recordIds.forEach(function(rid, idx) {
+                var snap = recordSnaps[idx];
+                if (snap && typeof snap.exists === 'boolean' && snap.exists) records[rid] = snap;
+              });
+            }
 
             var getRecDoc = function(name) { var d = records[name]; return d && d.exists ? d.data() || {} : null; };
             var getRecEntry = function(name) { var d = records[name]; return d && d.exists ? { id: d.id, data: d.data() || {} } : null; };
@@ -668,9 +682,18 @@
         }
       }
 
-      // Persist for offline use
+      // Persist for offline use (defer on iOS — large IndexedDB writes can block the main thread after a heavy build)
       if (navigator.onLine && window.LabourCareOffline && currentUser) {
-        try { await LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, { allPatientEntries: patientData }); } catch (e) { console.warn('Analytics cache save skipped:', e); }
+        var payload = { allPatientEntries: patientData };
+        if (dashboardIsAppleWebKitClient()) {
+          setTimeout(function() {
+            LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload).catch(function(e) {
+              console.warn('Analytics cache save skipped:', e);
+            });
+          }, 0);
+        } else {
+          try { await LabourCareOffline.persistAnalyticsFromBuild(currentUser.uid, userRole, userTownship, payload); } catch (e) { console.warn('Analytics cache save skipped:', e); }
+        }
       }
 
       var filtered = patientData.filter(function(p) { return p.matchesDateFilter; });
