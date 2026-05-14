@@ -508,9 +508,21 @@
       return false;
     }
 
+    /** iPhone / iPad / iPadOS desktop UA — WebKit benefits from longer Firestore deadlines and smaller parallel batches. */
+    function dashboardIsAppleWebKitClient() {
+      var ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua)) return true;
+      if (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+      return false;
+    }
+
     /** WebKit/iOS: use smartFirestoreQuery (timeouts/retries) instead of raw .get() for dashboard reads. */
     function dashboardFirestoreGet(refOrQuery, optOverrides) {
       var opts = { preferCache: false, timeout: 28000, retries: 3, fallbackToCache: true };
+      if (dashboardIsAppleWebKitClient()) {
+        opts.timeout = 45000;
+        opts.retries = 4;
+      }
       if (optOverrides && typeof optOverrides === 'object') {
         for (var k in optOverrides) {
           if (Object.prototype.hasOwnProperty.call(optOverrides, k)) opts[k] = optOverrides[k];
@@ -588,7 +600,7 @@
 
       if (!patientDocs.length) return { patients: [], totalPatients: 0 };
 
-      var BATCH_SIZE = 10;
+      var BATCH_SIZE = dashboardIsAppleWebKitClient() ? 5 : 10;
       var patientData = [];
       var visitDateKeys = ['visitDate','visit_date','timestamp','createdAt','created_at','date'];
       var testDateKeys = ['testDate','timestamp','createdAt','created_at','date'];
@@ -650,7 +662,10 @@
           }
         }));
         patientData.push.apply(patientData, batchResults);
-        if (i + BATCH_SIZE < patientDocs.length) await new Promise(function(r) { setTimeout(r, 30); });
+        if (i + BATCH_SIZE < patientDocs.length) {
+          var interBatchMs = dashboardIsAppleWebKitClient() ? 100 : 30;
+          await new Promise(function(r) { setTimeout(r, interBatchMs); });
+        }
       }
 
       // Persist for offline use
@@ -1657,7 +1672,7 @@
         group.style.display = 'block';
         el.innerHTML = '<option value="all">All Townships</option>';
 
-        var snap = await firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion).get();
+        var snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion));
         var byTownship = new Map();
         snap.forEach(function(doc) {
           var d = doc.data() || {};
@@ -1692,9 +1707,9 @@
         var db = firebase.firestore();
         var regions = new Map();
         var snaps = await Promise.all([
-          db.collection('users').where('role', '==', 'Midwife').get(),
-          db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; }),
-          db.collection('users').where('role', '==', 'TMO').get()
+          dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife')),
+          dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife')).catch(function() { return { forEach: function() {} }; }),
+          dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO'))
         ]);
         snaps.forEach(function(snap) {
           if (!snap || typeof snap.forEach !== 'function') return;
@@ -1744,16 +1759,16 @@
         }
 
         if (selRegion === 'all') {
-          var s1 = await db.collection('users').where('role', '==', 'Midwife').get();
-          var s1b = await db.collection('users').where('role', '==', 'midwife').get().catch(function() { return { forEach: function() {} }; });
-          var s2 = await db.collection('users').where('role', '==', 'TMO').get();
+          var s1 = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife'));
+          var s1b = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife')).catch(function() { return { forEach: function() {} }; });
+          var s2 = await dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO'));
           addFromSnap(s1);
           addFromSnap(s1b);
           addFromSnap(s2);
         } else {
-          addFromSnap(await db.collection('users').where('role', '==', 'TMO').where('region', '==', selRegion).get());
-          addFromSnap(await db.collection('users').where('role', '==', 'Midwife').where('region', '==', selRegion).get());
-          addFromSnap(await db.collection('users').where('role', '==', 'midwife').where('region', '==', selRegion).get().catch(function() { return { forEach: function() {} }; }));
+          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'TMO').where('region', '==', selRegion)));
+          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'Midwife').where('region', '==', selRegion)));
+          addFromSnap(await dashboardFirestoreGet(db.collection('users').where('role', '==', 'midwife').where('region', '==', selRegion)).catch(function() { return { forEach: function() {} }; }));
         }
 
         Array.from(byTownship.keys()).sort().forEach(function(township) {
@@ -1780,20 +1795,20 @@
         var snap = null;
         var centralDocList = null;
         if (userRole === 'Super Admin' || userRole === 'admin') {
-          snap = await firebase.firestore().collection('users').where('role','==','Midwife').get();
+          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife'));
         } else if (userRole === 'Central') {
           var selR = getSelectedCentralRegion();
           var dbf = firebase.firestore();
           centralDocList = [];
           if (selR === 'all') {
-            (await dbf.collection('users').where('role','==','Midwife').get()).forEach(function(d) { centralDocList.push(d); });
+            (await dashboardFirestoreGet(dbf.collection('users').where('role','==','Midwife'))).forEach(function(d) { centralDocList.push(d); });
             try {
-              (await dbf.collection('users').where('role','==','midwife').get()).forEach(function(d) { centralDocList.push(d); });
+              (await dashboardFirestoreGet(dbf.collection('users').where('role','==','midwife'))).forEach(function(d) { centralDocList.push(d); });
             } catch (e2) {}
           } else {
-            (await dbf.collection('users').where('role','==','Midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
+            (await dashboardFirestoreGet(dbf.collection('users').where('role','==','Midwife').where('region','==',selR))).forEach(function(d) { centralDocList.push(d); });
             try {
-              (await dbf.collection('users').where('role','==','midwife').where('region','==',selR).get()).forEach(function(d) { centralDocList.push(d); });
+              (await dashboardFirestoreGet(dbf.collection('users').where('role','==','midwife').where('region','==',selR))).forEach(function(d) { centralDocList.push(d); });
             } catch (e2) {}
           }
           var seenIds = new Set();
@@ -1803,9 +1818,9 @@
             return true;
           });
         } else if (userRole === 'Regional Officer' && userRegion) {
-          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
+          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion));
         } else if (userRole === 'TMO' && userTownship) {
-          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
+          snap = await dashboardFirestoreGet(firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship));
         } else return;
 
         group.style.display = 'block';
@@ -1880,13 +1895,7 @@
       try {
         var db = firebase.firestore();
         var userRef = db.collection('users').doc(currentUser.uid);
-        var userDoc;
-        var smartQ = typeof smartFirestoreQuery === 'function' ? smartFirestoreQuery : window.smartFirestoreQuery;
-        if (typeof smartQ === 'function') {
-          userDoc = await smartQ(Promise.resolve(userRef), { preferCache: false, timeout: 20000, retries: 3, fallbackToCache: true });
-        } else {
-          userDoc = await userRef.get();
-        }
+        var userDoc = await dashboardFirestoreGet(userRef);
         if (!userDoc || typeof userDoc.exists !== 'boolean') {
           console.warn('Dashboard: user profile response inconclusive; retrying direct get()');
           userDoc = await userRef.get();
