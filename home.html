@@ -547,7 +547,36 @@
     setTimeout(waitForAuthAndLoad, 200);
 
     // Get isIOS from firebase.js (already declared globally)
-    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let patientStatsLoadToken = 0;
+
+    async function homeSmartQuery(queryOrDocRef, options = {}) {
+      let result = null;
+      try {
+        if (typeof smartFirestoreQuery === 'function') {
+          result = await smartFirestoreQuery(Promise.resolve(queryOrDocRef), options);
+        } else {
+          result = await queryOrDocRef.get();
+        }
+      } catch (error) {
+        console.warn('[home] smart query failed, trying direct get:', error);
+      }
+
+      const inconclusive =
+        !result ||
+        result._smartQueryFailed ||
+        (typeof result.forEach !== 'function' && typeof result.exists !== 'boolean');
+
+      if (!inconclusive) return result;
+
+      try {
+        return await queryOrDocRef.get();
+      } catch (fallbackError) {
+        console.warn('[home] direct get fallback failed:', fallbackError);
+        return result;
+      }
+    }
     
     async function loadUserData() {
       try {
@@ -558,8 +587,8 @@
         } else {
           // Fallback to direct query if cache not available
           const userQuery = db.collection("users").doc(currentUser.uid);
-          const doc = await smartFirestoreQuery(
-            Promise.resolve(userQuery),
+          const doc = await homeSmartQuery(
+            userQuery,
             { preferCache: isIOSDevice, timeout: 8000, retries: 1 }
           );
           userData = doc && doc.exists ? doc.data() : null;
@@ -659,6 +688,8 @@
       }
       
       try {
+        const runToken = ++patientStatsLoadToken;
+
         // Reset stats
         patientStats = {
           antenatal: 0,
@@ -684,8 +715,8 @@
         if (userRole === "TMO" || (userRole && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer")) {
           try {
             const userQuery = db.collection("users").doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
+            const userDoc = await homeSmartQuery(
+              userQuery,
               { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
             );
             if (userDoc && userDoc.exists) {
@@ -705,16 +736,16 @@
         if (userRole === "Super Admin" || userRole === "admin") {
           // Super Admin sees all patients
           const patientsQuery = db.collection("patients");
-          querySnapshot = await smartFirestoreQuery(
-            Promise.resolve(patientsQuery),
+          querySnapshot = await homeSmartQuery(
+            patientsQuery,
             { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
           );
         } else if (userRole === "TMO") {
           // TMO sees patients from their township
           if (userTownship) {
             const patientsQuery = db.collection("patients").where("township", "==", userTownship);
-            querySnapshot = await smartFirestoreQuery(
-              Promise.resolve(patientsQuery),
+            querySnapshot = await homeSmartQuery(
+              patientsQuery,
               { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
             );
           } else {
@@ -725,8 +756,8 @@
           // Regional Officer sees patients from their region
           if (userRegion) {
             const patientsQuery = db.collection("patients").where("region", "==", userRegion);
-            querySnapshot = await smartFirestoreQuery(
-              Promise.resolve(patientsQuery),
+            querySnapshot = await homeSmartQuery(
+              patientsQuery,
               { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
             );
           } else {
@@ -734,49 +765,26 @@
             return;
           }
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only patients they created - use smart query for iOS
-          // OPTIMIZED: Use shorter timeout and skip birth record checks for faster loading
-          let snapNew, snapOld;
+          // Midwife sees only patients they created using canonical created_by field.
+          let midwifeSnap;
           try {
-            const newQuery = db.collection("patients").where("created_by", "==", currentUser.uid);
-            snapNew = await smartFirestoreQuery(
-              Promise.resolve(newQuery),
+            const midwifeQuery = db.collection("patients").where("created_by", "==", currentUser.uid);
+            midwifeSnap = await homeSmartQuery(
+              midwifeQuery,
               { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
             );
           } catch (error) {
-            console.warn('Could not load new format patients:', error);
-            snapNew = { forEach: () => {}, docs: [], empty: true };
+            console.warn('Could not load midwife patients:', error);
+            midwifeSnap = { forEach: () => {}, docs: [], empty: true };
           }
-          
-          try {
-            const oldQuery = db.collection("patients").where("createdBy", "==", currentUser.uid);
-            snapOld = await smartFirestoreQuery(
-              Promise.resolve(oldQuery),
-              { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
-            );
-          } catch (error) {
-            console.warn('Could not load old format patients:', error);
-            snapOld = { forEach: () => {}, docs: [], empty: true };
-          }
-          
-          // Combine both snapshots
-          const combinedDocs = new Map();
-          if (snapNew && !snapNew.empty) {
-            snapNew.forEach(doc => combinedDocs.set(doc.id, doc));
-          }
-          if (snapOld && !snapOld.empty) {
-            snapOld.forEach(doc => {
-              if (!combinedDocs.has(doc.id)) {
-                combinedDocs.set(doc.id, doc);
-              }
-            });
-          }
-          
-          // OPTIMIZED: Process in batches to avoid blocking UI
-          const docsArray = Array.from(combinedDocs.values());
+
+          // Stage 1: fast stats render without deep per-patient subcollection reads.
+          const docsArray = midwifeSnap && !midwifeSnap.empty ? midwifeSnap.docs : [];
           const batchSize = 10;
+          const postnatalCandidateIds = [];
           
           for (let i = 0; i < docsArray.length; i += batchSize) {
+            if (runToken !== patientStatsLoadToken) return;
             const batch = docsArray.slice(i, i + batchSize);
             await Promise.all(batch.map(async (doc) => {
               const data = doc.data();
@@ -790,26 +798,9 @@
               if (patientStats.hasOwnProperty(status)) {
                 patientStats[status]++;
               }
-              
-              // OPTIMIZED: Skip birth record check for faster loading (can be loaded later if needed)
-              // Only check if we have time
-              if (status === 'postnatal' && i < batchSize) {
-                try {
-                  const birthRecordQuery = db.collection("patients")
-                      .doc(doc.id)
-                      .collection("records")
-                    .doc("birthRecord");
-                  const birthRecord = await smartFirestoreQuery(
-                    Promise.resolve(birthRecordQuery),
-                    { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
-                  );
-                  
-                  if (birthRecord && birthRecord.exists) {
-                    patientStats.baby++;
-                  }
-                } catch (error) {
-                  // Silently skip if can't load birth record
-                }
+
+              if (status === 'postnatal' && postnatalCandidateIds.length < 120) {
+                postnatalCandidateIds.push(doc.id);
               }
               
               patientStats.total++;
@@ -825,6 +816,36 @@
           }
           
           updateStatsDisplay();
+
+          // Stage 2: background refinement for baby counter.
+          setTimeout(async () => {
+            for (let i = 0; i < postnatalCandidateIds.length; i++) {
+              if (runToken !== patientStatsLoadToken) return;
+              const patientId = postnatalCandidateIds[i];
+              try {
+                const birthRecordRef = db.collection("patients")
+                  .doc(patientId)
+                  .collection("records")
+                  .doc("birthRecord");
+                const birthRecord = await homeSmartQuery(
+                  birthRecordRef,
+                  { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
+                );
+                if (birthRecord && birthRecord.exists) {
+                  patientStats.baby++;
+                }
+              } catch (error) {
+                // Background refinement only.
+              }
+
+              if (i % 10 === 0) {
+                updateStatsDisplay();
+                await new Promise(resolve => setTimeout(resolve, 0));
+              }
+            }
+            updateStatsDisplay();
+          }, 0);
+
           return;
         } else {
           // No access for other roles
@@ -832,8 +853,7 @@
           return;
         }
 
-        // Process query results for Super Admin and TMO
-        // OPTIMIZED: Process in batches to avoid blocking UI
+        // Process query results for Super Admin / TMO / Regional Officer.
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
           return;
@@ -841,8 +861,10 @@
         
         const docsArray = querySnapshot.docs;
         const batchSize = 20; // Larger batches for Super Admin/TMO
+        const postnatalCandidateIds = [];
         
         for (let i = 0; i < docsArray.length; i += batchSize) {
+          if (runToken !== patientStatsLoadToken) return;
           const batch = docsArray.slice(i, i + batchSize);
           await Promise.all(batch.map(async (doc) => {
             const data = doc.data();
@@ -856,25 +878,9 @@
             if (patientStats.hasOwnProperty(status)) {
               patientStats[status]++;
             }
-            
-            // OPTIMIZED: Skip birth record checks for faster loading (only check first batch)
-            if (status === 'postnatal' && i < batchSize) {
-              try {
-                const birthRecordQuery = db.collection("patients")
-                    .doc(doc.id)
-                    .collection("records")
-                  .doc("birthRecord");
-                const birthRecord = await smartFirestoreQuery(
-                  Promise.resolve(birthRecordQuery),
-                  { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
-                );
-                
-                if (birthRecord && birthRecord.exists) {
-                  patientStats.baby++;
-                }
-              } catch (error) {
-                // Silently skip if can't load birth record
-              }
+
+            if (status === 'postnatal' && postnatalCandidateIds.length < 200) {
+              postnatalCandidateIds.push(doc.id);
             }
             
             patientStats.total++;
@@ -890,6 +896,35 @@
         }
 
         updateStatsDisplay();
+
+        // Background refinement for baby count to keep first render responsive.
+        setTimeout(async () => {
+          for (let i = 0; i < postnatalCandidateIds.length; i++) {
+            if (runToken !== patientStatsLoadToken) return;
+            const patientId = postnatalCandidateIds[i];
+            try {
+              const birthRecordRef = db.collection("patients")
+                .doc(patientId)
+                .collection("records")
+                .doc("birthRecord");
+              const birthRecord = await homeSmartQuery(
+                birthRecordRef,
+                { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
+              );
+              if (birthRecord && birthRecord.exists) {
+                patientStats.baby++;
+              }
+            } catch (error) {
+              // Background refinement only.
+            }
+
+            if (i % 10 === 0) {
+              updateStatsDisplay();
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          }
+          updateStatsDisplay();
+        }, 0);
       } catch (error) {
         console.error('Error loading patient stats:', error);
         // Still update display with zeros so page doesn't look broken

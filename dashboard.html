@@ -947,14 +947,54 @@
         fallbackToCache: options.fallbackToCache !== false
       };
 
-      if (typeof window.smartFirestoreQuery === 'function') {
-        return window.smartFirestoreQuery(queryPromise, smartOptions);
+      let result = null;
+      try {
+        if (typeof window.smartFirestoreQuery === 'function') {
+          result = await window.smartFirestoreQuery(queryPromise, smartOptions);
+        } else {
+          result = await Promise.race([
+            queryPromise.then(q => q.get()),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Dashboard query timeout')), smartOptions.timeout))
+          ]);
+        }
+      } catch (error) {
+        console.warn('[dashboard] smart query failed, attempting direct get:', error);
       }
 
-      return Promise.race([
-        queryPromise.then(q => q.get()),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Dashboard query timeout')), smartOptions.timeout))
-      ]);
+      if (result && !result._smartQueryFailed) {
+        return result;
+      }
+
+      try {
+        const directRef = await queryPromise;
+        return await directRef.get();
+      } catch (fallbackError) {
+        console.warn('[dashboard] direct get fallback failed:', fallbackError);
+        return result;
+      }
+    }
+
+    async function loadUserProfileDocWithFallback(userDocRef) {
+      let userDoc = null;
+      try {
+        userDoc = await dashboardFirestoreGet(userDocRef, { timeout: 10000, retries: 2 });
+      } catch (error) {
+        console.warn('[dashboard] Smart user doc load failed, trying direct get:', error);
+      }
+
+      const inconclusive =
+        !userDoc ||
+        userDoc._smartQueryFailed ||
+        typeof userDoc.exists !== 'boolean';
+
+      if (!inconclusive) return userDoc;
+
+      try {
+        return await userDocRef.get();
+      } catch (fallbackError) {
+        console.warn('[dashboard] Direct user doc fallback failed:', fallbackError);
+        return userDoc;
+      }
     }
 
     function parseDateValue(value) {
@@ -1108,10 +1148,8 @@
 
         // Load user profile
         console.log('Loading user profile...');
-        const userDoc = await dashboardFirestoreGet(
-          firebase.firestore().collection('users').doc(currentUser.uid),
-          { timeout: 10000, retries: 2 }
-        );
+        const userDocRef = firebase.firestore().collection('users').doc(currentUser.uid);
+        const userDoc = await loadUserProfileDocWithFallback(userDocRef);
         if (!userDoc.exists) {
           throw new Error('User profile not found');
         }
@@ -1279,7 +1317,7 @@
       }
 
       const filtered = analyticsData.patients.filter(patient => {
-        const creator = patient.profile.created_by || patient.profile.createdBy;
+        const creator = patient.profile.created_by;
         return creator === userId;
       });
 
@@ -1388,6 +1426,11 @@
     // Chart instances storage
     let chartInstances = {};
     let analyticsData = null;
+    let analyticsRenderToken = 0;
+
+    function yieldToUIFrame(delayMs = 0) {
+      return new Promise(resolve => setTimeout(resolve, delayMs));
+    }
 
     function destroyChart(chartId) {
       if (chartInstances[chartId]) {
@@ -1460,22 +1503,11 @@
         );
         patientDocs = snapshot.docs;
       } else if (userRole && userRole.toLowerCase() === 'midwife') {
-        const [snapNew, snapOld] = await Promise.all([
-          dashboardFirestoreGet(
-            db.collection('patients').where('created_by', '==', currentUser.uid),
-            { timeout: 12000, retries: 2 }
-          ),
-          dashboardFirestoreGet(
-            db.collection('patients').where('createdBy', '==', currentUser.uid),
-            { timeout: 12000, retries: 2 }
-          )
-        ]);
-        const combined = new Map();
-        snapNew.forEach(doc => combined.set(doc.id, doc));
-        snapOld.forEach(doc => {
-          if (!combined.has(doc.id)) combined.set(doc.id, doc);
-        });
-        patientDocs = Array.from(combined.values());
+        const snapshot = await dashboardFirestoreGet(
+          db.collection('patients').where('created_by', '==', currentUser.uid),
+          { timeout: 12000, retries: 2 }
+        );
+        patientDocs = snapshot.docs;
           } else {
         // Super Admin or fallback: all patients
         const snapshot = await dashboardFirestoreGet(
@@ -1673,6 +1705,8 @@
     // Load TMO analytics with charts
     async function loadTMOAnalytics() {
       try {
+        const renderToken = ++analyticsRenderToken;
+
         if (!analyticsData) {
           analyticsData = await buildAnalyticsData();
         }
@@ -1686,14 +1720,14 @@
         // Apply midwife filter for TMO, Regional Officer, and Super Admin
         if ((userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin') && selectedMidwife && selectedMidwife !== 'all') {
           dataset = dataset.filter(patient => {
-            const createdBy = patient.profile.created_by || patient.profile.createdBy;
+            const createdBy = patient.profile.created_by;
             return createdBy === selectedMidwife;
           });
           console.log(`Filtered to midwife ${selectedMidwife}: ${dataset.length} patients`);
         } else if (userRole && userRole.toLowerCase() === 'midwife') {
           // Midwife always sees only their own patients
           dataset = dataset.filter(patient => {
-            const createdBy = patient.profile.created_by || patient.profile.createdBy;
+            const createdBy = patient.profile.created_by;
             return createdBy === currentUser.uid;
           });
         }
@@ -1709,36 +1743,47 @@
 
         chartIds.forEach(chartId => destroyChart(chartId));
 
-        // Load existing charts
+        // Stage 1 (critical path): render key charts first for quicker first paint.
         await loadANCVisitsChart(dataset);
+        if (renderToken !== analyticsRenderToken) return;
+        await yieldToUIFrame();
+
         await loadOxytocinChart(dataset);
+        if (renderToken !== analyticsRenderToken) return;
+        await yieldToUIFrame();
+
         await loadHighRiskChart(dataset);
-        await loadTTChart(dataset);
-        await loadFolicAcidChart(dataset);
-        await loadHIVSyphilisChart(dataset);
-        await loadPPHChart(dataset);
-        await loadTransferChart(dataset);
-        
-        // Load new ANC metrics
-        await loadANCMetrics(dataset);
-        
-        // Load new Intrapartum metrics
-        await loadIntrapartumMetrics(dataset);
-        
-        // Load new Postnatal metrics
-        await loadPostnatalMetrics(dataset);
-        
-        // Load new Newborn metrics
-        await loadNewbornMetrics(dataset);
-        
-        // Load Referral metrics
-        await loadReferralMetrics(dataset);
-        
-        // Load Outcome metrics
-        await loadOutcomeMetrics(dataset);
-        
-        // Load Charts
-        await loadCharts(dataset);
+        if (renderToken !== analyticsRenderToken) return;
+
+        // Stage 2 (background): progressively load secondary metrics/charts.
+        setTimeout(async () => {
+          const backgroundTasks = [
+            () => loadTTChart(dataset),
+            () => loadFolicAcidChart(dataset),
+            () => loadHIVSyphilisChart(dataset),
+            () => loadPPHChart(dataset),
+            () => loadTransferChart(dataset),
+            () => loadANCMetrics(dataset),
+            () => loadIntrapartumMetrics(dataset),
+            () => loadPostnatalMetrics(dataset),
+            () => loadNewbornMetrics(dataset),
+            () => loadReferralMetrics(dataset),
+            () => loadOutcomeMetrics(dataset),
+            () => loadCharts(dataset)
+          ];
+
+          for (const task of backgroundTasks) {
+            if (renderToken !== analyticsRenderToken) {
+              return;
+            }
+            try {
+              await task();
+            } catch (taskError) {
+              console.warn('Background analytics task failed:', taskError);
+            }
+            await yieldToUIFrame(0);
+          }
+        }, 0);
         
       } catch (error) {
         console.error('Error loading TMO analytics:', error);

@@ -55,6 +55,11 @@ const isSafariDesktop =
   !/Chromium/.test(ua);
 const isSafariBrowser = isSafariDesktop || isIOS;
 
+function isAppleMobileOrTablet() {
+  return /iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 // --- Firestore settings: force long polling for all browsers ---
 // This helps when WebSockets are blocked by ISP / firewall.
 // CRITICAL for Android native apps and networks with firewall restrictions
@@ -192,7 +197,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
     fallbackToCache = true
   } = options;
 
-  const isIOSDetected = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+  const isIOSDetected = isAppleMobileOrTablet();
 
   // Prefer cache on iOS if requested
   if (preferCache && isIOSDetected) {
@@ -275,6 +280,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
         console.error("❌ All query attempts failed. Returning empty result.");
         console.error("Error:", error.message, error.code);
         return {
+          _smartQueryFailed: true,
           empty: true,
           size: 0,
           forEach: () => {},

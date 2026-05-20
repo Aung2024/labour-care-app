@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v6-moh';
+const CACHE_NAME = 'mch-care-v7-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -73,7 +73,16 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+function shouldCacheRequest(requestUrl) {
+  // Avoid caching runtime env config, auth-like endpoints, and query-heavy URLs.
+  if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) return false;
+  if (requestUrl.search) return false;
+  return true;
+}
+
+// Fetch event strategy:
+// - HTML/document navigation: network first, fallback to cache.
+// - Static assets: cache first, then network.
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
@@ -86,36 +95,50 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        if (response) {
+  const isDocumentRequest =
+    event.request.mode === 'navigate' ||
+    (event.request.headers.get('accept') || '').includes('text/html');
+
+  if (isDocumentRequest) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
           return response;
-        }
-        
-        // Clone the request
-        const fetchRequest = event.request.clone();
-        
-        return fetch(fetchRequest).then((response) => {
-          // Check if valid response
+        })
+        .catch(async (error) => {
+          console.error('[Service Worker] Document fetch failed:', error);
+          const cachedResponse = await caches.match(event.request);
+          if (cachedResponse) return cachedResponse;
+          return caches.match('./index.html');
+        })
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) return cachedResponse;
+
+      return fetch(event.request)
+        .then((response) => {
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
-          
-          // Clone the response
-          const responseToCache = response.clone();
-          
-          // Cache the new response
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-          
+
+          if (shouldCacheRequest(requestUrl)) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
           return response;
-        }).catch((error) => {
-          console.error('[Service Worker] Fetch failed:', error);
-          // Return a custom offline page if available
-          return caches.match('./index.html');
+        })
+        .catch((error) => {
+          console.error('[Service Worker] Asset fetch failed:', error);
+          return caches.match(event.request);
         });
-      })
+    })
   );
 });

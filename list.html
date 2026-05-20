@@ -856,6 +856,33 @@
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
+    async function listSmartQuery(queryOrDocRef, options = {}) {
+      let result = null;
+      try {
+        if (typeof smartFirestoreQuery === 'function') {
+          result = await smartFirestoreQuery(Promise.resolve(queryOrDocRef), options);
+        } else {
+          result = await queryOrDocRef.get();
+        }
+      } catch (error) {
+        console.warn('[list] smart query failed, attempting direct get:', error);
+      }
+
+      const inconclusive =
+        !result ||
+        result._smartQueryFailed ||
+        (typeof result.forEach !== 'function' && typeof result.exists !== 'boolean');
+
+      if (!inconclusive) return result;
+
+      try {
+        return await queryOrDocRef.get();
+      } catch (fallbackError) {
+        console.warn('[list] direct get fallback failed:', fallbackError);
+        return result;
+      }
+    }
+
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
       if (!user) {
@@ -876,8 +903,8 @@
         } else {
           // Fallback to direct query
           const userQuery = firebase.firestore().collection('users').doc(user.uid);
-          const userDoc = await smartFirestoreQuery(
-            Promise.resolve(userQuery),
+          const userDoc = await listSmartQuery(
+            userQuery,
             { preferCache: isIOS, timeout: 8000, retries: 2, fallbackToCache: true }
           );
           userData = userDoc && userDoc.exists ? userDoc.data() : null;
@@ -926,58 +953,31 @@
 
         // Apply role-based filtering
         if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
-          // Default to Midwife if role not loaded yet
-          console.log('Loading as Midwife - checking both field formats...');
-          // Try both field names for compatibility
+          // Default to Midwife if role not loaded yet.
+          // MOH DB schema is canonical: created_by + created_at.
+          console.log('Loading as Midwife using created_by field...');
           try {
-            const newQuery = db.collection('patients').where('created_by', '==', currentUser.uid);
-            console.log('Trying created_by query...');
-            const newSnap = await smartFirestoreQuery(
-              Promise.resolve(newQuery),
+            const patientQuery = db.collection('patients').where('created_by', '==', currentUser.uid);
+            const snapshot = await listSmartQuery(
+              patientQuery,
               { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
-            console.log('created_by query result:', newSnap?.empty ? 'empty' : `${newSnap?.size || 0} docs`);
-            
-            const oldQuery = db.collection('patients').where('createdBy', '==', currentUser.uid);
-            console.log('Trying createdBy query...');
-            const oldSnap = await smartFirestoreQuery(
-              Promise.resolve(oldQuery),
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-            );
-            console.log('createdBy query result:', oldSnap?.empty ? 'empty' : `${oldSnap?.size || 0} docs`);
-            
-            // Combine results
+            console.log('created_by query result:', snapshot?.empty ? 'empty' : `${snapshot?.size || 0} docs`);
+
             allPatients = [];
-            const patientMap = new Map();
-            
-            if (newSnap && typeof newSnap.forEach === 'function' && !newSnap.empty) {
+            if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
               let count = 0;
-              newSnap.forEach(doc => {
+              snapshot.forEach(doc => {
                 if (doc && doc.id && doc.data) {
-                  patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                  allPatients.push({ id: doc.id, ...doc.data() });
                   count++;
                 }
               });
-              console.log('✅ Added', count, 'patients from created_by field');
+              console.log('✅ Loaded', count, 'patients from created_by field');
             } else {
               console.log('⚠️ created_by query returned empty or invalid result');
             }
-            
-            if (oldSnap && typeof oldSnap.forEach === 'function' && !oldSnap.empty) {
-              let count = 0;
-              oldSnap.forEach(doc => {
-                if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
-                  patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-                  count++;
-                }
-              });
-              console.log('✅ Added', count, 'patients from createdBy field');
-            } else {
-              console.log('⚠️ createdBy query returned empty or invalid result');
-            }
-            
-            allPatients = Array.from(patientMap.values());
-            console.log('📊 Total combined patients:', allPatients.length);
+            console.log('📊 Total patients:', allPatients.length);
             
             if (allPatients.length === 0) {
               console.warn('⚠️ No patients found. Possible reasons:');
@@ -998,8 +998,8 @@
             console.log('Regional Officer Region:', userRegion);
             if (userRegion) {
               query = query.where('region', '==', userRegion);
-                const snapshot = await smartFirestoreQuery(
-                  Promise.resolve(query),
+                const snapshot = await listSmartQuery(
+                  query,
                   { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
                 );
                 allPatients = [];
@@ -1030,8 +1030,8 @@
               console.log('TMO Township:', userTownship);
               query = query.where('township', '==', userTownship);
               
-              const snapshot = await smartFirestoreQuery(
-                Promise.resolve(query),
+              const snapshot = await listSmartQuery(
+                query,
                 { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
               );
         
@@ -1062,40 +1062,20 @@
           if (selectedMidwifeId && selectedMidwifeId !== 'all') {
             console.log('Filtering by selected midwife:', selectedMidwifeId);
             try {
-              // Try both field names for compatibility
-              const newQuery = db.collection('patients').where('created_by', '==', selectedMidwifeId);
-              const newSnap = await smartFirestoreQuery(
-                Promise.resolve(newQuery),
+              const midwifeQuery = db.collection('patients').where('created_by', '==', selectedMidwifeId);
+              const snapshot = await listSmartQuery(
+                midwifeQuery,
                 { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
               );
-              
-              const oldQuery = db.collection('patients').where('createdBy', '==', selectedMidwifeId);
-              const oldSnap = await smartFirestoreQuery(
-                Promise.resolve(oldQuery),
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-              );
-              
-              // Combine results
+
               allPatients = [];
-              const patientMap = new Map();
-              
-              if (newSnap && typeof newSnap.forEach === 'function' && !newSnap.empty) {
-                newSnap.forEach(doc => {
+              if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+                snapshot.forEach(doc => {
                   if (doc && doc.id && doc.data) {
-                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+                    allPatients.push({ id: doc.id, ...doc.data() });
                   }
                 });
               }
-              
-              if (oldSnap && typeof oldSnap.forEach === 'function' && !oldSnap.empty) {
-                oldSnap.forEach(doc => {
-                  if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
-                    patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-                  }
-                });
-              }
-              
-              allPatients = Array.from(patientMap.values());
               console.log('✅ Loaded', allPatients.length, 'patients for selected midwife');
             } catch (error) {
               console.error('❌ Error loading patients for selected midwife:', error);
@@ -1103,8 +1083,8 @@
             }
           } else {
             // Super Admin sees all patients when "All Midwives" is selected
-            const snapshot = await smartFirestoreQuery(
-              Promise.resolve(query),
+            const snapshot = await listSmartQuery(
+              query,
               { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
             
@@ -1671,8 +1651,8 @@
         const midwivesQuery = db.collection('users')
           .where('role', 'in', ['Midwife', 'midwife']);
         
-        const snapshot = await smartFirestoreQuery(
-          Promise.resolve(midwivesQuery),
+        const snapshot = await listSmartQuery(
+          midwivesQuery,
           { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
         );
         
@@ -1723,8 +1703,8 @@
           try {
             const db = firebase.firestore();
             const allUsersQuery = db.collection('users');
-            const allUsersSnap = await smartFirestoreQuery(
-              Promise.resolve(allUsersQuery),
+            const allUsersSnap = await listSmartQuery(
+              allUsersQuery,
               { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
             );
             
