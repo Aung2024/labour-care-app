@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v5';
+const CACHE_NAME = 'mch-care-v6-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -77,6 +77,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 

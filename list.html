@@ -839,6 +839,9 @@
   <script>
     let currentUser = null;
     let userRole = null;
+    let currentUserTownship = '';
+    let currentUserRegion = '';
+    let currentUserProfile = null;
     let allPatients = [];
     let filteredPatients = [];
     let currentStatusFilter = 'all';
@@ -846,6 +849,12 @@
     let currentView = 'list';
     let selectedMidwifeId = 'all'; // For Super Admin midwife filter
     let allMidwives = []; // Store all midwives for Super Admin
+
+    function isAppleMobileOrTablet() {
+      const ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/i.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
 
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
@@ -856,8 +865,8 @@
       
       currentUser = user;
       
-      // Detect iOS
-      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      // Detect iOS/iPadOS WebKit devices.
+      const isIOS = isAppleMobileOrTablet();
       
       // OPTIMIZED: Get user role using cache to avoid redundant queries
       try {
@@ -875,7 +884,10 @@
         }
       
         if (userData) {
+          currentUserProfile = userData;
           userRole = userData.role;
+          currentUserTownship = userData.township || '';
+          currentUserRegion = userData.region || '';
           console.log('✅ User role loaded:', userRole);
         } else {
           console.warn('⚠️ User document not found, defaulting to Midwife');
@@ -909,7 +921,7 @@
       try {
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const isIOS = isAppleMobileOrTablet();
         let query = db.collection('patients');
 
         // Apply role-based filtering
@@ -982,17 +994,10 @@
         } else if (userRole === 'Regional Officer') {
           try {
             console.log('Loading as Regional Officer...');
-            const userQuery = db.collection('users').doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
-            );
-            
-            if (userDoc && userDoc.exists) {
-              const userRegion = userDoc.data().region;
-              console.log('Regional Officer Region:', userRegion);
-              if (userRegion) {
-                query = query.where('region', '==', userRegion);
+            const userRegion = currentUserRegion || (currentUserProfile && currentUserProfile.region) || '';
+            console.log('Regional Officer Region:', userRegion);
+            if (userRegion) {
+              query = query.where('region', '==', userRegion);
                 const snapshot = await smartFirestoreQuery(
                   Promise.resolve(query),
                   { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
@@ -1008,12 +1013,8 @@
                 } else {
                   console.warn('⚠️ Regional Officer query returned empty result');
                 }
-              } else {
-                console.warn('⚠️ Regional Officer user document missing region');
-                allPatients = [];
-              }
             } else {
-              console.warn('⚠️ Regional Officer user document not found');
+              console.warn('⚠️ Regional Officer user profile missing region');
               allPatients = [];
             }
           } catch (error) {
@@ -1024,16 +1025,10 @@
         } else if (userRole === 'TMO') {
           try {
             console.log('Loading as TMO...');
-            const userQuery = db.collection('users').doc(currentUser.uid);
-            const userDoc = await smartFirestoreQuery(
-              Promise.resolve(userQuery),
-              { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
-            );
-            
-            if (userDoc && userDoc.exists) {
-          const userTownship = userDoc.data().township;
+            const userTownship = currentUserTownship || (currentUserProfile && currentUserProfile.township) || '';
+            if (userTownship) {
               console.log('TMO Township:', userTownship);
-          query = query.where('township', '==', userTownship);
+              query = query.where('township', '==', userTownship);
               
               const snapshot = await smartFirestoreQuery(
                 Promise.resolve(query),
@@ -1052,7 +1047,7 @@
                 console.warn('⚠️ TMO query returned empty result');
               }
             } else {
-              console.warn('⚠️ TMO user document not found or missing township');
+              console.warn('⚠️ TMO user profile missing township');
               allPatients = [];
             }
           } catch (error) {
@@ -1667,10 +1662,10 @@
 
     // Load all midwives for Super Admin filter
     async function loadMidwives() {
+      const isIOS = isAppleMobileOrTablet();
       try {
         console.log('Loading midwives for Super Admin filter...');
         const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
         
         // Query all users with role 'Midwife' or 'midwife'
         const midwivesQuery = db.collection('users')

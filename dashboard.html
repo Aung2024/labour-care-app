@@ -932,6 +932,31 @@
     let userRegion = null;
     let dateFilter = { start: null, end: null };
 
+    function isAppleMobileOrTablet() {
+      const ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/i.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    async function dashboardFirestoreGet(refOrQuery, options = {}) {
+      const queryPromise = Promise.resolve(refOrQuery);
+      const smartOptions = {
+        preferCache: isAppleMobileOrTablet(),
+        timeout: options.timeout || 12000,
+        retries: options.retries === undefined ? 2 : options.retries,
+        fallbackToCache: options.fallbackToCache !== false
+      };
+
+      if (typeof window.smartFirestoreQuery === 'function') {
+        return window.smartFirestoreQuery(queryPromise, smartOptions);
+      }
+
+      return Promise.race([
+        queryPromise.then(q => q.get()),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Dashboard query timeout')), smartOptions.timeout))
+      ]);
+    }
+
     function parseDateValue(value) {
       if (!value) return null;
       if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
@@ -1083,7 +1108,10 @@
 
         // Load user profile
         console.log('Loading user profile...');
-        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+        const userDoc = await dashboardFirestoreGet(
+          firebase.firestore().collection('users').doc(currentUser.uid),
+          { timeout: 10000, retries: 2 }
+        );
         if (!userDoc.exists) {
           throw new Error('User profile not found');
         }
@@ -1283,26 +1311,30 @@
         if (userRole === 'Super Admin' || userRole === 'admin') {
           // Super Admin: Get all midwives
           console.log('Loading all midwives for Super Admin');
-          midwivesSnap = await firebase.firestore()
-            .collection('users')
-            .where('role', '==', 'Midwife')
-            .get();
+          midwivesSnap = await dashboardFirestoreGet(
+            firebase.firestore().collection('users').where('role', '==', 'Midwife'),
+            { timeout: 10000, retries: 2 }
+          );
         } else if (userRole === 'Regional Officer' && userRegion) {
           // Regional Officer: Get midwives in their region
           console.log('Loading midwives for region:', userRegion);
-          midwivesSnap = await firebase.firestore()
-            .collection('users')
-            .where('role', '==', 'Midwife')
-            .where('region', '==', userRegion)
-            .get();
+          midwivesSnap = await dashboardFirestoreGet(
+            firebase.firestore()
+              .collection('users')
+              .where('role', '==', 'Midwife')
+              .where('region', '==', userRegion),
+            { timeout: 10000, retries: 2 }
+          );
         } else if (userRole === 'TMO') {
           // TMO: Get only midwives in their township
           console.log('Loading midwives for township:', userTownship);
-          midwivesSnap = await firebase.firestore()
-            .collection('users')
-            .where('role', '==', 'Midwife')
-            .where('township', '==', userTownship)
-            .get();
+          midwivesSnap = await dashboardFirestoreGet(
+            firebase.firestore()
+              .collection('users')
+              .where('role', '==', 'Midwife')
+              .where('township', '==', userTownship),
+            { timeout: 10000, retries: 2 }
+          );
         } else {
           // For other roles, don't load midwife filter
           console.log('Midwife filter not available for role:', userRole);
@@ -1413,22 +1445,30 @@
         
         if (userRole === 'Regional Officer') {
         if (userRegion) {
-          const snapshot = await db.collection('patients')
-                .where('region', '==', userRegion)
-                .get();
+          const snapshot = await dashboardFirestoreGet(
+            db.collection('patients').where('region', '==', userRegion),
+            { timeout: 12000, retries: 2 }
+          );
           patientDocs = snapshot.docs;
         } else {
           patientDocs = [];
         }
       } else if (userRole === 'TMO' && userTownship) {
-        const snapshot = await db.collection('patients')
-              .where('township', '==', userTownship)
-              .get();
+        const snapshot = await dashboardFirestoreGet(
+          db.collection('patients').where('township', '==', userTownship),
+          { timeout: 12000, retries: 2 }
+        );
         patientDocs = snapshot.docs;
       } else if (userRole && userRole.toLowerCase() === 'midwife') {
         const [snapNew, snapOld] = await Promise.all([
-          db.collection('patients').where('created_by', '==', currentUser.uid).get(),
-          db.collection('patients').where('createdBy', '==', currentUser.uid).get()
+          dashboardFirestoreGet(
+            db.collection('patients').where('created_by', '==', currentUser.uid),
+            { timeout: 12000, retries: 2 }
+          ),
+          dashboardFirestoreGet(
+            db.collection('patients').where('createdBy', '==', currentUser.uid),
+            { timeout: 12000, retries: 2 }
+          )
         ]);
         const combined = new Map();
         snapNew.forEach(doc => combined.set(doc.id, doc));
@@ -1438,7 +1478,10 @@
         patientDocs = Array.from(combined.values());
           } else {
         // Super Admin or fallback: all patients
-        const snapshot = await db.collection('patients').get();
+        const snapshot = await dashboardFirestoreGet(
+          db.collection('patients'),
+          { timeout: 15000, retries: 2 }
+        );
         patientDocs = snapshot.docs;
       }
 
@@ -1446,8 +1489,9 @@
         return { patients: [] };
       }
 
-      // Optimize: Batch queries and use cache-first strategy with limits
-      const BATCH_SIZE = 10; // Process patients in batches to avoid overwhelming
+      // Keep dashboard reads conservative for iOS/Safari and low-bandwidth devices.
+      // Each patient fans out to several subcollection reads, so small batches are smoother.
+      const BATCH_SIZE = isAppleMobileOrTablet() ? 3 : 5;
       const patientData = [];
       
       for (let i = 0; i < patientDocs.length; i += BATCH_SIZE) {
@@ -1457,15 +1501,10 @@
           const patientRef = db.collection('patients').doc(doc.id);
 
           try {
-            // Query with timeout protection
-            const queryWithTimeout = async (queryPromise, timeout = 10000) => {
+            // Query through the shared smart path for Safari/iOS fallback and timeouts.
+            const queryWithTimeout = async (refOrQuery, timeout = 10000) => {
               try {
-                return await Promise.race([
-                  queryPromise,
-                  new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Query timeout')), timeout)
-                  )
-                ]);
+                return await dashboardFirestoreGet(refOrQuery, { timeout, retries: 1 });
               } catch (error) {
                 console.warn('Query failed, returning empty result:', error);
                 // Return empty snapshot-like object
@@ -1492,53 +1531,48 @@
                 patientRef.collection('antenatal_visits')
                   .orderBy('visitDate', 'desc')
                   .limit(5)
-                  .get({ source: 'server' })
               ),
               queryWithTimeout(
                 patientRef.collection('postpartum_visits')
                   .orderBy('visitDate', 'desc')
                   .limit(5)
-                  .get({ source: 'server' })
               ),
               queryWithTimeout(
                 patientRef.collection('testRecords')
                   .orderBy('testDate', 'desc')
                   .limit(3)
-                  .get({ source: 'server' })
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('summary').get({ source: 'server' })
+                patientRef.collection('records').doc('summary')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('startingTime').get({ source: 'server' })
+                patientRef.collection('records').doc('startingTime')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('secondStage').get({ source: 'server' })
+                patientRef.collection('records').doc('secondStage')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('birthRecord').get({ source: 'server' })
+                patientRef.collection('records').doc('birthRecord')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('endTreatment').get({ source: 'server' })
+                patientRef.collection('records').doc('endTreatment')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('transferRecord').get({ source: 'server' })
+                patientRef.collection('records').doc('transferRecord')
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('outcomeRecord').get({ source: 'server' })
+                patientRef.collection('records').doc('outcomeRecord')
               ),
               queryWithTimeout(
                 patientRef.collection('newborn_care')
                   .limit(1)
-                  .get({ source: 'server' })
               ),
               queryWithTimeout(
-                patientRef.collection('records').doc('thirdStage').get({ source: 'server' })
+                patientRef.collection('records').doc('thirdStage')
               ),
               queryWithTimeout(
                 patientRef.collection('immediate_newborn_care')
                   .limit(1)
-                  .get({ source: 'server' })
               )
             ]);
 
@@ -1622,9 +1656,9 @@
         
         patientData.push(...batchResults);
         
-        // Small delay between batches to avoid overwhelming the connection
+        // Small delay between batches to avoid overwhelming WebKit/mobile connections.
         if (i + BATCH_SIZE < patientDocs.length) {
-          await new Promise(resolve => setTimeout(resolve, 50));
+          await new Promise(resolve => setTimeout(resolve, 30));
         }
       }
 
