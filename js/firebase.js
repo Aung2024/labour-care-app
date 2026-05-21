@@ -77,23 +77,27 @@ try {
 }
 
 // --- Offline persistence ---
-// Safari / iOS + IndexedDB = a lot of problems
-// So: we completely skip persistence on Safari/iOS for stability
+// Try to enable persistence on all browsers (including iOS/Safari).
+// If multi-tab persistence fails, fall back to single-tab persistence.
 try {
-  if (isSafariBrowser) {
-    console.log("ℹ️ Skipping Firestore persistence on Safari/iOS for compatibility.");
-    // No enablePersistence() here – Firestore will still work online-only
-  } else {
-    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      if (err.code === "failed-precondition") {
-        console.warn("Persistence can only be enabled in one tab at a time.");
-      } else if (err.code === "unimplemented") {
-        console.warn("Persistence is not supported in this browser.");
-      } else {
-        console.warn("Error enabling persistence:", err);
-      }
-    });
-  }
+  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    if (err.code === "failed-precondition") {
+      console.warn("Multi-tab persistence unavailable. Retrying single-tab persistence.");
+      db.enablePersistence().catch((fallbackErr) => {
+        if (fallbackErr.code === "failed-precondition") {
+          console.warn("Single-tab persistence also unavailable (another tab may already own it).");
+        } else if (fallbackErr.code === "unimplemented") {
+          console.warn("Persistence is not supported in this browser.");
+        } else {
+          console.warn("Error enabling single-tab persistence:", fallbackErr);
+        }
+      });
+    } else if (err.code === "unimplemented") {
+      console.warn("Persistence is not supported in this browser.");
+    } else {
+      console.warn("Error enabling persistence:", err);
+    }
+  });
 } catch (error) {
   console.warn("Persistence initialization error (non-critical):", error);
   // App continues without persistence

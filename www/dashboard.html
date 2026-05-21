@@ -881,7 +881,7 @@
       </div>
 
       <!-- Standard Analytics (for Midwives) -->
-      <div id="standardAnalytics" class="analytics-section mb-4">
+      <div id="standardAnalytics" class="analytics-section mb-4" style="display: none;">
         <div class="row">
           <div class="col-md-6 mb-3">
             <div class="analytics-card">
@@ -2370,14 +2370,19 @@
 
     // Load new analytics based on user role
     async function loadNewAnalytics() {
+      const tmoAnalyticsSection = document.getElementById('tmoAnalytics');
+      const standardAnalyticsSection = document.getElementById('standardAnalytics');
+      const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
+      const normalizedRole = (userRole || '').trim().toLowerCase();
+      const isScopeManagerRole = ['tmo', 'regional officer', 'super admin', 'admin'].includes(normalizedRole);
+
+      // Always default to the shared analytics layout.
+      if (tmoAnalyticsSection) tmoAnalyticsSection.style.display = 'block';
+      if (standardAnalyticsSection) standardAnalyticsSection.style.display = 'none';
+
       try {
-        if (userRole === 'TMO' || userRole === 'Regional Officer' || userRole === 'Super Admin' || userRole === 'admin') {
-          // Show TMO-style analytics with charts for TMO, Regional Officer, and Super Admin
-          document.getElementById('tmoAnalytics').style.display = 'block';
-          document.getElementById('standardAnalytics').style.display = 'none';
-          
+        if (isScopeManagerRole) {
           // Show and load midwife filter for TMO, Regional Officer, and Super Admin
-          const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
           if (midwifeFilterCard) {
             midwifeFilterCard.style.display = 'block';
           }
@@ -2389,12 +2394,8 @@
           await loadTMOAnalytics();
           
         } else {
-          // Show TMO-style analytics for Midwives (showing only their own patients)
-          document.getElementById('tmoAnalytics').style.display = 'block';
-          document.getElementById('standardAnalytics').style.display = 'none';
-          
+          // Midwives use the same analytics layout but only their own patients.
           // Hide the midwife filter for midwives (they only see their own data)
-          const midwifeFilterCard = document.getElementById('midwifeFilter')?.closest('.analytics-card');
           if (midwifeFilterCard) {
             midwifeFilterCard.style.display = 'none';
           }

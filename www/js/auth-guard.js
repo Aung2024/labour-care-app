@@ -219,7 +219,19 @@ async function verifyUserInFirestore(userId) {
         fallbackToCache: true 
       }
     );
+
+    // smartFirestoreQuery can return an empty stub object when the request fails
+    // (for example while offline). Do not treat that as an unauthorized user.
+    if (userDoc && userDoc._smartQueryFailed) {
+      console.warn('⚠️ User verification skipped: Firestore query failed (offline/network).');
+      return true;
+    }
     
+    if (!userDoc || typeof userDoc.exists !== 'boolean') {
+      console.warn('⚠️ User verification skipped: invalid Firestore response shape.');
+      return true;
+    }
+
     if (!userDoc.exists) {
       console.warn('⚠️ User document does not exist in Firestore');
       // Cache the negative result (shorter TTL for invalid users)
