@@ -936,6 +936,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
   <script src="js/clinical-validator.js"></script>
   <script src="js/duplicate-detector.js"></script>
   <script src="js/session-manager.js"></script>
@@ -1877,9 +1878,64 @@
     return segment ? segment.replace(/[^A-Za-z0-9-]/g, '').toUpperCase() : fallback;
   }
 
+  function isOfflineNow() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  function buildOfflinePatientUniqueId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
+    const tspCode = sanitizeCodeSegment(tspCodeRaw, 'UNK');
+    const facilityCode = (facilityCodeRaw || '003').toString().trim().padStart(3, '0').substring(0, 3);
+    const yearSuffix = new Date().getFullYear().toString().slice(-2);
+    const localSuffix = Date.now().toString().slice(-6);
+    return `${tspCode}-${facilityCode}-${yearSuffix}L${localSuffix}`;
+  }
+
+  async function getCurrentUserProfileForRegistration(user) {
+    if (!user) return {};
+
+    const cached = window.UserCache && typeof UserCache.getCached === 'function'
+      ? UserCache.getCached(user.uid)
+      : null;
+    if (cached) return cached;
+
+    const localProfile = {
+      role: localStorage.getItem('role') || 'Midwife',
+      email: localStorage.getItem('userEmail') || user.email || '',
+      township: localStorage.getItem('userTownship') || '',
+      region: localStorage.getItem('userRegion') || '',
+      facility_code: localStorage.getItem('facilityCode') || '003'
+    };
+
+    if (isOfflineNow()) {
+      return localProfile;
+    }
+
+    try {
+      const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data() || {};
+        if (window.UserCache && typeof UserCache.cache === 'function') {
+          UserCache.cache(user.uid, userData);
+        }
+        return userData;
+      }
+    } catch (error) {
+      console.warn('Failed to load user profile, using local profile:', error);
+    }
+
+    return localProfile;
+  }
+
   // Preview function: Get the next ID without incrementing the counter
   async function previewNextPatientId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
     try {
+      if (isOfflineNow()) {
+        return {
+          uniqueId: buildOfflinePatientUniqueId(regionShortRaw, tspCodeRaw, facilityCodeRaw),
+          meta: { offline: true }
+        };
+      }
+
       console.log('previewNextPatientId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
@@ -1941,6 +1997,13 @@
 
   async function generatePatientUniqueId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
     try {
+      if (isOfflineNow()) {
+        return {
+          uniqueId: buildOfflinePatientUniqueId(regionShortRaw, tspCodeRaw, facilityCodeRaw),
+          meta: { offline: true }
+        };
+      }
+
       console.log('generatePatientUniqueId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
@@ -2049,11 +2112,10 @@
         
         console.log('Loading township for user:', user.uid);
         
-        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
-        console.log('User document exists:', userDoc.exists);
+        const userData = await getCurrentUserProfileForRegistration(user);
+        console.log('User profile loaded:', userData);
         
-        if (userDoc.exists) {
-          const userData = userDoc.data();
+        if (userData && Object.keys(userData).length) {
           console.log('Full user data:', userData);
           console.log('Township from user data:', userData.township);
           
@@ -2139,7 +2201,7 @@
           
           console.log('User township loaded and displayed:', township);
         } else {
-          console.error('User document does not exist!');
+          console.error('User profile does not exist!');
           const townshipDisplayEl = document.getElementById('townshipDisplay');
           if (townshipDisplayEl) {
             townshipDisplayEl.innerHTML = `
@@ -2561,7 +2623,7 @@
         console.error('❌ DuplicateDetector not loaded! Check if js/duplicate-detector.js is included.');
       }
       
-      if (window.DuplicateDetector) {
+      if (window.DuplicateDetector && !isOfflineNow()) {
         console.log('🔍 Checking for duplicate patients...');
         
         // Get current user info for role-based filtering
@@ -2572,13 +2634,10 @@
         
         if (currentUser) {
           try {
-            const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-            if (userDoc.exists) {
-              const userData = userDoc.data();
-              userRole = userData.role || 'Midwife';
-              userTownship = userData.township || null;
-              userRegion = userData.region || null;
-            }
+            const userData = await getCurrentUserProfileForRegistration(currentUser);
+            userRole = userData.role || 'Midwife';
+            userTownship = userData.township || null;
+            userRegion = userData.region || null;
           } catch (error) {
             console.warn('Error getting user role:', error);
           }
@@ -2652,6 +2711,8 @@
         } else {
           console.log('✅ No duplicates found');
         }
+      } else if (isOfflineNow()) {
+        console.log('Offline mode: skipping duplicate check until sync.');
       }
       
       try {
@@ -2670,17 +2731,10 @@
           return;
         }
         
-        // Fetch the user's township from Firestore
-        const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
-        console.log('User document exists:', userDoc.exists);
-        
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          console.log('User data:', userData);
-          console.log('User township from Firestore:', userData.township);
-        }
-        
-        const userData = userDoc.exists ? userDoc.data() : {};
+        const userData = await getCurrentUserProfileForRegistration(user);
+        console.log('User data:', userData);
+        console.log('User township from profile/cache:', userData.township);
+
         const userTownship = userData.township || "";
         const userRegion = userData.region || "";
         const userRole = userData.role || 'Midwife';
@@ -2851,8 +2905,11 @@
         // Save to sessionStorage for consent page
         sessionStorage.setItem('pendingPatientData', JSON.stringify(patientDataForConsent));
 
-        // Redirect to consent page
-        const consentUrl = 'patient-consent.html?data=' + encodeURIComponent(JSON.stringify(patientDataForConsent));
+        // Redirect to consent page. Keep offline navigation query-free so the
+        // service worker can return the cached page reliably.
+        const consentUrl = isOfflineNow()
+          ? 'patient-consent.html'
+          : 'patient-consent.html?data=' + encodeURIComponent(JSON.stringify(patientDataForConsent));
         window.location.href = consentUrl;
         
       } catch (error) {

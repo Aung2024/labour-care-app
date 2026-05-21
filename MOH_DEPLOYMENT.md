@@ -4,7 +4,7 @@ This branch (`mnch-moh`) is prepared to run against a separate MOH Firebase proj
 
 ## What Changed
 
-- `js/firebase.js` and `www/js/firebase.js` now load runtime config from `/firebase.runtime-config.json` first.
+- `js/firebase.js` loads runtime config from `/firebase.runtime-config.json` first.
 - If runtime config is missing, the code falls back to embedded defaults.
 - `netlify.toml` is added and forces `firebase.runtime-config.json` to be uncached.
 

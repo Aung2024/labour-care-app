@@ -1,11 +1,14 @@
 
-const CACHE_NAME = 'mch-care-v7-moh';
+const CACHE_NAME = 'mch-care-v8-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
+  './home.html',
   './list.html',
   './login.html',
   './registration.html',
+  './patient-consent.html',
+  './provider-consent.html',
   './patient-care-hub.html',
   './patient-enhanced.html',
   './edit-patient.html',
@@ -25,8 +28,20 @@ const FILES_TO_CACHE = [
   './transfer.html',
   './other-outcome.html',
   './dashboard.html',
+  './leaderboard.html',
+  './high-risk-tracking.html',
   './manifest.json',
   './js/firebase.js',
+  './js/auth-guard.js',
+  './js/user-cache.js',
+  './js/consent-manager.js',
+  './js/offline-store.js',
+  './js/offline-sync.js',
+  './js/ui-dialogs.js',
+  './js/clinical-validator.js',
+  './js/duplicate-detector.js',
+  './js/session-manager.js',
+  './js/audit-logger.js',
   './js/patient-session.js',
   './js/status-manager.js',
   './css/style.css',
@@ -111,7 +126,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async (error) => {
           console.error('[Service Worker] Document fetch failed:', error);
-          const cachedResponse = await caches.match(event.request);
+          const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
           if (cachedResponse) return cachedResponse;
           return caches.match('./index.html');
         })

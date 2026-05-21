@@ -319,6 +319,6 @@ flowchart TD
 
 ## Notes
 
-- **Web vs Android:** Same HTML files serve both. Web deployment uses project root; Capacitor uses `www/`. Both must stay in sync.
+- **Web vs Android:** Same HTML files serve both. Web deployment uses project root; Android assets are synced from the project root into `android/app/src/main/assets/public`.
 - **Dynamic routes:** Most care screens use `?patient=<id>` or `?patient=<id>&edit=true` query params.
 - **Auth guard:** Unauthenticated users are redirected to `login.html` from most pages.

@@ -562,9 +562,12 @@
         const providerName = userDocData ? (userDocData.name || currentUser.email) : currentUser.email;
         const facility = userDocData ? (userDocData.facility_code || null) : null;
 
-        // Get IP address (best-effort; may fail offline)
+        // Get IP address (best-effort; skip while offline)
         let ipAddress = null;
         try {
+          if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            throw new Error('offline');
+          }
           ipAddress = await ConsentManager.getClientIP();
         } catch (ipErr) {
           console.warn('IP lookup skipped:', ipErr);
@@ -599,6 +602,10 @@
             hasConsent: true,
             consentStatus: 'consented'
           });
+
+          if (!window.LabourCareOffline || !LabourCareOffline.saveNewPatientWithSync) {
+            throw new Error('Offline save tools are not loaded. Please reload once while online, then test offline again.');
+          }
 
           const syncResult = await LabourCareOffline.saveNewPatientWithSync(
             patientId,
@@ -727,8 +734,15 @@
           type: 'refused',
           patientName: patientData.name || 'Unknown',
           providerAttestation: 'Patient refused consent',
-          ipAddress: await ConsentManager.getClientIP()
+          ipAddress: null
         };
+        try {
+          if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+            consentData.ipAddress = await ConsentManager.getClientIP();
+          }
+        } catch (ipErr) {
+          console.warn('IP lookup skipped:', ipErr);
+        }
 
         await ConsentManager.savePatientConsent(
           newPid,
