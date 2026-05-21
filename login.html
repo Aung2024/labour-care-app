@@ -235,6 +235,14 @@
       color: var(--primary-color);
     }
 
+    .offline-login-help {
+      margin-top: 0.35rem;
+      margin-left: 2rem;
+      color: #6b7280;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
     /* Buttons */
     .btn {
       border-radius: 12px;
@@ -460,6 +468,16 @@
           </label>
           <input type="password" id="password" class="form-control" placeholder="Enter your password" required />
         </div>
+
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="keepLoggedIn" checked>
+          <label class="form-check-label" for="keepLoggedIn">
+            Keep me logged in on this device
+          </label>
+          <div class="offline-login-help">
+            Required for offline use. Do not use on shared devices.
+          </div>
+        </div>
         
         <div class="d-flex flex-column gap-2">
           <button type="submit" class="btn btn-primary w-100">
@@ -625,10 +643,17 @@
     }
 
     // Login
+    const keepLoggedInInput = document.getElementById("keepLoggedIn");
+    if (keepLoggedInInput) {
+      const savedRememberMe = localStorage.getItem('rememberMe');
+      keepLoggedInInput.checked = savedRememberMe !== 'false';
+    }
+
     document.getElementById('loginForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
+      const keepLoggedIn = document.getElementById("keepLoggedIn").checked;
       const submitButton = e.target.querySelector('button[type="submit"]');
       const messageDiv = document.getElementById('message');
       
@@ -667,9 +692,12 @@
           }
         }
         
-        // Keep auth available after reload/offline transitions.
-        console.log('Setting LOCAL persistence...');
-        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        const persistence = keepLoggedIn
+          ? firebase.auth.Auth.Persistence.LOCAL
+          : firebase.auth.Auth.Persistence.SESSION;
+        console.log('Setting auth persistence:', keepLoggedIn ? 'LOCAL' : 'SESSION');
+        await firebase.auth().setPersistence(persistence);
+        setRememberMe(keepLoggedIn);
         
         console.log('Attempting Firebase sign in...');
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
@@ -766,6 +794,7 @@
         localStorage.setItem("userEmail", email);
         localStorage.setItem("userTownship", userData.township || '');
         localStorage.setItem("userRegion", userData.region || '');
+        localStorage.setItem("facilityCode", userData.facility_code || '003');
         
         // Reset login flag
         isLoggingIn = false;

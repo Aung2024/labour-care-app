@@ -89,12 +89,19 @@ function initAuthGuard() {
   // Check authentication status
   // OPTIMIZED: Use a single listener with immediate check
   let hasUnsubscribed = false;
-  const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
+  const unsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
     // Prevent multiple calls
     if (hasUnsubscribed) {
       return;
     }
     
+    if (!user) {
+      user = await waitForAuthRecovery();
+      if (user) {
+        console.log('✅ User recovered after auth restore delay:', user.uid);
+      }
+    }
+
     if (!user) {
       // User is not authenticated
       console.warn('⚠️ No authenticated user - redirecting to login');
@@ -154,6 +161,24 @@ function initAuthGuard() {
         unsubscribe();
       });
     }
+  });
+}
+
+function waitForAuthRecovery() {
+  const cachedUid = localStorage.getItem('uid');
+  const maxWaitMs = cachedUid ? 5000 : 1500;
+  const started = Date.now();
+
+  return new Promise((resolve) => {
+    const check = () => {
+      const recovered = firebase.auth().currentUser;
+      if (recovered || Date.now() - started >= maxWaitMs) {
+        resolve(recovered || null);
+        return;
+      }
+      setTimeout(check, 150);
+    };
+    check();
   });
 }
 
@@ -286,18 +311,6 @@ function redirectToLogin() {
   
   // Small delay to allow page to render (prevents blank page)
   setTimeout(() => {
-    // Clear any session data
-    localStorage.removeItem('uid');
-    localStorage.removeItem('role');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userTownship');
-    localStorage.removeItem('userRegion');
-    localStorage.removeItem('rememberMe');
-    localStorage.removeItem('sessionExpiry');
-    
-    // Clear session storage
-    sessionStorage.clear();
-    
     // Clear verification cache
     clearUserVerificationCache();
     
