@@ -232,6 +232,44 @@
       ]);
     },
 
+    assignOfficialPatientIdIfNeeded: function (payload) {
+      const currentId = payload && payload.patient_unique_id;
+      if (!currentId || !/L\d{4,}$/.test(String(currentId))) {
+        return Promise.resolve(payload);
+      }
+
+      const tspCode = payload.tsp_code || "UNK";
+      const facilityCode = (payload.facility_code || payload.facilityCode || "003")
+        .toString()
+        .trim()
+        .padStart(3, "0")
+        .substring(0, 3);
+      const yearSuffix = new Date().getFullYear().toString().slice(-2);
+      const counterId = tspCode.replace(/[^A-Za-z0-9]/g, "") + "_" + facilityCode + "_" + yearSuffix;
+      const db = firebase.firestore();
+      const counterRef = db.collection("patient_counters").doc(counterId);
+
+      return db.runTransaction(function (transaction) {
+        return transaction.get(counterRef).then(function (snapshot) {
+          let currentSerial = 0;
+          if (snapshot.exists && typeof snapshot.data().lastSerial === "number") {
+            currentSerial = snapshot.data().lastSerial;
+          }
+          const nextSerial = currentSerial + 1;
+          transaction.set(counterRef, {
+            lastSerial: nextSerial,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+
+          const officialId = tspCode + "-" + facilityCode + "-" + yearSuffix + String(nextSerial).padStart(4, "0");
+          return Object.assign({}, payload, {
+            patient_unique_id: officialId,
+            offline_temp_patient_unique_id: currentId
+          });
+        });
+      });
+    },
+
     /**
      * Save new patient: mirror first, then cloud. Returns { localOk, cloudOk }.
      * patientPlain: object without FieldValues for mirror; firestorePayloadFn() adds server timestamps for cloud.
@@ -311,15 +349,17 @@
                   return OfflineStore.deleteOutbox(item.id);
                 }
                 const payload = deserializeFromMirror(item.payload);
-                const withTs = Object.assign({}, payload, {
-                  updated_at: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                if (withTs.created_at == null && withTs.createdAt == null) {
-                  withTs.created_at = firebase.firestore.FieldValue.serverTimestamp();
-                }
-                return ref.set(withTs, { merge: true }).then(function () {
-                  processed++;
-                  return OfflineStore.deleteOutbox(item.id);
+                return LabourCareOffline.assignOfficialPatientIdIfNeeded(payload).then(function (officialPayload) {
+                  const withTs = Object.assign({}, officialPayload, {
+                    updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                  });
+                  if (withTs.created_at == null && withTs.createdAt == null) {
+                    withTs.created_at = firebase.firestore.FieldValue.serverTimestamp();
+                  }
+                  return ref.set(withTs, { merge: true }).then(function () {
+                    processed++;
+                    return OfflineStore.deleteOutbox(item.id);
+                  });
                 });
               }).catch(function () {
                 errors++;

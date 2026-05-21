@@ -812,9 +812,9 @@
           SessionManager.start();
         }
         
-        // Check for redirect URL (from auth guard)
-        const urlParams = new URLSearchParams(window.location.search);
-        const redirectUrl = urlParams.get('redirect');
+        // Always return to Home after login. Stale redirect URLs from offline
+        // auth recovery can otherwise send users to Register/List unexpectedly.
+        const redirectUrl = null;
         
         // Check provider consent before redirecting
         const consentCheck = await ConsentManager.checkProviderConsent(userCred.user.uid);
@@ -841,10 +841,18 @@
         
         // Record failed login attempt
         // Check for various error codes that indicate failed login
-        const isFailedLogin = err.code === 'auth/wrong-password' 
+        const isNetworkLikeError = err.code === 'auth/network-request-failed'
+          || (err.message && (
+            err.message.includes('ERR_INTERNET_DISCONNECTED') ||
+            err.message.includes('network') ||
+            err.message.includes('interrupted') ||
+            err.message.includes('unreachable')
+          ));
+        const invalidCredentialError = err.code === 'auth/invalid-credential'
+          || err.code === 'auth/wrong-password'
           || err.code === 'auth/user-not-found'
-          || err.code === 'auth/internal-error' 
           || (err.message && err.message.includes('INVALID_LOGIN_CREDENTIALS'));
+        const isFailedLogin = invalidCredentialError && !isNetworkLikeError;
         
         if (window.PasswordPolicy && isFailedLogin) {
           try {
@@ -925,7 +933,11 @@
         let alertClass = 'alert-danger';
         let icon = 'fas fa-exclamation-circle';
         
-        if (err.code === 'auth/user-not-found') {
+        if (isNetworkLikeError) {
+          errorMessage = 'Network error. Please reconnect to the internet before signing in. Offline mode works only after a successful online login on this device.';
+          alertClass = 'alert-warning';
+          icon = 'fas fa-wifi';
+        } else if (err.code === 'auth/user-not-found') {
           errorMessage = 'No account found with this email address. Please check your email and try again.';
           icon = 'fas fa-user-times';
         } else if (err.code === 'auth/wrong-password') {
@@ -938,10 +950,6 @@
           errorMessage = 'Too many failed attempts. Please try again later.';
           alertClass = 'alert-warning';
           icon = 'fas fa-clock';
-        } else if (err.code === 'auth/network-request-failed') {
-          errorMessage = 'Network error. Please check your internet connection and try again.';
-          alertClass = 'alert-warning';
-          icon = 'fas fa-wifi';
         } else if (err.code === 'auth/internal-error' || err.message.includes('INVALID_LOGIN_CREDENTIALS')) {
           errorMessage = 'Invalid email or password. Please check your credentials and try again.';
           icon = 'fas fa-shield-alt';
