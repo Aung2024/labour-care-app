@@ -184,14 +184,27 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
 
   <script>
     let selectedPatient = null;
 
+    function getPilotCachedUser() {
+      const uid = localStorage.getItem('uid');
+      if (!uid || localStorage.getItem('rememberMe') !== 'true') return null;
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isPilotCachedUser: true
+      };
+    }
+
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) user = getPilotCachedUser();
       if (!user) {
         window.location.href = "login.html";
         return;
@@ -207,6 +220,25 @@
 
       // Load patient data
       try {
+        const sessionPatient = sessionStorage.getItem('selectedPatientData');
+        if (sessionPatient) {
+          selectedPatient = JSON.parse(sessionPatient);
+          selectedPatient.id = patientId;
+          return;
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false && window.LabourCareOffline) {
+          const mirrored = await LabourCareOffline.getPatientPayload(patientId);
+          if (mirrored) {
+            selectedPatient = { id: patientId, ...mirrored };
+            sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+            return;
+          }
+          alert('Patient information is not available on this device. Please open this patient online once, then try offline again.');
+          window.location.href = 'list.html';
+          return;
+        }
+
         const patientDoc = await firebase.firestore()
           .collection('patients')
           .doc(patientId)
@@ -229,6 +261,11 @@
     function navigateToImmediateNewbornCare() {
       if (!selectedPatient || !selectedPatient.id) {
         alert('No patient selected');
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        alert('This report is available online only. Please reconnect to the internet and try again.');
         return;
       }
 

@@ -334,7 +334,18 @@
       });
     }
 
+    function getPilotCachedUser() {
+      const uid = localStorage.getItem('uid');
+      if (!uid || localStorage.getItem('rememberMe') !== 'true') return null;
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isPilotCachedUser: true
+      };
+    }
+
     firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) user = getPilotCachedUser();
       if (!user) {
         window.location.href = "login.html";
       } else {
@@ -352,6 +363,10 @@
     });
 
     function loadUserData() {
+      if (currentUser && currentUser.isPilotCachedUser) {
+        userRole = localStorage.getItem('role') || 'Midwife';
+        return;
+      }
       db.collection("users").doc(currentUser.uid).get().then(doc => {
         if (doc.exists) {
           const userData = doc.data();
@@ -383,6 +398,11 @@
       if (!patientId) {
         alert('No patient selected. Please select a patient first.');
         window.location.href = 'list.html';
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        alert('This report is available online only. Please reconnect to the internet and try again.');
         return;
       }
       

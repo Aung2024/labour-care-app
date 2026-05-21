@@ -831,6 +831,8 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/data-masking.js"></script>
   <script src="js/session-manager.js"></script>
@@ -883,8 +885,28 @@
       }
     }
 
+    function getPilotCachedUser() {
+      const uid = localStorage.getItem('uid');
+      if (!uid || localStorage.getItem('rememberMe') !== 'true') return null;
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isPilotCachedUser: true
+      };
+    }
+
+    function getLocalUserProfile() {
+      return {
+        role: localStorage.getItem('role') || 'Midwife',
+        email: localStorage.getItem('userEmail') || '',
+        township: localStorage.getItem('userTownship') || '',
+        region: localStorage.getItem('userRegion') || ''
+      };
+    }
+
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) user = getPilotCachedUser();
       if (!user) {
         window.location.href = "login.html";
         return;
@@ -898,7 +920,9 @@
       // OPTIMIZED: Get user role using cache to avoid redundant queries
       try {
         let userData;
-        if (window.UserCache) {
+        if (user.isPilotCachedUser) {
+          userData = getLocalUserProfile();
+        } else if (window.UserCache) {
           userData = await window.UserCache.get(user.uid);
         } else {
           // Fallback to direct query
@@ -950,6 +974,20 @@
         const db = firebase.firestore();
         const isIOS = isAppleMobileOrTablet();
         let query = db.collection('patients');
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false && window.LabourCareOffline) {
+          const scope = userRole === 'Regional Officer' ? currentUserRegion : currentUserTownship;
+          allPatients = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, scope);
+          filteredPatients = [...allPatients];
+          document.getElementById('loadingContainer').style.display = 'none';
+          if (allPatients.length === 0) {
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('emptyMessage').textContent = 'No cached/offline patients found on this device.';
+          } else {
+            displayPatients();
+          }
+          return;
+        }
 
         // Apply role-based filtering
         if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {

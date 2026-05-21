@@ -1011,6 +1011,8 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/page-performance.js"></script>
   <script src="js/session-manager.js"></script>
@@ -1175,8 +1177,19 @@
     let currentUser = null;
     let selectedPatient = null;
 
+    function getPilotCachedUser() {
+      const uid = localStorage.getItem('uid');
+      if (!uid || localStorage.getItem('rememberMe') !== 'true') return null;
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isPilotCachedUser: true
+      };
+    }
+
     // Initialize Firebase auth state
     firebase.auth().onAuthStateChanged(async function(user) {
+      if (!user) user = getPilotCachedUser();
       if (!user) {
         window.location.href = "login.html";
         return;
@@ -1196,6 +1209,28 @@
           document.getElementById('loadingContainer').style.display = 'none';
           document.getElementById('noPatientContainer').style.display = 'block';
           return;
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          const sessionPatient = sessionStorage.getItem('selectedPatientData');
+          if (sessionPatient) {
+            selectedPatient = JSON.parse(sessionPatient);
+            displayPatientInfo();
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('careCardsContainer').style.display = 'grid';
+            return;
+          }
+          if (window.LabourCareOffline) {
+            const mirrored = await LabourCareOffline.getPatientPayload(patientId);
+            if (mirrored) {
+              selectedPatient = { id: patientId, ...mirrored };
+              sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+              displayPatientInfo();
+              document.getElementById('loadingContainer').style.display = 'none';
+              document.getElementById('careCardsContainer').style.display = 'grid';
+              return;
+            }
+          }
         }
 
         // Load patient from Firestore - use smart query for Safari compatibility
