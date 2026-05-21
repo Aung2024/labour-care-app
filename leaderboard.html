@@ -594,6 +594,28 @@
     let userRegion = null;
     let allMidwives = [];
 
+    function isAppleMobileOrTablet() {
+      const ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/i.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    async function leaderboardGet(refOrQuery, options = {}) {
+      if (typeof smartFirestoreQuery !== 'undefined') {
+        const result = await smartFirestoreQuery(
+          Promise.resolve(refOrQuery),
+          {
+            preferCache: isAppleMobileOrTablet(),
+            timeout: options.timeout || 10000,
+            retries: options.retries === undefined ? 1 : options.retries,
+            fallbackToCache: options.fallbackToCache !== false
+          }
+        );
+        if (result && !result._smartQueryFailed) return result;
+      }
+      return refOrQuery.get();
+    }
+
     function isRegionalOfficer() {
       if (!userRole || typeof userRole !== 'string') return false;
       return userRole.toLowerCase().replace(/\s+/g, ' ').trim() === 'regional officer';
@@ -612,7 +634,7 @@
 
     async function loadUserData() {
       try {
-        const userDoc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
+        const userDoc = await leaderboardGet(firebase.firestore().collection('users').doc(currentUser.uid));
         if (userDoc.exists) {
           const data = userDoc.data();
           userRole = data.role;
@@ -636,10 +658,10 @@
         if (isRegionalOfficer() && userRegion) {
           // Regional Officer: only midwives in their region
           console.log('Filtering by region:', userRegion);
-          midwivesSnap1 = await firebase.firestore().collection('users')
-            .where('role', '==', 'Midwife').where('region', '==', userRegion).get();
-          midwivesSnap2 = await firebase.firestore().collection('users')
-            .where('role', '==', 'midwife').where('region', '==', userRegion).get();
+          midwivesSnap1 = await leaderboardGet(firebase.firestore().collection('users')
+            .where('role', '==', 'Midwife').where('region', '==', userRegion));
+          midwivesSnap2 = await leaderboardGet(firebase.firestore().collection('users')
+            .where('role', '==', 'midwife').where('region', '==', userRegion));
         } else if (isRegionalOfficer() && !userRegion) {
           document.getElementById('loadingContainer').style.display = 'none';
           document.getElementById('emptyState').style.display = 'block';
@@ -648,8 +670,8 @@
         } else {
           // All midwives for Super Admin, TMO, Midwife
           [midwivesSnap1, midwivesSnap2] = await Promise.all([
-            firebase.firestore().collection('users').where('role', '==', 'Midwife').get(),
-            firebase.firestore().collection('users').where('role', '==', 'midwife').get()
+            leaderboardGet(firebase.firestore().collection('users').where('role', '==', 'Midwife')),
+            leaderboardGet(firebase.firestore().collection('users').where('role', '==', 'midwife'))
           ]);
         }
 
@@ -680,7 +702,7 @@
         
         // Calculate scores for each midwife with progress updates
         // Process in smaller batches to show progress
-        const BATCH_SIZE = 3;
+        const BATCH_SIZE = isAppleMobileOrTablet() ? 1 : 3;
         for (let i = 0; i < midwifeArray.length; i += BATCH_SIZE) {
           const batch = midwifeArray.slice(i, i + BATCH_SIZE);
           updateLoadingMessage(i + 1, midwifeArray.length);
@@ -696,7 +718,7 @@
             try {
               const result = await Promise.race([
                 calculateMidwifeScore(midwifeId),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Score calculation timeout')), 60000))
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Score calculation timeout')), isAppleMobileOrTablet() ? 25000 : 60000))
               ]);
               
               // Handle both old format (number) and new format (object)
@@ -753,43 +775,17 @@
       try {
         console.log(`[${midwifeId}] Starting score calculation...`);
         
-        // Get all patients created by this midwife - use same logic as list.html
-        let newFormatSnap, oldFormatSnap;
+        // MOH database uses canonical created_by for new patients.
+        let newFormatSnap;
         const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
         
         try {
           const newQuery = db.collection('patients').where('created_by', '==', midwifeId);
-          // Use smartFirestoreQuery if available (from firebase.js)
-          if (typeof smartFirestoreQuery !== 'undefined') {
-            newFormatSnap = await smartFirestoreQuery(
-              Promise.resolve(newQuery),
-              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
-            );
-          } else {
-            newFormatSnap = await newQuery.get();
-          }
+          newFormatSnap = await leaderboardGet(newQuery, { timeout: 10000, retries: 1 });
           console.log(`[${midwifeId}] created_by query: ${newFormatSnap.size || 0} patients`);
         } catch (error) {
           console.error(`[${midwifeId}] Error querying created_by:`, error);
           newFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
-        }
-        
-        try {
-          const oldQuery = db.collection('patients').where('createdBy', '==', midwifeId);
-          // Use smartFirestoreQuery if available
-          if (typeof smartFirestoreQuery !== 'undefined') {
-            oldFormatSnap = await smartFirestoreQuery(
-              Promise.resolve(oldQuery),
-              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
-            );
-          } else {
-            oldFormatSnap = await oldQuery.get();
-          }
-          console.log(`[${midwifeId}] createdBy query: ${oldFormatSnap.size || 0} patients`);
-        } catch (error) {
-          console.error(`[${midwifeId}] Error querying createdBy:`, error);
-          oldFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
         }
 
         const patientIds = new Set();
@@ -803,16 +799,6 @@
           console.log(`[${midwifeId}] Found ${newFormatSnap.size} patients with created_by field`);
         }
         
-        if (oldFormatSnap && typeof oldFormatSnap.forEach === 'function' && !oldFormatSnap.empty) {
-          oldFormatSnap.forEach(doc => {
-            patientIds.add(doc.id);
-            if (!patientDocs.has(doc.id)) {
-              patientDocs.set(doc.id, doc);
-            }
-          });
-          console.log(`[${midwifeId}] Found ${oldFormatSnap.size} patients with createdBy field`);
-        }
-
         const patients = Array.from(patientIds);
         patientCount = patients.length;
         console.log(`[${midwifeId}] Total unique patients: ${patientCount}`);
@@ -823,7 +809,7 @@
         }
 
         // Process patients in batches for better performance
-        const BATCH_SIZE = 5;
+        const BATCH_SIZE = isAppleMobileOrTablet() ? 2 : 5;
         for (let i = 0; i < patients.length; i += BATCH_SIZE) {
           const batch = patients.slice(i, i + BATCH_SIZE);
           
@@ -839,10 +825,7 @@
               } else {
                 // Fallback: fetch patient document
                 const patientRef = firebase.firestore().collection('patients').doc(patientId);
-                const doc = await Promise.race([
-                  patientRef.get(),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-                ]);
+                const doc = await leaderboardGet(patientRef, { timeout: 3000, retries: 0 });
                 if (!doc.exists) return 0;
                 patientData = doc.data();
               }
@@ -869,15 +852,15 @@
                 secondStageDoc,
                 transferRecordDoc
               ] = await Promise.all([
-                patientRef.collection('antenatal_visits').get().catch(() => ({ docs: [], size: 0 })),
-                patientRef.collection('postpartum_visits').get().catch(() => ({ docs: [], size: 0 })),
-                patientRef.collection('testRecords').get().catch(() => ({ size: 0 })),
-                patientRef.collection('immediate_newborn_care').get().catch(() => ({ size: 0 })),
-                patientRef.collection('newborn_care').get().catch(() => ({ size: 0 })),
-                patientRef.collection('records').doc('summary').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('startingTime').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('secondStage').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('transferRecord').get().catch(() => ({ exists: false }))
+                leaderboardGet(patientRef.collection('antenatal_visits').limit(8), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('postpartum_visits').limit(4), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('testRecords').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('immediate_newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('records').doc('summary'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('startingTime'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('secondStage'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('transferRecord'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false }))
               ]);
               
               const ancVisits = ancVisitsSnap.docs ? ancVisitsSnap.docs.map(doc => doc.data()) : [];
@@ -1128,35 +1111,13 @@
 
       try {
         const db = firebase.firestore();
-        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        let newFormatSnap, oldFormatSnap;
+        let newFormatSnap;
         
         try {
           const newQuery = db.collection('patients').where('created_by', '==', midwifeId);
-          if (typeof smartFirestoreQuery !== 'undefined') {
-            newFormatSnap = await smartFirestoreQuery(
-              Promise.resolve(newQuery),
-              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
-            );
-          } else {
-            newFormatSnap = await newQuery.get();
-          }
+          newFormatSnap = await leaderboardGet(newQuery, { timeout: 10000, retries: 1 });
         } catch (error) {
           newFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
-        }
-        
-        try {
-          const oldQuery = db.collection('patients').where('createdBy', '==', midwifeId);
-          if (typeof smartFirestoreQuery !== 'undefined') {
-            oldFormatSnap = await smartFirestoreQuery(
-              Promise.resolve(oldQuery),
-              { preferCache: isIOS, timeout: 15000, retries: 2, fallbackToCache: true }
-            );
-          } else {
-            oldFormatSnap = await oldQuery.get();
-          }
-        } catch (error) {
-          oldFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
         }
 
         const patientIds = new Set();
@@ -1170,23 +1131,11 @@
             }
           });
         }
-        
-        if (oldFormatSnap && typeof oldFormatSnap.forEach === 'function' && !oldFormatSnap.empty) {
-          oldFormatSnap.forEach(doc => {
-            if (doc && doc.id && doc.data) {
-              patientIds.add(doc.id);
-              if (!patientDocs.has(doc.id)) {
-                patientDocs.set(doc.id, doc);
-              }
-            }
-          });
-        }
-
         const patients = Array.from(patientIds);
         breakdown.patientCount = patients.length;
 
         // Process patients in batches
-        const BATCH_SIZE = 5;
+        const BATCH_SIZE = isAppleMobileOrTablet() ? 2 : 5;
         for (let i = 0; i < patients.length; i += BATCH_SIZE) {
           const batch = patients.slice(i, i + BATCH_SIZE);
           
@@ -1221,10 +1170,7 @@
                 patientBreakdown.patientName = patientData.name || 'Unknown';
               } else {
                 const patientRef = db.collection('patients').doc(patientId);
-                const doc = await Promise.race([
-                  patientRef.get(),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-                ]);
+                const doc = await leaderboardGet(patientRef, { timeout: 3000, retries: 0 });
                 if (!doc.exists) return patientBreakdown;
                 patientData = doc.data();
                 patientBreakdown.patientName = patientData.name || 'Unknown';
@@ -1244,15 +1190,15 @@
                 secondStageDoc,
                 transferRecordDoc
               ] = await Promise.all([
-                patientRef.collection('antenatal_visits').get().catch(() => ({ docs: [], size: 0 })),
-                patientRef.collection('postpartum_visits').get().catch(() => ({ docs: [], size: 0 })),
-                patientRef.collection('testRecords').get().catch(() => ({ size: 0 })),
-                patientRef.collection('immediate_newborn_care').get().catch(() => ({ size: 0 })),
-                patientRef.collection('newborn_care').get().catch(() => ({ size: 0 })),
-                patientRef.collection('records').doc('summary').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('startingTime').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('secondStage').get().catch(() => ({ exists: false })),
-                patientRef.collection('records').doc('transferRecord').get().catch(() => ({ exists: false }))
+                leaderboardGet(patientRef.collection('antenatal_visits').limit(8), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('postpartum_visits').limit(4), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('testRecords').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('immediate_newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('records').doc('summary'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('startingTime'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('secondStage'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
+                leaderboardGet(patientRef.collection('records').doc('transferRecord'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false }))
               ]);
               
               // a) 1 point for registration
