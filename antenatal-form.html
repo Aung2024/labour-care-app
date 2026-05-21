@@ -8,17 +8,24 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/form-wizard-dangers.css" />
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/clinical-validator.js"></script>
   <script src="js/data-linkage.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -29,9 +36,24 @@
     }
 
     body {
-      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f0fdf4 100%);
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      padding-bottom: 2rem;
+      background: #f0fdf4;
+      font-family: 'Pyidaungsu', 'Myanmar Text', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+      min-height: 100vh;
+    }
+
+    .anc-form-page .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 1rem 2rem;
+      position: relative;
+      overflow: visible;
+      flex: 0 0 auto;
+    }
+
+    .anc-form-page .footer {
+      margin-top: auto;
+      padding: 1.5rem;
     }
 
     .header-section {
@@ -44,36 +66,72 @@
 
     .form-section {
       background: white;
-      border-radius: 15px;
-      padding: 2rem;
-      margin-bottom: 1.5rem;
-      margin-left: 0.75rem;
-      margin-right: 0.75rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+      border-radius: 12px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e5e7eb;
       border-left: 4px solid var(--primary-color);
-      transition: all 0.3s ease;
-    }
-
-    .form-section:hover {
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
-      transform: translateY(-2px);
+      position: relative;
+      break-inside: avoid;
     }
 
     @media (max-width: 768px) {
       .form-section {
-        margin-left: 0.75rem;
-        margin-right: 0.75rem;
-        padding: 1.5rem 1.25rem;
-        border-radius: 12px;
+        padding: 1.25rem 1.25rem;
+        border-radius: 10px;
       }
     }
 
     @media (max-width: 576px) {
       .form-section {
-        margin-left: 0.75rem;
-        margin-right: 0.75rem;
-        padding: 1.25rem 1rem;
-        border-radius: 10px;
+        padding: 1rem 1rem;
+      }
+    }
+
+    /* Save / Refer — fixed above safe area so short pages still look anchored */
+    .anc-form-actions {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 200;
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-top: 1px solid #e5e7eb;
+      padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+      margin: 0;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 0.5rem;
+      justify-content: stretch;
+      align-items: stretch;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .anc-form-actions .btn {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 44px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 0.5rem 0.65rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+
+    .anc-form-actions .btn i {
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 576px) {
+      .anc-form-actions {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
       }
     }
 
@@ -121,8 +179,6 @@
       padding: 1.25rem 1.5rem;
       border-radius: 12px;
       margin-bottom: 1.5rem;
-      margin-left: 0.75rem;
-      margin-right: 0.75rem;
       text-align: center;
       box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
     }
@@ -193,6 +249,50 @@
       background: linear-gradient(135deg, #dc2626, #b91c1c);
     }
 
+    .pregnancy-danger-grid .card-body {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: 0.65rem;
+    }
+
+    .pregnancy-danger-grid .card-body .form-check {
+      min-height: 104px;
+      margin: 0;
+      padding: 0.6rem 0.4rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      text-align: center;
+      border: 2px solid #fecaca;
+      border-radius: 12px;
+      background: #fff;
+      border-color: #fecaca;
+    }
+
+    .pregnancy-danger-grid .card-body .form-check.pregnancy-danger-checked,
+    .pregnancy-danger-grid .card-body .form-check:has(.form-check-input:checked) {
+      border-color: #dc2626;
+      background: #fef2f2;
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+    }
+
+    .pregnancy-danger-grid .card-body .form-check-input {
+      width: 1.35rem;
+      height: 1.35rem;
+      margin: 0.35rem 0 0 0;
+      order: 2;
+    }
+
+    .pregnancy-danger-grid .card-body .form-check-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-left: 0 !important;
+      padding-left: 0 !important;
+      line-height: 1.3;
+      order: 1;
+    }
+
     .form-check-input {
       width: 1.25rem;
       height: 1.25rem;
@@ -236,6 +336,10 @@
     }
 
     .btn-save {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
       background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
       border: none;
       color: white;
@@ -250,24 +354,6 @@
     .btn-save:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
-    }
-
-    .btn-education {
-      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-      border: none;
-      color: white;
-      padding: 0.875rem 2rem;
-      border-radius: 10px;
-      font-weight: 600;
-      font-size: 1rem;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
-    }
-
-    .btn-education:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
-      color: white;
     }
 
     /* Enhanced Alert Styles */
@@ -487,7 +573,7 @@
         font-size: 0.875rem;
       }
 
-      .btn-save, .btn-education, .btn-warning {
+      .btn-save, .btn-warning {
         padding: 0.75rem 1.5rem;
         font-size: 0.95rem;
       }
@@ -495,41 +581,6 @@
       .section-title {
         font-size: 1rem;
       }
-    }
-
-    /* Language Switcher */
-    .language-switcher {
-      display: flex;
-      gap: 0.25rem;
-      align-items: center;
-    }
-
-    .language-btn {
-      padding: 0.375rem 0.75rem;
-      font-size: 0.875rem;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-    }
-
-    .language-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .language-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-      border-color: rgba(255, 255, 255, 0.6);
-      font-weight: 600;
-    }
-
-    .flag-icon {
-      font-size: 1rem;
     }
 
     @media (max-width: 768px) {
@@ -543,10 +594,6 @@
         padding: 0.375rem 0.75rem;
         font-size: 0.8rem;
         white-space: nowrap;
-      }
-
-      .language-switcher {
-        order: 1;
       }
 
       .header-section .btn-outline-light {
@@ -577,19 +624,11 @@
         padding: 0.3rem 0.6rem;
         font-size: 0.75rem;
       }
-
-      .language-btn {
-        padding: 0.3rem 0.5rem !important;
-        font-size: 0.7rem !important;
-      }
-
-      .flag-icon {
-        font-size: 0.875rem;
-      }
     }
   </style>
+  <script src="js/lang-apply.js"></script>
 </head>
-<body>
+<body class="anc-form-page">
   <!-- Header -->
   <div class="header-section">
     <div class="container">
@@ -602,15 +641,6 @@
         </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
-            <!-- Language Switcher -->
-            <div class="language-switcher">
-              <button type="button" class="btn btn-sm language-btn" data-lang="en" title="English">
-                <span class="flag-icon">🇬🇧</span> ENG
-              </button>
-              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" title="မြန်မာ">
-                <span class="flag-icon">🇲🇲</span> MM
-              </button>
-            </div>
             <a href="antenatal-care.html" class="btn btn-outline-light btn-sm">
               <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to ANC" data-mm="ကိုယ်ဝန်ဆောင် ပြုစုစောင့်ရှောက်မှု သို့ ပြန်သွားရန်">Back to ANC</span>
             </a>
@@ -633,10 +663,16 @@
     </div>
 
     <!-- ANC Visit Form -->
-    <form id="ancForm" onsubmit="saveVisitData(event)">
-      <!-- ANC Information -->
-   
-
+    <form id="ancForm" onsubmit="saveVisitData(event)" class="anc-form">
+      <div class="form-wizard-bar" id="ancFormWizardBar">
+        <div class="form-wizard-progress" id="ancWizardDots"></div>
+        <div class="form-wizard-step-label" id="ancWizardStepTitle"></div>
+        <div class="form-wizard-nav">
+          <button type="button" class="btn btn-outline-secondary" id="ancWizardPrev"><i class="fas fa-arrow-left me-1"></i><span class="lang-text" data-en="Back" data-mm="နောက်သို့">နောက်သို့</span></button>
+          <button type="button" class="btn btn-success" id="ancWizardNext"><span class="lang-text" data-en="Next step" data-mm="ရှေ့သို့">ရှေ့သို့</span><i class="fas fa-arrow-right ms-1"></i></button>
+        </div>
+      </div>
+      <div class="wizard-step wizard-step-active" data-en-title="Visit & pregnancy history" data-mm-title="ကိုယ်ဝင်ရာဇဝင်">
       <!-- Visit Information -->
       <div class="form-section">
         <h5 class="section-title">
@@ -653,8 +689,8 @@
             <div class="d-flex gap-2">
               <input type="date" class="form-control" id="visitDate" name="visitDate" required>
               <button type="button" class="quick-fill-btn" onclick="setToday('visitDate')">Today</button>
+            </div>
           </div>
-        </div>
           <div class="col-md-6">
             <label class="form-label lang-text" data-en="Other Visits (e.g. private/other facility)" data-mm="အခြား စောင့်ရှောက်မှု (ဥပမာ - ပုဂ္ဂလိက/အခြား ကျန်းမာရေးဌာန)">Other Visits (e.g. private/other facility)</label>
             <input type="number" class="form-control" id="otherVisitCount" name="otherVisitCount" min="0" step="1" value="0">
@@ -738,10 +774,11 @@
             
             <textarea class="form-control" id="pastHistoryNotes" name="pastHistoryNotes" rows="2" placeholder="e.g Family / Medical / Surgical / OG / Drugs / Social history"></textarea>
             <small class="form-hint lang-text" data-en="" data-mm=""></small>
-            </div>
           </div>
         </div>
-        
+      </div>
+      </div>
+      <div class="wizard-step" data-en-title="General examination" data-mm-title="အထွေထွေစစ်ဆေးခြင်း">
       <!-- Physical Examination -->
       <div class="form-section">
         <h5 class="section-title">
@@ -749,75 +786,69 @@
         </h5>
 
         <div class="card-subtitle"><i class="fas fa-female me-2"></i><span class="lang-text" data-en="Maternal Portion" data-mm="မိခင်ဆိုင်ရာ အပိုင်း">Maternal Portion</span></div>
-        <div class="row g-3">
-          <div class="col-md-3 col-sm-6">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-4 col-sm-6">
             <label for="weight" class="form-label lang-text" data-en="Weight (Kg)" data-mm="ကိုယ်အလေးချိန် (ကီလိုဂရမ်)">Weight (Kg)</label>
             <input type="number" id="weight" name="weight" class="form-control" step="0.1" min="0" max="200">
-                </div>
-          <div class="col-md-3 col-sm-6">
+          </div>
+          <div class="col-md-4 col-sm-6">
             <label class="form-label lang-text" data-en="Height" data-mm="အရပ် အမြင့်">Height</label>
             <div class="d-flex gap-2">
-              <div style="flex: 1;">
+              <div class="flex-grow-1">
                 <input type="number" id="heightFeet" name="heightFeet" class="form-control" placeholder="Feet" min="0" max="10">
                 <small class="form-hint lang-text" data-en="ft" data-mm="ပေ">ft</small>
               </div>
-              <div style="flex: 1;">
+              <div class="flex-grow-1">
                 <input type="number" id="heightInches" name="heightInches" class="form-control" placeholder="Inches" min="0" max="11">
                 <small class="form-hint lang-text" data-en="in" data-mm="လက်မ">in</small>
               </div>
             </div>
           </div>
-          <div class="col-md-3 col-sm-6">
+          <div class="col-md-4 col-sm-6">
             <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate (bpm)" data-mm="သွေးခုန်နှုန်း">Pulse Rate (bpm)</label>
             <input type="number" id="pulseRate" name="pulseRate" class="form-control" min="40" max="180">
-                </div>
+          </div>
+        </div>
 
-   <div class="row g-3 mt-1">
-          <div class="col-md-3 col-sm-6">
+        <div class="row g-3 mt-1 align-items-end">
+          <div class="col-md-6 col-sm-6">
             <label for="bloodPressure" class="form-label lang-text" data-en="Blood Pressure (mm Hg)" data-mm="သွေးပေါင်ချိန် (mm Hg)">Blood Pressure (mm Hg)</label>
             <input type="text" id="bloodPressure" name="bloodPressure" class="form-control" placeholder="120/80">
-                </div>
-                </div>
-
-          <div class="col-md-3 col-sm-6">
+          </div>
+          <div class="col-md-6 col-sm-6">
             <label for="temperature" class="form-label lang-text" data-en="Temperature" data-mm="ကိုယ်အပူချိန်">Temperature</label>
-            <div class="d-flex gap-1">
-              <input type="number" id="temperature" name="temperature" class="form-control" step="0.1" placeholder="37.5">
-              <select id="temperatureUnit" name="temperatureUnit" class="form-control" style="width: 80px;">
+            <div class="d-flex gap-2 align-items-stretch">
+              <input type="number" id="temperature" name="temperature" class="form-control flex-grow-1" step="0.1" placeholder="37.5">
+              <select id="temperatureUnit" name="temperatureUnit" class="form-control" style="max-width: 88px; flex-shrink: 0;">
                 <option value="C">°C</option>
                 <option value="F">°F</option>
               </select>
-                </div>
-              </div>
-                </div>
-        
-     
+            </div>
+          </div>
+        </div>
 
-        <div class="row g-3 mt-1">
-          <div class="col-md-3 col-sm-6">
+        <div class="row g-3 mt-1 align-items-end">
+          <div class="col-md-4 col-sm-6">
             <label for="anemiaStatus" class="form-label lang-text" data-en="Anemia (Lower Inner Eyelid)" data-mm="သွေးအားနည်းခြင်း ရှိ/မရှိ (အောက်မျက်ခမ်းအတွင်းဘက်ကို ကြည့်ရန်)">Anemia (Lower Inner Eyelid)</label>
             <select id="anemiaStatus" name="anemiaStatus" class="form-control">
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
             </select>
-              </div>
-          <div class="col-md-3 col-sm-6">
+          </div>
+          <div class="col-md-4 col-sm-6">
             <label for="pittingEdema" class="form-label lang-text" data-en="Edema (Leg)" data-mm=" ခြေ/လက် ဖောယောင်ခြင်း ရှိ/မရှိ">Edema (Leg)</label>
             <select id="pittingEdema" name="pittingEdema" class="form-control">
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
             </select>
-            </div>
-      
-     
-
-          <div class="col-md-6 col-sm-12">
+          </div>
+          <div class="col-md-4 col-sm-12">
             <label for="otherFindings" class="form-label lang-text" data-en="Other Findings" data-mm="အခြား တွေ့ရှိချက်များ">Other Findings</label>
             <input type="text" id="otherFindings" name="otherFindings" class="form-control" placeholder="Describe any other findings">
           </div>
-      </div>
+        </div>
 
         <div class="row g-3 mt-1">
           <div class="col-md-4 col-sm-6">
@@ -834,6 +865,8 @@
           </div>
         </div>
       </div>
+      </div>
+      <div class="wizard-step" data-en-title="GBV, abdomen & fetus" data-mm-title="သန္ဓေသား">
 
       <!-- Gender Based Violence Suspected Case -->
       <div class="form-section">
@@ -932,8 +965,9 @@
             </div>
           </div>
       </div>
-      
-          
+      </div>
+      <div class="wizard-step" data-en-title="High risk" data-mm-title="နောက်ဆက်တွဲ">
+
       <!-- High Risk Pregnancy Assessment -->
       <div class="form-section">
         <h5 class="section-title">
@@ -1016,13 +1050,14 @@
             
             <label class="form-label mt-2 lang-text" data-en="Additional Notes:&#10;Describe any other risks or concerns" data-mm="မှတ်ချက်။&#10;အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော အခြားအခြေအနေများရှိလျှင် ဖော်ပြပါ။" for="riskNotes">Additional Notes:<br>Describe any other risks or concerns</label>
             <textarea name="riskNotes" id="riskNotes" class="form-control" rows="2" placeholder="Describe any other risk factors or concerns"></textarea>
-          </div>
         </div>
       </div>
+      </div>
+      <div class="wizard-step" data-en-title="Danger signs" data-mm-title="အန္တရာယ်လက္ခဏာ">
 
 <!-- Danger Signs in Pregnancy -->
       <div class="form-section">
-        <h5 class="section      -title">
+        <h5 class="section-title">
           <i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="Danger Signs in Pregnancy" data-mm="ကိုယ်ဝန်ဆောင်စဥ် အန္တရာယ်လက္ခဏာများ">Danger Signs in Pregnancy</span>
         </h5>
         
@@ -1048,9 +1083,9 @@
           </div>
           <div class="row g-3 mb-4">
             <div class="col-md-6">
-              <div class="card danger-signs-card">
+              <div class="card danger-signs-card pregnancy-danger-grid">
                 <div class="card-header">
-                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Urgent Danger Signs" data-mm="အရေးပေါ် အန္တရာယ်လက္ခဏာများ">Urgent Danger Signs</span></h6>
+                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Urgent Danger Signs" data-mm="အရေးပေါ် အန္တရာယ်လက္ခဏာ">Urgent Danger Signs</span></h6>
                 </div>
                 <div class="card-body">
                   <div class="form-check">
@@ -1088,9 +1123,9 @@
           </div>
           <div class="row g-3">
             <div class="col-md-6">
-              <div class="card danger-signs-card">
+              <div class="card danger-signs-card pregnancy-danger-grid">
                 <div class="card-header">
-                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Other Danger Signs" data-mm="အခြား အန္တရာယ်လက္ခဏာများ">Other Danger Signs</span></h6>
+                  <h6 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="Other Danger Signs" data-mm="အခြား အန္တရာယ်လက္ခဏာ">Other Danger Signs</span></h6>
                 </div>
                 <div class="card-body">
                   <div class="form-check">
@@ -1131,6 +1166,8 @@
           </div>
         </div>
       </div>
+      </div>
+      <div class="wizard-step" data-en-title="Treatment & notes" data-mm-title="ဆေးကုသမှု၊ မှတ်ချက်">
         
       <!-- Treatment & Medications -->
       <div class="form-section">
@@ -1239,7 +1276,7 @@
         </h5>
         
         <div class="row g-3">
-          <div class="col-md-6">
+          <div class="col-12 col-md-6">
             <label for="nextVisitDate" class="form-label lang-text" data-en="Follow-up Appointment&#10;Follow-up Date - (mm/dd/yyyy)" data-mm="နောက်တစ်ကြိမ် ပြန်ပြရန် ရက်ချိန်းပေးခြင်း&#10;ပြန်ပြရမည့် ရက်စွဲ - (လ/ရက်စွဲ/ခုနှစ်)">Follow-up Appointment<br>Follow-up Date - (mm/dd/yyyy)</label>
             <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control">
             <small class="form-hint lang-text" data-en="To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)" data-mm="ကိုယ်ဝန် ၅လ နှင့် ၆လ (ဒုတိယအကြိမ်နှင့် တတိယအကြိမ်) မှစ၍ မွေးဖွားရန်ကြိုတင်ပြင်ဆင်ရေးအတွက် ကူညီပေးရန်">To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)</small>
@@ -1253,29 +1290,26 @@
           </div>
         </div>
 
-          <div class="row g-3 mt-1">
-            <div class="col-md-4 col-sm-6">
-              <label for="initial" class="form-label lang-text" data-en="Initial" data-mm="အမည်အတိုကောက်">Initial</label>
-              <input type="text" id="initial" name="initial" class="form-control" placeholder="Initials">
-            </div>
+        <div class="row g-3 mt-1">
+          <div class="col-12 col-md-4 col-sm-6">
+            <label for="initial" class="form-label lang-text" data-en="Initial" data-mm="အမည်အတိုကောက်">Initial</label>
+            <input type="text" id="initial" name="initial" class="form-control" placeholder="Initials">
           </div>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="form-section">
-        <div class="d-flex flex-column flex-md-row gap-3 justify-content-center align-items-stretch">
-          <button type="button" class="btn btn-education flex-fill" onclick="window.location.href='antenatal-education.html'">
-            <i class="fas fa-graduation-cap me-2"></i><span class="lang-text" data-en="Health Education" data-mm="ကျန်းမာရေးပညာပေးခြင်း">Health Education</span>
-          </button>
-          <button type="submit" class="btn btn-save flex-fill">
-            <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ပြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>
-          </button>
-          <button type="button" class="btn btn-warning flex-fill" onclick="referPatient()" style="background-color: #fbbf24; border-color: #fbbf24; color: #000;">
-            <i class="fas fa-share-square me-2"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
-          </button>
         </div>
       </div>
+      </div>
+
     </form>
+
+    <!-- Action Buttons - separate from form sections, proper document flow -->
+    <div class="anc-form-actions" role="toolbar" aria-label="Visit actions">
+      <button type="submit" class="btn btn-save" form="ancForm">
+        <i class="fas fa-save"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ပြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>
+      </button>
+      <button type="button" class="btn btn-warning" onclick="referPatient()" style="background-color: #f59e0b; border-color: #f59e0b; color: #000;">
+        <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+      </button>
+    </div>
   </div>
 
   <footer class="footer">
@@ -1287,61 +1321,43 @@
     </div>
   </footer>
 
+  <script src="js/form-wizard.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
     let visitCount = 1;
-    
-    // Language switching
-    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
 
-    // Language switching function
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      
-      // Update active button
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      
-      // Update all text elements with lang-text class
-      document.querySelectorAll('.lang-text').forEach(el => {
-        const text = el.dataset[lang] || el.dataset.en || el.textContent;
-        el.textContent = text;
-      });
-
-      // Special handling for urgent alert text with red highlights
-      const urgentAlertText = document.getElementById('urgentAlertText');
-      if (urgentAlertText) {
-        if (lang === 'en') {
-          urgentAlertText.innerHTML = "If the symptoms below occur, please go <span class='text-urgent'>urgently</span> to health center:";
-        } else {
-          urgentAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>နေ့ညမဆိုင်း ချက်ချင်း</span> ပို့ဆောင်ရမည်။";
-        }
+    // Get patient ID from URL or session (offline / WebView may drop query string)
+    const urlParams = new URLSearchParams(window.location.search);
+    patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
-
-      // Special handling for regular alert text with red highlights
-      const regularAlertText = document.getElementById('regularAlertText');
-      if (regularAlertText) {
-        if (lang === 'en') {
-          regularAlertText.innerHTML = "If the symptoms below occur, please go to health center:";
-        } else {
-          regularAlertText.innerHTML = "အောက်ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ကိုယ်ဝန်ဆောင်အမျိုးသမီးကို ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ <span class='text-urgent'>အမြန်ဆုံး</span> သွားရောက်သင့်ပါသည်။";
-        }
-      }
+      return null;
     }
 
-    // Get patient ID from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    patientId = urlParams.get('patient');
-
-    firebase.auth().onAuthStateChanged(function(user) {
-      if (!user) {
+    firebase.auth().onAuthStateChanged(async function(user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      console.log('[ANC-FORM] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
+      if (!resolvedUser) {
+        console.log('[ANC-FORM] No user, redirecting to login.');
         window.location.href = "login.html";
       } else {
-        currentUser = user;
+        currentUser = resolvedUser;
+        console.log('[ANC-FORM] User present, loading patient info.');
         loadPatientInfo();
       }
     });
@@ -1353,7 +1369,53 @@
           return;
         }
 
-        // Load patient data
+        // OFFLINE: mirror + sessionStorage / legacy OfflineManager cache
+        const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const legacyToggle = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOfflinePatient = patientId.startsWith('OFFLINE-');
+        const isOffline = networkOff || legacyToggle || isOfflinePatient;
+
+        if (isOffline) {
+          currentPatient = null;
+          if (networkOff && window.LabourCareOffline && patientId && !isOfflinePatient) {
+            const pl = await LabourCareOffline.getPatientPayload(patientId);
+            if (pl) currentPatient = pl;
+          }
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (!currentPatient && cachedData) {
+            currentPatient = JSON.parse(cachedData);
+          } else if (!currentPatient && window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = match.data;
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = cached;
+            }
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            return;
+          }
+          document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+          visitCount = 1;
+          document.getElementById('visitNumber').value = visitCount;
+          clearFormFields();
+          setToday('visitDate');
+          if (currentPatient.lmp) {
+            const lmpInput = document.getElementById('lmp');
+            if (lmpInput) {
+              let lmpDate = currentPatient.lmp;
+              if (lmpDate && typeof lmpDate === 'string') lmpDate = lmpDate.split('T')[0];
+              lmpInput.value = lmpDate || '';
+              calculateGestationalAgeAndEDD();
+            }
+          }
+          return;
+        }
+
+        // ONLINE: Load patient data from Firestore
         const patientDoc = await firebase.firestore()
           .collection("patients")
           .doc(patientId)
@@ -1498,9 +1560,9 @@
           setValue('manualEdd', firstVisit.manualEdd);
         }
         
-        // Load Gestational Age Display (calculated)
-        if (firstVisit.gestationalAge) {
-          // Convert decimal GA to weeks and days format
+        // GA from an old visit must not overwrite LMP-based GA when LMP is known (new visit = new "today")
+        const skipStoredGA = firstVisit.lmpStatus !== 'unknown' && firstVisit.lmp;
+        if (!skipStoredGA && firstVisit.gestationalAge) {
           const gaValue = parseFloat(firstVisit.gestationalAge);
           if (!isNaN(gaValue)) {
             const weeks = Math.floor(gaValue);
@@ -1611,9 +1673,8 @@
           setValue('manualEdd', previousVisit.manualEdd);
         }
         
-        // Load Gestational Age Display (calculated)
-        if (previousVisit.gestationalAge) {
-          // Convert decimal GA to weeks and days format
+        const skipStoredGAPrev = previousVisit.lmpStatus !== 'unknown' && previousVisit.lmp;
+        if (!skipStoredGAPrev && previousVisit.gestationalAge) {
           const gaValue = parseFloat(previousVisit.gestationalAge);
           if (!isNaN(gaValue)) {
             const weeks = Math.floor(gaValue);
@@ -1873,22 +1934,17 @@
     }
 
     function calculateGestationalAge() {
-      if (currentPatient?.lmp) {
-        const lmpDate = new Date(currentPatient.lmp);
-        const today = new Date();
-        const diffTime = today - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        const displayGA = document.getElementById('gestationalAgeDisplay');
-        if (displayGA) {
-          // Display as "X weeks and Y days" format
-          const currentLang = localStorage.getItem('appLanguage') || 'mm';
-          if (currentLang === 'en') {
-            displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
-          } else {
-            displayGA.value = `${diffWeeks} ပတ် ${diffDays} ရက်`;
-          }
-        }
+      if (!currentPatient?.lmp) return;
+      let lmpStr = currentPatient.lmp;
+      if (typeof lmpStr === 'string') lmpStr = lmpStr.split('T')[0];
+      else if (lmpStr && typeof lmpStr.toDate === 'function') {
+        lmpStr = lmpStr.toDate().toISOString().split('T')[0];
+      }
+      const lmpInput = document.getElementById('lmp');
+      if (lmpInput && lmpInput.value) {
+        calculateGestationalAgeFromLMP(lmpInput.value);
+      } else if (lmpStr) {
+        calculateGestationalAgeFromLMP(lmpStr);
       }
     }
 
@@ -1917,36 +1973,63 @@
       }
     }
 
+    /** Parse YYYY-MM-DD as local calendar date (avoids UTC shift from new Date('YYYY-MM-DD')). */
+    function parseDateOnlyLocal(iso) {
+      if (!iso || typeof iso !== 'string') return null;
+      const part = iso.trim().split('T')[0];
+      const m = part.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return new Date(iso);
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10) - 1;
+      const d = parseInt(m[3], 10);
+      return new Date(y, mo, d, 12, 0, 0, 0);
+    }
+
+    function formatDateYMD(d) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${day}`;
+    }
+
+    /** Completed weeks + days from LMP to reference date (visit date or today). */
     function calculateGestationalAgeAndEDD() {
       const lmpInput = document.getElementById('lmp');
       const eddInput = document.getElementById('edd');
       
       if (lmpInput?.value && eddInput) {
-        const lmpDate = new Date(lmpInput.value);
-        
-        // Calculate EDD (LMP + 280 days)
-        const eddDate = new Date(lmpDate.getTime() + (280 * 24 * 60 * 60 * 1000));
-        eddInput.value = eddDate.toISOString().split('T')[0];
-        
-        // Update gestational age display
+        const lmpDate = parseDateOnlyLocal(lmpInput.value);
+        if (!lmpDate || isNaN(lmpDate.getTime())) return;
+
+        // EDD: LMP + 280 days (Naegel)
+        const eddDate = new Date(lmpDate.getTime() + 280 * 86400000);
+        eddInput.value = formatDateYMD(eddDate);
+
         calculateGestationalAgeFromLMP(lmpInput.value);
       }
     }
 
     function calculateGestationalAgeFromLMP(lmpValue) {
       if (lmpValue) {
-        const lmpDate = new Date(lmpValue);
-        // Use visit date if available, otherwise use current date
+        const lmpDate = parseDateOnlyLocal(lmpValue);
+        if (!lmpDate || isNaN(lmpDate.getTime())) return;
+
         const visitDateInput = document.getElementById('visitDate');
-        const referenceDate = visitDateInput && visitDateInput.value 
-          ? new Date(visitDateInput.value) 
-          : new Date();
-        const diffTime = referenceDate - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+        let referenceDate;
+        if (visitDateInput && visitDateInput.value) {
+          referenceDate = parseDateOnlyLocal(visitDateInput.value);
+        } else {
+          const n = new Date();
+          referenceDate = new Date(n.getFullYear(), n.getMonth(), n.getDate(), 12, 0, 0, 0);
+        }
+        if (!referenceDate || isNaN(referenceDate.getTime())) return;
+
+        const totalDays = Math.floor((referenceDate - lmpDate) / 86400000);
+        const diffWeeks = Math.floor(totalDays / 7);
+        const diffDays = totalDays % 7;
+
         const displayGA = document.getElementById('gestationalAgeDisplay');
         if (displayGA) {
-          // Display as "X weeks and Y days" format
           const currentLang = localStorage.getItem('appLanguage') || 'mm';
           if (currentLang === 'en') {
             displayGA.value = `${diffWeeks} weeks and ${diffDays} days`;
@@ -1955,6 +2038,16 @@
           }
         }
       }
+    }
+
+    /** Decimal weeks for validation (same basis as display). */
+    function gestationalAgeDecimalFromLMPAndVisit(lmpStr, visitStr) {
+      const l = parseDateOnlyLocal(lmpStr);
+      const v = parseDateOnlyLocal(visitStr);
+      if (!l || !v || isNaN(l.getTime()) || isNaN(v.getTime())) return null;
+      const totalDays = Math.floor((v - l) / 86400000);
+      if (totalDays < 0) return null;
+      return totalDays / 7;
     }
 
     function calculateEDDFromGA() {
@@ -2183,8 +2276,8 @@
     async function saveVisitData(event) {
       event.preventDefault();
       
-      // Prevent double submission
-      const submitButton = event.target.querySelector('button[type="submit"]');
+      // Prevent double submission (button may be in anc-form-actions or inside form)
+      const submitButton = document.querySelector('.anc-form-actions .btn-save') || event.target.querySelector('button[type="submit"]');
       if (submitButton) {
         submitButton.disabled = true;
         submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
@@ -2204,7 +2297,7 @@
           const num = parseFloat(el.value);
           return isNaN(num) ? null : num;
         };
-        
+
         // STEP 1: Clinical Data Validation (LMP, EDD, GA)
         if (window.ClinicalValidator) {
           const lmp = getValue('lmp');
@@ -2213,17 +2306,18 @@
           const displayGA = getValue('gestationalAgeDisplay');
           const visitDate = getValue('visitDate');
           
-          // Parse gestational age from display format if needed
+          // Prefer computed GA from LMP + visit date when LMP known (avoids stale display / parse issues)
           let gestationalAge = null;
           if (manualGA !== null) {
             gestationalAge = manualGA;
+          } else if (lmp && visitDate && document.getElementById('lmpKnown')?.checked) {
+            gestationalAge = gestationalAgeDecimalFromLMPAndVisit(lmp, visitDate);
           } else if (displayGA) {
-            // Parse "X weeks and Y days" or "X ပတ် Y ရက်" format
             const weeksMatch = displayGA.match(/(\d+)\s*(?:weeks|ပတ်)/);
             const daysMatch = displayGA.match(/(\d+)\s*(?:days|ရက်)/);
             if (weeksMatch && daysMatch) {
-              const weeks = parseInt(weeksMatch[1]);
-              const days = parseInt(daysMatch[1]);
+              const weeks = parseInt(weeksMatch[1], 10);
+              const days = parseInt(daysMatch[1], 10);
               gestationalAge = weeks + (days / 7);
             }
           }
@@ -2245,10 +2339,13 @@
           if (lmp && edd) {
             const eddLmpCheck = window.ClinicalValidator.validateEDDLMP(lmp, edd);
             if (!eddLmpCheck.isValid) {
-              const continueAnyway = confirm(
-                `Validation Warning: ${eddLmpCheck.error}\n\n` +
-                'Do you want to continue anyway?'
-              );
+              const continueAnyway = window.AppDialog && AppDialog.confirm
+                ? await AppDialog.confirm(
+                    `Validation Warning: ${eddLmpCheck.error}\n\n` +
+                    'Do you want to continue anyway?',
+                    { title: 'Validation Warning' }
+                  )
+                : false;
               if (!continueAnyway) {
                 if (submitButton) {
                   submitButton.disabled = false;
@@ -2263,10 +2360,13 @@
           if (gestationalAge !== null && lmp) {
             const gaCheck = window.ClinicalValidator.validateGestationalAge(gestationalAge, lmp, visitDate || new Date());
             if (!gaCheck.isValid) {
-              const continueAnyway = confirm(
-                `Validation Warning: ${gaCheck.error}\n\n` +
-                'Do you want to continue anyway?'
-              );
+              const continueAnyway = window.AppDialog && AppDialog.confirm
+                ? await AppDialog.confirm(
+                    `Validation Warning: ${gaCheck.error}\n\n` +
+                    'Do you want to continue anyway?',
+                    { title: 'Validation Warning' }
+                  )
+                : false;
               if (!continueAnyway) {
                 if (submitButton) {
                   submitButton.disabled = false;
@@ -2295,13 +2395,15 @@
         };
         
         // Collect all form data with null-safe access
+        const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+
         const visitData = {
-          visitNumber: visitCount, // Use the calculated visit count instead of form input
+          visitNumber: shouldDeferVisitNumber ? null : visitCount,
           visitNumberOther: getValue('visitNumberOther'),
           visitDate: getValue('visitDate'),
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           healthFacility: currentPatient?.township || 'Unknown Facility',
-          totalAncVisits: visitCount - 1, // Previous visits count
+          totalAncVisits: shouldDeferVisitNumber ? null : (visitCount - 1),
           
           // Main table data
           weight: getNumber('weight'),
@@ -2434,68 +2536,66 @@
           otherMedications: getValue('otherMedications'),
           
           patientId: patientId,
-          recordedBy: currentUser?.uid || ''
+          recordedBy: currentUser?.uid || '',
+          _needsVisitNumber: shouldDeferVisitNumber,
+          syncState: 'pending'
         };
 
         console.log('Saving visit data:', visitData);
-        
-        // Save visit data to Firestore
-        const visitRef = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('antenatal_visits')
-          .add(visitData);
 
-        console.log('Visit saved with ID:', visitRef.id);
-
-        // Update patient's last antenatal visit
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .update({
-            lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
-            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-          });
-
-        console.log('Patient record updated');
-        
-        // Sync LMP/EDD to patient document for cross-form linkage
-        if (window.DataLinkage) {
-          const lmp = getValue('lmp');
-          const edd = getValue('edd') || getValue('manualEdd');
-          if (lmp || edd) {
-            try {
-              await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
-            } catch (error) {
-              console.warn('Error syncing LMP/EDD:', error);
-              // Non-critical error, don't block save
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_anc_visits',
+          visitData,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._needsVisitNumber;
+            delete cloudData.syncState;
+            if (!cloudData.visitNumber) cloudData.visitNumber = visitCount;
+            if (cloudData.totalAncVisits == null && cloudData.visitNumber) {
+              cloudData.totalAncVisits = Math.max(0, cloudData.visitNumber - 1);
             }
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+            const visitRef = await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('antenatal_visits')
+              .add(cloudData);
+
+            await firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .update({
+                lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+              });
+
+            if (window.DataLinkage) {
+              const lmp = getValue('lmp');
+              const edd = getValue('edd') || getValue('manualEdd');
+              if (lmp || edd) {
+                try {
+                  await window.DataLinkage.syncLMPEDD(patientId, lmp, edd);
+                } catch (error) {
+                  console.warn('Error syncing LMP/EDD:', error);
+                }
+              }
+            }
+
+            await StatusManager.checkAndUpdateToAntenatalCare(patientId);
+            return { cloudId: visitRef.id };
           }
-        }
+        );
 
-        // Update patient status to Antenatal Care (if first visit)
-        const statusUpdated = await StatusManager.checkAndUpdateToAntenatalCare(patientId);
-        if (statusUpdated) {
-          console.log('✅ Patient status updated to Antenatal Care');
+        var successMsg = saveResult.cloud
+          ? 'ANC visit saved and synced to cloud.'
+          : 'ANC visit saved locally. Please sync when online.';
+        if (window.AppDialog && AppDialog.alert) {
+          await AppDialog.alert(successMsg, { title: 'Saved' });
+        } else {
+          alert(successMsg);
         }
-
-        // Refresh the visit count to ensure accuracy and update visit number
-        await loadVisitCount();
-        document.getElementById('visitNumber').value = visitCount;
-        console.log('Visit count refreshed:', visitCount);
-        
-        // Show mobile-friendly success message
-        showSuccessMessage('Visit data saved successfully!');
-        console.log('Visit data saved:', visitRef.id);
-        
-        // Clear all form fields after successful save
-        clearFormFields();
-        
-        // Reset button state
-        if (submitButton) {
-          submitButton.disabled = false;
-          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
-        }
+        window.location.href = 'antenatal-care.html';
 
       } catch (error) {
         console.error('Error saving visit data:', error);
@@ -2641,7 +2741,12 @@
       }, 2000);
     }
 
-    function generateAntenatalReport() {
+    async function generateAntenatalReport() {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        var msg = 'Reports are not available in offline mode. Please connect to the internet and try again.';
+        if (window.AppDialog && AppDialog.alert) { await AppDialog.alert(msg, { title: 'Offline' }); } else { alert(msg); }
+        return;
+      }
       window.location.href = `antenatal-report.html?patient=${patientId}`;
     }
 
@@ -2653,16 +2758,6 @@
     // Set today's date on page load
     window.addEventListener('load', function() {
       setToday('visitDate');
-      
-      // Initialize language switcher
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          switchLanguage(this.dataset.lang);
-        });
-      });
-      
-      // Set initial language
-      switchLanguage(currentLanguage);
     });
   </script>
 </body>

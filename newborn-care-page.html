@@ -17,6 +17,10 @@
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #667eea;
@@ -163,34 +167,6 @@
       }
     }
 
-    .language-switcher {
-      display: flex;
-      gap: 0.25rem;
-      align-items: center;
-    }
-
-    .language-btn {
-      padding: 0.375rem 0.75rem;
-      font-size: 0.875rem;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-    }
-
-    .language-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    .language-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-      font-weight: 600;
-    }
-
     .followup-section {
       margin-top: 1rem;
       padding: 1rem;
@@ -208,6 +184,7 @@
       }
     }
   </style>
+  <script src="js/lang-apply.js"></script>
 </head>
 <body>
   <!-- Header -->
@@ -222,14 +199,6 @@
         </div>
         <div class="col-md-4 text-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
-            <div class="language-switcher">
-              <button type="button" class="btn btn-sm language-btn" data-lang="en" title="English">
-                <span>🇬🇧</span> ENG
-              </button>
-              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" title="မြန်မာ">
-                <span>🇲🇲</span> MM
-              </button>
-            </div>
             <a href="immediate-newborn-care.html" class="btn btn-outline-light btn-sm">
               <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
             </a>
@@ -689,35 +658,37 @@
   </footer>
 
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
-    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
-
-    // Language switching function
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      
-      document.querySelectorAll('.lang-text').forEach(el => {
-        const text = el.dataset[lang] || el.dataset.en || el.textContent;
-        el.textContent = text;
-      });
-    }
 
     // Get patient ID from URL
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient');
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
 
     firebase.auth().onAuthStateChanged(async function(user) {
-      if (!user) {
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      if (!resolvedUser) {
         window.location.href = "login.html";
       } else {
-        currentUser = user;
+        currentUser = resolvedUser;
         await loadPatientInfo();
       }
     });
@@ -729,6 +700,34 @@
           return;
         }
 
+        // OFFLINE: Load from sessionStorage / IndexedDB
+        const isOffline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
+          (typeof navigator !== 'undefined' && navigator.onLine === false);
+        const isOfflinePatient = patientId.startsWith('OFFLINE-');
+
+        if (isOffline || isOfflinePatient) {
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (cachedData) {
+            currentPatient = JSON.parse(cachedData);
+          } else if (window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = match.data;
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = cached;
+            }
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            return;
+          }
+          document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+          return;
+        }
+
+        // ONLINE: Load from Firestore
         const patientDoc = await firebase.firestore()
           .collection("patients")
           .doc(patientId)
@@ -747,7 +746,7 @@
 
       } catch (error) {
         console.error('Error loading patient info:', error);
-        alert(`Error loading patient information: ${error.message}`);
+        alert('Could not load patient information. Please try again.');
       }
     }
 
@@ -853,7 +852,6 @@
         });
         
         const formData = {
-          // Baby Information
           baby_name: document.getElementById('baby_name').value || null,
           gender: document.getElementById('gender').value || null,
           birth_time: document.getElementById('birth_time').value || null,
@@ -861,12 +859,8 @@
           head_circumference_cm: document.getElementById('head_circumference_cm').value ? parseFloat(document.getElementById('head_circumference_cm').value) : null,
           birthplace: document.getElementById('birthplace').value || null,
           mode_of_delivery: document.getElementById('mode_of_delivery').value || null,
-          
-          // Parents Information
           mother_name: document.getElementById('mother_name').value || null,
           father_name: document.getElementById('father_name').value || null,
-          
-          // Assessment
           body_weight_gram: document.getElementById('body_weight_gram').value ? parseFloat(document.getElementById('body_weight_gram').value) : null,
           temperature: document.getElementById('temperature').value ? parseFloat(document.getElementById('temperature').value) : null,
           temperature_unit: document.getElementById('temperature_unit').value || 'C',
@@ -887,53 +881,64 @@
           clinical_notes: document.getElementById('clinical_notes').value || null,
           outcome: document.querySelector('input[name="outcome"]:checked')?.value || null,
           cause_of_death: document.getElementById('cause_of_death').value || null,
-          
           patientId: patientId,
-          recordedBy: currentUser.uid,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          recordedBy: currentUser.uid
         };
 
-        // Check if record already exists
-        const existingDoc = await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('newborn_care')
-          .limit(1)
-          .get();
+        const queuedPayload = {
+          _collection: 'newborn_care',
+          ...formData,
+          syncState: 'pending'
+        };
 
-        if (!existingDoc.empty) {
-          // Update existing record
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('newborn_care')
-            .doc(existingDoc.docs[0].id)
-            .update(formData);
-        } else {
-          // Create new record
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('newborn_care')
-            .add(formData);
-        }
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_newborn_records',
+          queuedPayload,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._collection;
+            delete cloudData.syncState;
+            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
 
-        // Update patient status to Birthed when newborn care data is saved
-        if (window.StatusManager) {
-          const statusUpdated = await StatusManager.checkAndUpdateToBirthed(
-            patientId,
-            'Newborn care data recorded'
-          );
-          if (statusUpdated) {
-            console.log('✅ Patient status updated to Birthed');
+            const collectionRef = firebase.firestore()
+              .collection('patients')
+              .doc(patientId)
+              .collection('newborn_care');
+            const existingDoc = await collectionRef.limit(1).get();
+
+            let cloudId = null;
+            if (!existingDoc.empty) {
+              cloudId = existingDoc.docs[0].id;
+              await collectionRef.doc(cloudId).set(cloudData, { merge: true });
+            } else {
+              const created = await collectionRef.add(cloudData);
+              cloudId = created.id;
+            }
+
+            if (window.StatusManager) {
+              await StatusManager.checkAndUpdateToBirthed(
+                patientId,
+                'Newborn care data recorded'
+              );
+            }
+            return { cloudId };
           }
-        }
+        );
 
-        showSuccessMessage('Newborn care data saved successfully!');
+        var nbcMsg = saveResult.cloud
+          ? 'Newborn care saved and synced to cloud!'
+          : 'Newborn care saved locally. Please sync when online.';
+        if (window.AppDialog && AppDialog.alert) {
+          await AppDialog.alert(nbcMsg, { title: 'Saved' });
+        } else {
+          alert(nbcMsg);
+        }
+        window.location.href = 'immediate-newborn-care.html';
+        return;
         
       } catch (error) {
         console.error('Error saving newborn care data:', error);
-        alert(`Error saving data: ${error.message}`);
+        alert('Could not save data. Please try again.');
       }
     }
 
@@ -1046,17 +1051,6 @@
         }, 300);
       }, 2000);
     }
-
-    // Initialize language switcher on page load
-    window.addEventListener('load', function() {
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          switchLanguage(this.dataset.lang);
-        });
-      });
-      
-      switchLanguage(currentLanguage);
-    });
   </script>
 </body>
 </html>

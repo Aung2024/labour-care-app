@@ -8,15 +8,22 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/form-wizard-dangers.css" />
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #7c3aed;
@@ -28,7 +35,7 @@
 
     body {
       background: var(--light-bg);
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Pyidaungsu', 'Myanmar Text', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     .header-section {
@@ -160,41 +167,6 @@
       text-align: center;
       padding: 3rem;
       color: var(--primary-color);
-    }
-
-    /* Language Switcher */
-    .language-switcher {
-      display: flex;
-      gap: 0.25rem;
-      align-items: center;
-    }
-
-    .language-btn {
-      padding: 0.375rem 0.75rem;
-      font-size: 0.875rem;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-    }
-
-    .language-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .language-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-      border-color: rgba(255, 255, 255, 0.6);
-      font-weight: 600;
-    }
-
-    .flag-icon {
-      font-size: 1rem;
     }
 
     /* Clean Checkbox Styling for Yes/No Fields */
@@ -345,10 +317,6 @@
         white-space: nowrap;
       }
 
-      .language-switcher {
-        order: 1;
-      }
-
       .header-section .btn-outline-light {
         order: 2;
         flex: 0 0 auto;
@@ -370,17 +338,9 @@
         font-size: 1.25rem;
         margin-bottom: 0.5rem;
       }
-
-      .language-btn {
-        padding: 0.3rem 0.5rem !important;
-        font-size: 0.7rem !important;
-      }
-
-      .flag-icon {
-        font-size: 0.875rem;
-      }
     }
   </style>
+  <script src="js/lang-apply.js"></script>
 </head>
 <body>
   <!-- Header Section -->
@@ -390,23 +350,14 @@
         <div class="col-md-8">
           <h1 class="mb-2">
             <i class="fas fa-hands-holding-child me-3"></i>
-            <span class="lang-text" data-en="Postpartum Care Form" data-my="မွေးပြီးမိခင် ပြုစုစောင့်ရှောက်မှုပေးခြင်း">Postpartum Care Form</span>
+            <span class="lang-text" data-en="Postpartum Care Form" data-mm="မွေးပြီးမိခင် ပြုစုစောင့်ရှောက်မှုပေးခြင်း">Postpartum Care Form</span>
           </h1>
         
         </div>
         <div class="col-md-4 text-md-end">
           <div class="d-flex align-items-center justify-content-end gap-3">
-            <!-- Language Switcher -->
-            <div class="language-switcher">
-              <button type="button" class="btn btn-sm language-btn active" data-lang="en" title="English">
-                <span class="flag-icon">🇬🇧</span> ENG
-              </button>
-              <button type="button" class="btn btn-sm language-btn" data-lang="my" title="မြန်မာ">
-                <span class="flag-icon">🇲🇲</span> MM
-              </button>
-            </div>
             <a href="postpartum-care.html" class="btn btn-outline-light btn-sm">
-              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to Postpartum Care" data-my="မွေးပြီးမိခင် ပြုစုစောင့်ရှောက်မှုသို့ ပြန်သွားရန်">Back to Postpartum Care</span>
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to Postpartum Care" data-mm="မွေးပြီးမိခင် ပြုစုစောင့်ရှောက်မှုသို့ ပြန်သွားရန်">Back to Postpartum Care</span>
             </a>
           </div>
         </div>
@@ -417,17 +368,17 @@
   <div class="container">
     <!-- Patient Information -->
     <div class="patient-info" id="patientInfo">
-      <h5><i class="fas fa-user me-2"></i><span class="lang-text" data-en="Patient Information" data-my="လူနာ အချက်အလက်">Patient Information</span></h5>
+      <h5><i class="fas fa-user me-2"></i><span class="lang-text" data-en="Patient Information" data-mm="လူနာ အချက်အလက်">Patient Information</span></h5>
       <div class="info-row">
-        <span class="info-label lang-text" data-en="Name:" data-my="အမည်:">Name:</span>
+        <span class="info-label lang-text" data-en="Name:" data-mm="အမည်:">Name:</span>
         <span class="info-value" id="patientName">Loading...</span>
       </div>
       <div class="info-row">
-        <span class="info-label lang-text" data-en="Age:" data-my="အသက်:">Age:</span>
+        <span class="info-label lang-text" data-en="Age:" data-mm="အသက်:">Age:</span>
         <span class="info-value" id="patientAge">Loading...</span>
       </div>
       <div class="info-row">
-        <span class="info-label lang-text" data-en="Phone:" data-my="ဖုန်း:">Phone:</span>
+        <span class="info-label lang-text" data-en="Phone:" data-mm="ဖုန်း:">Phone:</span>
         <span class="info-value" id="patientPhone">Loading...</span>
       </div>
     </div>
@@ -435,34 +386,43 @@
     <!-- Postpartum Care Form -->
     <div class="form-container">
       <form id="postpartumForm">
+        <div class="form-wizard-bar pnc-theme" id="pncFormWizardBar">
+          <div class="form-wizard-progress" id="pncWizardDots"></div>
+          <div class="form-wizard-step-label" id="pncWizardStepTitle"></div>
+          <div class="form-wizard-nav">
+            <button type="button" class="btn btn-outline-secondary" id="pncWizardPrev"><i class="fas fa-arrow-left me-1"></i><span class="lang-text" data-en="Back" data-mm="နောက်သို့">နောက်သို့</span></button>
+            <button type="button" class="btn btn-primary" id="pncWizardNext"><span class="lang-text" data-en="Next step" data-mm="ရှေ့သို့">ရှေ့သို့</span><i class="fas fa-arrow-right ms-1"></i></button>
+          </div>
+        </div>
+        <div class="wizard-step wizard-step-active" data-en-title="Visit & vitals" data-mm-title="ပြသမှု၊ သက်သေခံ">
         <!-- Visit Information -->
         <div class="form-section">
-          <h4><i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Visit Information" data-my="မွေးပြီးမိခင် စောင့်ရှောက်မှုဆိုင်ရာ သတင်းအချက်အလက်">Visit Information</span></h4>
+          <h4><i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Visit Information" data-mm="မွေးပြီးမိခင် စောင့်ရှောက်မှုဆိုင်ရာ သတင်းအချက်အလက်">Visit Information</span></h4>
           <div class="row">
             <div class="col-md-6">
-              <label for="visitDate" class="form-label lang-text" data-en="Visit Date (mm/dd/yyyy)" data-my="ပြသသည့် ရက်စွဲ (လ/ရက်စွဲ/ခုနှစ်)">Visit Date (mm/dd/yyyy) *</label>
+              <label for="visitDate" class="form-label lang-text" data-en="Visit Date (mm/dd/yyyy)" data-mm="ပြသသည့် ရက်စွဲ (လ/ရက်စွဲ/ခုနှစ်)">Visit Date (mm/dd/yyyy) *</label>
               <input type="date" class="form-control" id="visitDate" required>
             </div>
             <div class="col-md-6">
-              <label for="visitNumber" class="form-label lang-text" data-en="Visit Number" data-my="အကြိမ်အရေအတွက်">Visit Number</label>
+              <label for="visitNumber" class="form-label lang-text" data-en="Visit Number" data-mm="အကြိမ်အရေအတွက်">Visit Number</label>
               <input type="number" class="form-control" id="visitNumber" min="1" readonly>
             </div>
           </div>
           <div class="row mt-3">
             <div class="col-md-6">
-              <label for="deliveredDateTime" class="form-label lang-text" data-en="Delivered Date & Time" data-my="မွေးဖွားသည့် ရက်စွဲနှင့် အချိန်">Delivered Date & Time</label>
+              <label for="deliveredDateTime" class="form-label lang-text" data-en="Delivered Date & Time" data-mm="မွေးဖွားသည့် ရက်စွဲနှင့် အချိန်">Delivered Date & Time</label>
               <input type="datetime-local" class="form-control" id="deliveredDateTime">
             </div>
             <div class="col-md-6">
-              <label class="form-label lang-text" data-en="Post-partum Period" data-my="မွေးဖွားပြီးကာလ">Post-partum Period</label>
+              <label class="form-label lang-text" data-en="Post-partum Period" data-mm="မွေးဖွားပြီးကာလ">Post-partum Period</label>
               <div class="form-control" style="background: #f8f9fa; padding: 0.75rem;">
                 <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
-                  <span class="lang-text" data-en="Day" data-my="ရက်">Day</span>
+                  <span class="lang-text" data-en="Day" data-mm="ရက်">Day</span>
                   <strong id="postpartumDays" style="color: var(--primary-color); font-size: 1.1rem;">—</strong>
-                  <span class="lang-text" data-en="Hour" data-my="နာရီ">Hour</span>
+                  <span class="lang-text" data-en="Hour" data-mm="နာရီ">Hour</span>
                   <strong id="postpartumHours" style="color: var(--primary-color); font-size: 1.1rem;">—</strong>
                 </div>
-                <small class="text-muted lang-text" data-en="Auto-calculated from delivery date" data-my="မွေးဖွားသည့် ရက်စွဲမှ အလိုအလျောက် တွက်ချက်သည်">Auto-calculated from delivery date</small>
+                <small class="text-muted lang-text" data-en="Auto-calculated from delivery date" data-mm="မွေးဖွားသည့် ရက်စွဲမှ အလိုအလျောက် တွက်ချက်သည်">Auto-calculated from delivery date</small>
               </div>
             </div>
           </div>
@@ -470,38 +430,40 @@
 
         <!-- Vital Signs -->
         <div class="form-section">
-          <h4><i class="fas fa-heartbeat"></i><span class="lang-text" data-en="Vital Signs" data-my="Vital Signs">Vital Signs</span></h4>
+          <h4><i class="fas fa-heartbeat"></i><span class="lang-text" data-en="Vital Signs" data-mm="Vital Signs">Vital Signs</span></h4>
           <div class="row">
             <div class="col-md-3">
-              <label for="temperature" class="form-label lang-text" data-en="Temperature (°C)" data-my="ကိုယ်အပူချိန်">Temperature (°C)</label>
+              <label for="temperature" class="form-label lang-text" data-en="Temperature (°C)" data-mm="ကိုယ်အပူချိန်">Temperature (°C)</label>
               <input type="number" class="form-control" id="temperature" step="0.1" min="35" max="42">
             </div>
             <div class="col-md-3">
-              <label for="bloodPressure" class="form-label lang-text" data-en="Blood Pressure (mmHg)" data-my="သွေးပေါင်ချိန် (mm Hg)">Blood Pressure (mmHg)</label>
+              <label for="bloodPressure" class="form-label lang-text" data-en="Blood Pressure (mmHg)" data-mm="သွေးပေါင်ချိန် (mm Hg)">Blood Pressure (mmHg)</label>
               <input type="text" class="form-control" id="bloodPressure" placeholder="120/80">
             </div>
             <div class="col-md-3">
-              <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate" data-my="သွေးခုန်နှုန်း">Pulse Rate</label>
+              <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate" data-mm="သွေးခုန်နှုန်း">Pulse Rate</label>
               <input type="number" class="form-control" id="pulseRate" min="40" max="180">
             </div>
           </div>
         </div>
+        </div>
+        <div class="wizard-step" data-en-title="Examination" data-mm-title="စမ်းသပ်ခြင်း">
 
         <!-- Physical Examination -->
         <div class="form-section">
-          <h4><i class="fas fa-stethoscope"></i><span class="lang-text" data-en="Physical Examination" data-my="အထွေထွေ စမ်းသပ်စစ်ဆေးခြင်း">Physical Examination</span></h4>
+          <h4><i class="fas fa-stethoscope"></i><span class="lang-text" data-en="Physical Examination" data-mm="အထွေထွေ စမ်းသပ်စစ်ဆေးခြင်း">Physical Examination</span></h4>
           
           <!-- Breast Engorgement -->
           <div class="row mb-3">
             <div class="col-md-6">
-              <label class="form-label lang-text" data-en="Breast Engorgement" data-my="ရင်သားတင်းမာမှု ရှိ/မရှိ">Breast Engorgement</label>
+              <label class="form-label lang-text" data-en="Breast Engorgement" data-mm="ရင်သားတင်းမာမှု ရှိ/မရှိ">Breast Engorgement</label>
               <div class="checkbox-yes-no">
                 <input type="checkbox" id="breastEngorgement" name="breastEngorgement">
-                <label for="breastEngorgement" class="lang-text" data-en="Present" data-my="ရှိ">Present</label>
+                <label for="breastEngorgement" class="lang-text" data-en="Present" data-mm="ရှိ">Present</label>
               </div>
             </div>
             <div class="col-md-6">
-              <label for="nippleCondition" class="form-label lang-text" data-en="Nipple Condition" data-my="နို့သီးခေါင်းအခြေအနေ">Nipple Condition</label>
+              <label for="nippleCondition" class="form-label lang-text" data-en="Nipple Condition" data-mm="နို့သီးခေါင်းအခြေအနေ">Nipple Condition</label>
               <select class="form-control" id="nippleCondition">
                 <option value="">Select condition</option>
                 <option value="Normal">Normal (ပုံမှန် နို့သီးခေါင်း)</option>
@@ -516,14 +478,14 @@
           <!-- Breast Milk Production -->
           <div class="row mb-3">
             <div class="col-md-6">
-              <label class="form-label lang-text" data-en="Breast Milk Production/Breast Feeding" data-my="နို့ထွက်ခြင်း ရှိ/မရှိ/ မိခင်နို့တိုက်ကျွေးခြင်း">Breast Milk Production/Breast Feeding</label>
+              <label class="form-label lang-text" data-en="Breast Milk Production/Breast Feeding" data-mm="နို့ထွက်ခြင်း ရှိ/မရှိ/ မိခင်နို့တိုက်ကျွေးခြင်း">Breast Milk Production/Breast Feeding</label>
               <div class="checkbox-yes-no">
                 <input type="checkbox" id="breastMilkProduction" name="breastMilkProduction">
-                <label for="breastMilkProduction" class="lang-text" data-en="Present" data-my="ရှိ">Present</label>
+                <label for="breastMilkProduction" class="lang-text" data-en="Present" data-mm="ရှိ">Present</label>
               </div>
             </div>
             <div class="col-md-6">
-              <label for="uterusInvolution" class="form-label lang-text" data-en="Uterine Involution" data-my="သားအိမ် လုံးမာခြင်း/ဝပ်ခြင်း ရှိ/မရှိ">Uterine Involution</label>
+              <label for="uterusInvolution" class="form-label lang-text" data-en="Uterine Involution" data-mm="သားအိမ် လုံးမာခြင်း/ဝပ်ခြင်း ရှိ/မရှိ">Uterine Involution</label>
               <select class="form-control" id="uterusInvolution">
                 <option value="">Select status</option>
                 <option value="Normal">Normal (ပုံမှန် သားအိမ်ပြန်ဝပ်ခြင်း)</option>
@@ -536,7 +498,7 @@
           <!-- Vaginal Discharge -->
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="vaginalBleeding" class="form-label lang-text" data-en="Vaginal Discharge (Lochia)" data-my="မိန်းမကိုယ်မှ သွေးဆင်းခြင်း">Vaginal Discharge (Lochia)</label>
+              <label for="vaginalBleeding" class="form-label lang-text" data-en="Vaginal Discharge (Lochia)" data-mm="မိန်းမကိုယ်မှ သွေးဆင်းခြင်း">Vaginal Discharge (Lochia)</label>
               <select class="form-control" id="vaginalBleeding" onchange="checkHeavyBleeding()">
                 <option value="">Select type</option>
                 <option value="Rubra">Rubra (Red) (သွေးနီ/သွေးရဲရဲ)</option>
@@ -545,24 +507,24 @@
                 <option value="Heavy bleeding">Heavy Bleeding (သွေးဆင်းများခြင်း/သွေးသွန်ခြင်း)</option>
                 <option value="No bleeding">No Bleeding (သွေး မဆင်းခြင်း)</option>
               </select>
-              <small class="text-danger mt-1 d-block lang-text" data-en="If select &quot;Heavy Bleeding&quot;, move to PPH Card" data-my="မိန်းမကိုယ်မှ သွေးဆင်းများခြင်း (သို့) သွေးသွန်ခြင်း ဖြစ်ပါက PPH များ ဖြစ်နိုင်ချေရှိသော ပုံစံသို့ ပြောင်းသွားရမည်။">If select "Heavy Bleeding", move to PPH Card</small>
+              <small class="text-danger mt-1 d-block lang-text" data-en="If select &quot;Heavy Bleeding&quot;, move to PPH Card" data-mm="မိန်းမကိုယ်မှ သွေးဆင်းများခြင်း (သို့) သွေးသွန်ခြင်း ဖြစ်ပါက PPH များ ဖြစ်နိုင်ချေရှိသော ပုံစံသို့ ပြောင်းသွားရမည်။">If select "Heavy Bleeding", move to PPH Card</small>
               
               <!-- PPH Alert (shown when Heavy Bleeding is selected) -->
               <div id="pphAlertPostpartum" class="alert alert-danger mt-3" style="display: none;">
                 <div class="d-flex align-items-center justify-content-between">
                   <div>
                     <i class="fas fa-exclamation-triangle me-2"></i>
-                    <strong class="lang-text" data-en="Postpartum Hemorrhage (PPH) Detected!" data-my="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း (PPH) ဖြစ်ပေါ်နေသည်!">Postpartum Hemorrhage (PPH) Detected!</strong>
-                    <p class="mb-0 mt-1 lang-text" data-en="Start E-MOTIVE bundle and follow protocols immediately." data-my="E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။">Start E-MOTIVE bundle and follow protocols immediately.</p>
+                    <strong class="lang-text" data-en="Postpartum Hemorrhage (PPH) Detected!" data-mm="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း (PPH) ဖြစ်ပေါ်နေသည်!">Postpartum Hemorrhage (PPH) Detected!</strong>
+                    <p class="mb-0 mt-1 lang-text" data-en="Start E-MOTIVE bundle and follow protocols immediately." data-mm="E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။">Start E-MOTIVE bundle and follow protocols immediately.</p>
                   </div>
                   <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#emotiveInfoModal">
-                    <i class="fas fa-info-circle me-1"></i><span class="lang-text" data-en="E-MOTIVE Info" data-my="E-MOTIVE အချက်အလက်">E-MOTIVE Info</span>
+                    <i class="fas fa-info-circle me-1"></i><span class="lang-text" data-en="E-MOTIVE Info" data-mm="E-MOTIVE အချက်အလက်">E-MOTIVE Info</span>
                   </button>
                 </div>
               </div>
             </div>
             <div class="col-md-6">
-              <label for="dischargeSmell" class="form-label lang-text" data-en="Discharge Smell" data-my="မိန်းမကိုယ်မှဆင်းသော သွေး/အရည် အနံ့">Discharge Smell</label>
+              <label for="dischargeSmell" class="form-label lang-text" data-en="Discharge Smell" data-mm="မိန်းမကိုယ်မှဆင်းသော သွေး/အရည် အနံ့">Discharge Smell</label>
               <select class="form-control" id="dischargeSmell">
                 <option value="">Select</option>
                 <option value="Foul Smelling">Foul Smelling (အနံ့ဆိုးထွက်ခြင်း/အနံ့နံခြင်း)</option>
@@ -573,7 +535,7 @@
           
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="episiotomyHealing" class="form-label lang-text" data-en="Episiotomy Wound Healing" data-my="မွေးလမ်းကြောင်းအနာ/ခွဲစိတ်အနာ အခြေအနေ">Episiotomy Wound Healing</label>
+              <label for="episiotomyHealing" class="form-label lang-text" data-en="Episiotomy Wound Healing" data-mm="မွေးလမ်းကြောင်းအနာ/ခွဲစိတ်အနာ အခြေအနေ">Episiotomy Wound Healing</label>
               <select class="form-control" id="episiotomyHealing">
                 <option value="">Select status</option>
                 <option value="Healing well">Healing Well (အနာကောင်းကောင်းကျက်ခြင်း)</option>
@@ -587,7 +549,7 @@
           <!-- Urination -->
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="urination" class="form-label lang-text" data-en="Urination" data-my="ဆီးသွားခြင်း">Urination</label>
+              <label for="urination" class="form-label lang-text" data-en="Urination" data-mm="ဆီးသွားခြင်း">Urination</label>
               <select class="form-control" id="urination">
                 <option value="">Select</option>
                 <option value="can void well">Can void well (ကောင်းကောင်းသွားနိုင်တယ်)</option>
@@ -595,10 +557,10 @@
               </select>
             </div>
             <div class="col-md-6">
-              <label class="form-label lang-text" data-en="Constipation" data-my="ဝမ်းချုပ်ခြင်း ရှိ/မရှိ">Constipation</label>
+              <label class="form-label lang-text" data-en="Constipation" data-mm="ဝမ်းချုပ်ခြင်း ရှိ/မရှိ">Constipation</label>
               <div class="checkbox-yes-no">
                 <input type="checkbox" id="constipation" name="constipation">
-                <label for="constipation" class="lang-text" data-en="Present" data-my="ရှိ">Present</label>
+                <label for="constipation" class="lang-text" data-en="Present" data-mm="ရှိ">Present</label>
               </div>
             </div>
           </div>
@@ -606,7 +568,7 @@
           <!-- Mental Health Assessment -->
           <div class="row">
             <div class="col-md-12">
-              <label for="mentalHealthAssessment" class="form-label lang-text" data-en="Maternal Mental Health Assessment" data-my="မိခင်၏ စိတ်ကျန်းမာရေးဆိုင်ရာ လက္ခဏာများ ဆန်းစစ်ခြင်း">Maternal Mental Health Assessment</label>
+              <label for="mentalHealthAssessment" class="form-label lang-text" data-en="Maternal Mental Health Assessment" data-mm="မိခင်၏ စိတ်ကျန်းမာရေးဆိုင်ရာ လက္ခဏာများ ဆန်းစစ်ခြင်း">Maternal Mental Health Assessment</label>
               <select class="form-control" id="mentalHealthAssessment">
                 <option value="">Select</option>
                 <option value="Feeling Well">Feeling Well (ပုံမှန်)</option>
@@ -617,15 +579,17 @@
             </div>
           </div>
         </div>
+        </div>
+        <div class="wizard-step" data-en-title="Treatment" data-mm-title="ဆေးပေးခြင်း">
 
         <!-- Treatment & Counselling -->
         <div class="form-section">
-          <h4><i class="fas fa-pills"></i><span class="lang-text" data-en="Treatment & Counselling" data-my="ဆေးကုသမှုပေးခြင်း">Treatment & Counselling</span></h4>
+          <h4><i class="fas fa-pills"></i><span class="lang-text" data-en="Treatment & Counselling" data-mm="ဆေးကုသမှုပေးခြင်း">Treatment & Counselling</span></h4>
           <div class="row">
             <div class="col-md-3">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="vitaminBComplex">
-                <label class="form-check-label lang-text" for="vitaminBComplex" data-en="Vitamin B Complex" data-my="ဗီတာမင် ဘီဝမ်း">
+                <label class="form-check-label lang-text" for="vitaminBComplex" data-en="Vitamin B Complex" data-mm="ဗီတာမင် ဘီဝမ်း">
                   Vitamin B Complex
                 </label>
               </div>
@@ -633,7 +597,7 @@
             <div class="col-md-3">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="vitaminA">
-                <label class="form-check-label lang-text" for="vitaminA" data-en="Vitamin A" data-my="ဗီတာမင် အေ">
+                <label class="form-check-label lang-text" for="vitaminA" data-en="Vitamin A" data-mm="ဗီတာမင် အေ">
                   Vitamin A
                 </label>
               </div>
@@ -641,124 +605,128 @@
             <div class="col-md-3">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="ironFolic">
-                <label class="form-check-label lang-text" for="ironFolic" data-en="Iron & Folic Acid Tablet" data-my="သံဓါတ်နှင့် ဖောလစ်အက်ဆစ် အားဆေး">
+                <label class="form-check-label lang-text" for="ironFolic" data-en="Iron & Folic Acid Tablet" data-mm="သံဓါတ်နှင့် ဖောလစ်အက်ဆစ် အားဆေး">
                   Iron & Folic Acid Tablet
                 </label>
               </div>
             </div>
             <div class="col-md-3">
-              <label class="form-label lang-text" data-en="Contraception (42 days after birth)" data-my="သားဆက်ခြားနည်းလမ်းများအကြောင်း ဆွေးနွေးခြင်း (မွေးပြီး ၄၂ ရက် နောက်ပိုင်း)">Contraception (42 days after birth)</label>
+              <label class="form-label lang-text" data-en="Contraception (42 days after birth)" data-mm="သားဆက်ခြားနည်းလမ်းများအကြောင်း ဆွေးနွေးခြင်း (မွေးပြီး ၄၂ ရက် နောက်ပိုင်း)">Contraception (42 days after birth)</label>
               <div class="checkbox-yes-no">
                 <input type="checkbox" id="contraception" name="contraception" onchange="toggleContraceptiveMethods()">
-                <label for="contraception" class="lang-text" data-en="Yes" data-my="ရှိ">Yes</label>
+                <label for="contraception" class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</label>
               </div>
             </div>
           </div>
           <!-- Contraceptive Methods (shown if Yes selected) -->
           <div class="row mt-3" id="contraceptiveMethodsGroup" style="display: none;">
             <div class="col-md-12">
-              <label class="form-label lang-text" data-en="if &quot;Yes&quot;, select below contraceptive methods" data-my="အောက်ပါသားဆက်ခြားနည်းလမ်းများမှ ရွေးချယ်ထားသည့်နည်းလမ်းကို ရွေးပါ">if &quot;Yes&quot;, select below contraceptive methods:</label>
+              <label class="form-label lang-text" data-en="if &quot;Yes&quot;, select below contraceptive methods" data-mm="အောက်ပါသားဆက်ခြားနည်းလမ်းများမှ ရွေးချယ်ထားသည့်နည်းလမ်းကို ရွေးပါ">if &quot;Yes&quot;, select below contraceptive methods:</label>
               <div class="checkbox-group">
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="contraceptionInjection" name="contraceptiveMethod" value="Injection">
-                  <label class="form-check-label lang-text" for="contraceptionInjection" data-en="Injection" data-my="ထိုးဆေး">Injection</label>
+                  <label class="form-check-label lang-text" for="contraceptionInjection" data-en="Injection" data-mm="ထိုးဆေး">Injection</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="contraceptionPills" name="contraceptiveMethod" value="Pills">
-                  <label class="form-check-label lang-text" for="contraceptionPills" data-en="Pills" data-my="ဆေးပြားအသောက်">Pills</label>
+                  <label class="form-check-label lang-text" for="contraceptionPills" data-en="Pills" data-mm="ဆေးပြားအသောက်">Pills</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="contraceptionCondom" name="contraceptiveMethod" value="Condom">
-                  <label class="form-check-label lang-text" for="contraceptionCondom" data-en="Condom" data-my="ကွန်ဒုံး">Condom</label>
+                  <label class="form-check-label lang-text" for="contraceptionCondom" data-en="Condom" data-mm="ကွန်ဒုံး">Condom</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="contraceptionIUD" name="contraceptiveMethod" value="IUD">
-                  <label class="form-check-label lang-text" for="contraceptionIUD" data-en="Intra Uterine Device (IUD)" data-my="သားအိမ်တွင်းထည့်ပစ္စည်း">Intra Uterine Device (IUD)</label>
+                  <label class="form-check-label lang-text" for="contraceptionIUD" data-en="Intra Uterine Device (IUD)" data-mm="သားအိမ်တွင်းထည့်ပစ္စည်း">Intra Uterine Device (IUD)</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="contraceptionImplant" name="contraceptiveMethod" value="Implant">
-                  <label class="form-check-label lang-text" for="contraceptionImplant" data-en="Implant" data-my="လက်မောင်းတွင်းထည့်ပစ္စည်း">Implant</label>
+                  <label class="form-check-label lang-text" for="contraceptionImplant" data-en="Implant" data-mm="လက်မောင်းတွင်းထည့်ပစ္စည်း">Implant</label>
                 </div>
               </div>
             </div>
           </div>
         </div>
+        </div>
+        <div class="wizard-step" data-en-title="Danger signs" data-mm-title="အန္တရာယ်လက္ခဏာ">
 
         <!-- Danger Signs -->
         <div class="form-section danger-signs-section">
-          <h4><i class="fas fa-exclamation-triangle"></i><span class="lang-text" data-en="Danger Signs Assessment" data-my="အန္တရာယ်လက္ခဏာများကို ဆန်းစစ်ခြင်း">Danger Signs Assessment</span></h4>
-          <p class="text-danger mb-3 lang-text" data-en="If any of the following signs occur, advise immediate referral:" data-my="ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ နေ့ညမဆိုင်း ချက်ချင်း သွားရမည်။">
+          <h4><i class="fas fa-exclamation-triangle"></i><span class="lang-text" data-en="Danger Signs Assessment" data-mm="အန္တရာယ်လက္ခဏာ">Danger Signs Assessment</span></h4>
+          <p class="text-danger mb-3 lang-text" data-en="If any of the following signs occur, advise immediate referral:" data-mm="ဖော်ပြပါ လက္ခဏာများအနက်မှ တစ်ခုခုဖြစ်ပေါ်လာပါက ဆေးရုံ (သို့မဟုတ်) ကျန်းမာရေးဌာနသို့ နေ့ညမဆိုင်း ချက်ချင်း သွားရမည်။">
             <strong>If any of the following signs occur, advise immediate referral:</strong>
           </p>
           
-          <div class="checkbox-group">
+          <div class="checkbox-group pnc-danger-grid">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="heavyBleeding">
-              <label class="form-check-label lang-text" for="heavyBleeding" data-en="Heavy vaginal bleeding" data-my="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း">
+              <label class="form-check-label lang-text" for="heavyBleeding" data-en="Heavy vaginal bleeding" data-mm="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း">
                 Heavy vaginal bleeding
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="severeHeadache">
-              <label class="form-check-label lang-text" for="severeHeadache" data-en="Severe headache, Blurred vision" data-my="ပြင်းထန်စွာ ခေါင်းကိုက်ခြင်း၊ အမြင်မှုန်ဝါးခြင်း">
+              <label class="form-check-label lang-text" for="severeHeadache" data-en="Severe headache, Blurred vision" data-mm="ပြင်းထန်စွာ ခေါင်းကိုက်ခြင်း၊ အမြင်မှုန်ဝါးခြင်း">
                 Severe headache, Blurred vision
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="convulsions">
-              <label class="form-check-label lang-text" for="convulsions" data-en="Convulsions" data-my="တက်ခြင်း">
+              <label class="form-check-label lang-text" for="convulsions" data-en="Convulsions" data-mm="တက်ခြင်း">
                 Convulsions
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="breathingProblems">
-              <label class="form-check-label lang-text" for="breathingProblems" data-en="Fast breathing, Difficulty in breathing" data-my="အသက်ရှူမြန်ခြင်း၊ အသက်ရှူရန် ခက်ခဲခြင်း">
+              <label class="form-check-label lang-text" for="breathingProblems" data-en="Fast breathing, Difficulty in breathing" data-mm="အသက်ရှူမြန်ခြင်း၊ အသက်ရှူရန် ခက်ခဲခြင်း">
                 Fast breathing, Difficulty in breathing
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="feverFatigue">
-              <label class="form-check-label lang-text" for="feverFatigue" data-en="Fever, Fatigue" data-my="ဖျားပြီး အိပ်ယာမှ မထနိုင်လောက်အောင် အားနည်းခြင်း">
+              <label class="form-check-label lang-text" for="feverFatigue" data-en="Fever, Fatigue" data-mm="ဖျားပြီး အိပ်ယာမှ မထနိုင်လောက်အောင် အားနည်းခြင်း">
                 Fever, Fatigue
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="breastEngorgementDanger">
-              <label class="form-check-label lang-text" for="breastEngorgementDanger" data-en="Breast engorgement/ Nipple inflammation, redness, tenderness" data-my="ရင်သားတင်းမာခြင်း၊ နို့သီးခေါင်းယောင်ခြင်း/နီခြင်း/နာခြင်း">
+              <label class="form-check-label lang-text" for="breastEngorgementDanger" data-en="Breast engorgement/ Nipple inflammation, redness, tenderness" data-mm="ရင်သားတင်းမာခြင်း၊ နို့သီးခေါင်းယောင်ခြင်း/နီခြင်း/နာခြင်း">
                 Breast engorgement/ Nipple inflammation, redness, tenderness
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="urinaryProblems">
-              <label class="form-check-label lang-text" for="urinaryProblems" data-en="Difficulty in micturition, Urinary incontinence" data-my="ဆီးသွားရခက်ခဲခြင်း၊ ဆီးမထိန်းနိုင်ခြင်း">
+              <label class="form-check-label lang-text" for="urinaryProblems" data-en="Difficulty in micturition, Urinary incontinence" data-mm="ဆီးသွားရခက်ခဲခြင်း၊ ဆီးမထိန်းနိုင်ခြင်း">
                 Difficulty in micturition, Urinary incontinence
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="woundInflammation">
-              <label class="form-check-label lang-text" for="woundInflammation" data-en="Episiotomy wound inflammation and tenderness" data-my="မွေးလမ်းကြောင်းအနာ နီရဲယောင်ရမ်း/နာကျင်ခြင်း">
+              <label class="form-check-label lang-text" for="woundInflammation" data-en="Episiotomy wound inflammation and tenderness" data-mm="မွေးလမ်းကြောင်းအနာ နီရဲယောင်ရမ်း/နာကျင်ခြင်း">
                 Episiotomy wound inflammation and tenderness
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="foulDischarge">
-              <label class="form-check-label lang-text" for="foulDischarge" data-en="Foul smelling vaginal discharge" data-my="မိန်းမကိုယ်မှ အနံ့ဆိုးသော သွေး/အရည် ဆင်း">
+              <label class="form-check-label lang-text" for="foulDischarge" data-en="Foul smelling vaginal discharge" data-mm="မိန်းမကိုယ်မှ အနံ့ဆိုးသော သွေး/အရည် ဆင်း">
                 Foul smelling vaginal discharge
               </label>
             </div>
           </div>
         </div>
+        </div>
+        <div class="wizard-step" data-en-title="Notes & referral" data-mm-title="မှတ်ချက်၊ လွှဲပြောင်း">
 
         <!-- Additional Information -->
         <div class="form-section">
-          <h4><i class="fas fa-notes-medical"></i><span class="lang-text" data-en="Additional Information" data-my="အခြား လက္ခဏာများ">Additional Information</span></h4>
+          <h4><i class="fas fa-notes-medical"></i><span class="lang-text" data-en="Additional Information" data-mm="အခြား လက္ခဏာများ">Additional Information</span></h4>
           <div class="row">
             <div class="col-md-6">
-              <label for="otherSymptoms" class="form-label lang-text" data-en="Other Symptoms&#10;Describe any other symptoms or concerns" data-my="&#10;အခြားလက္ခဏာများ သို့ စိုးရိမ်သောအချက်များ ရှိပါက ဖော်ပြပါ။">Other Symptoms<br>Describe any other symptoms or concerns</label>
+              <label for="otherSymptoms" class="form-label lang-text" data-en="Other Symptoms&#10;Describe any other symptoms or concerns" data-mm="&#10;အခြားလက္ခဏာများ သို့ စိုးရိမ်သောအချက်များ ရှိပါက ဖော်ပြပါ။">Other Symptoms<br>Describe any other symptoms or concerns</label>
               <textarea class="form-control" id="otherSymptoms" rows="3" placeholder="Describe any other symptoms or concerns..."></textarea>
             </div>
             <div class="col-md-6">
-              <label for="treatment" class="form-label lang-text" data-en="Treatment Given&#10;Describe treatment provided" data-my="&#10;ကုသမှုပေးခြင်းများကို ဖော်ပြပါ။">Treatment Given<br>Describe treatment provided</label>
+              <label for="treatment" class="form-label lang-text" data-en="Treatment Given&#10;Describe treatment provided" data-mm="&#10;ကုသမှုပေးခြင်းများကို ဖော်ပြပါ။">Treatment Given<br>Describe treatment provided</label>
               <textarea class="form-control" id="treatment" rows="3" placeholder="Describe treatment provided..."></textarea>
             </div>
           </div>
@@ -767,26 +735,27 @@
               <div class="d-flex justify-content-center">
                 <button type="button" class="btn btn-warning flex-fill" onclick="referPatient()" style="background-color: #fbbf24; border-color: #fbbf24; color: #000; max-width: 300px;">
                   <i class="fas fa-share-square me-2"></i>
-                  <span class="lang-text" data-en="Refer Patient" data-my="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+                  <span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
                 </button>
               </div>
             </div>
           </div>
           <div class="row mt-3">
             <div class="col-md-12">
-              <label for="clinicalNotes" class="form-label lang-text" data-en="Clinical Notes&#10;Additional clinical observations and recommendations" data-my="&#10;ဆေးကုသစဉ် တွေ့ရှိချက်များနှင့် အကြံပြုချက်များရှိပါက ဖော်ပြပါ။">Clinical Notes<br>Additional clinical observations and recommendations</label>
+              <label for="clinicalNotes" class="form-label lang-text" data-en="Clinical Notes&#10;Additional clinical observations and recommendations" data-mm="&#10;ဆေးကုသစဉ် တွေ့ရှိချက်များနှင့် အကြံပြုချက်များရှိပါက ဖော်ပြပါ။">Clinical Notes<br>Additional clinical observations and recommendations</label>
               <textarea class="form-control" id="clinicalNotes" rows="4" placeholder="Additional clinical observations and recommendations..."></textarea>
             </div>
           </div>
+        </div>
         </div>
 
         <!-- Form Actions -->
         <div class="text-center mt-4">
           <button type="button" class="btn btn-secondary-action me-3" onclick="window.location.href='postpartum-care.html'">
-            <i class="fas fa-times me-2"></i><span class="lang-text" data-en="Cancel" data-my="ပယ်ဖျက်ရန်">Cancel</span>
+            <i class="fas fa-times me-2"></i><span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
           </button>
           <button type="submit" class="btn btn-primary-action">
-            <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Postpartum Visit" data-my="မွေးပြီးမိခင် စောင့်ရှောက်မှု သိမ်းဆည်းရန်">Save Postpartum Visit</span>
+            <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Postpartum Visit" data-mm="မွေးပြီးမိခင် စောင့်ရှောက်မှု သိမ်းဆည်းရန်">Save Postpartum Visit</span>
           </button>
         </div>
       </form>
@@ -807,35 +776,35 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="emotiveInfoModalLabel">
-            <i class="fas fa-first-aid me-2"></i><span class="lang-text" data-en="E-MOTIVE Bundle Protocol" data-my="E-MOTIVE Bundle စည်းမျဉ်း">E-MOTIVE Bundle Protocol</span>
+            <i class="fas fa-first-aid me-2"></i><span class="lang-text" data-en="E-MOTIVE Bundle Protocol" data-mm="E-MOTIVE Bundle စည်းမျဉ်း">E-MOTIVE Bundle Protocol</span>
           </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="alert alert-danger">
-            <strong class="lang-text" data-en="Emergency Protocol:" data-my="အရေးပေါ် စည်းမျဉ်း:">Emergency Protocol:</strong> <span class="lang-text" data-en="E-MOTIVE bundle for postpartum hemorrhage management" data-my="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း စီမံခန့်ခွဲမှုအတွက် E-MOTIVE bundle">E-MOTIVE bundle for postpartum hemorrhage management</span>
+            <strong class="lang-text" data-en="Emergency Protocol:" data-mm="အရေးပေါ် စည်းမျဉ်း:">Emergency Protocol:</strong> <span class="lang-text" data-en="E-MOTIVE bundle for postpartum hemorrhage management" data-mm="မွေးဖွားပြီးချိန် သွေးသွန်ခြင်း စီမံခန့်ခွဲမှုအတွက် E-MOTIVE bundle">E-MOTIVE bundle for postpartum hemorrhage management</span>
           </div>
           
           <div class="row">
             <div class="col-md-6">
-              <h6><i class="fas fa-search me-2"></i>E - <span class="lang-text" data-en="Early Detection" data-my="စောစီးစွာ ရှာဖွေတွေ့ရှိခြင်း">Early Detection</span></h6>
-              <p class="text-muted lang-text" data-en="PPH ဖြစ်ပေါ်နေပါက (သွေးဆုံးရှုံးမှု ≥500ml သို့မဟုတ် ≥300ml နှင့် ပုံမှန်မဟုတ်သော သားအိမ်တင်းမာမှု), E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။" data-my="PPH ဖြစ်ပေါ်နေပါက (သွေးဆုံးရှုံးမှု ≥500ml သို့မဟုတ် ≥300ml နှင့် ပုံမှန်မဟုတ်သော သားအိမ်တင်းမာမှု), E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။">Early recognition and detection of postpartum hemorrhage</p>
+              <h6><i class="fas fa-search me-2"></i>E - <span class="lang-text" data-en="Early Detection" data-mm="စောစီးစွာ ရှာဖွေတွေ့ရှိခြင်း">Early Detection</span></h6>
+              <p class="text-muted lang-text" data-en="PPH ဖြစ်ပေါ်နေပါက (သွေးဆုံးရှုံးမှု ≥500ml သို့မဟုတ် ≥300ml နှင့် ပုံမှန်မဟုတ်သော သားအိမ်တင်းမာမှု), E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။" data-mm="PPH ဖြစ်ပေါ်နေပါက (သွေးဆုံးရှုံးမှု ≥500ml သို့မဟုတ် ≥300ml နှင့် ပုံမှန်မဟုတ်သော သားအိမ်တင်းမာမှု), E-MOTIVE bundle ကို ချက်ချင်း စတင်ပြီး စည်းမျဉ်းများကို လိုက်နာပါ။">Early recognition and detection of postpartum hemorrhage</p>
               
-              <h6><i class="fas fa-hands me-2"></i>M - <span class="lang-text" data-en="Massage Uterus" data-my="သားအိမ်နှိပ်နယ်ခြင်း">Massage Uterus</span></h6>
-              <p class="text-muted lang-text" data-en="Bimanual uterine compression" data-my="လက်နှစ်ဖက်ဖြင့် သားအိမ်ဖိခြင်း">Bimanual uterine compression</p>
+              <h6><i class="fas fa-hands me-2"></i>M - <span class="lang-text" data-en="Massage Uterus" data-mm="သားအိမ်နှိပ်နယ်ခြင်း">Massage Uterus</span></h6>
+              <p class="text-muted lang-text" data-en="Bimanual uterine compression" data-mm="လက်နှစ်ဖက်ဖြင့် သားအိမ်ဖိခြင်း">Bimanual uterine compression</p>
               
-              <h6><i class="fas fa-pills me-2"></i>O - <span class="lang-text" data-en="Oxytocic Drugs" data-my="သားအိမ်ကျုံ့ဆေးများ">Oxytocic Drugs</span></h6>
-              <p class="text-muted lang-text" data-en="Administer uterotonic medications" data-my="သားအိမ်ကျုံ့ဆေးများ ပေးခြင်း">Administer uterotonic medications</p>
+              <h6><i class="fas fa-pills me-2"></i>O - <span class="lang-text" data-en="Oxytocic Drugs" data-mm="သားအိမ်ကျုံ့ဆေးများ">Oxytocic Drugs</span></h6>
+              <p class="text-muted lang-text" data-en="Administer uterotonic medications" data-mm="သားအိမ်ကျုံ့ဆေးများ ပေးခြင်း">Administer uterotonic medications</p>
               
-              <h6><i class="fas fa-syringe me-2"></i>T - <span class="lang-text" data-en="Tranexamic Acid" data-my="Tranexamic Acid">Tranexamic Acid</span></h6>
-              <p class="text-muted lang-text" data-en="Anti-fibrinolytic therapy" data-my="သွေးခဲခြင်းကို တားဆီးသော ကုထုံး">Anti-fibrinolytic therapy</p>
+              <h6><i class="fas fa-syringe me-2"></i>T - <span class="lang-text" data-en="Tranexamic Acid" data-mm="Tranexamic Acid">Tranexamic Acid</span></h6>
+              <p class="text-muted lang-text" data-en="Anti-fibrinolytic therapy" data-mm="သွေးခဲခြင်းကို တားဆီးသော ကုထုံး">Anti-fibrinolytic therapy</p>
             </div>
             <div class="col-md-6">
-              <h6><i class="fas fa-tint me-2"></i>IV - <span class="lang-text" data-en="IV Fluids" data-my="သွေးကြောထဲသို့ အရည်ထည့်ခြင်း">IV Fluids</span></h6>
-              <p class="text-muted lang-text" data-en="Intravenous fluid resuscitation" data-my="သွေးကြောထဲသို့ အရည်ထည့်ခြင်း">Intravenous fluid resuscitation</p>
+              <h6><i class="fas fa-tint me-2"></i>IV - <span class="lang-text" data-en="IV Fluids" data-mm="သွေးကြောထဲသို့ အရည်ထည့်ခြင်း">IV Fluids</span></h6>
+              <p class="text-muted lang-text" data-en="Intravenous fluid resuscitation" data-mm="သွေးကြောထဲသို့ အရည်ထည့်ခြင်း">Intravenous fluid resuscitation</p>
               
-              <h6><i class="fas fa-stethoscope me-2"></i>E - <span class="lang-text" data-en="Examination & Escalation" data-my="စစ်ဆေးခြင်းနှင့် အဆင့်မြှင့်တင်ခြင်း">Examination & Escalation</span></h6>
-              <p class="text-muted lang-text" data-en="Assess and escalate care if needed" data-my="လိုအပ်ပါက ဆန်းစစ်ပြီး စောင့်ရှောက်မှု အဆင့်မြှင့်တင်ခြင်း">Assess and escalate care if needed</p>
+              <h6><i class="fas fa-stethoscope me-2"></i>E - <span class="lang-text" data-en="Examination & Escalation" data-mm="စစ်ဆေးခြင်းနှင့် အဆင့်မြှင့်တင်ခြင်း">Examination & Escalation</span></h6>
+              <p class="text-muted lang-text" data-en="Assess and escalate care if needed" data-mm="လိုအပ်ပါက ဆန်းစစ်ပြီး စောင့်ရှောက်မှု အဆင့်မြှင့်တင်ခြင်း">Assess and escalate care if needed</p>
             </div>
           </div>
           
@@ -845,7 +814,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span class="lang-text" data-en="Close" data-my="ပိတ်ရန်">Close</span></button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span class="lang-text" data-en="Close" data-mm="ပိတ်ရန်">Close</span></button>
         </div>
       </div>
     </div>
@@ -859,43 +828,15 @@
     </div>
   </footer>
 
+  <script src="js/form-wizard.js"></script>
   <script>
+    if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+      window.alert = function(message) {
+        window.AppDialog.alert(String(message || ''), { title: 'Notice' });
+      };
+    }
     let currentUser = null;
     let currentPatient = null;
-    
-    // Language switching
-    let currentLanguage = localStorage.getItem('appLanguage') || 'en';
-
-    // Language switching function
-    function switchLanguage(lang) {
-      currentLanguage = lang;
-      localStorage.setItem('appLanguage', lang);
-      
-      // Update active button
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-      });
-      
-      // Update all text elements with lang-text class (but preserve elements with specific IDs)
-      document.querySelectorAll('.lang-text').forEach(el => {
-        // Skip if this element or its children contain the postpartum period display elements
-        if (el.id === 'postpartumDays' || el.id === 'postpartumHours' || 
-            el.querySelector('#postpartumDays') || el.querySelector('#postpartumHours')) {
-          return;
-        }
-        const text = el.dataset[lang] || el.dataset.en || el.textContent;
-        // Handle line breaks
-        el.innerHTML = text.replace(/&#10;/g, '<br>').replace(/\n/g, '<br>');
-      });
-      
-      // Recalculate postpartum period after language switch (if delivery date exists)
-      setTimeout(() => {
-        const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
-        if (deliveredDateTimeInput && deliveredDateTimeInput.value) {
-          calculatePostpartumPeriod();
-        }
-      }, 50);
-    }
 
     // Calculate postpartum period based on visit date (not current date)
     function calculatePostpartumPeriod() {
@@ -986,11 +927,28 @@
     }
 
     // Initialize Firebase and load data
+    async function waitForCurrentUserOffline(maxMs = 4000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const u = firebase.auth().currentUser;
+        if (u) return u;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+      return null;
+    }
+
     firebase.auth().onAuthStateChanged(async (user) => {
-      if (user) {
-        currentUser = user;
+      let resolvedUser = user;
+      if (!resolvedUser && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        resolvedUser = await waitForCurrentUserOffline(5000);
+      }
+      console.log('[PNC-FORM] onAuthStateChanged fired. user=', !!user, 'offlineMode=', localStorage.getItem('offlineMode'));
+      if (resolvedUser) {
+        currentUser = resolvedUser;
+        console.log('[PNC-FORM] User present, loading patient from URL.');
         await loadPatientFromURL();
       } else {
+        console.log('[PNC-FORM] No user, redirecting to login.');
         window.location.href = 'login.html';
       }
     });
@@ -1001,7 +959,7 @@
         showLoading(true);
         
         const urlParams = new URLSearchParams(window.location.search);
-        const patientId = urlParams.get('patient');
+        const patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
         
         if (!patientId) {
           alert('No patient ID provided');
@@ -1009,6 +967,46 @@
           return;
         }
         
+        const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const legacyToggle = window.OfflineManager && window.OfflineManager.isOfflineMode();
+        const isOfflinePatient = patientId.startsWith('OFFLINE-');
+        const isOffline = networkOff || legacyToggle || isOfflinePatient;
+
+        if (isOffline) {
+          currentPatient = null;
+          if (networkOff && window.LabourCareOffline && patientId && !isOfflinePatient) {
+            const pl = await LabourCareOffline.getPatientPayload(patientId);
+            if (pl) currentPatient = { id: patientId, ...pl };
+          }
+          const cachedData = sessionStorage.getItem('selectedPatientData');
+          if (!currentPatient && cachedData) {
+            currentPatient = JSON.parse(cachedData);
+            currentPatient.id = patientId;
+          } else if (!currentPatient && window.OfflineManager) {
+            if (isOfflinePatient) {
+              const pending = await window.OfflineManager.getPendingRecords('pending_patients');
+              const match = pending.find(r => r.localId === patientId);
+              if (match) currentPatient = { id: patientId, ...match.data };
+            } else {
+              const cached = await window.OfflineManager.getCachedPatient(patientId);
+              if (cached) currentPatient = cached;
+            }
+          }
+          if (!currentPatient) {
+            alert('Patient data not available offline.');
+            window.location.href = 'postpartum-care.html';
+            return;
+          }
+          document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
+          document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
+          document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
+          const today = new Date().toISOString().split('T')[0];
+          document.getElementById('visitDate').value = today;
+          showLoading(false);
+          return;
+        }
+
+        // ONLINE: Load from Firestore
         const db = firebase.firestore();
         const patientDoc = await db.collection('patients').doc(patientId).get();
         
@@ -1062,7 +1060,7 @@
         
       } catch (error) {
         console.error('Error loading patient:', error);
-        alert('Error loading patient data: ' + error.message);
+        alert('Could not load patient data. Please try again.');
         showLoading(false);
       }
     }
@@ -1266,9 +1264,12 @@
           return checkbox && checkbox.checked ? 'Yes' : 'No';
         };
         
+        const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+
         const formData = {
+          patientId: currentPatient.id,
           visitDate: document.getElementById('visitDate').value,
-          visitNumber: parseInt(document.getElementById('visitNumber').value),
+          visitNumber: shouldDeferVisitNumber ? null : parseInt(document.getElementById('visitNumber').value),
           deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
           postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
           postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
@@ -1305,45 +1306,54 @@
           treatment: document.getElementById('treatment').value,
           clinicalNotes: document.getElementById('clinicalNotes').value,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          createdBy: currentUser.uid
+          createdBy: currentUser.uid,
+          _needsVisitNumber: shouldDeferVisitNumber,
+          syncState: 'pending'
         };
-        
-        const db = firebase.firestore();
-        await db.collection('patients')
-          .doc(currentPatient.id)
-          .collection('postpartum_visits')
-          .add(formData);
-        
-        // Update patient's last postpartum visit date
-        await db.collection('patients')
-          .doc(currentPatient.id)
-          .update({
-            lastPostpartumVisit: firebase.firestore.FieldValue.serverTimestamp()
-          });
 
-        // Update patient status to Postnatal Care
-        await StatusManager.checkAndUpdateToPostnatalCare(currentPatient.id, 'First postnatal visit recorded');
-        
-        alert('Postpartum visit saved successfully!');
+        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
+          'pending_pnc_visits',
+          formData,
+          async function (payload) {
+            const cloudData = { ...payload };
+            delete cloudData._needsVisitNumber;
+            delete cloudData.syncState;
+            if (!cloudData.visitNumber) {
+              cloudData.visitNumber = parseInt(document.getElementById('visitNumber').value) || null;
+            }
+            cloudData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+            const db = firebase.firestore();
+            const ref = await db.collection('patients')
+              .doc(currentPatient.id)
+              .collection('postpartum_visits')
+              .add(cloudData);
+
+            await db.collection('patients')
+              .doc(currentPatient.id)
+              .update({
+                lastPostpartumVisit: firebase.firestore.FieldValue.serverTimestamp()
+              });
+
+            await StatusManager.checkAndUpdateToPostnatalCare(currentPatient.id, 'First postnatal visit recorded');
+            return { cloudId: ref.id };
+          }
+        );
+
+        var pncMsg = saveResult.cloud
+          ? 'PNC visit saved and synced to cloud.'
+          : 'PNC visit saved locally. Please sync when online.';
+        if (window.AppDialog && AppDialog.alert) {
+          await AppDialog.alert(pncMsg, { title: 'Saved' });
+        } else {
+          alert(pncMsg);
+        }
         window.location.href = 'postpartum-care.html';
         
       } catch (error) {
         console.error('Error saving postpartum visit:', error);
-        alert('Error saving postpartum visit: ' + error.message);
+        alert('Could not save postpartum visit. Please try again.');
       }
-    });
-
-    // Initialize language switcher on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      // Initialize language switcher buttons
-      document.querySelectorAll('.language-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          switchLanguage(this.dataset.lang);
-        });
-      });
-      
-      // Set initial language
-      switchLanguage(currentLanguage);
     });
   </script>
 </body>

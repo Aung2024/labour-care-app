@@ -28,6 +28,14 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js" crossorigin="anonymous"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/offline-store.js"></script>
+  <script src="js/offline-sync.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/sync-manager.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/high-risk-utils.js"></script>
   <!-- Auth guard will handle authentication check -->
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
@@ -63,6 +71,49 @@
     body.auth-verified {
       opacity: 1;
       visibility: visible;
+    }
+
+    #labourCareOfflineBanner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: #fef3c7;
+      color: #78350f;
+      border-bottom: 1px solid #f59e0b;
+      font-size: 0.95rem;
+    }
+
+    .hrt-bell-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .hrt-bell-btn {
+      color: #fff;
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 8px;
+      padding: 4px 8px;
+    }
+
+    .hrt-bell-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      padding: 0 4px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.7rem;
+      line-height: 18px;
+      text-align: center;
+      font-weight: 700;
     }
 
     .main-container {
@@ -636,6 +687,7 @@
           // Use setTimeout to defer this heavy operation
           setTimeout(() => {
             loadPatientStats();
+            setTimeout(loadHrtBellCount, 2000);
           }, 500);
         }
       } catch (error) {
@@ -679,6 +731,61 @@
       }
     }
 
+    function scheduleFullMirrorPull() {
+      if (navigator.onLine && window.LabourCareOffline && currentUser && userRole) {
+        const tsPull = LabourCareOffline.scopeFilterValueForRole(userRole);
+        LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
+      }
+    }
+
+    async function labourCareHomeSync() {
+      const btn = document.getElementById('labourCareSyncBtnHeader');
+      if (btn) btn.disabled = true;
+      try {
+        if (!currentUser || !userRole) {
+          alert('Please wait for the app to finish loading.');
+          return;
+        }
+        if (window.SyncManager && typeof window.SyncManager.syncAll === 'function') {
+          await window.SyncManager.syncAll();
+        }
+        if (window.LabourCareOffline) {
+          const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
+          await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
+          await LabourCareOffline.flushOutbox();
+          LabourCareOffline.setOfflineBanner(false);
+        }
+        await loadPatientStats();
+        alert('Sync complete.');
+      } catch (e) {
+        alert('Sync failed: ' + (e && e.message ? e.message : e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function loadHrtBellCount() {
+      if (!navigator.onLine || !currentUser || !userRole) return;
+      try {
+        const db = firebase.firestore();
+        const snap = await homeSmartQuery(
+          db.collection('patients').where('created_by', '==', currentUser.uid),
+          { preferCache: isIOSDevice, timeout: 6000, retries: 1, fallbackToCache: true }
+        );
+        const count = snap && !snap.empty ? snap.size || (snap.docs ? snap.docs.length : 0) : 0;
+        const badge = document.getElementById('hrtBellBadge');
+        if (!badge) return;
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.classList.remove('d-none');
+        } else {
+          badge.classList.add('d-none');
+        }
+      } catch (e) {
+        console.warn('HRT bell count failed', e);
+      }
+    }
+
     async function loadPatientStats() {
       // Don't load stats if page not initialized
       if (!pageInitialized) {
@@ -706,6 +813,38 @@
 
         if (!currentUser || !userRole) {
           console.log('User not loaded yet, skipping stats');
+          return;
+        }
+
+        if (!navigator.onLine && window.LabourCareOffline) {
+          let ts = LabourCareOffline.scopeFilterValueForRole(userRole);
+          if (!ts && LabourCareOffline.normalizeRoleKey(userRole) === 'regional officer' && window.UserCache) {
+            const cachedUser = UserCache.getCached(currentUser.uid);
+            if (cachedUser && cachedUser.region) ts = cachedUser.region;
+          }
+          const list = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, ts);
+          const listFiltered = list || [];
+
+          for (let i = 0; i < listFiltered.length; i++) {
+            const data = listFiltered[i];
+            let status = data.status || data.treatmentStatus || 'antenatal';
+            if (status === 'active') status = 'antenatal';
+            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
+              status = 'postnatal';
+            }
+            if (patientStats.hasOwnProperty(status)) {
+              patientStats[status]++;
+            }
+            if (status === 'postnatal' && window.OfflineStore) {
+              const rec = await OfflineStore.getDocument('patients/' + data.id + '/records/birthRecord');
+              if (rec && rec.payload) {
+                patientStats.baby++;
+              }
+            }
+            patientStats.total++;
+          }
+          updateStatsDisplay();
+          LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
           return;
         }
 
@@ -980,6 +1119,9 @@
           case 'scoreboard':
             window.location.href = 'leaderboard.html';
             break;
+          case 'high-risk-tracking':
+            window.location.href = 'high-risk-tracking.html';
+            break;
         }
       }, 100);
     }
@@ -1041,10 +1183,19 @@
     document.addEventListener('DOMContentLoaded', function() {
       // Set initial language
       switchLanguage(currentLanguage);
+      const syncBtn = document.getElementById('labourCareSyncBtnHeader');
+      if (syncBtn) {
+        syncBtn.addEventListener('click', function () {
+          labourCareHomeSync();
+        });
+      }
     });
   </script>
 </head>
 <body>
+  <div id="labourCareOfflineBanner" role="status">
+    <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
+  </div>
   <div class="main-container">
     <!-- Header Section -->
     <div class="header-section">
@@ -1079,6 +1230,15 @@
               <span>🇲🇲</span> MM
             </button>
           </div>
+          <div class="hrt-bell-wrap">
+            <a href="high-risk-tracking.html" class="hrt-bell-btn" id="hrtBellBtn" title="High Risk Alerts">
+              <i class="fas fa-bell"></i>
+            </a>
+            <span class="hrt-bell-badge d-none" id="hrtBellBadge">0</span>
+          </div>
+          <button type="button" class="btn btn-outline-light btn-sm" id="labourCareSyncBtnHeader">
+            <i class="fas fa-sync-alt me-2"></i><span class="lang-text" data-en="Sync" data-mm="စင့်ခ်">Sync</span>
+          </button>
           <a href="settings.html" id="settingsButton" class="btn btn-outline-light btn-sm" title="Settings" style="display: none;">
             <i class="fas fa-cog"></i>
           </a>
@@ -1199,6 +1359,20 @@
         </div>
         <a href="#" class="care-action" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);" onclick="event.preventDefault(); navigateToCare('cme');">
           <i class="fas fa-book-open me-2"></i><span class="lang-text" data-en="Start Learning" data-mm="သင်ယူမှု စတင်ရန်">Start Learning</span>
+        </a>
+      </div>
+
+      <!-- High Risk Tracking -->
+      <div class="care-card primary" id="hrtCard" onclick="navigateToCare('high-risk-tracking')">
+        <div class="care-icon">
+          <i class="fas fa-heartbeat"></i>
+        </div>
+        <h3 class="care-title"><span class="lang-text" data-en="High Risk Tracking" data-mm="အန္တရာယ်မြင့် လူနာ စောင့်ကြည့်မှု">High Risk Tracking</span></h3>
+        <p class="care-description">
+          <span class="lang-text" data-en="Review unresolved high-risk patients and follow-up actions." data-mm="ဖြေရှင်းရန်ကျန် အန္တရာယ်မြင့် လူနာများနှင့် နောက်ဆက်တွဲလုပ်ဆောင်ချက်များကို ကြည့်ရှုပါ။">Review unresolved high-risk patients and follow-up actions.</span>
+        </p>
+        <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('high-risk-tracking');">
+          <i class="fas fa-bell me-2"></i><span class="lang-text" data-en="Open High Risk Tracking" data-mm="အန္တရာယ်မြင့် စောင့်ကြည့်မှု ဖွင့်ရန်">Open High Risk Tracking</span>
         </a>
       </div>
 

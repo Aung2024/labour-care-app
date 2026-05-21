@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#dc2626">
+  <title>High Risk Tracking - MNCH</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/edd-display.js"></script>
+  <script src="js/high-risk-utils.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/data-masking.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <style>
+    :root {
+      --hrt-surface: #ffffff;
+      --hrt-border: #e2e8f0;
+      --hrt-header-bg: #f1f5f9;
+      --hrt-header-text: #334155;
+      --hrt-row-hover: #f8fafc;
+      --hrt-row-stripe: #fafbfc;
+      --hrt-text: #0f172a;
+      --hrt-muted: #64748b;
+      --hrt-accent: #b91c1c;
+      --hrt-accent-soft: #fef2f2;
+      --hrt-phone: #2563eb;
+      --hrt-radius: 12px;
+      --hrt-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 20px rgba(15, 23, 42, 0.06);
+    }
+
+    body {
+      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(145deg, #5b67c9 0%, #6b4d8c 45%, #4c1d95 100%);
+      min-height: 100vh;
+      margin: 0;
+      color: var(--hrt-text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-header {
+      background: linear-gradient(135deg, #b91c1c 0%, #991b1b 50%, #7f1d1d 100%);
+      color: #fff;
+      padding: 1rem 1.35rem;
+      box-shadow: 0 4px 24px rgba(127, 29, 29, 0.35);
+    }
+
+    .main-wrap {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2rem;
+    }
+
+    .card-panel {
+      background: var(--hrt-surface);
+      border-radius: var(--hrt-radius);
+      box-shadow: var(--hrt-shadow);
+      border: 1px solid rgba(255,255,255,0.65);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+    }
+
+    #tableState.card-panel {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .hrt-info-banner {
+      padding: 1rem 1.35rem;
+      border-bottom: 1px solid var(--hrt-border);
+      background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+    }
+
+    .hrt-info-banner .hrt-info {
+      color: var(--hrt-muted);
+      font-size: 0.875rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .table-wrap::-webkit-scrollbar { height: 8px; }
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    .hrt-table {
+      font-size: 0.8125rem;
+      line-height: 1.45;
+      color: var(--hrt-text);
+      margin: 0;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 1100px;
+    }
+
+    .hrt-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--hrt-header-bg);
+      color: var(--hrt-header-text);
+      font-weight: 600;
+      font-size: 0.6875rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.85rem 0.75rem;
+      border-bottom: 2px solid var(--hrt-border);
+      white-space: nowrap;
+      vertical-align: middle;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
+    }
+
+    .hrt-table tbody td {
+      padding: 0.75rem 0.75rem;
+      border-bottom: 1px solid var(--hrt-border);
+      vertical-align: top;
+    }
+
+    .hrt-table tbody tr:nth-child(even) td {
+      background: var(--hrt-row-stripe);
+    }
+
+    .hrt-table tbody tr:hover td {
+      background: var(--hrt-row-hover);
+    }
+
+    .hrt-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .hrt-col-name { min-width: 8.5rem; max-width: 11rem; color: #1e293b; }
+    .hrt-patient-name { font-weight: 600; letter-spacing: -0.01em; }
+    .hrt-col-phone { min-width: 6.5rem; white-space: nowrap; }
+    .hrt-col-phone a {
+      color: var(--hrt-phone);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid transparent;
+    }
+    .hrt-col-phone a:hover { border-bottom-color: var(--hrt-phone); }
+
+    .hrt-col-edd { min-width: 8.5rem; max-width: 10rem; }
+    .hrt-col-date { min-width: 5.5rem; white-space: nowrap; }
+    .hrt-col-days { min-width: 5rem; text-align: center; }
+    .hrt-col-risks { min-width: 9rem; max-width: 14rem; }
+    .hrt-col-cues { min-width: 6.5rem; max-width: 10rem; }
+    .hrt-col-action {
+      min-width: 7.5rem;
+      width: 7.5rem;
+      text-align: center;
+      vertical-align: middle !important;
+    }
+    .hrt-table thead th.hrt-col-action { text-align: center; }
+
+    .hrt-edd-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      align-items: flex-start;
+    }
+    .hrt-edd-date { font-weight: 600; color: #1e293b; }
+    .hrt-edd-ga { font-size: 0.75rem; color: var(--hrt-muted); }
+    .hrt-edd-flag {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: #fff7ed;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+      line-height: 1.3;
+      max-width: 100%;
+    }
+
+    .hrt-empty {
+      color: #cbd5e1;
+      font-weight: 300;
+      font-size: 1.1rem;
+    }
+
+    .hrt-pill-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .hrt-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      line-height: 1.35;
+      padding: 0.28rem 0.5rem;
+      border-radius: 6px;
+      max-width: 100%;
+      word-break: break-word;
+      border: 1px solid transparent;
+    }
+    .hrt-pill--anc {
+      background: #f1f5f9;
+      color: #334155;
+      border-color: #e2e8f0;
+    }
+    .hrt-pill--lcg {
+      background: #eff6ff;
+      color: #1e40af;
+      border-color: #bfdbfe;
+    }
+    .hrt-pill--pnc {
+      background: #f5f3ff;
+      color: #5b21b6;
+      border-color: #ddd6fe;
+    }
+    .hrt-pill--other {
+      background: #fffbeb;
+      color: #92400e;
+      border-color: #fde68a;
+    }
+
+    .hrt-day-pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.35rem 0.55rem;
+      border-radius: 999px;
+      min-width: 3.25rem;
+      text-align: center;
+    }
+    .hrt-day-pill--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .hrt-day-pill--warn { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+    .hrt-day-pill--overdue { background: var(--hrt-accent-soft); color: #991b1b; border: 1px solid #fecaca; }
+
+    .hrt-cue-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.28rem 0.45rem;
+      border-radius: 6px;
+      margin: 0 0.25rem 0.25rem 0;
+    }
+    .hrt-cue-pill.danger { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .hrt-cue-pill.warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .hrt-cue-pill.info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    .hrt-btn-hub {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      color: #fff !important;
+      text-decoration: none !important;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      border: none;
+      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .hrt-btn-hub:hover {
+      color: #fff !important;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(185, 28, 28, 0.45);
+    }
+    .hrt-btn-hub i { font-size: 0.85rem; opacity: 0.95; }
+
+    .lang-btn {
+      border: 1px solid rgba(255,255,255,.45);
+      background: rgba(255,255,255,.12);
+      color: #fff;
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 0.8rem;
+      transition: background 0.15s ease;
+    }
+    .lang-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
+    .lang-btn.active { background: rgba(255,255,255,.28); font-weight: 600; }
+
+    @media (max-width: 768px) {
+      .main-wrap { padding: 0.75rem 0.5rem 1.5rem; }
+      .hrt-table { font-size: 0.78rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div>
+        <button type="button" class="btn btn-light btn-sm me-2" onclick="location.href='home.html'">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <span class="fw-bold hrt-title">High Risk Tracking</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="lang-btn" data-lang="en" onclick="setLang('en')">ENG</button>
+        <button type="button" class="lang-btn active" data-lang="mm" onclick="setLang('mm')">MM</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <div id="offlineBanner" class="alert alert-warning d-none" role="alert"></div>
+    <div class="card-panel">
+      <p class="small text-muted mb-0 hrt-info"></p>
+    </div>
+    <div id="loadingState" class="card-panel text-center py-5">
+      <div class="spinner-border text-danger" role="status"></div>
+      <p class="mt-2 mb-0 hrt-loading">Loading…</p>
+    </div>
+    <div id="emptyState" class="card-panel text-center py-5 d-none">
+      <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+      <p class="mb-0 hrt-empty"></p>
+    </div>
+    <div id="tableState" class="card-panel d-none">
+      <div class="table-wrap">
+        <table class="hrt-table w-100">
+          <thead>
+            <tr>
+              <th class="hrt-col-name col-name"></th>
+              <th class="hrt-col-phone col-phone"></th>
+              <th class="hrt-col-edd col-edd"></th>
+              <th class="hrt-col-date col-last"></th>
+              <th class="hrt-col-days col-days"></th>
+              <th class="hrt-col-risks col-risk-anc"></th>
+              <th class="hrt-col-risks col-risk-lcg"></th>
+              <th class="hrt-col-risks col-risk-pnc"></th>
+              <th class="hrt-col-risks col-risk-other"></th>
+              <th class="hrt-col-cues col-cues"></th>
+              <th class="hrt-col-action col-action"></th>
+            </tr>
+          </thead>
+          <tbody id="hrtBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var FOLLOWUP_ALERT_DAYS = 14;
+    var FOLLOWUP_WARN_DAYS = 28;
+    var CONCURRENCY = 8;
+
+    var T = {
+      en: {
+        title: 'High Risk Tracking',
+        info: 'Listed patients have at least one ANC visit with “high risk” (Risk+) recorded. Extra columns pull LCG summary risk text, PNC danger signs, registration/lab data when present. Antenatal patients only.',
+        loading: 'Loading patients and ANC visits…',
+        empty: 'No high-risk antenatal patients in your access scope, or none with ANC data yet.',
+        offline: 'High Risk Tracking needs an internet connection to load antenatal visits from the server.',
+        colName: 'Patient',
+        colPhone: 'Phone',
+        colEdd: 'EDD / GA',
+        colLast: 'Last ANC',
+        colDays: 'Days since ANC',
+        colRiskAnc: 'Risks (ANC)',
+        colRiskLcg: 'Risks (LCG)',
+        colRiskPnc: 'Risks (PNC)',
+        colRiskOther: 'Other (reg. / labs)',
+        colCues: 'Cues',
+        colAction: 'Open',
+        openHub: 'Care hub',
+        openHubBtn: 'Open hub',
+        noVisits: 'No visits',
+        days: 'days',
+        referral: 'Referral',
+        danger: 'Danger signs',
+        anemia: 'Anemia (exam)',
+        bp: 'BP high',
+        protein: 'Urine protein+',
+        sugar: 'Urine sugar+'
+      },
+      mm: {
+        title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
+        info: 'ဤစာရင်းတွင် High Risk သတ်မှတ်ထားသော ကိုယ်ဝန်သည်များ ပါဝင်သည်။ လိုအပ်လျှင် ဖုန်းခေါ်ပြီး Follow up လိုက်ပေးပါ။',
+        loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
+        empty: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် မရှိသေးပါ။',
+        offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက်ချိတ်ဆက်မှု လိုအပ်သည်။',
+        colName: 'လူနာ',
+        colPhone: 'ဖုန်းနံပါတ်',
+        colEdd: 'မီးဖွားရက် / ကိုယ်ဝန်အပတ်',
+        colLast: 'နောက်ဆုံး ANC',
+        colDays: 'ANC မလာတာ ရက်',
+        colRiskAnc: 'ANC အန္တရာယ်များ',
+        colRiskLcg: 'LCG အန္တရာယ်များ',
+        colRiskPnc: 'PNC အန္တရာယ်များ',
+        colRiskOther: 'အခြား',
+        colCues: 'သတိပေးချက်များ',
+        colAction: 'ဖွင့်ရန်',
+        openHub: 'Care Hub ကိုသွားပါ',
+        openHubBtn: 'Hub ဖွင့်ရန်',
+        noVisits: 'မှတ်တမ်း မရှိ',
+        days: 'ရက်',
+        referral: 'လွှဲပြောင်း',
+        danger: 'အန္တရာယ်များ',
+        anemia: 'သွေးအားနည်း',
+        bp: 'သွေးပေါင်မြင့်',
+        protein: 'ဆီးတွင်း ပရိုတင်းမြင့်',
+        sugar: 'သွေးတွင်း သကြားဓာတ်များ'
+      }
+    };
+
+    var lang = localStorage.getItem('appLanguage') || 'mm';
+
+    function tr(key) {
+      var pack = T[lang] || T.mm;
+      return pack[key] != null ? pack[key] : (T.en[key] || key);
+    }
+
+    function applyStaticI18n() {
+      document.querySelector('.hrt-title').textContent = tr('title');
+      document.querySelector('.hrt-info').textContent = tr('info');
+      document.querySelector('.hrt-loading').textContent = tr('loading');
+      document.querySelector('.hrt-empty').textContent = tr('empty');
+      document.querySelectorAll('.lang-btn').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+      });
+      document.querySelector('.col-name').textContent = tr('colName');
+      document.querySelector('.col-phone').textContent = tr('colPhone');
+      document.querySelector('.col-edd').textContent = tr('colEdd');
+      document.querySelector('.col-last').textContent = tr('colLast');
+      document.querySelector('.col-days').textContent = tr('colDays');
+      document.querySelector('.col-risk-anc').textContent = tr('colRiskAnc');
+      document.querySelector('.col-risk-lcg').textContent = tr('colRiskLcg');
+      document.querySelector('.col-risk-pnc').textContent = tr('colRiskPnc');
+      document.querySelector('.col-risk-other').textContent = tr('colRiskOther');
+      document.querySelector('.col-cues').textContent = tr('colCues');
+      document.querySelector('.col-action').textContent = tr('colAction');
+    }
+
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('appLanguage', l);
+      applyStaticI18n();
+      if (window._hrtRows) renderTable(window._hrtRows);
+    }
+
+    function isRegionalOfficerRole(role) {
+      if (!role || typeof role !== 'string') return false;
+      return role === 'Regional Officer' || role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer';
+    }
+
+    function isAntenatalPatient(p) {
+      var s = (p.status || 'registered').toLowerCase();
+      if (s.indexOf('labour') !== -1) return false;
+      if (s.indexOf('postnatal') !== -1 || s.indexOf('postpartum') !== -1) return false;
+      return true;
+    }
+
+    function formatDateVal(v) {
+      if (v == null) return '—';
+      var d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+    }
+
+    function parseBloodPressure(str) {
+      if (!str || typeof str !== 'string') return null;
+      var m = str.trim().match(/^(\d+)\s*\/\s*(\d+)/);
+      if (!m) return null;
+      return { sys: parseInt(m[1], 10), dia: parseInt(m[2], 10) };
+    }
+
+    function clinicalCueTags(latest) {
+      if (!latest) return [];
+      var tags = [];
+      var ref = latest.referral;
+      if (ref === 'Yes' || ref === 'yes') tags.push({ cls: 'bg-info text-dark', t: tr('referral') });
+      if (latest.dangerSignsPresent === 'yes' || latest.dangerSignsPresent === 'Yes') tags.push({ cls: 'bg-danger', t: tr('danger') });
+      if (latest.anemiaStatus === 'Yes' || latest.anemiaStatus === 'yes') tags.push({ cls: 'bg-warning text-dark', t: tr('anemia') });
+      var bp = parseBloodPressure(latest.bloodPressure);
+      if (bp && (bp.sys >= 140 || bp.dia >= 90)) tags.push({ cls: 'bg-danger', t: tr('bp') });
+      var up = (latest.urineProtein || '').toLowerCase();
+      if (up.indexOf('++') !== -1 || up === 'positive' || up === 'trace++') tags.push({ cls: 'bg-warning text-dark', t: tr('protein') });
+      var us = (latest.urineSugar || '').toLowerCase();
+      if (us.indexOf('++') !== -1 || us === 'positive') tags.push({ cls: 'bg-warning text-dark', t: tr('sugar') });
+      var hb = latest.hemoglobin != null ? parseFloat(latest.hemoglobin) : NaN;
+      if (!isNaN(hb) && hb < 11) tags.push({ cls: 'bg-warning text-dark', t: 'Hb<11' });
+      return tags;
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function uniqueStrings(arr) {
+      var seen = new Set();
+      var out = [];
+      (arr || []).forEach(function (x) {
+        var s = x == null ? '' : String(x).trim();
+        if (s && !seen.has(s)) {
+          seen.add(s);
+          out.push(s);
+        }
+      });
+      return out;
+    }
+
+    function extractLcgRisksFromSummary(summaryData) {
+      if (!summaryData) return [];
+      var rf = summaryData.risk_factors;
+      if (Array.isArray(rf)) return uniqueStrings(rf.map(String));
+      if (typeof rf === 'string' && rf.trim()) {
+        return uniqueStrings(rf.split(/[\n,;]+/).map(function (s) { return s.trim(); }));
+      }
+      return [];
+    }
+
+    var PNC_DANGER_KEYS = [
+      ['heavyBleeding', 'Heavy bleeding'],
+      ['severeHeadache', 'Severe headache'],
+      ['convulsions', 'Convulsions'],
+      ['breathingProblems', 'Breathing difficulty'],
+      ['feverFatigue', 'Fever / severe fatigue'],
+      ['breastEngorgementDanger', 'Breast problem (danger)'],
+      ['urinaryProblems', 'Urinary problems'],
+      ['woundInflammation', 'Wound inflammation'],
+      ['foulDischarge', 'Foul-smelling discharge']
+    ];
+
+    function extractPncRisksFromVisits(visitDocs) {
+      var out = [];
+      (visitDocs || []).forEach(function (vd) {
+        var ds = vd.dangerSigns;
+        if (!ds || typeof ds !== 'object') return;
+        PNC_DANGER_KEYS.forEach(function (pair) {
+          var v = ds[pair[0]];
+          if (v === true || v === 'Yes' || v === 'yes') out.push(pair[1]);
+        });
+      });
+      return uniqueStrings(out);
+    }
+
+    var LAB_RESULT_FIELDS = [
+      ['hivResult', 'HIV'],
+      ['malariaResult', 'Malaria'],
+      ['syphilisResult', 'Syphilis'],
+      ['hepatitisBResult', 'Hepatitis B'],
+      ['hepatitisCResult', 'Hepatitis C'],
+      ['rbsResult', 'RBS'],
+      ['hemoglobinResult', 'Hb'],
+      ['urineProtein', 'Urine protein'],
+      ['urineSugar', 'Urine sugar']
+    ];
+
+    function isConcerningLabValue(val) {
+      if (val == null) return false;
+      var s = String(val).trim();
+      if (!s) return false;
+      if (/^(negative|not\s+detected|non[- ]?reactive|normal|clear|no)$/i.test(s)) return false;
+      return /positive|reactive|detected|\+\+|^\s*\+|severe|critical/i.test(s);
+    }
+
+    function extractLabRiskSnippets(testDataList) {
+      var out = [];
+      (testDataList || []).forEach(function (d) {
+        LAB_RESULT_FIELDS.forEach(function (pair) {
+          var key = pair[0];
+          var label = pair[1];
+          var v = d[key];
+          if (key === 'hemoglobinResult' && v != null && v !== '') {
+            var hn = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+            if (!isNaN(hn) && hn < 11) {
+              out.push(label + ': ' + String(v).trim());
+              return;
+            }
+          }
+          if (isConcerningLabValue(v)) out.push(label + ': ' + String(v).trim());
+        });
+      });
+      return uniqueStrings(out).slice(0, 12);
+    }
+
+    function extractRegistrationRisks(patient) {
+      var out = [];
+      if (patient.high_risk === 'yes' || patient.high_risk === true) {
+        out.push(lang === 'mm' ? 'မှတ်ပုံတင်: အန္တရာယ်မြင့်' : 'Registration: high risk');
+      }
+      if (Array.isArray(patient.risk_factors)) {
+        patient.risk_factors.forEach(function (f) {
+          if (f) out.push(String(f));
+        });
+      }
+      if (patient.risk_notes && String(patient.risk_notes).trim()) {
+        var n = String(patient.risk_notes).trim();
+        out.push(n.length > 100 ? n.slice(0, 100) + '…' : n);
+      }
+      return uniqueStrings(out);
+    }
+
+    function mergeOtherColumn(registrationRisks, labSnippets) {
+      return uniqueStrings((registrationRisks || []).concat(labSnippets || []));
+    }
+
+    var HRT_RISK_LABELS = {
+      maternal_age_18_or_35: 'Maternal age <18 or >35 years',
+      maternal_age_18_or_40: 'Maternal age <18 or ≥40 years',
+      parity_5: 'Parity ≥ 5',
+      multiple_pregnancy: 'Multiple pregnancy',
+      previous_complications: 'History of complications in previous pregnancies',
+      previous_stillbirths: 'Previous stillbirths or neonatal deaths',
+      previous_preterm: 'Previous preterm births',
+      obstructed_labour: 'History of obstructed / prolonged labour or CS',
+      uterine_scar: 'Uterine scar',
+      hypertension: 'Hypertension',
+      diabetes: 'Diabetes mellitus',
+      cardiac_disease: 'Cardiac disease',
+      tuberculosis: 'Tuberculosis',
+      epilepsy: 'Epilepsy',
+      kidney_disease: 'Kidney disease',
+      hiv: 'HIV infection',
+      previous_congenital_anomalies: 'Previous child with congenital anomalies',
+      short_interval_pregnancy: 'Short interval between pregnancies',
+      placenta_previa_abruption: 'Placenta previa / abruption',
+      other_medical_conditions: 'Other medical conditions'
+    };
+
+    function humanizeRiskLabel(s) {
+      var t = String(s == null ? '' : s).trim();
+      if (!t) return t;
+      if (HRT_RISK_LABELS[t]) return HRT_RISK_LABELS[t];
+      var noSpace = t.replace(/\s+/g, '');
+      if (HRT_RISK_LABELS[noSpace]) return HRT_RISK_LABELS[noSpace];
+      if (/:/.test(t)) return t;
+      if (/_/.test(t)) {
+        return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+      }
+      return t;
+    }
+
+    function factorCellHtml(arr, variant) {
+      if (!arr || !arr.length) return '<span class="hrt-empty">—</span>';
+      var mod = variant ? ' hrt-pill--' + variant : ' hrt-pill--anc';
+      return '<div class="hrt-pill-wrap">' + arr.map(function (f) {
+        return '<span class="hrt-pill' + mod + '">' + escapeHtml(humanizeRiskLabel(f)) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    function cuePillClass(bootstrapCls) {
+      var c = bootstrapCls || '';
+      if (c.indexOf('bg-danger') !== -1) return 'hrt-cue-pill danger';
+      if (c.indexOf('bg-warning') !== -1) return 'hrt-cue-pill warning';
+      if (c.indexOf('bg-info') !== -1) return 'hrt-cue-pill info';
+      return 'hrt-cue-pill warning';
+    }
+
+    function eddCellHtml(p) {
+      var ga = p.gestational_age != null ? p.gestational_age + ' w' : '—';
+      var gaEsc = escapeHtml(ga);
+      if (!p.edd) {
+        return '<div class="hrt-edd-stack"><span class="hrt-edd-date">—</span><span class="hrt-edd-ga">' + gaEsc + '</span></div>';
+      }
+      var d = window.EddDisplay && window.EddDisplay.parseEddToDate(p.edd);
+      var dateStr;
+      if (d && !isNaN(d.getTime())) {
+        dateStr = d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+      } else {
+        dateStr = String(p.edd);
+      }
+      var past = false;
+      if (d && !isNaN(d.getTime())) {
+        var t0 = new Date();
+        t0.setHours(0, 0, 0, 0);
+        var ed0 = new Date(d.getTime());
+        ed0.setHours(0, 0, 0, 0);
+        past = ed0 < t0;
+      }
+      var flagText = past
+        ? (lang === 'mm' ? 'EDD ကျော်လွန် · မွေးဖွားပြီး ဖြစ်နိုင်' : 'Past EDD · may have delivered')
+        : '';
+      return '<div class="hrt-edd-stack">' +
+        '<span class="hrt-edd-date">' + escapeHtml(dateStr) + '</span>' +
+        (past ? '<span class="hrt-edd-flag">' + escapeHtml(flagText) + '</span>' : '') +
+        '<span class="hrt-edd-ga">' + gaEsc + '</span></div>';
+    }
+
+    async function fetchPatientsForRole(db, currentUser, userRole) {
+      var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      var query = db.collection('patients');
+      var allPatients = [];
+
+      if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
+        var patientMap = new Map();
+        var newSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('created_by', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var oldSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('createdBy', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var sharedSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        [newSnap, oldSnap, sharedSnap].forEach(function (snap) {
+          if (snap && typeof snap.forEach === 'function' && !snap.empty) {
+            snap.forEach(function (doc) {
+              if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+              }
+            });
+          }
+        });
+        allPatients = Array.from(patientMap.values());
+      } else if (userRole === 'Regional Officer' || isRegionalOfficerRole(userRole)) {
+        var uDoc = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc && uDoc.exists) {
+          var reg = uDoc.data().region;
+          if (reg) {
+            var rs = await smartFirestoreQuery(
+              Promise.resolve(query.where('region', '==', reg)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (rs && typeof rs.forEach === 'function' && !rs.empty) {
+              rs.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'TMO') {
+        var uDoc2 = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc2 && uDoc2.exists) {
+          var tw = uDoc2.data().township;
+          if (tw) {
+            var ts = await smartFirestoreQuery(
+              Promise.resolve(query.where('township', '==', tw)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (ts && typeof ts.forEach === 'function' && !ts.empty) {
+              ts.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'Super Admin' || userRole === 'admin') {
+        var snapshot = await smartFirestoreQuery(
+          Promise.resolve(query),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+          snapshot.forEach(function (doc) {
+            if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+          });
+        }
+      }
+
+      return allPatients;
+    }
+
+    async function fetchVisitsForPatient(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
+      var snap;
+      try {
+        snap = await ref.orderBy('visitDate', 'asc').get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'asc').get();
+        } catch (e2) {
+          snap = await ref.get();
+        }
+      }
+      var visits = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          visits.push({ id: d.id, data: d.data() || {} });
+        });
+      }
+      return visits;
+    }
+
+    async function fetchPostpartumVisitsRaw(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('postpartum_visits');
+      var snap;
+      try {
+        snap = await ref.orderBy('visitDate', 'desc').limit(20).get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'desc').limit(20).get();
+        } catch (e2) {
+          snap = await ref.limit(20).get();
+        }
+      }
+      var list = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          list.push(d.data() || {});
+        });
+      }
+      return list;
+    }
+
+    async function fetchLabourSummaryRaw(db, patientId) {
+      var doc = await db.collection('patients').doc(patientId).collection('records').doc('summary').get();
+      return doc && doc.exists ? doc.data() || {} : null;
+    }
+
+    async function fetchLabRecordsRaw(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('testRecords');
+      var snap;
+      try {
+        snap = await ref.orderBy('testDate', 'desc').limit(12).get();
+      } catch (e) {
+        try {
+          snap = await ref.orderBy('timestamp', 'desc').limit(12).get();
+        } catch (e2) {
+          snap = await ref.limit(12).get();
+        }
+      }
+      var list = [];
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) {
+          list.push(d.data() || {});
+        });
+      }
+      return list;
+    }
+
+    async function mapWithConcurrency(items, limit, fn) {
+      var out = [];
+      for (var i = 0; i < items.length; i += limit) {
+        var batch = items.slice(i, i + limit);
+        var part = await Promise.all(batch.map(fn));
+        out.push.apply(out, part);
+      }
+      return out;
+    }
+
+    function renderTable(rows) {
+      var tbody = document.getElementById('hrtBody');
+      tbody.innerHTML = '';
+      rows.forEach(function (r) {
+        var days = r.daysSince;
+        var daysPill = 'hrt-day-pill--ok';
+        if (days == null) {
+          daysPill = '';
+        } else if (days > FOLLOWUP_WARN_DAYS) {
+          daysPill = 'hrt-day-pill--overdue';
+        } else if (days > FOLLOWUP_ALERT_DAYS) {
+          daysPill = 'hrt-day-pill--warn';
+        }
+
+        var daysCell;
+        if (days == null) {
+          daysCell = '<span class="text-muted small">' + escapeHtml(tr('noVisits')) + '</span>';
+        } else {
+          daysCell = '<span class="hrt-day-pill ' + daysPill + '">' + days + ' ' + escapeHtml(tr('days')) + '</span>';
+        }
+
+        var cues = clinicalCueTags(r.latestData);
+        var cuesHtml = cues.length
+          ? '<div class="hrt-pill-wrap">' + cues.map(function (c) {
+              return '<span class="' + cuePillClass(c.cls) + '">' + escapeHtml(c.t) + '</span>';
+            }).join('') + '</div>'
+          : '<span class="hrt-empty">—</span>';
+
+        var rawName = r.patient.name || r.patient.patientName || '—';
+        var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
+        var trEl = document.createElement('tr');
+        trEl.innerHTML =
+          '<td class="hrt-col-name"><span class="hrt-patient-name">' + name + '</span></td>' +
+          '<td class="hrt-col-phone">' + phoneCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-edd">' + eddCellHtml(r.patient) + '</td>' +
+          '<td class="hrt-col-date">' + escapeHtml(r.lastAncStr) + '</td>' +
+          '<td class="hrt-col-days">' + daysCell + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.factorsUnique, 'anc') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.riskLcg, 'lcg') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(r.riskPnc, 'pnc') + '</td>' +
+          '<td class="hrt-col-risks">' + factorCellHtml(mergeOtherColumn(extractRegistrationRisks(r.patient), r.labRisks), 'other') + '</td>' +
+          '<td class="hrt-col-cues">' + cuesHtml + '</td>' +
+          '<td class="hrt-col-action"><a class="hrt-btn-hub" href="patient-care-hub.html?patient=' +
+          encodeURIComponent(r.patient.id) +
+          '" title="' + escapeHtml(tr('openHub')) + '"><i class="fas fa-hand-holding-medical"></i><span>' +
+          escapeHtml(tr('openHubBtn')) +
+          '</span></a></td>';
+        tbody.appendChild(trEl);
+      });
+    }
+
+    function phoneCellHtml(patient) {
+      var raw = patient.phone || patient.emergency_phone || patient.phoneNumber || '';
+      raw = String(raw).trim();
+      if (!raw) return '—';
+      var display = window.DataMasking && typeof window.DataMasking.maskPhone === 'function'
+        ? window.DataMasking.maskPhone(raw, true)
+        : raw;
+      var tel = raw.replace(/[^\d+]/g, '');
+      if (!tel) return escapeHtml(display);
+      return '<a href="tel:' + escapeHtml(tel) + '">' + escapeHtml(display) + '</a>';
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      if (!user) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      applyStaticI18n();
+
+      var offline = window.OfflineManager && window.OfflineManager.isOfflineMode();
+      if (offline) {
+        document.getElementById('offlineBanner').textContent = tr('offline');
+        document.getElementById('offlineBanner').classList.remove('d-none');
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+        return;
+      }
+
+      var db = firebase.firestore();
+      var userRole = 'Midwife';
+      try {
+        var userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
+        if (!userData) {
+          var uq = await smartFirestoreQuery(
+            Promise.resolve(db.collection('users').doc(user.uid)),
+            { preferCache: /iPhone|iPad|iPod/.test(navigator.userAgent), timeout: 8000, retries: 2, fallbackToCache: true }
+          );
+          userData = uq && uq.exists ? uq.data() : null;
+        }
+        if (userData && userData.role) userRole = userData.role;
+      } catch (e) {
+        console.warn('HRT role load', e);
+      }
+
+      try {
+        var patients = await fetchPatientsForRole(db, user, userRole);
+        var antenatalOnly = patients.filter(isAntenatalPatient);
+
+        var enriched = await mapWithConcurrency(antenatalOnly, CONCURRENCY, async function (p) {
+          var visits = await fetchVisitsForPatient(db, p.id);
+          var bundle = { antenatalVisits: visits };
+          if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
+
+          var pncDocs = [];
+          var summaryData = null;
+          var labList = [];
+          try {
+            var triple = await Promise.all([
+              fetchPostpartumVisitsRaw(db, p.id),
+              fetchLabourSummaryRaw(db, p.id),
+              fetchLabRecordsRaw(db, p.id)
+            ]);
+            pncDocs = triple[0];
+            summaryData = triple[1];
+            labList = triple[2];
+          } catch (e) {
+            console.warn('HRT extra fetches', p.id, e);
+          }
+
+          var factors = window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
+          var factorsUnique = uniqueStrings(factors);
+          var riskLcg = extractLcgRisksFromSummary(summaryData);
+          var riskPnc = extractPncRisksFromVisits(pncDocs);
+          var labRisks = extractLabRiskSnippets(labList);
+
+          var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
+          var latestData = window.HighRiskUtils.getLatestAncVisitData(bundle);
+          var lastAncStr = lastMs ? formatDateVal(new Date(lastMs)) : tr('noVisits');
+          var daysSince = null;
+          if (lastMs != null) {
+            daysSince = Math.floor((Date.now() - lastMs) / 86400000);
+          }
+
+          return {
+            patient: p,
+            factorsUnique: factorsUnique,
+            riskLcg: riskLcg,
+            riskPnc: riskPnc,
+            labRisks: labRisks,
+            lastAncStr: lastAncStr,
+            daysSince: daysSince,
+            latestData: latestData
+          };
+        });
+
+        var rows = enriched.filter(Boolean);
+        rows.sort(function (a, b) {
+          var da = a.daysSince;
+          var db_ = b.daysSince;
+          if (da == null && db_ == null) return 0;
+          if (da == null) return 1;
+          if (db_ == null) return -1;
+          return db_ - da;
+        });
+
+        window._hrtRows = rows;
+
+        document.getElementById('loadingState').classList.add('d-none');
+        if (rows.length === 0) {
+          document.getElementById('emptyState').classList.remove('d-none');
+        } else {
+          document.getElementById('tableState').classList.remove('d-none');
+          renderTable(rows);
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+        document.querySelector('.hrt-empty').textContent = (err && err.message) || String(err);
+      }
+    });
+  </script>
+</body>
+</html>
