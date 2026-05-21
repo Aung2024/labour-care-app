@@ -46,14 +46,15 @@ function isConditionalPage() {
 
 function getCachedOfflineUser() {
   const uid = localStorage.getItem('uid');
-  if (!uid || typeof navigator === 'undefined' || navigator.onLine !== false) {
+  if (!uid || localStorage.getItem('rememberMe') !== 'true') {
     return null;
   }
 
   return {
     uid: uid,
     email: localStorage.getItem('userEmail') || '',
-    isOfflineCachedUser: true
+    isOfflineCachedUser: true,
+    isPilotCachedUser: true
   };
 }
 
@@ -118,7 +119,7 @@ function initAuthGuard() {
     if (!user) {
       const cachedOfflineUser = getCachedOfflineUser();
       if (cachedOfflineUser) {
-        console.warn('⚠️ Offline mode: allowing cached user access:', cachedOfflineUser.uid);
+        console.warn('⚠️ Pilot mode: allowing cached user access:', cachedOfflineUser.uid);
         hasUnsubscribed = true;
         unsubscribe();
         return;

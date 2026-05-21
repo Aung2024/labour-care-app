@@ -527,6 +527,18 @@
       card.classList.add('loading');
     });
 
+    function getPilotCachedUser() {
+      const uid = localStorage.getItem('uid');
+      if (!uid || localStorage.getItem('rememberMe') !== 'true') {
+        return null;
+      }
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isPilotCachedUser: true
+      };
+    }
+
     // Wait for auth guard to verify authentication before loading data
     // This prevents showing content to unauthenticated users
     function waitForAuthAndLoad() {
@@ -538,7 +550,7 @@
         checkCount++;
         
         // Check if user is authenticated
-        const user = firebase.auth().currentUser;
+        const user = firebase.auth().currentUser || getPilotCachedUser();
         if (user) {
           clearInterval(checkAuth);
           initializePage(user);
@@ -547,11 +559,10 @@
           // Auth guard should have redirected by now, but if not, show error
           console.error('❌ Authentication timeout - auth guard should have redirected');
           if (mainContainer) {
-            mainContainer.innerHTML = '<div class="alert alert-danger">Authentication required. Redirecting to login...</div>';
+            mainContainer.innerHTML = '<div class="alert alert-warning">Please sign in online once with "Keep me logged in" checked before using offline mode.</div>';
+            mainContainer.style.opacity = '1';
+            mainContainer.style.pointerEvents = 'auto';
           }
-          setTimeout(() => {
-            window.location.href = 'login.html';
-          }, 1000);
         }
       }, 100);
     }
@@ -634,7 +645,14 @@
       try {
         // OPTIMIZED: Use user cache to avoid redundant queries
         let userData;
-        if (window.UserCache) {
+        if (currentUser.isPilotCachedUser) {
+          userData = {
+            role: localStorage.getItem('role') || 'Midwife',
+            email: localStorage.getItem('userEmail') || currentUser.email || '',
+            township: localStorage.getItem('userTownship') || '',
+            region: localStorage.getItem('userRegion') || ''
+          };
+        } else if (window.UserCache) {
           userData = await window.UserCache.get(currentUser.uid);
         } else {
           // Fallback to direct query if cache not available
