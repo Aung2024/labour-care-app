@@ -1926,6 +1926,24 @@
     return localProfile;
   }
 
+  function getCurrentOrCachedOfflineUser() {
+    const firebaseUser = firebase.auth().currentUser;
+    if (firebaseUser) return firebaseUser;
+
+    if (isOfflineNow()) {
+      const uid = localStorage.getItem('uid');
+      if (uid) {
+        return {
+          uid,
+          email: localStorage.getItem('userEmail') || '',
+          isOfflineCachedUser: true
+        };
+      }
+    }
+
+    return null;
+  }
+
   // Preview function: Get the next ID without incrementing the counter
   async function previewNextPatientId(regionShortRaw, tspCodeRaw, facilityCodeRaw) {
     try {
@@ -1939,7 +1957,7 @@
       console.log('previewNextPatientId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
-      const user = firebase.auth().currentUser;
+      const user = getCurrentOrCachedOfflineUser();
       if (!user) {
         throw new Error('User not authenticated');
       }
@@ -2007,7 +2025,7 @@
       console.log('generatePatientUniqueId called with:', { regionShortRaw, tspCodeRaw, facilityCodeRaw });
       
       // Check if user is authenticated
-      const user = firebase.auth().currentUser;
+      const user = getCurrentOrCachedOfflineUser();
       if (!user) {
         throw new Error('User not authenticated');
       }
@@ -2088,13 +2106,13 @@
         console.log('loadUserTownship() called');
         
         // Wait for Firebase auth to be ready
-        let user = firebase.auth().currentUser;
+        let user = getCurrentOrCachedOfflineUser();
         if (!user) {
           console.log('No current user, waiting for auth state...');
           await new Promise((resolve) => {
             const unsubscribe = firebase.auth().onAuthStateChanged((authUser) => {
               unsubscribe();
-              user = authUser;
+              user = authUser || getCurrentOrCachedOfflineUser();
               resolve();
             });
             // Timeout after 5 seconds
@@ -2627,7 +2645,7 @@
         console.log('🔍 Checking for duplicate patients...');
         
         // Get current user info for role-based filtering
-        const currentUser = firebase.auth().currentUser;
+        const currentUser = getCurrentOrCachedOfflineUser();
         let userRole = 'Midwife'; // Default
         let userTownship = null;
         let userRegion = null;
@@ -2716,7 +2734,7 @@
       }
       
       try {
-        const user = firebase.auth().currentUser;
+        const user = getCurrentOrCachedOfflineUser();
         console.log('Current user object:', user);
         console.log('Current user UID:', user?.uid);
         
@@ -2940,7 +2958,7 @@
           // Get facility code from user document
           let facilityCode = '003'; // Default
           try {
-            const user = firebase.auth().currentUser;
+            const user = getCurrentOrCachedOfflineUser();
             if (user) {
               const userDoc = await firebase.firestore().collection("users").doc(user.uid).get();
               if (userDoc.exists) {
@@ -2986,7 +3004,7 @@
     // Debug function to check user township (can be called from console)
     window.debugUserTownship = async function() {
       try {
-        const user = firebase.auth().currentUser;
+        const user = getCurrentOrCachedOfflineUser();
         if (!user) {
           console.log('No user logged in');
           return;

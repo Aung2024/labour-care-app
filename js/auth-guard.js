@@ -44,6 +44,19 @@ function isConditionalPage() {
   return CONDITIONAL_PAGES.includes(currentPage);
 }
 
+function getCachedOfflineUser() {
+  const uid = localStorage.getItem('uid');
+  if (!uid || typeof navigator === 'undefined' || navigator.onLine !== false) {
+    return null;
+  }
+
+  return {
+    uid: uid,
+    email: localStorage.getItem('userEmail') || '',
+    isOfflineCachedUser: true
+  };
+}
+
 /**
  * Check if cached user verification is still valid
  */
@@ -99,6 +112,16 @@ function initAuthGuard() {
       user = await waitForAuthRecovery();
       if (user) {
         console.log('✅ User recovered after auth restore delay:', user.uid);
+      }
+    }
+
+    if (!user) {
+      const cachedOfflineUser = getCachedOfflineUser();
+      if (cachedOfflineUser) {
+        console.warn('⚠️ Offline mode: allowing cached user access:', cachedOfflineUser.uid);
+        hasUnsubscribed = true;
+        unsubscribe();
+        return;
       }
     }
 
@@ -350,6 +373,7 @@ window.AuthGuard = {
   isAuthenticated: isAuthenticated,
   requireAuth: requireAuth,
   isPublicPage: isPublicPage,
+  getCachedOfflineUser: getCachedOfflineUser,
   redirectToLogin: redirectToLogin,
   clearCache: clearUserVerificationCache
 };
