@@ -28,9 +28,22 @@ async function checkProviderConsent(userId) {
         fallbackToCache: true 
       }
     );
+
+    // smartFirestoreQuery may return a failure stub while offline/network is unstable.
+    // Do not force redirect to consent page on uncertain connectivity failures.
+    if (consentDoc && consentDoc._smartQueryFailed) {
+      return { hasConsent: true, needsReconsent: false, consentData: null, uncertain: true };
+    }
     
-    if (!consentDoc || !consentDoc.exists) {
-      return { hasConsent: false, needsReconsent: false, consentData: null };
+    if (!consentDoc || typeof consentDoc.exists !== 'boolean') {
+      return { hasConsent: true, needsReconsent: false, consentData: null, uncertain: true };
+    }
+
+    if (!consentDoc.exists) {
+      if (navigator && navigator.onLine === false) {
+        return { hasConsent: true, needsReconsent: false, consentData: null, uncertain: true };
+      }
+      return { hasConsent: false, needsReconsent: false, consentData: null, uncertain: false };
     }
     
     const consentData = consentDoc.data();
@@ -43,11 +56,12 @@ async function checkProviderConsent(userId) {
     return {
       hasConsent: true,
       needsReconsent: needsReconsent,
-      consentData: consentData
+      consentData: consentData,
+      uncertain: false
     };
   } catch (error) {
     console.error('Error checking provider consent:', error);
-    return { hasConsent: false, needsReconsent: false, consentData: null };
+    return { hasConsent: true, needsReconsent: false, consentData: null, uncertain: true };
   }
 }
 
@@ -114,18 +128,30 @@ async function checkPatientConsent(patientId) {
         fallbackToCache: true 
       }
     );
-    
-    if (!consentDoc || !consentDoc.exists) {
-      return { hasConsent: false, consentData: null };
+
+    if (consentDoc && consentDoc._smartQueryFailed) {
+      return { hasConsent: true, consentData: null, uncertain: true };
+    }
+
+    if (!consentDoc || typeof consentDoc.exists !== 'boolean') {
+      return { hasConsent: true, consentData: null, uncertain: true };
+    }
+
+    if (!consentDoc.exists) {
+      if (navigator && navigator.onLine === false) {
+        return { hasConsent: true, consentData: null, uncertain: true };
+      }
+      return { hasConsent: false, consentData: null, uncertain: false };
     }
     
     return {
       hasConsent: true,
-      consentData: consentDoc.data()
+      consentData: consentDoc.data(),
+      uncertain: false
     };
   } catch (error) {
     console.error('Error checking patient consent:', error);
-    return { hasConsent: false, consentData: null };
+    return { hasConsent: true, consentData: null, uncertain: true };
   }
 }
 
