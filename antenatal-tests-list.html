@@ -334,6 +334,7 @@
     let testRecords = [];
 
     firebase.auth().onAuthStateChanged(function(user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
       if (!user) {
         window.location.href = "login.html";
       } else {
@@ -354,20 +355,35 @@
           return;
         }
 
+        const sessionPatient = sessionStorage.getItem('selectedPatientData');
+        if (sessionPatient) {
+          selectedPatient = JSON.parse(sessionPatient);
+          selectedPatient.id = patientId;
+          document.getElementById('patientNameDisplay').textContent =
+            patientName || selectedPatient.name || 'Unknown Patient';
+          if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            testRecords = [];
+            displayTestRecords();
+            return;
+          }
+        }
+
         // Load patient data from Firestore
-        const patientDoc = await firebase.firestore()
+        const patientDoc = selectedPatient ? null : await firebase.firestore()
           .collection("patients")
           .doc(patientId)
           .get();
 
-        if (!patientDoc.exists) {
+        if (patientDoc && !patientDoc.exists) {
           alert('Patient not found.');
           window.location.href = 'list.html';
           return;
         }
 
-        selectedPatient = patientDoc.data();
-        selectedPatient.id = patientId;
+        if (patientDoc) {
+          selectedPatient = patientDoc.data();
+          selectedPatient.id = patientId;
+        }
 
         // Try to get latest LMP and GA from antenatal visits for accurate calculations
         try {
@@ -414,6 +430,12 @@
     async function loadPatientTestRecords() {
       try {
         showLoading(true);
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          testRecords = [];
+          displayTestRecords();
+          return;
+        }
         
         const db = firebase.firestore();
         const testRecordsSnapshot = await db.collection('patients')

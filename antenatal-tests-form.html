@@ -14,6 +14,7 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <style>
@@ -640,6 +641,7 @@
     // Initialize Firebase and load data
     document.addEventListener('DOMContentLoaded', function() {
       firebase.auth().onAuthStateChanged(function(user) {
+        user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
         if (user) {
           currentUser = user;
           loadPatientFromURL();
@@ -689,6 +691,32 @@
         }
 
         // Load patient data
+        const sessionPatient = sessionStorage.getItem('selectedPatientData');
+        if (sessionPatient) {
+          currentPatient = JSON.parse(sessionPatient);
+          currentPatient.id = patientId;
+          await populatePatientInfo();
+          if (testId && typeof navigator !== 'undefined' && navigator.onLine === false) {
+            alert('Editing previous lab records is available online only.');
+            window.location.href = 'antenatal-tests.html';
+            return;
+          }
+          if (testId) {
+            isEditMode = true;
+            currentTestId = testId;
+            await loadExistingTestData(testId);
+          } else {
+            setCurrentDate();
+          }
+          return;
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          alert('Patient information is not available on this device. Please open this patient online once, then try offline again.');
+          window.location.href = 'antenatal-tests.html';
+          return;
+        }
+
         const db = firebase.firestore();
         const patientDoc = await db.collection('patients').doc(patientId).get();
         
@@ -1125,12 +1153,27 @@
           patientName: currentPatient.name,
           createdBy: currentUser.uid,
           createdByName: currentUser.displayName || currentUser.email,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          timestamp: new Date().toISOString(),
+          syncState: 'pending'
         };
-        
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          if (!window.OfflineManager || !OfflineManager.saveOfflineRecord) {
+            throw new Error('Offline save tools are not loaded. Please reload once online, then try again.');
+          }
+          await OfflineManager.saveOfflineRecord('pending_lab_tests', testData);
+          alert('Lab test saved locally. Please sync when online.');
+          window.location.href = 'antenatal-tests.html';
+          return;
+        }
+
         const db = firebase.firestore();
         console.log('About to save to Firestore...');
         console.log('Test data:', testData);
+
+        const cloudData = { ...testData };
+        delete cloudData.syncState;
+        cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
         
         if (isEditMode) {
           // Update existing test record
@@ -1139,7 +1182,7 @@
             .doc(currentPatient.id)
             .collection('testRecords')
             .doc(currentTestId)
-            .update(testData);
+            .update(cloudData);
           
           alert('Test results updated successfully!');
         } else {
@@ -1148,7 +1191,7 @@
           await db.collection('patients')
             .doc(currentPatient.id)
             .collection('testRecords')
-            .add(testData);
+            .add(cloudData);
           
           alert('Test results saved successfully!');
         }

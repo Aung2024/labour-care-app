@@ -765,13 +765,18 @@
           alert('Please wait for the app to finish loading.');
           return;
         }
+        if (window.LabourCareOffline) {
+          await LabourCareOffline.flushOutbox();
+        }
         if (window.SyncManager && typeof window.SyncManager.syncAll === 'function') {
-          await window.SyncManager.syncAll();
+          const syncResult = await window.SyncManager.syncAll();
+          if (syncResult && syncResult.success === false) {
+            throw new Error(syncResult.message || 'Some offline records could not be synced.');
+          }
         }
         if (window.LabourCareOffline) {
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
-          await LabourCareOffline.flushOutbox();
           LabourCareOffline.setOfflineBanner(false);
         }
         await loadPatientStats();

@@ -244,6 +244,12 @@ function extendSession() {
  * Handle session timeout
  */
 async function handleSessionTimeout() {
+  if (localStorage.getItem('rememberMe') === 'true') {
+    console.log('⏰ Session timeout skipped for remembered pilot user');
+    refreshSession();
+    return;
+  }
+
   console.log('⏰ Session timeout - logging out user');
   
   // Stop tracking

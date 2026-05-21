@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v17-moh';
+const CACHE_NAME = 'mch-care-v18-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -51,6 +51,9 @@ const FILES_TO_CACHE = [
   './js/consent-manager.js',
   './js/offline-store.js',
   './js/offline-sync.js',
+  './js/offline-manager.js',
+  './js/offline-status-bar.js',
+  './js/sync-manager.js',
   './js/ui-dialogs.js',
   './js/clinical-validator.js',
   './js/duplicate-detector.js',

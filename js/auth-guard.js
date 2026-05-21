@@ -53,9 +53,57 @@ function getCachedOfflineUser() {
   return {
     uid: uid,
     email: localStorage.getItem('userEmail') || '',
+    displayName: localStorage.getItem('userName') || localStorage.getItem('userEmail') || '',
+    getIdToken: function () { return Promise.resolve(''); },
     isOfflineCachedUser: true,
     isPilotCachedUser: true
   };
+}
+
+function resolvePilotAuthUser(user) {
+  return user || getCachedOfflineUser();
+}
+
+function isPilotRememberedUser() {
+  return !!getCachedOfflineUser();
+}
+
+function showOnlineOnlyMessage(message) {
+  alert(message || 'This feature is available online only. Please reconnect to the internet and try again.');
+}
+
+function installPilotAuthShim() {
+  try {
+    if (!window.firebase || !firebase.auth || firebase.auth.__pilotAuthShimInstalled) return;
+
+    const auth = firebase.auth();
+    const originalOnAuthStateChanged = auth.onAuthStateChanged.bind(auth);
+    auth.onAuthStateChanged = function (nextOrObserver, error, completed) {
+      if (typeof nextOrObserver === 'function') {
+        return originalOnAuthStateChanged(function (user) {
+          nextOrObserver(resolvePilotAuthUser(user));
+        }, error, completed);
+      }
+
+      if (nextOrObserver && typeof nextOrObserver === 'object') {
+        const observer = Object.assign({}, nextOrObserver);
+        if (typeof observer.next === 'function') {
+          const originalNext = observer.next.bind(nextOrObserver);
+          observer.next = function (user) {
+            originalNext(resolvePilotAuthUser(user));
+          };
+        }
+        return originalOnAuthStateChanged(observer, error, completed);
+      }
+
+      return originalOnAuthStateChanged(nextOrObserver, error, completed);
+    };
+
+    firebase.auth.__pilotAuthShimInstalled = true;
+    console.log('✅ Pilot auth shim installed');
+  } catch (error) {
+    console.warn('Pilot auth shim could not be installed:', error);
+  }
 }
 
 /**
@@ -327,6 +375,11 @@ function clearUserVerificationCache() {
  * Added small delay to allow page to render first
  */
 function redirectToLogin() {
+  if (isPilotRememberedUser()) {
+    console.warn('⚠️ Pilot mode: prevented login redirect for remembered user.');
+    return;
+  }
+
   // Don't redirect if already on login page
   const currentPage = window.location.pathname.split('/').pop() || '';
   if (currentPage === 'login.html' || currentPage === '') {
@@ -375,19 +428,30 @@ window.AuthGuard = {
   requireAuth: requireAuth,
   isPublicPage: isPublicPage,
   getCachedOfflineUser: getCachedOfflineUser,
+  resolvePilotAuthUser: resolvePilotAuthUser,
+  isPilotRememberedUser: isPilotRememberedUser,
+  showOnlineOnlyMessage: showOnlineOnlyMessage,
   redirectToLogin: redirectToLogin,
   clearCache: clearUserVerificationCache
 };
 
+window.getPilotCachedUser = getCachedOfflineUser;
+window.resolvePilotAuthUser = resolvePilotAuthUser;
+window.isPilotRememberedUser = isPilotRememberedUser;
+window.showOnlineOnlyMessage = showOnlineOnlyMessage;
+
 // Auto-initialize when script loads
 // Use a small delay to ensure Firebase is loaded first
+installPilotAuthShim();
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     // Small delay to ensure Firebase scripts are loaded
+    installPilotAuthShim();
     setTimeout(initAuthGuard, 100);
   });
 } else {
   // DOM already loaded, but wait a bit for Firebase
+  installPilotAuthShim();
   setTimeout(initAuthGuard, 100);
 }
 

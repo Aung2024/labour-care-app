@@ -78,6 +78,14 @@
         if (typeof progressCallback === 'function') progressCallback(step, detail);
       };
 
+      // Step 0: upload offline-created patient roots first. Sub-records such as
+      // ANC visits and lab tests may depend on the patient document already
+      // existing for Firestore rules/status updates.
+      if (window.LabourCareOffline && typeof window.LabourCareOffline.flushOutbox === 'function') {
+        report('patients', 'Uploading offline patients...');
+        await window.LabourCareOffline.flushOutbox();
+      }
+
       // Step 1: Sync patients first (we need real IDs for sub-records)
       report('patients', 'Syncing patients...');
       const pendingPatients = await window.OfflineManager.getPendingRecords('pending_patients');
