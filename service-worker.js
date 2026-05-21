@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v8-moh';
+const CACHE_NAME = 'mch-care-v9-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -31,6 +31,15 @@ const FILES_TO_CACHE = [
   './leaderboard.html',
   './high-risk-tracking.html',
   './manifest.json',
+  './css/vendor/bootstrap.min.css',
+  './css/vendor/fontawesome-all.min.css',
+  './css/webfonts/fa-solid-900.woff2',
+  './css/webfonts/fa-regular-400.woff2',
+  './css/webfonts/fa-brands-400.woff2',
+  './js/vendor/bootstrap.bundle.min.js',
+  './js/vendor/firebase-app.js',
+  './js/vendor/firebase-auth.js',
+  './js/vendor/firebase-firestore.js',
   './js/firebase.js',
   './js/auth-guard.js',
   './js/user-cache.js',
