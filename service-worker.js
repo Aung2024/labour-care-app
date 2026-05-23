@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v18-moh';
+const CACHE_NAME = 'mch-care-v20-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -7,6 +7,9 @@ const FILES_TO_CACHE = [
   './list.html',
   './login.html',
   './registration.html',
+  './patient-transfers.html',
+  './transfer-patient.html',
+  './transfer-requests.html',
   './patient-consent.html',
   './provider-consent.html',
   './patient-care-hub.html',
