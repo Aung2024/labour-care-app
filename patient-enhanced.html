@@ -924,6 +924,23 @@
       display: none;
     }
 
+    .clinical-risk-alert {
+      line-height: 1.55;
+      white-space: normal;
+    }
+
+    .clinical-risk-alert .risk-title {
+      display: block;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+    }
+
+    .clinical-risk-alert .risk-note {
+      display: block;
+      margin-top: 0.7rem;
+      color: inherit;
+    }
+
     /* Risk indicator on age input */
     .form-control.is-high-risk {
       border-color: #dc2626;
@@ -2584,6 +2601,41 @@
     }
     
     // Age-based Risk Detection
+    function setAgeRiskAlertContent(ageValue) {
+      const ageRiskAlert = document.getElementById('ageRiskAlert');
+      if (!ageRiskAlert) return;
+
+      if (ageValue < 18) {
+        ageRiskAlert.innerHTML = `
+          <div class="clinical-risk-alert">
+            <span class="risk-title">အသက် &lt;18 နှစ် (Under 18 years)</span>
+            <strong>⚠️ သတိပြုရန် / Alert:</strong><br>
+            မိခင်သည် အသက်ငယ်ရွယ်သော အန္တရာယ်ရှိကိုယ်ဝန် (High-risk pregnancy) ဖြစ်ပါသည်။<br>
+            👉 ကလေးမွေးဖွားခြင်းကို ကျန်းမာရေးဌာန (Facility) တွင်သာ ပြုလုပ်ရန် အကြံပြုပါသည်။
+            <span class="risk-note">
+              <strong>Note (English):</strong><br>
+              The client is an adolescent pregnancy (&lt;18 years), which is high risk.<br>
+              👉 Delivery should be planned and conducted at a health facility.
+            </span>
+          </div>
+        `;
+      } else if (ageValue >= 35) {
+        ageRiskAlert.innerHTML = `
+          <div class="clinical-risk-alert">
+            <span class="risk-title">အသက် ≥35 နှစ် (35 years and above)</span>
+            <strong>⚠️ သတိပြုရန် / Alert:</strong><br>
+            မိခင်သည် အသက်ကြီးရင့်သော အန္တရာယ်ရှိကိုယ်ဝန် (Advanced maternal age) ဖြစ်ပါသည်။<br>
+            👉 ကလေးမွေးဖွားခြင်းကို ကျန်းမာရေးဌာန (Facility) တွင်သာ လုပ်ဆောင်ရန် လိုအပ်ပါသည်။
+            <span class="risk-note">
+              <strong>Note (English):</strong><br>
+              The client is of advanced maternal age (≥35 years), which is high risk.<br>
+              👉 Delivery is recommended at a health facility.
+            </span>
+          </div>
+        `;
+      }
+    }
+
     function evaluateAgeRisk() {
       const ageInput = document.getElementById('age');
       const ageRiskAlert = document.getElementById('ageRiskAlert');
@@ -2599,10 +2651,11 @@
         return false;
       }
       
-      const isHighRisk = ageValue < 17 || ageValue >= 40;
+      const isHighRisk = ageValue < 18 || ageValue >= 35;
       
       if (ageRiskAlert) {
         if (isHighRisk) {
+          setAgeRiskAlertContent(ageValue);
           ageRiskAlert.classList.remove('hide');
           ageRiskAlert.classList.add('show');
           ageRiskAlert.style.display = 'block';
@@ -2710,6 +2763,7 @@
       const youngestChildAgeYearsInput = document.getElementById('youngestChildAgeYears');
       const youngestChildAgeMonthsInput = document.getElementById('youngestChildAgeMonths');
       const pregnancyAlert = document.getElementById('pregnancy24Alert');
+      const firstPregnancyAlert = document.getElementById('firstPregnancyAlert');
       const pregnancyFlagInput = document.getElementById('pregnancyWithin24Months');
       const registrationDateInput = document.getElementById('registration_date');
       const registrationDateFormatted = document.getElementById('registrationDateFormatted');
@@ -2767,6 +2821,12 @@
         }
       }
 
+      function updateFirstPregnancyAlert() {
+        if (!parityControls.gravida || !firstPregnancyAlert) return;
+        const gravidaVal = parseInt(parityControls.gravida.value, 10);
+        firstPregnancyAlert.style.display = gravidaVal === 1 ? 'block' : 'none';
+      }
+
       function evaluatePregnancyInterval() {
         if (!parityControls.gravida) return;
         const gravidaVal = parseInt(parityControls.gravida.value, 10);
@@ -2815,6 +2875,7 @@
         parityControls.gravida.addEventListener('change', () => {
           toggleYoungestChildFields();
           evaluatePregnancyInterval();
+          updateFirstPregnancyAlert();
         });
       }
       if (youngestChildAgeYearsInput) {
@@ -2833,6 +2894,7 @@
       updateParityField();
       toggleYoungestChildFields();
       evaluatePregnancyInterval();
+      updateFirstPregnancyAlert();
       updateRegistrationDatePreview();
       
       // Add form submission listener with delay to ensure DOM is ready
@@ -3108,7 +3170,8 @@
         const pregnancyWithin24 = data.pregnancyWithin24Months === 'true';
         const frequentPregnancy = pregnancyWithin24 ? 'Yes' : 'No';
         const ageValue = parseInt(data.age, 10);
-        const ageRisk = (Number.isFinite(ageValue) && (ageValue < 17 || ageValue >= 40)) ? 'Yes' : 'No';
+        const ageRisk = (Number.isFinite(ageValue) && (ageValue < 18 || ageValue >= 35)) ? 'Yes' : 'No';
+        const firstPregnancyRisk = Number.isFinite(gravidaValue) && gravidaValue === 1;
         const registrationDateDisplay = formatRegistrationDateDisplay(data.registration_date);
         
         // Convert field names to snake_case for consistency (no duplicates)
@@ -3137,6 +3200,8 @@
           frequent_pregnancy: frequentPregnancy,
           age_risk: ageRisk,
           maternal_age_risk: ageRisk === 'Yes',
+          primigravida_risk: firstPregnancyRisk,
+          first_pregnancy_risk: firstPregnancyRisk,
           
           // Location identifiers
           region_short_code: resolvedRegionShort || null,
@@ -3194,6 +3259,8 @@
           frequent_pregnancy: processedData.frequent_pregnancy || 'No',
           age_risk: processedData.age_risk || 'No',
           maternal_age_risk: processedData.maternal_age_risk || false,
+          primigravida_risk: processedData.primigravida_risk || false,
+          first_pregnancy_risk: processedData.first_pregnancy_risk || false,
           region_short_code: processedData.region_short_code || null,
           tsp_code: processedData.tsp_code || null,
           facility_code: facilityCode,
@@ -3232,6 +3299,7 @@
           updateParityField();
           toggleYoungestChildFields();
           evaluatePregnancyInterval();
+          updateFirstPregnancyAlert();
           evaluateAgeRisk();
           updateRegistrationDatePreview();
           
@@ -3376,7 +3444,7 @@
                 <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="12" max="50" pattern="[0-9]*" inputmode="numeric">
                 <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
                   <i class="fas fa-exclamation-triangle me-2"></i>
-                  <span class="lang-text" data-en="⚠️ High Risk: Maternal age is 17 or under, or 40 and over. Please monitor closely." data-mm="⚠️ အန္တရာယ်များ: မိခင်အသက်သည် ၁၇ နှစ်အောက် သို့မဟုတ် ၄၀ နှစ်နှင့် အထက်ဖြစ်သည်။ ဂရုတစိုက်စောင့်ကြည့်ပါ။">⚠️ High Risk: Maternal age is 17 or under, or 40 and over. Please monitor closely.</span>
+                  <span>Age risk alert will appear here.</span>
                 </div>
               </div>
             </div>
@@ -3498,6 +3566,20 @@
                 <input type="hidden" name="patientUniqueId" id="patientUniqueId" value="">
                 <div class="parity-helper">
                   Stored as <span id="parityPreview">—</span>
+                </div>
+                <div id="firstPregnancyAlert" class="alert alert-warning mt-3" style="display: none;">
+                  <div class="clinical-risk-alert">
+                    <span class="risk-title">သားဦးကိုယ်ဝန် (G1 – First pregnancy)</span>
+                    <strong>⚠️ သတိပြုရန် / Alert:</strong><br>
+                    မိခင်သည် သားဦးကိုယ်ဝန်ဖြစ်ပါသည်။ ပထမကိုယ်ဝန်ဖြစ်သဖြင့် မွေးဖွားစဉ်အန္တရာယ်များ (labour complications) ဖြစ်နိုင်ခြေရှိပါသည်။<br>
+                    👉 ကလေးမွေးဖွားခြင်းကို ကျန်းမာရေးဌာန (Facility) တွင်သာ စီစဉ်ဆောင်ရွက်ရန် အကြံပြုပါသည်။
+                    <span class="risk-note">
+                      <strong>Note (English):</strong><br>
+                      The client is a primigravida (G1 – first pregnancy).<br>
+                      There is an increased risk of labour complications.<br>
+                      👉 Delivery should be planned and conducted at a health facility.
+                    </span>
+                  </div>
                 </div>
                 <div class="form-text text-warning" id="offlineIdNotice" style="display: none;">
                   Offline temporary ID. The official serial number will be assigned during sync.
