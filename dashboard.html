@@ -1642,13 +1642,25 @@
         group.style.display = 'block';
         el.innerHTML = '<option value="all">All Townships</option>';
 
-        var snap = await firebase.firestore().collection('users').where('role','==','TMO').where('region','==',userRegion).get();
+        var db = firebase.firestore();
         var byTownship = new Map();
-        snap.forEach(function(doc) {
-          var d = doc.data() || {};
-          if (!d.township) return;
-          if (!byTownship.has(d.township)) byTownship.set(d.township, d.township);
-        });
+
+        function addFromSnap(snap) {
+          if (!snap || typeof snap.forEach !== 'function') return;
+          snap.forEach(function(doc) {
+            var d = doc.data() || {};
+            if (!d.township) return;
+            if ((d.region || '').trim() !== userRegion) return;
+            byTownship.set(d.township, d.township);
+          });
+        }
+
+        var snaps = await Promise.all([
+          db.collection('users').where('role', '==', 'TMO').where('region', '==', userRegion).get(),
+          db.collection('users').where('role', '==', 'Midwife').where('region', '==', userRegion).get(),
+          db.collection('users').where('role', '==', 'midwife').where('region', '==', userRegion).get().catch(function() { return { forEach: function() {} }; })
+        ]);
+        snaps.forEach(addFromSnap);
 
         Array.from(byTownship.keys()).sort().forEach(function(township) {
           var opt = document.createElement('option');
@@ -1788,7 +1800,12 @@
             return true;
           });
         } else if (userRole === 'Regional Officer' && userRegion) {
-          snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get();
+          var regionalDocs = [];
+          (await firebase.firestore().collection('users').where('role','==','Midwife').where('region','==',userRegion).get()).forEach(function(d) { regionalDocs.push(d); });
+          try {
+            (await firebase.firestore().collection('users').where('role','==','midwife').where('region','==',userRegion).get()).forEach(function(d) { regionalDocs.push(d); });
+          } catch (e2) {}
+          snap = { forEach: function(fn) { regionalDocs.forEach(fn); } };
         } else if (userRole === 'TMO' && userTownship) {
           snap = await firebase.firestore().collection('users').where('role','==','Midwife').where('township','==',userTownship).get();
         } else return;
