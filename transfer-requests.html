@@ -82,6 +82,14 @@
       loadRequests();
     }
 
+    function sortRequestsByDateDesc(rows) {
+      return rows.sort((a, b) => {
+        const ta = a.createdAt && typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate().getTime() : 0;
+        const tb = b.createdAt && typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate().getTime() : 0;
+        return tb - ta;
+      });
+    }
+
     async function loadRequests() {
       const wrap = document.getElementById('listWrap');
       wrap.innerHTML = '<div class="cardx"><i class="fas fa-spinner fa-spin me-2"></i>Loading...</div>';
@@ -89,16 +97,15 @@
         const db = firebase.firestore();
         let snap;
         if (activeTab === 'incoming') {
+          // Avoid composite index requirement: filter in Firestore, sort client-side.
           snap = await db.collection('patient_transfer_requests')
             .where('targetMidwifeIds', 'array-contains', currentUser.uid)
-            .orderBy('createdAt', 'desc')
-            .limit(50)
+            .limit(100)
             .get();
         } else {
           snap = await db.collection('patient_transfer_requests')
             .where('fromMidwifeId', '==', currentUser.uid)
-            .orderBy('createdAt', 'desc')
-            .limit(50)
+            .limit(100)
             .get();
         }
         if (snap.empty) {
@@ -107,10 +114,15 @@
         }
         const rows = [];
         snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
-        wrap.innerHTML = rows.map((r) => renderRow(r)).join('');
+        sortRequestsByDateDesc(rows);
+        wrap.innerHTML = rows.slice(0, 50).map((r) => renderRow(r)).join('');
       } catch (e) {
         console.error(e);
-        wrap.innerHTML = '<div class="cardx text-danger">Failed to load requests: ' + escapeHtml(e.message) + '</div>';
+        const msg = String(e.message || e);
+        const friendly = msg.includes('requires an index')
+          ? 'Transfer list could not load because Firestore indexes are still building. Please refresh in 1–2 minutes.'
+          : msg;
+        wrap.innerHTML = '<div class="cardx text-danger">Failed to load requests: ' + escapeHtml(friendly) + '</div>';
       }
     }
 
