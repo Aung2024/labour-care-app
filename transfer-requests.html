@@ -22,7 +22,7 @@
     <div class="head d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <div>
         <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-share-square me-2"></i>Transfer Requests</div>
-        <div style="opacity:.9;font-size:.9rem;">Accept requests to gain patient access</div>
+        <div style="opacity:.9;font-size:.9rem;">Accept requests to receive patients into your care</div>
       </div>
       <div class="d-flex gap-2">
         <a href="transfer-patient.html" class="btn btn-light btn-sm"><i class="fas fa-plus me-1"></i>New Transfer</a>
@@ -159,23 +159,40 @@
           if (!reqSnap.exists) throw new Error('Request not found');
           const req = reqSnap.data();
           if (req.status !== 'pending') throw new Error('Request already processed');
+          const targets = req.targetMidwifeIds || [];
+          if (!targets.includes(currentUser.uid)) {
+            throw new Error('You are not authorized to accept this request');
+          }
+
           const patientRef = firebase.firestore().collection('patients').doc(req.patientId);
           const patientSnap = await tx.get(patientRef);
           if (!patientSnap.exists) throw new Error('Patient not found');
-          const ids = Array.from(new Set([req.fromMidwifeId, ...(req.targetMidwifeIds || [])].filter(Boolean)));
+          const patient = patientSnap.data();
+          const previousOwnerId = patient.created_by || patient.createdBy || req.fromMidwifeId;
+
+          // Full ownership transfer: list, home stats, and dashboard all key off created_by.
           tx.update(patientRef, {
-            care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(...ids)
+            created_by: currentUser.uid,
+            createdBy: currentUser.uid,
+            care_team_midwife_ids: [currentUser.uid],
+            transferred_from_midwife_id: previousOwnerId || null,
+            transferred_at: firebase.firestore.FieldValue.serverTimestamp(),
+            transferred_by_request_id: id
           });
           tx.update(reqRef, {
             status: 'accepted',
             acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            acceptedBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+            acceptedBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid),
+            previousOwnerId: previousOwnerId || null
           });
         });
         if (window.AuditLogger && AuditLogger.logAuditEvent) {
           AuditLogger.logAuditEvent('transfer_request_accepted', 'transfer_request', id, {});
         }
-        await AppDialog.alert('Transfer accepted. You now have full access to this patient.', { title: 'Accepted' });
+        await AppDialog.alert(
+          'Patient transferred successfully. They will now appear in your patient list and dashboard. The sending midwife no longer has this patient in their list.',
+          { title: 'Transfer complete' }
+        );
         loadRequests();
       } catch (e) {
         console.error(e);
