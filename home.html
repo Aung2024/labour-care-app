@@ -679,21 +679,24 @@
             : userData.role;
           document.getElementById("userRole").textContent = roleDisplay;
           
-          // Regional Officer and TMO do not register patients or use midwife-only workflows.
+          // Supervisory and admin accounts do not use midwife-only patient workflows.
           const isSupervisoryRole = userRole === 'TMO' || (
             userRole && userRole.toLowerCase().replace(/\s+/g, ' ') === 'regional officer'
           );
-          if (isSupervisoryRole) {
+          const hideMidwifeWorkflowCards = isSupervisoryRole || userRole === 'Super Admin' || userRole === 'admin';
+          if (hideMidwifeWorkflowCards) {
             ['homeCardPatientRegistration', 'homeCardSelectPatient', 'homeCardPatientTransfers'].forEach(function (cardId) {
               const card = document.getElementById(cardId);
               if (card) card.style.display = 'none';
             });
           }
 
-          // Show admin link if Super Admin
+          // Show admin tools if Super Admin
           const adminCard = document.getElementById("adminCard");
-          if (userRole === "Super Admin" && adminCard) {
-            adminCard.style.display = "block";
+          const manageMidwivesCard = document.getElementById("manageMidwivesCard");
+          if (userRole === "Super Admin") {
+            if (adminCard) adminCard.style.display = "block";
+            if (manageMidwivesCard) manageMidwivesCard.style.display = "block";
           }
           
           // Show township report card if TMO
@@ -719,9 +722,12 @@
           }
           
           // Load patient stats after user role is loaded (deferred for performance)
-          // Use setTimeout to defer this heavy operation
           setTimeout(() => {
-            loadPatientStats();
+            if (userRole === 'Super Admin') {
+              loadMidwifeCountForHome();
+            } else {
+              loadPatientStats();
+            }
             setTimeout(loadHrtBellCount, 2000);
           }, 500);
         }
@@ -823,6 +829,28 @@
         }
       } catch (e) {
         console.warn('HRT bell count failed', e);
+      }
+    }
+
+    async function loadMidwifeCountForHome() {
+      const el = document.getElementById('manageMidwivesCount');
+      if (!el) return;
+      try {
+        const db = firebase.firestore();
+        let count = 0;
+        try {
+          const snap = await db.collection('users').where('role', 'in', ['Midwife', 'midwife']).get();
+          count = snap.size;
+        } catch (e) {
+          const snap = await db.collection('users').get();
+          snap.forEach(function(doc) {
+            const role = (doc.data() || {}).role;
+            if (role === 'Midwife' || role === 'midwife') count++;
+          });
+        }
+        el.textContent = String(count);
+      } catch (e) {
+        el.textContent = '-';
       }
     }
 
@@ -1135,7 +1163,7 @@
       
       navigationInProgress = true;
 
-      const onlineOnly = ['dashboard', 'township-report', 'admin', 'cme', 'scoreboard', 'high-risk-tracking', 'patient-transfers'];
+      const onlineOnly = ['dashboard', 'township-report', 'admin', 'manage-midwives', 'cme', 'scoreboard', 'high-risk-tracking', 'patient-transfers'];
       if (onlineOnly.includes(careType) && typeof navigator !== 'undefined' && navigator.onLine === false) {
         alert('This feature is available online only. Please reconnect to the internet and try again.');
         navigationInProgress = false;
@@ -1162,6 +1190,9 @@
             break;
           case 'admin':
             window.location.href = 'admin.html';
+            break;
+          case 'manage-midwives':
+            window.location.href = 'manage-midwives.html';
             break;
           case 'cme':
             window.location.href = 'cme-learning.html';
@@ -1381,6 +1412,26 @@
         </div>
         <a href="#" class="care-action dashboard" onclick="event.preventDefault(); navigateToCare('township-report');">
           <i class="fas fa-download me-2"></i><span class="lang-text" data-en="Generate Report" data-mm="အစီရင်ခံစာ ထုတ်လုပ်ရန်">Generate Report</span>
+        </a>
+      </div>
+
+      <!-- Manage Midwives (Super Admin only) -->
+      <div class="care-card dashboard" id="manageMidwivesCard" style="display: none;" onclick="navigateToCare('manage-midwives')">
+        <div class="care-icon">
+          <i class="fas fa-user-nurse"></i>
+        </div>
+        <h3 class="care-title"><span class="lang-text" data-en="Manage Midwives" data-mm="သားဖွား/မီးဖွားကျွမ်းကျင်သူများ စီမံခန့်ခွဲရန်">Manage Midwives</span></h3>
+        <p class="care-description">
+          <span class="lang-text" data-en="View all midwife accounts, update their details, region, and township." data-mm="သားဖွား/မီးဖွားကျွမ်းကျင်သူ အကောင့်အားလုံးကို ကြည့်ရှုပြီး အချက်အလက်၊ တိုင်းဒေသကြီး/ပြည်နယ်နှင့် မြို့နယ် ပြင်ဆင်ပါ။">View all midwife accounts, update their details, region, and township.</span>
+        </p>
+        <div class="care-stats">
+          <div class="stat-item">
+            <div class="stat-number" id="manageMidwivesCount">-</div>
+            <div class="stat-label"><span class="lang-text" data-en="Midwives" data-mm="ကျွမ်းကျင်သူများ">Midwives</span></div>
+          </div>
+        </div>
+        <a href="#" class="care-action dashboard" onclick="event.preventDefault(); navigateToCare('manage-midwives');">
+          <i class="fas fa-users-cog me-2"></i><span class="lang-text" data-en="Manage Midwives" data-mm="ကျွမ်းကျင်သူများ စီမံခန့်ခွဲရန်">Manage Midwives</span>
         </a>
       </div>
 

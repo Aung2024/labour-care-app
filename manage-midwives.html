@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Manage Midwives</title>
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <style>
+    body {
+      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+    .head {
+      background: linear-gradient(135deg, #374151, #1f2937);
+      color: #fff;
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 10px 24px rgba(0,0,0,.2);
+    }
+    .cardx {
+      margin-top: 1rem;
+      background: #fff;
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 8px 20px rgba(0,0,0,.12);
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: .75rem;
+    }
+    @media (min-width: 768px) {
+      .filters { grid-template-columns: 1.4fr 1fr 1fr auto; align-items: end; }
+    }
+    .mw-row {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: .85rem;
+      margin-bottom: .65rem;
+      background: #fff;
+    }
+    .mw-row:hover { border-color: #9ca3af; background: #f9fafb; }
+    .mw-meta { color: #6b7280; font-size: .85rem; }
+    .badge-approved { background: #d1fae5; color: #065f46; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .table-wrap { overflow-x: auto; }
+    .form-select, .form-control { min-height: 44px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head d-flex justify-content-between align-items-center gap-2 flex-wrap">
+      <div>
+        <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-user-nurse me-2"></i>Manage Midwives</div>
+        <div style="opacity:.92;font-size:.9rem;">View and edit midwife accounts</div>
+      </div>
+      <a href="home.html" class="btn btn-light btn-sm"><i class="fas fa-home me-1"></i>Home</a>
+    </div>
+
+    <div class="cardx">
+      <div class="filters">
+        <div>
+          <label class="form-label mb-1">Search</label>
+          <input type="search" id="searchInput" class="form-control" placeholder="Name or email..." />
+        </div>
+        <div>
+          <label class="form-label mb-1">Region</label>
+          <select id="regionFilter" class="form-select"><option value="">All Regions</option></select>
+        </div>
+        <div>
+          <label class="form-label mb-1">Township</label>
+          <select id="townshipFilter" class="form-select"><option value="">All Townships</option></select>
+        </div>
+        <div>
+          <button type="button" class="btn btn-outline-secondary w-100" onclick="resetFilters()"><i class="fas fa-undo me-1"></i>Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="listWrap" class="cardx"><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>
+  </div>
+
+  <div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-user-edit me-2"></i>Edit Midwife</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" id="editEmail" class="form-control" readonly />
+            <div class="form-text">Email changes require Admin Dashboard → Update Email.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" id="editName" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Phone</label>
+            <input type="tel" id="editPhone" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Region</label>
+            <select id="editRegion" class="form-select"></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Township</label>
+            <select id="editTownship" class="form-select"></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Account status</label>
+            <select id="editApproved" class="form-select">
+              <option value="true">Approved</option>
+              <option value="false">Pending approval</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveMidwife()"><i class="fas fa-save me-1"></i>Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/township-region.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script>
+    let allMidwives = [];
+    let editingId = null;
+    let editModal = null;
+
+    function escapeHtml(v) {
+      return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function isMidwifeRole(role) {
+      return role === 'Midwife' || role === 'midwife';
+    }
+
+    async function requireSuperAdmin(user) {
+      const doc = await firebase.firestore().collection('users').doc(user.uid).get();
+      if (!doc.exists || doc.data().role !== 'Super Admin') {
+        throw new Error('Super Admin access required.');
+      }
+    }
+
+    firebase.auth().onAuthStateChanged(async function(user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!user) { window.location.href = 'login.html'; return; }
+      try {
+        await requireSuperAdmin(user);
+        editModal = new bootstrap.Modal(document.getElementById('editModal'));
+        initRegionFilters();
+        bindFilterEvents();
+        await loadMidwives();
+      } catch (e) {
+        await AppDialog.alert(e.message || 'Access denied.', { title: 'Manage Midwives' });
+        window.location.href = 'home.html';
+      }
+    });
+
+    function initRegionFilters() {
+      const regions = Object.keys(window.MYANMAR_REGIONS || {}).sort();
+      const rSel = document.getElementById('regionFilter');
+      rSel.innerHTML = '<option value="">All Regions</option>' +
+        regions.map(function(r) { return '<option value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</option>'; }).join('');
+    }
+
+    function fillTownshipFilter() {
+      const region = document.getElementById('regionFilter').value;
+      const tSel = document.getElementById('townshipFilter');
+      let townships = [];
+      if (region && window.MYANMAR_REGIONS && window.MYANMAR_REGIONS[region]) {
+        townships = window.MYANMAR_REGIONS[region].slice().sort();
+      } else {
+        townships = [...new Set(allMidwives.map(function(m) { return (m.township || '').trim(); }).filter(Boolean))].sort();
+      }
+      tSel.innerHTML = '<option value="">All Townships</option>' +
+        townships.map(function(t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
+    }
+
+    function bindFilterEvents() {
+      document.getElementById('searchInput').addEventListener('input', renderList);
+      document.getElementById('regionFilter').addEventListener('change', function() {
+        fillTownshipFilter();
+        renderList();
+      });
+      document.getElementById('townshipFilter').addEventListener('change', renderList);
+    }
+
+    function resetFilters() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('regionFilter').value = '';
+      fillTownshipFilter();
+      document.getElementById('townshipFilter').value = '';
+      renderList();
+    }
+
+    async function loadMidwives() {
+      const wrap = document.getElementById('listWrap');
+      wrap.innerHTML = '<div><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>';
+      try {
+        const db = firebase.firestore();
+        let docs = [];
+        try {
+          const snap = await db.collection('users').where('role', 'in', ['Midwife', 'midwife']).get();
+          snap.forEach(function(d) { docs.push({ id: d.id, ...d.data() }); });
+        } catch (e) {
+          const snap = await db.collection('users').get();
+          snap.forEach(function(d) {
+            const data = d.data() || {};
+            if (isMidwifeRole(data.role)) docs.push({ id: d.id, ...data });
+          });
+        }
+
+        allMidwives = docs.sort(function(a, b) {
+          return String(a.name || a.email || '').localeCompare(String(b.name || b.email || ''));
+        });
+        fillTownshipFilter();
+        renderList();
+      } catch (e) {
+        console.error(e);
+        wrap.innerHTML = '<div class="text-danger">Failed to load midwives: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function getFilteredMidwives() {
+      const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+      const region = document.getElementById('regionFilter').value;
+      const township = document.getElementById('townshipFilter').value;
+      return allMidwives.filter(function(m) {
+        if (region && (m.region || '') !== region) return false;
+        if (township && (m.township || '') !== township) return false;
+        if (!q) return true;
+        const hay = ((m.name || '') + ' ' + (m.email || '')).toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
+
+    function renderList() {
+      const wrap = document.getElementById('listWrap');
+      const rows = getFilteredMidwives();
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="text-muted">No midwives match your filters.</div>';
+        return;
+      }
+
+      wrap.innerHTML = rows.map(function(m) {
+        const approved = m.approved !== false;
+        const badge = approved
+          ? '<span class="badge badge-approved">Approved</span>'
+          : '<span class="badge badge-pending">Pending</span>';
+        return `
+          <div class="mw-row d-flex justify-content-between align-items-start gap-2 flex-wrap">
+            <div>
+              <div class="fw-bold">${escapeHtml(m.name || 'Unnamed midwife')}</div>
+              <div class="mw-meta">${escapeHtml(m.email || '-')}</div>
+              <div class="mw-meta">${escapeHtml(m.region || 'No region')} · ${escapeHtml(m.township || 'No township')}</div>
+              ${m.phone ? '<div class="mw-meta">' + escapeHtml(m.phone) + '</div>' : ''}
+            </div>
+            <div class="d-flex flex-column align-items-end gap-2">
+              ${badge}
+              <button class="btn btn-outline-primary btn-sm" onclick="openEdit('${m.id}')"><i class="fas fa-edit me-1"></i>Edit</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function fillEditTownships(region, selected) {
+      const tSel = document.getElementById('editTownship');
+      const list = (window.MYANMAR_REGIONS && window.MYANMAR_REGIONS[region]) ? window.MYANMAR_REGIONS[region].slice().sort() : [];
+      if (selected && list.indexOf(selected) === -1) list.unshift(selected);
+      tSel.innerHTML = '<option value="">Select township</option>' +
+        list.map(function(t) {
+          const sel = t === selected ? ' selected' : '';
+          return '<option value="' + escapeHtml(t) + '"' + sel + '>' + escapeHtml(t) + '</option>';
+        }).join('');
+    }
+
+    function openEdit(id) {
+      const m = allMidwives.find(function(x) { return x.id === id; });
+      if (!m) return;
+      editingId = id;
+      document.getElementById('editEmail').value = m.email || '';
+      document.getElementById('editName').value = m.name || '';
+      document.getElementById('editPhone').value = m.phone || '';
+      document.getElementById('editApproved').value = m.approved === false ? 'false' : 'true';
+
+      const rSel = document.getElementById('editRegion');
+      const regions = Object.keys(window.MYANMAR_REGIONS || {}).sort();
+      const currentRegion = m.region || (window.getRegionFromTownship ? window.getRegionFromTownship(m.township) : '');
+      rSel.innerHTML = '<option value="">Select region</option>' +
+        regions.map(function(r) {
+          const sel = r === currentRegion ? ' selected' : '';
+          return '<option value="' + escapeHtml(r) + '"' + sel + '>' + escapeHtml(r) + '</option>';
+        }).join('');
+      fillEditTownships(currentRegion, m.township || '');
+      rSel.onchange = function() { fillEditTownships(rSel.value, ''); };
+      editModal.show();
+    }
+
+    async function saveMidwife() {
+      if (!editingId) return;
+      const name = document.getElementById('editName').value.trim();
+      const phone = document.getElementById('editPhone').value.trim();
+      const region = document.getElementById('editRegion').value.trim();
+      const township = document.getElementById('editTownship').value.trim();
+      const approved = document.getElementById('editApproved').value === 'true';
+      if (!name) {
+        await AppDialog.alert('Name is required.', { title: 'Edit Midwife' });
+        return;
+      }
+
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      try {
+        const payload = {
+          name: name,
+          phone: phone || null,
+          region: region || null,
+          township: township || null,
+          approved: approved,
+          role: 'Midwife',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedBy: firebase.auth().currentUser.uid
+        };
+        if (!payload.region && payload.township && window.getRegionFromTownship) {
+          payload.region = window.getRegionFromTownship(payload.township) || null;
+        }
+        await firebase.firestore().collection('users').doc(editingId).update(payload);
+
+        const idx = allMidwives.findIndex(function(x) { return x.id === editingId; });
+        if (idx !== -1) allMidwives[idx] = Object.assign({}, allMidwives[idx], payload);
+        editModal.hide();
+        renderList();
+        await AppDialog.alert('Midwife account updated.', { title: 'Saved' });
+      } catch (e) {
+        console.error(e);
+        await AppDialog.alert('Unable to save: ' + e.message, { title: 'Error' });
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -42,4 +42,5 @@
 
   global.getRegionFromTownship = getRegionFromTownship;
   global.TOWNSHIP_TO_REGION = TOWNSHIP_TO_REGION;
+  global.MYANMAR_REGIONS = myanmarRegions;
 })(typeof window !== 'undefined' ? window : globalThis);
