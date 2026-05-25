@@ -1041,7 +1041,7 @@
           <label class="form-label mb-1">
             <i class="fas fa-calendar-plus"></i><span class="lang-text" data-en="Early ANC Visit" data-mm="Early ANC ရ/မရ">Early ANC Visit</span>
           </label>
-          <small class="form-hint d-block mb-2 lang-text" data-en="Auto-calculated from first ANC visit date and LMP (before 14 weeks gestation)" data-mm="ပထမအကြိမ် ANC ပြသရက်နှင့် LMP မှ အလိုအလျောက် တွက်ချက်ပေးထားသည်။ ">Auto-calculated from first ANC visit date and LMP (before 14 weeks gestation)</small>
+          <small class="form-hint d-block mb-2 lang-text" data-en="Auto-calculated from first ANC visit date and LMP (within 14 days of LMP)" data-mm="ပထမအကြိမ် ANC ပြသရက်နှင့် LMP မှ အလိုအလျောက် တွက်ချက်ပေးထားသည် (LMP မှ ၁၄ ရက်အတွင်း)">Auto-calculated from first ANC visit date and LMP (within 14 days of LMP)</small>
           <div id="earlyAncBadge" class="early-anc-badge unknown">
             <i class="fas fa-info-circle"></i>
             <span id="earlyAncStatusText" class="lang-text" data-en="Enter LMP and visit date to calculate" data-mm="LMP နှင့် ပြသရက်ထည့်ပါ">Enter LMP and visit date to calculate</span>
@@ -1621,7 +1621,7 @@
         </h5>
         
         <div id="ancSchedulePanel" class="anc-schedule-panel" style="display: none;">
-          <h6><i class="fas fa-calendar-check me-2"></i><span class="lang-text" data-en="Recommended ANC visit schedule (from LMP)" data-mm="အကြံပြု ANC ပြသရက်များ (LMP မှ)">Recommended ANC visit schedule (from LMP)</span></h6>
+          <h6><i class="fas fa-calendar-check me-2"></i><span class="lang-text" data-en="Recommended ANC visit schedule (from LMP)" data-mm="နောက်တစ်ကြိမ် လာပြသင့်သောနေ့များ">Recommended ANC visit schedule (from LMP)</span></h6>
           <div class="table-responsive">
             <table class="anc-schedule-table">
               <thead>
@@ -1638,13 +1638,13 @@
 
         <div class="row g-3">
           <div class="col-12 col-md-6">
-            <label for="nextVisitDate" class="form-label lang-text" data-en="Next ANC visit date (auto-calculated)" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက် (အလိုအလျောက်)">Next ANC visit date (auto-calculated)</label>
+            <label for="nextVisitDate" class="form-label lang-text" data-en="Next ANC visit date (auto-calculated)" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက်">Next ANC visit date (auto-calculated)</label>
             <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control next-visit-readonly" readonly>
             <div class="form-check mt-2">
               <input class="form-check-input" type="checkbox" id="nextVisitManualOverride" onchange="toggleNextVisitOverride()">
-              <label class="form-check-label lang-text" for="nextVisitManualOverride" data-en="Adjust next visit date manually" data-mm="နောက်ပြန်ရက်ကို လက်ဖြင့် ပြင်ဆင်ရန်">Adjust next visit date manually</label>
+              <label class="form-check-label lang-text" for="nextVisitManualOverride" data-en="Adjust next visit date manually" data-mm=" ANC  ပြန်ပြရက်ကို စိတ်ကြိုက်ပြန်လည်ပြင်ဆင်မည်။ ">Adjust next visit date manually</label>
             </div>
-            <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on MOH 8-visit ANC schedule from LMP." data-mm="LMP မှ MOH ၈-ကြိမ် ANC အချိန်ဇယားအရ တွက်ချက်ထားသည်။">Based on MOH 8-visit ANC schedule from LMP.</small>
+            <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on LMP." data-mm="LMP ပေါ်မှုတည် တွက်ချက်ထားသည်။">Based on LMP.</small>
           </div>
         </div>
 
@@ -2646,19 +2646,30 @@
       return getEffectiveFirstAncVisitDate();
     }
 
-    function getEarlyAncGestationalAgeWeeks() {
+    function getEarlyAncGestationalAgeDays() {
       const lmpInput = document.getElementById('lmp');
       const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked');
       if (!lmpInput?.value || lmpStatus?.value === 'unknown') return null;
       const firstDate = getEffectiveFirstAncVisitDate();
       if (!firstDate) return null;
-      return gestationalAgeDecimalFromLMPAndVisit(lmpInput.value, firstDate);
+      const l = parseDateOnlyLocal(lmpInput.value);
+      const v = parseDateOnlyLocal(firstDate);
+      if (!l || !v || isNaN(l.getTime()) || isNaN(v.getTime())) return null;
+      const totalDays = Math.floor((v - l) / 86400000);
+      if (totalDays < 0) return null;
+      return totalDays;
+    }
+
+    function getEarlyAncGestationalAgeWeeks() {
+      const days = getEarlyAncGestationalAgeDays();
+      if (days === null) return null;
+      return days / 7;
     }
 
     function computeEarlyAncVisit() {
-      const gaWeeks = getEarlyAncGestationalAgeWeeks();
-      if (gaWeeks === null) return null;
-      return gaWeeks < 14;
+      const days = getEarlyAncGestationalAgeDays();
+      if (days === null) return null;
+      return days < 14;
     }
 
     function updateEarlyAncDisplay() {
@@ -2668,11 +2679,11 @@
 
       const lmpInput = document.getElementById('lmp');
       const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked');
-      const gaWeeks = getEarlyAncGestationalAgeWeeks();
+      const totalDays = getEarlyAncGestationalAgeDays();
 
       badge.classList.remove('yes', 'no', 'unknown');
 
-      if (!lmpInput?.value || lmpStatus?.value === 'unknown' || gaWeeks === null) {
+      if (!lmpInput?.value || lmpStatus?.value === 'unknown' || totalDays === null) {
         badge.classList.add('unknown');
         statusText.setAttribute('data-en', 'Enter LMP and first visit date to calculate');
         statusText.setAttribute('data-mm', 'LMP နှင့် ပထမအကြိမ် ANC ပြသရက် ထည့်ပါ');
@@ -2682,24 +2693,24 @@
         return;
       }
 
-      const isEarly = gaWeeks < 14;
-      const weeks = Math.floor(gaWeeks);
-      const days = Math.round((gaWeeks - weeks) * 7);
+      const isEarly = totalDays < 14;
+      const weeks = Math.floor(totalDays / 7);
+      const days = totalDays % 7;
 
       if (isEarly) {
         badge.classList.add('yes');
-        statusText.setAttribute('data-en', `Yes — first ANC at ${weeks} weeks ${days} days (< 14 weeks)`);
-        statusText.setAttribute('data-mm', `Yes — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (< ၁၄ ပတ်)`);
+        statusText.setAttribute('data-en', `Yes — first ANC at ${weeks} weeks ${days} days (${totalDays} days from LMP, within 14 days)`);
+        statusText.setAttribute('data-mm', `Yes — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (LMP မှ ${totalDays} ရက်၊ ၁၄ ရက်အတွင်း)`);
         statusText.textContent = currentLanguage === 'en'
-          ? `Yes — first ANC at ${weeks} weeks ${days} days (< 14 weeks)`
-          : `Yes — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (< ၁၄ ပတ်)`;
+          ? `Yes — first ANC at ${weeks} weeks ${days} days (${totalDays} days from LMP, within 14 days)`
+          : `Yes — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (LMP မှ ${totalDays} ရက်၊ ၁၄ ရက်အတွင်း)`;
       } else {
         badge.classList.add('no');
-        statusText.setAttribute('data-en', `No — first ANC at ${weeks} weeks ${days} days (≥ 14 weeks)`);
-        statusText.setAttribute('data-mm', `No — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (≥ ၁၄ ပတ်)`);
+        statusText.setAttribute('data-en', `No — first ANC at ${weeks} weeks ${days} days (${totalDays} days from LMP, after 14 days)`);
+        statusText.setAttribute('data-mm', `No — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (LMP မှ ${totalDays} ရက်၊ ၁၄ ရက်ကျော်ပြီ)`);
         statusText.textContent = currentLanguage === 'en'
-          ? `No — first ANC at ${weeks} weeks ${days} days (≥ 14 weeks)`
-          : `No — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (≥ ၁၄ ပတ်)`;
+          ? `No — first ANC at ${weeks} weeks ${days} days (${totalDays} days from LMP, after 14 days)`
+          : `No — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (LMP မှ ${totalDays} ရက်၊ ၁၄ ရက်ကျော်ပြီ)`;
       }
     }
 
