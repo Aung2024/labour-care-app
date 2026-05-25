@@ -248,6 +248,54 @@
       color: #6b7280;
     }
 
+    .anc-schedule-panel {
+      background: #f0fdf4;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .anc-schedule-panel h6 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #065f46;
+      margin-bottom: 0.65rem;
+    }
+
+    .anc-schedule-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    .anc-schedule-table th,
+    .anc-schedule-table td {
+      border: 1px solid #d1fae5;
+      padding: 0.45rem 0.55rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .anc-schedule-table th {
+      background: rgba(16, 185, 129, 0.12);
+      color: #065f46;
+      font-weight: 700;
+    }
+
+    .anc-schedule-table tr.current-visit td {
+      background: rgba(16, 185, 129, 0.18);
+      font-weight: 600;
+    }
+
+    .anc-schedule-table tr.next-visit td {
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .next-visit-readonly {
+      background: #f8fafc;
+    }
+
     .patient-name-header {
       background: linear-gradient(135deg, #3b82f6, #1d4ed8);
       color: white;
@@ -973,7 +1021,7 @@
         <div id="manualGAEDDSection" class="row g-3 mt-1" style="display: none;">
           <div class="col-md-6">
             <label for="manualGestationalAge" class="form-label lang-text" data-en="Manual Gestational Age (if LMP unknown)" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်) ">Manual Gestational Age (if LMP unknown)</label>
-            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA()">
+            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA(); updateAncVisitSchedule();">
           </div>
           <div class="col-md-6">
             <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
@@ -1552,6 +1600,7 @@
                 <option value="">Select</option>
               <option value="TD1">TD1</option>
               <option value="TD2">TD2</option>
+              <option value="Completed" class="lang-text" data-en="Completed" data-mm="ပြီးမြောက်ပြီ">Completed</option>
               <option value="Not Given">Not Given</option>
               </select>
             </div>
@@ -1571,11 +1620,31 @@
           <i class="fas fa-notes-medical me-2"></i><span class="lang-text" data-en="Clinical Notes & Next Steps" data-mm="ကုသမှု မှတ်စုများနှင့် နောက်ထပ် အဆင့်များ">Clinical Notes & Next Steps</span>
         </h5>
         
+        <div id="ancSchedulePanel" class="anc-schedule-panel" style="display: none;">
+          <h6><i class="fas fa-calendar-check me-2"></i><span class="lang-text" data-en="Recommended ANC visit schedule (from LMP)" data-mm="အကြံပြု ANC ပြသရက်များ (LMP မှ)">Recommended ANC visit schedule (from LMP)</span></h6>
+          <div class="table-responsive">
+            <table class="anc-schedule-table">
+              <thead>
+                <tr>
+                  <th class="lang-text" data-en="Visit" data-mm="အကြိမ်">Visit</th>
+                  <th class="lang-text" data-en="Pregnancy period" data-mm="ကိုယ်ဝန်ကာလ">Pregnancy period</th>
+                  <th class="lang-text" data-en="Recommended date" data-mm="အကြံပြုရက်">Recommended date</th>
+                </tr>
+              </thead>
+              <tbody id="ancScheduleBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="row g-3">
           <div class="col-12 col-md-6">
-            <label for="nextVisitDate" class="form-label lang-text" data-en="Follow-up Appointment&#10;Follow-up Date - (mm/dd/yyyy)" data-mm="နောက်တစ်ကြိမ် ပြန်ပြရန် ရက်ချိန်းပေးခြင်း&#10;ပြန်ပြရမည့် ရက်စွဲ - (လ/ရက်စွဲ/ခုနှစ်)">Follow-up Appointment<br>Follow-up Date - (mm/dd/yyyy)</label>
-            <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control">
-            <small class="form-hint lang-text" data-en="To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)" data-mm="ကိုယ်ဝန် ၅လ နှင့် ၆လ (ဒုတိယအကြိမ်နှင့် တတိယအကြိမ်) မှစ၍ မွေးဖွားရန်ကြိုတင်ပြင်ဆင်ရေးအတွက် ကူညီပေးရန်">To provide support for birth preparedness begin from 5th and 6th month (2nd and 3rd ANC visit)</small>
+            <label for="nextVisitDate" class="form-label lang-text" data-en="Next ANC visit date (auto-calculated)" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက် (အလိုအလျောက်)">Next ANC visit date (auto-calculated)</label>
+            <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control next-visit-readonly" readonly>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="nextVisitManualOverride" onchange="toggleNextVisitOverride()">
+              <label class="form-check-label lang-text" for="nextVisitManualOverride" data-en="Adjust next visit date manually" data-mm="နောက်ပြန်ရက်ကို လက်ဖြင့် ပြင်ဆင်ရန်">Adjust next visit date manually</label>
+            </div>
+            <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on MOH 8-visit ANC schedule from LMP." data-mm="LMP မှ MOH ၈-ကြိမ် ANC အချိန်ဇယားအရ တွက်ချက်ထားသည်။">Based on MOH 8-visit ANC schedule from LMP.</small>
           </div>
         </div>
 
@@ -1721,6 +1790,7 @@
               calculateGestationalAgeAndEDD();
             }
           }
+          updateAncVisitSchedule();
           return;
         }
 
@@ -1767,16 +1837,62 @@
           }
         }
 
-        // Load History Taking fields from previous visit (most recent visit)
-        await loadHistoryTakingFromPreviousVisit();
-        await loadFirstAncVisitDate();
-        
-        // Load TD from previous visit
-        await loadTDFromPreviousVisit();
+        // Load historical ANC data and compute visit schedule
+        await ensureHistoricalAncDataLoaded();
 
       } catch (error) {
         console.error('Error loading patient info:', error);
         alert(`Error loading patient information: ${error.message}`);
+      }
+    }
+
+    async function ensureHistoricalAncDataLoaded() {
+      await loadHistoryTakingFromPreviousVisit();
+      await loadLmpFromFirstVisitIfNeeded();
+      await loadFirstAncVisitDate();
+      await loadTDFromPreviousVisit();
+      calculateGestationalAgeAndEDD();
+      updateEarlyAncDisplay();
+      updateAncVisitSchedule();
+    }
+
+    async function loadLmpFromFirstVisitIfNeeded() {
+      const lmpInput = document.getElementById('lmp');
+      if (lmpInput?.value || !patientId || !navigator.onLine) return;
+      try {
+        const firstVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'asc')
+          .limit(1)
+          .get();
+        if (firstVisitSnapshot.empty) return;
+        const firstVisit = firstVisitSnapshot.docs[0].data();
+        if (firstVisit.lmp) {
+          let lmpDate = firstVisit.lmp;
+          if (lmpDate && typeof lmpDate.toDate === 'function') {
+            lmpDate = lmpDate.toDate().toISOString().split('T')[0];
+          } else if (typeof lmpDate === 'string') {
+            lmpDate = lmpDate.split('T')[0];
+          }
+          lmpInput.value = lmpDate || '';
+        }
+        if (firstVisit.lmpStatus) {
+          const lmpRadio = document.getElementById(firstVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
+          if (lmpRadio) {
+            lmpRadio.checked = true;
+            toggleLMPFields();
+          }
+        }
+        if (firstVisit.edd && !document.getElementById('edd')?.value) {
+          document.getElementById('edd').value = normalizeVisitDateValue(firstVisit.edd) || '';
+        }
+        if (firstVisit.manualGestationalAge && !document.getElementById('manualGestationalAge')?.value) {
+          document.getElementById('manualGestationalAge').value = firstVisit.manualGestationalAge;
+        }
+      } catch (e) {
+        console.warn('Could not load LMP from first visit:', e);
       }
     }
 
@@ -2041,6 +2157,7 @@
         }
         
         console.log('History Taking fields loaded from previous visit');
+        calculateGestationalAgeAndEDD();
         
       } catch (error) {
         console.error('Error loading History Taking from previous visit:', error);
@@ -2354,6 +2471,7 @@
       updateEarlyAncDisplay();
       calculateBMI();
       evaluateVitalAlerts();
+      updateAncVisitSchedule();
     }
 
     function applyClinicalRiskLanguage() {
@@ -2366,14 +2484,156 @@
       });
     }
 
+    function addCalendarMonthsLocal(date, months) {
+      const d = new Date(date.getTime());
+      const day = d.getDate();
+      d.setMonth(d.getMonth() + months);
+      if (d.getDate() !== day) d.setDate(0);
+      return d;
+    }
+
+    function addDaysLocal(date, days) {
+      return new Date(date.getTime() + days * 86400000);
+    }
+
+    function getEffectiveLmpForSchedule() {
+      const lmpInput = document.getElementById('lmp');
+      const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked');
+      if (lmpInput?.value && lmpStatus?.value !== 'unknown') {
+        return lmpInput.value;
+      }
+      const manualGa = parseFloat(document.getElementById('manualGestationalAge')?.value);
+      const visitDate = document.getElementById('visitDate')?.value;
+      if (!isNaN(manualGa) && visitDate) {
+        const visit = parseDateOnlyLocal(visitDate);
+        if (visit) {
+          return formatDateYMD(addDaysLocal(visit, -Math.round(manualGa * 7)));
+        }
+      }
+      return null;
+    }
+
+    function getRecommendedDateForVisitNumber(lmpStr, targetVisitNumber) {
+      const lmp = parseDateOnlyLocal(lmpStr);
+      if (!lmp || targetVisitNumber < 1 || targetVisitNumber > 8) return null;
+      switch (targetVisitNumber) {
+        case 1: return null;
+        case 2: return formatDateYMD(addCalendarMonthsLocal(lmp, 5));
+        case 3: return formatDateYMD(addCalendarMonthsLocal(lmp, 6));
+        case 4: return formatDateYMD(addCalendarMonthsLocal(lmp, 7));
+        case 5: return formatDateYMD(addCalendarMonthsLocal(lmp, 8));
+        case 6: return formatDateYMD(addDaysLocal(addCalendarMonthsLocal(lmp, 8), 14));
+        case 7: return formatDateYMD(addCalendarMonthsLocal(lmp, 9));
+        case 8: return formatDateYMD(addDaysLocal(addCalendarMonthsLocal(lmp, 9), 14));
+        default: return null;
+      }
+    }
+
+    function buildAncScheduleRows(lmpStr) {
+      const en = currentLanguage === 'en';
+      return [
+        { visit: 1, periodEn: 'As soon as pregnancy known (within 3 months)', periodMm: 'ကိုယ်ဝန်ရှိကြောင်းသိသိချင်း (သို့) ကိုယ်ဝန် သုံးလအတွင်း', date: null },
+        { visit: 2, periodEn: 'Month 5 — once monthly', periodMm: 'ကိုယ်ဝန် ၅ လ — တစ်လ တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 2) },
+        { visit: 3, periodEn: 'Month 6 — once monthly', periodMm: 'ကိုယ်ဝန် ၆ လ — တစ်လ တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 3) },
+        { visit: 4, periodEn: 'Month 7 — once monthly', periodMm: 'ကိုယ်ဝန် ၇ လ — တစ်လ တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 4) },
+        { visit: 5, periodEn: 'Month 8 — every 2 weeks', periodMm: 'ကိုယ်ဝန် ၈ လ — နှစ်ပတ် တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 5) },
+        { visit: 6, periodEn: 'Month 8 — every 2 weeks', periodMm: 'ကိုယ်ဝန် ၈ လ — နှစ်ပတ် တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 6) },
+        { visit: 7, periodEn: 'Month 9 — every 2 weeks', periodMm: 'ကိုယ်ဝန် ၉ လ — နှစ်ပတ် တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 7) },
+        { visit: 8, periodEn: 'Month 9 — every 2 weeks', periodMm: 'ကိုယ်ဝန် ၉ လ — နှစ်ပတ် တစ်ကြိမ်', date: getRecommendedDateForVisitNumber(lmpStr, 8) }
+      ].map(function(row) {
+        return {
+          visit: row.visit,
+          period: en ? row.periodEn : row.periodMm,
+          dateLabel: row.visit === 1
+            ? (en ? 'At first ANC visit' : 'ပထမအကြိမ် ANC တွင်')
+            : (row.date ? formatDisplayDate(row.date) : '—')
+        };
+      });
+    }
+
+    function formatDisplayDate(iso) {
+      const d = parseDateOnlyLocal(iso);
+      if (!d) return iso;
+      return d.toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'my-MM', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
+    }
+
+    function toggleNextVisitOverride() {
+      const input = document.getElementById('nextVisitDate');
+      const override = document.getElementById('nextVisitManualOverride');
+      if (!input || !override) return;
+      if (override.checked) {
+        input.removeAttribute('readonly');
+        input.classList.remove('next-visit-readonly');
+      } else {
+        input.setAttribute('readonly', 'readonly');
+        input.classList.add('next-visit-readonly');
+        updateAncVisitSchedule();
+      }
+    }
+
+    function updateAncVisitSchedule() {
+      const panel = document.getElementById('ancSchedulePanel');
+      const body = document.getElementById('ancScheduleBody');
+      const nextInput = document.getElementById('nextVisitDate');
+      const hint = document.getElementById('nextVisitScheduleHint');
+      const manualOverride = document.getElementById('nextVisitManualOverride');
+      if (!panel || !body || !nextInput) return;
+
+      const lmpStr = getEffectiveLmpForSchedule();
+      const currentVisit = parseInt(document.getElementById('visitNumber')?.value, 10) || visitCount || 1;
+      const nextVisitNum = currentVisit + 1;
+
+      if (!lmpStr) {
+        panel.style.display = 'none';
+        if (!manualOverride?.checked) nextInput.value = '';
+        if (hint) {
+          hint.textContent = currentLanguage === 'en'
+            ? 'Enter LMP (or gestational age if LMP unknown) to calculate the 8-visit schedule.'
+            : 'LMP (သို့) LMP မသိပါက ကိုယ်ဝန်ဆောင်ကာလ ထည့်ပါ — ၈-ကြိမ် ANC အချိန်ဇယား တွက်ပေးမည်။';
+        }
+        return;
+      }
+
+      panel.style.display = 'block';
+      const rows = buildAncScheduleRows(lmpStr);
+      body.innerHTML = rows.map(function(row) {
+        const classes = [];
+        if (row.visit === currentVisit) classes.push('current-visit');
+        if (row.visit === nextVisitNum) classes.push('next-visit');
+        const visitLabel = currentLanguage === 'en' ? ('Visit ' + row.visit) : ('အကြိမ် ' + row.visit);
+        return '<tr class="' + classes.join(' ') + '"><td>' + visitLabel + '</td><td>' + row.period + '</td><td>' + row.dateLabel + '</td></tr>';
+      }).join('');
+
+      const recommendedNext = nextVisitNum <= 8 ? getRecommendedDateForVisitNumber(lmpStr, nextVisitNum) : null;
+      if (!manualOverride?.checked) {
+        nextInput.value = recommendedNext || '';
+      }
+
+      if (hint) {
+        if (currentVisit >= 8) {
+          hint.textContent = currentLanguage === 'en'
+            ? 'All 8 recommended ANC visits are scheduled. Follow EDD / delivery planning.'
+            : 'အကြံပြု ANC ၈-ကြိမ် ပြည့်ပါပြီ။ EDD / မွေးဖွားရေး အစီအစဉ် လုပ်ဆောင်ပါ။';
+        } else if (recommendedNext) {
+          hint.textContent = currentLanguage === 'en'
+            ? ('Visit ' + nextVisitNum + ' recommended on ' + formatDisplayDate(recommendedNext) + '.')
+            : (nextVisitNum + ' အကြိမ် ANC — ' + formatDisplayDate(recommendedNext) + ' တွင် အကြံပြုထားသည်။');
+        }
+      }
+    }
+
     function onVisitDateChanged() {
       calculateGestationalAgeAndEDD();
       updateEarlyAncDisplay();
+      updateAncVisitSchedule();
     }
 
     function onLmpOrVisitChanged() {
       calculateGestationalAgeAndEDD();
       updateEarlyAncDisplay();
+      updateAncVisitSchedule();
     }
 
     function getEffectiveFirstAncVisitDate() {
@@ -2709,6 +2969,8 @@
         lmpInput.value = '';
         eddInput.value = '';
       }
+      updateEarlyAncDisplay();
+      updateAncVisitSchedule();
     }
 
     function togglePastHistoryNotes() {
@@ -3348,6 +3610,10 @@
       updateEarlyAncDisplay();
       updateClinicalAlerts();
       evaluateVitalAlerts();
+      const override = document.getElementById('nextVisitManualOverride');
+      if (override) override.checked = false;
+      toggleNextVisitOverride();
+      updateAncVisitSchedule();
 
       console.log('Form fields cleared successfully');
     }
