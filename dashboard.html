@@ -474,18 +474,37 @@
     }
     function isPatientHighRisk(patient) {
       if (window.HighRiskUtils && window.HighRiskUtils.isPatientHighRisk) return window.HighRiskUtils.isPatientHighRisk(highRiskPatientBundle(patient));
-      var profile = patient.profile || patient.registration || {};
-      if (profile.high_risk === 'yes' || profile.high_risk === true) return true;
-      if (Array.isArray(profile.risk_factors) && profile.risk_factors.length > 0) return true;
-      var age = parseInt(profile.age, 10);
-      if (!isNaN(age) && (age < 18 || age >= 40)) return true;
-      return (patient.antenatalVisits || []).some(function(v) { var d = v.data !== undefined ? v.data : v; var hr = d.high_risk || d.highRisk; return hr === 'yes' || hr === 'Yes'; });
+      var visits = patient.antenatalVisits || [];
+      var latest = null;
+      var latestMs = null;
+      visits.forEach(function (v) {
+        var d = v.data !== undefined ? v.data : v;
+        var t = d.visitDate || d.timestamp;
+        var ms = t && typeof t.toDate === 'function' ? t.toDate().getTime() : t ? new Date(t).getTime() : null;
+        if (ms != null && (latestMs == null || ms > latestMs)) {
+          latestMs = ms;
+          latest = d;
+        }
+      });
+      var hr = latest && (latest.high_risk || latest.highRisk);
+      return hr === 'yes' || hr === 'Yes';
     }
     function getPatientRiskFactorsFromANC(patient) {
       if (window.HighRiskUtils && window.HighRiskUtils.getPatientRiskFactorsFromANC) return window.HighRiskUtils.getPatientRiskFactorsFromANC(highRiskPatientBundle(patient));
-      var factors = [];
-      (patient.antenatalVisits || []).forEach(function(v) { var d = v.data !== undefined ? v.data : v; var hr = d.high_risk || d.highRisk; if ((hr === 'yes' || hr === 'Yes') && d.risk_factors && Array.isArray(d.risk_factors)) factors.push.apply(factors, d.risk_factors); });
-      return factors;
+      if (!isPatientHighRisk(patient)) return [];
+      var visits = patient.antenatalVisits || [];
+      var latest = null;
+      var latestMs = null;
+      visits.forEach(function (v) {
+        var d = v.data !== undefined ? v.data : v;
+        var t = d.visitDate || d.timestamp;
+        var ms = t && typeof t.toDate === 'function' ? t.toDate().getTime() : t ? new Date(t).getTime() : null;
+        if (ms != null && (latestMs == null || ms > latestMs)) {
+          latestMs = ms;
+          latest = d;
+        }
+      });
+      return latest && Array.isArray(latest.risk_factors) ? latest.risk_factors.slice() : [];
     }
 
     function getTransferReferralReasonKey(transferData) {
@@ -870,13 +889,6 @@
           if (window.HighRiskUtils && typeof window.HighRiskUtils.getAutoDetectedRiskReasons === 'function') {
             window.HighRiskUtils.getAutoDetectedRiskReasons(hrBundle).forEach(function(r) {
               m.highRiskReasonCounts[r] = (m.highRiskReasonCounts[r] || 0) + 1;
-            });
-          }
-          if (Array.isArray(profile.risk_factors)) {
-            profile.risk_factors.forEach(function(f) {
-              if (f == null || f === '') return;
-              var rk = 'Registration factor: ' + String(f);
-              m.highRiskReasonCounts[rk] = (m.highRiskReasonCounts[rk] || 0) + 1;
             });
           }
         }

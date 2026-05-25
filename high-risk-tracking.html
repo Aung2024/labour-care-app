@@ -314,6 +314,71 @@
     @media (min-width: 769px) {
       .hrt-cards { display: none !important; }
     }
+
+    /* Dashboard summary */
+    .hrt-dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    @media (min-width: 768px) {
+      .hrt-dashboard { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+    }
+    .hrt-stat-card {
+      background: var(--hrt-surface);
+      border-radius: var(--hrt-radius);
+      box-shadow: var(--hrt-shadow);
+      border: 1px solid rgba(255,255,255,0.65);
+      padding: 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-height: 5.5rem;
+    }
+    .hrt-stat-card .stat-icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      margin-bottom: 0.15rem;
+    }
+    .hrt-stat-card .stat-value {
+      font-size: 1.65rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .hrt-stat-card .stat-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--hrt-muted);
+    }
+    .hrt-stat-card.total .stat-icon { background: #fef2f2; color: #b91c1c; }
+    .hrt-stat-card.active .stat-icon { background: #eff6ff; color: #1d4ed8; }
+    .hrt-stat-card.overdue .stat-icon { background: #fff7ed; color: #c2410c; }
+    .hrt-stat-card.resolved .stat-icon { background: #ecfdf5; color: #047857; }
+
+    .hrt-search-bar {
+      display: flex;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .hrt-search-bar input {
+      flex: 1 1 220px;
+      border: 1px solid var(--hrt-border);
+      border-radius: 10px;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.875rem;
+      background: #fff;
+    }
   </style>
 </head>
 <body>
@@ -330,6 +395,34 @@
 
   <div class="main-wrap">
     <div id="offlineBanner" class="alert alert-warning d-none" role="alert"></div>
+
+    <div id="dashboardState" class="d-none">
+      <div class="hrt-dashboard">
+        <div class="hrt-stat-card total">
+          <span class="stat-icon"><i class="fas fa-user-injured"></i></span>
+          <span class="stat-value" id="statTotalHr">0</span>
+          <span class="stat-label" id="statTotalHrLabel">High Risk Patients</span>
+        </div>
+        <div class="hrt-stat-card active">
+          <span class="stat-icon"><i class="fas fa-heart-pulse"></i></span>
+          <span class="stat-value" id="statActiveHr">0</span>
+          <span class="stat-label" id="statActiveHrLabel">Active Follow-up</span>
+        </div>
+        <div class="hrt-stat-card overdue">
+          <span class="stat-icon"><i class="fas fa-clock"></i></span>
+          <span class="stat-value" id="statOverdueHr">0</span>
+          <span class="stat-label" id="statOverdueHrLabel">Overdue Follow-up</span>
+        </div>
+        <div class="hrt-stat-card resolved">
+          <span class="stat-icon"><i class="fas fa-circle-check"></i></span>
+          <span class="stat-value" id="statResolvedHr">0</span>
+          <span class="stat-label" id="statResolvedHrLabel">Resolved</span>
+        </div>
+      </div>
+      <div class="hrt-search-bar">
+        <input type="search" id="hrtSearchInput" placeholder="" oninput="filterHrtRows()">
+      </div>
+    </div>
 
     <div id="loadingState" class="card-panel text-center py-5">
       <div class="spinner-border text-danger" role="status"></div>
@@ -357,7 +450,6 @@
               <th class="hrt-col-edd col-edd"></th>
               <th class="hrt-col-days col-days"></th>
               <th class="hrt-col-risks col-risks"></th>
-              <th class="hrt-col-cues col-cues"></th>
               <th class="hrt-col-actions col-actions"></th>
             </tr>
           </thead>
@@ -431,7 +523,7 @@
     var T = {
       en: {
         title: 'High Risk Tracking',
-        info: 'High-risk clients in your access scope (same detection rules as the dashboard). Track actions and close the follow-up cycle.',
+        info: 'Patients marked high risk on the latest ANC visit assessment. Track follow-up actions until resolved.',
         loading: 'Loading patients and ANC visits...',
         empty: 'No high-risk patients in your access scope.',
         offline: 'High Risk Tracking needs an internet connection.',
@@ -439,8 +531,7 @@
         colPhone: 'Phone',
         colEdd: 'EDD / GA',
         colDays: 'Days Since',
-        colRisks: 'Risk Factors',
-        colCues: 'Alerts',
+        colRisks: 'ANC Risk Factors',
         colActions: 'Actions',
         noVisits: 'No visits',
         days: 'd',
@@ -477,11 +568,16 @@
         justNow: 'just now',
         minutesAgo: 'm ago',
         hoursAgo: 'h ago',
-        daysAgo: 'd ago'
+        daysAgo: 'd ago',
+        searchPlaceholder: 'Search by patient name…',
+        statTotal: 'High Risk Patients',
+        statActive: 'Active Follow-up',
+        statOverdue: 'Overdue Follow-up',
+        statResolved: 'Resolved'
       },
       mm: {
         title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
-        info: 'Dashboard နှင့် စည်းမျဉ်းတူသော အန္တရာယ်မြင့် လူနာများ (ANC/မီးဖွား/နောက်ပိုင်း စောင့်ရှောက်မှု)။ Follow up လိုက်ပါ။',
+        info: 'နောက်ဆုံး ANC visit တွင် အန္တရာယ်မြင့် ကိုယ်ဝန်ဟု မှတ်ထားသော လူနာများ။ Follow-up လုပ်ဆောင်မှုများကို ပြီးဆုံးသည်အထိ စောင့်ကြည့်ပါ။',
         loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
         empty: 'သင့်အခွင့်အရေးအတွင်း အန္တရာယ်မြင့် လူနာ မရှိသေးပါ။',
         offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက် လိုအပ်သည်။',
@@ -489,9 +585,9 @@
         colPhone: 'ဖုန်း',
         colEdd: 'မီးဖွားရက် / GA',
         colDays: 'ရက် (Days Since)',
-        colRisks: 'အန္တရာယ်အချက်များ',
-        colCues: 'သတိပေးချက်',
+        colRisks: 'ANC အန္တရာယ်အချက်များ',
         colActions: 'လုပ်ဆောင်မှု',
+        searchPlaceholder: 'လူနာအမည် ရှာဖွေရန်…',
         noVisits: 'မှတ်တမ်း မရှိ',
         days: 'ရက်',
         referral: 'လွှဲပြောင်း',
@@ -527,7 +623,11 @@
         justNow: 'အခု',
         minutesAgo: 'မိနစ်က',
         hoursAgo: 'နာရီက',
-        daysAgo: 'ရက်က'
+        daysAgo: 'ရက်က',
+        statTotal: 'အန္တရာယ်မြင့် လူနာ',
+        statActive: 'Follow-up လုပ်ဆောင်နေ',
+        statOverdue: 'Follow-up ကျော်လွန်',
+        statResolved: 'ပြီးဆုံး'
       }
     };
 
@@ -553,10 +653,15 @@
       if (colDays) colDays.textContent = tr('colDays');
       var colRisks = document.querySelector('.col-risks');
       if (colRisks) colRisks.textContent = tr('colRisks');
-      var colCues = document.querySelector('.col-cues');
-      if (colCues) colCues.textContent = tr('colCues');
       var colActions = document.querySelector('.col-actions');
       if (colActions) colActions.textContent = tr('colActions');
+
+      document.getElementById('statTotalHrLabel').textContent = tr('statTotal');
+      document.getElementById('statActiveHrLabel').textContent = tr('statActive');
+      document.getElementById('statOverdueHrLabel').textContent = tr('statOverdue');
+      document.getElementById('statResolvedHrLabel').textContent = tr('statResolved');
+      var searchInput = document.getElementById('hrtSearchInput');
+      if (searchInput) searchInput.placeholder = tr('searchPlaceholder');
 
       document.querySelector('.action-modal-title').textContent = tr('actionModalTitle');
       document.querySelector('.action-label-note').textContent = tr('actionNote');
@@ -585,7 +690,7 @@
       lang = l;
       localStorage.setItem('appLanguage', l);
       applyStaticI18n();
-      if (window._hrtRows) renderAll(window._hrtRows);
+      if (window._hrtRows) renderAll(getFilteredHrtRows());
     }
 
     function isRegionalOfficerRole(role) {
@@ -634,11 +739,9 @@
       return tags;
     }
 
-    function computeUrgency(daysSince, cues) {
-      var hasDanger = cues.some(function(c) { return c.cls.indexOf('bg-danger') !== -1; });
-      if (daysSince != null && daysSince > FOLLOWUP_WARN_DAYS && hasDanger) return 'critical';
-      if ((daysSince != null && daysSince > FOLLOWUP_WARN_DAYS) || hasDanger) return 'high';
-      if (daysSince != null && daysSince > FOLLOWUP_ALERT_DAYS) return 'moderate';
+    function computeUrgency(daysSince) {
+      if (daysSince != null && daysSince > FOLLOWUP_WARN_DAYS) return 'critical';
+      if (daysSince != null && daysSince > FOLLOWUP_ALERT_DAYS) return 'high';
       return 'on-track';
     }
 
@@ -726,19 +829,10 @@
       return uniqueStrings(out).slice(0, 12);
     }
 
-    function extractRegistrationRisks(patient) {
-      var out = [];
-      if (patient.high_risk === 'yes' || patient.high_risk === true) {
-        out.push(lang === 'mm' ? '\u1019\u103e\u1010\u103a\u1015\u102f\u1036\u1010\u1004\u103a: \u1021\u1014\u1039\u1010\u101b\u102c\u101a\u103a\u1019\u103c\u1004\u103a\u1037' : 'Reg: high risk');
-      }
-      if (Array.isArray(patient.risk_factors)) {
-        patient.risk_factors.forEach(function (f) { if (f) out.push(String(f)); });
-      }
-      if (patient.risk_notes && String(patient.risk_notes).trim()) {
-        var n = String(patient.risk_notes).trim();
-        out.push(n.length > 80 ? n.slice(0, 80) + '\u2026' : n);
-      }
-      return uniqueStrings(out);
+    function mergedRiskPills(r) {
+      return (r.factorsUnique || []).map(function(f) {
+        return { text: f, variant: 'anc' };
+      });
     }
 
     var HRT_RISK_LABELS = {
@@ -773,17 +867,6 @@
       if (/:/.test(t)) return t;
       if (/_/.test(t)) return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
       return t;
-    }
-
-    function mergedRiskPills(r) {
-      var all = [];
-      (r.factorsUnique || []).forEach(function(f) { all.push({ text: f, variant: 'anc' }); });
-      (r.riskLcg || []).forEach(function(f) { all.push({ text: f, variant: 'lcg' }); });
-      (r.riskPnc || []).forEach(function(f) { all.push({ text: f, variant: 'pnc' }); });
-      var regRisks = extractRegistrationRisks(r.patient);
-      var otherRisks = uniqueStrings(regRisks.concat(r.labRisks || []));
-      otherRisks.forEach(function(f) { all.push({ text: f, variant: 'other' }); });
-      return all;
     }
 
     function riskPillsHtml(pills) {
@@ -909,8 +992,55 @@
       return row.actions[0].type === 'resolved';
     }
 
+    function isFollowUpOverdue(actions) {
+      if (!actions || !actions.length) return false;
+      var fu = actions[0].followUpDate;
+      if (!fu) return false;
+      var d = fu && typeof fu.toDate === 'function' ? fu.toDate() : new Date(fu);
+      if (isNaN(d.getTime())) return false;
+      var today = new Date(); today.setHours(0,0,0,0);
+      var fd = new Date(d.getTime()); fd.setHours(0,0,0,0);
+      return fd < today;
+    }
+
+    function updateDashboardStats(allRows) {
+      var rows = allRows || [];
+      var resolved = 0;
+      var active = 0;
+      var overdue = 0;
+      rows.forEach(function(r) {
+        if (isResolved(r)) {
+          resolved++;
+          return;
+        }
+        active++;
+        if (isFollowUpOverdue(r.actions)) overdue++;
+      });
+      document.getElementById('statTotalHr').textContent = rows.length;
+      document.getElementById('statActiveHr').textContent = active;
+      document.getElementById('statOverdueHr').textContent = overdue;
+      document.getElementById('statResolvedHr').textContent = resolved;
+    }
+
+    function getFilteredHrtRows() {
+      if (!window._hrtRows) return [];
+      var q = (window._hrtFilterQuery || '').trim().toLowerCase();
+      if (!q) return window._hrtRows;
+      return window._hrtRows.filter(function(r) {
+        var name = (r.patient.name || r.patient.patientName || '').toLowerCase();
+        return name.indexOf(q) !== -1;
+      });
+    }
+
+    function filterHrtRows() {
+      var input = document.getElementById('hrtSearchInput');
+      window._hrtFilterQuery = input ? input.value : '';
+      renderAll(getFilteredHrtRows());
+    }
+
     /* Render both table and cards */
     function renderAll(rows) {
+      updateDashboardStats(window._hrtRows || rows);
       var resolved = [];
       var active = [];
       rows.forEach(function(r) {
@@ -931,8 +1061,7 @@
       var tbody = document.getElementById('hrtBody');
       tbody.innerHTML = '';
       rows.forEach(function(r) {
-        var cues = clinicalCueTags(r.latestData);
-        var urg = isResolved(r) ? null : computeUrgency(r.daysSince, cues);
+        var urg = isResolved(r) ? null : computeUrgency(r.daysSince);
         var rawName = r.patient.name || r.patient.patientName || '\u2014';
         var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
         var pills = mergedRiskPills(r);
@@ -950,7 +1079,6 @@
           '<td class="hrt-col-edd">' + eddCellHtml(r.patient) + '</td>' +
           '<td class="hrt-col-days">' + daysCellHtml(r.daysSince) + '</td>' +
           '<td class="hrt-col-risks">' + riskPillsHtml(pills) + '</td>' +
-          '<td class="hrt-col-cues">' + cuesHtml(cues) + '</td>' +
           '<td class="hrt-col-actions">' +
             actionBarHtml(r.patient.id) +
             lastActionHtml(r.actions) +
@@ -966,8 +1094,7 @@
       var container = document.getElementById('hrtCards');
       container.innerHTML = '';
       rows.forEach(function(r) {
-        var cues = clinicalCueTags(r.latestData);
-        var urg = isResolved(r) ? null : computeUrgency(r.daysSince, cues);
+        var urg = isResolved(r) ? null : computeUrgency(r.daysSince);
         var rawName = r.patient.name || r.patient.patientName || '\u2014';
         var name = escapeHtml(window.DataMasking ? window.DataMasking.maskName(rawName, false) : rawName);
         var pills = mergedRiskPills(r);
@@ -988,7 +1115,6 @@
             daysCellHtml(r.daysSince) +
           '</div>' +
           '<div class="hrt-card-section"><div class="hrt-card-section-label">' + escapeHtml(T[lang].colRisks) + '</div>' + riskPillsHtml(pills) + '</div>' +
-          (cues.length ? '<div class="hrt-card-section"><div class="hrt-card-section-label">' + escapeHtml(T[lang].colCues) + '</div>' + cuesHtml(cues) + '</div>' : '') +
           '<div class="hrt-card-actions">' +
             actionBarHtml(r.patient.id) +
             '<a class="hrt-hub-link" href="patient-care-hub.html?patient=' + encodeURIComponent(r.patient.id) + '">' +
@@ -1003,7 +1129,7 @@
     function toggleResolved() {
       showResolved = !showResolved;
       updateResolvedLabel();
-      if (window._hrtRows) renderAll(window._hrtRows);
+      if (window._hrtRows) renderAll(getFilteredHrtRows());
     }
 
     /* Action modal */
@@ -1046,7 +1172,7 @@
         var modal = bootstrap.Modal.getInstance(document.getElementById('actionModal'));
         if (modal) modal.hide();
         await refreshActions(_currentActionPatientId);
-        renderAll(window._hrtRows);
+        renderAll(getFilteredHrtRows());
       } catch (err) {
         console.error('Save action failed', err);
         alert((err && err.message) || 'Failed to save action');
@@ -1256,45 +1382,26 @@
 
         var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
           var visits = await fetchVisitsForPatient(db, p.id);
-          var reg = p.profile || p.registration || p;
-          var bundle = { antenatalVisits: visits, registration: reg };
+          var bundle = { antenatalVisits: visits };
           if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
 
-          var pncDocs = [], summaryData = null, labList = [], actions = [];
+          var actions = [];
           try {
-            var quad = await Promise.all([
-              fetchPostpartumVisitsRaw(db, p.id),
-              fetchLabourSummaryRaw(db, p.id),
-              fetchLabRecordsRaw(db, p.id),
-              fetchHrtActions(db, p.id)
-            ]);
-            pncDocs = quad[0];
-            summaryData = quad[1];
-            labList = quad[2];
-            actions = quad[3];
+            actions = await fetchHrtActions(db, p.id);
           } catch (e) {
-            console.warn('HRT extra fetches', p.id, e);
+            console.warn('HRT actions fetch', p.id, e);
           }
 
           var factors = window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
           var factorsUnique = uniqueStrings(factors);
-          var riskLcg = extractLcgRisksFromSummary(summaryData);
-          var riskPnc = extractPncRisksFromVisits(pncDocs);
-          var labRisks = extractLabRiskSnippets(labList);
-
           var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
-          var latestData = window.HighRiskUtils.getLatestAncVisitData(bundle);
           var daysSince = null;
           if (lastMs != null) daysSince = Math.floor((Date.now() - lastMs) / 86400000);
 
           return {
             patient: p,
             factorsUnique: factorsUnique,
-            riskLcg: riskLcg,
-            riskPnc: riskPnc,
-            labRisks: labRisks,
             daysSince: daysSince,
-            latestData: latestData,
             actions: actions
           };
         });
@@ -1311,13 +1418,15 @@
         });
 
         window._hrtRows = rows;
+        window._hrtFilterQuery = '';
 
         document.getElementById('loadingState').classList.add('d-none');
         if (rows.length === 0) {
           document.getElementById('emptyState').classList.remove('d-none');
         } else {
+          document.getElementById('dashboardState').classList.remove('d-none');
           document.getElementById('tableState').classList.remove('d-none');
-          renderAll(rows);
+          renderAll(getFilteredHrtRows());
         }
       } catch (err) {
         console.error(err);

@@ -1315,7 +1315,7 @@
       <!-- High Risk Pregnancy Assessment -->
       <div class="form-section">
         <h5 class="section-title">
-          <i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="High Risk Pregnancy Assessment" data-mm="အန္တရာယ်ဖြစ်နိုင်ချေရှိသော ကိုယ်ဝန်ဆောင် ဟုတ်/မဟုတ် ဆန်းစစ်ခြင်း">High Risk Pregnancy Assessment</span>
+          <i class="fas fa-exclamation-triangle me-2"></i><span class="lang-text" data-en="High Risk Pregnancy Assessment" data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေမြင့်မားသော ကိုယ်ဝန်ဆောင် ဟုတ်/မဟုတ် ဆန်းစစ်ခြင်း">High Risk Pregnancy Assessment</span>
         </h5>
         
         <div class="mt-2">
@@ -1851,9 +1851,56 @@
       await loadLmpFromFirstVisitIfNeeded();
       await loadFirstAncVisitDate();
       await loadTDFromPreviousVisit();
+      await loadHighRiskFromPreviousVisit();
       calculateGestationalAgeAndEDD();
       updateEarlyAncDisplay();
       updateAncVisitSchedule();
+    }
+
+    function applyHighRiskAssessmentFromVisit(visitData) {
+      if (!visitData) return;
+
+      if (visitData.high_risk) {
+        document.querySelectorAll('input[name="highRisk"]').forEach(function (r) { r.checked = false; });
+        const highRiskRadio = document.querySelector('input[name="highRisk"][value="' + visitData.high_risk + '"]');
+        if (highRiskRadio) {
+          highRiskRadio.checked = true;
+          toggleHighRiskDetails();
+        }
+      }
+
+      document.querySelectorAll('input[name="riskFactors"]').forEach(function (cb) { cb.checked = false; });
+      if (visitData.risk_factors && Array.isArray(visitData.risk_factors)) {
+        visitData.risk_factors.forEach(function (riskFactor) {
+          const checkbox = document.querySelector('input[name="riskFactors"][value="' + riskFactor + '"]');
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      const riskNotesEl = document.getElementById('riskNotes');
+      if (riskNotesEl) {
+        riskNotesEl.value = visitData.risk_notes || '';
+      }
+    }
+
+    async function loadHighRiskFromPreviousVisit() {
+      try {
+        if (!patientId || !navigator.onLine) return;
+
+        const previousVisitSnapshot = await firebase.firestore()
+          .collection('patients')
+          .doc(patientId)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'desc')
+          .limit(1)
+          .get();
+
+        if (previousVisitSnapshot.empty) return;
+
+        applyHighRiskAssessmentFromVisit(previousVisitSnapshot.docs[0].data());
+      } catch (error) {
+        console.warn('Could not load high risk assessment from previous visit:', error);
+      }
     }
 
     async function loadLmpFromFirstVisitIfNeeded() {
@@ -2331,27 +2378,7 @@
           evaluateVitalAlerts();
           updateEarlyAncDisplay();
           
-          // Load High Risk Assessment
-          if (latestVisit.high_risk) {
-            const highRiskRadio = document.querySelector(`input[name="highRisk"][value="${latestVisit.high_risk}"]`);
-            if (highRiskRadio) {
-              highRiskRadio.checked = true;
-              toggleHighRiskDetails(); // Show/hide risk factors section
-            }
-          }
-          
-          // Load High Risk Factors checkboxes
-          if (latestVisit.risk_factors && Array.isArray(latestVisit.risk_factors)) {
-            latestVisit.risk_factors.forEach(riskFactor => {
-              const checkbox = document.querySelector(`input[name="riskFactors"][value="${riskFactor}"]`);
-              if (checkbox) {
-                checkbox.checked = true;
-              }
-            });
-          }
-          
-          // Load Risk Notes
-          setValue('riskNotes', latestVisit.risk_notes);
+          applyHighRiskAssessmentFromVisit(latestVisit);
           
           // Load additional fields
           setValue('temperature', latestVisit.temperature);
@@ -3469,7 +3496,11 @@
               .doc(patientId)
               .update({
                 lastAntenatalVisit: firebase.firestore.FieldValue.serverTimestamp(),
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+                high_risk: cloudData.high_risk || 'no',
+                high_risk_pregnancy: cloudData.high_risk === 'yes' ? 'Yes' : 'No',
+                risk_factors: cloudData.risk_factors || [],
+                risk_notes: cloudData.risk_notes || null
               });
 
             if (window.DataLinkage) {
@@ -3496,6 +3527,9 @@
           await AppDialog.alert(successMsg, { title: 'Saved' });
         } else {
           alert(successMsg);
+        }
+        if (patientId) {
+          sessionStorage.setItem('selectedPatientId', patientId);
         }
         window.location.href = 'antenatal-care.html';
 
