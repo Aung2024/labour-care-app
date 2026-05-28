@@ -28,6 +28,7 @@
       margin-top: 1rem;
     }
     .transfer-card {
+      position: relative;
       background: #fff;
       border: 0;
       border-radius: 18px;
@@ -57,6 +58,25 @@
     .title { font-weight: 800; color: #111827; font-size: 1.15rem; }
     .desc { color: #6b7280; margin-top: .35rem; font-size: .93rem; line-height: 1.45; }
     .action { margin-top: 1rem; font-weight: 700; color: #059669; }
+    .transfer-notify-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      padding: 0 6px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.72rem;
+      line-height: 22px;
+      text-align: center;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+    }
+    .transfer-card.has-pending {
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3), 0 12px 28px rgba(0,0,0,.16);
+    }
   </style>
 </head>
 <body>
@@ -77,10 +97,11 @@
         <div class="action">Start transfer <i class="fas fa-arrow-right ms-1"></i></div>
       </button>
 
-      <button class="transfer-card" type="button" onclick="goToTransfer('requests')">
+      <button class="transfer-card" type="button" id="receiveTransfersCard" onclick="goToTransfer('requests')">
+        <span class="transfer-notify-badge d-none" id="receiveTransferBadge">0</span>
         <div class="transfer-icon"><i class="fas fa-inbox"></i></div>
         <div class="title">Receive Transfers</div>
-        <div class="desc">Review incoming transfer requests and accept patients into your care.</div>
+        <div class="desc" id="receiveTransferDesc">Review incoming transfer requests and accept patients into your care.</div>
         <div class="action">View requests <i class="fas fa-arrow-right ms-1"></i></div>
       </button>
     </div>
@@ -95,6 +116,44 @@
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       alert('Patient transfers are available online only. Please reconnect to the internet and try again.');
       window.location.href = 'home.html';
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!user || user.isPilotCachedUser) return;
+      await loadIncomingTransferBadge(user.uid);
+    });
+
+    async function loadIncomingTransferBadge(uid) {
+      const badge = document.getElementById('receiveTransferBadge');
+      const card = document.getElementById('receiveTransfersCard');
+      const desc = document.getElementById('receiveTransferDesc');
+      if (!badge || !card) return;
+      try {
+        const snap = await firebase.firestore()
+          .collection('patient_transfer_requests')
+          .where('targetMidwifeIds', 'array-contains', uid)
+          .limit(80)
+          .get();
+        let count = 0;
+        snap.forEach(function (doc) {
+          if ((doc.data().status || 'pending') === 'pending') count++;
+        });
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.classList.remove('d-none');
+          card.classList.add('has-pending');
+          if (desc) {
+            desc.innerHTML = '<strong style="color:#b91c1c;">' + count + ' transfer' +
+              (count === 1 ? '' : 's') + ' waiting for you.</strong> Accept patients into your care.';
+          }
+        } else {
+          badge.classList.add('d-none');
+          card.classList.remove('has-pending');
+        }
+      } catch (e) {
+        console.warn('Incoming transfer badge failed', e);
+      }
     }
 
     function goToTransfer(action) {

@@ -31,6 +31,7 @@
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/status-manager.js"></script>
   <script src="js/sync-manager.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/offline-status-bar.js"></script>
@@ -116,6 +117,28 @@
       line-height: 18px;
       text-align: center;
       font-weight: 700;
+    }
+
+    .care-card-notify-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      padding: 0 6px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.72rem;
+      line-height: 22px;
+      text-align: center;
+      font-weight: 700;
+      z-index: 2;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+    }
+
+    .care-card.transfer-pending-highlight {
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), var(--card-shadow);
     }
 
     .main-container {
@@ -788,6 +811,7 @@
               loadPatientStats();
             }
             setTimeout(loadHrtBellCount, 2000);
+            loadPendingTransferCount();
           }, 500);
         }
       } catch (error) {
@@ -866,6 +890,53 @@
         alert('Sync failed: ' + (e && e.message ? e.message : e));
       } finally {
         if (btn) btn.disabled = false;
+      }
+    }
+
+    async function loadPendingTransferCount() {
+      if (!navigator.onLine || !currentUser) return;
+      const card = document.getElementById('homeCardPatientTransfers');
+      const badge = document.getElementById('transferPendingBadge');
+      const hint = document.getElementById('transferPendingHint');
+      if (!card || !badge) return;
+
+      try {
+        const db = firebase.firestore();
+        const snap = await homeSmartQuery(
+          db.collection('patient_transfer_requests')
+            .where('targetMidwifeIds', 'array-contains', currentUser.uid)
+            .limit(80),
+          { preferCache: false, timeout: 8000, retries: 1, fallbackToCache: true }
+        );
+        let count = 0;
+        if (snap && typeof snap.forEach === 'function') {
+          snap.forEach(function (doc) {
+            const data = doc.data() || {};
+            if ((data.status || 'pending') === 'pending') count++;
+          });
+        }
+
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.classList.remove('d-none');
+          card.classList.add('transfer-pending-highlight');
+          if (hint) {
+            const en = count === 1
+              ? '1 patient transfer waiting for you'
+              : count + ' patient transfers waiting for you';
+            const mm = count === 1
+              ? 'လူနာ လွှဲပြောင်းမှု ၁ ခု စောင့်ဆိုင်းနေသည်'
+              : 'လူနာ လွှဲပြောင်းမှု ' + count + ' ခု စောင့်ဆိုင်းနေသည်';
+            hint.textContent = (localStorage.getItem('appLanguage') || 'mm') === 'en' ? en : mm;
+            hint.classList.remove('d-none');
+          }
+        } else {
+          badge.classList.add('d-none');
+          card.classList.remove('transfer-pending-highlight');
+          if (hint) hint.classList.add('d-none');
+        }
+      } catch (e) {
+        console.warn('Pending transfer count failed', e);
       }
     }
 
@@ -1316,6 +1387,7 @@
             el.textContent = mmText;
           }
         });
+        loadPendingTransferCount();
       }, 150);
     }
 
@@ -1329,6 +1401,11 @@
           labourCareHomeSync();
         });
       }
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && currentUser) {
+          loadPendingTransferCount();
+        }
+      });
     });
   </script>
 </head>
@@ -1429,11 +1506,13 @@
 
       <!-- Patient Transfers -->
       <div class="care-card primary" id="homeCardPatientTransfers" onclick="navigateToCare('patient-transfers')">
+        <span class="care-card-notify-badge d-none" id="transferPendingBadge" title="Incoming transfer requests">0</span>
         <div class="care-card-header">
           <div class="care-icon primary"><i class="fas fa-exchange-alt"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="Patient Transfers" data-mm="လူနာ လွှဲပြောင်းမှုများ">Patient Transfers</span></h3>
         </div>
         <div class="care-card-body">
+          <p id="transferPendingHint" class="care-description text-danger fw-semibold d-none mb-1" style="font-size:0.88rem;"></p>
           <p class="care-description">
             <span class="lang-text" data-en="Send transfer requests and accept incoming transferred patients." data-mm="လူနာ လွှဲပြောင်း တောင်းဆိုချက် ပို့ရန်နှင့် ဝင်လာသော လွှဲပြောင်းမှုများကို လက်ခံရန်။">Send transfer requests and accept incoming transferred patients.</span>
           </p>

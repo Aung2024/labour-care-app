@@ -997,6 +997,36 @@
       document.getElementById("currentGA").textContent = 'Unknown';
     }
 
+    const MEDICATION_FREQUENCY_LABELS = {
+      daily: { en: 'Once daily', mm: 'တစ်နေ့တစ်ကြိမ်' },
+      twice_daily: { en: 'Twice daily', mm: 'တစ်နေ့နှစ်ကြိမ်' },
+      three_times_daily: { en: 'Three times daily', mm: 'တစ်နေ့သုံးကြိမ်' },
+      weekly: { en: 'Once weekly', mm: 'တစ်ပတ်တစ်ကြိမ်' },
+      single_dose: { en: 'Single dose', mm: 'တစ်ကြိမ်သာ' }
+    };
+
+    function formatMedicationFrequency(code) {
+      if (!code) return '';
+      const lang = localStorage.getItem('appLanguage') || 'mm';
+      const labels = MEDICATION_FREQUENCY_LABELS[code];
+      if (!labels) return code;
+      return lang === 'en' ? labels.en : labels.mm;
+    }
+
+    function formatMedicationVisitCell(status, frequency, totalTablets) {
+      if (!status || status === '-') return '-';
+      const parts = [];
+      const freqLabel = formatMedicationFrequency(frequency);
+      if (freqLabel) parts.push(freqLabel);
+      if (totalTablets != null && totalTablets !== '' && !Number.isNaN(Number(totalTablets))) {
+        const lang = localStorage.getItem('appLanguage') || 'mm';
+        const tabLabel = lang === 'en' ? 'tabs' : 'ပြား';
+        parts.push(`${totalTablets} ${tabLabel}`);
+      }
+      if (!parts.length) return status;
+      return `${status} (${parts.join(', ')})`;
+    }
+
     function populateVisitsTable() {
       const tableBody = document.getElementById("visitsTableBody");
       
@@ -1116,10 +1146,10 @@
             <td>${formatFetalPresentation(visit.fetalPresentation)}</td>
             <td>${visit.fetalHeartRate || '-'}</td>
             <td>${fetalMovement}</td>
-            <td>${visit.deworming || '-'}</td>
-            <td>${visit.ironFolicAcid || '-'}</td>
-            <td>${visit.vitaminB1 || '-'}</td>
-            <td>${visit.micronutrientsTablet || '-'}</td>
+            <td>${formatMedicationVisitCell(visit.deworming, visit.dewormingFrequency, visit.dewormingTotalTablets)}</td>
+            <td>${formatMedicationVisitCell(visit.ironFolicAcid, visit.ironFolicAcidFrequency, visit.ironFolicAcidTotalTablets)}</td>
+            <td>${formatMedicationVisitCell(visit.vitaminB1, visit.vitaminB1Frequency, visit.vitaminB1TotalTablets)}</td>
+            <td>${formatMedicationVisitCell(visit.micronutrientsTablet, visit.micronutrientsFrequency, visit.micronutrientsTotalTablets)}</td>
             <td>${tdValue}</td>
             <td>${visit.initial || '-'}</td>
           </tr>

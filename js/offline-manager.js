@@ -359,6 +359,35 @@
     });
   }
 
+  async function patchCachedPatient(patientId, patch) {
+    if (!patientId || !patch || typeof patch !== 'object') return null;
+    const existing = await getCachedPatient(patientId);
+    if (!existing) return null;
+    const updated = Object.assign({}, existing, patch, { id: patientId });
+    return cachePatientForOffline(updated);
+  }
+
+  async function patchPendingPatientData(patientId, patch) {
+    if (!patientId || !patch || typeof patch !== 'object') return null;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('pending_patients', 'readwrite');
+      const store = tx.objectStore('pending_patients');
+      const req = store.get(patientId);
+      req.onsuccess = () => {
+        const record = req.result;
+        if (!record || record.syncStatus !== 'pending') {
+          resolve(null);
+          return;
+        }
+        record.data = Object.assign({}, record.data, patch);
+        store.put(record);
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
   /**
    * Latest LCG first/second stage times for a patient while offline.
    * Sources: pending_lcg_records (any record), then cached patient (lcgStartingTime from Prepare for Offline).
@@ -667,6 +696,8 @@
     cacheUserProfile,
     getCachedUserProfile,
     cachePatientForOffline,
+    patchCachedPatient,
+    patchPendingPatientData,
     getCachedPatients,
     getCachedPatient,
     getOfflineLcgForPatient,

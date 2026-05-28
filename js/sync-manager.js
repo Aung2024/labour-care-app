@@ -6,6 +6,32 @@
   'use strict';
 
   let syncInProgress = false;
+  const syncedAncPatientIds = new Set();
+
+  async function applyAntenatalStatusAfterAncSync(patientId) {
+    if (!patientId || String(patientId).indexOf('OFFLINE-') === 0) return;
+    if (window.StatusManager && typeof window.StatusManager.checkAndUpdateToAntenatalCare === 'function') {
+      await window.StatusManager.checkAndUpdateToAntenatalCare(patientId, {
+        assumeVisitRecorded: true,
+        reason: 'ANC visit synced from offline'
+      });
+      return;
+    }
+    try {
+      const doc = await firebase.firestore().collection('patients').doc(patientId).get();
+      if (!doc.exists) return;
+      const st = doc.data().status;
+      if (!st || st === 'registered') {
+        await firebase.firestore().collection('patients').doc(patientId).update({
+          status: 'antenatal_care',
+          status_updated_at: firebase.firestore.FieldValue.serverTimestamp(),
+          status_update_reason: 'ANC visit synced from offline'
+        });
+      }
+    } catch (e) {
+      console.warn('[SyncManager] Inline ANC status update failed:', e);
+    }
+  }
 
   /**
    * Generate a real patient unique ID using Firestore transactions.
@@ -62,6 +88,7 @@
     }
 
     syncInProgress = true;
+    syncedAncPatientIds.clear();
     const results = {
       patients: { synced: 0, errors: 0, details: [] },
       ancVisits: { synced: 0, errors: 0, details: [] },
@@ -89,6 +116,7 @@
       // Step 1: Sync patients first (we need real IDs for sub-records)
       report('patients', 'Syncing patients...');
       const pendingPatients = await window.OfflineManager.getPendingRecords('pending_patients');
+      const pendingAncAll = await window.OfflineManager.getPendingRecords('pending_anc_visits');
 
       for (const record of pendingPatients) {
         try {
@@ -107,7 +135,13 @@
 
           firestoreData.patient_unique_id = realPatientUniqueId;
           firestoreData.created_at = firebase.firestore.FieldValue.serverTimestamp();
-          firestoreData.status = firestoreData.status || 'registered';
+          const hasQueuedAnc = pendingAncAll.some(function (anc) {
+            const pid = anc.data && (anc.data.patientId || anc.data.offlinePatientId);
+            return pid === tempId;
+          });
+          firestoreData.status = hasQueuedAnc
+            ? 'antenatal_care'
+            : (firestoreData.status || 'registered');
           firestoreData.hasConsent = firestoreData.hasConsent !== undefined ? firestoreData.hasConsent : true;
           firestoreData.consentStatus = firestoreData.consentStatus || 'consented';
           firestoreData.synced_from_offline = true;
@@ -197,6 +231,16 @@
           }
         }
       );
+
+      if (syncedAncPatientIds.size > 0) {
+        if (window.StatusManager && typeof window.StatusManager.reconcileAntenatalStatuses === 'function') {
+          await window.StatusManager.reconcileAntenatalStatuses(Array.from(syncedAncPatientIds));
+        } else {
+          for (const pid of syncedAncPatientIds) {
+            await applyAntenatalStatusAfterAncSync(pid);
+          }
+        }
+      }
 
       // Clean up synced records
       await window.OfflineManager.clearSyncedRecords();
@@ -310,18 +354,17 @@
         await window.OfflineManager.markSynced(storeName, record.localId, cloudId);
         resultBucket.synced++;
 
-        if (window.StatusManager) {
-          try {
-            if (storeName === 'pending_anc_visits') {
-              await StatusManager.checkAndUpdateToAntenatalCare(patientId);
-            } else if (storeName === 'pending_pnc_visits') {
-              await StatusManager.checkAndUpdateToPostnatalCare(patientId, 'PNC visit synced from offline');
-            } else if (storeName === 'pending_newborn_records') {
-              await StatusManager.checkAndUpdateToBirthed(patientId, 'Newborn care synced from offline');
-            }
-          } catch (statusErr) {
-            console.warn('[SyncManager] Status update failed (non-critical):', statusErr);
+        try {
+          if (storeName === 'pending_anc_visits') {
+            syncedAncPatientIds.add(patientId);
+            await applyAntenatalStatusAfterAncSync(patientId);
+          } else if (window.StatusManager && storeName === 'pending_pnc_visits') {
+            await StatusManager.checkAndUpdateToPostnatalCare(patientId, 'PNC visit synced from offline');
+          } else if (window.StatusManager && storeName === 'pending_newborn_records') {
+            await StatusManager.checkAndUpdateToBirthed(patientId, 'Newborn care synced from offline');
           }
+        } catch (statusErr) {
+          console.warn('[SyncManager] Status update failed (non-critical):', statusErr);
         }
 
       } catch (err) {
