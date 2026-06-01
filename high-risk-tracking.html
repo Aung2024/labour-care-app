@@ -676,6 +676,29 @@
       cursor: not-allowed;
       background: #f8fafc;
     }
+    .hrt-status-btn {
+      border: 1px solid #fecaca;
+      background: #fff;
+      color: #991b1b;
+      min-height: 34px;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0 0.55rem;
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      white-space: nowrap;
+    }
+    .hrt-status-btn:hover {
+      background: #fef2f2;
+      color: #7f1d1d;
+    }
     .hrt-sms-pill {
       display: inline-flex;
       align-items: center;
@@ -934,8 +957,8 @@
         actionReferred: 'Referred',
         actionMedication: 'Medication',
         actionCounseled: 'Counseled',
-        actionResolved: 'Resolved',
-        actionModalTitle: 'Record Action',
+        actionResolved: 'Change status',
+        actionModalTitle: 'Update HRT status',
         actionNote: 'Notes (optional)',
         actionFollowUp: 'Follow-up date (optional)',
         resolvedReason: 'Reason',
@@ -975,11 +998,8 @@
         eddLabel: 'EDD',
         noNotes: 'No notes',
         smsLater: 'SMS (coming soon)',
-        toolsCol: 'Edit / Delete / Print',
-        printLabel: 'Print',
-        editLabel: 'Edit',
-        deleteLabel: 'Delete',
-        deleteUnavailable: 'HRT row comes from ANC high-risk. Edit ANC visit to remove.',
+        toolsCol: 'Status',
+        changeStatusLabel: 'Change status',
         modalTitle: 'High-risk follow-up',
         phoneLabel: 'Phone',
         statTotal: 'High Risk Patients',
@@ -1017,8 +1037,8 @@
         actionReferred: 'လွှဲပြောင်း',
         actionMedication: 'ဆေးဝါးပေး',
         actionCounseled: 'အကြံပြုပြီး',
-        actionResolved: 'ပြီးဆုံး',
-        actionModalTitle: 'လုပ်ဆောင်မှု မှတ်တမ်း',
+        actionResolved: 'အခြေအနေပြောင်း',
+        actionModalTitle: 'HRT အခြေအနေ ပြောင်းရန်',
         actionNote: 'မှတ်ချက် (ရှိလျှင်)',
         actionFollowUp: 'Follow-up ရက်စွဲ (ရှိလျှင်)',
         resolvedReason: 'အကြောင်းရင်း',
@@ -1057,11 +1077,8 @@
         eddLabel: 'မွေးရက်',
         noNotes: 'မှတ်ချက် မရှိ',
         smsLater: 'SMS (မကြာမီ)',
-        toolsCol: 'ပြင် / ဖျက် / ပရင့်',
-        printLabel: 'ပရင့်',
-        editLabel: 'ပြင်',
-        deleteLabel: 'ဖျက်',
-        deleteUnavailable: 'HRT စာရင်းသည် ANC high-risk မှလာသည်။ ဖယ်ရန် ANC visit ကို ပြင်ပါ။',
+        toolsCol: 'အခြေအနေ',
+        changeStatusLabel: 'အခြေအနေပြောင်း',
         modalTitle: 'အန္တရာယ်မြင့် နောက်ဆက်တွဲ',
         phoneLabel: 'ဖုန်း',
         statTotal: 'အန္တရာယ်မြင့် လူနာ',
@@ -1566,13 +1583,6 @@
       return p.phone || p.emergency_phone || p.phoneNumber || '\u2014';
     }
 
-    function printHrtPatient(patientId) {
-      var row = findRowByPatientId(patientId);
-      if (!row) return;
-      openHrtDetailModal(patientId);
-      setTimeout(function () { window.print(); }, 150);
-    }
-
     function findRowByPatientId(patientId) {
       var rows = window._hrtRows || [];
       for (var i = 0; i < rows.length; i++) {
@@ -1581,16 +1591,10 @@
       return null;
     }
 
-    function editHrtPatient(patientId) {
-      sessionStorage.setItem('selectedPatientId', patientId);
-      window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
-    }
-
     function hrtToolsHtml(patientId) {
       return '<span class="hrt-register-actions">' +
-        '<button type="button" class="hrt-mini-btn" title="' + escapeHtml(tr('editLabel')) + '" onclick="event.stopPropagation(); editHrtPatient(\'' + escapeHtml(patientId) + '\')"><i class="fas fa-pen"></i></button>' +
-        '<button type="button" class="hrt-mini-btn disabled" title="' + escapeHtml(tr('deleteUnavailable')) + '" onclick="event.stopPropagation();" disabled><i class="fas fa-trash"></i></button>' +
-        '<button type="button" class="hrt-mini-btn" title="' + escapeHtml(tr('printLabel')) + '" onclick="event.stopPropagation(); printHrtPatient(\'' + escapeHtml(patientId) + '\')"><i class="fas fa-print"></i></button>' +
+        '<button type="button" class="hrt-status-btn" title="' + escapeHtml(tr('changeStatusLabel')) + '" onclick="event.stopPropagation(); openActionModal(\'' + escapeHtml(patientId) + '\',\'resolved\')">' +
+          '<i class="fas fa-pen-to-square"></i><span>' + escapeHtml(tr('changeStatusLabel')) + '</span></button>' +
       '</span>';
     }
 
@@ -1643,10 +1647,9 @@
         '</div>' +
         '<div class="hrt-detail-label mb-1">' + escapeHtml(tr('actionsLabel')) + '</div>' +
         '<div class="hrt-row-actions">' +
-          actionBarHtml(patientId) +
+          hrtToolsHtml(patientId) +
           '<a class="hrt-hub-link" href="patient-care-hub.html?patient=' + encodeURIComponent(patientId) + '">' +
             '<i class="fas fa-hand-holding-medical"></i> ' + escapeHtml(T[lang].openHub || 'Care Hub') + '</a>' +
-          hrtToolsHtml(patientId) +
         '</div>' +
         lastActionHtml(r.actions) +
         followUpHtml(r.actions);
