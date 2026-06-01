@@ -36,7 +36,6 @@
   <script src="js/ui-dialogs.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
-  <script src="js/high-risk-utils.js"></script>
   <!-- Auth guard will handle authentication check -->
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
@@ -89,36 +88,6 @@
       font-size: 0.95rem;
     }
 
-    .hrt-bell-wrap {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .hrt-bell-btn {
-      color: #fff;
-      text-decoration: none;
-      border: 1px solid rgba(255,255,255,0.5);
-      border-radius: 8px;
-      padding: 4px 8px;
-    }
-
-    .hrt-bell-badge {
-      position: absolute;
-      top: -8px;
-      right: -8px;
-      min-width: 18px;
-      height: 18px;
-      border-radius: 999px;
-      padding: 0 4px;
-      background: #ef4444;
-      color: #fff;
-      font-size: 0.7rem;
-      line-height: 18px;
-      text-align: center;
-      font-weight: 700;
-    }
-
     .care-card-notify-badge {
       position: absolute;
       top: 12px;
@@ -137,7 +106,8 @@
       box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
     }
 
-    .care-card.transfer-pending-highlight {
+    .care-card.transfer-pending-highlight,
+    .care-card.hrt-active-highlight {
       box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), var(--card-shadow);
     }
 
@@ -810,8 +780,8 @@
             } else {
               loadPatientStats();
             }
-            setTimeout(loadHrtBellCount, 2000);
             loadPendingTransferCount();
+            loadHrtCardNotifyCount();
           }, 500);
         }
       } catch (error) {
@@ -940,34 +910,38 @@
       }
     }
 
-    async function loadHrtBellCount() {
-      if (!navigator.onLine || !currentUser || !userRole) return;
-      if (!window.HighRiskUtils || typeof HighRiskUtils.countActiveHrtAlerts !== 'function') return;
-      const badge = document.getElementById('hrtBellBadge');
-      if (!badge) return;
+    /** Badge on HRT card only — uses count cached when user opens High Risk Tracking (no extra home queries). */
+    function loadHrtCardNotifyCount() {
+      const card = document.getElementById('hrtCard');
+      const badge = document.getElementById('hrtActiveBadge');
+      const hint = document.getElementById('hrtActiveHint');
+      if (!card || !badge) return;
+
+      let count = 0;
       try {
-        const db = firebase.firestore();
-        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        const runQuery = (q, opts) => homeSmartQuery(q, Object.assign(
-          { preferCache: isIOSDevice, timeout: 8000, retries: 1, fallbackToCache: true },
-          opts || {}
-        ));
-        const patients = await HighRiskUtils.fetchPatientsForHrtRole(db, currentUser, userRole, {
-          runQuery: (q, opts) => runQuery(q, opts),
-          preferCache: isIOSDevice
-        });
-        const count = await HighRiskUtils.countActiveHrtAlerts(db, patients, {
-          runQuery: (q) => runQuery(q),
-          concurrency: 4
-        });
-        if (count > 0) {
-          badge.textContent = count > 99 ? '99+' : String(count);
-          badge.classList.remove('d-none');
-        } else {
-          badge.classList.add('d-none');
+        const raw = sessionStorage.getItem('hrtActiveFollowUpCount');
+        if (raw != null && raw !== '') count = parseInt(raw, 10) || 0;
+      } catch (e) { /* ignore */ }
+
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.classList.remove('d-none');
+        card.classList.add('hrt-active-highlight');
+        if (hint) {
+          const lang = localStorage.getItem('appLanguage') || 'mm';
+          const en = count === 1
+            ? '1 high-risk patient needs follow-up'
+            : count + ' high-risk patients need follow-up';
+          const mm = count === 1
+            ? 'အန္တရာယ်မြင့် လူနာ ၁ ဦး နောက်ဆက်တွဲ လိုအပ်သည်'
+            : 'အန္တရာယ်မြင့် လူနာ ' + count + ' ဦး နောက်ဆက်တွဲ လိုအပ်သည်';
+          hint.textContent = lang === 'en' ? en : mm;
+          hint.classList.remove('d-none');
         }
-      } catch (e) {
-        console.warn('HRT bell count failed', e);
+      } else {
+        badge.classList.add('d-none');
+        card.classList.remove('hrt-active-highlight');
+        if (hint) hint.classList.add('d-none');
       }
     }
 
@@ -1397,6 +1371,7 @@
           }
         });
         loadPendingTransferCount();
+        loadHrtCardNotifyCount();
       }, 150);
     }
 
@@ -1413,7 +1388,11 @@
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden && currentUser) {
           loadPendingTransferCount();
+          loadHrtCardNotifyCount();
         }
+      });
+      window.addEventListener('pageshow', function () {
+        if (currentUser) loadHrtCardNotifyCount();
       });
     });
   </script>
@@ -1453,12 +1432,6 @@
             <button class="language-btn active" data-lang="mm" onclick="switchLanguage('mm')">
               <span>🇲🇲</span> MM
             </button>
-          </div>
-          <div class="hrt-bell-wrap">
-            <a href="high-risk-tracking.html" class="hrt-bell-btn" id="hrtBellBtn" title="High Risk Alerts">
-              <i class="fas fa-bell"></i>
-            </a>
-            <span class="hrt-bell-badge d-none" id="hrtBellBadge">0</span>
           </div>
           <button type="button" class="btn btn-outline-light btn-sm" id="labourCareSyncBtnHeader">
             <i class="fas fa-sync-alt me-2"></i><span class="lang-text" data-en="Sync" data-mm="စင့်ခ်">Sync</span>
@@ -1640,11 +1613,13 @@
 
       <!-- High Risk Tracking -->
       <div class="care-card primary" id="hrtCard" onclick="navigateToCare('high-risk-tracking')">
+        <span class="care-card-notify-badge d-none" id="hrtActiveBadge" title="High-risk patients needing follow-up">0</span>
         <div class="care-card-header">
           <div class="care-icon primary"><i class="fas fa-heartbeat"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="High Risk Tracking" data-mm="အန္တရာယ်မြင့် လူနာ စောင့်ကြည့်မှု">High Risk Tracking</span></h3>
         </div>
         <div class="care-card-body">
+          <p id="hrtActiveHint" class="care-description text-danger fw-semibold d-none mb-1" style="font-size:0.88rem;"></p>
           <p class="care-description">
             <span class="lang-text" data-en="Review unresolved high-risk patients and follow-up actions." data-mm="ဖြေရှင်းရန်ကျန် အန္တရာယ်မြင့် လူနာများနှင့် နောက်ဆက်တွဲလုပ်ဆောင်ချက်များကို ကြည့်ရှုပါ။">Review unresolved high-risk patients and follow-up actions.</span>
           </p>
