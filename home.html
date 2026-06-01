@@ -942,15 +942,24 @@
 
     async function loadHrtBellCount() {
       if (!navigator.onLine || !currentUser || !userRole) return;
+      if (!window.HighRiskUtils || typeof HighRiskUtils.countActiveHrtAlerts !== 'function') return;
+      const badge = document.getElementById('hrtBellBadge');
+      if (!badge) return;
       try {
         const db = firebase.firestore();
-        const snap = await homeSmartQuery(
-          db.collection('patients').where('created_by', '==', currentUser.uid),
-          { preferCache: isIOSDevice, timeout: 6000, retries: 1, fallbackToCache: true }
-        );
-        const count = snap && !snap.empty ? snap.size || (snap.docs ? snap.docs.length : 0) : 0;
-        const badge = document.getElementById('hrtBellBadge');
-        if (!badge) return;
+        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const runQuery = (q, opts) => homeSmartQuery(q, Object.assign(
+          { preferCache: isIOSDevice, timeout: 8000, retries: 1, fallbackToCache: true },
+          opts || {}
+        ));
+        const patients = await HighRiskUtils.fetchPatientsForHrtRole(db, currentUser, userRole, {
+          runQuery: (q, opts) => runQuery(q, opts),
+          preferCache: isIOSDevice
+        });
+        const count = await HighRiskUtils.countActiveHrtAlerts(db, patients, {
+          runQuery: (q) => runQuery(q),
+          concurrency: 4
+        });
         if (count > 0) {
           badge.textContent = count > 99 ? '99+' : String(count);
           badge.classList.remove('d-none');
