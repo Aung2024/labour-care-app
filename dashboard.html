@@ -245,6 +245,7 @@
             <li class="nav-item" role="presentation"><button class="nav-link active" id="tab-overview" data-bs-toggle="tab" data-bs-target="#pane-overview" type="button" role="tab">Overview</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-aggregate" data-bs-toggle="tab" data-bs-target="#pane-aggregate" type="button" role="tab">Aggregate by TSP</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-anc" data-bs-toggle="tab" data-bs-target="#pane-anc" type="button" role="tab">ANC</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="tab-highrisk" data-bs-toggle="tab" data-bs-target="#pane-highrisk" type="button" role="tab">High Risk</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-labour" data-bs-toggle="tab" data-bs-target="#pane-labour" type="button" role="tab">Labour</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-pnc" data-bs-toggle="tab" data-bs-target="#pane-pnc" type="button" role="tab">PNC & Newborn</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="tab-referrals" data-bs-toggle="tab" data-bs-target="#pane-referrals" type="button" role="tab">Referrals</button></li>
@@ -295,11 +296,67 @@
                 <div class="col-fifth mb-3"><div class="stat-card danger"><div class="stat-number" id="statHepC">0</div><div class="stat-label">Hepatitis C Positive</div></div></div>
               </div>
               <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>ANC Visits Distribution</h5><div id="chart-anc-visits"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-list-ul"></i>High Risk Factors Breakdown</h5><div id="chart-high-risk-factors"></div></div></div>
+                <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>ANC Visits Distribution</h5><div id="chart-anc-visits"></div></div></div>
               </div>
               <div class="row mb-4">
                 <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-pills"></i>Iron/Folic Acid &amp; Vitamin B Coverage</h5><div id="chart-iron-folic"></div></div></div>
+              </div>
+            </div>
+
+            <!-- ========== HIGH RISK TAB ========== -->
+            <div class="tab-pane fade" id="pane-highrisk" role="tabpanel">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h5 class="mb-0" style="color:#475569;font-weight:600;"><i class="fas fa-triangle-exclamation me-2" style="color:#ef4444;"></i>High Risk Pregnancy</h5>
+                <a href="high-risk-tracking.html" class="btn btn-danger btn-sm" style="min-height:44px;display:inline-flex;align-items:center;gap:0.35rem;touch-action:manipulation;">
+                  <i class="fas fa-list-check"></i> Open High Risk Tracking
+                </a>
+              </div>
+              <div class="row mb-4 stat-cards-row">
+                <div class="col-md-4 mb-3">
+                  <div class="stat-card danger">
+                    <div class="stat-number" id="statHighRiskTab">0</div>
+                    <div class="stat-label">Total High Risk Cases</div>
+                  </div>
+                </div>
+              </div>
+              <p class="text-muted small mb-3" id="highRiskFilterHint">Counts use dashboard date filters and your access scope. Based on latest ANC visit marked high risk.</p>
+              <div class="row mb-4">
+                <div class="col-12 mb-3">
+                  <div class="chart-card">
+                    <h5><i class="fas fa-list-ul"></i>High Risk Factors Breakdown</h5>
+                    <div id="chart-high-risk-factors"></div>
+                  </div>
+                </div>
+              </div>
+              <div id="hrChartMidwifeWrap" class="row mb-4" style="display:none;">
+                <div class="col-12 mb-3">
+                  <div class="chart-card">
+                    <h5><i class="fas fa-chart-line"></i>Monthly High Risk Cases</h5>
+                    <div id="chart-hr-monthly"></div>
+                  </div>
+                </div>
+              </div>
+              <div id="hrChartTmoWrap" class="row mb-4" style="display:none;">
+                <div class="col-12 mb-3">
+                  <div class="chart-card">
+                    <h5><i class="fas fa-user-nurse"></i>Monthly High Risk Cases by Midwife</h5>
+                    <div id="chart-hr-monthly-mw"></div>
+                  </div>
+                </div>
+              </div>
+              <div id="hrChartRegionalWrap" class="row mb-4" style="display:none;">
+                <div class="col-md-6 mb-3">
+                  <div class="chart-card">
+                    <h5><i class="fas fa-map-marker-alt"></i>Monthly High Risk by Township</h5>
+                    <div id="chart-hr-monthly-tsp"></div>
+                  </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <div class="chart-card">
+                    <h5><i class="fas fa-globe-asia"></i>Monthly High Risk by Region</h5>
+                    <div id="chart-hr-monthly-region"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -410,7 +467,7 @@
     var currentUser = null, userRole = null, userTownship = null, userRegion = null, viewerEmail = '';
     var dateFilter = { start: null, end: null };
     var analyticsData = null, chartInstances = {}, statBreakdowns = {};
-    var tabsRendered = { overview: false, anc: false, aggregate: false, labour: false, pnc: false, referrals: false };
+    var tabsRendered = { overview: false, anc: false, highrisk: false, aggregate: false, labour: false, pnc: false, referrals: false };
     var currentDataset = [];
 
     function dashboardIsAppleMobileOrTablet() {
@@ -505,6 +562,75 @@
         }
       });
       return latest && Array.isArray(latest.risk_factors) ? latest.risk_factors.slice() : [];
+    }
+
+    function getHighRiskAnchorDate(patient) {
+      var best = null;
+      (patient.antenatalVisits || []).forEach(function (v) {
+        var d = v.data !== undefined ? v.data : v;
+        var hr = d.high_risk || d.highRisk;
+        if (hr !== 'yes' && hr !== 'Yes') return;
+        var dt = parseDateValue(d.visitDate || d.visit_date || d.timestamp || d.createdAt);
+        if (dt && (!best || dt > best)) best = dt;
+      });
+      if (best) return best;
+      if (isPatientHighRisk(patient)) {
+        var profile = patient.profile || patient.registration || {};
+        return parseDateValue(profile.created_at || profile.createdAt || profile.registration_date);
+      }
+      return null;
+    }
+
+    function countsAsHighRiskInPeriod(patient) {
+      if (!isPatientHighRisk(patient)) return false;
+      if (!dateFilter.start && !dateFilter.end) return true;
+      var anchor = getHighRiskAnchorDate(patient);
+      if (!anchor) return true;
+      return isDateWithinActiveFilter(anchor);
+    }
+
+    function getMidwifeLabel(profile) {
+      if (!profile) return 'Unknown';
+      return profile.midwife_name || profile.midwifeName || profile.created_by_name ||
+        profile.providerName || profile.midwife || profile.created_by || 'Unknown';
+    }
+
+    function isDashboardMidwifeRole() {
+      var r = (userRole || '').toLowerCase();
+      return r === 'midwife' || !userRole;
+    }
+
+    function isDashboardTmoRole() {
+      return userRole === 'TMO';
+    }
+
+    function isDashboardRegionalPlusRole() {
+      return userRole === 'Regional Officer' || userRole === 'Central' ||
+        userRole === 'Super Admin' || userRole === 'admin';
+    }
+
+    function buildMonthlySeriesFromGroups(groupMap, maxSeries) {
+      maxSeries = maxSeries || 8;
+      var monthSet = {};
+      var groupTotals = [];
+      Object.keys(groupMap || {}).forEach(function (group) {
+        var months = groupMap[group] || {};
+        var total = 0;
+        Object.keys(months).forEach(function (mk) {
+          monthSet[mk] = true;
+          total += months[mk] || 0;
+        });
+        if (total > 0) groupTotals.push({ name: group, total: total, months: months });
+      });
+      var sortedMonths = Object.keys(monthSet).sort();
+      groupTotals.sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name); });
+      var top = groupTotals.slice(0, maxSeries);
+      return {
+        categories: sortedMonths,
+        series: top.map(function (g) {
+          return { name: g.name, data: sortedMonths.map(function (mk) { return g.months[mk] || 0; }) };
+        })
+      };
     }
 
     function getTransferReferralReasonKey(transferData) {
@@ -794,7 +920,8 @@
         // Visit distribution
         visits0: 0, visits1to3: 0, visits4plus: 0, visits8plus: 0,
         // For charts (monthly aggregation)
-        monthlyReg: {}, monthlyHighRisk: {}, monthlyAnemia: { severe: {}, mild: {}, none: {} },
+        monthlyReg: {}, monthlyHighRisk: {}, monthlyHighRiskByMidwife: {}, monthlyHighRiskByTsp: {}, monthlyHighRiskByRegion: {},
+        monthlyAnemia: { severe: {}, mild: {}, none: {} },
         monthlyCoinfection: { hiv: {}, syphilis: {}, malaria: {}, hepB: {}, hepC: {} },
         monthlyLcg: {},
         // Age distribution
@@ -878,11 +1005,23 @@
           m.earlyAnc++;
           tspAgg.earlyAnc++;
         }
-        var hasHighRisk = isPatientHighRisk(patient);
+        var hasHighRisk = countsAsHighRiskInPeriod(patient);
         if (hasHighRisk) {
           m.highRisk++;
-          var hrMonth = getMonthKey(regDate);
-          m.monthlyHighRisk[hrMonth] = (m.monthlyHighRisk[hrMonth] || 0) + 1;
+          var hrDate = getHighRiskAnchorDate(patient) || regDate;
+          if (hrDate) {
+            var hrMonth = getMonthKey(hrDate);
+            m.monthlyHighRisk[hrMonth] = (m.monthlyHighRisk[hrMonth] || 0) + 1;
+            var mwKey = getMidwifeLabel(profile);
+            if (!m.monthlyHighRiskByMidwife[mwKey]) m.monthlyHighRiskByMidwife[mwKey] = {};
+            m.monthlyHighRiskByMidwife[mwKey][hrMonth] = (m.monthlyHighRiskByMidwife[mwKey][hrMonth] || 0) + 1;
+            var tspKey = getPatientTownship(patient);
+            if (!m.monthlyHighRiskByTsp[tspKey]) m.monthlyHighRiskByTsp[tspKey] = {};
+            m.monthlyHighRiskByTsp[tspKey][hrMonth] = (m.monthlyHighRiskByTsp[tspKey][hrMonth] || 0) + 1;
+            var regionKey = (profile.region || 'Unknown').trim() || 'Unknown';
+            if (!m.monthlyHighRiskByRegion[regionKey]) m.monthlyHighRiskByRegion[regionKey] = {};
+            m.monthlyHighRiskByRegion[regionKey][hrMonth] = (m.monthlyHighRiskByRegion[regionKey][hrMonth] || 0) + 1;
+          }
           tspAgg.highRisk++;
           getPatientRiskFactorsFromANC(patient).forEach(function(f) { m.riskFactors[f] = (m.riskFactors[f] || 0) + 1; });
           var hrBundle = highRiskPatientBundle(patient);
@@ -1136,7 +1275,9 @@
 
     function updateKPIAndStats(m) {
       setText('statTotal', m.total); setText('statNew', m.newClients); setText('statEarlyAnc', m.earlyAnc);
-      setText('statHighRisk', m.highRisk); setText('statLcg', m.lcgCompleted); setText('statLab', m.labComplete);
+      setText('statHighRisk', m.highRisk);
+      setText('statHighRiskTab', m.highRisk);
+      setText('statLcg', m.lcgCompleted); setText('statLab', m.labComplete);
       setText('statUltrasound', m.ultrasound);
 
       setText('statSevereAnemia', m.severeAnemia); setText('statMildAnemia', m.mildAnemia); setText('statNoAnemia', m.noAnemia);
@@ -1311,6 +1452,76 @@
       tabsRendered.overview = true;
     }
 
+    function renderGroupedMonthlyLineChart(id, groupMap, title, emptyMsg) {
+      var built = buildMonthlySeriesFromGroups(groupMap, 8);
+      if (!built.categories.length || !built.series.length) {
+        destroyChart(id);
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="text-muted small p-3">' + (emptyMsg || 'No monthly high-risk data in this period.') + '</div>';
+        return;
+      }
+      createChart(id, Object.assign({}, chartDefaults, {
+        chart: { type: 'line', height: 320, toolbar: { show: false }, zoom: { enabled: false } },
+        series: built.series,
+        xaxis: { categories: built.categories, title: { text: 'Month' } },
+        stroke: { curve: 'smooth', width: 2 },
+        markers: { size: 4 },
+        colors: [COLORS.red, COLORS.orange || '#f97316', COLORS.yellow, COLORS.blue, COLORS.purple, COLORS.cyan, COLORS.pink, COLORS.green],
+        title: { text: title },
+        legend: { position: 'top', fontSize: '11px' },
+        dataLabels: { enabled: false }
+      }));
+    }
+
+    function renderHighRiskMonthlySimple(m) {
+      var id = 'chart-hr-monthly';
+      var months = Object.keys(m.monthlyHighRisk || {}).sort();
+      if (!months.length) {
+        destroyChart(id);
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="text-muted small p-3">No high-risk cases in this period.</div>';
+        return;
+      }
+      createChart(id, Object.assign({}, chartDefaults, {
+        chart: { type: 'area', height: 300, toolbar: { show: false } },
+        series: [{ name: 'High risk cases', data: months.map(function (k) { return m.monthlyHighRisk[k]; }) }],
+        xaxis: { categories: months },
+        colors: [COLORS.red],
+        stroke: { curve: 'smooth', width: 2 },
+        fill: { type: 'gradient', gradient: { opacityFrom: 0.45, opacityTo: 0.05 } },
+        title: { text: 'Monthly High Risk Cases (' + m.highRisk + ' total)' },
+        dataLabels: { enabled: false }
+      }));
+    }
+
+    function renderHighRiskCharts(m) {
+      var mwWrap = document.getElementById('hrChartMidwifeWrap');
+      var tmoWrap = document.getElementById('hrChartTmoWrap');
+      var regWrap = document.getElementById('hrChartRegionalWrap');
+      if (mwWrap) mwWrap.style.display = 'none';
+      if (tmoWrap) tmoWrap.style.display = 'none';
+      if (regWrap) regWrap.style.display = 'none';
+
+      renderHighRiskFactorsChart(m);
+
+      if (isDashboardMidwifeRole()) {
+        if (mwWrap) mwWrap.style.display = '';
+        renderHighRiskMonthlySimple(m);
+      } else if (isDashboardTmoRole()) {
+        if (tmoWrap) tmoWrap.style.display = '';
+        renderGroupedMonthlyLineChart('chart-hr-monthly-mw', m.monthlyHighRiskByMidwife, 'High risk cases by midwife', 'No high-risk cases by midwife in this period.');
+      } else if (isDashboardRegionalPlusRole()) {
+        if (regWrap) regWrap.style.display = '';
+        renderGroupedMonthlyLineChart('chart-hr-monthly-tsp', m.monthlyHighRiskByTsp, 'High risk cases by township', 'No high-risk cases by township in this period.');
+        renderGroupedMonthlyLineChart('chart-hr-monthly-region', m.monthlyHighRiskByRegion, 'High risk cases by region', 'No high-risk cases by region in this period.');
+      } else {
+        if (mwWrap) mwWrap.style.display = '';
+        renderHighRiskMonthlySimple(m);
+      }
+
+      tabsRendered.highrisk = true;
+    }
+
     function renderANCCharts(m) {
       destroyChart('chart-hiv-syphilis');
       // ANC Visits Distribution
@@ -1322,8 +1533,6 @@
         legend: { position: 'bottom' },
         title: { text: 'ANC Visits Distribution (' + m.total + ' patients)' }
       }));
-
-      renderHighRiskFactorsChart(m);
 
       // Iron/Folic Coverage
       createChart('chart-iron-folic', Object.assign({}, chartDefaults, {
@@ -1496,6 +1705,7 @@
       if (tabsRendered[tabId] || !cachedMetrics) return;
       if (tabId === 'overview') renderOverviewCharts(cachedMetrics);
       else if (tabId === 'anc') renderANCCharts(cachedMetrics);
+      else if (tabId === 'highrisk') renderHighRiskCharts(cachedMetrics);
       else if (tabId === 'aggregate') renderAggregateCharts(cachedMetrics);
       else if (tabId === 'labour') renderLabourCharts(cachedMetrics);
       else if (tabId === 'pnc') renderPNCCharts(cachedMetrics);
