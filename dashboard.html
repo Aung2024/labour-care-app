@@ -915,7 +915,6 @@
         folicGiven: 0, folicNotGiven: 0,
         hivScreenPositive: 0, syphilisScreenPositive: 0, hivScreenNegative: 0, notTested: 0,
         patientsWithLabRecord: 0, hivSyphScreenedPatients: 0,
-        highRiskReasonCounts: {},
         referralReasonCounts: {},
         // Visit distribution
         visits0: 0, visits1to3: 0, visits4plus: 0, visits8plus: 0,
@@ -1023,13 +1022,12 @@
             m.monthlyHighRiskByRegion[regionKey][hrMonth] = (m.monthlyHighRiskByRegion[regionKey][hrMonth] || 0) + 1;
           }
           tspAgg.highRisk++;
-          getPatientRiskFactorsFromANC(patient).forEach(function(f) { m.riskFactors[f] = (m.riskFactors[f] || 0) + 1; });
-          var hrBundle = highRiskPatientBundle(patient);
-          if (window.HighRiskUtils && typeof window.HighRiskUtils.getAutoDetectedRiskReasons === 'function') {
-            window.HighRiskUtils.getAutoDetectedRiskReasons(hrBundle).forEach(function(r) {
-              m.highRiskReasonCounts[r] = (m.highRiskReasonCounts[r] || 0) + 1;
-            });
-          }
+          getPatientRiskFactorsFromANC(patient).forEach(function (f) {
+            if (!f) return;
+            var key = String(f).trim();
+            if (!key) return;
+            m.riskFactors[key] = (m.riskFactors[key] || 0) + 1;
+          });
         }
 
         if ((!dateFilter.start && !dateFilter.end) || (regDate && isDateWithinActiveFilter(regDate))) {
@@ -1325,38 +1323,26 @@
     var COLORS = { blue: '#3b82f6', green: '#10b981', yellow: '#f59e0b', red: '#ef4444', purple: '#8b5cf6', cyan: '#06b6d4', pink: '#ec4899', gray: '#6b7280', lightGray: '#e5e7eb' };
     var chartDefaults = { chart: { toolbar: { show: false }, fontFamily: 'Inter,system-ui,sans-serif' }, title: { style: { fontSize: '14px', fontWeight: 600 } } };
 
-    function mergedHighRiskFactorCounts(m) {
-      var combined = {};
-      function bump(k, v) {
-        if (k == null || k === '' || !v) return;
-        var key = String(k);
-        combined[key] = (combined[key] || 0) + v;
-      }
-      Object.keys(m.riskFactors || {}).forEach(function(k) { bump(k, m.riskFactors[k]); });
-      Object.keys(m.highRiskReasonCounts || {}).forEach(function(k) { bump(k, m.highRiskReasonCounts[k]); });
-      return combined;
-    }
-
     function renderHighRiskFactorsChart(m) {
       var id = 'chart-high-risk-factors';
-      var combined = mergedHighRiskFactorCounts(m);
-      var entries = Object.keys(combined).map(function(k) { return [k, combined[k]]; })
-        .filter(function(e) { return e[1] > 0; })
-        .sort(function(a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); })
+      var combined = m.riskFactors || {};
+      var entries = Object.keys(combined).map(function (k) { return [k, combined[k]]; })
+        .filter(function (e) { return e[1] > 0; })
+        .sort(function (a, b) { return b[1] - a[1] || a[0].localeCompare(b[0]); })
         .slice(0, 18);
       if (!entries.length) {
         destroyChart(id);
         var el = document.getElementById(id);
-        if (el) el.innerHTML = '<div class="text-muted small p-3">No high-risk factor data recorded in this period.</div>';
+        if (el) el.innerHTML = '<div class="text-muted small p-3">No risk factor checkboxes recorded on latest ANC visits in this period.</div>';
         return;
       }
       createChart(id, Object.assign({}, chartDefaults, {
         chart: { type: 'bar', height: Math.max(280, entries.length * 28), toolbar: { show: false } },
-        series: [{ name: 'Patients', data: entries.map(function(e) { return e[1]; }) }],
-        xaxis: { categories: entries.map(function(e) { return e[0]; }), labels: { style: { fontSize: '11px' } } },
+        series: [{ name: 'Patients with factor', data: entries.map(function (e) { return e[1]; }) }],
+        xaxis: { categories: entries.map(function (e) { return e[0]; }), labels: { style: { fontSize: '11px' }, maxHeight: 80 } },
         colors: [COLORS.red],
         plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '72%' } },
-        title: { text: 'Documented reasons (' + m.highRisk + ' high-risk patients)' },
+        title: { text: 'ANC risk factor ticks (' + m.highRisk + ' high-risk patients)' },
         dataLabels: { enabled: entries.length < 20 },
         legend: { show: false }
       }));
