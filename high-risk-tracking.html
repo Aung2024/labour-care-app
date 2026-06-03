@@ -460,9 +460,14 @@
       color: #94a3b8;
       background: #fff;
     }
-    .hrt-track-dot.filled {
+    .hrt-track-dot.visited {
       background: #22c55e;
       border-color: #16a34a;
+      color: #fff;
+    }
+    .hrt-track-dot.next {
+      background: #eab308;
+      border-color: #ca8a04;
       color: #fff;
     }
     .hrt-outcome-badge {
@@ -477,11 +482,66 @@
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
-    .hrt-outcome-active { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
-    .hrt-outcome-defaulted { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
-    .hrt-outcome-completed { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
-    .hrt-outcome-transferred { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+    .hrt-outcome-on_track { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .hrt-outcome-defaulted { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
+    .hrt-outcome-overdued { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .hrt-outcome-dropped_out { background: #450a0a; color: #fff; border-color: #450a0a; }
+    .hrt-outcome-complete { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .hrt-outcome-alive { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
     .hrt-outcome-death { background: #111827; color: #fff; border-color: #111827; }
+
+    .hrt-header-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+    }
+    .hrt-header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+    .hrt-title {
+      font-weight: 700;
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+    .language-switcher {
+      display: inline-flex;
+      gap: 0.35rem;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 0.25rem;
+    }
+    .language-btn {
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.92);
+      border-radius: 8px;
+      padding: 0.4rem 0.65rem;
+      min-height: 44px;
+      min-width: 44px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .language-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #991b1b;
+    }
+    .hrt-new-anc-btn {
+      border-color: #bbf7d0;
+      color: #047857;
+      background: #ecfdf5;
+    }
+    .hrt-new-anc-btn:hover {
+      background: #d1fae5;
+      color: #065f46;
+    }
 
     .hrt-row-details {
       display: none;
@@ -783,12 +843,16 @@
 </head>
 <body>
   <header class="page-header">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-      <div>
-        <button type="button" class="btn btn-light btn-sm me-2" onclick="location.href='home.html'">
+    <div class="hrt-header-row">
+      <div class="hrt-header-brand">
+        <button type="button" class="btn btn-light btn-sm" onclick="location.href='home.html'" aria-label="Back">
           <i class="fas fa-arrow-left"></i>
         </button>
-        <span class="fw-bold hrt-title">High Risk Tracking</span>
+        <span class="hrt-title">High Risk Tracking</span>
+      </div>
+      <div class="language-switcher" role="group" aria-label="Language">
+        <button type="button" class="language-btn" data-lang="en" onclick="setLang('en')">ENG</button>
+        <button type="button" class="language-btn" data-lang="mm" onclick="setLang('mm')">MM</button>
       </div>
     </div>
   </header>
@@ -823,11 +887,11 @@
         <input type="search" id="hrtSearchInput" placeholder="" oninput="filterHrtRows()">
         <select id="hrtStatusFilter" onchange="filterHrtRows()">
           <option value="all">All status</option>
-          <option value="active">Active</option>
+          <option value="on_track">On Track</option>
           <option value="defaulted">Defaulted</option>
-          <option value="transferred">Transferred</option>
-          <option value="completed">Completed</option>
-          <option value="death">Death</option>
+          <option value="overdued">Overdued</option>
+          <option value="dropped_out">Dropped out</option>
+          <option value="complete">Complete</option>
         </select>
       </div>
     </div>
@@ -861,25 +925,17 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div class="action-modal-type" id="actionTypeDisplay">
-            <i class="fas fa-phone"></i> <span></span>
-          </div>
-          <div class="mb-3" id="resolvedReasonGroup" style="display:none;">
-            <label class="form-label fw-semibold action-label-reason"></label>
-            <select class="form-select" id="resolvedReasonSelect">
-              <option value="delivered_safely" class="opt-delivered"></option>
-              <option value="transferred" class="opt-transferred"></option>
-              <option value="risk_resolved" class="opt-risk-resolved"></option>
-              <option value="death" class="opt-death"></option>
+          <p class="text-muted small mb-3" id="completeModalHint"></p>
+          <div class="mb-3" id="outcomeSelectGroup">
+            <label class="form-label fw-semibold action-label-outcome"></label>
+            <select class="form-select" id="outcomeSelect" style="border-radius:10px;">
+              <option value="alive" class="opt-alive"></option>
+              <option value="death" class="opt-death-outcome"></option>
             </select>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold action-label-note"></label>
             <textarea class="form-control" id="actionNote" rows="3" style="border-radius:10px;"></textarea>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold action-label-followup"></label>
-            <input type="date" class="form-control" id="actionFollowUp" style="border-radius:10px;">
           </div>
         </div>
         <div class="modal-footer border-0 pt-0">
@@ -892,58 +948,51 @@
     </div>
   </div>
 
-  <!-- Row Detail Modal -->
-  <div class="modal fade" id="hrtDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content" style="border-radius:16px;border:none;">
-        <div class="modal-header border-0 pb-0">
-          <h5 class="modal-title fw-bold" id="hrtDetailTitle"></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div id="hrtDetailBody"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script>
-    var FOLLOWUP_ALERT_DAYS = 14;
-    var FOLLOWUP_WARN_DAYS = 28;
     var CONCURRENCY = 8;
-    var showResolved = false;
+    var showCompleted = false;
     var _currentActionPatientId = null;
-    var _currentActionType = null;
     var _currentUser = null;
     var _currentUserName = '';
-
-    var ACTION_TYPES = {
-      called: { icon: 'fa-phone', color: '#2563eb' },
-      home_visit: { icon: 'fa-house-medical', color: '#047857' },
-      referred: { icon: 'fa-truck-medical', color: '#b91c1c' },
-      medication: { icon: 'fa-pills', color: '#7c3aed' },
-      counseled: { icon: 'fa-comments', color: '#b45309' },
-      resolved: { icon: 'fa-circle-check', color: '#047857' }
-    };
 
     var T = {
       en: {
         title: 'High Risk Tracking',
-        info: 'Patients marked high risk on the latest ANC visit assessment. Track follow-up actions until resolved.',
+        info: 'Patients marked high risk on the latest ANC visit. Status follows the 8-visit ANC schedule.',
         loading: 'Loading patients and ANC visits...',
         empty: 'No high-risk patients in your access scope.',
         offline: 'High Risk Tracking needs an internet connection.',
         colName: 'Patient',
         colPhone: 'Phone',
         colEdd: 'EDD / GA',
-        colDays: 'Days Since',
-        colRisks: 'ANC Risk Factors',
+        colDays: 'Days Since Last ANC',
+        colRisks: 'High Risk Factors',
         colActions: 'Actions',
         noVisits: 'No visits',
         days: 'd',
         referral: 'Referral',
-        danger: 'Danger signs',
+        danger: 'High risk factors',
+        ageLabel: 'Age',
+        registerLabel: 'Reg No.',
+        statusCol: 'Status',
+        outcomeColLabel: 'Outcome',
+        statusOnTrack: 'On Track',
+        statusDefaulted: 'Defaulted',
+        statusOverdued: 'Overdued',
+        statusDroppedOut: 'Dropped out',
+        statusComplete: 'Complete',
+        outcomeAlive: 'Alive',
+        outcomeDead: 'Dead',
+        newAnc: '+ New ANC',
+        markComplete: 'Mark complete',
+        completeModalTitle: 'Mark tracking complete',
+        completeModalHint: 'Select whether the mother and baby outcome is alive or dead.',
+        outcomeLabel: 'Outcome',
+        showCompleted: 'Show completed',
+        hideCompleted: 'Hide completed',
+        statOnTrack: 'On Track',
+        statDefaulted: 'Defaulted / Overdue',
         anemia: 'Anemia',
         bp: 'BP high',
         protein: 'Protein+',
@@ -952,22 +1001,11 @@
         urgHigh: 'High',
         urgModerate: 'Moderate',
         urgOnTrack: 'On track',
-        actionCalled: 'Called',
-        actionHomeVisit: 'Home visit',
-        actionReferred: 'Referred',
-        actionMedication: 'Medication',
-        actionCounseled: 'Counseled',
-        actionResolved: 'Change status',
-        actionModalTitle: 'Update HRT status',
+        actionResolved: 'Mark complete',
+        actionModalTitle: 'Mark tracking complete',
         actionNote: 'Notes (optional)',
-        actionFollowUp: 'Follow-up date (optional)',
-        resolvedReason: 'Reason',
-        reasonDelivered: 'Delivered safely',
-        reasonTransferred: 'Transferred to facility',
-        reasonRiskResolved: 'Risk resolved',
-        reasonDeath: 'Death',
-        showResolved: 'Show resolved',
-        hideResolved: 'Hide resolved',
+        showResolved: 'Show completed',
+        hideResolved: 'Hide completed',
         openHub: 'Care Hub',
         save: 'Save',
         resolvedBadge: 'Resolved',
@@ -980,16 +1018,16 @@
         searchPlaceholder: 'Search by patient name…',
         statusAll: 'All status',
         statusActive: 'Active',
-        statusDefaulted: 'Defaulted',
         statusTransferred: 'Transferred',
         statusCompleted: 'Completed',
         statusDeath: 'Death',
         patientCol: 'Patient',
         pregnancyCol: 'Pregnancy',
         followupCol: 'Follow-up',
-        outcomeCol: 'Outcome',
+        outcomeCol: 'Status',
         patientIdLabel: 'ID',
         parityLabel: 'Parity',
+        gpLabel: 'G+P',
         ancDateLabel: 'Last ANC',
         detailsLabel: 'Details',
         actionsLabel: 'Actions',
@@ -998,32 +1036,52 @@
         eddLabel: 'EDD',
         noNotes: 'No notes',
         smsLater: 'SMS (coming soon)',
-        toolsCol: 'Status',
-        changeStatusLabel: 'Change status',
+        toolsCol: 'Actions',
+        changeStatusLabel: 'Mark complete',
         modalTitle: 'High-risk follow-up',
         phoneLabel: 'Phone',
         statTotal: 'High Risk Patients',
         statActive: 'Active Follow-up',
         statOverdue: 'Overdue Follow-up',
-        statResolved: 'Resolved'
+        statResolved: 'Completed'
       },
       mm: {
-        title: 'အန္တရာယ်မြင့် ကိုယ်ဝန်သည် စောင့်ကြည့်ရေး',
-        info: 'နောက်ဆုံး ANC visit တွင် အန္တရာယ်မြင့် ကိုယ်ဝန်ဟု မှတ်ထားသော လူနာများ။ Follow-up လုပ်ဆောင်မှုများကို ပြီးဆုံးသည်အထိ စောင့်ကြည့်ပါ။',
+        title: 'အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင် စောင့်ရှောက်မှု',
+        info: 'နောက်ဆုံး ANC visit တွင် အန္တရာယ်ရှိ ကိုယ်ဝန်ဟု မှတ်ထားသော လူနာများ။ 8 ANC schedule အလိုက် စောင့်ကြည့်ပါ။',
         loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
-        empty: 'သင့်အခွင့်အရေးအတွင်း အန္တရာယ်မြင့် လူနာ မရှိသေးပါ။',
+        empty: 'သင့်အခွင့်အရေးအတွင်း အန္တရာယ်ရှိ လူနာ မရှိသေးပါ။',
         offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက် လိုအပ်သည်။',
         colName: 'လူနာ',
         colPhone: 'ဖုန်း',
         colEdd: 'မီးဖွားရက် / GA',
-        colDays: 'ရက် (Days Since)',
-        colRisks: 'ANC အန္တရာယ်အချက်များ',
+        colDays: 'နောက်ဆုံး ANC မှ ရက်',
+        colRisks: 'အန္တရာယ်ရှိ အချက်များ',
         colActions: 'လုပ်ဆောင်မှု',
         searchPlaceholder: 'လူနာအမည် ရှာဖွေရန်…',
         noVisits: 'မှတ်တမ်း မရှိ',
-        days: 'ရက်',
+        days: ' ရက်',
         referral: 'လွှဲပြောင်း',
-        danger: 'အန္တရာယ်',
+        danger: 'အန္တရာယ်ရှိ အချက်များ',
+        ageLabel: 'အသက်',
+        registerLabel: 'မှတ်ပုံတင်',
+        statusCol: 'အခြေအနေ',
+        outcomeColLabel: 'ရလဒ်',
+        statusOnTrack: 'On Track',
+        statusDefaulted: 'Defaulted',
+        statusOverdued: 'Overdued',
+        statusDroppedOut: 'Dropped out',
+        statusComplete: 'Complete',
+        outcomeAlive: 'Alive',
+        outcomeDead: 'Dead',
+        newAnc: '+ New ANC',
+        markComplete: 'Complete',
+        completeModalTitle: 'စောင့်ရှောက်မှု ပြီးဆုံးကြောင်း မှတ်ရန်',
+        completeModalHint: 'မိခင်နှင့် ကလေး ရလဒ်ကို Alive (သို့) Dead ရွေးချယ်ပါ။',
+        outcomeLabel: 'ရလဒ်',
+        showCompleted: 'ပြီးဆုံးမှု ပြရန်',
+        hideCompleted: 'ပြီးဆုံးမှု ဖျောက်ရန်',
+        statOnTrack: 'On Track',
+        statDefaulted: 'Defaulted / Overdue',
         anemia: 'သွေးအားနည်း',
         bp: 'သွေးပေါင်မြင့်',
         protein: 'ပရိုတင်း+',
@@ -1032,15 +1090,9 @@
         urgHigh: 'မြင့်',
         urgModerate: 'အသင့်အတင့်',
         urgOnTrack: 'ကောင်း',
-        actionCalled: 'ဖုန်းခေါ်ပြီး',
-        actionHomeVisit: 'အိမ်သို့သွား',
-        actionReferred: 'လွှဲပြောင်း',
-        actionMedication: 'ဆေးဝါးပေး',
-        actionCounseled: 'အကြံပြုပြီး',
-        actionResolved: 'အခြေအနေပြောင်း',
-        actionModalTitle: 'HRT အခြေအနေ ပြောင်းရန်',
+        actionResolved: 'Complete',
+        actionModalTitle: 'စောင့်ရှောက်မှု ပြီးဆုံးကြောင်း မှတ်ရန်',
         actionNote: 'မှတ်ချက် (ရှိလျှင်)',
-        actionFollowUp: 'Follow-up ရက်စွဲ (ရှိလျှင်)',
         resolvedReason: 'အကြောင်းရင်း',
         reasonDelivered: 'မီးဖွားပြီး ကျန်းမာရှိ',
         reasonTransferred: 'ဆေးရုံသို့ လွှဲပြောင်း',
@@ -1059,16 +1111,16 @@
         daysAgo: 'ရက်က',
         statusAll: 'အခြေအနေအားလုံး',
         statusActive: 'လုပ်ဆောင်နေ',
-        statusDefaulted: 'ပျက်ကွက်',
         statusTransferred: 'လွှဲပြောင်း',
         statusCompleted: 'ပြီးဆုံး',
         statusDeath: 'သေဆုံး',
         patientCol: 'လူနာ',
         pregnancyCol: 'ကိုယ်ဝန်အချက်',
         followupCol: 'နောက်ဆက်တွဲ',
-        outcomeCol: 'ရလဒ်',
+        outcomeCol: 'အခြေအနေ',
         patientIdLabel: 'ID',
         parityLabel: 'မွေးဖွား',
+        gpLabel: 'G+P',
         ancDateLabel: 'နောက်ဆုံး ANC',
         detailsLabel: 'အသေးစိတ်',
         actionsLabel: 'လုပ်ဆောင်ချက်များ',
@@ -1077,8 +1129,8 @@
         eddLabel: 'မွေးရက်',
         noNotes: 'မှတ်ချက် မရှိ',
         smsLater: 'SMS (မကြာမီ)',
-        toolsCol: 'အခြေအနေ',
-        changeStatusLabel: 'အခြေအနေပြောင်း',
+        toolsCol: 'လုပ်ဆောင်ချက်',
+        changeStatusLabel: 'Complete',
         modalTitle: 'အန္တရာယ်မြင့် နောက်ဆက်တွဲ',
         phoneLabel: 'ဖုန်း',
         statTotal: 'အန္တရာယ်မြင့် လူနာ',
@@ -1100,22 +1152,14 @@
       document.querySelector('.hrt-info').textContent = tr('info');
       document.querySelector('.hrt-loading').textContent = tr('loading');
       document.querySelector('.hrt-empty').textContent = tr('empty');
-      var colName = document.querySelector('.col-name');
-      if (colName) colName.textContent = tr('colName');
-      var colPhone = document.querySelector('.col-phone');
-      if (colPhone) colPhone.textContent = tr('colPhone');
-      var colEdd = document.querySelector('.col-edd');
-      if (colEdd) colEdd.textContent = tr('colEdd');
-      var colDays = document.querySelector('.col-days');
-      if (colDays) colDays.textContent = tr('colDays');
-      var colRisks = document.querySelector('.col-risks');
-      if (colRisks) colRisks.textContent = tr('colRisks');
-      var colActions = document.querySelector('.col-actions');
-      if (colActions) colActions.textContent = tr('colActions');
+
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
 
       document.getElementById('statTotalHrLabel').textContent = tr('statTotal');
-      document.getElementById('statActiveHrLabel').textContent = tr('statActive');
-      document.getElementById('statOverdueHrLabel').textContent = tr('statOverdue');
+      document.getElementById('statActiveHrLabel').textContent = tr('statOnTrack');
+      document.getElementById('statOverdueHrLabel').textContent = tr('statDefaulted');
       document.getElementById('statResolvedHrLabel').textContent = tr('statResolved');
       var searchInput = document.getElementById('hrtSearchInput');
       if (searchInput) searchInput.placeholder = tr('searchPlaceholder');
@@ -1124,36 +1168,38 @@
         var opts = statusSel.options;
         if (opts && opts.length >= 6) {
           opts[0].textContent = tr('statusAll');
-          opts[1].textContent = tr('statusActive');
+          opts[1].textContent = tr('statusOnTrack');
           opts[2].textContent = tr('statusDefaulted');
-          opts[3].textContent = tr('statusTransferred');
-          opts[4].textContent = tr('statusCompleted');
-          opts[5].textContent = tr('statusDeath');
+          opts[3].textContent = tr('statusOverdued');
+          opts[4].textContent = tr('statusDroppedOut');
+          opts[5].textContent = tr('statusComplete');
         }
       }
 
-      document.querySelector('.action-modal-title').textContent = tr('actionModalTitle');
+      document.querySelector('.action-modal-title').textContent = tr('completeModalTitle');
+      var hint = document.getElementById('completeModalHint');
+      if (hint) hint.textContent = tr('completeModalHint');
       document.querySelector('.action-label-note').textContent = tr('actionNote');
-      document.querySelector('.action-label-followup').textContent = tr('actionFollowUp');
-      document.querySelector('.action-label-reason').textContent = tr('resolvedReason');
-      document.querySelector('.opt-delivered').textContent = tr('reasonDelivered');
-      document.querySelector('.opt-transferred').textContent = tr('reasonTransferred');
-      document.querySelector('.opt-risk-resolved').textContent = tr('reasonRiskResolved');
-      document.querySelector('.opt-death').textContent = tr('reasonDeath');
+      var outcomeLabel = document.querySelector('.action-label-outcome');
+      if (outcomeLabel) outcomeLabel.textContent = tr('outcomeLabel');
+      var optAlive = document.querySelector('.opt-alive');
+      if (optAlive) optAlive.textContent = tr('outcomeAlive');
+      var optDeathOutcome = document.querySelector('.opt-death-outcome');
+      if (optDeathOutcome) optDeathOutcome.textContent = tr('outcomeDead');
       document.querySelector('.action-btn-save').textContent = tr('save');
-      updateResolvedLabel();
+      updateCompletedLabel();
     }
 
-    function updateResolvedLabel() {
-      var cnt = window._resolvedCount || 0;
+    function updateCompletedLabel() {
+      var cnt = window._completedCount || 0;
       var el = document.getElementById('resolvedLabel');
       if (!el) return;
-      if (showResolved) {
-        el.textContent = tr('hideResolved');
+      if (showCompleted) {
+        el.textContent = tr('hideCompleted');
       } else {
-        el.textContent = tr('showResolved') + (cnt > 0 ? ' (' + cnt + ')' : '');
+        el.textContent = tr('showCompleted') + (cnt > 0 ? ' (' + cnt + ')' : '');
       }
-      document.getElementById('btnToggleResolved').classList.toggle('active', showResolved);
+      document.getElementById('btnToggleResolved').classList.toggle('active', showCompleted);
     }
 
     function setLang(l) {
@@ -1235,105 +1281,50 @@
       return out;
     }
 
-    function extractLcgRisksFromSummary(summaryData) {
-      if (!summaryData) return [];
-      var rf = summaryData.risk_factors;
-      if (Array.isArray(rf)) return uniqueStrings(rf.map(String));
-      if (typeof rf === 'string' && rf.trim()) {
-        return uniqueStrings(rf.split(/[\n,;]+/).map(function (s) { return s.trim(); }));
-      }
-      return [];
-    }
-
-    var PNC_DANGER_KEYS = [
-      ['heavyBleeding', 'Heavy bleeding'],
-      ['severeHeadache', 'Severe headache'],
-      ['convulsions', 'Convulsions'],
-      ['breathingProblems', 'Breathing difficulty'],
-      ['feverFatigue', 'Fever / severe fatigue'],
-      ['breastEngorgementDanger', 'Breast problem'],
-      ['urinaryProblems', 'Urinary problems'],
-      ['woundInflammation', 'Wound inflammation'],
-      ['foulDischarge', 'Foul discharge']
-    ];
-
-    function extractPncRisksFromVisits(visitDocs) {
-      var out = [];
-      (visitDocs || []).forEach(function (vd) {
-        var ds = vd.dangerSigns;
-        if (!ds || typeof ds !== 'object') return;
-        PNC_DANGER_KEYS.forEach(function (pair) {
-          var v = ds[pair[0]];
-          if (v === true || v === 'Yes' || v === 'yes') out.push(pair[1]);
-        });
-      });
-      return uniqueStrings(out);
-    }
-
-    var LAB_RESULT_FIELDS = [
-      ['hivResult', 'HIV'], ['malariaResult', 'Malaria'], ['syphilisResult', 'Syphilis'],
-      ['hepatitisBResult', 'Hep B'], ['hepatitisCResult', 'Hep C'], ['rbsResult', 'RBS'],
-      ['hemoglobinResult', 'Hb'], ['urineProtein', 'Urine protein'], ['urineSugar', 'Urine sugar']
-    ];
-
-    function isConcerningLabValue(val) {
-      if (val == null) return false;
-      var s = String(val).trim();
-      if (!s) return false;
-      if (/^(negative|not\s+detected|non[- ]?reactive|normal|clear|no)$/i.test(s)) return false;
-      return /positive|reactive|detected|\+\+|^\s*\+|severe|critical/i.test(s);
-    }
-
-    function extractLabRiskSnippets(testDataList) {
-      var out = [];
-      (testDataList || []).forEach(function (d) {
-        LAB_RESULT_FIELDS.forEach(function (pair) {
-          var key = pair[0], label = pair[1], v = d[key];
-          if (key === 'hemoglobinResult' && v != null && v !== '') {
-            var hn = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
-            if (!isNaN(hn) && hn < 11) { out.push(label + ': ' + String(v).trim()); return; }
-          }
-          if (isConcerningLabValue(v)) out.push(label + ': ' + String(v).trim());
-        });
-      });
-      return uniqueStrings(out).slice(0, 12);
-    }
-
-    function mergedRiskPills(r) {
-      return (r.factorsUnique || []).map(function(f) {
-        return { text: f, variant: 'anc' };
-      });
-    }
+    var RISK_FACTOR_I18N = {
+      'maternal_age_18_or_40 and over': { en: 'Maternal Age ≤18 years or ≥ 40 years', mm: 'အသက် ≤ ၁၈ နှစ် (သို့) ≥ ၄၀ နှစ်' },
+      'Diabetes (pre-existing or gestational)': { en: 'Diabetes (pre-existing or gestational)', mm: 'ဆီးချိုရောဂါ' },
+      'Hypertension': { en: 'Hypertension', mm: 'သွေးပေါင်ချိန်တက်ခြင်း' },
+      'Heart Disease (or) Kidney Disease': { en: 'Heart Disease (or) Kidney Disease', mm: 'နှလုံးရောဂါ (သို့မဟုတ်) ကျောက်ကပ်ရောဂါ' },
+      'Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia': { en: 'Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia', mm: 'ကိုယ်ဝန်ဆောင်စဥ် သွေးတိုးခြင်း၊ ကိုယ်ဝန်ဆိပ်တက်ခြင်း' },
+      'Previous pregnancy complications': { en: 'Previous pregnancy complications', mm: 'ယခင်ကိုယ်ဝန်နှင့်ပတ်သက်သည့် နောက်ဆက်တွဲ ပြဿနာများ' },
+      'Multiple pregnancy': { en: 'Multiple pregnancy', mm: 'ယခင် (၅)ကြိမ်အထက် မွေးဖွားခြင်း' },
+      'Fetal Malpresentation': { en: 'Fetal Malpresentation', mm: 'သန္ဓေသား အနေအထား ပုံမမှန်ခြင်း' },
+      'Twins Pregnancy': { en: 'Twins Pregnancy', mm: 'အမွှာကိုယ်ဝန်' },
+      'Placenta previa/Abruption': { en: 'Placenta previa/Abruption', mm: 'အချင်းရှေ့ရောက်ခြင်း/ အချိန်မတိုင်မီ အချင်းကွာခြင်း' },
+      'Other Medical Conditions': { en: 'Other Medical Conditions', mm: 'အခြားကျန်းမာရေးပြဿနာများ' }
+    };
 
     var HRT_RISK_LABELS = {
-      maternal_age_18_or_35: 'Age <18 or >35',
-      maternal_age_18_or_40: 'Age <18 or \u226540',
-      parity_5: 'Parity \u2265 5',
-      multiple_pregnancy: 'Multiple pregnancy',
-      previous_complications: 'Prev. complications',
-      previous_stillbirths: 'Prev. stillbirths/NND',
-      previous_preterm: 'Prev. preterm',
-      obstructed_labour: 'Prev. obstructed labour/CS',
-      uterine_scar: 'Uterine scar',
-      hypertension: 'Hypertension',
-      diabetes: 'Diabetes',
-      cardiac_disease: 'Cardiac disease',
-      tuberculosis: 'TB',
-      epilepsy: 'Epilepsy',
-      kidney_disease: 'Kidney disease',
-      hiv: 'HIV',
-      previous_congenital_anomalies: 'Prev. congenital anomalies',
-      short_interval_pregnancy: 'Short interval',
-      placenta_previa_abruption: 'Placenta previa/abruption',
-      other_medical_conditions: 'Other medical'
+      maternal_age_18_or_35: { en: 'Age <18 or >35', mm: 'အသက် <18 (သို့) >35' },
+      maternal_age_18_or_40: { en: 'Age <18 or ≥40', mm: 'အသက် <18 (သို့) ≥40' },
+      parity_5: { en: 'Parity ≥ 5', mm: 'မွေးဖွား ≥ 5' },
+      multiple_pregnancy: { en: 'Multiple pregnancy', mm: 'အမွှာကိုယ်ဝန်' },
+      previous_complications: { en: 'Prev. complications', mm: 'ယခင်ကိုယ်ဝန် နောက်ဆက်တွဲပြဿနာ' },
+      previous_stillbirths: { en: 'Prev. stillbirths/NND', mm: 'ယခင် ကလေးသေမွေး/NN' },
+      previous_preterm: { en: 'Prev. preterm', mm: 'ယခင် မစေ့မွေး' },
+      obstructed_labour: { en: 'Prev. obstructed labour/CS', mm: 'ယခင် မွေးဖွားခက်ခဲ/CS' },
+      uterine_scar: { en: 'Uterine scar', mm: 'သားအိမ်အနာအမာရှိ' },
+      hypertension: { en: 'Hypertension', mm: 'သွေးတိုး' },
+      diabetes: { en: 'Diabetes', mm: 'ဆီးချို' },
+      cardiac_disease: { en: 'Cardiac disease', mm: 'နှလုံးရောဂါ' },
+      tuberculosis: { en: 'TB', mm: 'TB' },
+      epilepsy: { en: 'Epilepsy', mm: 'ဆေးလိပ်' },
+      kidney_disease: { en: 'Kidney disease', mm: 'ကျောက်ကပ်ရောဂါ' },
+      hiv: { en: 'HIV', mm: 'HIV' },
+      previous_congenital_anomalies: { en: 'Prev. congenital anomalies', mm: 'ယခင် congenital anomaly' },
+      short_interval_pregnancy: { en: 'Short interval', mm: 'ကိုယ်ဝန်ကြားကာလ တို' },
+      placenta_previa_abruption: { en: 'Placenta previa/abruption', mm: 'Placenta previa/abruption' },
+      other_medical_conditions: { en: 'Other medical', mm: 'အခြားကျန်းမာရေး' }
     };
 
     function humanizeRiskLabel(s) {
       var t = String(s == null ? '' : s).trim();
       if (!t) return t;
-      if (HRT_RISK_LABELS[t]) return HRT_RISK_LABELS[t];
+      if (RISK_FACTOR_I18N[t]) return RISK_FACTOR_I18N[t][lang] || RISK_FACTOR_I18N[t].en;
+      if (HRT_RISK_LABELS[t]) return HRT_RISK_LABELS[t][lang] || HRT_RISK_LABELS[t].en;
       var noSpace = t.replace(/\s+/g, '');
-      if (HRT_RISK_LABELS[noSpace]) return HRT_RISK_LABELS[noSpace];
+      if (HRT_RISK_LABELS[noSpace]) return HRT_RISK_LABELS[noSpace][lang] || HRT_RISK_LABELS[noSpace].en;
       if (/:/.test(t)) return t;
       if (/_/.test(t)) return t.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
       return t;
@@ -1401,148 +1392,166 @@
 
     function daysCellHtml(days) {
       if (days == null) return '<span class="text-muted small">' + escapeHtml(tr('noVisits')) + '</span>';
-      var cls = 'hrt-day-pill--ok';
-      if (days > FOLLOWUP_WARN_DAYS) cls = 'hrt-day-pill--overdue';
-      else if (days > FOLLOWUP_ALERT_DAYS) cls = 'hrt-day-pill--warn';
-      return '<span class="hrt-day-pill ' + cls + '">' + days + tr('days') + '</span>';
+      return '<span class="hrt-day-pill hrt-day-pill--ok">' + days + tr('days') + '</span>';
     }
 
-    function actionTypeIcon(type) {
-      var at = ACTION_TYPES[type];
-      return at ? at.icon : 'fa-circle-question';
-    }
-
-    function actionTypeLabel(type) {
-      var map = {
-        called: 'actionCalled', home_visit: 'actionHomeVisit', referred: 'actionReferred',
-        medication: 'actionMedication', counseled: 'actionCounseled', resolved: 'actionResolved'
-      };
-      return tr(map[type] || type);
-    }
-
-    function actionBarHtml(patientId) {
-      var types = ['called', 'home_visit', 'referred', 'medication', 'counseled', 'resolved'];
-      return '<div class="hrt-action-bar">' + types.map(function(t) {
-        return '<button type="button" class="hrt-act-btn act-' + t + '" ' +
-          'onclick="openActionModal(\'' + escapeHtml(patientId) + '\',\'' + t + '\')" ' +
-          'title="' + escapeHtml(actionTypeLabel(t)) + '">' +
-          '<i class="fas ' + actionTypeIcon(t) + '"></i></button>';
-      }).join('') + '</div>';
-    }
-
-    function lastActionHtml(actions) {
-      if (!actions || !actions.length) return '';
-      var a = actions[0];
-      var ms = a.recordedAt && typeof a.recordedAt.toDate === 'function' ? a.recordedAt.toDate().getTime() :
-               a.recordedAt ? new Date(a.recordedAt).getTime() : null;
-      return '<div class="hrt-last-action">' +
-        '<i class="fas ' + actionTypeIcon(a.type) + '"></i> ' +
-        escapeHtml(actionTypeLabel(a.type)) + ' ' + escapeHtml(relativeTime(ms)) +
-        '</div>';
-    }
-
-    function followUpHtml(actions) {
-      if (!actions || !actions.length) return '';
-      var latest = actions[0];
-      var fu = latest.followUpDate;
-      if (!fu) return '';
-      var d = fu && typeof fu.toDate === 'function' ? fu.toDate() : new Date(fu);
-      if (isNaN(d.getTime())) return '';
-      var today = new Date(); today.setHours(0,0,0,0);
-      var fd = new Date(d.getTime()); fd.setHours(0,0,0,0);
-      if (fd < today) {
-        return '<div class="hrt-followup-overdue"><i class="fas fa-clock"></i> ' + escapeHtml(tr('followupOverdue')) + '</div>';
+    function parseDateOnlyLocal(val) {
+      if (!val) return null;
+      if (val && typeof val.toDate === 'function') val = val.toDate();
+      if (val instanceof Date) {
+        if (isNaN(val.getTime())) return null;
+        return new Date(val.getFullYear(), val.getMonth(), val.getDate());
       }
-      return '';
+      var s = String(val).trim();
+      var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+      var d = new Date(s);
+      if (isNaN(d.getTime())) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
     }
 
-    function isResolved(row) {
-      if (!row.actions || !row.actions.length) return false;
-      return row.actions[0].type === 'resolved';
+    function addDaysLocal(d, days) {
+      var out = new Date(d.getTime());
+      out.setDate(out.getDate() + days);
+      return out;
     }
 
-    function isFollowUpOverdue(actions) {
-      if (!actions || !actions.length) return false;
-      var fu = actions[0].followUpDate;
-      if (!fu) return false;
-      var d = fu && typeof fu.toDate === 'function' ? fu.toDate() : new Date(fu);
-      if (isNaN(d.getTime())) return false;
-      var today = new Date(); today.setHours(0,0,0,0);
-      var fd = new Date(d.getTime()); fd.setHours(0,0,0,0);
-      return fd < today;
+    function addCalendarMonthsLocal(d, months) {
+      var out = new Date(d.getTime());
+      out.setMonth(out.getMonth() + months);
+      return out;
     }
 
-    function updateDashboardStats(allRows) {
-      var rows = allRows || [];
-      var resolved = 0;
-      var active = 0;
-      var overdue = 0;
-      rows.forEach(function(r) {
-        if (isResolved(r)) {
-          resolved++;
-          return;
-        }
-        active++;
-        if (isFollowUpOverdue(r.actions)) overdue++;
-      });
-      document.getElementById('statTotalHr').textContent = rows.length;
-      document.getElementById('statActiveHr').textContent = active;
-      document.getElementById('statOverdueHr').textContent = overdue;
-      document.getElementById('statResolvedHr').textContent = resolved;
-
-      try {
-        sessionStorage.setItem('hrtActiveFollowUpCount', String(active));
-        sessionStorage.setItem('hrtActiveFollowUpCountAt', String(Date.now()));
-      } catch (e) { /* ignore */ }
+    function formatDateYMD(d) {
+      if (!d || isNaN(d.getTime())) return null;
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
     }
 
-    function completedReasonLabel(reason) {
-      if (reason === 'transferred') return tr('statusTransferred');
-      if (reason === 'death') return tr('statusDeath');
-      return tr('statusCompleted');
-    }
-
-    function countFollowupSteps(actions) {
-      if (!actions || !actions.length) return 0;
-      var c = 0;
-      actions.forEach(function (a) {
-        if (!a || !a.type) return;
-        if (a.type === 'resolved') return;
-        if (a.type === 'called' || a.type === 'home_visit' || a.type === 'medication' || a.type === 'counseled' || a.type === 'referred') {
-          c += 1;
-        }
-      });
-      if (c > 8) c = 8;
-      return c;
-    }
-
-    function rowOutcome(row) {
-      var latest = (row.actions && row.actions.length) ? row.actions[0] : null;
-      if (latest && latest.type === 'resolved') {
-        if (latest.resolvedReason === 'transferred') return { key: 'transferred', label: tr('statusTransferred') };
-        if (latest.resolvedReason === 'death') return { key: 'death', label: tr('statusDeath') };
-        return { key: 'completed', label: tr('statusCompleted') };
+    function getRecommendedDateForVisitNumber(lmpStr, targetVisitNumber) {
+      var lmp = parseDateOnlyLocal(lmpStr);
+      if (!lmp || targetVisitNumber < 1 || targetVisitNumber > 8) return null;
+      switch (targetVisitNumber) {
+        case 1: return null;
+        case 2: return formatDateYMD(addCalendarMonthsLocal(lmp, 5));
+        case 3: return formatDateYMD(addCalendarMonthsLocal(lmp, 6));
+        case 4: return formatDateYMD(addCalendarMonthsLocal(lmp, 7));
+        case 5: return formatDateYMD(addCalendarMonthsLocal(lmp, 8));
+        case 6: return formatDateYMD(addDaysLocal(addCalendarMonthsLocal(lmp, 8), 14));
+        case 7: return formatDateYMD(addCalendarMonthsLocal(lmp, 9));
+        case 8: return formatDateYMD(addDaysLocal(addCalendarMonthsLocal(lmp, 9), 14));
+        default: return null;
       }
-      if (latest && latest.type === 'referred') return { key: 'transferred', label: tr('statusTransferred') };
-      if (row.daysSince != null && row.daysSince > 30) return { key: 'defaulted', label: tr('statusDefaulted') };
-      return { key: 'active', label: tr('statusActive') };
+    }
+
+    function countCompletedAncVisits(visits) {
+      var maxNum = 0;
+      (visits || []).forEach(function (v) {
+        var data = v.data || v;
+        var n = parseInt(data.visitNumber, 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      });
+      if (maxNum > 0) return Math.min(maxNum, 8);
+      return Math.min((visits || []).length, 8);
+    }
+
+    function getNextVisitDueDate(row) {
+      var latest = row.latestAnc;
+      if (latest && latest.nextVisitDate) {
+        var parsed = parseDateOnlyLocal(latest.nextVisitDate);
+        if (parsed) return parsed;
+      }
+      var completed = row.ancVisitCount || 0;
+      var nextVisitNum = completed + 1;
+      if (nextVisitNum > 8) return null;
+      var lmp = row.patient && row.patient.lmp;
+      if (lmp && lmp !== 'unknown') {
+        var recommended = getRecommendedDateForVisitNumber(lmp, nextVisitNum);
+        return recommended ? parseDateOnlyLocal(recommended) : null;
+      }
+      return null;
+    }
+
+    function getDaysLateForNextVisit(row) {
+      if (isCompleted(row)) return 0;
+      var due = getNextVisitDueDate(row);
+      if (!due) return 0;
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var diff = Math.floor((today.getTime() - due.getTime()) / 86400000);
+      return diff > 0 ? diff : 0;
+    }
+
+    function getCompleteAction(row) {
+      if (!row.actions || !row.actions.length) return null;
+      for (var i = 0; i < row.actions.length; i++) {
+        var a = row.actions[i];
+        if (a && a.type === 'resolved' && (
+          a.resolvedReason === 'completed' ||
+          a.resolvedReason === 'delivered_safely'
+        )) {
+          return a;
+        }
+      }
+      return null;
+    }
+
+    function isCompleted(row) {
+      return !!getCompleteAction(row);
+    }
+
+    function rowTrackingStatus(row) {
+      var completeAction = getCompleteAction(row);
+      if (completeAction) {
+        return { key: 'complete', label: tr('statusComplete') };
+      }
+      var daysLate = getDaysLateForNextVisit(row);
+      if (daysLate === 0) return { key: 'on_track', label: tr('statusOnTrack') };
+      if (daysLate <= 7) return { key: 'defaulted', label: tr('statusDefaulted') };
+      if (daysLate <= 30) return { key: 'overdued', label: tr('statusOverdued') };
+      return { key: 'dropped_out', label: tr('statusDroppedOut') };
+    }
+
+    function rowPatientOutcome(row) {
+      var completeAction = getCompleteAction(row);
+      if (!completeAction) return null;
+      var outcome = completeAction.outcome || completeAction.resolvedReason;
+      if (outcome === 'death' || completeAction.resolvedReason === 'death') return { key: 'death', label: tr('outcomeDead') };
+      return { key: 'alive', label: tr('outcomeAlive') };
+    }
+
+    function statusBadgeHtml(status) {
+      return '<span class="hrt-outcome-badge hrt-outcome-' + status.key + '"><i class="fas fa-circle"></i>' +
+        escapeHtml(status.label) + '</span>';
     }
 
     function outcomeBadgeHtml(outcome) {
-      return '<span class="hrt-outcome-badge hrt-outcome-' + outcome.key + '"><i class="fas fa-circle"></i>' +
+      if (!outcome) return '';
+      return '<span class="hrt-outcome-badge hrt-outcome-' + outcome.key + ' mt-1"><i class="fas fa-heart-pulse"></i>' +
         escapeHtml(outcome.label) + '</span>';
     }
 
-    function statusTrackHtml(stepCount) {
+    function statusTrackHtml(completedCount) {
+      var nextVisit = Math.min((completedCount || 0) + 1, 8);
       var dots = [];
       for (var i = 1; i <= 8; i++) {
-        dots.push('<span class="hrt-track-dot ' + (i <= stepCount ? 'filled' : '') + '">' + i + '</span>');
+        var cls = '';
+        if (i <= completedCount) cls = 'visited';
+        else if (i === nextVisit && completedCount < 8) cls = 'next';
+        dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
       }
       return '<span class="hrt-status-track">' + dots.join('') + '</span>';
     }
 
-    function formatPatientId(p) {
-      return p.patient_id || p.registration_id || p.patientId || p.id || '\u2014';
+    function formatRegisterNo(p) {
+      return p.patient_id || p.registration_id || p.patientId || '\u2014';
+    }
+
+    function formatPatientAge(p) {
+      if (p.age != null && p.age !== '') return String(p.age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
+      return '\u2014';
     }
 
     function currentGaFromLatestAnc(latestAnc) {
@@ -1557,13 +1566,15 @@
     }
 
     function formatPregnancyCell(p, latestAnc) {
+      var gravida = p.gravida || p.gravida_value;
+      var parity = p.parity != null && p.parity !== '' ? p.parity : '\u2014';
+      var gp = 'G' + (gravida != null && gravida !== '' ? gravida : '\u2014') + ' P' + parity;
       var currentGa = currentGaFromLatestAnc(latestAnc);
       var ga = currentGa != null ? String(currentGa) + 'w' : (p.gestational_age != null ? String(p.gestational_age) + 'w' : '\u2014');
-      var parity = p.parity || '\u2014';
       var edd = formatDateVal(p.edd);
       return {
-        line1: tr('gaLabel') + ': ' + ga,
-        line2: tr('eddLabel') + ': ' + edd + ' \u00b7 ' + tr('parityLabel') + ': ' + parity
+        line1: tr('gpLabel') + ': ' + gp,
+        line2: tr('gaLabel') + ': ' + ga + ' \u00b7 ' + tr('eddLabel') + ': ' + edd
       };
     }
 
@@ -1574,28 +1585,26 @@
       }).join(' ');
     }
 
-    function riskListText(risks) {
-      if (!risks || !risks.length) return '\u2014';
-      return risks.map(function (r) { return humanizeRiskLabel(r); }).join(', ');
+    function openHrtAncReport(patientId) {
+      window.location.href = 'antenatal-report.html?patient=' + encodeURIComponent(patientId);
     }
 
-    function patientPhoneText(p) {
-      return p.phone || p.emergency_phone || p.phoneNumber || '\u2014';
-    }
-
-    function findRowByPatientId(patientId) {
-      var rows = window._hrtRows || [];
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].patient && rows[i].patient.id === patientId) return rows[i];
+    function hrtToolsHtml(patientId, row) {
+      var html = '<span class="hrt-register-actions">' +
+        '<a class="hrt-status-btn hrt-new-anc-btn" href="antenatal-form.html?patient=' + encodeURIComponent(patientId) + '" onclick="event.stopPropagation();">' +
+          '<i class="fas fa-plus"></i><span>' + escapeHtml(tr('newAnc')) + '</span></a>';
+      if (!isCompleted(row)) {
+        html += '<button type="button" class="hrt-status-btn" title="' + escapeHtml(tr('markComplete')) + '" onclick="event.stopPropagation(); openCompleteModal(\'' + escapeHtml(patientId) + '\')">' +
+          '<i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
       }
-      return null;
+      html += '</span>';
+      return html;
     }
 
-    function hrtToolsHtml(patientId) {
-      return '<span class="hrt-register-actions">' +
-        '<button type="button" class="hrt-status-btn" title="' + escapeHtml(tr('changeStatusLabel')) + '" onclick="event.stopPropagation(); openActionModal(\'' + escapeHtml(patientId) + '\',\'resolved\')">' +
-          '<i class="fas fa-pen-to-square"></i><span>' + escapeHtml(tr('changeStatusLabel')) + '</span></button>' +
-      '</span>';
+    function statusCellHtml(row) {
+      var status = rowTrackingStatus(row);
+      var outcome = rowPatientOutcome(row);
+      return statusBadgeHtml(status) + (outcome ? '<div>' + outcomeBadgeHtml(outcome) + '</div>' : '');
     }
 
     function smsHtml() {
@@ -1609,12 +1618,12 @@
       return window._hrtRows.filter(function(r) {
         var p = r.patient || {};
         var name = (p.name || p.patientName || '').toLowerCase();
-        var pid = String(formatPatientId(p)).toLowerCase();
+        var reg = String(formatRegisterNo(p)).toLowerCase();
         var phone = String(p.phone || p.phoneNumber || p.emergency_phone || '').toLowerCase();
-        if (q && name.indexOf(q) === -1 && pid.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
+        if (q && name.indexOf(q) === -1 && reg.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
         if (statusFilter !== 'all') {
-          var outcome = rowOutcome(r);
-          if (outcome.key !== statusFilter) return false;
+          var status = rowTrackingStatus(r);
+          if (status.key !== statusFilter) return false;
         }
         return true;
       });
@@ -1628,58 +1637,45 @@
       renderAll(getFilteredHrtRows());
     }
 
-    function buildDetailModalHtml(r) {
-      var p = r.patient || {};
-      var patientId = p.id || '';
-      var preg = formatPregnancyCell(p, r.latestAnc);
-      var outcome = rowOutcome(r);
-      var notes = (r.latestAnc && r.latestAnc.risk_notes) ? String(r.latestAnc.risk_notes) : '';
-      var ancDateText = r.latestAncVisitDate ? formatDateVal(r.latestAncVisitDate) : '\u2014';
-      return '<div class="hrt-modal-summary">' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('patientCol')) + '</div><div class="hrt-modal-value">' + escapeHtml(p.name || p.patientName || '\u2014') + '<br>' + escapeHtml(formatPatientId(p)) + '<br>' + phoneCellHtml(p) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('pregnancyCol')) + '</div><div class="hrt-modal-value">' + escapeHtml(preg.line1) + '<br>' + escapeHtml(preg.line2) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('followupCol')) + '</div><div class="hrt-modal-value">' + statusTrackHtml(countFollowupSteps(r.actions)) + '<br>' + daysCellHtml(r.daysSince) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('outcomeCol')) + '</div><div class="hrt-modal-value">' + outcomeBadgeHtml(outcome) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('ancDateLabel')) + '</div><div class="hrt-modal-value">' + escapeHtml(ancDateText) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('notesLabel')) + '</div><div class="hrt-modal-value">' + (notes ? escapeHtml(notes) : escapeHtml(tr('noNotes'))) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">' + escapeHtml(tr('danger')) + '</div><div class="hrt-modal-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-          '<div class="hrt-modal-box"><div class="hrt-modal-label">SMS</div><div class="hrt-modal-value">' + smsHtml() + '</div></div>' +
-        '</div>' +
-        '<div class="hrt-detail-label mb-1">' + escapeHtml(tr('actionsLabel')) + '</div>' +
-        '<div class="hrt-row-actions">' +
-          hrtToolsHtml(patientId) +
-          '<a class="hrt-hub-link" href="patient-care-hub.html?patient=' + encodeURIComponent(patientId) + '">' +
-            '<i class="fas fa-hand-holding-medical"></i> ' + escapeHtml(T[lang].openHub || 'Care Hub') + '</a>' +
-        '</div>' +
-        lastActionHtml(r.actions) +
-        followUpHtml(r.actions);
-    }
+    function updateDashboardStats(allRows) {
+      var rows = allRows || [];
+      var completed = 0;
+      var onTrack = 0;
+      var defaultedOrOverdue = 0;
+      rows.forEach(function(r) {
+        if (isCompleted(r)) {
+          completed++;
+          return;
+        }
+        var status = rowTrackingStatus(r);
+        if (status.key === 'on_track') onTrack++;
+        else defaultedOrOverdue++;
+      });
+      document.getElementById('statTotalHr').textContent = rows.length;
+      document.getElementById('statActiveHr').textContent = onTrack;
+      document.getElementById('statOverdueHr').textContent = defaultedOrOverdue;
+      document.getElementById('statResolvedHr').textContent = completed;
 
-    function openHrtDetailModal(patientId) {
-      var row = findRowByPatientId(patientId);
-      if (!row) return;
-      var title = document.getElementById('hrtDetailTitle');
-      var body = document.getElementById('hrtDetailBody');
-      title.textContent = tr('modalTitle') + ' - ' + (row.patient.name || row.patient.patientName || '');
-      body.innerHTML = buildDetailModalHtml(row);
-      var modal = new bootstrap.Modal(document.getElementById('hrtDetailModal'));
-      modal.show();
+      try {
+        sessionStorage.setItem('hrtActiveFollowUpCount', String(onTrack + defaultedOrOverdue));
+        sessionStorage.setItem('hrtActiveFollowUpCountAt', String(Date.now()));
+      } catch (e) { /* ignore */ }
     }
 
     /* Render compact tracking rows */
     function renderAll(rows) {
       updateDashboardStats(window._hrtRows || rows);
-      var resolved = [];
-      var active = [];
+      var completedRows = [];
+      var activeRows = [];
       rows.forEach(function(r) {
-        if (isResolved(r)) resolved.push(r);
-        else active.push(r);
+        if (isCompleted(r)) completedRows.push(r);
+        else activeRows.push(r);
       });
-      window._resolvedCount = resolved.length;
-      updateResolvedLabel();
+      window._completedCount = completedRows.length;
+      updateCompletedLabel();
 
-      var display = active.slice();
-      if (showResolved) display = display.concat(resolved);
+      var display = activeRows.slice();
+      if (showCompleted) display = display.concat(completedRows);
 
       var container = document.getElementById('hrtRows');
       container.innerHTML = '<div class="hrt-register-desktop"><table class="hrt-register-table"><thead><tr>' +
@@ -1699,43 +1695,43 @@
         var p = r.patient || {};
         var patientId = p.id || '';
         var patientName = escapeHtml(p.name || p.patientName || '\u2014');
-        var pid = escapeHtml(formatPatientId(p));
+        var ageText = escapeHtml(formatPatientAge(p));
+        var regNo = escapeHtml(formatRegisterNo(p));
         var phone = phoneCellHtml(p);
         var preg = formatPregnancyCell(p, r.latestAnc);
-        var outcome = rowOutcome(r);
-        var followups = countFollowupSteps(r.actions);
-        var urg = isResolved(r) ? null : computeUrgency(r.daysSince);
-        var urgHtml = urg ? '<span class="urgency-badge urgency-' + urg + '"><span class="urgency-dot"></span>' + escapeHtml(urgencyLabel(urg)) + '</span>' : '';
-        var ancDateText = r.latestAncVisitDate ? formatDateVal(r.latestAncVisitDate) : '\u2014';
+        var completedVisits = r.ancVisitCount || 0;
         var trEl = document.createElement('tr');
-        trEl.setAttribute('onclick', "openHrtDetailModal('" + escapeHtml(patientId) + "')");
+        trEl.setAttribute('onclick', "openHrtAncReport('" + escapeHtml(patientId) + "')");
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + patientName + '</div><div class="hrt-patient-meta">' +
-            escapeHtml(tr('patientIdLabel')) + ': ' + pid + '<br>' + phone + '</div></td>' +
+            escapeHtml(tr('ageLabel')) + ': ' + ageText + '<br>' +
+            escapeHtml(tr('registerLabel')) + ': ' + regNo + '<br>' + phone + '</div></td>' +
           '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div></td>' +
-          '<td class="text-center">' + daysCellHtml(r.daysSince) + (urgHtml ? '<div class="mt-1">' + urgHtml + '</div>' : '') + '</td>' +
+          '<td class="text-center">' + daysCellHtml(r.daysSince) + '</td>' +
           '<td>' + compactRiskListHtml(r.factorsUnique || []) + '</td>' +
-          '<td>' + statusTrackHtml(followups) + '<div class="hrt-anc-date">' + escapeHtml(tr('ancDateLabel')) + ': ' + escapeHtml(ancDateText) + '</div></td>' +
-          '<td>' + outcomeBadgeHtml(outcome) + '</td>' +
+          '<td>' + statusTrackHtml(completedVisits) + '</td>' +
+          '<td>' + statusCellHtml(r) + '</td>' +
           '<td>' + smsHtml() + '</td>' +
-          '<td>' + hrtToolsHtml(patientId) + '</td>';
+          '<td>' + hrtToolsHtml(patientId, r) + '</td>';
         desktopBody.appendChild(trEl);
 
         var card = document.createElement('div');
         card.className = 'hrt-mobile-card';
         card.innerHTML =
-          '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openHrtDetailModal(\'' + escapeHtml(patientId) + '\')">' +
+          '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openHrtAncReport(\'' + escapeHtml(patientId) + '\')">' +
             '<div class="hrt-mobile-top">' +
-              '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">' + escapeHtml(tr('patientIdLabel')) + ': ' + pid + '<br>' + phone + '</div></div>' +
-              '<div>' + outcomeBadgeHtml(outcome) + '</div>' +
+              '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">' +
+                escapeHtml(tr('ageLabel')) + ': ' + ageText + '<br>' +
+                escapeHtml(tr('registerLabel')) + ': ' + regNo + '<br>' + phone + '</div></div>' +
+              '<div>' + statusCellHtml(r) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('pregnancyCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(preg.line1) + '<br>' + escapeHtml(preg.line2) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('colDays')) + '</span><div class="hrt-mobile-value">' + daysCellHtml(r.daysSince) + '</div></div>' +
-              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('followupCol')) + '</span><div class="hrt-mobile-value">' + statusTrackHtml(followups) + '<br>' + escapeHtml(tr('ancDateLabel')) + ': ' + escapeHtml(ancDateText) + '</div></div>' +
-              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('outcomeCol')) + '</span><div class="hrt-mobile-value">' + outcomeBadgeHtml(outcome) + '</div></div>' +
+              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('followupCol')) + '</span><div class="hrt-mobile-value">' + statusTrackHtml(completedVisits) + '</div></div>' +
+              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('outcomeCol')) + '</span><div class="hrt-mobile-value">' + statusCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('danger')) + '</span><div class="hrt-mobile-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">SMS / ' + escapeHtml(tr('toolsCol')) + '</span><div class="hrt-mobile-value">' + smsHtml() + ' ' + hrtToolsHtml(patientId) + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">SMS / ' + escapeHtml(tr('toolsCol')) + '</span><div class="hrt-mobile-value">' + smsHtml() + ' ' + hrtToolsHtml(patientId, r) + '</div></div>' +
             '</div>' +
           '</div>';
         mobileBody.appendChild(card);
@@ -1743,45 +1739,37 @@
     }
 
     function toggleResolved() {
-      showResolved = !showResolved;
-      updateResolvedLabel();
+      showCompleted = !showCompleted;
+      updateCompletedLabel();
       if (window._hrtRows) renderAll(getFilteredHrtRows());
     }
 
-    /* Action modal */
-    function openActionModal(patientId, actionType) {
+    function openCompleteModal(patientId) {
       _currentActionPatientId = patientId;
-      _currentActionType = actionType;
-      var disp = document.getElementById('actionTypeDisplay');
-      disp.innerHTML = '<i class="fas ' + actionTypeIcon(actionType) + '"></i> <span>' + escapeHtml(actionTypeLabel(actionType)) + '</span>';
-      document.getElementById('resolvedReasonGroup').style.display = actionType === 'resolved' ? 'block' : 'none';
       document.getElementById('actionNote').value = '';
-      document.getElementById('actionFollowUp').value = '';
-      document.getElementById('resolvedReasonSelect').value = 'delivered_safely';
+      document.getElementById('outcomeSelect').value = 'alive';
       var modal = new bootstrap.Modal(document.getElementById('actionModal'));
       modal.show();
     }
 
     async function saveAction() {
-      if (!_currentActionPatientId || !_currentActionType || !_currentUser) return;
+      if (!_currentActionPatientId || !_currentUser) return;
       var btn = document.getElementById('btnSaveAction');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
 
+      var outcome = document.getElementById('outcomeSelect').value;
       var db = firebase.firestore();
       var data = {
-        type: _currentActionType,
+        type: 'resolved',
+        resolvedReason: 'completed',
+        outcome: outcome,
         recordedBy: _currentUser.uid,
         recordedByName: _currentUserName,
         recordedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       var note = document.getElementById('actionNote').value.trim();
       if (note) data.note = note;
-      var fuDate = document.getElementById('actionFollowUp').value;
-      if (fuDate) data.followUpDate = new Date(fuDate);
-      if (_currentActionType === 'resolved') {
-        data.resolvedReason = document.getElementById('resolvedReasonSelect').value;
-      }
 
       try {
         await db.collection('patients').doc(_currentActionPatientId).collection('hrt_actions').add(data);
@@ -1906,48 +1894,17 @@
       return allPatients;
     }
 
-    async function fetchLatestAncVisitForPatient(db, patientId) {
+    async function fetchAllAncVisitsForPatient(db, patientId) {
       var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
-      var snap;
-      try { snap = await ref.orderBy('visitDate', 'desc').limit(1).get(); }
-      catch (e) {
-        try { snap = await ref.orderBy('timestamp', 'desc').limit(1).get(); }
-        catch (e2) { snap = await ref.limit(1).get(); }
-      }
-      var visits = [];
-      if (snap && snap.docs) snap.docs.forEach(function(d) { visits.push({ id: d.id, data: d.data() || {} }); });
-      return visits;
-    }
-
-    async function fetchPostpartumVisitsRaw(db, patientId) {
-      var ref = db.collection('patients').doc(patientId).collection('postpartum_visits');
       var snap;
       try { snap = await ref.orderBy('visitDate', 'desc').limit(20).get(); }
       catch (e) {
         try { snap = await ref.orderBy('timestamp', 'desc').limit(20).get(); }
         catch (e2) { snap = await ref.limit(20).get(); }
       }
-      var list = [];
-      if (snap && snap.docs) snap.docs.forEach(function(d) { list.push(d.data() || {}); });
-      return list;
-    }
-
-    async function fetchLabourSummaryRaw(db, patientId) {
-      var doc = await db.collection('patients').doc(patientId).collection('records').doc('summary').get();
-      return doc && doc.exists ? doc.data() || {} : null;
-    }
-
-    async function fetchLabRecordsRaw(db, patientId) {
-      var ref = db.collection('patients').doc(patientId).collection('testRecords');
-      var snap;
-      try { snap = await ref.orderBy('testDate', 'desc').limit(12).get(); }
-      catch (e) {
-        try { snap = await ref.orderBy('timestamp', 'desc').limit(12).get(); }
-        catch (e2) { snap = await ref.limit(12).get(); }
-      }
-      var list = [];
-      if (snap && snap.docs) snap.docs.forEach(function(d) { list.push(d.data() || {}); });
-      return list;
+      var visits = [];
+      if (snap && snap.docs) snap.docs.forEach(function(d) { visits.push({ id: d.id, data: d.data() || {} }); });
+      return visits;
     }
 
     async function mapWithConcurrency(items, limit, fn) {
@@ -1997,7 +1954,7 @@
         var patients = await fetchPatientsForRole(db, user, userRole);
 
         var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
-          var visits = await fetchLatestAncVisitForPatient(db, p.id);
+          var visits = await fetchAllAncVisitsForPatient(db, p.id);
           var bundle = { antenatalVisits: visits };
           if (!window.HighRiskUtils || !window.HighRiskUtils.isPatientHighRisk(bundle)) return null;
 
@@ -2014,6 +1971,7 @@
           var latestAnc = window.HighRiskUtils.getLatestAncVisitData(bundle);
           var daysSince = null;
           if (lastMs != null) daysSince = Math.floor((Date.now() - lastMs) / 86400000);
+          var ancVisitCount = countCompletedAncVisits(visits);
 
           return {
             patient: p,
@@ -2021,14 +1979,18 @@
             daysSince: daysSince,
             actions: actions,
             latestAnc: latestAnc || null,
+            ancVisitCount: ancVisitCount,
             latestAncVisitDate: latestAnc ? (latestAnc.visitDate || latestAnc.visit_date || latestAnc.timestamp || latestAnc.createdAt || latestAnc.created_at || null) : null
           };
         });
 
         var rows = enriched.filter(Boolean);
         rows.sort(function (a, b) {
-          var aRes = isResolved(a), bRes = isResolved(b);
-          if (aRes !== bRes) return aRes ? 1 : -1;
+          var aDone = isCompleted(a), bDone = isCompleted(b);
+          if (aDone !== bDone) return aDone ? 1 : -1;
+          var lateA = getDaysLateForNextVisit(a);
+          var lateB = getDaysLateForNextVisit(b);
+          if (lateA !== lateB) return lateB - lateA;
           var da = a.daysSince, db_ = b.daysSince;
           if (da == null && db_ == null) return 0;
           if (da == null) return 1;
