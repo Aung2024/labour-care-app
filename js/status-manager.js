@@ -323,8 +323,11 @@
 
   /**
    * Reconcile patients who have ANC visits but are still marked registered.
+   * @param {string[]} patientIds
+   * @param {{ assumeVisitRecorded?: boolean }} [options]
    */
-  async function reconcileAntenatalStatuses(patientIds) {
+  async function reconcileAntenatalStatuses(patientIds, options) {
+    options = options || {};
     if (!patientIds || !patientIds.length) return;
     const seen = new Set();
     for (let i = 0; i < patientIds.length; i++) {
@@ -332,7 +335,10 @@
       if (!pid || seen.has(pid) || String(pid).indexOf('OFFLINE-') === 0) continue;
       seen.add(pid);
       try {
-        await checkAndUpdateToAntenatalCare(pid, { assumeVisitRecorded: true });
+        await checkAndUpdateToAntenatalCare(pid, {
+          assumeVisitRecorded: !!options.assumeVisitRecorded,
+          reason: options.reason || 'ANC visit reconciliation'
+        });
       } catch (e) {
         console.warn('[StatusManager] Reconcile failed for', pid, e);
       }

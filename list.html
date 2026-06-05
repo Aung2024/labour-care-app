@@ -400,6 +400,9 @@
     .tracking-status-pill.defaulted { background: #fff7ed; color: #c2410c; border-color: #fdba74; }
     .tracking-status-pill.overdued { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
     .tracking-status-pill.dropped_out { background: #450a0a; color: #fff; border-color: #450a0a; }
+    .tracking-status-pill.needs_first_anc { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+    .tracking-status-pill.newborn_follow_up_due { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
+    .tracking-status-pill.newborn_follow_up_overdue { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
     .tracking-noti-empty {
       padding: 1.25rem 1rem;
       text-align: center;
@@ -421,6 +424,18 @@
     .patient-off-track--dropped_out {
       background: #fef2f2 !important;
       border-left-color: #7f1d1d !important;
+    }
+    .patient-off-track--needs_first_anc {
+      background: #eff6ff !important;
+      border-left-color: #3b82f6 !important;
+    }
+    .patient-off-track--newborn_follow_up_due {
+      background: #ecfdf5 !important;
+      border-left-color: #10b981 !important;
+    }
+    .patient-off-track--newborn_follow_up_overdue {
+      background: #fef2f2 !important;
+      border-left-color: #dc2626 !important;
     }
     .patient-card.patient-off-track {
       box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15), var(--card-shadow);
@@ -1345,6 +1360,7 @@
           console.log('✅ Displaying', allPatients.length, 'patients');
           displayPatients();
           loadPatientTrackingStatuses();
+          reconcileStaleRegisteredStatuses();
         }
         
       } catch (error) {
@@ -1413,32 +1429,100 @@
       }
     }
 
+    async function fetchNewbornCareForPatient(db, patientId) {
+      try {
+        const snap = await db.collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
+        if (snap.empty) return null;
+        return snap.docs[0].data() || null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function reconcileStaleRegisteredStatuses() {
+      if (!window.StatusManager || typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const registeredIds = allPatients
+        .filter(function (p) { return window.AncTrackingStatus && AncTrackingStatus.isRegisteredPatient(p); })
+        .map(function (p) { return p.id; });
+      if (!registeredIds.length) return;
+      try {
+        await StatusManager.reconcileAntenatalStatuses(registeredIds);
+      } catch (err) {
+        console.warn('Registered status reconciliation failed:', err);
+      }
+    }
+
     async function loadPatientTrackingStatuses() {
       if (!window.AncTrackingStatus || !currentUser) return;
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
       const db = firebase.firestore();
       const lang = getListLang();
-      const antenatalPatients = allPatients.filter(p => AncTrackingStatus.isAntenatalPatient(p));
       patientTrackingMap.clear();
 
-      for (let i = 0; i < antenatalPatients.length; i += TRACKING_CONCURRENCY) {
-        const batch = antenatalPatients.slice(i, i + TRACKING_CONCURRENCY);
-        await Promise.all(batch.map(async (patient) => {
-          try {
-            const [visits, actions] = await Promise.all([
-              fetchAncVisitsForPatient(db, patient.id),
-              fetchHrtActionsForPatient(db, patient.id)
-            ]);
+      const antenatalPatients = allPatients.filter(function (p) { return AncTrackingStatus.isAntenatalPatient(p); });
+      const registeredPatients = allPatients.filter(function (p) { return AncTrackingStatus.isRegisteredPatient(p); });
+      const newbornPatients = allPatients.filter(function (p) { return AncTrackingStatus.isNewbornFollowUpPatient(p); });
+      const trackedIds = new Set();
+
+      async function processBatch(items, handler) {
+        for (let i = 0; i < items.length; i += TRACKING_CONCURRENCY) {
+          const batch = items.slice(i, i + TRACKING_CONCURRENCY);
+          await Promise.all(batch.map(handler));
+          updateTrackingBell();
+          if (trackingPanelOpen) renderTrackingPanel();
+        }
+      }
+
+      await processBatch(antenatalPatients, async function (patient) {
+        trackedIds.add(patient.id);
+        try {
+          const [visits, actions] = await Promise.all([
+            fetchAncVisitsForPatient(db, patient.id),
+            fetchHrtActionsForPatient(db, patient.id)
+          ]);
+          const result = AncTrackingStatus.computeTrackingStatus(patient, visits, actions, lang);
+          patientTrackingMap.set(patient.id, result);
+        } catch (err) {
+          console.warn('Tracking status failed for', patient.id, err);
+        }
+      });
+
+      await processBatch(registeredPatients, async function (patient) {
+        if (trackedIds.has(patient.id)) return;
+        trackedIds.add(patient.id);
+        try {
+          const visits = await fetchAncVisitsForPatient(db, patient.id);
+          if (!visits.length) {
+            patientTrackingMap.set(patient.id, AncTrackingStatus.computeFirstAncNeededStatus(lang));
+          } else if (window.StatusManager) {
+            await StatusManager.checkAndUpdateToAntenatalCare(patient.id);
+            patient.status = StatusManager.STATUSES.ANTENATAL;
+            const actions = await fetchHrtActionsForPatient(db, patient.id);
             const result = AncTrackingStatus.computeTrackingStatus(patient, visits, actions, lang);
             patientTrackingMap.set(patient.id, result);
-          } catch (err) {
-            console.warn('Tracking status failed for', patient.id, err);
           }
-        }));
-        updateTrackingBell();
-        if (trackingPanelOpen) renderTrackingPanel();
-      }
+        } catch (err) {
+          console.warn('Registered tracking failed for', patient.id, err);
+        }
+      });
+
+      await processBatch(newbornPatients, async function (patient) {
+        if (trackedIds.has(patient.id)) return;
+        trackedIds.add(patient.id);
+        try {
+          var followUpDate = patient.newborn_follow_up_date || patient.next_follow_up_date || null;
+          if (!followUpDate) {
+            const nbData = await fetchNewbornCareForPatient(db, patient.id);
+            followUpDate = nbData && nbData.follow_up_appointment_date ? nbData.follow_up_appointment_date : null;
+          }
+          if (!followUpDate) return;
+          const result = AncTrackingStatus.computeNewbornFollowUpStatus(followUpDate, lang);
+          if (result) patientTrackingMap.set(patient.id, result);
+        } catch (err) {
+          console.warn('Newborn follow-up tracking failed for', patient.id, err);
+        }
+      });
 
       displayPatients();
       updateTrackingBell();

@@ -184,7 +184,53 @@
   }
 
   function isNotOnTrack(statusKey) {
-    return statusKey === 'defaulted' || statusKey === 'overdued' || statusKey === 'dropped_out';
+    return statusKey === 'defaulted' || statusKey === 'overdued' || statusKey === 'dropped_out' ||
+      statusKey === 'needs_first_anc' || statusKey === 'newborn_follow_up_due' || statusKey === 'newborn_follow_up_overdue';
+  }
+
+  function isRegisteredPatient(patient) {
+    if (!patient) return false;
+    var s = String(patient.status || '').toLowerCase().trim();
+    return !s || s === 'registered' || s === 'register';
+  }
+
+  function isNewbornFollowUpPatient(patient) {
+    if (!patient) return false;
+    var s = String(patient.status || '').toLowerCase();
+    return s.indexOf('birthed') !== -1 || s.indexOf('postnatal') !== -1;
+  }
+
+  function computeNewbornFollowUpStatus(followUpDateStr, lang) {
+    lang = lang || 'en';
+    var due = parseDateOnlyLocal(followUpDateStr);
+    if (!due) return null;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var diffDays = Math.floor((due.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 0) {
+      return {
+        key: 'newborn_follow_up_overdue',
+        label: lang === 'mm' ? 'မွေးကင်းစကလေး နောက်ဆက်တွဲ ပြန်လည်ပြသရန် (ကျော်လွန်)' : 'Newborn follow-up overdue',
+        daysLate: Math.abs(diffDays)
+      };
+    }
+    if (diffDays <= 7) {
+      return {
+        key: 'newborn_follow_up_due',
+        label: lang === 'mm' ? 'မွေးကင်းစကလေး နောက်ဆက်တွဲ ပြန်လည်ပြသရန်' : 'Newborn follow-up due',
+        daysLate: 0
+      };
+    }
+    return null;
+  }
+
+  function computeFirstAncNeededStatus(lang) {
+    lang = lang || 'en';
+    return {
+      key: 'needs_first_anc',
+      label: lang === 'mm' ? 'ပထမ ANC ပြသရန်' : '1st ANC visit due',
+      daysLate: 0
+    };
   }
 
   function isAntenatalPatient(patient) {
@@ -215,6 +261,10 @@
     getDaysLateForNextVisit: getDaysLateForNextVisit,
     rowTrackingStatus: rowTrackingStatus,
     isNotOnTrack: isNotOnTrack,
+    isRegisteredPatient: isRegisteredPatient,
+    isNewbornFollowUpPatient: isNewbornFollowUpPatient,
+    computeNewbornFollowUpStatus: computeNewbornFollowUpStatus,
+    computeFirstAncNeededStatus: computeFirstAncNeededStatus,
     isAntenatalPatient: isAntenatalPatient,
     computeTrackingStatus: computeTrackingStatus,
     getLabel: getLabel

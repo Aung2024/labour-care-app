@@ -234,7 +234,10 @@
 
       if (syncedAncPatientIds.size > 0) {
         if (window.StatusManager && typeof window.StatusManager.reconcileAntenatalStatuses === 'function') {
-          await window.StatusManager.reconcileAntenatalStatuses(Array.from(syncedAncPatientIds));
+          await window.StatusManager.reconcileAntenatalStatuses(Array.from(syncedAncPatientIds), {
+            assumeVisitRecorded: true,
+            reason: 'ANC visit synced from offline'
+          });
         } else {
           for (const pid of syncedAncPatientIds) {
             await applyAntenatalStatusAfterAncSync(pid);
