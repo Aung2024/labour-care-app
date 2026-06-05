@@ -399,6 +399,7 @@
     getPatientStatus,
     reconcileAntenatalStatuses,
     normalizePatientStatus,
+    isRegisteredLikeStatus,
     updateLocalPatientStatusMirror,
     getStatusDisplayName,
     getStatusBadgeClass,

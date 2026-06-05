@@ -992,6 +992,7 @@
   <script src="js/user-cache.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/status-manager.js"></script>
   <script src="js/anc-tracking-status.js"></script>
 
   <script>
@@ -1144,7 +1145,10 @@
             document.getElementById('emptyMessage').textContent = 'No cached/offline patients found on this device.';
           } else {
             displayPatients();
-            loadPatientTrackingStatuses();
+            reconcileRegisteredPatientStatuses().then(function () {
+              displayPatients();
+              loadPatientTrackingStatuses();
+            });
           }
           return;
         }
@@ -1344,6 +1348,7 @@
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
           console.log('✅ Displaying', allPatients.length, 'patients');
+          await reconcileRegisteredPatientStatuses();
           displayPatients();
           loadPatientTrackingStatuses();
         }
@@ -1426,6 +1431,59 @@
         return snap.docs[0].data() || null;
       } catch (e) {
         return null;
+      }
+    }
+
+    async function reconcileRegisteredPatientStatuses() {
+      if (!window.StatusManager) return;
+
+      var registeredPatients = allPatients.filter(function (p) {
+        return StatusManager.isRegisteredLikeStatus(p.status);
+      });
+      if (!registeredPatients.length) return;
+
+      var db = typeof firebase !== 'undefined' && firebase.firestore ? firebase.firestore() : null;
+      var statusUpdated = false;
+
+      for (let i = 0; i < registeredPatients.length; i += TRACKING_CONCURRENCY) {
+        const batch = registeredPatients.slice(i, i + TRACKING_CONCURRENCY);
+        await Promise.all(batch.map(async function (patient) {
+          try {
+            var hasVisit = false;
+
+            if (db && (typeof navigator === 'undefined' || navigator.onLine)) {
+              const visits = await fetchAncVisitsForPatient(db, patient.id);
+              hasVisit = visits.length > 0;
+            }
+
+            if (!hasVisit && window.OfflineManager && typeof OfflineManager.getPendingRecords === 'function') {
+              const pending = await OfflineManager.getPendingRecords('pending_anc_visits');
+              hasVisit = (pending || []).some(function (rec) {
+                var data = rec.data || {};
+                return data.patientId === patient.id || data.offlinePatientId === patient.id;
+              });
+            }
+
+            if (!hasVisit) return;
+
+            if (typeof navigator !== 'undefined' && navigator.onLine && db) {
+              await StatusManager.checkAndUpdateToAntenatalCare(patient.id, {
+                reason: 'ANC visit found — status reconciliation'
+              });
+            } else {
+              StatusManager.updateLocalPatientStatusMirror(patient.id, StatusManager.STATUSES.ANTENATAL);
+            }
+
+            patient.status = StatusManager.STATUSES.ANTENATAL;
+            statusUpdated = true;
+          } catch (err) {
+            console.warn('Status reconciliation failed for', patient.id, err);
+          }
+        }));
+      }
+
+      if (statusUpdated) {
+        filteredPatients = [...allPatients];
       }
     }
 
