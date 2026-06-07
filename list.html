@@ -1412,6 +1412,25 @@
       return visits;
     }
 
+    async function fetchAncVisitsIncludingPending(db, patientId) {
+      const visits = await fetchAncVisitsForPatient(db, patientId);
+      if (!window.OfflineManager || typeof OfflineManager.getPendingRecords !== 'function') {
+        return visits;
+      }
+      try {
+        const pending = await OfflineManager.getPendingRecords('pending_anc_visits');
+        (pending || []).forEach(function (rec) {
+          const data = rec.data || {};
+          if (data.patientId === patientId || data.offlinePatientId === patientId) {
+            visits.push({ id: rec.id || ('pending-' + patientId), data: data, pending: true });
+          }
+        });
+      } catch (e) {
+        console.warn('Could not merge pending ANC visits for', patientId, e);
+      }
+      return visits;
+    }
+
     async function fetchHrtActionsForPatient(db, patientId) {
       try {
         const snap = await db.collection('patients').doc(patientId).collection('hrt_actions')
@@ -1494,7 +1513,7 @@
         await Promise.all(batch.map(async function (patient) {
           try {
             const results = await Promise.all([
-              fetchAncVisitsForPatient(db, patient.id),
+              fetchAncVisitsIncludingPending(db, patient.id),
               fetchHrtActionsForPatient(db, patient.id)
             ]);
             const result = AncTrackingStatus.computePatientTrackingStatus(patient, {
