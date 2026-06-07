@@ -11,6 +11,7 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/anc-tracking-status.js"></script>
   <style>
     @media print {
       body { margin: 0; background: #fff; }
@@ -1092,11 +1093,15 @@
           <span class="strip-label lang-text" data-en="Early ANC Visit" data-mm="Early ANC ရ/မရ">Early ANC Visit</span>
           <span class="strip-value" id="earlyAncVisit">No</span>
         </div>
+        <div class="strip-item">
+          <span class="strip-label lang-text" data-en="Next ANC date" data-mm="နောက်တစ်ကြိမ် ANC ရက်">Next ANC date</span>
+          <span class="strip-value" id="nextAncDate">-</span>
+        </div>
       </div>
 
-      <!-- Visit timeline (book visit numbers 1–12) -->
+      <!-- Visit timeline (8-visit ANC schedule) -->
       <div class="visit-timeline no-print" id="visitTimelineWrap">
-        <div class="visit-timeline-label lang-text" data-en="ANC visits" data-mm="ANC အကြိမ်">ANC visits</div>
+        <div class="visit-timeline-label lang-text" data-en="ANC visit schedule (8 visits)" data-mm="ANC အကြိမ် (၈ ကြိမ်)">ANC visit schedule (8 visits)</div>
         <div class="timeline-dots" id="visitTimeline"></div>
       </div>
 
@@ -1175,7 +1180,7 @@
         </div>
       </div>
 
-      <!-- Print: full 12-row book register -->
+      <!-- Print: full 8-row ANC schedule register -->
       <div class="anc-book-print">
         <h5 class="section-heading lang-text" data-en="ANC visit register" data-mm="ANC မှတ်တမ်း">ANC visit register</h5>
         <table class="visits-table">
@@ -1283,6 +1288,9 @@
     let reportDb;
     let reportLang = localStorage.getItem('appLanguage') || 'mm';
 
+    /** MoH 8-visit ANC schedule — same as antenatal form and tracking */
+    const ANC_SCHEDULE_VISIT_COUNT = 8;
+
     const DANGER_SIGN_I18N = {
       vaginal_bleeding: { en: 'Vaginal Bleeding', mm: 'မိန်းမကိုယ်မှ သွေးဆင်းခြင်း' },
       convulsions: { en: 'Convulsions, Loss of consciousness', mm: 'တက်လျှင်၊ သတိလစ်ခြင်း' },
@@ -1344,6 +1352,8 @@
       gbvSuspectedNo: { en: 'GBV suspected: No', mm: 'ကျား၊မအခြေပြု အကြမ်းဖက်ခံသံသယ: မရှိပါ' },
       gbvNotRecorded: { en: 'GBV not recorded', mm: 'မမှတ်ရသေး' },
       noVisits: { en: 'No antenatal visits recorded.', mm: 'ကိုယ်ဝန်ဆောင် ပြသမှု မမှတ်ရသေးပါ။' },
+      nextAncNotSet: { en: 'Not scheduled', mm: 'မသတ်မှတ်ရသေး' },
+      nextAncComplete: { en: 'ANC schedule complete', mm: 'ANC အချိန်ဇယား ပြီးမြောက်' },
       noLabs: { en: 'No laboratory tests recorded.', mm: 'ဓာတ်ခွဲခန်း စစ်ဆေးမှု မမှတ်ရသေးပါ။' },
       weightChartEmpty: { en: 'Record weight at ANC visits to see the growth chart.', mm: 'အလေးချိန်ဇယားကြည့်ရန် ANC တိုင်း အလေးချိန်မှတ်ပါ။' },
       weightRecorded: { en: 'Recorded weight', mm: 'မှတ်တမ်းအလေးချိန်' },
@@ -1648,39 +1658,82 @@
         } else {
           document.getElementById("currentGA").textContent = t('unknown');
         }
-        return;
-      }
-
-      let lmpDisplay = formatReportDate(lmpRaw) || lmpRaw;
-      document.getElementById("patientLMP").textContent = lmpDisplay;
-      const eddFromLmp = latestVisit?.edd || currentPatient.edd;
-      if (eddFromLmp) {
-        document.getElementById("patientEDD").textContent = formatReportDate(eddFromLmp);
-        if (eddSourceEl) eddSourceEl.textContent = t('eddFromLmp');
       } else {
-        document.getElementById("patientEDD").textContent = t('eddNotCalc');
-        if (eddSourceEl) eddSourceEl.textContent = '';
+        let lmpDisplay = formatReportDate(lmpRaw) || lmpRaw;
+        document.getElementById("patientLMP").textContent = lmpDisplay;
+        const eddFromLmp = latestVisit?.edd || currentPatient.edd;
+        if (eddFromLmp) {
+          document.getElementById("patientEDD").textContent = formatReportDate(eddFromLmp);
+          if (eddSourceEl) eddSourceEl.textContent = t('eddFromLmp');
+        } else {
+          document.getElementById("patientEDD").textContent = t('eddNotCalc');
+          if (eddSourceEl) eddSourceEl.textContent = '';
+        }
+
+        let lmpDate;
+        if (lmpRaw.toDate) lmpDate = lmpRaw.toDate();
+        else if (lmpRaw.seconds) lmpDate = new Date(lmpRaw.seconds * 1000);
+        else lmpDate = new Date(lmpRaw);
+
+        if (!isNaN(lmpDate.getTime())) {
+          const today = new Date();
+          const diffTime = today - lmpDate;
+          const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+          const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
+          let currentGAText = `${diffWeeks}w ${diffDays}d`;
+          if (diffWeeks > 42) {
+            currentGAText += t('postTermLong');
+          }
+          document.getElementById("currentGA").textContent = currentGAText;
+        } else {
+          document.getElementById("currentGA").textContent = t('unknown');
+        }
       }
 
-      let lmpDate;
-      if (lmpRaw.toDate) lmpDate = lmpRaw.toDate();
-      else if (lmpRaw.seconds) lmpDate = new Date(lmpRaw.seconds * 1000);
-      else lmpDate = new Date(lmpRaw);
+      populateNextAncDate();
+    }
 
-      if (!isNaN(lmpDate.getTime())) {
-        const today = new Date();
-        const diffTime = today - lmpDate;
-        const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-        const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-        let currentGAText = `${diffWeeks}w ${diffDays}d`;
-        if (diffWeeks > 42) {
-          currentGAText += t('postTermLong');
-        }
-        document.getElementById("currentGA").textContent = currentGAText;
+    function formatDateYMDForReport(d) {
+      if (!d || isNaN(d.getTime())) return '';
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    }
+
+    function populateNextAncDate() {
+      var el = document.getElementById('nextAncDate');
+      if (!el) return;
+
+      if (!antenatalVisits.length) {
+        el.textContent = t('nextAncNotSet');
         return;
       }
 
-      document.getElementById("currentGA").textContent = t('unknown');
+      if (window.AncTrackingStatus) {
+        var visitRecords = antenatalVisits.map(function (v) { return { data: v }; });
+        var due = AncTrackingStatus.computeNextAncDueDate(currentPatient, visitRecords);
+        if (due) {
+          el.textContent = formatReportDate(formatDateYMDForReport(due));
+          return;
+        }
+
+        var tracking = AncTrackingStatus.computePatientTrackingStatus(currentPatient, {
+          visits: visitRecords
+        }, getReportLang());
+        if (tracking && tracking.key === 'complete') {
+          el.textContent = t('nextAncComplete');
+          return;
+        }
+      }
+
+      var latestVisit = antenatalVisits[antenatalVisits.length - 1];
+      if (latestVisit && latestVisit.nextVisitDate) {
+        el.textContent = formatReportDate(latestVisit.nextVisitDate);
+        return;
+      }
+
+      el.textContent = t('nextAncNotSet');
     }
 
     const MEDICATION_FREQUENCY_LABELS = {
@@ -1820,10 +1873,10 @@
 
       const rows = [];
       const recordedCount = antenatalVisits.length;
-      for (let i = 1; i <= 12; i++) {
+      for (let i = 1; i <= ANC_SCHEDULE_VISIT_COUNT; i++) {
         if (visitByNumber[i]) {
           rows.push(visitByNumber[i]);
-        } else if (screenMode === 'print' || i <= Math.max(recordedCount + 1, 12)) {
+        } else if (screenMode === 'print' || i <= Math.max(recordedCount + 1, ANC_SCHEDULE_VISIT_COUNT)) {
           rows.push({
             visitNumber: i,
             visitDate: '-',
@@ -2006,7 +2059,7 @@
         if (n > latest) latest = n;
       });
       let html = '';
-      for (let i = 1; i <= 12; i++) {
+      for (let i = 1; i <= ANC_SCHEDULE_VISIT_COUNT; i++) {
         const classes = ['timeline-dot'];
         if (filled.has(i)) classes.push('filled');
         if (i === latest) classes.push('latest');

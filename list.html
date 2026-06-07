@@ -840,13 +840,13 @@
 
   <div id="trackingNotiPanel" class="tracking-noti-panel d-none" role="dialog" aria-label="ANC schedule alerts">
     <div class="tracking-noti-header">
-      <h4 id="trackingNotiTitle">Care follow-up needed</h4>
+      <h4 id="trackingNotiTitle">ANC follow-up needed</h4>
       <button type="button" class="tracking-noti-close" onclick="closeTrackingPanel()" aria-label="Close">
         <i class="fas fa-times"></i>
       </button>
     </div>
     <ul id="trackingNotiList" class="tracking-noti-list"></ul>
-    <p id="trackingNotiEmpty" class="tracking-noti-empty d-none">All patients are on track.</p>
+    <p id="trackingNotiEmpty" class="tracking-noti-empty d-none">All antenatal patients are on track.</p>
   </div>
 
   <div class="main-container">
@@ -1378,7 +1378,7 @@
 
     function trackingBadgeHtml(patientId) {
       const patient = allPatients.find(function (p) { return p.id === patientId; });
-      if (patient && window.AncTrackingStatus && AncTrackingStatus.isRegisteredPatient(patient)) return '';
+      if (patient && window.AncTrackingStatus && !AncTrackingStatus.isAntenatalPatient(patient)) return '';
       const tracking = getPatientTracking(patientId);
       if (!tracking || !window.AncTrackingStatus || !AncTrackingStatus.shouldShowTrackingBadge(tracking)) return '';
       var icon = AncTrackingStatus.isNotOnTrack(tracking.key)
@@ -1421,16 +1421,6 @@
         return list;
       } catch (e) {
         return [];
-      }
-    }
-
-    async function fetchNewbornCareForPatient(db, patientId) {
-      try {
-        const snap = await db.collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
-        if (snap.empty) return null;
-        return snap.docs[0].data() || null;
-      } catch (e) {
-        return null;
       }
     }
 
@@ -1487,19 +1477,6 @@
       }
     }
 
-    async function fetchPncVisitsForPatient(db, patientId) {
-      const ref = db.collection('patients').doc(patientId).collection('postpartum_visits');
-      let snap;
-      try { snap = await ref.orderBy('visitDate', 'desc').limit(10).get(); }
-      catch (e) {
-        try { snap = await ref.orderBy('createdAt', 'desc').limit(10).get(); }
-        catch (e2) { snap = await ref.limit(10).get(); }
-      }
-      const visits = [];
-      if (snap && snap.docs) snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
-      return visits;
-    }
-
     async function loadPatientTrackingStatuses() {
       if (!window.AncTrackingStatus || !currentUser) return;
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -1509,29 +1486,20 @@
       patientTrackingMap.clear();
 
       const trackablePatients = allPatients.filter(function (p) {
-        if (AncTrackingStatus.isRegisteredPatient(p)) return false;
-        var phase = AncTrackingStatus.getCarePhase(p);
-        return phase === 'antenatal' || phase === 'birthed' || phase === 'postnatal';
+        return AncTrackingStatus.isAntenatalPatient(p);
       });
 
       for (let i = 0; i < trackablePatients.length; i += TRACKING_CONCURRENCY) {
         const batch = trackablePatients.slice(i, i + TRACKING_CONCURRENCY);
         await Promise.all(batch.map(async function (patient) {
           try {
-            var phase = AncTrackingStatus.getCarePhase(patient);
-            var needNewborn = phase === 'birthed' || phase === 'postnatal';
-            var needPnc = phase === 'postnatal';
             const results = await Promise.all([
               fetchAncVisitsForPatient(db, patient.id),
-              fetchHrtActionsForPatient(db, patient.id),
-              needNewborn ? fetchNewbornCareForPatient(db, patient.id) : Promise.resolve(null),
-              needPnc ? fetchPncVisitsForPatient(db, patient.id) : Promise.resolve(null)
+              fetchHrtActionsForPatient(db, patient.id)
             ]);
             const result = AncTrackingStatus.computePatientTrackingStatus(patient, {
               visits: results[0],
-              actions: results[1],
-              newbornCare: results[2],
-              pncVisits: results[3]
+              actions: results[1]
             }, lang);
             if (result) patientTrackingMap.set(patient.id, result);
           } catch (err) {
@@ -1549,7 +1517,7 @@
     function getOffTrackPatients() {
       if (!window.AncTrackingStatus) return [];
       return allPatients.filter(function (p) {
-        if (AncTrackingStatus.isRegisteredPatient(p)) return false;
+        if (!AncTrackingStatus.isAntenatalPatient(p)) return false;
         const t = getPatientTracking(p.id);
         return t && AncTrackingStatus.isNotOnTrack(t.key);
       }).sort(function (a, b) {
