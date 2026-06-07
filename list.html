@@ -1147,8 +1147,9 @@
           } else {
             displayPatients();
             reconcileRegisteredPatientStatuses().then(function () {
+              return loadPatientTrackingStatuses();
+            }).then(function () {
               displayPatients();
-              loadPatientTrackingStatuses();
             });
           }
           return;
@@ -1350,8 +1351,8 @@
         } else {
           console.log('✅ Displaying', allPatients.length, 'patients');
           await reconcileRegisteredPatientStatuses();
+          await loadPatientTrackingStatuses();
           displayPatients();
-          loadPatientTrackingStatuses();
         }
         
       } catch (error) {
@@ -1377,11 +1378,22 @@
       return patientTrackingMap.get(patientId) || null;
     }
 
+    function findPatientById(patientId) {
+      return allPatients.find(function (p) { return p.id === patientId; }) ||
+        filteredPatients.find(function (p) { return p.id === patientId; }) ||
+        null;
+    }
+
     function trackingBadgeHtml(patientId) {
-      const patient = allPatients.find(function (p) { return p.id === patientId; });
-      if (patient && window.AncTrackingStatus && !AncTrackingStatus.isAntenatalPatient(patient)) return '';
-      const tracking = getPatientTracking(patientId);
-      if (!tracking || !window.AncTrackingStatus || !AncTrackingStatus.shouldShowTrackingBadge(tracking)) return '';
+      if (!window.AncTrackingStatus) return '';
+      const patient = findPatientById(patientId);
+      if (!patient || !AncTrackingStatus.isAntenatalPatient(patient)) return '';
+
+      let tracking = getPatientTracking(patientId);
+      if (!tracking || !AncTrackingStatus.shouldShowTrackingBadge(tracking)) {
+        tracking = AncTrackingStatus.defaultAntenatalTracking(getListLang());
+      }
+
       var icon = AncTrackingStatus.isNotOnTrack(tracking.key)
         ? '<i class="fas fa-triangle-exclamation"></i> '
         : '';
@@ -1408,36 +1420,42 @@
       return visits;
     }
 
+    async function firestoreCollectionGet(query, source) {
+      try {
+        if (source) return await query.get({ source: source });
+        return await query.get();
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function fetchAncVisitsForPatient(db, patientId) {
       const ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
-      let visits = [];
+      const sources = (typeof navigator !== 'undefined' && navigator.onLine)
+        ? ['server', 'default']
+        : ['default'];
 
-      try {
-        const byVisitDate = await ref.orderBy('visitDate', 'desc').limit(20).get();
-        visits = snapToVisitList(byVisitDate);
-      } catch (e) {
-        /* fall through */
-      }
+      for (let s = 0; s < sources.length; s++) {
+        const sourceOpt = sources[s] === 'default' ? null : sources[s];
+        let visits = [];
 
-      if (!visits.length) {
-        try {
-          const byTimestamp = await ref.orderBy('timestamp', 'desc').limit(20).get();
-          visits = snapToVisitList(byTimestamp);
-        } catch (e2) {
-          /* fall through */
+        let snap = await firestoreCollectionGet(ref.orderBy('visitDate', 'desc').limit(20), sourceOpt);
+        visits = snapToVisitList(snap);
+
+        if (!visits.length) {
+          snap = await firestoreCollectionGet(ref.orderBy('timestamp', 'desc').limit(20), sourceOpt);
+          visits = snapToVisitList(snap);
         }
-      }
 
-      if (!visits.length) {
-        try {
-          const all = await ref.limit(20).get();
-          visits = snapToVisitList(all);
-        } catch (e3) {
-          console.warn('Could not load ANC visits for', patientId, e3);
+        if (!visits.length) {
+          snap = await firestoreCollectionGet(ref.limit(20), sourceOpt);
+          visits = snapToVisitList(snap);
         }
+
+        if (visits.length) return visits;
       }
 
-      return visits;
+      return [];
     }
 
     async function resolvePatientIdAliasesForList(patient) {
@@ -1553,6 +1571,11 @@
       const trackablePatients = allPatients.filter(function (p) {
         return AncTrackingStatus.isAntenatalPatient(p);
       });
+
+      trackablePatients.forEach(function (patient) {
+        patientTrackingMap.set(patient.id, AncTrackingStatus.defaultAntenatalTracking(lang));
+      });
+      displayPatients();
 
       for (let i = 0; i < trackablePatients.length; i += TRACKING_CONCURRENCY) {
         const batch = trackablePatients.slice(i, i + TRACKING_CONCURRENCY);

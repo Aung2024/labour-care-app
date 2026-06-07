@@ -289,8 +289,20 @@
 
   function isAntenatalPatient(patient) {
     if (!patient || isRegisteredPatient(patient)) return false;
+    if (global.StatusManager && global.StatusManager.normalizePatientStatus && global.StatusManager.STATUSES) {
+      return global.StatusManager.normalizePatientStatus(patient.status) === global.StatusManager.STATUSES.ANTENATAL;
+    }
     var s = String(patient.status || '').toLowerCase();
     return s.indexOf('antenatal') !== -1 || s === 'anc';
+  }
+
+  function defaultAntenatalTracking(lang) {
+    return {
+      key: 'on_track',
+      label: getLabel('on_track', lang),
+      daysLate: 0,
+      phase: 'antenatal'
+    };
   }
 
   function computeTrackingStatus(patient, visits, actions, lang) {
@@ -322,31 +334,21 @@
     }
 
     var due = getAncScheduleDueDate(ctx);
-    if (!due) {
-      var hasAncActivity = visits.length > 0 ||
-        !!(patient && (patient.lastAntenatalVisit || patient.last_antenatal_visit));
-      if (hasAncActivity) {
+    if (due) {
+      var daysLate = getDaysLateForDueDate(due);
+      var status = statusFromDaysLate(daysLate, lang);
+      if (status) {
         return {
-          key: 'on_track',
-          label: getLabel('on_track', lang),
-          daysLate: 0,
+          key: status.key,
+          label: status.label,
+          daysLate: daysLate,
+          dueDate: formatDateYMD(due),
           phase: 'antenatal'
         };
       }
-      return null;
     }
 
-    var daysLate = getDaysLateForDueDate(due);
-    var status = statusFromDaysLate(daysLate, lang);
-    if (!status) return null;
-
-    return {
-      key: status.key,
-      label: status.label,
-      daysLate: daysLate,
-      dueDate: formatDateYMD(due),
-      phase: 'antenatal'
-    };
+    return defaultAntenatalTracking(lang);
   }
 
   function resolveDueDate(patient, options) {
@@ -375,6 +377,7 @@
     isNotOnTrack: isNotOnTrack,
     isRegisteredPatient: isRegisteredPatient,
     isAntenatalPatient: isAntenatalPatient,
+    defaultAntenatalTracking: defaultAntenatalTracking,
     computeTrackingStatus: computeTrackingStatus,
     computeNextAncDueDate: computeNextAncDueDate,
     computePatientTrackingStatus: computePatientTrackingStatus,
