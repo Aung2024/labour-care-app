@@ -323,7 +323,9 @@
 
     var due = getAncScheduleDueDate(ctx);
     if (!due) {
-      if (visits.length > 0) {
+      var hasAncActivity = visits.length > 0 ||
+        !!(patient && (patient.lastAntenatalVisit || patient.last_antenatal_visit));
+      if (hasAncActivity) {
         return {
           key: 'on_track',
           label: getLabel('on_track', lang),

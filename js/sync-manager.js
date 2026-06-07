@@ -146,6 +146,7 @@
           firestoreData.consentStatus = firestoreData.consentStatus || 'consented';
           firestoreData.synced_from_offline = true;
           firestoreData.offline_created_at = record.createdAt;
+          firestoreData.offline_local_id = tempId;
 
           const docRef = await firebase.firestore().collection('patients').add(firestoreData);
 
@@ -288,8 +289,27 @@
     }
   }
 
+  async function mergeOfflinePatientIdMap(tempIdToRealId) {
+    var map = tempIdToRealId || {};
+    if (!window.OfflineManager || typeof OfflineManager.getAllRecords !== 'function') {
+      return map;
+    }
+    try {
+      var all = await OfflineManager.getAllRecords('pending_patients');
+      (all || []).forEach(function (rec) {
+        if (rec.localId && rec.cloudId) {
+          map[rec.localId] = rec.cloudId;
+        }
+      });
+    } catch (e) {
+      console.warn('[SyncManager] Could not merge offline patient ID map:', e);
+    }
+    return map;
+  }
+
   async function syncSubRecords(storeName, firestoreSubCollection, tempIdToRealId, resultBucket, report, options) {
     const opts = options || {};
+    tempIdToRealId = await mergeOfflinePatientIdMap(tempIdToRealId);
     const pendingRecords = await window.OfflineManager.getPendingRecords(storeName);
 
     for (const record of pendingRecords) {

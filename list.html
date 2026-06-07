@@ -988,6 +988,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/offline-store.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/session-manager.js"></script>
@@ -1399,35 +1400,85 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    async function fetchAncVisitsForPatient(db, patientId) {
-      const ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
-      let snap;
-      try { snap = await ref.orderBy('visitDate', 'desc').limit(20).get(); }
-      catch (e) {
-        try { snap = await ref.orderBy('timestamp', 'desc').limit(20).get(); }
-        catch (e2) { snap = await ref.limit(20).get(); }
-      }
+    function snapToVisitList(snap) {
       const visits = [];
-      if (snap && snap.docs) snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
+      if (snap && snap.docs) {
+        snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
+      }
       return visits;
     }
 
-    async function fetchAncVisitsIncludingPending(db, patientId) {
-      const visits = await fetchAncVisitsForPatient(db, patientId);
+    async function fetchAncVisitsForPatient(db, patientId) {
+      const ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
+      let visits = [];
+
+      try {
+        const byVisitDate = await ref.orderBy('visitDate', 'desc').limit(20).get();
+        visits = snapToVisitList(byVisitDate);
+      } catch (e) {
+        /* fall through */
+      }
+
+      if (!visits.length) {
+        try {
+          const byTimestamp = await ref.orderBy('timestamp', 'desc').limit(20).get();
+          visits = snapToVisitList(byTimestamp);
+        } catch (e2) {
+          /* fall through */
+        }
+      }
+
+      if (!visits.length) {
+        try {
+          const all = await ref.limit(20).get();
+          visits = snapToVisitList(all);
+        } catch (e3) {
+          console.warn('Could not load ANC visits for', patientId, e3);
+        }
+      }
+
+      return visits;
+    }
+
+    async function resolvePatientIdAliasesForList(patient) {
+      if (window.OfflineManager && typeof OfflineManager.resolvePatientIdAliases === 'function') {
+        return OfflineManager.resolvePatientIdAliases(patient);
+      }
+      return patient && patient.id ? [patient.id] : [];
+    }
+
+    async function fetchAncVisitsIncludingPending(db, patient) {
+      const patientObj = typeof patient === 'object' ? patient : { id: patient };
+      const patientId = patientObj.id;
+      const aliases = await resolvePatientIdAliasesForList(patientObj);
+      const visits = db ? await fetchAncVisitsForPatient(db, patientId) : [];
+
       if (!window.OfflineManager || typeof OfflineManager.getPendingRecords !== 'function') {
         return visits;
       }
+
       try {
         const pending = await OfflineManager.getPendingRecords('pending_anc_visits');
+        const matches = OfflineManager.recordMatchesPatientIds
+          ? function (data) { return OfflineManager.recordMatchesPatientIds(data, aliases); }
+          : function (data) {
+            return aliases.indexOf(data.patientId) >= 0 || aliases.indexOf(data.offlinePatientId) >= 0;
+          };
+
         (pending || []).forEach(function (rec) {
           const data = rec.data || {};
-          if (data.patientId === patientId || data.offlinePatientId === patientId) {
-            visits.push({ id: rec.id || ('pending-' + patientId), data: data, pending: true });
+          if (matches(data)) {
+            visits.push({
+              id: rec.localId || rec.id || ('pending-' + patientId),
+              data: data,
+              pending: true
+            });
           }
         });
       } catch (e) {
         console.warn('Could not merge pending ANC visits for', patientId, e);
       }
+
       return visits;
     }
 
@@ -1461,16 +1512,11 @@
             var hasVisit = false;
 
             if (db && (typeof navigator === 'undefined' || navigator.onLine)) {
-              const visits = await fetchAncVisitsForPatient(db, patient.id);
+              const visits = await fetchAncVisitsIncludingPending(db, patient);
               hasVisit = visits.length > 0;
-            }
-
-            if (!hasVisit && window.OfflineManager && typeof OfflineManager.getPendingRecords === 'function') {
-              const pending = await OfflineManager.getPendingRecords('pending_anc_visits');
-              hasVisit = (pending || []).some(function (rec) {
-                var data = rec.data || {};
-                return data.patientId === patient.id || data.offlinePatientId === patient.id;
-              });
+            } else if (window.OfflineManager) {
+              const visits = await fetchAncVisitsIncludingPending(null, patient);
+              hasVisit = visits.length > 0;
             }
 
             if (!hasVisit) return;
@@ -1513,7 +1559,7 @@
         await Promise.all(batch.map(async function (patient) {
           try {
             const results = await Promise.all([
-              fetchAncVisitsIncludingPending(db, patient.id),
+              fetchAncVisitsIncludingPending(db, patient),
               fetchHrtActionsForPatient(db, patient.id)
             ]);
             const result = AncTrackingStatus.computePatientTrackingStatus(patient, {

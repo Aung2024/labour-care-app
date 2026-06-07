@@ -679,6 +679,60 @@
     init();
   }
 
+  /** Map OFFLINE-* local IDs ↔ Firestore cloud IDs from synced pending_patients records. */
+  async function getOfflinePatientIdMap() {
+    var byOffline = {};
+    var byCloud = {};
+    try {
+      var all = await getAllRecords('pending_patients');
+      (all || []).forEach(function (rec) {
+        if (rec.localId && rec.cloudId) {
+          byOffline[rec.localId] = rec.cloudId;
+          byCloud[rec.cloudId] = rec.localId;
+        }
+      });
+    } catch (e) {
+      console.warn('[OfflineManager] Could not build offline patient ID map:', e);
+    }
+    return { byOffline: byOffline, byCloud: byCloud };
+  }
+
+  /** All IDs that refer to the same patient (cloud + offline temp IDs). */
+  async function resolvePatientIdAliases(patientOrId) {
+    var aliases = [];
+    var seen = {};
+    function add(id) {
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      aliases.push(id);
+    }
+
+    var patient = typeof patientOrId === 'object' && patientOrId ? patientOrId : null;
+    var primaryId = patient ? patient.id : patientOrId;
+    add(primaryId);
+    if (patient && patient.offline_local_id) add(patient.offline_local_id);
+
+    try {
+      var map = await getOfflinePatientIdMap();
+      if (primaryId && map.byCloud[primaryId]) add(map.byCloud[primaryId]);
+      Object.keys(map.byOffline).forEach(function (offlineId) {
+        if (map.byOffline[offlineId] === primaryId) add(offlineId);
+      });
+    } catch (e) {
+      /* non-critical */
+    }
+    return aliases;
+  }
+
+  function recordMatchesPatientIds(data, aliasIds) {
+    if (!data || !aliasIds || !aliasIds.length) return false;
+    var ids = [data.patientId, data.offlinePatientId, data.patient_id].filter(Boolean);
+    for (var i = 0; i < ids.length; i++) {
+      if (aliasIds.indexOf(ids[i]) >= 0) return true;
+    }
+    return false;
+  }
+
   // --------------- Expose global API ---------------
 
   window.OfflineManager = {
@@ -705,6 +759,9 @@
     updateSyncBadge,
     updateOfflineUI,
     generateLocalId,
-    showConnectionToast
+    showConnectionToast,
+    getOfflinePatientIdMap,
+    resolvePatientIdAliases,
+    recordMatchesPatientIds
   };
 })();
