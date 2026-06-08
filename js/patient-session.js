@@ -81,7 +81,139 @@ function initializePatientSessionUI() {
 }
 
 // Display patient info banner
-async function displayPatientBanner(containerId = 'patientBanner') {
+async function displayPatientBanner(containerId = 'patientBanner', options = {}) {
+  const opts = Object.assign({ careType: 'anc' }, options || {});
+  if (opts.careType === 'pnc') {
+    return displayPncPatientBanner(containerId, opts);
+  }
+  return displayAncPatientBanner(containerId);
+}
+
+async function displayPncPatientBanner(containerId) {
+  const patient = getSelectedPatient();
+  if (!patient) return;
+
+  const data = patient.data;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const lang = localStorage.getItem('appLanguage') || 'mm';
+  const L = function (en, mm) { return lang === 'en' ? en : mm; };
+
+  let deliveryDisplay = L('Not recorded', 'မမှတ်ရသေး');
+  let daysPpDisplay = '-';
+  let pncVisitCount = 0;
+  let latestPpDays = null;
+
+  try {
+    const db = firebase.firestore();
+    const patientRef = db.collection('patients').doc(patient.id);
+
+    let visitsSnap;
+    try {
+      visitsSnap = await patientRef.collection('postpartum_visits').orderBy('visitDate', 'desc').limit(20).get();
+      if (visitsSnap.empty) {
+        visitsSnap = await patientRef.collection('postpartum_visits').orderBy('timestamp', 'desc').limit(20).get();
+      }
+      if (visitsSnap.empty) {
+        visitsSnap = await patientRef.collection('postpartum_visits').limit(20).get();
+      }
+    } catch (e) {
+      visitsSnap = await patientRef.collection('postpartum_visits').limit(20).get();
+    }
+
+    pncVisitCount = visitsSnap.size;
+
+    let deliveryDate = null;
+    if (!visitsSnap.empty) {
+      const visits = visitsSnap.docs.map(function (d) { return d.data(); });
+      visits.forEach(function (v) {
+        if (v.postpartumDays != null && v.postpartumDays !== '') {
+          var n = parseInt(v.postpartumDays, 10);
+          if (!isNaN(n) && (latestPpDays == null || n > latestPpDays)) latestPpDays = n;
+        }
+      });
+      const earliest = visits.slice().sort(function (a, b) {
+        return parseVisitDateMs(a) - parseVisitDateMs(b);
+      })[0];
+      if (earliest && earliest.deliveredDateTime) {
+        deliveryDate = firestoreToDate(earliest.deliveredDateTime);
+      }
+    }
+
+    if (!deliveryDate) {
+      try {
+        const nbSnap = await patientRef.collection('newborn_care').limit(1).get();
+        if (!nbSnap.empty) {
+          const nb = nbSnap.docs[0].data();
+          if (nb.birth_time) deliveryDate = firestoreToDate(nb.birth_time);
+        }
+      } catch (e) { /* optional */ }
+    }
+
+    if (!deliveryDate && data.deliveryDate) {
+      deliveryDate = firestoreToDate(data.deliveryDate);
+    }
+
+    if (deliveryDate && !isNaN(deliveryDate.getTime())) {
+      deliveryDisplay = deliveryDate.toLocaleDateString();
+      const diffDays = Math.floor((Date.now() - deliveryDate.getTime()) / 86400000);
+      daysPpDisplay = diffDays >= 0 ? (diffDays + ' ' + L('days', 'ရက်')) : '-';
+    } else if (latestPpDays != null) {
+      daysPpDisplay = latestPpDays + ' ' + L('days', 'ရက်');
+    }
+  } catch (err) {
+    console.warn('[PatientBanner] PNC data load failed:', err);
+  }
+
+  container.innerHTML =
+    '<div style="background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; padding: 1rem 1.25rem; border-radius: 12px; margin-bottom: 1rem;">' +
+      '<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem;">' +
+        '<div style="flex: 1; min-width: 0;">' +
+          '<div style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">' + escapeBannerHtml(data.name || L('Unknown Patient', 'မသိ')) + '</div>' +
+          '<div style="font-size: 0.88rem; opacity: 0.95; line-height: 1.55;">' +
+            L('Age', 'အသက်') + ': ' + escapeBannerHtml(data.age || '-') +
+            ' &nbsp;|&nbsp; ' + L('Parity', 'မွေးဖွားခြင်း') + ': ' + escapeBannerHtml(data.parity || '-') +
+          '</div>' +
+          '<div style="font-size: 0.88rem; opacity: 0.95; line-height: 1.55; margin-top: 0.15rem;">' +
+            L('Delivery', 'မွေးဖွားရက်') + ': ' + escapeBannerHtml(deliveryDisplay) +
+            ' &nbsp;|&nbsp; ' + L('Days postpartum', 'မွေးပြီး') + ': ' + escapeBannerHtml(daysPpDisplay) +
+          '</div>' +
+          '<div style="font-size: 0.88rem; opacity: 0.95; margin-top: 0.15rem;">' +
+            L('PNC visits', 'PNC အကြိမ်') + ': ' + pncVisitCount +
+          '</div>' +
+        '</div>' +
+        '<button type="button" class="btn btn-light btn-sm" onclick="window.location.href=\'patient-care-hub.html\' + (sessionStorage.getItem(\'selectedPatientId\') ? \'?patient=\' + encodeURIComponent(sessionStorage.getItem(\'selectedPatientId\')) : \'\')" style="font-weight: 600; min-height: 44px; white-space: nowrap;">' +
+          '<i class="fas fa-arrow-left me-1"></i> ' + L('Back to Patient Hub', 'လူနာ Hub သို့') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function escapeBannerHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function firestoreToDate(val) {
+  if (!val) return null;
+  if (val.toDate && typeof val.toDate === 'function') return val.toDate();
+  if (val instanceof Date) return val;
+  if (val.seconds) return new Date(val.seconds * 1000);
+  return new Date(val);
+}
+
+function parseVisitDateMs(data) {
+  if (!data) return 0;
+  var d = firestoreToDate(data.visitDate || data.timestamp || data.createdAt);
+  return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+}
+
+async function displayAncPatientBanner(containerId = 'patientBanner') {
   const patient = getSelectedPatient();
   if (!patient) return;
   
