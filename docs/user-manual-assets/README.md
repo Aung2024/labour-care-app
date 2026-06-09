@@ -4,11 +4,12 @@ Add real screenshots to this folder using the exact filenames below. The manual 
 
 Recommended screenshot style:
 
-- Use a phone/mobile viewport first.
+- Use phone/mobile vertical screenshots first. Recommended size is around 390×844 or 430×932.
 - Prefer Myanmar UI screenshots unless English is specifically needed.
 - Use one consistent demo patient and demo midwife account.
 - Avoid real patient names, phone numbers, addresses, or clinical data.
 - Crop only if it improves readability; keep buttons and headings visible.
+- The placeholders in `user-manual.html` are vertical phone-shaped boxes. Wide desktop screenshots should only be used for reports if a mobile screenshot cannot explain the screen clearly.
 
 ## Required Files
 
