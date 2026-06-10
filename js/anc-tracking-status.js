@@ -1,5 +1,5 @@
 /**
- * ANC schedule tracking (On Track / Defaulted / Overdued / Dropped out / Complete).
+ * ANC schedule tracking (Active / Overdue / Defaulter-lost / Complete).
  * Used by patient list badges and alerts — antenatal patients only.
  *
  * Due date: latest visit nextVisitDate, else 8-visit LMP schedule.
@@ -10,17 +10,15 @@
 
   var LABELS = {
     en: {
-      on_track: 'On Track',
-      defaulted: 'Defaulted',
-      overdued: 'Overdued',
-      dropped_out: 'Dropped out',
+      on_track: 'Active follow-up',
+      overdue_followup: 'Overdue follow-up',
+      lost_to_followup: 'Defaulter/lost to follow-up',
       complete: 'Complete'
     },
     mm: {
-      on_track: 'On Track',
-      defaulted: 'Defaulted',
-      overdued: 'Overdued',
-      dropped_out: 'Dropped out',
+      on_track: 'Active follow-up',
+      overdue_followup: 'Overdue follow-up',
+      lost_to_followup: 'Defaulter/lost to follow-up',
       complete: 'Complete'
     }
   };
@@ -209,7 +207,12 @@
       var a = actions[i];
       if (a && a.type === 'resolved' && (
         a.resolvedReason === 'completed' ||
-        a.resolvedReason === 'delivered_safely'
+        a.resolvedReason === 'delivered_safely' ||
+        a.resolvedReason === 'death' ||
+        a.resolvedReason === 'transferred' ||
+        a.outcome === 'alive' ||
+        a.outcome === 'death' ||
+        a.outcome === 'transfer'
       )) {
         return a;
       }
@@ -245,12 +248,13 @@
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var diff = Math.floor((today.getTime() - due.getTime()) / 86400000);
-    return diff > 0 ? diff : 0;
+    return diff;
   }
 
   function getDaysLateForNextVisit(ctx) {
     if (isCompleted(ctx)) return 0;
-    return getDaysLateForDueDate(getNextVisitDueDate(ctx)) || 0;
+    var daysLate = getDaysLateForDueDate(getNextVisitDueDate(ctx));
+    return daysLate == null ? null : daysLate;
   }
 
   function getLabel(key, lang) {
@@ -258,13 +262,21 @@
     return pack[key] || LABELS.en[key] || key;
   }
 
-  function statusFromDaysLate(daysLate, lang) {
+  function getNextAncVisitNumber(ctx) {
+    var completed = ctx && ctx.ancVisitCount ? ctx.ancVisitCount : 0;
+    return Math.min(completed + 1, 8);
+  }
+
+  function getFollowUpGraceDays(ctx) {
+    return getNextAncVisitNumber(ctx) >= 5 ? 14 : 30;
+  }
+
+  function statusFromDaysLate(daysLate, lang, ctx) {
     lang = lang || 'en';
     if (daysLate == null) return null;
-    if (daysLate === 0) return { key: 'on_track', label: getLabel('on_track', lang) };
-    if (daysLate <= 7) return { key: 'defaulted', label: getLabel('defaulted', lang) };
-    if (daysLate <= 30) return { key: 'overdued', label: getLabel('overdued', lang) };
-    return { key: 'dropped_out', label: getLabel('dropped_out', lang) };
+    if (daysLate < 0) return { key: 'on_track', label: getLabel('on_track', lang) };
+    if (daysLate <= getFollowUpGraceDays(ctx)) return { key: 'overdue_followup', label: getLabel('overdue_followup', lang) };
+    return { key: 'lost_to_followup', label: getLabel('lost_to_followup', lang) };
   }
 
   function rowTrackingStatus(ctx, lang) {
@@ -273,12 +285,12 @@
       return { key: 'complete', label: getLabel('complete', lang) };
     }
     var daysLate = getDaysLateForNextVisit(ctx);
-    var status = statusFromDaysLate(daysLate, lang);
+    var status = statusFromDaysLate(daysLate, lang, ctx);
     return status || { key: 'on_track', label: getLabel('on_track', lang) };
   }
 
   function isNotOnTrack(statusKey) {
-    return statusKey === 'defaulted' || statusKey === 'overdued' || statusKey === 'dropped_out';
+    return statusKey === 'overdue_followup' || statusKey === 'lost_to_followup';
   }
 
   function isRegisteredPatient(patient) {
@@ -336,13 +348,15 @@
     var due = getAncScheduleDueDate(ctx);
     if (due) {
       var daysLate = getDaysLateForDueDate(due);
-      var status = statusFromDaysLate(daysLate, lang);
+      var status = statusFromDaysLate(daysLate, lang, ctx);
       if (status) {
         return {
           key: status.key,
           label: status.label,
           daysLate: daysLate,
           dueDate: formatDateYMD(due),
+          nextVisitNumber: getNextAncVisitNumber(ctx),
+          graceDays: getFollowUpGraceDays(ctx),
           phase: 'antenatal'
         };
       }
@@ -373,6 +387,8 @@
     isCompleted: isCompleted,
     getNextVisitDueDate: getNextVisitDueDate,
     getDaysLateForNextVisit: getDaysLateForNextVisit,
+    getNextAncVisitNumber: getNextAncVisitNumber,
+    getFollowUpGraceDays: getFollowUpGraceDays,
     rowTrackingStatus: rowTrackingStatus,
     isNotOnTrack: isNotOnTrack,
     isRegisteredPatient: isRegisteredPatient,
