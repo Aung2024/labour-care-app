@@ -382,6 +382,7 @@
     }
 
     .care-card.primary::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .care-card.hrt::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
     .care-card.registration::before { background: linear-gradient(90deg, #0891b2, #0e7490); }
     .care-card.dashboard::before { background: linear-gradient(90deg, #6b7280, #4b5563); }
     .care-card#cmeCard::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
@@ -409,6 +410,7 @@
 
     .care-icon.registration { color: #0891b2; }
     .care-icon.primary { color: #10b981; }
+    .care-icon.hrt { color: #ef4444; }
     .care-icon.dashboard { color: #4b5563; }
     .care-icon.management { color: #7c3aed; }
     .care-icon.scoreboard { color: #f59e0b; }
@@ -485,6 +487,7 @@
     .care-action.baby { background: linear-gradient(135deg, #f59e0b, #d97706); }
     .care-action.registration { background: linear-gradient(135deg, #0891b2, #0e7490); }
     .care-action.primary { background: linear-gradient(135deg, #10b981, #059669); }
+    .care-action.hrt { background: linear-gradient(135deg, #ef4444, #dc2626); }
     .care-action.dashboard { background: linear-gradient(135deg, #6b7280, #4b5563); }
     .care-action.management { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
     .care-action.scoreboard { background: linear-gradient(135deg, #ffc107, #ff9800); color: #1f2937; font-weight: 700; }
@@ -794,6 +797,8 @@
       document.querySelectorAll('.care-card').forEach(card => {
         card.classList.remove('loading');
       });
+
+      applyHomeLanguage(currentLanguage);
     }
 
     // Start checking for auth after a short delay (let auth guard initialize first)
@@ -1467,51 +1472,50 @@
     }
 
     // Language switching
-    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    let currentLanguage = localStorage.getItem('appLanguage')
+      || localStorage.getItem('language')
+      || 'mm';
+
+    function applyHomeLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var enText = el.getAttribute('data-en');
+        var mmText = el.getAttribute('data-mm');
+        if (lang === 'en' && enText) {
+          el.textContent = enText;
+        } else if (lang === 'mm' && mmText) {
+          el.textContent = mmText;
+        }
+      });
+
+      if (pageInitialized) {
+        loadPendingTransferCount();
+        loadHrtCardNotifyCount();
+      }
+    }
 
     // Language switching function (debounced)
     let languageSwitchTimeout = null;
-    
+
     function switchLanguage(lang) {
-      // Prevent switching if page not ready
-      if (!pageInitialized) {
-        console.log('⏳ Page not ready');
-        return;
-      }
-      
-      // Debounce rapid clicks
       if (languageSwitchTimeout) {
         clearTimeout(languageSwitchTimeout);
       }
-      
-      languageSwitchTimeout = setTimeout(() => {
-        currentLanguage = lang;
-        localStorage.setItem('appLanguage', lang);
-        
-        // Update active button
-        document.querySelectorAll('.language-btn').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.lang === lang);
-        });
-        
-        // Update all text elements with lang-text class
-        document.querySelectorAll('.lang-text').forEach(el => {
-          const enText = el.getAttribute('data-en');
-          const mmText = el.getAttribute('data-mm');
-          if (lang === 'en' && enText) {
-            el.textContent = enText;
-          } else if (lang === 'mm' && mmText) {
-            el.textContent = mmText;
-          }
-        });
-        loadPendingTransferCount();
-        loadHrtCardNotifyCount();
-      }, 150);
+
+      languageSwitchTimeout = setTimeout(function () {
+        applyHomeLanguage(lang);
+      }, pageInitialized ? 150 : 0);
     }
 
     // Initialize language switcher on page load
     document.addEventListener('DOMContentLoaded', function() {
-      // Set initial language
-      switchLanguage(currentLanguage);
+      applyHomeLanguage(currentLanguage);
       const syncBtn = document.getElementById('labourCareSyncBtnHeader');
       if (syncBtn) {
         syncBtn.addEventListener('click', function () {
@@ -1560,7 +1564,7 @@
             <button type="button" class="language-btn" data-lang="en" onclick="switchLanguage('en')">
               <span class="lang-flag" aria-hidden="true">🇬🇧</span> ENG
             </button>
-            <button type="button" class="language-btn active" data-lang="mm" onclick="switchLanguage('mm')">
+            <button type="button" class="language-btn" data-lang="mm" onclick="switchLanguage('mm')">
               <span class="lang-flag" aria-hidden="true">🇲🇲</span> MM
             </button>
           </div>
@@ -1747,10 +1751,10 @@
       </div>
 
       <!-- High Risk Tracking -->
-      <div class="care-card primary" id="hrtCard" onclick="navigateToCare('high-risk-tracking')">
+      <div class="care-card hrt" id="hrtCard" onclick="navigateToCare('high-risk-tracking')">
         <span class="care-card-notify-badge d-none" id="hrtActiveBadge" title="High-risk patients needing follow-up">0</span>
         <div class="care-card-header">
-          <div class="care-icon primary"><i class="fas fa-heartbeat"></i></div>
+          <div class="care-icon hrt"><i class="fas fa-ambulance"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="High Risk Tracking" data-mm="အန္တရာယ်မြင့် လူနာ စောင့်ကြည့်မှု">High Risk Tracking</span></h3>
         </div>
         <div class="care-card-body">
@@ -1759,7 +1763,7 @@
             <span class="lang-text" data-en="Review unresolved high-risk patients and follow-up actions." data-mm="ဖြေရှင်းရန်ကျန် အန္တရာယ်မြင့် လူနာများနှင့် နောက်ဆက်တွဲလုပ်ဆောင်ချက်များကို ကြည့်ရှုပါ။">Review unresolved high-risk patients and follow-up actions.</span>
           </p>
         </div>
-        <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('high-risk-tracking');">
+        <a href="#" class="care-action hrt" onclick="event.preventDefault(); navigateToCare('high-risk-tracking');">
           <i class="fas fa-bell"></i><span class="lang-text" data-en="Open High Risk Tracking" data-mm="အန္တရာယ်မြင့် စောင့်ကြည့်မှု ဖွင့်ရန်">Open High Risk Tracking</span>
         </a>
       </div>
