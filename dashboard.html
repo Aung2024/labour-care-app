@@ -784,6 +784,30 @@
       return false;
     }
 
+    async function fetchMidwifePatientDocs(db, uid) {
+      var patientMap = new Map();
+      var mergeSnap = function (snap) {
+        if (snap && snap.docs) {
+          snap.docs.forEach(function (doc) {
+            if (doc && doc.id && !patientMap.has(doc.id)) patientMap.set(doc.id, doc);
+          });
+        }
+      };
+      var opts = { retries: 2 };
+      mergeSnap(await dashboardSmartGet(db.collection('patients').where('created_by', '==', uid), opts));
+      mergeSnap(await dashboardSmartGet(db.collection('patients').where('createdBy', '==', uid), opts));
+      mergeSnap(await dashboardSmartGet(db.collection('patients').where('care_team_midwife_ids', 'array-contains', uid), opts));
+      return Array.from(patientMap.values());
+    }
+
+    async function fetchHrtActionsSnap(ref) {
+      try {
+        return await dashboardSmartGet(ref.collection('hrt_actions').orderBy('recordedAt', 'desc').limit(20), { retries: 1 });
+      } catch (e) {
+        return dashboardSmartGet(ref.collection('hrt_actions').limit(20), { retries: 0 });
+      }
+    }
+
     async function buildAnalyticsData() {
       var db = firebase.firestore();
 
@@ -796,7 +820,11 @@
         }
         if (raw && raw.length) {
           var roleKey = (userRole || '').toLowerCase();
-          if (roleKey === 'midwife') raw = raw.filter(function(e) { var p = e.profile || {}; return p.created_by === currentUser.uid || p.createdBy === currentUser.uid; });
+          if (roleKey === 'midwife') raw = raw.filter(function(e) {
+            var p = e.profile || {};
+            var team = Array.isArray(p.care_team_midwife_ids) ? p.care_team_midwife_ids : [];
+            return p.created_by === currentUser.uid || p.createdBy === currentUser.uid || team.indexOf(currentUser.uid) !== -1;
+          });
           else if (userRole === 'TMO' && userTownship) raw = raw.filter(function(e) { return e.profile && e.profile.township === userTownship; });
           else if (userRole === 'Regional Officer' && userRegion) raw = raw.filter(function(e) { return e.profile && e.profile.region === userRegion; });
           var mapped = raw.map(function(entry) {
@@ -822,7 +850,7 @@
       } else if (userRole === 'TMO' && userTownship) {
         patientDocs = (await dashboardSmartGet(db.collection('patients').where('township','==',userTownship))).docs;
       } else if (userRole && userRole.toLowerCase() === 'midwife') {
-        patientDocs = (await dashboardSmartGet(db.collection('patients').where('created_by','==',currentUser.uid))).docs;
+        patientDocs = await fetchMidwifePatientDocs(db, currentUser.uid);
       } else {
         patientDocs = (await dashboardSmartGet(db.collection('patients'), { timeout: 15000 })).docs;
       }
@@ -847,9 +875,7 @@
               dashboardSmartGet(ref.collection('records'), { retries: 1 }),
               dashboardSmartGet(ref.collection('newborn_care').limit(1), { retries: 1 }),
               dashboardSmartGet(ref.collection('immediate_newborn_care').limit(1), { retries: 1 }),
-              dashboardSmartGet(ref.collection('hrt_actions').orderBy('createdAt', 'desc').limit(20), { retries: 1 }).catch(function () {
-                return dashboardSmartGet(ref.collection('hrt_actions').limit(20), { retries: 0 });
-              })
+              fetchHrtActionsSnap(ref)
             ]);
             var ancSnap = results[0], pncSnap = results[1], testSnap = results[2];
             var recordsSnap = results[3], nbSnap = results[4], immNbSnap = results[5], hrtSnap = results[6];
