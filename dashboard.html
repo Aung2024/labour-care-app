@@ -361,11 +361,6 @@
                 <div class="col-lg-7 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>ANC Visit Breakdown</h5><div id="chart-anc-visits-breakdown"></div></div></div>
               </div>
 
-              <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-project-diagram me-2" style="color:#8b5cf6;"></i>GA at ANC Visits</h5>
-              <div class="row mb-4">
-                <div class="col-12 mb-3"><div class="chart-card"><div id="chart-ga-visits-scatter"></div></div></div>
-              </div>
-
               <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-tint me-2" style="color:#ef4444;"></i>Anemia</h5>
               <div class="row mb-4 stat-cards-row">
                 <div class="col-md-4 mb-3"><div class="stat-card danger"><div class="stat-number" id="statSevereAnemia">0</div><div class="stat-label">Severe Anemia (&lt;7 g/dl)</div></div></div>
@@ -390,7 +385,7 @@
               </div>
 
               <div class="row mb-4">
-                <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>GBV suspected case - Monthly Trend</h5><div id="chart-gbv-trend"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>GBV Suspected Cases - Monthly Trend</h5><div id="chart-gbv-trend"></div></div></div>
               </div>
             </div>
 
@@ -494,12 +489,13 @@
             <div class="tab-pane fade" id="pane-labour" role="tabpanel">
               <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-baby me-2" style="color:#3b82f6;"></i>Deliveries</h5>
               <div class="row mb-4 stat-cards-row">
-                <div class="col-md-6 mb-3"><div class="stat-card primary"><div class="stat-number" id="statHomeDel">0</div><div class="stat-label">Home Deliveries by BHS</div></div></div>
-                <div class="col-md-6 mb-3"><div class="stat-card info"><div class="stat-number" id="statInstDel">0</div><div class="stat-label">Institutional Deliveries by BHS</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card success"><div class="stat-number" id="statTotalDel">0</div><div class="stat-label">Total Deliveries (Home + Institutional)</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card primary"><div class="stat-number" id="statHomeDel">0</div><div class="stat-label">Home Deliveries by BHS</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card info"><div class="stat-number" id="statInstDel">0</div><div class="stat-label">Institutional Deliveries by BHS</div></div></div>
               </div>
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-area"></i>LCG Completion Trend</h5><div id="chart-lcg-trend"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-procedures"></i>Third Stage Management</h5><div id="chart-third-stage"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-procedures"></i>Third Stage Management (Uterotonic Usage)</h5><div id="chart-third-stage"></div></div></div>
               </div>
             </div>
 
@@ -998,12 +994,17 @@
       return null;
     }
 
-    function hasNewbornEvidence(patient, hasSecondStage) {
-      return hasRecordData(patient.newbornCare) ||
-        hasRecordData(patient.immediateNewbornCare) ||
-        hasRecordData(patient.birthRecord) ||
-        hasRecordData(patient.thirdStage) ||
-        hasSecondStage === true;
+    /** Post-delivery patients only — ignores orphan LCG/birth records after status returns to ANC. */
+    function isDeliveredPatient(patient, profile, pncVisits) {
+      var bucket = statusBucket(profile);
+      if (bucket === 'pnc' || bucket === 'birthed') return true;
+      if ((pncVisits || []).length > 0) return true;
+      if (hasRecordData(patient.newbornCare) || hasRecordData(patient.immediateNewbornCare)) return true;
+      var birth = patient.birthRecord && patient.birthRecord.data ? patient.birthRecord.data : null;
+      if (birth && (birth.deliveryDate || birth.birthDate || birth.birthTime || birth.deliveredDateTime || birth.deliveryDateTime)) {
+        return true;
+      }
+      return false;
     }
 
     function getFirstPncDays(firstPnc, patient) {
@@ -1351,17 +1352,44 @@
         });
         if (hasOxytocin) m.oxytocinYes++; else m.oxytocinNo++;
 
-        // Third stage management (uterotonic)
+        // Third stage, delivery location, and newborn metrics — delivered patients only
+        var delivered = isDeliveredPatient(patient, profile, pncVisits);
         var ts = patient.thirdStage;
         var birthRec = patient.birthRecord ? patient.birthRecord.data : null;
-        if ((ts && isAffirmative(ts.oxytocinGiven)) || (birthRec && (isAffirmative(birthRec.uterotonicGivenThirdStage) || isAffirmative(birthRec.uterotonic)))) m.uterotonic++;
-
-        // Delivery location (from newborn_care)
         var nbCare = patient.newbornCare ? patient.newbornCare.data : null;
-        if (nbCare && nbCare.birthplace) {
-          var bp = (nbCare.birthplace || '').toLowerCase().trim();
-          if (bp === 'home') { m.homeDel++; tspAgg.homeDel++; }
-          else if (bp === 'facility') { m.instDel++; tspAgg.instDel++; }
+
+        if (delivered) {
+          if ((ts && isAffirmative(ts.oxytocinGiven)) || (birthRec && (isAffirmative(birthRec.uterotonicGivenThirdStage) || isAffirmative(birthRec.uterotonic)))) {
+            m.uterotonic++;
+          }
+
+          if (nbCare && nbCare.birthplace) {
+            var bp = (nbCare.birthplace || '').toLowerCase().trim();
+            if (bp === 'home') { m.homeDel++; tspAgg.homeDel++; }
+            else if (bp === 'facility') { m.instDel++; tspAgg.instDel++; }
+          }
+
+          m.nbRecords++;
+          var bwKg = getBirthWeightKg(patient);
+          if (bwKg) {
+            if (bwKg < 1.5) m.bwGroups['<1.5']++;
+            else if (bwKg < 2) m.bwGroups['1.5-2']++;
+            else if (bwKg < 2.5) m.bwGroups['2-2.5']++;
+            else if (bwKg < 3) m.bwGroups['2.5-3']++;
+            else if (bwKg < 3.5) m.bwGroups['3-3.5']++;
+            else if (bwKg < 4) m.bwGroups['3.5-4']++;
+            else m.bwGroups['>4']++;
+            if (bwKg < 2) {
+              m.lowBW++;
+              var nb = patient.newbornCare && patient.newbornCare.data ? patient.newbornCare.data : null;
+              if ((birthRec && (isAffirmative(birthRec.kmcProvided) || isAffirmative(birthRec.kangarooMotherCare))) || (nb && (isAffirmative(nb.kmcProvided) || isAffirmative(nb.kangarooMotherCare)))) m.lowBWKmc++;
+            }
+          } else {
+            m.bwGroups['Not recorded']++;
+          }
+
+          var immCare = patient.immediateNewbornCare ? patient.immediateNewbornCare.data : null;
+          if (immCare && isAffirmative(immCare.gasping_or_no_breathing)) m.resuscitated++;
         }
 
         // PNC timing & danger signs
@@ -1414,32 +1442,6 @@
           }
         }
         if (pncVisits.length > 0) tspAgg.newPncPatients++;
-
-        // Newborn care. Count any birth/newborn evidence, not only newborn_care records.
-        if (hasNewbornEvidence(patient, hasSecond)) {
-          m.nbRecords++;
-          var bwKg = getBirthWeightKg(patient);
-          if (bwKg) {
-            if (bwKg < 1.5) m.bwGroups['<1.5']++;
-            else if (bwKg < 2) m.bwGroups['1.5-2']++;
-            else if (bwKg < 2.5) m.bwGroups['2-2.5']++;
-            else if (bwKg < 3) m.bwGroups['2.5-3']++;
-            else if (bwKg < 3.5) m.bwGroups['3-3.5']++;
-            else if (bwKg < 4) m.bwGroups['3.5-4']++;
-            else m.bwGroups['>4']++;
-            if (bwKg < 2) {
-              m.lowBW++;
-              var nb = patient.newbornCare && patient.newbornCare.data ? patient.newbornCare.data : null;
-              if ((birthRec && (isAffirmative(birthRec.kmcProvided) || isAffirmative(birthRec.kangarooMotherCare))) || (nb && (isAffirmative(nb.kmcProvided) || isAffirmative(nb.kangarooMotherCare)))) m.lowBWKmc++;
-            }
-          } else {
-            m.bwGroups['Not recorded']++;
-          }
-        }
-
-        // Resuscitation
-        var immCare = patient.immediateNewbornCare ? patient.immediateNewbornCare.data : null;
-        if (immCare && isAffirmative(immCare.gasping_or_no_breathing)) m.resuscitated++;
 
         // Transfers
         if (patient.transferRecord) {
@@ -1534,6 +1536,7 @@
       setText('statHiv', m.hivPos); setText('statSyphilis', m.syphilisPos); setText('statMalaria', m.malariaPos);
       setText('statHepB', m.hepBPos); setText('statHepC', m.hepCPos);
 
+      setTextOrNoRecords('statTotalDel', (m.homeDel || 0) + (m.instDel || 0));
       setTextOrNoRecords('statHomeDel', m.homeDel); setTextOrNoRecords('statInstDel', m.instDel);
       setTextOrNoRecords('statUterotonic', m.uterotonic);
       setTextOrNoRecords('statPnc48h', m.pnc48h); setTextOrNoRecords('statPnc42d', m.pnc42d);
@@ -1814,36 +1817,7 @@
         showChartEmpty('chart-anc-visits-breakdown', 'No ANC patients in this period.');
       }
 
-      // 3) GA vs visit scatter
-      if (m.gaVisitPoints && m.gaVisitPoints.length) {
-        createChart('chart-ga-visits-scatter', Object.assign({}, chartDefaults, {
-          chart: { type: 'scatter', height: 360, toolbar: { show: false }, zoom: { enabled: true, type: 'xy' } },
-          series: [{ name: 'ANC visits', data: m.gaVisitPoints.map(function (p) { return { x: p.x, y: p.y }; }) }],
-          xaxis: {
-            title: { text: 'Visit number' },
-            min: 0.5,
-            max: Math.max(8.5, Math.max.apply(null, m.gaVisitPoints.map(function (p) { return p.x; })) + 0.5),
-            tickAmount: Math.min(8, Math.max.apply(null, m.gaVisitPoints.map(function (p) { return p.x; }))),
-            labels: { formatter: function (val) { return Math.round(val); } }
-          },
-          yaxis: {
-            title: { text: 'Gestational age (weeks)' },
-            min: 0,
-            max: 42,
-            labels: { formatter: function (val) { return Math.round(val); } },
-            tickAmount: 8
-          },
-          tooltip: { y: { formatter: function (val) { return Math.round(val) + ' weeks'; } } },
-          colors: [COLORS.purple],
-          markers: { size: 5, strokeWidth: 0, opacity: 0.75 },
-          title: { text: m.gaVisitPoints.length + ' visits with GA recorded' },
-          dataLabels: { enabled: false }
-        }));
-      } else {
-        showChartEmpty('chart-ga-visits-scatter', 'No gestational age data on ANC visits in this period.');
-      }
-
-      // 4) Anemia breakdown (ANC patients with lab Hb)
+      // 3) Anemia breakdown (ANC patients with lab Hb)
       var ancAnemiaTotal = (m.ancSevereAnemia || 0) + (m.ancMildAnemia || 0) + (m.ancNoAnemia || 0);
       if (ancAnemiaTotal > 0) {
         createChart('chart-anc-anemia', Object.assign({}, chartDefaults, {
@@ -1886,16 +1860,20 @@
         showChartEmpty('chart-vitamin-b1-coverage', 'No ANC patients in this period.');
       }
 
-      // 7) GBV monthly trend (horizontal — month on Y, count on X)
+      // 7) GBV monthly trend (vertical bars)
       var gbvMonths = Object.keys(m.monthlyGbv || {}).sort();
       if (gbvMonths.length) {
         createChart('chart-gbv-trend', Object.assign({}, chartDefaults, {
-          chart: { type: 'bar', height: Math.max(280, gbvMonths.length * 40), toolbar: { show: false } },
+          chart: { type: 'bar', height: 300, toolbar: { show: false } },
           series: [{ name: 'GBV suspected cases', data: gbvMonths.map(function (k) { return m.monthlyGbv[k]; }) }],
-          xaxis: { categories: gbvMonths },
+          xaxis: {
+            categories: gbvMonths,
+            labels: { rotate: -35, trim: true, hideOverlappingLabels: true, style: { fontSize: '11px' } }
+          },
+          yaxis: Object.assign({ title: { text: 'Cases' } }, dashboardIntegerAxis()),
           colors: [COLORS.orange],
-          plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '68%' } },
-          dataLabels: { enabled: true },
+          plotOptions: { bar: { borderRadius: 6, columnWidth: '52%' } },
+          dataLabels: { enabled: true, formatter: function (val) { return Math.round(val); } },
           legend: { show: false }
         }));
       } else {
@@ -1945,29 +1923,39 @@
 
     function renderLabourCharts(m) {
       // LCG Completion Trend
-      var lcgMonths = Object.keys(m.monthlyLcg).sort();
+      var lcgMonths = Object.keys(m.monthlyLcg || {}).sort();
       if (lcgMonths.length) {
         createChart('chart-lcg-trend', Object.assign({}, chartDefaults, {
-          chart: { type: 'area', height: 300, toolbar: { show: false } },
-          series: [{ name: 'LCG Completed', data: lcgMonths.map(function(k) { return m.monthlyLcg[k]; }) }],
-          xaxis: { categories: lcgMonths },
+          chart: { type: 'bar', height: 300, toolbar: { show: false } },
+          series: [{ name: 'LCG Completed', data: lcgMonths.map(function (k) { return m.monthlyLcg[k]; }) }],
+          xaxis: {
+            categories: lcgMonths,
+            labels: { rotate: -35, trim: true, hideOverlappingLabels: true, style: { fontSize: '11px' } }
+          },
+          yaxis: Object.assign({ title: { text: 'Count' } }, dashboardIntegerAxis()),
           colors: [COLORS.cyan],
-          stroke: { curve: 'smooth', width: 2 },
-          fill: { type: 'gradient', gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
-          title: { text: 'LCG Completion Trend' },
-          dataLabels: { enabled: false }
+          plotOptions: { bar: { borderRadius: 6, columnWidth: '52%' } },
+          dataLabels: { enabled: true, formatter: function (val) { return Math.round(val); } },
+          legend: { show: false },
+          title: { text: 'LCG Completion Trend' }
         }));
+      } else {
+        showChartEmpty('chart-lcg-trend', 'No LCG completions recorded in this period.');
       }
 
-      // Third Stage Management
-      createChart('chart-third-stage', Object.assign({}, chartDefaults, {
-        chart: { type: 'donut', height: 300 },
-        series: [m.uterotonic, Math.max(m.nbRecords - m.uterotonic, 0)],
-        labels: ['Uterotonic Given', 'Not Given'],
-        colors: [COLORS.green, COLORS.gray],
-        legend: { position: 'bottom' },
-        title: { text: 'Third Stage Management (' + m.nbRecords + ' birth/newborn records)' }
-      }));
+      // Third Stage Management (Uterotonic Usage)
+      if (m.nbRecords > 0) {
+        createChart('chart-third-stage', Object.assign({}, chartDefaults, {
+          chart: { type: 'donut', height: 300 },
+          series: [m.uterotonic, Math.max(m.nbRecords - m.uterotonic, 0)],
+          labels: ['Uterotonic Given', 'Not Given'],
+          colors: [COLORS.green, COLORS.gray],
+          legend: { position: 'bottom' },
+          title: { text: 'Third Stage Management (Uterotonic Usage) (' + m.nbRecords + ' deliveries)' }
+        }));
+      } else {
+        showChartEmpty('chart-third-stage', 'No delivered patients in this period.');
+      }
 
       tabsRendered.labour = true;
     }
@@ -1982,7 +1970,7 @@
         xaxis: { categories: bwKeys.map(function(k) { return k === 'Not recorded' ? k : k + ' kg'; }), title: { text: 'Weight Range' } },
         colors: [COLORS.pink],
         plotOptions: { bar: { borderRadius: 4 } },
-        title: { text: 'Birth Weight Distribution (' + m.nbRecords + ' newborn records)' },
+        title: { text: 'Birth Weight Distribution (' + m.nbRecords + ' deliveries)' },
         dataLabels: { enabled: false }
       }));
 
