@@ -375,6 +375,10 @@
               <div class="row mb-4">
                 <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-pie"></i>Anemia Breakdown</h5><p class="text-muted small mb-2">Based on latest hemoglobin lab result among ANC patients.</p><div id="chart-anc-anemia"></div></div></div>
               </div>
+              <div class="row mb-4">
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-pills"></i>Iron/Folic Acid Or Micronutrients</h5><div id="chart-iron-micro-coverage"></div></div></div>
+                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-capsules"></i>Vitamin B1</h5><div id="chart-vitamin-b1-coverage"></div></div></div>
+              </div>
 
               <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-virus me-2" style="color:#ef4444;"></i>Co-infection</h5>
               <div class="row mb-4 stat-cards-row">
@@ -387,11 +391,6 @@
 
               <div class="row mb-4">
                 <div class="col-12 mb-3"><div class="chart-card"><h5><i class="fas fa-chart-bar"></i>GBV suspected case - Monthly Trend</h5><div id="chart-gbv-trend"></div></div></div>
-              </div>
-
-              <div class="row mb-4">
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-pills"></i>Iron/Folic Acid &amp; Micronutrients</h5><div id="chart-iron-micro-coverage"></div></div></div>
-                <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-capsules"></i>Vitamin B1</h5><div id="chart-vitamin-b1-coverage"></div></div></div>
               </div>
             </div>
 
@@ -1309,7 +1308,7 @@
             var visitNum = parseInt(vd.visitNumber, 10);
             if (isNaN(visitNum) || visitNum <= 0) visitNum = idx + 1;
             var gaWeeks = parseGestationalAgeWeeks(vd);
-            if (gaWeeks != null) m.gaVisitPoints.push({ x: visitNum, y: Math.round(gaWeeks * 10) / 10 });
+            if (gaWeeks != null) m.gaVisitPoints.push({ x: visitNum, y: Math.round(gaWeeks) });
           });
 
           var latestData = sortedAsc.length ? (sortedAsc[sortedAsc.length - 1].data || {}) : {};
@@ -1827,7 +1826,14 @@
             tickAmount: Math.min(8, Math.max.apply(null, m.gaVisitPoints.map(function (p) { return p.x; }))),
             labels: { formatter: function (val) { return Math.round(val); } }
           },
-          yaxis: { title: { text: 'Gestational age (weeks)' }, min: 0, max: 42 },
+          yaxis: {
+            title: { text: 'Gestational age (weeks)' },
+            min: 0,
+            max: 42,
+            labels: { formatter: function (val) { return Math.round(val); } },
+            tickAmount: 8
+          },
+          tooltip: { y: { formatter: function (val) { return Math.round(val) + ' weeks'; } } },
           colors: [COLORS.purple],
           markers: { size: 5, strokeWidth: 0, opacity: 0.75 },
           title: { text: m.gaVisitPoints.length + ' visits with GA recorded' },
@@ -1852,23 +1858,7 @@
         showChartEmpty('chart-anc-anemia', 'No hemoglobin lab results among ANC patients in this period.');
       }
 
-      // 6) GBV monthly trend (horizontal — month on Y, count on X)
-      var gbvMonths = Object.keys(m.monthlyGbv || {}).sort();
-      if (gbvMonths.length) {
-        createChart('chart-gbv-trend', Object.assign({}, chartDefaults, {
-          chart: { type: 'bar', height: Math.max(280, gbvMonths.length * 40), toolbar: { show: false } },
-          series: [{ name: 'GBV suspected cases', data: gbvMonths.map(function (k) { return m.monthlyGbv[k]; }) }],
-          xaxis: { categories: gbvMonths },
-          colors: [COLORS.orange],
-          plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '68%' } },
-          dataLabels: { enabled: true },
-          legend: { show: false }
-        }));
-      } else {
-        showChartEmpty('chart-gbv-trend', 'No GBV suspected cases recorded in this period.');
-      }
-
-      // 7) Iron/Folic or Micronutrients (latest visit)
+      // 5) Iron/Folic or Micronutrients (latest visit)
       if (ancTotal > 0) {
         createChart('chart-iron-micro-coverage', Object.assign({}, chartDefaults, {
           chart: { type: 'donut', height: 300 },
@@ -1882,7 +1872,7 @@
         showChartEmpty('chart-iron-micro-coverage', 'No ANC patients in this period.');
       }
 
-      // 8) Vitamin B1 (latest visit)
+      // 6) Vitamin B1 (latest visit)
       if (ancTotal > 0) {
         createChart('chart-vitamin-b1-coverage', Object.assign({}, chartDefaults, {
           chart: { type: 'donut', height: 300 },
@@ -1894,6 +1884,22 @@
         }));
       } else {
         showChartEmpty('chart-vitamin-b1-coverage', 'No ANC patients in this period.');
+      }
+
+      // 7) GBV monthly trend (horizontal — month on Y, count on X)
+      var gbvMonths = Object.keys(m.monthlyGbv || {}).sort();
+      if (gbvMonths.length) {
+        createChart('chart-gbv-trend', Object.assign({}, chartDefaults, {
+          chart: { type: 'bar', height: Math.max(280, gbvMonths.length * 40), toolbar: { show: false } },
+          series: [{ name: 'GBV suspected cases', data: gbvMonths.map(function (k) { return m.monthlyGbv[k]; }) }],
+          xaxis: { categories: gbvMonths },
+          colors: [COLORS.orange],
+          plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '68%' } },
+          dataLabels: { enabled: true },
+          legend: { show: false }
+        }));
+      } else {
+        showChartEmpty('chart-gbv-trend', 'No GBV suspected cases recorded in this period.');
       }
 
       tabsRendered.anc = true;
