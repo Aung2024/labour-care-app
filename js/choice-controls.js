@@ -45,6 +45,52 @@
     });
   }
 
+  function getRealOptions(select) {
+    return Array.from(select.options).filter(function (opt) {
+      return !isPlaceholderOption(opt);
+    });
+  }
+
+  function applyChipDensity(select, group, layout) {
+    if (layout !== 'chips') return;
+    var density = select.dataset.choiceDensity;
+    if (density) {
+      group.classList.add('choice-chips--' + density);
+      return;
+    }
+    var opts = getRealOptions(select);
+    if (opts.length === 2) {
+      var vals = opts.map(function (o) { return o.value.toLowerCase(); });
+      if ((vals.indexOf('yes') >= 0 && vals.indexOf('no') >= 0) ||
+          (vals.indexOf('given') >= 0 && vals.indexOf('not given') >= 0)) {
+        group.classList.add('choice-chips--binary');
+        return;
+      }
+    }
+    if (opts.length === 3) {
+      group.classList.add('choice-chips--cols-3');
+      return;
+    }
+    if (opts.length >= 4) {
+      group.classList.add('choice-chips--wrap');
+    }
+  }
+
+  function applyCardLayout(select, group, layout) {
+    if (layout !== 'cards') return;
+    var cardLayout = select.dataset.choiceCards;
+    if (cardLayout) {
+      group.classList.add('choice-cards--' + cardLayout);
+      return;
+    }
+    var count = getRealOptions(select).length;
+    if (count === 2) {
+      group.classList.add('choice-cards--pair');
+    } else if (count >= 4) {
+      group.classList.add('choice-cards--grid');
+    }
+  }
+
   function syncChoiceFromSelect(select) {
     var wrap = select.closest('.choice-control');
     if (!wrap) return;
@@ -139,6 +185,9 @@
 
       group.appendChild(btn);
     });
+
+    applyChipDensity(select, group, layout);
+    applyCardLayout(select, group, layout);
 
     group.addEventListener('click', function (e) {
       var btn = e.target.closest('.choice-chip, .choice-card, .choice-toggle-btn');
