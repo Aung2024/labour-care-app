@@ -837,6 +837,31 @@
       font-weight: 700;
       white-space: nowrap;
     }
+    .hrt-sms-contact {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .hrt-phone-call-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      font-size: 1rem;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hrt-phone-call-btn:hover {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
     .hrt-modal-summary {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -942,7 +967,7 @@
         <div class="hrt-stat-card hrt-stat-card-clickable danger selected" data-filter="all" onclick="setHrtCardFilter('all')" role="button" tabindex="0">
           <span class="stat-icon"><i class="fas fa-female"></i></span>
           <span class="stat-value" id="statTotalHr">0</span>
-          <span class="stat-label" id="statTotalHrLabel">Total High Risk Patients</span>
+          <span class="stat-label" id="statTotalHrLabel">Current HRT Patients</span>
         </div>
         <div class="hrt-stat-card hrt-stat-card-clickable success" data-filter="on_track" onclick="setHrtCardFilter('on_track')" role="button" tabindex="0">
           <span class="stat-icon"><i class="fas fa-calendar-check"></i></span>
@@ -1107,7 +1132,8 @@
         changeStatusLabel: 'Mark complete',
         modalTitle: 'High-risk follow-up',
         phoneLabel: 'Phone',
-        statTotal: 'Total High Risk Patients',
+        callPatient: 'Call patient',
+        statTotal: 'Current HRT Patients',
         statActive: 'Active follow-up',
         statOverdue: 'Overdue follow-up',
         statDefaulted: 'Defaulted',
@@ -1195,7 +1221,8 @@
         changeStatusLabel: 'Complete',
         modalTitle: 'အန္တရာယ်မြင့် နောက်ဆက်တွဲ',
         phoneLabel: 'ဖုန်း',
-        statTotal: 'အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင်စုစုပေါင်း',
+        callPatient: 'ဖုန်းခေါ်ရန်',
+        statTotal: 'လက်ရှိ HRT လူနာများ',
         statActive: 'ရက်ချိန်းမှန်သော ကိုယ်ဝန်ဆောင်များ',
         statOverdue: 'ရက်ချိန်းလွန်သော ကိုယ်ဝန်ဆောင်များ',
         statDefaulted: 'အဆက်အသွယ်မရသော ကိုယ်ဝန်ဆောင်များ',
@@ -1710,8 +1737,16 @@
       return '<div class="hrt-recommendation-text" title="' + escapeHtml(text) + '">' + escapeHtml(text) + '</div>';
     }
 
-    function smsHtml() {
-      return '<span class="hrt-sms-pill"><i class="fas fa-comment"></i>' + escapeHtml(tr('smsCol')) + '</span>';
+    function smsContactHtml(patient) {
+      var html = '<div class="hrt-sms-contact">' +
+        '<span class="hrt-sms-pill"><i class="fas fa-comment"></i>' + escapeHtml(tr('smsCol')) + '</span>';
+      var href = phoneHref(patient);
+      if (href) {
+        html += '<a class="hrt-phone-call-btn" href="' + escapeHtml(href) + '" onclick="event.stopPropagation();" aria-label="' + escapeHtml(tr('callPatient')) + '" title="' + escapeHtml(tr('callPatient')) + '">' +
+          '<i class="fas fa-phone"></i></a>';
+      }
+      html += '</div>';
+      return html;
     }
 
     function getFilteredHrtRows() {
@@ -1726,7 +1761,11 @@
         if (q && name.indexOf(q) === -1 && reg.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
         if (statusFilter !== 'all') {
           var status = rowTrackingStatus(r);
-          if (status.key !== statusFilter) return false;
+          if (statusFilter === 'complete') {
+            if (status.key !== 'complete') return false;
+          } else if (status.key !== statusFilter) return false;
+        } else if (isCompleted(r)) {
+          return false;
         }
         return true;
       });
@@ -1747,6 +1786,7 @@
       var alive = 0;
       var death = 0;
       var transfer = 0;
+      var current = 0;
       rows.forEach(function(r) {
         if (isCompleted(r)) {
           completed++;
@@ -1756,12 +1796,13 @@
           else alive++;
           return;
         }
+        current++;
         var status = rowTrackingStatus(r);
         if (status.key === 'on_track') onTrack++;
         else if (status.key === 'overdue_followup') overdue++;
         else if (status.key === 'lost_to_followup') lost++;
       });
-      document.getElementById('statTotalHr').textContent = rows.length;
+      document.getElementById('statTotalHr').textContent = current;
       document.getElementById('statActiveHr').textContent = onTrack;
       document.getElementById('statOverdueHr').textContent = overdue;
       document.getElementById('statDefaultedHr').textContent = lost;
@@ -1817,7 +1858,7 @@
           '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
           '<td>' + statusCellHtml(r) + '</td>' +
           '<td>' + recommendationCellHtml(r) + '</td>' +
-          '<td>' + smsHtml() + '</td>' +
+          '<td>' + smsContactHtml(p) + '</td>' +
           '<td>' + hrtToolsHtml(patientId, r) + '</td>';
         desktopBody.appendChild(trEl);
 
@@ -1836,7 +1877,7 @@
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('recommendationCol')) + '</span><div class="hrt-mobile-value">' + recommendationCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('outcomeCol')) + '</span><div class="hrt-mobile-value">' + statusCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('danger')) + '</span><div class="hrt-mobile-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('smsCol')) + ' / ' + escapeHtml(tr('actionCol')) + '</span><div class="hrt-mobile-value">' + smsHtml() + ' ' + hrtToolsHtml(patientId, r) + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('smsCol')) + ' / ' + escapeHtml(tr('actionCol')) + '</span><div class="hrt-mobile-value">' + smsContactHtml(p) + ' ' + hrtToolsHtml(patientId, r) + '</div></div>' +
             '</div>' +
           '</div>';
         mobileBody.appendChild(card);
