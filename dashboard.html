@@ -1137,6 +1137,32 @@
       return null;
     }
 
+    var EARLY_ANC_MAX_WEEKS = 14;
+    var EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
+
+    function isEarlyAncPatient(patient, visits) {
+      visits = visits || [];
+      if (!visits.length) return false;
+      var sorted = getSortedVisitsAsc(visits);
+      var firstWrap = sorted[0];
+      var first = (firstWrap && firstWrap.data) ? firstWrap.data : firstWrap;
+      if (!first) return false;
+      var profile = (patient && patient.profile) || patient || {};
+      var lmp = first.lmp || profile.lmp;
+      var lmpStatus = first.lmpStatus || profile.lmpStatus;
+      if (lmp && lmpStatus !== 'unknown' && lmp !== 'unknown' && lmp !== 'Unknown') {
+        var lmpDate = parseDateValue(lmp);
+        var visitDate = parseDateValue(first.visitDate || first.visit_date || first.timestamp || first.createdAt);
+        if (lmpDate && visitDate) {
+          var days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+          if (days >= 0) return days < EARLY_ANC_MAX_DAYS;
+        }
+      }
+      var gaWeeks = parseGestationalAgeWeeks(first);
+      if (gaWeeks != null) return gaWeeks < EARLY_ANC_MAX_WEEKS;
+      return false;
+    }
+
     function showChartEmpty(id, message) {
       destroyChart(id);
       var el = document.getElementById(id);
@@ -1229,7 +1255,6 @@
         }
 
         // ANC visit-level flags (per patient)
-        var hasEarlyAnc = false;
         var visitCount = visits.length;
         if (visitCount === 0) { m.visits0++; m.noAnc++; }
         else if (visitCount >= 8) m.visits8plus++;
@@ -1241,7 +1266,6 @@
 
         visits.forEach(function(v) {
           var d = v.data || {};
-          if (d.early_anc_visit === true || d.early_anc_visit === 'yes' || d.earlyAncVisit === true) hasEarlyAnc = true;
 
           // GBV suspected (visit-level trend)
           if (d.gbvSuspected === 'yes') {
@@ -1263,6 +1287,8 @@
           // Iron/folic
           if (d.ironFolicAcid === 'Given' || d.folicAcid === 'Given' || (typeof d.treatmentGiven === 'string' && d.treatmentGiven.toLowerCase().includes('folic'))) { /* counted per-patient below */ }
         });
+
+        var hasEarlyAnc = isEarlyAncPatient(patient, visits);
 
         if (hasEarlyAnc) {
           m.earlyAnc++;

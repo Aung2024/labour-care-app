@@ -1098,10 +1098,38 @@
         <strong>${pphCount}</strong> PPH cases
       `;
       
-      // Early ANC analysis
+      // Early ANC analysis (first visit within 14 weeks of LMP)
+      const EARLY_ANC_MAX_WEEKS = 14;
+      const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
+      function isEarlyAncForTownshipReport(patient) {
+        const visits = patient.ancVisits || [];
+        if (!visits.length) return false;
+        const sorted = visits.slice().sort(function(a, b) {
+          const dA = new Date(a.visitDate || a.visit_date || a.timestamp || a.createdAt);
+          const dB = new Date(b.visitDate || b.visit_date || b.timestamp || b.createdAt);
+          return (isNaN(dA) ? 0 : dA) - (isNaN(dB) ? 0 : dB);
+        });
+        const first = sorted[0];
+        const lmp = first.lmp || patient.lmp;
+        const lmpStatus = first.lmpStatus || patient.lmpStatus;
+        if (lmp && lmpStatus !== 'unknown' && lmp !== 'unknown') {
+          const lmpDate = new Date(lmp);
+          const visitDate = new Date(first.visitDate || first.visit_date || first.timestamp || first.createdAt);
+          if (!isNaN(lmpDate.getTime()) && !isNaN(visitDate.getTime())) {
+            const days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+            if (days >= 0) return days < EARLY_ANC_MAX_DAYS;
+          }
+        }
+        const ga = first.gestationalAge != null ? first.gestationalAge : first.gestational_age;
+        if (ga != null && ga !== '') {
+          const weeks = parseFloat(ga);
+          if (!isNaN(weeks) && weeks > 0) return weeks < EARLY_ANC_MAX_WEEKS;
+        }
+        return false;
+      }
       let earlyANCCount = 0;
       reportData.patients.forEach(patient => {
-        if (patient.early_anc_visit === 'Yes' || patient.early_anc_visit === true) {
+        if (isEarlyAncForTownshipReport(patient)) {
           earlyANCCount++;
         }
       });

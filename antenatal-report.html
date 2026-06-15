@@ -1617,13 +1617,43 @@
       return false;
     }
 
+    const EARLY_ANC_MAX_WEEKS = 14;
+    const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
+
+    function computeEarlyAncFromVisits(visits, patient) {
+      if (!visits || !visits.length) return false;
+      const sorted = visits.slice().sort(function(a, b) {
+        const dA = new Date(a.visitDate || a.visit_date || a.timestamp || a.createdAt);
+        const dB = new Date(b.visitDate || b.visit_date || b.timestamp || b.createdAt);
+        return (isNaN(dA) ? 0 : dA) - (isNaN(dB) ? 0 : dB);
+      });
+      const first = sorted[0];
+      if (!first) return false;
+      const lmp = first.lmp || patient?.lmp;
+      const lmpStatus = first.lmpStatus || patient?.lmpStatus;
+      if (!isLMPUnknownForReport(lmp, lmpStatus)) {
+        const lmpDate = new Date(lmp);
+        const visitDate = new Date(first.visitDate || first.visit_date || first.timestamp || first.createdAt);
+        if (!isNaN(lmpDate.getTime()) && !isNaN(visitDate.getTime())) {
+          const days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+          if (days >= 0) return days < EARLY_ANC_MAX_DAYS;
+        }
+      }
+      const ga = first.gestationalAge != null ? first.gestationalAge : first.gestational_age;
+      if (ga != null && ga !== '') {
+        const weeks = parseFloat(ga);
+        if (!isNaN(weeks) && weeks > 0) return weeks < EARLY_ANC_MAX_WEEKS;
+      }
+      return false;
+    }
+
     function populatePatientInfo() {
       document.getElementById("patientName").textContent = currentPatient.name || t('unknown');
       document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
       document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
       document.getElementById("patientPhone").textContent = currentPatient.phone || t('notProvided');
       
-      const hasEarlyANC = antenatalVisits.some(visit => visit.early_anc_visit) || currentPatient.early_anc_visit;
+      const hasEarlyANC = computeEarlyAncFromVisits(antenatalVisits, currentPatient);
       document.getElementById("earlyAncVisit").textContent = hasEarlyANC ? t('earlyAncYes') : t('earlyAncNo');
       
       document.getElementById("totalAncVisits").textContent = antenatalVisits.length;
