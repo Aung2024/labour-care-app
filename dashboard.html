@@ -181,6 +181,12 @@
       line-height: 1.35;
     }
     .hrt-stat-breakdown strong { color: #0f172a; font-weight: 700; }
+    .pnc-outcomes-row { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    @media (min-width: 768px) {
+      .pnc-outcomes-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .hrt-stat-card.primary { border-left-color: #3b82f6; }
+    .hrt-stat-card.primary .stat-icon { background: #eff6ff; color: #3b82f6; }
     .hr-charts-row .chart-card { min-height: 360px; }
 
     /* Offline Banner */
@@ -503,16 +509,30 @@
             <div class="tab-pane fade" id="pane-pnc" role="tabpanel">
               <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-heartbeat me-2" style="color:#8b5cf6;"></i>Postnatal Care Coverage</h5>
               <div class="row mb-4 stat-cards-row">
-                <div class="col-md-4 mb-3"><div class="stat-card primary"><div class="stat-number" id="statUterotonic">0</div><div class="stat-label">Uterotonic in Third Stage</div></div></div>
-                <div class="col-md-4 mb-3"><div class="stat-card success"><div class="stat-number" id="statPnc48h">0</div><div class="stat-label">PNC within 48 Hours</div></div></div>
-                <div class="col-md-4 mb-3"><div class="stat-card warning"><div class="stat-number" id="statPnc42d">0</div><div class="stat-label">PNC within 42 Days</div></div></div>
+                <div class="col-md-3 mb-3"><div class="stat-card primary"><div class="stat-number" id="statPncReceived">0</div><div class="stat-label">Total PNC Received</div></div></div>
+                <div class="col-md-3 mb-3"><div class="stat-card success"><div class="stat-number" id="statPnc48h">0</div><div class="stat-label">PNC within 48 Hours</div></div></div>
+                <div class="col-md-3 mb-3"><div class="stat-card warning"><div class="stat-number" id="statPnc42d">0</div><div class="stat-label">PNC within 42 Days</div></div></div>
+                <div class="col-md-3 mb-3"><div class="stat-card danger"><div class="stat-number" id="statPphCases">0</div><div class="stat-label">Total PPH Cases</div></div></div>
+              </div>
+              <div class="hrt-dashboard pnc-outcomes-row mb-4">
+                <div class="hrt-stat-card success">
+                  <span class="stat-icon"><i class="fas fa-heart-pulse"></i></span>
+                  <span class="stat-value" id="statMaternalOutcomeTotal">0</span>
+                  <span class="stat-label">Maternal Outcome</span>
+                  <span class="hrt-stat-breakdown" id="statMaternalOutcomeBreakdown"></span>
+                </div>
+                <div class="hrt-stat-card primary">
+                  <span class="stat-icon"><i class="fas fa-baby"></i></span>
+                  <span class="stat-value" id="statNewbornOutcomeTotal">0</span>
+                  <span class="stat-label">Newborn Outcome</span>
+                  <span class="hrt-stat-breakdown" id="statNewbornOutcomeBreakdown"></span>
+                </div>
               </div>
               <h5 class="mb-3" style="color:#475569;font-weight:600;"><i class="fas fa-baby me-2" style="color:#ec4899;"></i>Newborn Care</h5>
               <div class="row mb-4 stat-cards-row">
-                <div class="col-md-3 mb-3"><div class="stat-card primary"><div class="stat-number" id="statNbRecords">0</div><div class="stat-label">Newborn Care Records</div></div></div>
-                <div class="col-md-3 mb-3"><div class="stat-card danger"><div class="stat-number" id="statResuscitated">0</div><div class="stat-label">Resuscitated Newborns</div></div></div>
-                <div class="col-md-3 mb-3"><div class="stat-card warning"><div class="stat-number" id="statLowBW">0</div><div class="stat-label">Low Birth Weight (&lt;2kg)</div></div></div>
-                <div class="col-md-3 mb-3"><div class="stat-card success"><div class="stat-number" id="statLowBWKmc">0</div><div class="stat-label">Low BW + KMC</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card primary"><div class="stat-number" id="statNbRecords">0</div><div class="stat-label">Newborn Care Records</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card danger"><div class="stat-number" id="statResuscitated">0</div><div class="stat-label">Resuscitated Newborns</div></div></div>
+                <div class="col-md-4 mb-3"><div class="stat-card warning"><div class="stat-number" id="statLowBW">0</div><div class="stat-label">Low Birth Weight (&lt;2kg)</div></div></div>
               </div>
               <div class="row mb-4">
                 <div class="col-md-6 mb-3"><div class="chart-card"><h5><i class="fas fa-weight"></i>Birth Weight Distribution</h5><div id="chart-birth-weight"></div></div></div>
@@ -976,6 +996,53 @@
       return false;
     }
 
+    function getLatestPncVisitData(pncVisits) {
+      var bestNum = -1;
+      var bestData = null;
+      var bestMs = null;
+      (pncVisits || []).forEach(function (v) {
+        var d = v.data !== undefined ? v.data : v;
+        var n = parseInt(d.visitNumber, 10);
+        if (!isNaN(n) && n > bestNum) {
+          bestNum = n;
+          bestData = d;
+          return;
+        }
+        var ms = parseDateValue(d.visitDate || d.visit_date || d.timestamp || d.createdAt);
+        if (ms && (bestMs == null || ms > bestMs)) {
+          bestMs = ms;
+          if (bestNum < 0) bestData = d;
+        }
+      });
+      return bestData;
+    }
+
+    function normalizeMaternalOutcomeFromPnc(pncData) {
+      if (!pncData) return 'alive';
+      var o = String(pncData.maternalOutcome || pncData.maternal_outcome || '').toLowerCase().trim();
+      if (!o || o === 'alive') return 'alive';
+      if (o === 'dead') {
+        var dt = String(pncData.maternalDeathType || pncData.maternal_death_type || '').toLowerCase();
+        if (dt === 'other' || dt.indexOf('non') !== -1 || dt.indexOf('incidental') !== -1) return 'dead_other';
+        return 'dead_obstetric';
+      }
+      return 'alive';
+    }
+
+    function normalizeNewbornOutcomeFromPnc(pncData) {
+      if (!pncData) return 'alive';
+      var o = String(pncData.newbornOutcome || pncData.newborn_outcome || '').toLowerCase().trim();
+      if (!o || o === 'alive') return 'alive';
+      if (o === 'stillbirth' || o === 'still_birth') return 'stillbirth';
+      if (o === 'neonatal_death' || o === 'neonatal death' || o === 'neonataldeath') return 'neonatal_death';
+      return 'alive';
+    }
+
+    function isPphFromLatestPncVisit(pncData) {
+      if (!pncData) return false;
+      return String(pncData.vaginalBleeding || '').trim() === 'Heavy bleeding';
+    }
+
     function hasRecordData(record) {
       if (!record) return false;
       var data = record.data && typeof record.data === 'object' ? record.data : record;
@@ -1066,13 +1133,16 @@
         severeAnemia: 0, mildAnemia: 0, noAnemia: 0,
         hivPos: 0, syphilisPos: 0, malariaPos: 0, hepBPos: 0, hepCPos: 0,
         homeDel: 0, instDel: 0, uterotonic: 0,
-        pnc48h: 0, pnc42d: 0, nbRecords: 0, resuscitated: 0, lowBW: 0, lowBWKmc: 0,
+        pnc48h: 0, pnc42d: 0, nbRecords: 0, resuscitated: 0, lowBW: 0,
+        pncReceived: 0, pphCases: 0,
+        maternalOutcomeAlive: 0, maternalOutcomeDeadObstetric: 0, maternalOutcomeDeadOther: 0,
+        newbornOutcomeAlive: 0, newbornOutcomeStillbirth: 0, newbornOutcomeNeonatalDeath: 0,
         ancTransfer: 0, labourTransfer: 0, pncTransfer: 0,
         // Status counts aligned with the standard patient status progression.
         statusAnc: 0, statusLabour: 0, statusBirthed: 0, statusPnc: 0, statusRegistered: 0,
         // PNC quality (visit-level aggregation across all patients)
         pncVitB: 0, pncVitA: 0, pncIronFolic: 0, pncContraception: 0, pncDangerSigns: 0, pncVisitsTotal: 0,
-        // Maternal/newborn outcomes
+        // Maternal/newborn outcomes (legacy labour records — kept for other tabs if needed)
         maternalAlive: 0, maternalDead: 0, newbornAlive: 0, newbornDead: 0,
         oxytocinYes: 0, oxytocinNo: 0,
         ttComplete: 0, ttIncomplete: 0,
@@ -1381,8 +1451,6 @@
             else m.bwGroups['>4']++;
             if (bwKg < 2) {
               m.lowBW++;
-              var nb = patient.newbornCare && patient.newbornCare.data ? patient.newbornCare.data : null;
-              if ((birthRec && (isAffirmative(birthRec.kmcProvided) || isAffirmative(birthRec.kangarooMotherCare))) || (nb && (isAffirmative(nb.kmcProvided) || isAffirmative(nb.kangarooMotherCare)))) m.lowBWKmc++;
             }
           } else {
             m.bwGroups['Not recorded']++;
@@ -1441,7 +1509,22 @@
             if (days <= 42) { m.pnc42d++; tspAgg.pnc42d++; }
           }
         }
-        if (pncVisits.length > 0) tspAgg.newPncPatients++;
+        if (pncVisits.length > 0) {
+          tspAgg.newPncPatients++;
+          m.pncReceived++;
+          var latestPnc = getLatestPncVisitData(pncVisits);
+          if (latestPnc) {
+            var matOutcome = normalizeMaternalOutcomeFromPnc(latestPnc);
+            if (matOutcome === 'alive') m.maternalOutcomeAlive++;
+            else if (matOutcome === 'dead_obstetric') m.maternalOutcomeDeadObstetric++;
+            else if (matOutcome === 'dead_other') m.maternalOutcomeDeadOther++;
+            var nbOutcome = normalizeNewbornOutcomeFromPnc(latestPnc);
+            if (nbOutcome === 'alive') m.newbornOutcomeAlive++;
+            else if (nbOutcome === 'stillbirth') m.newbornOutcomeStillbirth++;
+            else if (nbOutcome === 'neonatal_death') m.newbornOutcomeNeonatalDeath++;
+            if (isPphFromLatestPncVisit(latestPnc)) m.pphCases++;
+          }
+        }
 
         // Transfers
         if (patient.transferRecord) {
@@ -1538,10 +1621,25 @@
 
       setTextOrNoRecords('statTotalDel', (m.homeDel || 0) + (m.instDel || 0));
       setTextOrNoRecords('statHomeDel', m.homeDel); setTextOrNoRecords('statInstDel', m.instDel);
-      setTextOrNoRecords('statUterotonic', m.uterotonic);
+      setTextOrNoRecords('statPncReceived', m.pncReceived);
+      setTextOrNoRecords('statPphCases', m.pphCases);
       setTextOrNoRecords('statPnc48h', m.pnc48h); setTextOrNoRecords('statPnc42d', m.pnc42d);
       setTextOrNoRecords('statNbRecords', m.nbRecords); setTextOrNoRecords('statResuscitated', m.resuscitated);
-      setTextOrNoRecords('statLowBW', m.lowBW); setTextOrNoRecords('statLowBWKmc', m.lowBWKmc);
+      setTextOrNoRecords('statLowBW', m.lowBW);
+      var matTotal = (m.maternalOutcomeAlive || 0) + (m.maternalOutcomeDeadObstetric || 0) + (m.maternalOutcomeDeadOther || 0);
+      var nbTotal = (m.newbornOutcomeAlive || 0) + (m.newbornOutcomeStillbirth || 0) + (m.newbornOutcomeNeonatalDeath || 0);
+      setText('statMaternalOutcomeTotal', matTotal);
+      setText('statNewbornOutcomeTotal', nbTotal);
+      var matBreakEl = document.getElementById('statMaternalOutcomeBreakdown');
+      if (matBreakEl) {
+        matBreakEl.innerHTML = 'Alive: <strong>' + (m.maternalOutcomeAlive || 0) + '</strong> · Obstetric death: <strong>' +
+          (m.maternalOutcomeDeadObstetric || 0) + '</strong> · Other death: <strong>' + (m.maternalOutcomeDeadOther || 0) + '</strong>';
+      }
+      var nbBreakEl = document.getElementById('statNewbornOutcomeBreakdown');
+      if (nbBreakEl) {
+        nbBreakEl.innerHTML = 'Alive: <strong>' + (m.newbornOutcomeAlive || 0) + '</strong> · Stillbirth: <strong>' +
+          (m.newbornOutcomeStillbirth || 0) + '</strong> · Neonatal death: <strong>' + (m.newbornOutcomeNeonatalDeath || 0) + '</strong>';
+      }
       setTextOrNoRecords('statAncTransfer', m.ancTransfer); setTextOrNoRecords('statLabourTransfer', m.labourTransfer);
       setTextOrNoRecords('statPncTransfer', m.pncTransfer);
 
@@ -1992,12 +2090,17 @@
       if (dsEntries.length) {
         createChart('chart-danger-signs', Object.assign({}, chartDefaults, {
           chart: { type: 'bar', height: 300, toolbar: { show: false } },
-          series: [{ name: 'Count', data: dsEntries.map(function(e) { return e[1]; }) }],
-          xaxis: { categories: dsEntries.map(function(e) { return e[0].replace(/_/g, ' '); }) },
+          series: [{ name: 'Patients', data: dsEntries.map(function(e) { return e[1]; }) }],
+          xaxis: {
+            categories: dsEntries.map(function(e) { return e[0].replace(/_/g, ' '); }),
+            labels: { rotate: -25, trim: true, hideOverlappingLabels: true, style: { fontSize: '10px' } }
+          },
+          yaxis: Object.assign({ title: { text: 'Patients' } }, dashboardIntegerAxis()),
           colors: [COLORS.red],
-          plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
-          title: { text: 'Danger Signs Prevalence' },
-          dataLabels: { enabled: true }
+          plotOptions: { bar: { borderRadius: 6, columnWidth: '52%' } },
+          title: { text: 'Danger Signs Prevalence (latest PNC visit)' },
+          dataLabels: { enabled: true, formatter: function (val) { return Math.round(val); } },
+          legend: { show: false }
         }));
       } else {
         destroyChart('chart-danger-signs');

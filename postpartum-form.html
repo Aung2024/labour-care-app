@@ -683,6 +683,56 @@
           </div>
         </div>
 
+        <!-- Maternal & Newborn Outcomes -->
+        <div class="form-section">
+          <h4><i class="fas fa-heart-pulse"></i><span class="lang-text" data-en="Maternal &amp; Newborn Outcomes" data-mm="မိခင်နှင့် newborn ရလဒ်">Maternal &amp; Newborn Outcomes</span></h4>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label lang-text" data-en="Maternal Outcome *" data-mm="မိခင် ရလဒ် *">Maternal Outcome *</label>
+              <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="maternalOutcome" id="maternalOutcomeAlive" value="alive" onchange="onMaternalOutcomeChange()">
+                  <label class="form-check-label lang-text" for="maternalOutcomeAlive" data-en="Alive" data-mm="အသက်ရှင်">Alive</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="maternalOutcome" id="maternalOutcomeDead" value="dead" onchange="onMaternalOutcomeChange()">
+                  <label class="form-check-label lang-text" for="maternalOutcomeDead" data-en="Dead" data-mm="သေဆုံး">Dead</label>
+                </div>
+              </div>
+              <div id="maternalDeathTypeGroup" class="mt-3 ps-2 border-start border-2 border-danger" style="display: none;">
+                <label class="form-label lang-text" data-en="Type of maternal death *" data-mm="မိခင် သေဆုံးရခြင်း အမျိုးအစား *">Type of maternal death *</label>
+                <div class="d-flex flex-column gap-2">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="maternalDeathType" id="maternalDeathObstetric" value="obstetric">
+                    <label class="form-check-label lang-text" for="maternalDeathObstetric" data-en="Obstetric-related (Maternal) Death" data-mm="Obstetric-related (Maternal) Death">Obstetric-related (Maternal) Death</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="maternalDeathType" id="maternalDeathOther" value="other">
+                    <label class="form-check-label lang-text" for="maternalDeathOther" data-en="Other (Non-obstetric/Incidental) Death" data-mm="Other (Non-obstetric/Incidental) Death">Other (Non-obstetric/Incidental) Death</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label lang-text" data-en="Newborn Outcome *" data-mm="Newborn ရလဒ် *">Newborn Outcome *</label>
+              <div class="d-flex flex-column gap-2">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="newbornOutcome" id="newbornOutcomeAlive" value="alive">
+                  <label class="form-check-label lang-text" for="newbornOutcomeAlive" data-en="Alive" data-mm="အသက်ရှင်">Alive</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="newbornOutcome" id="newbornOutcomeStillbirth" value="stillbirth">
+                  <label class="form-check-label lang-text" for="newbornOutcomeStillbirth" data-en="Stillbirth" data-mm="Stillbirth">Stillbirth</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="newbornOutcome" id="newbornOutcomeNeonatalDeath" value="neonatal_death">
+                  <label class="form-check-label lang-text" for="newbornOutcomeNeonatalDeath" data-en="Neonatal death" data-mm="Neonatal death">Neonatal death</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Vital Signs -->
         <div class="form-section">
           <h4><i class="fas fa-heartbeat"></i><span class="lang-text" data-en="Vital Signs" data-mm="Vital Signs">Vital Signs</span></h4>
@@ -1523,6 +1573,7 @@
           document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
           const today = new Date().toISOString().split('T')[0];
           document.getElementById('visitDate').value = today;
+          setDefaultPncOutcomesAlive();
           showLoading(false);
           return;
         }
@@ -1575,12 +1626,153 @@
         
         const visitNumber = Math.min(visitsSnapshot.size + 1, PNC_SCHEDULE_VISIT_COUNT);
         document.getElementById('visitNumber').value = visitNumber;
-        
       } catch (error) {
         console.error('Error calculating visit number:', error);
         document.getElementById('visitNumber').value = 1;
       }
+      await loadFromPreviousPncVisit();
       updatePncVisitSchedule();
+    }
+
+    function onMaternalOutcomeChange() {
+      var dead = document.querySelector('input[name="maternalOutcome"]:checked');
+      var group = document.getElementById('maternalDeathTypeGroup');
+      if (!group) return;
+      var isDead = dead && dead.value === 'dead';
+      group.style.display = isDead ? '' : 'none';
+      if (!isDead) {
+        document.querySelectorAll('input[name="maternalDeathType"]').forEach(function (el) { el.checked = false; });
+      }
+    }
+
+    function setDefaultPncOutcomesAlive() {
+      var aliveM = document.getElementById('maternalOutcomeAlive');
+      var aliveN = document.getElementById('newbornOutcomeAlive');
+      if (aliveM) aliveM.checked = true;
+      if (aliveN) aliveN.checked = true;
+      onMaternalOutcomeChange();
+    }
+
+    function setYesNoSelectValue(id, value) {
+      var el = document.getElementById(id);
+      if (!el || value == null || value === '') return;
+      el.value = value === true || value === 'Yes' ? 'Yes' : (value === false || value === 'No' ? 'No' : value);
+    }
+
+    function applyPncVisitDataToForm(data) {
+      if (!data) return;
+      var setVal = function (id, val) {
+        var el = document.getElementById(id);
+        if (el && val != null && val !== '') el.value = val;
+      };
+      var setCheck = function (id, val) { var el = document.getElementById(id); if (el) el.checked = !!val; };
+
+      setVal('temperature', data.temperature);
+      if (data.temperatureUnit) document.getElementById('temperatureUnit').value = data.temperatureUnit;
+      setVal('systolicBP', data.systolicBP);
+      setVal('diastolicBP', data.diastolicBP);
+      setVal('pulseRate', data.pulseRate);
+      setYesNoSelectValue('breastEngorgement', data.breastEngorgement);
+      setVal('nippleCondition', data.nippleCondition);
+      setYesNoSelectValue('breastMilkProduction', data.breastMilkProduction);
+      setVal('uterusInvolution', data.uterusInvolution);
+      setVal('vaginalBleeding', data.vaginalBleeding);
+      setVal('dischargeSmell', data.dischargeSmell);
+      setVal('episiotomyHealing', data.episiotomyHealing);
+      setVal('urination', data.urination);
+      setYesNoSelectValue('constipation', data.constipation);
+      setVal('mentalHealthAssessment', data.mentalHealthAssessment);
+      setCheck('vitaminBComplex', data.vitaminBComplex);
+      setCheck('vitaminA', data.vitaminA);
+      setCheck('ironFolic', data.ironFolic);
+      setYesNoSelectValue('contraception', data.contraception);
+      if (Array.isArray(data.contraceptiveMethods)) {
+        document.querySelectorAll('input[name="contraceptiveMethod"]').forEach(function (cb) {
+          cb.checked = data.contraceptiveMethods.indexOf(cb.value) !== -1;
+        });
+      }
+      var ds = data.dangerSigns || {};
+      setCheck('heavyBleeding', ds.heavyBleeding);
+      setCheck('severeHeadache', ds.severeHeadache);
+      setCheck('convulsions', ds.convulsions);
+      setCheck('breathingProblems', ds.breathingProblems);
+      setCheck('feverFatigue', ds.feverFatigue);
+      setCheck('breastEngorgementDanger', ds.breastEngorgementDanger);
+      setCheck('urinaryProblems', ds.urinaryProblems);
+      setCheck('woundInflammation', ds.woundInflammation);
+      setCheck('foulDischarge', ds.foulDischarge);
+      setVal('otherSymptoms', data.otherSymptoms);
+      setVal('treatment', data.treatment);
+      setVal('clinicalNotes', data.clinicalNotes);
+
+      var mo = (data.maternalOutcome || data.maternal_outcome || 'alive').toLowerCase();
+      var moEl = document.querySelector('input[name="maternalOutcome"][value="' + mo + '"]');
+      if (moEl) moEl.checked = true;
+      else document.getElementById('maternalOutcomeAlive').checked = true;
+      onMaternalOutcomeChange();
+      if (mo === 'dead') {
+        var dt = (data.maternalDeathType || data.maternal_death_type || '').toLowerCase();
+        var dtEl = document.querySelector('input[name="maternalDeathType"][value="' + dt + '"]');
+        if (dtEl) dtEl.checked = true;
+      }
+      var no = (data.newbornOutcome || data.newborn_outcome || 'alive').toLowerCase();
+      var noEl = document.querySelector('input[name="newbornOutcome"][value="' + no + '"]');
+      if (noEl) noEl.checked = true;
+      else document.getElementById('newbornOutcomeAlive').checked = true;
+
+      checkHeavyBleeding();
+      evaluateVitalAlerts();
+    }
+
+    async function loadFromPreviousPncVisit() {
+      if (!currentPatient || !currentPatient.id) {
+        setDefaultPncOutcomesAlive();
+        return;
+      }
+      try {
+        var db = firebase.firestore();
+        var snap = await db.collection('patients').doc(currentPatient.id)
+          .collection('postpartum_visits').orderBy('visitDate', 'desc').limit(20).get();
+        var prev = null;
+        var bestNum = 0;
+        snap.docs.forEach(function (doc) {
+          var d = doc.data() || {};
+          var n = parseInt(d.visitNumber, 10);
+          if (!isNaN(n) && n >= bestNum) {
+            bestNum = n;
+            prev = d;
+          }
+        });
+        if (prev) {
+          applyPncVisitDataToForm(prev);
+        } else {
+          setDefaultPncOutcomesAlive();
+        }
+      } catch (e) {
+        console.warn('loadFromPreviousPncVisit', e);
+        setDefaultPncOutcomesAlive();
+      }
+    }
+
+    function validatePncOutcomes() {
+      var mo = document.querySelector('input[name="maternalOutcome"]:checked');
+      var no = document.querySelector('input[name="newbornOutcome"]:checked');
+      if (!mo) {
+        alert(currentLanguage === 'mm' ? 'မိခင် ရလဒ် ရွေးချယ်ပါ။' : 'Please select Maternal Outcome.');
+        return false;
+      }
+      if (!no) {
+        alert(currentLanguage === 'mm' ? 'Newborn ရလဒ် ရွေးချယ်ပါ။' : 'Please select Newborn Outcome.');
+        return false;
+      }
+      if (mo.value === 'dead') {
+        var dt = document.querySelector('input[name="maternalDeathType"]:checked');
+        if (!dt) {
+          alert(currentLanguage === 'mm' ? 'မိခင် သေဆုံးရခြင်း အမျိုးအစား ရွေးချယ်ပါ။' : 'Please select the type of maternal death.');
+          return false;
+        }
+      }
+      return true;
     }
 
     // Load delivery date/time from shared anchor (newborn care or 1st PNC), then fallbacks
@@ -1776,6 +1968,8 @@
     document.getElementById('postpartumForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
+      if (!validatePncOutcomes()) return;
+
       try {
         // Get contraceptive methods
         const contraceptiveMethods = [];
@@ -1828,6 +2022,11 @@
           treatment: document.getElementById('treatment').value,
           clinicalNotes: document.getElementById('clinicalNotes').value,
           nextVisitDate: document.getElementById('nextVisitDate').value || null,
+          maternalOutcome: document.querySelector('input[name="maternalOutcome"]:checked').value,
+          maternalDeathType: document.querySelector('input[name="maternalOutcome"]:checked').value === 'dead'
+            ? (document.querySelector('input[name="maternalDeathType"]:checked') || {}).value || null
+            : null,
+          newbornOutcome: document.querySelector('input[name="newbornOutcome"]:checked').value,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser.uid,
           _needsVisitNumber: shouldDeferVisitNumber,
