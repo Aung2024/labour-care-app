@@ -23,6 +23,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/birth-delivery-anchor.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -242,12 +243,85 @@
       border-left: 3px solid var(--primary-color);
     }
 
+    .form-hint {
+      display: block;
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+      line-height: 1.35;
+    }
+
+    .next-visit-readonly {
+      background: #f8fafc;
+      cursor: not-allowed;
+    }
+
+    .nb-schedule-panel {
+      background: #f0fdf4;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      margin-top: 0.75rem;
+    }
+
+    .nb-schedule-panel h6 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #065f46;
+      margin-bottom: 0.65rem;
+    }
+
+    .nb-schedule-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    .nb-schedule-table th,
+    .nb-schedule-table td {
+      border: 1px solid #d1fae5;
+      padding: 0.45rem 0.55rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .nb-schedule-table th {
+      background: rgba(16, 185, 129, 0.12);
+      color: #065f46;
+      font-weight: 700;
+    }
+
+    .nb-schedule-table tr.current-visit td {
+      background: rgba(16, 185, 129, 0.18);
+      font-weight: 600;
+    }
+
+    .nb-schedule-table tr.next-visit td {
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .nb-next-visit-block {
+      padding: 1rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+    }
+
     @media (max-width: 768px) {
       .form-section {
         margin-left: 0.75rem;
         margin-right: 0.75rem;
         padding: 1.5rem 1.25rem;
         border-radius: 12px;
+      }
+
+      .nb-schedule-table {
+        font-size: 0.78rem;
+      }
+
+      .nb-schedule-table th,
+      .nb-schedule-table td {
+        padding: 0.4rem 0.45rem;
       }
     }
   </style>
@@ -326,11 +400,18 @@
               <span class="lang-text" data-en="Birth Time" data-mm="မွေးဖွားသည့် အချိန်">Birth Time</span>
             </label>
             <div class="d-flex gap-2">
-              <input type="datetime-local" class="form-control" id="birth_time" name="birth_time">
-              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setCurrentDateTime('birth_time')">
+              <input type="datetime-local" class="form-control" id="birth_time" name="birth_time" onchange="onNewbornBirthTimeChanged()" oninput="onNewbornBirthTimeChanged()">
+              <button type="button" id="birthTimeNowBtn" class="btn btn-outline-secondary btn-sm" onclick="setCurrentDateTime('birth_time')">
                 <i class="fas fa-clock"></i> <span class="lang-text" data-en="Now" data-mm="ယခု">Now</span>
               </button>
             </div>
+            <small class="form-hint lang-text" data-en="Visit 1: enter here or on 1st PNC visit. Locked once saved on either form." data-mm="အကြိမ် ၁ — PNC ပထမအကြိမ် (သို့) ဤနေရာတွင် ထည့်ပါ။ သိမ်းပြီးပါက ပြင်ဆင်၍မရပါ။">Visit 1: enter here or on 1st PNC visit. Locked once saved on either form.</small>
+          </div>
+          <div class="col-md-6">
+            <label for="visit_number" class="form-label">
+              <span class="lang-text" data-en="Visit Number" data-mm="အကြိမ်အရေအတွက်">Visit Number</span>
+            </label>
+            <input type="number" class="form-control" id="visit_number" name="visit_number" min="1" max="4" readonly>
           </div>
         </div>
 
@@ -623,20 +704,42 @@
           </div>
         </div>
 
-        <!-- Follow-up Appointment Date -->
-        <div class="mb-4">
-          <label for="follow_up_appointment_date" class="form-label">
-            <span class="lang-text" data-en="Follow-up Date (mm/dd/yy)" data-mm="ပြန်ပြရမည့် ရက်စွဲ (လ/ရက်စွဲ/ခုနှစ်)">Follow-up Date (mm/dd/yy)</span>
+        <!-- Newborn Follow-up Schedule -->
+        <div class="mb-4 nb-next-visit-block">
+          <label class="form-label fw-bold mb-2">
+            <span class="lang-text" data-en="Follow-up schedule" data-mm="ပြန်ပြရမည့် အချိန်ဇယား">Follow-up schedule</span>
           </label>
-          <div class="d-flex gap-2">
-            <input type="date" class="form-control" id="follow_up_appointment_date" name="follow_up_appointment_date">
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setToday('follow_up_appointment_date')">
-              <i class="fas fa-calendar"></i> <span class="lang-text" data-en="Today" data-mm="ယနေ့">Today</span>
-            </button>
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <label for="follow_up_appointment_date" class="form-label lang-text" data-en="Next follow-up date (auto-calculated)" data-mm="နောက်တစ်ကြိမ် newborn care ပြန်ပြရက်">Next follow-up date (auto-calculated)</label>
+              <div class="d-flex gap-2">
+                <input type="date" class="form-control next-visit-readonly" id="follow_up_appointment_date" name="follow_up_appointment_date" readonly>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="followUpTodayBtn" style="display: none;" onclick="setToday('follow_up_appointment_date')">
+                  <i class="fas fa-calendar"></i> <span class="lang-text" data-en="Today" data-mm="ယနေ့">Today</span>
+                </button>
+              </div>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="followUpManualOverride" onchange="toggleNewbornFollowUpOverride()">
+                <label class="form-check-label lang-text" for="followUpManualOverride" data-en="Adjust next visit date manually" data-mm="ပြန်ပြရက်ကို စိတ်ကြိုက်ပြင်ဆင်မည်">Adjust next visit date manually</label>
+              </div>
+              <small id="newbornScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on birth date and time." data-mm="မွေးဖွားသည့် ရက်စွဲနှင့် အချိန် အခြေခံ၍ တွက်ချက်ထားသည်။">Based on birth date and time.</small>
+            </div>
           </div>
-          <div class="info-alert mt-2">
-            <i class="fas fa-info-circle me-2"></i>
-            <span class="lang-text" data-en="Link with calendar for follow-up reminder." data-mm="နောက်တစ်ကြိမ် ပြန်ပြရန် ရက်ချိန်းပေးပြီး ကယ်လင်ဒါနှင့် ချိတ်ဆက်ရန်။">Link with calendar for follow-up reminder.</span>
+
+          <div id="newbornSchedulePanel" class="nb-schedule-panel mt-3" style="display: none;">
+            <h6><i class="fas fa-calendar-check me-2"></i><span class="lang-text" data-en="Recommended newborn care schedule (from birth date)" data-mm="အကြံပြု newborn care ၄-ကြိမ် အချိန်ဇယား">Recommended newborn care schedule (from birth date)</span></h6>
+            <div class="table-responsive">
+              <table class="nb-schedule-table">
+                <thead>
+                  <tr>
+                    <th class="lang-text" data-en="Visit" data-mm="အကြိမ်">Visit</th>
+                    <th class="lang-text" data-en="Timing after birth" data-mm="မွေးပြီး ကာလ">Timing after birth</th>
+                    <th class="lang-text" data-en="Recommended date" data-mm="အကြံပြုရက်">Recommended date</th>
+                  </tr>
+                </thead>
+                <tbody id="newbornScheduleBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -712,6 +815,186 @@
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
+    let currentLanguage = document.documentElement.getAttribute('data-lang') || 'mm';
+    let deliveryAnchorLocked = false;
+
+    window.onAppLanguageChange = function (lang) {
+      currentLanguage = lang;
+      updateNewbornVisitSchedule();
+    };
+
+    const NEWBORN_SCHEDULE_VISIT_COUNT = window.BirthDeliveryAnchor
+      ? BirthDeliveryAnchor.CARE_SCHEDULE_VISIT_COUNT
+      : 4;
+
+    function formatDisplayDate(iso) {
+      if (window.BirthDeliveryAnchor) {
+        return BirthDeliveryAnchor.formatDisplayDate(iso, currentLanguage);
+      }
+      return iso || '—';
+    }
+
+    function getBirthDateStrForSchedule() {
+      const dt = document.getElementById('birth_time')?.value;
+      if (!dt) return null;
+      return window.BirthDeliveryAnchor
+        ? BirthDeliveryAnchor.getBirthDateStrFromDatetimeLocal(dt)
+        : dt.split('T')[0];
+    }
+
+    function inferNewbornVisitNumberFromDays(birthTimeStr) {
+      if (!birthTimeStr) return 1;
+      const birth = new Date(birthTimeStr);
+      if (isNaN(birth.getTime())) return 1;
+      const parseDay = window.BirthDeliveryAnchor
+        ? BirthDeliveryAnchor.parseDateOnlyLocal.bind(BirthDeliveryAnchor)
+        : function (d) { return d; };
+      const today = parseDay(new Date());
+      const birthDay = parseDay(birth);
+      const days = Math.floor((today - birthDay) / 86400000);
+      if (days >= 42) return 4;
+      if (days >= 14) return 3;
+      if (days >= 3) return 2;
+      return 1;
+    }
+
+    function applyNewbornVisitNumber(storedVisitNumber) {
+      const birthTimeStr = document.getElementById('birth_time')?.value;
+      const inferred = inferNewbornVisitNumberFromDays(birthTimeStr);
+      const stored = parseInt(storedVisitNumber, 10);
+      const visitNum = stored >= 1 && stored <= NEWBORN_SCHEDULE_VISIT_COUNT
+        ? Math.max(stored, inferred)
+        : inferred;
+      document.getElementById('visit_number').value = visitNum;
+      applyBirthTimeLock();
+    }
+
+    function getRecommendedNewbornDateForVisit(birthDateStr, targetVisitNumber) {
+      if (window.BirthDeliveryAnchor) {
+        return BirthDeliveryAnchor.getRecommendedCareDateForVisit(birthDateStr, targetVisitNumber);
+      }
+      return null;
+    }
+
+    async function applySharedDeliveryAnchor() {
+      if (!patientId || !window.BirthDeliveryAnchor) return;
+      const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(patientId);
+      const input = document.getElementById('birth_time');
+      if (!input) return;
+      if (anchor.datetimeLocal) {
+        input.value = anchor.datetimeLocal;
+        if (anchor.locked) deliveryAnchorLocked = true;
+      }
+      applyBirthTimeLock();
+      updateNewbornVisitSchedule();
+    }
+
+    function buildNewbornScheduleRows(birthDateStr) {
+      const en = currentLanguage === 'en';
+      return [
+        { visit: 1, periodEn: 'First newborn care visit (record birth date & time)', periodMm: 'ပထမအကြိမ် newborn care (မွေးဖွားရက်/အချိန် မှတ်ရန်)', date: null },
+        { visit: 2, periodEn: '3 days after birth', periodMm: 'မွေးပြီး ၃ ရက်', date: getRecommendedNewbornDateForVisit(birthDateStr, 2) },
+        { visit: 3, periodEn: '14 days after birth', periodMm: 'မွေးပြီး ၁၄ ရက်', date: getRecommendedNewbornDateForVisit(birthDateStr, 3) },
+        { visit: 4, periodEn: '42 days after birth', periodMm: 'မွေးပြီး ၄၂ ရက်', date: getRecommendedNewbornDateForVisit(birthDateStr, 4) }
+      ].map(function (row) {
+        return {
+          visit: row.visit,
+          period: en ? row.periodEn : row.periodMm,
+          dateLabel: row.visit === 1
+            ? (en ? 'At first newborn care visit' : 'ပထမအကြိမ် newborn care တွင်')
+            : (row.date ? formatDisplayDate(row.date) : '—')
+        };
+      });
+    }
+
+    function toggleNewbornFollowUpOverride() {
+      const input = document.getElementById('follow_up_appointment_date');
+      const override = document.getElementById('followUpManualOverride');
+      const todayBtn = document.getElementById('followUpTodayBtn');
+      if (!input || !override) return;
+      if (override.checked) {
+        input.removeAttribute('readonly');
+        input.classList.remove('next-visit-readonly');
+        if (todayBtn) todayBtn.style.display = '';
+      } else {
+        input.setAttribute('readonly', 'readonly');
+        input.classList.add('next-visit-readonly');
+        if (todayBtn) todayBtn.style.display = 'none';
+        updateNewbornVisitSchedule();
+      }
+    }
+
+    function updateNewbornVisitSchedule() {
+      const panel = document.getElementById('newbornSchedulePanel');
+      const body = document.getElementById('newbornScheduleBody');
+      const nextInput = document.getElementById('follow_up_appointment_date');
+      const hint = document.getElementById('newbornScheduleHint');
+      const manualOverride = document.getElementById('followUpManualOverride');
+      if (!panel || !body || !nextInput) return;
+
+      const birthDateStr = getBirthDateStrForSchedule();
+      const currentVisit = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
+      const nextVisitNum = currentVisit + 1;
+
+      if (!birthDateStr) {
+        panel.style.display = 'none';
+        if (!manualOverride?.checked) nextInput.value = '';
+        if (hint) {
+          hint.textContent = currentLanguage === 'en'
+            ? 'Enter birth date & time to calculate the 4-visit newborn care schedule.'
+            : 'မွေးဖွားသည့် ရက်စွဲနှင့် အချိန် ထည့်ပါ — newborn care ၄-ကြိမ် အချိန်ဇယား တွက်ပေးမည်။';
+        }
+        return;
+      }
+
+      panel.style.display = 'block';
+      const rows = buildNewbornScheduleRows(birthDateStr);
+      body.innerHTML = rows.map(function (row) {
+        const classes = [];
+        if (row.visit === currentVisit) classes.push('current-visit');
+        if (row.visit === nextVisitNum) classes.push('next-visit');
+        const visitLabel = currentLanguage === 'en' ? ('Visit ' + row.visit) : ('အကြိမ် ' + row.visit);
+        return '<tr class="' + classes.join(' ') + '"><td>' + visitLabel + '</td><td>' + row.period + '</td><td>' + row.dateLabel + '</td></tr>';
+      }).join('');
+
+      const recommendedNext = nextVisitNum <= NEWBORN_SCHEDULE_VISIT_COUNT
+        ? getRecommendedNewbornDateForVisit(birthDateStr, nextVisitNum)
+        : null;
+      if (!manualOverride?.checked) {
+        nextInput.value = recommendedNext || '';
+      }
+
+      if (hint) {
+        if (currentVisit >= NEWBORN_SCHEDULE_VISIT_COUNT) {
+          hint.textContent = currentLanguage === 'en'
+            ? 'All 4 recommended newborn care visits are scheduled.'
+            : 'အကြံပြု newborn care ၄-ကြိမ် ပြည့်ပါပြီ။';
+        } else if (recommendedNext) {
+          hint.textContent = currentLanguage === 'en'
+            ? ('Visit ' + nextVisitNum + ' recommended on ' + formatDisplayDate(recommendedNext) + '.')
+            : (nextVisitNum + ' အကြိမ် newborn care — ' + formatDisplayDate(recommendedNext) + ' တွင် အကြံပြုထားသည်။');
+        } else if (currentVisit === 1) {
+          hint.textContent = currentLanguage === 'en'
+            ? 'Visit 1 is recorded at this visit; schedule starts from birth date.'
+            : 'အကြိမ် ၁ ကို ယခုအကြိမ်တွင် မှတ်ရမည်။ အချိန်ဇယားသည် မွေးဖွားရက်မှ စတင်သည်။';
+        }
+      }
+    }
+
+    function onNewbornBirthTimeChanged() {
+      applyNewbornVisitNumber(document.getElementById('visit_number')?.value);
+      updateNewbornVisitSchedule();
+    }
+
+    function applyBirthTimeLock() {
+      const input = document.getElementById('birth_time');
+      const nowBtn = document.getElementById('birthTimeNowBtn');
+      if (!input) return;
+      const shouldLock = deliveryAnchorLocked && !!input.value;
+      input.readOnly = shouldLock;
+      input.classList.toggle('next-visit-readonly', shouldLock);
+      if (nowBtn) nowBtn.style.display = shouldLock ? 'none' : '';
+    }
 
     // Get patient ID from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -795,6 +1078,8 @@
           }
           document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
           applyAutoBabyName();
+          applyNewbornVisitNumber(1);
+          updateNewbornVisitSchedule();
           return;
         }
 
@@ -841,7 +1126,12 @@
             applyAutoBabyName();
           }
           if (data.gender) document.getElementById('gender').value = data.gender;
-          if (data.birth_time) document.getElementById('birth_time').value = data.birth_time;
+          if (data.birth_time) {
+            document.getElementById('birth_time').value = data.birth_time;
+            deliveryAnchorLocked = true;
+          }
+          applyNewbornVisitNumber(data.visit_number);
+          await applySharedDeliveryAnchor();
           if (data.birth_length_cm) document.getElementById('birth_length_cm').value = data.birth_length_cm;
           if (data.head_circumference_cm) document.getElementById('head_circumference_cm').value = data.head_circumference_cm;
           if (data.birthplace) document.getElementById('birthplace').value = data.birthplace;
@@ -895,12 +1185,23 @@
           // Other fields
           if (data.eye_care_status) document.getElementById('eye_care_status').value = data.eye_care_status;
           if (data.follow_up_appointment_date) document.getElementById('follow_up_appointment_date').value = data.follow_up_appointment_date;
+          if (data.follow_up_manual_override) {
+            document.getElementById('followUpManualOverride').checked = true;
+            toggleNewbornFollowUpOverride();
+          }
           if (data.clinical_notes) document.getElementById('clinical_notes').value = data.clinical_notes;
           if (data.cause_of_death) document.getElementById('cause_of_death').value = data.cause_of_death;
           // Check alerts
           checkTemperatureAlert();
           checkHeartRateAlert();
           checkRespirationAlert();
+          applyBirthTimeLock();
+          updateNewbornVisitSchedule();
+        } else {
+          applyNewbornVisitNumber(1);
+          await applySharedDeliveryAnchor();
+          applyBirthTimeLock();
+          updateNewbornVisitSchedule();
         }
       } catch (error) {
         console.error('Error loading existing newborn care data:', error);
@@ -927,6 +1228,7 @@
           baby_name: generateBabyName(currentPatient && currentPatient.name),
           gender: document.getElementById('gender').value || null,
           birth_time: document.getElementById('birth_time').value || null,
+          visit_number: parseInt(document.getElementById('visit_number').value, 10) || 1,
           birth_length_cm: document.getElementById('birth_length_cm').value ? parseFloat(document.getElementById('birth_length_cm').value) : null,
           head_circumference_cm: document.getElementById('head_circumference_cm').value ? parseFloat(document.getElementById('head_circumference_cm').value) : null,
           birthplace: document.getElementById('birthplace').value || null,
@@ -948,6 +1250,7 @@
           bcg: document.getElementById('bcg').checked,
           exclusive_breastfeeding_on_demand: document.getElementById('exclusive_breastfeeding_on_demand').checked,
           follow_up_appointment_date: document.getElementById('follow_up_appointment_date').value || null,
+          follow_up_manual_override: document.getElementById('followUpManualOverride').checked,
           clinical_notes: document.getElementById('clinical_notes').value || null,
           outcome: document.querySelector('input[name="outcome"]:checked')?.value || null,
           cause_of_death: document.getElementById('cause_of_death').value || null,
@@ -1002,9 +1305,18 @@
             }
             await firebase.firestore().collection('patients').doc(patientId).update(patientPatch);
 
+            if (cloudData.birth_time && window.BirthDeliveryAnchor) {
+              await BirthDeliveryAnchor.syncDatetimeToNewbornCare(patientId, cloudData.birth_time);
+            }
+
             return { cloudId };
           }
         );
+
+        if (formData.birth_time) {
+          deliveryAnchorLocked = true;
+          applyBirthTimeLock();
+        }
 
         var nbcMsg = saveResult.cloud
           ? 'Newborn care saved and synced to cloud!'
@@ -1108,6 +1420,9 @@
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const dateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
       document.getElementById(fieldId).value = dateTime;
+      if (fieldId === 'birth_time') {
+        onNewbornBirthTimeChanged();
+      }
     }
 
     function showSuccessMessage(message) {

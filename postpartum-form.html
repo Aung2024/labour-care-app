@@ -23,6 +23,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/birth-delivery-anchor.js"></script>
   <style>
     :root {
       --primary-color: #7c3aed;
@@ -490,7 +491,7 @@
       .pnc-next-visit-block {
         padding: 0.85rem;
       }
-    }
+
       .header-section {
         padding: 1.5rem 0;
       }
@@ -626,7 +627,7 @@
           <div class="row g-3">
             <div class="col-md-6 col-sm-6">
               <label for="visitDate" class="form-label lang-text" data-en="Visit Date (mm/dd/yyyy)" data-mm="ပြသသည့် ရက်စွဲ (လ/ရက်စွဲ/ခုနှစ်)">Visit Date (mm/dd/yyyy) *</label>
-              <input type="date" class="form-control" id="visitDate" required onchange="onPncVisitDateChanged()">
+              <input type="date" class="form-control" id="visitDate" required onchange="calculatePostpartumPeriod()">
             </div>
             <div class="col-md-6 col-sm-6">
               <label for="visitNumber" class="form-label lang-text" data-en="Visit Number" data-mm="အကြိမ်အရေအတွက်">Visit Number</label>
@@ -635,7 +636,7 @@
             <div class="col-md-6 col-sm-6">
               <label for="deliveredDateTime" class="form-label lang-text" data-en="Delivered Date & Time" data-mm="မွေးဖွားသည့် ရက်စွဲနှင့် အချိန်">Delivered Date & Time</label>
               <input type="datetime-local" class="form-control" id="deliveredDateTime" onchange="onPncDeliveryChanged()" oninput="onPncDeliveryChanged()">
-              <small class="form-hint lang-text" data-en="Visit 1: enter birth date and time here. Used for the 4-visit PNC schedule." data-mm="အကြိမ် ၁ — မွေးဖွားသည့် ရက်စွဲနှင့် အချိန် ထည့်ပါ။ PNC ၄-ကြိမ် အချိန်ဇယားအတွက် အသုံးပြုသည်။">Visit 1: enter birth date and time here. Used for the 4-visit PNC schedule.</small>
+              <small class="form-hint lang-text" data-en="Visit 1: enter here or on Newborn Care page. Locked once saved on either form." data-mm="အကြိမ် ၁ — newborn care (သို့) PNC ပထမအကြိမ်တွင် ထည့်ပါ။ သိမ်းပြီးပါက ပြင်ဆင်၍မရပါ။">Visit 1: enter here or on Newborn Care page. Locked once saved on either form.</small>
             </div>
             <div class="col-md-6 col-sm-6">
               <label class="form-label lang-text" data-en="Post-partum Period" data-mm="မွေးဖွားပြီးကာလ">Post-partum Period</label>
@@ -646,6 +647,7 @@
                   <span class="lang-text" data-en="Hour" data-mm="နာရီ">Hour</span>
                   <strong id="postpartumHours" style="color: var(--primary-color); font-size: 1.1rem;">—</strong>
                 </div>
+                <small class="text-muted lang-text" data-en="Auto-calculated from delivery date" data-mm="မွေးဖွားသည့် ရက်စွဲမှ အလိုအလျောက် တွက်ချက်သည်">Auto-calculated from delivery date</small>
               </div>
             </div>
           </div>
@@ -659,7 +661,7 @@
                   <input class="form-check-input" type="checkbox" id="nextVisitManualOverride" onchange="togglePncNextVisitOverride()">
                   <label class="form-check-label lang-text" for="nextVisitManualOverride" data-en="Adjust next visit date manually" data-mm="PNC ပြန်ပြရက်ကို စိတ်ကြိုက်ပြင်ဆင်မည်">Adjust next visit date manually</label>
                 </div>
-                <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on delivery date." data-mm="မွေးဖွားသည့် ရက်စွဲ အခြေခံ၍ တွက်ချက်ထားသည်။">Based on delivery date.</small>
+                <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Same schedule as Newborn Care (+3, +14, +42 days from birth)." data-mm="Newborn care နှင့် တူညီသော အချိန်ဇယား (မွေးပြီး ၃၊ ၁၄၊ ၄၂ ရက်)။">Same schedule as Newborn Care (+3, +14, +42 days from birth).</small>
               </div>
             </div>
 
@@ -1092,6 +1094,11 @@
     let currentPatient = null;
     let patientId = null;
     let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    let deliveryAnchorLocked = false;
+
+    const PNC_SCHEDULE_VISIT_COUNT = window.BirthDeliveryAnchor
+      ? BirthDeliveryAnchor.CARE_SCHEDULE_VISIT_COUNT
+      : 4;
 
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
@@ -1103,60 +1110,26 @@
       updatePncVisitSchedule();
     };
 
-    const PNC_SCHEDULE_VISIT_COUNT = 4;
-
-    function parseDateOnlyLocal(val) {
-      if (!val) return null;
-      if (val instanceof Date) {
-        if (isNaN(val.getTime())) return null;
-        return new Date(val.getFullYear(), val.getMonth(), val.getDate());
-      }
-      const s = String(val).trim();
-      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-      const d = new Date(s);
-      if (isNaN(d.getTime())) return null;
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    }
-
-    function addDaysLocal(d, days) {
-      const out = new Date(d.getTime());
-      out.setDate(out.getDate() + days);
-      return out;
-    }
-
-    function formatDateYMD(d) {
-      if (!d || isNaN(d.getTime())) return null;
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return y + '-' + m + '-' + day;
-    }
-
-    function formatDisplayDate(iso) {
-      const d = parseDateOnlyLocal(iso);
-      if (!d) return iso || '—';
-      return d.toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'my-MM', {
-        day: '2-digit', month: 'short', year: 'numeric'
-      });
-    }
-
     function getBirthDateStrForSchedule() {
       const dt = document.getElementById('deliveredDateTime')?.value;
       if (!dt) return null;
-      return dt.split('T')[0];
+      return window.BirthDeliveryAnchor
+        ? BirthDeliveryAnchor.getBirthDateStrFromDatetimeLocal(dt)
+        : dt.split('T')[0];
+    }
+
+    function formatDisplayDate(iso) {
+      if (window.BirthDeliveryAnchor) {
+        return BirthDeliveryAnchor.formatDisplayDate(iso, currentLanguage);
+      }
+      return iso || '—';
     }
 
     function getRecommendedPncDateForVisit(birthDateStr, targetVisitNumber) {
-      const birth = parseDateOnlyLocal(birthDateStr);
-      if (!birth || targetVisitNumber < 1 || targetVisitNumber > PNC_SCHEDULE_VISIT_COUNT) return null;
-      switch (targetVisitNumber) {
-        case 1: return null;
-        case 2: return formatDateYMD(addDaysLocal(birth, 3));
-        case 3: return formatDateYMD(addDaysLocal(birth, 14));
-        case 4: return formatDateYMD(addDaysLocal(birth, 42));
-        default: return null;
+      if (window.BirthDeliveryAnchor) {
+        return BirthDeliveryAnchor.getRecommendedCareDateForVisit(birthDateStr, targetVisitNumber);
       }
+      return null;
     }
 
     function buildPncScheduleRows(birthDateStr) {
@@ -1208,8 +1181,8 @@
         if (!manualOverride?.checked) nextInput.value = '';
         if (hint) {
           hint.textContent = currentLanguage === 'en'
-            ? 'Enter delivery date & time to calculate the 4-visit PNC schedule.'
-            : 'မွေးဖွားသည့် ရက်စွဲနှင့် အချိန် ထည့်ပါ — PNC ၄-ကြိမ် အချိန်ဇယား တွက်ပေးမည်။';
+            ? 'Enter delivery date & time (here or on Newborn Care) to calculate the shared 4-visit schedule.'
+            : 'မွေးဖွားသည့် ရက်စွဲ/အချိန် (newborn care (သို့) PNC) ထည့်ပါ — ၄-ကြိမ် အချိန်ဇယား တွက်ပေးမည်။';
         }
         return;
       }
@@ -1234,12 +1207,12 @@
       if (hint) {
         if (currentVisit >= PNC_SCHEDULE_VISIT_COUNT) {
           hint.textContent = currentLanguage === 'en'
-            ? 'All 4 recommended PNC visits are scheduled.'
-            : 'အကြံပြု PNC ၄-ကြိမ် ပြည့်ပါပြီ။';
+            ? 'All 4 recommended visits are scheduled (same as Newborn Care).'
+            : 'အကြံပြု ၄-ကြိမ် ပြည့်ပါပြီ (newborn care နှင့် တူညီသည်)။';
         } else if (recommendedNext) {
           hint.textContent = currentLanguage === 'en'
-            ? ('Visit ' + nextVisitNum + ' recommended on ' + formatDisplayDate(recommendedNext) + '.')
-            : (nextVisitNum + ' အကြိမ် PNC — ' + formatDisplayDate(recommendedNext) + ' တွင် အကြံပြုထားသည်။');
+            ? ('Visit ' + nextVisitNum + ' recommended on ' + formatDisplayDate(recommendedNext) + ' (same as Newborn Care).')
+            : (nextVisitNum + ' အကြိမ် — ' + formatDisplayDate(recommendedNext) + ' (newborn care နှင့် တူညီသည်)။');
         } else if (currentVisit === 1) {
           hint.textContent = currentLanguage === 'en'
             ? 'Visit 1 is recorded at this visit; schedule starts from delivery date.'
@@ -1249,26 +1222,17 @@
     }
 
     function onPncDeliveryChanged() {
-      calculatePostpartumPeriod();
-      updatePncVisitSchedule();
-    }
-
-    function onPncVisitDateChanged() {
+      if (deliveryAnchorLocked) return;
       calculatePostpartumPeriod();
       updatePncVisitSchedule();
     }
 
     function applyDeliveryDateTimeLock() {
       const input = document.getElementById('deliveredDateTime');
-      const visitNum = parseInt(document.getElementById('visitNumber')?.value, 10) || 1;
       if (!input) return;
-      if (visitNum > 1 && input.value) {
-        input.readOnly = true;
-        input.classList.add('next-visit-readonly');
-      } else {
-        input.readOnly = false;
-        input.classList.remove('next-visit-readonly');
-      }
+      const shouldLock = deliveryAnchorLocked && !!input.value;
+      input.readOnly = shouldLock;
+      input.classList.toggle('next-visit-readonly', shouldLock);
     }
 
     function updateBackToPncLink() {
@@ -1562,7 +1526,6 @@
           document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
           const today = new Date().toISOString().split('T')[0];
           document.getElementById('visitDate').value = today;
-          updatePncVisitSchedule();
           showLoading(false);
           return;
         }
@@ -1593,8 +1556,6 @@
         
         // Load delivery date/time from first visit if available
         await loadDeliveryDateTimeFromFirstVisit();
-        applyDeliveryDateTimeLock();
-        updatePncVisitSchedule();
         
         showLoading(false);
         
@@ -1622,11 +1583,10 @@
         console.error('Error calculating visit number:', error);
         document.getElementById('visitNumber').value = 1;
       }
-      applyDeliveryDateTimeLock();
       updatePncVisitSchedule();
     }
 
-    // Load delivery date/time from first visit, baby.html birth record, or newborn care page
+    // Load delivery date/time from shared anchor (newborn care or 1st PNC), then fallbacks
     async function loadDeliveryDateTimeFromFirstVisit() {
       try {
         const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
@@ -1635,8 +1595,21 @@
           return;
         }
 
+        if (window.BirthDeliveryAnchor && currentPatient && currentPatient.id) {
+          const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(currentPatient.id);
+          if (anchor.datetimeLocal) {
+            deliveredDateTimeInput.value = anchor.datetimeLocal;
+            deliveryAnchorLocked = anchor.locked;
+            applyDeliveryDateTimeLock();
+            calculatePostpartumPeriod();
+            updatePncVisitSchedule();
+            return;
+          }
+        }
+
         const db = firebase.firestore();
         let deliveryDate = null;
+        let loadedFromPersistedSource = false;
         
         // First, try to load from newborn care page (newborn_care collection)
         try {
@@ -1678,6 +1651,7 @@
               
               if (deliveryDate && !isNaN(deliveryDate.getTime())) {
                 console.log('Loaded delivery date/time from newborn care page');
+                loadedFromPersistedSource = true;
               } else {
                 deliveryDate = null;
               }
@@ -1710,6 +1684,7 @@
                 
                 if (deliveryDate && !isNaN(deliveryDate.getTime())) {
                   console.log('Loaded delivery date/time from birth record');
+                  loadedFromPersistedSource = true;
                 } else {
                   deliveryDate = null;
                 }
@@ -1740,6 +1715,7 @@
               } else {
                 deliveryDate = new Date(firstVisit.deliveredDateTime);
               }
+              loadedFromPersistedSource = true;
             }
           }
         }
@@ -1756,20 +1732,29 @@
         }
         
         if (deliveryDate && !isNaN(deliveryDate.getTime())) {
-          // Convert to local datetime format for input (YYYY-MM-DDTHH:mm)
-          const year = deliveryDate.getFullYear();
-          const month = String(deliveryDate.getMonth() + 1).padStart(2, '0');
-          const day = String(deliveryDate.getDate()).padStart(2, '0');
-          const hours = String(deliveryDate.getHours()).padStart(2, '0');
-          const minutes = String(deliveryDate.getMinutes()).padStart(2, '0');
-          const localDateTimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
-          
+          const localDateTimeString = window.BirthDeliveryAnchor
+            ? BirthDeliveryAnchor.toDatetimeLocalString(deliveryDate)
+            : (function () {
+              const year = deliveryDate.getFullYear();
+              const month = String(deliveryDate.getMonth() + 1).padStart(2, '0');
+              const day = String(deliveryDate.getDate()).padStart(2, '0');
+              const hours = String(deliveryDate.getHours()).padStart(2, '0');
+              const minutes = String(deliveryDate.getMinutes()).padStart(2, '0');
+              return year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
+            })();
+
           deliveredDateTimeInput.value = localDateTimeString;
-          // Use setTimeout to ensure DOM is ready and language switcher has finished
+          if (loadedFromPersistedSource) {
+            deliveryAnchorLocked = true;
+          }
+          applyDeliveryDateTimeLock();
           setTimeout(function () {
             calculatePostpartumPeriod();
             updatePncVisitSchedule();
           }, 200);
+        } else {
+          applyDeliveryDateTimeLock();
+          updatePncVisitSchedule();
         }
       } catch (error) {
         console.error('Error loading delivery date/time:', error);
@@ -1877,6 +1862,14 @@
               });
 
             await StatusManager.checkAndUpdateToPostnatalCare(currentPatient.id, 'First postnatal visit recorded');
+
+            if (cloudData.deliveredDateTime && window.BirthDeliveryAnchor) {
+              const visitNum = cloudData.visitNumber || parseInt(document.getElementById('visitNumber').value, 10) || 1;
+              if (visitNum === 1) {
+                await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(currentPatient.id, cloudData.deliveredDateTime);
+              }
+            }
+
             return { cloudId: ref.id };
           }
         );
