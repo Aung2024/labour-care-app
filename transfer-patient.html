@@ -262,7 +262,7 @@
         <div class="modal-body">
           <div class="input-group mb-3">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
-            <input id="patientSearchInput" type="text" class="form-control" placeholder="Search by name or patient ID" oninput="renderPatientList()" />
+            <input id="patientSearchInput" type="text" class="form-control" placeholder="Search by name or patient ID" oninput="schedulePatientListRender()" />
           </div>
           <div id="patientModalList"></div>
         </div>
@@ -276,6 +276,8 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/transfer-load-utils.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -288,6 +290,27 @@
     let patientModal = null;
     let referFlow = false;
     let transferType = 'anc';
+    let patientsLoaded = false;
+    let patientsLoading = false;
+    let renderListTimer = null;
+    const PICKER_MAX_VISIBLE = 80;
+    const PATIENT_LIST_CACHE_MS = 180000;
+    const MIDWIVES_CACHE_MS = 300000;
+
+    function smartQuery(queryPromise, options) {
+      if (window.TransferLoadUtils && TransferLoadUtils.smartQuery) {
+        return TransferLoadUtils.smartQuery(queryPromise, options);
+      }
+      return queryPromise.then((q) => q.get());
+    }
+
+    function slimPatient(id, data) {
+      return {
+        id: id,
+        name: data.name || data.patientName || 'Unknown',
+        status: data.status || 'registered'
+      };
+    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const urlPatientId = urlParams.get('patient');
@@ -336,12 +359,10 @@
         patientModal = new bootstrap.Modal(document.getElementById('patientPickerModal'));
         setDefaultReferralTime();
         applyReferFlowUi();
-        await loadCurrentUser();
-        await loadMyPatients();
+        await Promise.all([loadCurrentUser(), loadMidwives()]);
         if (urlPatientId) {
           await preselectPatientFromUrl(urlPatientId);
         }
-        await loadMidwives();
         refreshSubmitState();
       } catch (error) {
         AppDialog.alert(error.message, { title: 'Patient Transfers' });
@@ -349,17 +370,46 @@
     });
 
     async function loadCurrentUser() {
-      const doc = await firebase.firestore().collection('users').doc(currentUser.uid).get();
-      currentUserData = doc.exists ? doc.data() : {};
+      if (window.UserCache) {
+        currentUserData = await UserCache.get(currentUser.uid);
+      }
+      if (!currentUserData) {
+        const doc = await smartQuery(
+          Promise.resolve(firebase.firestore().collection('users').doc(currentUser.uid)),
+          { timeout: 8000, retries: 1 }
+        );
+        currentUserData = doc && doc.exists ? doc.data() : {};
+      }
+    }
+
+    async function ensurePatientsLoaded() {
+      if (patientsLoaded) return;
+      if (patientsLoading) {
+        while (patientsLoading) {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
+        return;
+      }
+      patientsLoading = true;
+      try {
+        await loadMyPatients();
+        patientsLoaded = true;
+      } finally {
+        patientsLoading = false;
+      }
     }
 
     async function preselectPatientFromUrl(patientId) {
       let p = allPatients.find((x) => x.id === patientId);
       if (!p) {
-        const snap = await firebase.firestore().collection('patients').doc(patientId).get();
-        if (snap.exists) {
-          p = { id: snap.id, ...snap.data() };
-          allPatients.unshift(p);
+        const snap = await smartQuery(
+          Promise.resolve(firebase.firestore().collection('patients').doc(patientId)),
+          { timeout: 8000, retries: 2 }
+        );
+        if (snap && snap.exists) {
+          p = slimPatient(snap.id, snap.data() || {});
+          allPatients = [p];
+          patientsLoaded = true;
         }
       }
       if (p) {
@@ -373,26 +423,59 @@
     }
 
     async function loadMyPatients() {
+      const cacheKey = 'transferPatientPicker:' + currentUser.uid;
+      const cached = TransferLoadUtils.cacheRead
+        ? TransferLoadUtils.cacheRead(cacheKey, PATIENT_LIST_CACHE_MS)
+        : null;
+      if (cached && cached.length) {
+        allPatients = cached;
+        return;
+      }
+
       const db = firebase.firestore();
+      const uid = currentUser.uid;
       const map = new Map();
-      const q1 = await db.collection('patients').where('created_by', '==', currentUser.uid).get().catch(() => null);
-      const q2 = await db.collection('patients').where('createdBy', '==', currentUser.uid).get().catch(() => null);
-      const q3 = await db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid).get().catch(() => null);
-      [q1, q2, q3].forEach((snap) => {
-        if (snap && !snap.empty) snap.forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
-      });
+
+      const mergeSnap = (snap) => {
+        if (!snap || snap.empty || typeof snap.forEach !== 'function') return;
+        snap.forEach((d) => {
+          if (d && d.id) map.set(d.id, slimPatient(d.id, d.data() || {}));
+        });
+      };
+
+      const results = await Promise.all([
+        smartQuery(Promise.resolve(db.collection('patients').where('created_by', '==', uid)), { timeout: 10000, retries: 2 }).catch(() => null),
+        smartQuery(Promise.resolve(db.collection('patients').where('createdBy', '==', uid)), { timeout: 10000, retries: 1 }).catch(() => null),
+        smartQuery(Promise.resolve(db.collection('patients').where('care_team_midwife_ids', 'array-contains', uid)), { timeout: 10000, retries: 1 }).catch(() => null)
+      ]);
+      results.forEach(mergeSnap);
+
       allPatients = Array.from(map.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-      renderPatientList();
+      if (TransferLoadUtils.cacheWrite) {
+        TransferLoadUtils.cacheWrite(cacheKey, allPatients);
+      }
     }
 
-    function openPatientModal() {
+    async function openPatientModal() {
       if (referFlow) return;
-      renderPatientList();
       patientModal.show();
+      renderPatientList(true);
+      try {
+        await ensurePatientsLoaded();
+        renderPatientList();
+      } catch (e) {
+        const list = document.getElementById('patientModalList');
+        if (list) list.innerHTML = '<div class="text-danger p-2">Unable to load patients. Please try again.</div>';
+      }
       setTimeout(() => {
         const input = document.getElementById('patientSearchInput');
         if (input) input.focus();
       }, 120);
+    }
+
+    function schedulePatientListRender() {
+      if (renderListTimer) clearTimeout(renderListTimer);
+      renderListTimer = setTimeout(() => renderPatientList(), 120);
     }
 
     function getPatientStatusLabel(patient) {
@@ -403,9 +486,13 @@
       return status;
     }
 
-    function renderPatientList() {
+    function renderPatientList(showLoading) {
       const list = document.getElementById('patientModalList');
       if (!list) return;
+      if (showLoading && !patientsLoaded) {
+        list.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>Loading patients...</div>';
+        return;
+      }
       const q = String(document.getElementById('patientSearchInput')?.value || '').toLowerCase().trim();
       const recentIds = JSON.parse(localStorage.getItem('recentPatients') || '[]');
       const recentSet = new Set(recentIds);
@@ -424,7 +511,15 @@
         return;
       }
 
-      list.innerHTML = filtered.map((p) => {
+      let display = filtered;
+      let hintHtml = '';
+      if (!q && filtered.length > PICKER_MAX_VISIBLE) {
+        display = filtered.slice(0, PICKER_MAX_VISIBLE);
+        hintHtml = '<div class="text-muted p-2 small">Showing ' + PICKER_MAX_VISIBLE + ' of ' + filtered.length +
+          '. Type a name or ID to search.</div>';
+      }
+
+      list.innerHTML = hintHtml + display.map((p) => {
         const isRecent = recentSet.has(p.id);
         const status = getPatientStatusLabel(p);
         return `
@@ -455,19 +550,7 @@
       refreshSubmitState();
     }
 
-    async function loadMidwives() {
-      const db = firebase.firestore();
-      let users = [];
-      try {
-        const snap = await db.collection('users').where('role', 'in', ['Midwife', 'midwife']).get();
-        snap.forEach((d) => users.push({ id: d.id, ...d.data() }));
-      } catch (e) {
-        const snap = await db.collection('users').get();
-        snap.forEach((d) => {
-          const u = d.data() || {};
-          if (u.role === 'Midwife' || u.role === 'midwife') users.push({ id: d.id, ...u });
-        });
-      }
+    function applyMidwivesList(users) {
       allMidwives = users.filter((u) => u.id !== currentUser.uid);
       const regions = [...new Set(allMidwives.map((u) => String(u.region || '').trim()).filter(Boolean))].sort();
       const rSel = document.getElementById('regionSelect');
@@ -476,6 +559,47 @@
       document.getElementById('townshipSelect').onchange = renderMidwives;
       fillTownships();
       renderMidwives();
+    }
+
+    async function loadMidwives() {
+      const cacheKey = 'transferMidwivesList';
+      const cached = TransferLoadUtils.cacheRead
+        ? TransferLoadUtils.cacheRead(cacheKey, MIDWIVES_CACHE_MS)
+        : null;
+      if (cached && cached.length) {
+        applyMidwivesList(cached);
+      } else {
+        const box = document.getElementById('midwivesBox');
+        if (box) box.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>';
+      }
+
+      const db = firebase.firestore();
+      let users = [];
+      try {
+        const snap = await smartQuery(
+          Promise.resolve(db.collection('users').where('role', 'in', ['Midwife', 'midwife'])),
+          { timeout: 12000, retries: 2 }
+        );
+        if (snap && typeof snap.forEach === 'function') {
+          snap.forEach((d) => users.push({ id: d.id, ...d.data() }));
+        }
+      } catch (e) {
+        const snap = await smartQuery(Promise.resolve(db.collection('users')), { timeout: 12000, retries: 1 }).catch(() => null);
+        if (snap && typeof snap.forEach === 'function') {
+          snap.forEach((d) => {
+            const u = d.data() || {};
+            if (u.role === 'Midwife' || u.role === 'midwife') users.push({ id: d.id, ...u });
+          });
+        }
+      }
+
+      if (users.length) {
+        if (TransferLoadUtils.cacheWrite) TransferLoadUtils.cacheWrite(cacheKey, users);
+        applyMidwivesList(users);
+      } else if (!cached || !cached.length) {
+        const box = document.getElementById('midwivesBox');
+        if (box) box.innerHTML = '<div class="text-muted p-2">No midwives found.</div>';
+      }
     }
 
     function fillTownships() {
@@ -641,6 +765,10 @@
         if (window.AuditLogger && AuditLogger.logAuditEvent) {
           AuditLogger.logAuditEvent('transfer_request_created', 'patient', patientId, { recipientCount: ids.length, careContext: transferType });
         }
+        try {
+          sessionStorage.removeItem('sentTransferHrt:' + currentUser.uid);
+          sessionStorage.removeItem('transferPatientPicker:' + currentUser.uid);
+        } catch (e) { /* ignore */ }
 
         await AppDialog.alert(
           'Referral record saved and transfer request sent. The receiving midwife can accept from Transfer Requests.',

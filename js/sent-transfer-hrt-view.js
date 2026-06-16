@@ -302,25 +302,53 @@
     global.location.href = 'antenatal-report.html?patient=' + encodeURIComponent(patientId);
   }
 
+  var MAX_TRANSFER_ROWS = 40;
+  var ENRICH_CONCURRENCY = 8;
+  var CACHE_TTL_MS = 180000;
+  var ANC_VISIT_LIMIT = 10;
+
+  function getUtils() {
+    return global.TransferLoadUtils || {};
+  }
+
+  function smartQuery(queryPromise, options) {
+    var utils = getUtils();
+    if (utils.smartQuery) return utils.smartQuery(queryPromise, options);
+    return queryPromise.then(function (q) { return q.get(); });
+  }
+
+  function cacheKey(uid) {
+    return 'sentTransferHrt:' + uid;
+  }
+
   async function fetchAncVisits(db, patientId) {
     var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
     var snap;
-    try { snap = await ref.orderBy('visitDate', 'desc').limit(20).get(); }
-    catch (e) {
-      try { snap = await ref.orderBy('timestamp', 'desc').limit(20).get(); }
-      catch (e2) { snap = await ref.limit(20).get(); }
+    try {
+      snap = await smartQuery(Promise.resolve(ref.orderBy('visitDate', 'desc').limit(ANC_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+    } catch (e) {
+      try {
+        snap = await smartQuery(Promise.resolve(ref.orderBy('timestamp', 'desc').limit(ANC_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+      } catch (e2) {
+        snap = await smartQuery(Promise.resolve(ref.limit(ANC_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+      }
     }
     var visits = [];
     if (snap && snap.docs) snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
+    else if (snap && typeof snap.forEach === 'function') snap.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
     return visits;
   }
 
   async function fetchHrtActions(db, patientId) {
     try {
-      var snap = await db.collection('patients').doc(patientId).collection('hrt_actions')
-        .orderBy('recordedAt', 'desc').limit(5).get();
+      var snap = await smartQuery(
+        Promise.resolve(db.collection('patients').doc(patientId).collection('hrt_actions')
+          .orderBy('recordedAt', 'desc').limit(5)),
+        { timeout: 8000, retries: 1 }
+      );
       var list = [];
       if (snap && snap.docs) snap.docs.forEach(function (d) { list.push(d.data() || {}); });
+      else if (snap && typeof snap.forEach === 'function') snap.forEach(function (d) { list.push(d.data() || {}); });
       return list;
     } catch (e) {
       return [];
@@ -337,11 +365,12 @@
     return out;
   }
 
-  async function enrichTransferRow(db, transferReq) {
+  async function enrichTransferRow(db, transferReq, patientMap) {
     var patientId = transferReq.patientId;
     if (!patientId) return null;
-    var patientSnap = await db.collection('patients').doc(patientId).get();
-    if (!patientSnap.exists) {
+
+    var patient = patientMap.get(patientId);
+    if (!patient) {
       return {
         transfer: transferReq,
         patient: { id: patientId, name: transferReq.patientName || 'Unknown' },
@@ -352,9 +381,21 @@
         actions: []
       };
     }
-    var patient = { id: patientSnap.id, ...patientSnap.data() };
-    var visits = await fetchAncVisits(db, patientId);
-    var actions = await fetchHrtActions(db, patientId);
+
+    var visits;
+    var actions;
+    try {
+      var pair = await Promise.all([
+        fetchAncVisits(db, patientId),
+        fetchHrtActions(db, patientId)
+      ]);
+      visits = pair[0];
+      actions = pair[1];
+    } catch (e) {
+      visits = [];
+      actions = [];
+    }
+
     var bundle = { antenatalVisits: visits };
     var factors = global.HighRiskUtils
       ? global.HighRiskUtils.getPatientRiskFactorsFromANC(bundle)
@@ -443,35 +484,62 @@
 
   async function loadAndRender(containerEl, midwifeUid) {
     if (!containerEl || !midwifeUid) return;
-    containerEl.innerHTML = '<div class="hrt-empty-state"><i class="fas fa-spinner fa-spin me-2"></i>Loading transferred patients...</div>';
+    var utils = getUtils();
+    var cached = utils.cacheRead ? utils.cacheRead(cacheKey(midwifeUid), CACHE_TTL_MS) : null;
+    if (cached && cached.length) {
+      renderRows(containerEl, cached);
+    } else {
+      containerEl.innerHTML = '<div class="hrt-empty-state"><i class="fas fa-spinner fa-spin me-2"></i>Loading transferred patients...</div>';
+    }
+
     try {
       var db = firebase.firestore();
-      var snap = await db.collection('patient_transfer_requests')
-        .where('fromMidwifeId', '==', midwifeUid)
-        .limit(100)
-        .get();
-      if (snap.empty) {
+      var snap = await smartQuery(
+        Promise.resolve(db.collection('patient_transfer_requests')
+          .where('fromMidwifeId', '==', midwifeUid)
+          .limit(MAX_TRANSFER_ROWS)),
+        { timeout: 10000, retries: 2 }
+      );
+
+      if (!snap || snap.empty) {
         containerEl.innerHTML = '<div class="hrt-empty-state">No transferred patients to show yet.</div>';
+        if (utils.cacheWrite) utils.cacheWrite(cacheKey(midwifeUid), []);
         return;
       }
+
       var transfers = [];
-      snap.forEach(function (d) { transfers.push({ id: d.id, ...d.data() }); });
+      if (snap.forEach) snap.forEach(function (d) { transfers.push({ id: d.id, ...d.data() }); });
+      else if (snap.docs) snap.docs.forEach(function (d) { transfers.push({ id: d.id, ...d.data() }); });
+
       transfers.sort(function (a, b) {
         var ta = a.createdAt && typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate().getTime() : 0;
         var tb = b.createdAt && typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate().getTime() : 0;
         return tb - ta;
       });
+      transfers = transfers.slice(0, MAX_TRANSFER_ROWS);
 
-      var enriched = [];
-      for (var i = 0; i < transfers.length; i++) {
-        var row = await enrichTransferRow(db, transfers[i]);
-        if (row) enriched.push(row);
-      }
+      var patientIds = transfers.map(function (t) { return t.patientId; }).filter(Boolean);
+      var patientMap = utils.batchGetPatientDocs
+        ? await utils.batchGetPatientDocs(db, patientIds)
+        : new Map();
+
+      var mapFn = utils.mapWithConcurrency || async function (items, limit, fn) {
+        return Promise.all(items.map(fn));
+      };
+
+      var enriched = await mapFn(transfers, ENRICH_CONCURRENCY, function (t) {
+        return enrichTransferRow(db, t, patientMap);
+      });
+      enriched = enriched.filter(Boolean);
+
+      if (utils.cacheWrite) utils.cacheWrite(cacheKey(midwifeUid), enriched);
       renderRows(containerEl, enriched);
     } catch (e) {
       console.error('Sent transfer tracking failed', e);
-      containerEl.innerHTML = '<div class="hrt-empty-state text-danger">Unable to load transferred patients: ' +
-        escapeHtml(e.message || String(e)) + '</div>';
+      if (!cached || !cached.length) {
+        containerEl.innerHTML = '<div class="hrt-empty-state text-danger">Unable to load transferred patients: ' +
+          escapeHtml(e.message || String(e)) + '</div>';
+      }
     }
   }
 
