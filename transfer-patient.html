@@ -2,253 +2,535 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Transfer Patient</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Transfer Patient - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/choice-controls.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/register-sw.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/transfer-load-utils.js"></script>
+  <script src="js/status-manager.js"></script>
+  <script src="js/audit-logger.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script src="js/choice-controls.js"></script>
   <style>
+    :root {
+      --primary-color: #f59e0b;
+      --secondary-color: #d97706;
+      --accent-color: #fbbf24;
+      --light-bg: #fffbeb;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
     body {
-      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
+      background: linear-gradient(180deg, #fffbeb 0%, #f8fafc 45%, #fff7ed 100%);
+      font-family: 'Inter', 'Pyidaungsu', 'Myanmar Text', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
       min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
     }
-    .wrap { max-width: 920px; margin: 0 auto; padding: 1rem; padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
-    .head {
-      background: linear-gradient(135deg,#10b981,#059669);
-      color: #fff;
-      border-radius: 16px;
-      padding: 1rem;
-      box-shadow: 0 10px 24px rgba(0,0,0,.2);
+
+    .transfer-form-page .page-content {
+      flex: 1;
+      width: 100%;
     }
-    .cardx {
-      margin-top: 1rem;
-      background: #fff;
-      border-radius: 16px;
-      padding: 1rem;
-      box-shadow: 0 8px 20px rgba(0,0,0,.12);
+
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.25rem 1.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-    .section-title { font-size: .95rem; font-weight: 700; color: #374151; margin-bottom: .45rem; }
-    .section-heading {
-      font-size: 1rem;
+
+    .header-section h1 {
+      font-size: clamp(1.05rem, 4vw, 1.35rem);
       font-weight: 700;
-      color: #374151;
-      margin: 0 0 .75rem;
-      padding-bottom: .5rem;
-      border-bottom: 2px solid #f59e0b;
+      margin: 0;
+      line-height: 1.35;
+    }
+
+    .header-subtitle {
+      opacity: 0.92;
+      font-size: 0.88rem;
+      margin-top: 0.35rem;
+      line-height: 1.45;
+    }
+
+    .language-switcher {
+      display: inline-flex;
+      gap: 0.35rem;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 0.25rem;
+    }
+
+    .language-btn {
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.85);
+      border-radius: 8px;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-height: 44px;
+      min-width: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .language-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: var(--secondary-color);
+    }
+
+    .transfer-form-page .container {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 0 1rem 1.5rem;
+    }
+
+    .patient-info {
+      background: white;
+      border-radius: 14px;
+      padding: 1.15rem 1.25rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--card-shadow);
+      border-left: 4px solid #3b82f6;
+    }
+
+    .patient-info h5 {
+      color: #1e40af;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 0.85rem;
       display: flex;
       align-items: center;
-      gap: .5rem;
+      gap: 0.5rem;
     }
-    .section-heading i { color: #f59e0b; }
-    .hint { color: #6b7280; font-size: .82rem; }
-    .required-mark::after { content: ' *'; color: #ef4444; font-weight: 700; }
+
+    .info-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.75rem;
+      margin-bottom: 0.45rem;
+      font-size: 0.92rem;
+    }
+
+    .info-label {
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    .info-value {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .form-container {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .form-section {
+      background: white;
+      border-radius: 16px;
+      padding: 1.25rem 1.35rem;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      border: 1px solid #e5e7eb;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .form-section h4 {
+      color: var(--secondary-color);
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 2px solid rgba(245, 158, 11, 0.25);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .transfer-form-page .form-label {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 0.92rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .form-hint {
+      display: block;
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-top: 0.35rem;
+      line-height: 1.4;
+    }
+
+    .required-mark::after {
+      content: ' *';
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    .transfer-form-page .form-section .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      margin: 0;
+    }
+
+    @media (min-width: 768px) {
+      .transfer-form-page .form-section .row.two-col {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .transfer-form-page .form-section .row > [class*="col-"] {
+      width: 100%;
+      max-width: 100%;
+      padding: 0;
+    }
+
+    .form-control, .form-select {
+      min-height: 44px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+    }
 
     .picker-btn {
       width: 100%;
-      border: 1px solid #d1d5db;
+      border: 1px dashed #cbd5e1;
       border-radius: 12px;
-      background: #fff;
+      background: #f8fafc;
       min-height: 52px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: .65rem .85rem;
+      padding: 0.75rem 0.9rem;
       text-align: left;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
-    .picker-btn:disabled { opacity: .85; cursor: default; background: #f9fafb; }
+
+    .picker-btn:not(:disabled):hover {
+      border-color: var(--primary-color);
+      background: #fffbeb;
+    }
+
+    .picker-btn:disabled {
+      opacity: 0.9;
+      cursor: default;
+      background: #f1f5f9;
+      border-style: solid;
+    }
+
     .picker-title { font-weight: 600; color: #111827; }
-    .picker-sub { font-size: .8rem; color: #6b7280; }
-    .picker-empty .picker-title { color: #6b7280; font-weight: 500; }
+    .picker-sub { font-size: 0.8rem; color: #64748b; margin-top: 0.15rem; }
+    .picker-empty .picker-title { color: #64748b; font-weight: 500; }
+
+    .midwives-box {
+      max-height: 280px;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 0.5rem;
+      background: #fafafa;
+    }
+
+    .mw-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.6rem 0.5rem;
+      border-bottom: 1px dashed #e5e7eb;
+      border-radius: 10px;
+      min-height: 44px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .mw-item:last-child { border-bottom: 0; }
+    .mw-item:hover { background: #fffbeb; }
+    .mw-item input[type="checkbox"] { width: 22px; height: 22px; flex-shrink: 0; }
+
+    .mw-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .mw-toolbar .btn {
+      min-height: 44px;
+      touch-action: manipulation;
+    }
 
     .status-pill {
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
-      font-size: .72rem;
+      font-size: 0.72rem;
       font-weight: 700;
-      padding: .18rem .5rem;
-      background: #f3f4f6;
-      color: #374151;
+      padding: 0.2rem 0.55rem;
+      background: #f1f5f9;
+      color: #334155;
       text-transform: capitalize;
     }
 
-    .midwives-box {
-      max-height: 300px;
-      overflow: auto;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px;
-      padding: .5rem;
-      background: #f9fafb;
-    }
-    .mw-item {
-      display: flex;
-      align-items: center;
-      gap: .65rem;
-      padding: .55rem .5rem;
-      border-bottom: 1px dashed #e5e7eb;
-      border-radius: 10px;
-      min-height: 44px;
-    }
-    .mw-item:last-child { border-bottom: 0; }
-    .mw-item:hover { background: #eefcf7; }
-    .form-select, .form-control { min-height: 44px; }
-    .mw-item input[type="checkbox"] { width: 20px; height: 20px; }
-
-    .referral-block {
-      background: #fffbeb;
-      border: 1px solid #fde68a;
-      border-radius: 12px;
-      padding: .85rem;
-      margin-top: 1rem;
-    }
-
-    .sticky-actions {
-      position: sticky;
+    .anc-form-actions {
+      position: fixed;
+      left: 0;
+      right: 0;
       bottom: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,.85) 0%, #fff 22%);
-      padding-top: .75rem;
-      margin-top: .8rem;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      z-index: 200;
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-top: 1px solid #e5e7eb;
+      padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: row;
+      gap: 0.5rem;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .anc-form-actions .btn {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 44px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .anc-form-actions .btn-save {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      color: #111827;
+      font-weight: 700;
     }
 
     .modal-card {
       border: 1px solid #e5e7eb;
       border-radius: 12px;
-      padding: .55rem .65rem;
-      margin-bottom: .5rem;
+      padding: 0.65rem 0.75rem;
+      margin-bottom: 0.5rem;
       background: #fff;
       cursor: pointer;
       min-height: 44px;
+      touch-action: manipulation;
     }
-    .modal-card:hover { border-color: #10b981; background: #f0fdf4; }
-    .modal-meta { color: #6b7280; font-size: .8rem; }
+
+    .modal-card:hover, .modal-card:active {
+      border-color: var(--primary-color);
+      background: #fffbeb;
+    }
+
+    .modal-meta { color: #64748b; font-size: 0.8rem; }
+
+    .footer {
+      text-align: center;
+      padding: 1rem;
+      color: #64748b;
+      font-size: 0.82rem;
+      margin-top: 1rem;
+    }
 
     @media (max-width: 576px) {
-      .wrap { padding: .75rem; }
-      .cardx { padding: .85rem; border-radius: 14px; }
-      .head { border-radius: 14px; }
-      .sticky-actions .btn { min-height: 46px; }
-      .picker-btn { min-height: 56px; }
+      .header-section .header-actions {
+        width: 100%;
+        justify-content: space-between !important;
+      }
+
+      .header-section h1 i {
+        display: none;
+      }
     }
   </style>
+  <script src="js/lang-apply.js"></script>
 </head>
-<body>
-  <div class="wrap">
-    <div class="head d-flex justify-content-between align-items-center gap-2 flex-wrap">
-      <div>
-        <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-share-square me-2"></i><span id="pageTitle">Transfer Patient</span></div>
-        <div id="pageSubtitle" style="opacity:.92;font-size:.9rem;">Referral details and transfer to another midwife</div>
+<body class="transfer-form-page">
+  <div class="page-content">
+    <div class="header-section">
+      <div class="container px-0">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+          <div class="flex-grow-1 min-w-0">
+            <h1>
+              <i class="fas fa-share-square me-2"></i>
+              <span id="pageTitle" class="lang-text" data-en="Transfer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Transfer Patient</span>
+            </h1>
+            <div id="pageSubtitle" class="header-subtitle lang-text"
+              data-en="Complete referral record and send to another midwife"
+              data-mm="ညွှန်းပို့မှတ်တမ်းဖြည့်ပြီး အခြားသ midwife ထံ လွှဲပြောင်းပါ">Complete referral record and send to another midwife</div>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-wrap header-actions">
+            <div class="language-switcher">
+              <button type="button" class="language-btn" data-lang="en">ENG</button>
+              <button type="button" class="language-btn active" data-lang="mm">MM</button>
+            </div>
+            <a href="patient-transfers.html" id="backLink" class="btn btn-outline-light btn-sm" style="min-height:44px;">
+              <i class="fas fa-arrow-left me-1"></i>
+              <span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+          </div>
+        </div>
       </div>
-      <a href="patient-transfers.html" id="backLink" class="btn btn-light btn-sm"><i class="fas fa-arrow-left me-1"></i>Back</a>
     </div>
 
-    <div class="cardx">
-      <div class="mb-3">
-        <div class="section-title">Patient</div>
-        <button id="patientPickerBtn" type="button" class="picker-btn picker-empty" onclick="openPatientModal()">
-          <div>
-            <div id="patientPickerTitle" class="picker-title">Search and select patient</div>
-            <div id="patientPickerSub" class="picker-sub">Tap to open patient finder</div>
-          </div>
-          <i class="fas fa-search text-muted"></i>
-        </button>
-      </div>
-
-      <div class="referral-block">
-        <div class="section-heading"><i class="fas fa-hospital"></i> Referral details</div>
-        <div class="row g-3">
-          <div class="col-12 col-md-6">
-            <label class="section-title required-mark" for="referralTime">Referral time</label>
-            <input type="datetime-local" id="referralTime" class="form-control" required />
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="referralMode">Referral mode</label>
-            <select id="referralMode" class="form-select">
-              <option value="">Select referral mode</option>
-              <option value="Ambulance">Ambulance</option>
-              <option value="Private Vehicle">Private Vehicle</option>
-              <option value="Public Transport">Public Transport</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div class="col-12">
-            <label class="section-title" for="referralFacility">Referral facility</label>
-            <input type="text" id="referralFacility" class="form-control" placeholder="Enter facility name" />
-          </div>
-          <div class="col-12">
-            <label class="section-title" for="mainSymptoms">Main symptoms and duration</label>
-            <textarea id="mainSymptoms" class="form-control" rows="3" placeholder="Describe main symptoms, duration, and obstetric history if applicable"></textarea>
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="treatmentBeforeReferral">Treatment before referral</label>
-            <textarea id="treatmentBeforeReferral" class="form-control" rows="2"></textarea>
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="medications">Medications</label>
-            <textarea id="medications" class="form-control" rows="2"></textarea>
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="patientGeneralCondition">Patient's general condition</label>
-            <select id="patientGeneralCondition" class="form-select">
-              <option value="">Select condition</option>
-              <option value="Good">Good</option>
-              <option value="Fair">Fair</option>
-              <option value="Poor">Poor</option>
-              <option value="Serious">Serious</option>
-            </select>
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="vitalSigns">Vital signs (BP, pulse, temperature)</label>
-            <input type="text" id="vitalSigns" class="form-control" placeholder="e.g., BP: 120/80, Pulse: 72, Temp: 37.5°C" />
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="section-title" for="initial">Initial / signature</label>
-            <input type="text" id="initial" class="form-control" placeholder="Signature / initials" />
-          </div>
+    <div class="container">
+      <div class="patient-info">
+        <h5><i class="fas fa-user-injured"></i><span class="lang-text" data-en="Patient" data-mm="လူနာ">Patient</span></h5>
+        <div class="info-row">
+          <span class="info-label lang-text" data-en="Name:" data-mm="အမည်:">Name:</span>
+          <span class="info-value" id="displayPatientName">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label lang-text" data-en="Patient ID:" data-mm="လူနာ ID:">Patient ID:</span>
+          <span class="info-value" id="displayPatientId">—</span>
+        </div>
+        <div class="mt-3">
+          <button id="patientPickerBtn" type="button" class="picker-btn picker-empty" onclick="openPatientModal()">
+            <div>
+              <div id="patientPickerTitle" class="picker-title lang-text" data-en="Search and select patient" data-mm="လူနာကို ရှာဖွေရွေးချယ်ပါ">Search and select patient</div>
+              <div id="patientPickerSub" class="picker-sub lang-text" data-en="Tap to open patient finder" data-mm="လူနာရှာဖွေမှု ဖွင့်ရန် နှိပ်ပါ">Tap to open patient finder</div>
+            </div>
+            <i class="fas fa-search text-muted"></i>
+          </button>
         </div>
       </div>
 
-      <div class="section-heading mt-4 mb-2"><i class="fas fa-user-nurse"></i> Transfer to midwife</div>
-
-      <div class="row g-3">
-        <div class="col-12 col-md-6">
-          <label class="section-title" for="regionSelect">Region</label>
-          <select id="regionSelect" class="form-select">
-            <option value="">All Regions</option>
-          </select>
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="section-title" for="townshipSelect">Township</label>
-          <select id="townshipSelect" class="form-select">
-            <option value="">All Townships</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="mt-3">
-        <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-          <div class="section-title mb-0">Receiving midwives</div>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllMidwives(true)">Select all shown</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllMidwives(false)">Clear</button>
+      <div class="form-container">
+        <form id="transferForm" onsubmit="return false;">
+          <div class="form-section">
+            <h4><i class="fas fa-hospital"></i><span class="lang-text" data-en="Referral Details" data-mm="လွှဲပြောင်းညွှန်းပို့မှုအသေးစိတ်">Referral Details</span></h4>
+            <div class="row g-3 two-col">
+              <div class="col-12 col-md-6">
+                <label for="referralTime" class="form-label required-mark lang-text" data-en="Referral time" data-mm="ညွှန်းပို့ချိန်">Referral time</label>
+                <input type="datetime-local" id="referralTime" class="form-control" required />
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="referralMode" class="form-label lang-text" data-en="Referral mode" data-mm="သွားရောက်ရန် ယာဉ်">Referral mode</label>
+                <select id="referralMode" class="form-select" data-choice>
+                  <option value="" data-en="Select referral mode" data-mm="ညွှန်းပို့ယာဉ် ရွေးချယ်ပါ">Select referral mode</option>
+                  <option value="Ambulance" data-en="Ambulance" data-mm="ဆေးရုံကားဖြင့်">Ambulance</option>
+                  <option value="Private Vehicle" data-en="Private Vehicle" data-mm="ကိုယ်ပိုင်ယာဉ်">Private Vehicle</option>
+                  <option value="Public Transport" data-en="Public Transport" data-mm="အများပြည်သူယာဉ်">Public Transport</option>
+                  <option value="Other" data-en="Other" data-mm="အခြား">Other</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label for="referralFacility" class="form-label lang-text" data-en="Referral facility" data-mm="ညွှန်းပို့မည့် ဆေးရုံ/ကျန်းမာရေးဌာန">Referral facility</label>
+                <input type="text" id="referralFacility" class="form-control" placeholder="" />
+              </div>
+              <div class="col-12">
+                <label for="mainSymptoms" class="form-label lang-text"
+                  data-en="Main symptoms and duration"
+                  data-mm="အဓိကရောဂါလက္ခဏာများနှင့် ကြာမြင့်ချိန်">Main symptoms and duration</label>
+                <textarea id="mainSymptoms" class="form-control" rows="3"></textarea>
+                <small class="form-hint lang-text"
+                  data-en="Include obstetric history if the patient is pregnant."
+                  data-mm="ကိုယ်ဝန်ဆောင်ဖြစ်ပါက မွေးဖွားရာဇဝင်ပါ ဖော်ပြပါ။">Include obstetric history if the patient is pregnant.</small>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="treatmentBeforeReferral" class="form-label lang-text" data-en="Treatment before referral" data-mm="မလွှဲပြောင်းမီ ကုသမှု">Treatment before referral</label>
+                <textarea id="treatmentBeforeReferral" class="form-control" rows="2"></textarea>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="medications" class="form-label lang-text" data-en="Medications" data-mm="ဆေးဝါးများ">Medications</label>
+                <textarea id="medications" class="form-control" rows="2"></textarea>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="patientGeneralCondition" class="form-label lang-text" data-en="Patient's general condition" data-mm="လူနာ၏ အခြေအနေ">Patient's general condition</label>
+                <select id="patientGeneralCondition" class="form-select" data-choice>
+                  <option value="" data-en="Select condition" data-mm="အခြေအနေ ရွေးချယ်ပါ">Select condition</option>
+                  <option value="Good" data-en="Good" data-mm="ကောင်း">Good</option>
+                  <option value="Fair" data-en="Fair" data-mm="ပျမ်းမျှ">Fair</option>
+                  <option value="Poor" data-en="Poor" data-mm="မကောင်း">Poor</option>
+                  <option value="Serious" data-en="Serious" data-mm="ပြင်းထန်">Serious</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="vitalSigns" class="form-label lang-text" data-en="Vital signs (BP, pulse, temperature)" data-mm="Vital signs (သွေးပေါင်ချိန်၊ သွေးခုန်နှုန်း၊ အပူချိန်)">Vital signs (BP, pulse, temperature)</label>
+                <input type="text" id="vitalSigns" class="form-control" />
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="initial" class="form-label lang-text" data-en="Initial / signature" data-mm="လက်မှတ် / အမည်အတိုကောက်">Initial / signature</label>
+                <input type="text" id="initial" class="form-control" />
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="hint mb-2">Filter by region/township first to reduce scrolling.</div>
-        <div id="midwivesBox" class="midwives-box"></div>
+
+          <div class="form-section">
+            <h4><i class="fas fa-user-nurse"></i><span class="lang-text" data-en="Transfer to Midwife" data-mm="Midwife ထံ လွှဲပြောင်းရန်">Transfer to Midwife</span></h4>
+            <div class="row g-3 two-col">
+              <div class="col-12 col-md-6">
+                <label for="regionSelect" class="form-label lang-text" data-en="Region" data-mm="တိုင်းဒေသကြီး">Region</label>
+                <select id="regionSelect" class="form-select"></select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="townshipSelect" class="form-label lang-text" data-en="Township" data-mm="မြို့နယ်">Township</label>
+                <select id="townshipSelect" class="form-select"></select>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <label class="form-label mb-0 lang-text" data-en="Receiving midwives" data-mm="လက်ခံမည့် midwife များ">Receiving midwives</label>
+                <div class="mw-toolbar">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllMidwives(true)">
+                    <span class="lang-text" data-en="Select all" data-mm="အားလုံး ရွေးပါ">Select all</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllMidwives(false)">
+                    <span class="lang-text" data-en="Clear" data-mm="ရှင်းပါ">Clear</span>
+                  </button>
+                </div>
+              </div>
+              <small class="form-hint lang-text" data-en="Filter by region/township first to reduce scrolling." data-mm="ရွေးချယ်ရလွယ်အောင် တိုင်းဒေသကြီး/မြို့နယ် စစ်ထုတ်ပါ။">Filter by region/township first to reduce scrolling.</small>
+              <div id="midwivesBox" class="midwives-box mt-2"></div>
+            </div>
+            <div class="mt-3">
+              <label for="notesInput" class="form-label lang-text" data-en="Transfer notes (optional)" data-mm="လွှဲပြောင်းမှတ်ချက် (မဖြစ်မနေမဟုတ်)">Transfer notes (optional)</label>
+              <textarea id="notesInput" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+        </form>
       </div>
 
-      <div class="mt-3">
-        <label class="section-title" for="notesInput">Transfer notes (optional)</label>
-        <textarea id="notesInput" class="form-control" rows="2" placeholder="Additional notes for receiving midwife"></textarea>
-      </div>
+      <footer class="footer">
+        <span class="lang-text" data-en="MNCH App | Patient transfer & referral" data-mm="MNCH App | လူနာ လွှဲပြောင်းညွှန်းပို့">MNCH App | Patient transfer & referral</span>
+      </footer>
+    </div>
 
-      <div class="sticky-actions d-flex gap-2">
-        <button type="button" class="btn btn-outline-secondary flex-fill" onclick="cancelTransfer()">Cancel</button>
-        <button id="submitBtn" class="btn btn-success flex-fill" onclick="submitTransferRequest()" disabled>
-          <i class="fas fa-paper-plane me-1"></i> Send transfer request
-        </button>
-      </div>
+    <div class="anc-form-actions" role="toolbar">
+      <button type="button" class="btn btn-outline-secondary" onclick="cancelTransfer()">
+        <i class="fas fa-times"></i><span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
+      </button>
+      <button id="submitBtn" type="button" class="btn btn-save" onclick="submitTransferRequest()" disabled>
+        <i class="fas fa-paper-plane"></i><span class="lang-text" data-en="Send transfer request" data-mm="လွှဲပြောင်းတောင်းဆိုချက် ပို့ရန်">Send transfer request</span>
+      </button>
     </div>
   </div>
 
@@ -256,13 +538,16 @@
     <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="fas fa-user-injured me-2"></i>Select Patient</h5>
+          <h5 class="modal-title">
+            <i class="fas fa-user-injured me-2"></i>
+            <span class="lang-text" data-en="Select Patient" data-mm="လူနာ ရွေးချယ်ရန်">Select Patient</span>
+          </h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="input-group mb-3">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
-            <input id="patientSearchInput" type="text" class="form-control" placeholder="Search by name or patient ID" oninput="schedulePatientListRender()" />
+            <input id="patientSearchInput" type="text" class="form-control" oninput="schedulePatientListRender()" />
           </div>
           <div id="patientModalList"></div>
         </div>
@@ -270,17 +555,6 @@
     </div>
   </div>
 
-  <script src="js/vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/vendor/firebase-app.js"></script>
-  <script src="js/vendor/firebase-auth.js"></script>
-  <script src="js/vendor/firebase-firestore.js"></script>
-  <script src="js/firebase.js"></script>
-  <script src="js/auth-guard.js"></script>
-  <script src="js/user-cache.js"></script>
-  <script src="js/transfer-load-utils.js"></script>
-  <script src="js/status-manager.js"></script>
-  <script src="js/audit-logger.js"></script>
-  <script src="js/ui-dialogs.js"></script>
   <script>
     let currentUser = null;
     let currentUserData = null;
@@ -293,9 +567,142 @@
     let patientsLoaded = false;
     let patientsLoading = false;
     let renderListTimer = null;
+    let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
     const PICKER_MAX_VISIBLE = 80;
     const PATIENT_LIST_CACHE_MS = 180000;
     const MIDWIVES_CACHE_MS = 300000;
+
+    const MSG = {
+      selectPatient: { en: 'Please select a patient.', mm: 'လူနာကို ရွေးချယ်ပါ။' },
+      referralTime: { en: 'Please enter referral time.', mm: 'ညွှန်းပို့ချိန် ထည့်ပါ။' },
+      selectMidwife: { en: 'Please select at least one receiving midwife.', mm: 'လက်ခံမည့် midwife အနည်းဆုံး တစ်ဦး ရွေးပါ။' },
+      patientNotFound: { en: 'Patient not found.', mm: 'လူနာ မတွေ့ပါ။' },
+      loadPatientsFail: { en: 'Unable to load patients. Please try again.', mm: 'လူနာစာရင်း မတင်နိုင်ပါ။ ထပ်စမ်းကြည့်ပါ။' },
+      noPatients: { en: 'No patients found.', mm: 'လူနာ မရှိပါ။' },
+      loadingPatients: { en: 'Loading patients...', mm: 'လူနာများ တင်နေသည်...' },
+      loadingMidwives: { en: 'Loading midwives...', mm: 'Midwife များ တင်နေသည်...' },
+      noMidwives: { en: 'No midwives found.', mm: 'Midwife မတွေ့ပါ။' },
+      noMidwivesFilter: { en: 'No midwives found for selected filters.', mm: 'ရွေးထားသော filter အတွက် midwife မရှိပါ။' },
+      sending: { en: 'Sending...', mm: 'ပို့နေသည်...' },
+      success: {
+        en: 'Referral record saved and transfer request sent. The receiving midwife can accept from Transfer Requests.',
+        mm: 'ညွှန်းပို့မှတ်တမ်း သိမ်းပြီး လွှဲပြောင်းတောင်းဆိုချက် ပို့ပြီးပါပြီ။ လက်ခံမည့် midwife သည် Transfer Requests မှ လက်ခံနိုင်ပါသည်။'
+      },
+      errorTitle: { en: 'Error', mm: 'အမှား' },
+      successTitle: { en: 'Success', mm: 'အောင်မြင်ပါသည်' },
+      transferTitle: { en: 'Transfer Patient', mm: 'လူနာ လွှဲပြောင်းရန်' },
+      onlineOnly: {
+        en: 'Patient transfers are available online only. Please reconnect to the internet and try again.',
+        mm: 'လူနာလွှဲပြောင်းမှုကို အင်တာနက်ချိတ်ဆက်ထားမှသာ အသုံးပြုနိုင်ပါသည်။'
+      },
+      showNofM: { en: 'Showing {n} of {total}. Type a name or ID to search.', mm: '{total} ဦးအနက် {n} ဦးပြထားသည်။ ရှာဖွေရန် အမည် သို့ ID ရိုက်ပါ။' },
+      selectedPatient: { en: 'Selected patient', mm: 'ရွေးချယ်ထားသော လူနာ' },
+      recent: { en: 'Recent', mm: 'မကြာသေးမီ' },
+      allRegions: { en: 'All Regions', mm: 'တိုင်းဒေသကြီး အားလုံး' },
+      allTownships: { en: 'All Townships', mm: 'မြို့နယ် အားလုံး' },
+      referTransferTitle: { en: 'Refer & Transfer Patient', mm: 'ညွှန်းပို့၍ လွှဲပြောင်းရန်' },
+      referSubtitle: {
+        en: 'Complete referral record and send to another midwife',
+        mm: 'ညွှန်းပို့မှတ်တမ်းဖြည့်ပြီး အခြား midwife ထံ လွှဲပြောင်းပါ'
+      },
+      authWait: {
+        en: 'Please wait for your online session to restore, then reopen Patient Transfers.',
+        mm: 'Online session ပြန်မရသေးပါ။ ခဏစောင့်ပြီး Patient Transfers ကို ပြန်ဖွင့်ပါ။'
+      }
+    };
+
+    function t(key, vars) {
+      const entry = MSG[key] || { en: key, mm: key };
+      let text = entry[currentLanguage] || entry.en || key;
+      if (vars) {
+        Object.keys(vars).forEach(function (k) {
+          text = text.replace('{' + k + '}', vars[k]);
+        });
+      }
+      return text;
+    }
+
+    function dialogTitle(key) {
+      return t(key);
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlPatientId = urlParams.get('patient');
+    transferType = urlParams.get('type') || 'anc';
+    referFlow = !!urlPatientId;
+
+    window.onAppLanguageChange = function (lang) {
+      currentLanguage = lang;
+      updatePlaceholders();
+      rebuildRegionTownshipOptions();
+      renderMidwives();
+      renderPatientList();
+      if (window.ChoiceControls) {
+        ChoiceControls.refreshLabels(document);
+      }
+    };
+
+    function updatePlaceholders() {
+      const ph = {
+        referralFacility: {
+          en: 'Enter facility name',
+          mm: 'ဆေးရုံ/ကျန်းမာရေးဌာနအမည် ရိုက်ထည့်ပါ'
+        },
+        mainSymptoms: {
+          en: 'Describe main symptoms, duration, and obstetric history if applicable',
+          mm: 'အဓိကရောဂါလက္ခဏာများ၊ ကြာမြင့်ချိန်နှင့် မွေးဖွားရာဇဝင်များ ဖော်ပြပါ'
+        },
+        vitalSigns: {
+          en: 'e.g., BP: 120/80, Pulse: 72, Temp: 37.5°C',
+          mm: 'ဥပမာ - BP: 120/80, Pulse: 72, Temp: 37.5°C'
+        },
+        initial: { en: 'Signature / initials', mm: 'လက်မှတ် / အမည်အတိုကောက်' },
+        notesInput: {
+          en: 'Additional notes for receiving midwife',
+          mm: 'လက်ခံမည့် midwife အတွက် မှတ်ချက်များ'
+        },
+        patientSearchInput: {
+          en: 'Search by name or patient ID',
+          mm: 'အမည် သို့မဟုတ် လူနာ ID ဖြင့် ရှာပါ'
+        }
+      };
+      Object.keys(ph).forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.placeholder = ph[id][currentLanguage] || ph[id].en;
+      });
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      alert(t('onlineOnly'));
+      window.location.href = 'home.html';
+    }
+
+    function setDefaultReferralTime() {
+      const now = new Date();
+      const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      const el = document.getElementById('referralTime');
+      if (el && !el.value) el.value = localDateTime.toISOString().slice(0, 16);
+    }
+
+    function applyReferFlowUi() {
+      if (!referFlow) return;
+      const title = document.getElementById('pageTitle');
+      const subtitle = document.getElementById('pageSubtitle');
+      if (title) {
+        title.setAttribute('data-en', MSG.referTransferTitle.en);
+        title.setAttribute('data-mm', MSG.referTransferTitle.mm);
+        title.textContent = t('referTransferTitle');
+      }
+      if (subtitle) {
+        subtitle.setAttribute('data-en', MSG.referSubtitle.en);
+        subtitle.setAttribute('data-mm', MSG.referSubtitle.mm);
+        subtitle.textContent = t('referSubtitle');
+      }
+      const back = document.getElementById('backLink');
+      if (back) {
+        back.href = 'javascript:history.back()';
+      }
+    }
 
     function smartQuery(queryPromise, options) {
       if (window.TransferLoadUtils && TransferLoadUtils.smartQuery) {
@@ -312,32 +719,16 @@
       };
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlPatientId = urlParams.get('patient');
-    transferType = urlParams.get('type') || 'anc';
-    referFlow = !!urlPatientId;
-
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      alert('Patient transfers are available online only. Please reconnect to the internet and try again.');
-      window.location.href = 'home.html';
-    }
-
-    function setDefaultReferralTime() {
-      const now = new Date();
-      const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-      const el = document.getElementById('referralTime');
-      if (el && !el.value) el.value = localDateTime.toISOString().slice(0, 16);
-    }
-
-    function applyReferFlowUi() {
-      if (!referFlow) return;
-      document.getElementById('pageTitle').textContent = 'Refer & Transfer Patient';
-      document.getElementById('pageSubtitle').textContent = 'Complete referral record and send to another midwife';
-      const back = document.getElementById('backLink');
-      if (back) {
-        back.href = 'javascript:history.back()';
-        back.innerHTML = '<i class="fas fa-arrow-left me-1"></i>Back';
+    function updatePatientDisplay(p) {
+      const nameEl = document.getElementById('displayPatientName');
+      const idEl = document.getElementById('displayPatientId');
+      if (!p || !p.id) {
+        if (nameEl) nameEl.textContent = '—';
+        if (idEl) idEl.textContent = '—';
+        return;
       }
+      if (nameEl) nameEl.textContent = p.name || '—';
+      if (idEl) idEl.textContent = p.id || '—';
     }
 
     async function requireOnlineFirebaseUser(user) {
@@ -348,7 +739,7 @@
         if (restored) return restored;
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
-      throw new Error('Please wait for your online session to restore, then reopen Patient Transfers.');
+      throw new Error(t('authWait'));
     }
 
     firebase.auth().onAuthStateChanged(async (user) => {
@@ -359,13 +750,17 @@
         patientModal = new bootstrap.Modal(document.getElementById('patientPickerModal'));
         setDefaultReferralTime();
         applyReferFlowUi();
+        updatePlaceholders();
         await Promise.all([loadCurrentUser(), loadMidwives()]);
         if (urlPatientId) {
           await preselectPatientFromUrl(urlPatientId);
         }
+      if (window.ChoiceControls) {
+        ChoiceControls.refreshLabels(document);
+      }
         refreshSubmitState();
       } catch (error) {
-        AppDialog.alert(error.message, { title: 'Patient Transfers' });
+        AppDialog.alert(error.message, { title: t('transferTitle') });
       }
     });
 
@@ -418,7 +813,7 @@
         btn.disabled = true;
         btn.onclick = null;
       } else {
-        AppDialog.alert('Patient not found.', { title: 'Transfer Patient' });
+        AppDialog.alert(t('patientNotFound'), { title: t('transferTitle') });
       }
     }
 
@@ -465,7 +860,7 @@
         renderPatientList();
       } catch (e) {
         const list = document.getElementById('patientModalList');
-        if (list) list.innerHTML = '<div class="text-danger p-2">Unable to load patients. Please try again.</div>';
+        if (list) list.innerHTML = '<div class="text-danger p-2">' + escapeHtml(t('loadPatientsFail')) + '</div>';
       }
       setTimeout(() => {
         const input = document.getElementById('patientSearchInput');
@@ -490,7 +885,7 @@
       const list = document.getElementById('patientModalList');
       if (!list) return;
       if (showLoading && !patientsLoaded) {
-        list.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>Loading patients...</div>';
+        list.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>' + escapeHtml(t('loadingPatients')) + '</div>';
         return;
       }
       const q = String(document.getElementById('patientSearchInput')?.value || '').toLowerCase().trim();
@@ -507,7 +902,7 @@
       });
 
       if (!filtered.length) {
-        list.innerHTML = '<div class="text-muted p-2">No patients found.</div>';
+        list.innerHTML = '<div class="text-muted p-2">' + escapeHtml(t('noPatients')) + '</div>';
         return;
       }
 
@@ -515,8 +910,7 @@
       let hintHtml = '';
       if (!q && filtered.length > PICKER_MAX_VISIBLE) {
         display = filtered.slice(0, PICKER_MAX_VISIBLE);
-        hintHtml = '<div class="text-muted p-2 small">Showing ' + PICKER_MAX_VISIBLE + ' of ' + filtered.length +
-          '. Type a name or ID to search.</div>';
+        hintHtml = '<div class="text-muted p-2 small">' + escapeHtml(t('showNofM', { n: PICKER_MAX_VISIBLE, total: filtered.length })) + '</div>';
       }
 
       list.innerHTML = hintHtml + display.map((p) => {
@@ -531,7 +925,7 @@
               </div>
               <div class="d-flex flex-column align-items-end gap-1">
                 <span class="status-pill">${escapeHtml(status)}</span>
-                ${isRecent ? '<span class="modal-meta">Recent</span>' : ''}
+                ${isRecent ? '<span class="modal-meta">' + escapeHtml(t('recent')) + '</span>' : ''}
               </div>
             </div>
           </div>
@@ -544,17 +938,32 @@
       const p = allPatients.find((x) => x.id === id) || {};
       const btn = document.getElementById('patientPickerBtn');
       btn.classList.remove('picker-empty');
-      document.getElementById('patientPickerTitle').textContent = p.name || 'Selected patient';
+      document.getElementById('patientPickerTitle').textContent = p.name || t('selectedPatient');
       document.getElementById('patientPickerSub').textContent = p.id || '';
+      updatePatientDisplay(p);
       if (!skipModalHide && patientModal) patientModal.hide();
       refreshSubmitState();
     }
 
+    function rebuildRegionTownshipOptions() {
+      const rSel = document.getElementById('regionSelect');
+      const tSel = document.getElementById('townshipSelect');
+      if (!rSel || !allMidwives.length) return;
+      const currentRegion = rSel.value;
+      const currentTownship = tSel ? tSel.value : '';
+      const regions = [...new Set(allMidwives.map((u) => String(u.region || '').trim()).filter(Boolean))].sort();
+      rSel.innerHTML = '<option value="">' + escapeHtml(t('allRegions')) + '</option>' +
+        regions.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+      if (currentRegion) rSel.value = currentRegion;
+      fillTownships(currentTownship);
+    }
+
     function applyMidwivesList(users) {
       allMidwives = users.filter((u) => u.id !== currentUser.uid);
-      const regions = [...new Set(allMidwives.map((u) => String(u.region || '').trim()).filter(Boolean))].sort();
       const rSel = document.getElementById('regionSelect');
-      rSel.innerHTML = '<option value="">All Regions</option>' + regions.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+      rSel.innerHTML = '<option value="">' + escapeHtml(t('allRegions')) + '</option>';
+      const regions = [...new Set(allMidwives.map((u) => String(u.region || '').trim()).filter(Boolean))].sort();
+      rSel.innerHTML += regions.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
       rSel.onchange = () => { fillTownships(); renderMidwives(); };
       document.getElementById('townshipSelect').onchange = renderMidwives;
       fillTownships();
@@ -570,7 +979,7 @@
         applyMidwivesList(cached);
       } else {
         const box = document.getElementById('midwivesBox');
-        if (box) box.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>';
+        if (box) box.innerHTML = '<div class="text-muted p-2"><i class="fas fa-spinner fa-spin me-2"></i>' + escapeHtml(t('loadingMidwives')) + '</div>';
       }
 
       const db = firebase.firestore();
@@ -598,17 +1007,19 @@
         applyMidwivesList(users);
       } else if (!cached || !cached.length) {
         const box = document.getElementById('midwivesBox');
-        if (box) box.innerHTML = '<div class="text-muted p-2">No midwives found.</div>';
+        if (box) box.innerHTML = '<div class="text-muted p-2">' + escapeHtml(t('noMidwives')) + '</div>';
       }
     }
 
-    function fillTownships() {
+    function fillTownships(preserveValue) {
       const region = document.getElementById('regionSelect').value;
       const townships = [...new Set(allMidwives
         .filter((u) => !region || String(u.region || '') === region)
         .map((u) => String(u.township || '').trim()).filter(Boolean))].sort();
       const tSel = document.getElementById('townshipSelect');
-      tSel.innerHTML = '<option value="">All Townships</option>' + townships.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+      tSel.innerHTML = '<option value="">' + escapeHtml(t('allTownships')) + '</option>' +
+        townships.map((twn) => `<option value="${escapeHtml(twn)}">${escapeHtml(twn)}</option>`).join('');
+      if (preserveValue) tSel.value = preserveValue;
     }
 
     function renderMidwives() {
@@ -620,7 +1031,7 @@
       );
       const box = document.getElementById('midwivesBox');
       if (!filtered.length) {
-        box.innerHTML = '<div class="text-muted p-2">No midwives found for selected filters.</div>';
+        box.innerHTML = '<div class="text-muted p-2">' + escapeHtml(t('noMidwivesFilter')) + '</div>';
         refreshSubmitState();
         return;
       }
@@ -724,9 +1135,9 @@
       const ids = Array.from(document.querySelectorAll('.mw-check:checked')).map((el) => el.value);
       const referralData = getReferralFormData();
 
-      if (!patientId) return AppDialog.alert('Please select a patient.', { title: 'Transfer Patient' });
-      if (!referralData.referralTime) return AppDialog.alert('Please enter referral time.', { title: 'Transfer Patient' });
-      if (ids.length === 0) return AppDialog.alert('Please select at least one receiving midwife.', { title: 'Transfer Patient' });
+      if (!patientId) return AppDialog.alert(t('selectPatient'), { title: t('transferTitle') });
+      if (!referralData.referralTime) return AppDialog.alert(t('referralTime'), { title: t('transferTitle') });
+      if (ids.length === 0) return AppDialog.alert(t('selectMidwife'), { title: t('transferTitle') });
 
       const patient = allPatients.find((p) => p.id === patientId) || {};
       const recipients = allMidwives.filter((u) => ids.includes(u.id)).map((u) => ({
@@ -738,7 +1149,9 @@
 
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Sending...';
+      const saveLabel = btn.querySelector('.lang-text');
+      const prevHtml = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> ' + escapeHtml(t('sending'));
       try {
         await saveReferralRecords(patientId, referralData);
 
@@ -770,10 +1183,7 @@
           sessionStorage.removeItem('transferPatientPicker:' + currentUser.uid);
         } catch (e) { /* ignore */ }
 
-        await AppDialog.alert(
-          'Referral record saved and transfer request sent. The receiving midwife can accept from Transfer Requests.',
-          { title: 'Success' }
-        );
+        await AppDialog.alert(t('success'), { title: t('successTitle') });
 
         if (referFlow) {
           window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
@@ -782,10 +1192,17 @@
         }
       } catch (e) {
         console.error(e);
-        AppDialog.alert('Unable to complete transfer: ' + e.message, { title: 'Error' });
+        AppDialog.alert('Unable to complete transfer: ' + e.message, { title: t('errorTitle') });
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Send transfer request';
+        btn.innerHTML = prevHtml;
+        if (window.initLanguageSwitcher) {
+          const lang = localStorage.getItem('appLanguage') || 'mm';
+          document.querySelectorAll('#submitBtn .lang-text').forEach(function (el) {
+            const text = el.dataset[lang] || el.dataset.en;
+            if (text) el.textContent = text;
+          });
+        }
         refreshSubmitState();
       }
     }
