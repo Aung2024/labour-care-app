@@ -175,6 +175,7 @@
     formatDisplayDate: formatDisplayDate,
     getBirthDateStrFromDatetimeLocal: getBirthDateStrFromDatetimeLocal,
     getRecommendedCareDateForVisit: getRecommendedCareDateForVisit,
+    fetchNewbornCareDoc: fetchNewbornCareDoc,
     fetchSharedDeliveryAnchor: fetchSharedDeliveryAnchor,
     syncDatetimeToNewbornCare: syncDatetimeToNewbornCare,
     syncDatetimeToNewbornCareIfEmpty: syncDatetimeToNewbornCareIfEmpty

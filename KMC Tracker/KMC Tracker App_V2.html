@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KMC Tracking Dashboard - Jhpiego Myanmar</title>
+
+    <!-- PWA / Home Screen App Icon Settings -->
+    <link rel="icon" href="./favicon.ico.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="./favicon.ico.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="./favicon.ico.ico">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="KMC Tracker">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Recharts for Data Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.1.12/umd/Recharts.js"></script>
+
+    <!-- HTML2Canvas for PNG Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; overflow-x: hidden; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .exporting { border: none !important; border-radius: 0 !important; box-shadow: none !important; }
+
+        /* Custom Animations */
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-pop-in { animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        @keyframes slideIn {
+            0% { opacity: 0; transform: translateX(20px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+        .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+
+        @keyframes splashFadeOut {
+            0% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.1); pointer-events: none; visibility: hidden; }
+        }
+        .splash-exit { animation: splashFadeOut 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+
+        /* Hover & Transition Utilities */
+        .hover-card { transition: all 0.3s ease; }
+        .hover-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); z-index: 10; }
+        .btn-active { transition: all 0.2s ease; }
+        .btn-active:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useRef, useEffect } = React;
+        const { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LabelList, AreaChart, Area, ScatterChart, Scatter, ZAxis, Label, ComposedChart } = Recharts;
+
+        // --- SUPABASE SETUP ---
+        const SUPABASE_URL = 'https://nxvfjzduumcrwbbcirhq.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_--ZCzLr7SAZnTklVkKUq5Q_-3cGp9Ha';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // ==========================================
+        // 🚨 ROLE-BASED ACCESS CONTROL (RBAC) CONFIG
+        // ==========================================
+        const ADMIN_EMAILS = [
+            'admin@jhpiego.org',
+            'manager@example.com'
+        ]; 
+
+        // --- LOGIN COMPONENT ---
+        const LoginForm = ({ supabase }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [errorMsg, setErrorMsg] = useState('');
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setErrorMsg('');
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) setErrorMsg(error.message);
+                setLoading(false);
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative z-50">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md animate-pop-in">
+                        <div className="text-center mb-8">
+                            <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-3xl shadow-lg">
+                                <i className="fa-solid fa-person-breastfeeding"></i>
+                            </div>
+                            <h2 className="text-2xl font-black text-gray-800 uppercase tracking-wide">KMC Tracker</h2>
+                            <p className="text-sm text-gray-500 mt-1">Jhpiego Myanmar • Staff Login</p>
+                        </div>
+                        {errorMsg && (
+                            <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 text-sm text-center border border-red-200">
+                                <i className="fa-solid fa-triangle-exclamation mr-2"></i>{errorMsg}
+                            </div>
+                        )}
+                        <form onSubmit={handleLogin} className="space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Email Address</label>
+                                <div className="relative">
+                                    <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input type="email" required className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-10 p-3 outline-none transition-all" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Password</label>
+                                <div className="relative">
+                                    <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                    <input type="password" required className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-10 p-3 outline-none transition-all" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                                </div>
+                            </div>
+                            <button type="submit" disabled={loading} className="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-bold rounded-lg text-sm px-5 py-3.5 text-center shadow-md hover:shadow-lg transition-all flex items-center justify-center">
+                                {loading ? <i className="fa-solid fa-spinner fa-spin text-lg"></i> : 'Secure Log In'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- DATA DICTIONARY FOR KMC BARRIERS ---
+        const kmcBarriers = {
+          "1. Physical and Emotional Strain": [
+            { reason: "Physical Pain and Fatigue", detail: "Exhaustion is a top barrier, particularly after C-section recovery or when managing other children." },
+            { reason: "Discomfort during Sleep", detail: "Difficulty sleeping while in a semi-reclined or upright position with the baby restricts rest." },
+            { reason: "Mental Health and Guilt", detail: "Postpartum depression and anxiety over having a premature baby can reduce a mother’s willingness or ability to perform continuous KMC." }
+          ],
+          "2. Logistical and Practical Challenges": [
+            { reason: "Lack of Support", detail: "The absence of help with KMC practice (e.g., family members taking turns) or other obligations (household chores, caring for other children) is a major factor." },
+            { reason: "Time Limitations and Household Duties", detail: "Many mothers stop KMC because they cannot manage it alongside home responsibilities or work." },
+            { reason: "Infant Fussy/Discomfort", detail: "If the baby cries, feels uncomfortable, or seems too warm, parents tend to discontinue the session." },
+            { reason: "Medical Issues and Complications", detail: "The mother's own health issues (e.g., pain, illness) or the baby's discomfort (e.g., being attached to medical devices) hampers continuity." }
+          ],
+          "3. Sociocultural and Behavioral Factors": [
+            { reason: "Cultural Beliefs and Confinement", detail: "In some regions, traditional practices conflict with KMC." },
+            { reason: "Resistance from Family Members", detail: "Grandparents or other family members may discourage KMC, believing the baby needs to be in a cot." },
+            { reason: "Modesty and Privacy", detail: "Lack of privacy in overcrowded hospital wards makes mothers uncomfortable." }
+          ],
+          "4. Health System Barriers": [
+            { reason: "Poor Counseling and Education", detail: "Lack of adequate training and understanding of the benefits of KMC makes parents less likely to adhere to it." },
+            { reason: "Negative Experience with Staff", detail: "Poor interaction with healthcare providers or feeling pressured to do KMC can cause clients to abandon the practice." },
+            { reason: "Resource Constraints", detail: "Lack of proper facilities (e.g., chairs, screens, blankets) in hospitals." }
+          ],
+          "5. Reasons for Planned Discontinuation": [
+            { reason: "Baby Reaching Target Weight", detail: "Often, when the baby grows, gains weight, and becomes more active or uncomfortable in the KMC position, mothers stop." },
+            { reason: "Baby's Improved Health", detail: "The perception that the baby is strong enough and no longer needs special care." }
+          ]
+        };
+
+        // --- HELPERS ---
+        const getTodayDate = () => new Date().toISOString().split('T')[0];
+
+        const calculateAgeInDays = (dobString) => {
+          if (!dobString) return '-';
+          const diffTime = Math.abs(new Date() - new Date(dobString));
+          return Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
+        };
+
+        const getDaysBetween = (start, end) => {
+            if (!start || !end) return null;
+            const diff = new Date(end) - new Date(start);
+            return Math.floor(diff / (1000 * 3600 * 24));
+        };
+
+        const addDays = (dateStr, days) => {
+          if (!dateStr) return '';
+          const d = new Date(dateStr);
+          d.setDate(d.getDate() + days);
+          return d.toISOString().split('T')[0];
+        };
+
+        const getDiffDays = (dateStr) => {
+          if (!dateStr) return 0;
+          const diffTime = new Date() - new Date(dateStr);
+          return diffTime / (1000 * 3600 * 24);
+        };
+
+        const deriveOutcome = (client) => {
+          if (client.manualOutcome) return client.manualOutcome;
+
+          if (!client.visits) return 'Active';
+          if (client.visits.some(v => v.visitStatus === 'Death')) return 'Death';
+          if (client.visits.some(v => v.visitStatus === 'Refer to higher center')) return 'Referred';
+          if (client.visits.some(v => v.visitStatus === 'Loss of contact')) return 'Defaulted';
+
+          const completedVisits = client.visits.filter(v => v.done || v.visitStatus === 'Attended').length;
+          if (completedVisits >= 3) return 'Completed';
+
+          let isDropOff = false;
+          let isOverdue = false;
+
+          client.visits.forEach(v => {
+            if (!v.done && v.visitStatus !== 'Attended' && v.scheduledDate) {
+              const diffDays = getDiffDays(v.scheduledDate);
+              if (diffDays > 30) isDropOff = true;
+              else if (diffDays > 7) isOverdue = true;
+            }
+          });
+
+          if (isDropOff) return 'Defaulted';
+          if (isOverdue) return 'Overdue';
+
+          return 'Active'; 
+        };
+
+        const parseCSVRow = (row) => {
+          const result = [];
+          let current = '';
+          let inQuotes = false;
+          for (let i = 0; i < row.length; i++) {
+            const char = row[i];
+            if (char === '"') inQuotes = !inQuotes;
+            else if (char === ',' && !inQuotes) { result.push(current); current = ''; } 
+            else current += char;
+          }
+          result.push(current);
+          return result.map(s => s.replace(/^"|"$/g, '').replace(/""/g, '"'));
+        };
+
+        const checkGraduation = (client) => {
+            if (!client) return { meets: false };
+            let maxW = parseFloat(client.birthWeight || 0);
+            let maxDays = 0;
+            (client.visits || []).forEach(v => {
+                if (v.weight && parseFloat(v.weight) > maxW) maxW = parseFloat(v.weight);
+                if (v.date) {
+                    let d = getDaysBetween(client.dob, v.date);
+                    if (d > maxDays) maxDays = d;
+                }
+            });
+            let cga = parseInt(client.gestationalAge || 0) + Math.floor(maxDays / 7);
+            return { meets: cga >= 40 || maxW >= 2.5, cga, maxW };
+        };
+
+        const initialLocations = {
+          'Yangon': ['Thanlyin', 'Insein', 'Dala', 'South Dagon', 'Hlaingthaya'],
+          'Bago': ['Bago', 'Taungoo', 'Pyay'],
+          'Mandalay': ['Mandalay', 'Meiktila', 'Pyin Oo Lwin'],
+          'Ayeyarwady': ['Pathein', 'Hinthada', 'Myaungmya', 'Maubin']
+        };
+
+        const PIE_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#64748b'];
+
+        // --- SPLASH SCREEN COMPONENT ---
+        const SplashScreen = ({ isFading }) => (
+            <div className={`fixed inset-0 bg-blue-600 flex flex-col items-center justify-center z-[100] ${isFading ? 'splash-exit' : ''}`}>
+                <div className="animate-float flex flex-col items-center">
+                    <div className="relative mb-6">
+                        <i className="fa-solid fa-person-breastfeeding text-white text-8xl"></i>
+                        <i className="fa-solid fa-heart text-pink-400 text-3xl absolute -right-2 -top-2 animate-ping"></i>
+                    </div>
+                    <h1 className="text-white text-4xl font-extrabold tracking-widest uppercase shadow-black drop-shadow-md">KMC Tracker</h1>
+                    <p className="text-blue-200 mt-3 font-medium tracking-wide">Developed by Jhpiego Myanmar</p>
+                    
+                    <div className="mt-12 flex space-x-2">
+                        <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{animationDelay: "0ms"}}></div>
+                        <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{animationDelay: "150ms"}}></div>
+                        <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{animationDelay: "300ms"}}></div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // --- COMPONENT: EXPORTABLE CHART WRAPPER ---
+        const VisualizationCard = ({ id, title, subtitle, headerExtras, children }) => {
+          const handleDownload = () => {
+            const element = document.getElementById(id);
+            element.classList.add('exporting');
+            html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+              element.classList.remove('exporting');
+              const link = document.createElement('a');
+              link.download = `${title.replace(/\s+/g, '_')}_A5_Export.png`;
+              link.href = canvas.toDataURL('image/png');
+              link.click();
+            });
+          };
+
+          return (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col relative group hover-card">
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-xl">
+                <div>
+                    <h3 className="font-bold text-gray-800 flex items-center text-sm">{title}</h3>
+                    {subtitle && <p className="text-[10px] text-gray-500 mt-0.5">{subtitle}</p>}
+                </div>
+                <div className="flex items-center space-x-3">
+                  {headerExtras}
+                  <button onClick={handleDownload} className="text-gray-500 hover:text-blue-600 bg-white border border-gray-200 hover:border-blue-300 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-sm flex items-center btn-active">
+                    <i className="fa-solid fa-download mr-1.5"></i> Export
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-4 flex-1 flex justify-center items-center bg-gray-100/50">
+                 <div id={id} className="bg-white w-full relative flex flex-col shadow-sm border border-gray-200 overflow-hidden" style={{ aspectRatio: '1.414 / 1', padding: '20px' }}>
+                    <div className="text-center mb-6 pb-2 border-b border-gray-100 shrink-0">
+                        <h2 className="text-xl font-black text-gray-800 uppercase">{title}</h2>
+                        <p className="text-[10px] text-gray-500 tracking-widest mt-1">KMC Tracking Dashboard • Developed by Jhpiego Myanmar</p>
+                    </div>
+                    <div className="flex-1 w-full min-h-0 relative">
+                      {children}
+                    </div>
+                 </div>
+              </div>
+            </div>
+          );
+        };
+
+        // --- MAIN APP COMPONENT ---
+        const App = () => {
+          const [session, setSession] = useState(null);
+          const [authChecking, setAuthChecking] = useState(true);
+          const [userRole, setUserRole] = useState(null);
+
+          const [showSplash, setShowSplash] = useState(true);
+          const [splashFading, setSplashFading] = useState(false);
+
+          const [outcomeView, setOutcomeView] = useState('bar');
+          const [attendanceView, setAttendanceView] = useState('bar');
+          const [barrierView, setBarrierView] = useState('bar');
+          const [dangerView, setDangerView] = useState('bar');
+
+          // GLOBAL FILTER STATES
+          const [trendFilterTownship, setTrendFilterTownship] = useState('All');
+          const [trendFilterMonth, setTrendFilterMonth] = useState('All');
+          const [trendFilterYear, setTrendFilterYear] = useState('All');
+
+          const [activeTab, setActiveTab] = useState('registry'); 
+
+          // Check Session
+          const handleSessionUpdate = (currentSession) => {
+              setSession(currentSession);
+              if (currentSession?.user?.email) {
+                  const role = ADMIN_EMAILS.includes(currentSession.user.email) ? 'admin' : 'data_entry';
+                  setUserRole(role);
+                  if (role === 'data_entry') {
+                      setActiveTab('registry');
+                  } else if (activeTab === 'registry' && role === 'admin') {
+                      setActiveTab('dashboard'); 
+                  }
+              } else {
+                  setUserRole(null);
+              }
+          };
+
+          useEffect(() => {
+            supabase.auth.getSession().then(({ data: { session }, error }) => {
+              if (error) {
+                  console.warn("Auth session error:", error.message);
+                  supabase.auth.signOut(); 
+                  handleSessionUpdate(null);
+              } else {
+                  handleSessionUpdate(session);
+              }
+              setAuthChecking(false);
+            }).catch((err) => {
+              console.warn("Unexpected auth error:", err);
+              setAuthChecking(false);
+            });
+
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+              if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+                  handleSessionUpdate(null);
+              } else {
+                  handleSessionUpdate(session);
+              }
+            });
+            return () => subscription.unsubscribe();
+          }, []);
+
+          // Splash screen timings
+          useEffect(() => {
+              const fadeTimer = setTimeout(() => setSplashFading(true), 2000);
+              const hideTimer = setTimeout(() => setShowSplash(false), 2800);
+              return () => { clearTimeout(fadeTimer); clearTimeout(hideTimer); };
+          }, []);
+
+          const [clients, setClients] = useState([]);
+          const [isLoadingData, setIsLoadingData] = useState(false);
+
+          useEffect(() => {
+             if (session) fetchClients();
+          }, [session]);
+
+          const fetchClients = async () => {
+             setIsLoadingData(true);
+             const { data, error } = await supabase.from('kmc_clients').select('*').order('id', { ascending: false });
+             if (error) {
+                 console.error("Error fetching data:", error);
+                 alert("Failed to load data from Supabase. Check your table structure.");
+             } else {
+                 setClients(data || []);
+             }
+             setIsLoadingData(false);
+          };
+
+          const [searchTerm, setSearchTerm] = useState('');
+          const [searchTownship, setSearchTownship] = useState('All');
+          const [searchStatus, setSearchStatus] = useState('All'); 
+          
+          const fileInputRef = useRef(null);
+          const [isNotiOpen, setIsNotiOpen] = useState(false);
+
+          const [locations, setLocations] = useState(() => {
+              const savedLocs = localStorage.getItem('kmc_locations_data');
+              return savedLocs ? JSON.parse(savedLocs) : {
+                  'Yangon': ['Thanlyin', 'Insein', 'Dala', 'South Dagon', 'Hlaingthaya'],
+                  'Bago': ['Bago', 'Taungoo', 'Pyay'],
+                  'Mandalay': ['Mandalay', 'Meiktila', 'Pyin Oo Lwin'],
+                  'Ayeyarwady': ['Pathein', 'Hinthada', 'Myaungmya', 'Maubin']
+              };
+          });
+          useEffect(() => { localStorage.setItem('kmc_locations_data', JSON.stringify(locations)); }, [locations]);
+
+          const [newRegion, setNewRegion] = useState('');
+          const [selectedRegionForTownship, setSelectedRegionForTownship] = useState('Yangon');
+          const [newTownship, setNewTownship] = useState('');
+
+          const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+          const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
+          const [selectedClient, setSelectedClient] = useState(null);
+          const [activeVisitTab, setActiveVisitTab] = useState(0); 
+          const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+          // Graduation States
+          const [showGradPrompt, setShowGradPrompt] = useState(false);
+          const [gradOutcome, setGradOutcome] = useState('Completed');
+
+          const [formData, setFormData] = useState({
+            clientId: '',
+            registrationDate: getTodayDate(),
+            reportingMonth: 'February', reportingYear: new Date().getFullYear().toString(), region: '', township: '', clientName: '', 
+            dob: '', gestationalAge: '', birthWeight: '', dischargeDate: '',
+            parentName: '', address: '', primaryPhone: '', secondaryPhone: '', kmcBinder: 'Yes', completionDate: ''
+          });
+
+          const availableYears = useMemo(() => {
+             return [...new Set(clients.map(c => c.reportingYear || new Date().getFullYear().toString()))].sort().reverse();
+          }, [clients]);
+
+          const availableMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+          // --- GLOBAL FILTERING LOGIC ---
+          const filteredDashboardClients = useMemo(() => {
+            let filtered = clients;
+            if (trendFilterYear !== 'All') filtered = filtered.filter(c => (c.reportingYear || new Date().getFullYear().toString()) === trendFilterYear);
+            if (trendFilterMonth !== 'All') filtered = filtered.filter(c => c.reportingMonth === trendFilterMonth);
+            if (trendFilterTownship !== 'All') filtered = filtered.filter(c => c.township === trendFilterTownship);
+            return filtered;
+          }, [clients, trendFilterYear, trendFilterMonth, trendFilterTownship]);
+
+
+          // --- CHART 1: TREND DATA ---
+          const trendChartData = useMemo(() => {
+            let monthTownshipObj = {};
+            let uniqueTownships = new Set();
+            filteredDashboardClients.forEach(c => {
+                const m = c.reportingMonth || 'Unknown';
+                const t = c.township || 'Unknown';
+                uniqueTownships.add(t);
+                if (!monthTownshipObj[m]) monthTownshipObj[m] = {};
+                monthTownshipObj[m][t] = (monthTownshipObj[m][t] || 0) + 1;
+            });
+
+            const monthsOrdered = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const data = Object.keys(monthTownshipObj)
+                .sort((a,b) => monthsOrdered.indexOf(a) - monthsOrdered.indexOf(b))
+                .map(m => {
+                    let obj = { month: m.substring(0,3) };
+                    Object.keys(monthTownshipObj[m]).forEach(t => {
+                        obj[t] = monthTownshipObj[m][t];
+                    });
+                    return obj;
+                });
+            
+            return { data, townshipsList: Array.from(uniqueTownships) };
+          }, [filteredDashboardClients]);
+
+          // --- METRICS ---
+          const metrics = useMemo(() => {
+            let total = filteredDashboardClients.length;
+            let completed = 0, onTrack = 0, dropOff = 0, death = 0;
+            filteredDashboardClients.forEach(c => {
+              const status = deriveOutcome(c);
+              if (status === 'Completed') completed++;
+              else if (status === 'Defaulted') dropOff++;
+              else if (status === 'Death') death++;
+              else onTrack++; 
+            });
+            return { total, completed, onTrack, dropOff, death };
+          }, [filteredDashboardClients]);
+
+          // --- COMPREHENSIVE ACADEMIC ANALYTICS ---
+          const analytics = useMemo(() => {
+            let total = filteredDashboardClients.length || 1; 
+            
+            let kitIssued = 0;
+            
+            let maxV = Math.max(...filteredDashboardClients.map(c => c.visits ? c.visits.length : 0), 3);
+
+            let wV = Array(maxV).fill(null).map(() => ({sum: 0, count: 0}));
+            let tV = Array(maxV).fill(null).map(() => ({sum: 0, count: 0}));
+            let aV = Array(maxV).fill(null).map(() => ({sum: 0, count: 0}));
+            let attV = Array(maxV).fill(0);
+            let kmcYesV = Array(maxV).fill(0);
+            let vTotalDone = Array(maxV).fill(0);
+
+            let wBirth = { sum: 0, count: 0 };
+            
+            let outcomesObj = { 'Completed': 0, 'Active': 0, 'Overdue': 0, 'Defaulted': 0, 'Referred': 0, 'Death': 0 };
+
+            let barrierCatObj = {};
+            let barrierReasonObj = {};
+            let dangerObj = {}; 
+
+            let regTrendObj = {};
+            let discTrendObj = {};
+
+            let scatterData = [];
+            let groupData = {
+                cat1: { sumGain: 0, count: 0, label: '< 3 hrs/day' },
+                cat2: { sumGain: 0, count: 0, label: '3 to < 5 hrs/day' },
+                cat3: { sumGain: 0, count: 0, label: '5 to < 8 hrs/day' },
+                cat4: { sumGain: 0, count: 0, label: '>= 8 hrs/day' }
+            };
+
+            let feedTrends = {
+                'Exclusive Breast Feeding': { birth: {s:0, c:0}, visits: Array(maxV).fill(null).map(() => ({s:0, c:0})) },
+                'Formula Feeding': { birth: {s:0, c:0}, visits: Array(maxV).fill(null).map(() => ({s:0, c:0})) },
+                'Mixed Feeding': { birth: {s:0, c:0}, visits: Array(maxV).fill(null).map(() => ({s:0, c:0})) }
+            };
+
+            filteredDashboardClients.forEach(c => {
+              if (c.kmcBinder === 'Yes') kitIssued++;
+              
+              outcomesObj[deriveOutcome(c)]++;
+              if (c.birthWeight) { wBirth.sum += parseFloat(c.birthWeight); wBirth.count++; }
+
+              if (c.registrationDate) {
+                  let rm = new Date(c.registrationDate).toLocaleString('default', {month:'short', year:'2-digit'});
+                  regTrendObj[rm] = (regTrendObj[rm] || 0) + 1;
+              }
+
+              let bWeight = parseFloat(c.birthWeight || 0);
+              let lastWeight = bWeight;
+              let validKmcHours = [];
+              let feedTypes = [];
+
+              (c.visits || []).forEach((v, index) => {
+                  const isDone = v.done || v.visitStatus === 'Attended';
+
+                  if (isDone && v.date && c.dob) {
+                      let days = getDaysBetween(c.dob, v.date);
+                      if (days !== null && days >= 0) {
+                          aV[index].sum += days; aV[index].count++;
+                      }
+                  }
+
+                  if (isDone && v.temp) {
+                      let tempVal = parseFloat(v.temp);
+                      tV[index].sum += tempVal; tV[index].count++;
+                  }
+
+                  if (isDone && v.weight) {
+                      let currentWeight = parseFloat(v.weight);
+                      lastWeight = currentWeight;
+                      wV[index].sum += currentWeight; wV[index].count++;
+                  }
+
+                  if (isDone) {
+                      vTotalDone[index]++;
+                      attV[index]++;
+                      if (v.kmcPracticed === 'Yes') kmcYesV[index]++;
+                      
+                      if (v.feedingType) feedTypes.push(v.feedingType);
+                      if (v.kmcPracticed === 'Yes' && v.kmcHours) validKmcHours.push(parseFloat(v.kmcHours));
+                      
+                      if (v.dangerSign) {
+                          let sign = v.dangerSign === 'Others' && v.dangerSignOther ? v.dangerSignOther : v.dangerSign;
+                          dangerObj[sign] = (dangerObj[sign] || 0) + 1;
+                      }
+                  }
+
+                  if (v.kmcPracticed === 'No') {
+                      if (v.kmcNoCategory) {
+                          let cleanCat = v.kmcNoCategory.replace(/^\d+\.\s*/, ''); 
+                          barrierCatObj[cleanCat] = (barrierCatObj[cleanCat] || 0) + 1;
+                      }
+                      if (v.kmcNoReason) {
+                          let reason = v.kmcNoReason === 'Others' && v.kmcNoReasonOther ? v.kmcNoReasonOther : v.kmcNoReason;
+                          barrierReasonObj[reason] = (barrierReasonObj[reason] || 0) + 1;
+                      }
+                      if (v.kmcDiscontinueDate) {
+                          let dm = new Date(v.kmcDiscontinueDate).toLocaleString('default', {month:'short', year:'2-digit'});
+                          discTrendObj[dm] = (discTrendObj[dm] || 0) + 1;
+                      }
+                  }
+              });
+
+              // --- Weight Gain & Feeding Trend Logic ---
+              let weightGain = lastWeight - bWeight;
+
+              let predominantFeed = null;
+              if (feedTypes.length > 0) {
+                  const counts = {};
+                  let maxCount = 0;
+                  feedTypes.forEach(f => {
+                      counts[f] = (counts[f] || 0) + 1;
+                      if (counts[f] > maxCount) { maxCount = counts[f]; predominantFeed = f; }
+                  });
+              }
+
+              if (predominantFeed && feedTrends[predominantFeed]) {
+                  if (c.birthWeight) {
+                      feedTrends[predominantFeed].birth.s += parseFloat(c.birthWeight);
+                      feedTrends[predominantFeed].birth.c++;
+                  }
+                  (c.visits || []).forEach((v, index) => {
+                      if ((v.done || v.visitStatus==='Attended') && v.weight) { 
+                          feedTrends[predominantFeed].visits[index].s += parseFloat(v.weight); 
+                          feedTrends[predominantFeed].visits[index].c++; 
+                      }
+                  });
+              }
+
+              if (weightGain !== 0) {
+                  if (validKmcHours.length > 0) {
+                      let avgHours = validKmcHours.reduce((a, b) => a + b, 0) / validKmcHours.length;
+                      
+                      scatterData.push({
+                          name: c.clientName,
+                          kmcHours: parseFloat(avgHours.toFixed(1)),
+                          weightGain: parseFloat(weightGain.toFixed(2))
+                      });
+
+                      if (avgHours < 3) { groupData.cat1.sumGain += weightGain; groupData.cat1.count++; }
+                      else if (avgHours < 5) { groupData.cat2.sumGain += weightGain; groupData.cat2.count++; }
+                      else if (avgHours < 8) { groupData.cat3.sumGain += weightGain; groupData.cat3.count++; }
+                      else { groupData.cat4.sumGain += weightGain; groupData.cat4.count++; }
+                  }
+              }
+            });
+
+            const monthsOrderedShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const sortMonths = (a, b) => {
+                let [m1, y1] = a.month.split(' '); let [m2, y2] = b.month.split(' ');
+                if(y1 !== y2) return y1.localeCompare(y2);
+                return monthsOrderedShort.indexOf(m1) - monthsOrderedShort.indexOf(m2);
+            };
+
+            const registrationTrendData = Object.keys(regTrendObj).map(k => ({ month: k, registrations: regTrendObj[k] })).sort(sortMonths);
+            const discontinuationTrendData = Object.keys(discTrendObj).map(k => ({ month: k, stops: discTrendObj[k] })).sort(sortMonths);
+
+            const combinedClinicalTrend = wV.slice(0, 5).map((_, i) => ({
+              visit: `V${i+1}`, 
+              weight: wV[i].count ? +(wV[i].sum/wV[i].count).toFixed(2) : null, 
+              temp: tV[i].count ? +(tV[i].sum/tV[i].count).toFixed(1) : null, 
+              age: aV[i].count ? Math.round(aV[i].sum/aV[i].count) : null 
+            }));
+
+            const qualityData = [
+                { metric: 'KMC Kit Provided', percentage: Math.round((kitIssued/total)*100) },
+                { metric: 'KMC Practiced (V1)', percentage: vTotalDone[0] ? Math.round((kmcYesV[0]/vTotalDone[0])*100) : 0 },
+            ];
+
+            const weightData = [
+              { visit: 'Admission', weight: wBirth.count ? +(wBirth.sum/wBirth.count).toFixed(2) : null, n: wBirth.count },
+              ...wV.slice(0, 5).map((_, i) => ({
+                  visit: `Visit ${i+1}`, 
+                  weight: wV[i].count ? +(wV[i].sum/wV[i].count).toFixed(2) : null, 
+                  n: wV[i].count
+              }))
+            ];
+
+            const feedingTrendData = [
+              { 
+                  visit: 'Admission', 
+                  'Exclusive Breast Feeding': feedTrends['Exclusive Breast Feeding'].birth.c ? +(feedTrends['Exclusive Breast Feeding'].birth.s/feedTrends['Exclusive Breast Feeding'].birth.c).toFixed(2) : null, 
+                  'Formula Feeding': feedTrends['Formula Feeding'].birth.c ? +(feedTrends['Formula Feeding'].birth.s/feedTrends['Formula Feeding'].birth.c).toFixed(2) : null, 
+                  'Mixed Feeding': feedTrends['Mixed Feeding'].birth.c ? +(feedTrends['Mixed Feeding'].birth.s/feedTrends['Mixed Feeding'].birth.c).toFixed(2) : null 
+              },
+              ...feedTrends['Exclusive Breast Feeding'].visits.slice(0, 5).map((_, i) => ({
+                  visit: `Visit ${i+1}`, 
+                  'Exclusive Breast Feeding': feedTrends['Exclusive Breast Feeding'].visits[i].c ? +(feedTrends['Exclusive Breast Feeding'].visits[i].s/feedTrends['Exclusive Breast Feeding'].visits[i].c).toFixed(2) : null, 
+                  'Formula Feeding': feedTrends['Formula Feeding'].visits[i].c ? +(feedTrends['Formula Feeding'].visits[i].s/feedTrends['Formula Feeding'].visits[i].c).toFixed(2) : null, 
+                  'Mixed Feeding': feedTrends['Mixed Feeding'].visits[i].c ? +(feedTrends['Mixed Feeding'].visits[i].s/feedTrends['Mixed Feeding'].visits[i].c).toFixed(2) : null
+              }))
+            ];
+
+            const outcomeData = [
+                { name: 'Completed', count: outcomesObj['Completed'], color: '#10b981' },
+                { name: 'Active', count: outcomesObj['Active'], color: '#3b82f6' },
+                { name: 'Overdue', count: outcomesObj['Overdue'], color: '#f59e0b' },
+                { name: 'Defaulted', count: outcomesObj['Defaulted'], color: '#ef4444' },
+                { name: 'Referred', count: outcomesObj['Referred'], color: '#8b5cf6' },
+                { name: 'Death', count: outcomesObj['Death'], color: '#64748b' }
+            ];
+
+            const attendanceData = attV.slice(0, 5).map((count, i) => ({
+                visit: `Visit ${i+1}`, 
+                attendance: Math.round((count/total)*100) 
+            }));
+
+            const totalAttended = attV.reduce((a,b)=>a+b, 0);
+            const expectedTotalVisits = total * 3; // Baseline expectation
+            const attendancePieData = [
+                { name: 'Attended', value: totalAttended, color: '#8b5cf6' },
+                { name: 'Missed', value: Math.max(0, expectedTotalVisits - totalAttended), color: '#cbd5e1' }
+            ];
+
+            const barrierPieData = Object.keys(barrierCatObj).map(k => ({ name: k, value: barrierCatObj[k] }));
+            const barrierBarData = Object.keys(barrierReasonObj).map(k => ({ name: k, count: barrierReasonObj[k] })).sort((a,b) => b.count - a.count);
+
+            const dangerBarData = Object.keys(dangerObj).map(k => ({ name: k, count: dangerObj[k] })).sort((a,b) => b.count - a.count);
+            const dangerPieData = Object.keys(dangerObj).map(k => ({ name: k, value: dangerObj[k] }));
+
+            const kmcWeightScatter = scatterData;
+            const kmcWeightBar = [
+                { category: groupData.cat1.label, avgGain: groupData.cat1.count ? parseFloat((groupData.cat1.sumGain / groupData.cat1.count).toFixed(2)) : 0 },
+                { category: groupData.cat2.label, avgGain: groupData.cat2.count ? parseFloat((groupData.cat2.sumGain / groupData.cat2.count).toFixed(2)) : 0 },
+                { category: groupData.cat3.label, avgGain: groupData.cat3.count ? parseFloat((groupData.cat3.sumGain / groupData.cat3.count).toFixed(2)) : 0 },
+                { category: groupData.cat4.label, avgGain: groupData.cat4.count ? parseFloat((groupData.cat4.sumGain / groupData.cat4.count).toFixed(2)) : 0 }
+            ];
+
+            return { qualityData, weightData, feedingTrendData, outcomeData, attendanceData, attendancePieData, barrierPieData, barrierBarData, dangerBarData, dangerPieData, rawOutcomes: outcomesObj, kmcWeightScatter, kmcWeightBar, registrationTrendData, discontinuationTrendData, combinedClinicalTrend };
+          }, [filteredDashboardClients]);
+
+          const overdueClients = useMemo(() => clients.filter(c => {
+            const st = deriveOutcome(c);
+            return st === 'Overdue' || st === 'Defaulted';
+          }), [clients]);
+
+          const overdueCount = overdueClients.length;
+
+          // Filter by Township, Search Term AND Status
+          const filteredClients = clients.filter(c => {
+            const matchesTownship = searchTownship === 'All' || c.township === searchTownship;
+            const matchesStatus = searchStatus === 'All' || deriveOutcome(c) === searchStatus;
+            const matchesText = c.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                c.parentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                c.id.toLowerCase().includes(searchTerm.toLowerCase());
+            return matchesTownship && matchesStatus && matchesText;
+          });
+
+          // Supabase Interactions
+          const handleSaveClient = async (e) => {
+            e.preventDefault();
+            
+            if (new Date(formData.dischargeDate) < new Date(formData.dob)) {
+                alert("Error: Discharge date cannot be earlier than Date of Birth!");
+                return;
+            }
+
+            const generatedId = `KMC-${String(clients.length + 1).padStart(3, '0')}-${Date.now().toString().slice(-4)}`;
+            const newId = formData.clientId && formData.clientId.trim() !== '' ? formData.clientId.trim() : generatedId;
+            
+            const v1Sched = addDays(formData.dischargeDate, 3);
+            const v2Sched = addDays(v1Sched, 7);
+            const v3Sched = addDays(v2Sched, 14);
+
+            const newClient = {
+              ...formData, 
+              id: newId,
+              birthWeight: parseFloat(formData.birthWeight), 
+              gestationalAge: parseInt(formData.gestationalAge, 10),
+              manualOutcome: '',
+              visits: [
+                { visitNum: 1, scheduledDate: v1Sched, date: '', weight: '', temp: '', kmcPracticed: '', kmcHours: '', kmcTotalHours: '', kmcNoCategory: '', kmcNoReason: '', kmcDiscontinueDate: '', visitStatus: '', feedingType: '', hasDangerSign: '', dangerSign: '', dangerSignOther: '', clientExperience: '', comments: '', done: false },
+                { visitNum: 2, scheduledDate: v2Sched, date: '', weight: '', temp: '', kmcPracticed: '', kmcHours: '', kmcTotalHours: '', kmcNoCategory: '', kmcNoReason: '', kmcDiscontinueDate: '', visitStatus: '', feedingType: '', hasDangerSign: '', dangerSign: '', dangerSignOther: '', clientExperience: '', comments: '', done: false },
+                { visitNum: 3, scheduledDate: v3Sched, date: '', weight: '', temp: '', kmcPracticed: '', kmcHours: '', kmcTotalHours: '', kmcNoCategory: '', kmcNoReason: '', kmcDiscontinueDate: '', visitStatus: '', feedingType: '', hasDangerSign: '', dangerSign: '', dangerSignOther: '', clientExperience: '', comments: '', done: false }
+              ]
+            };
+            
+            const { error } = await supabase.from('kmc_clients').insert([newClient]);
+            if (error) {
+                alert(`Error saving to database: ${error.message}`);
+            } else {
+                setClients([newClient, ...clients]);
+                setIsClientModalOpen(false);
+                setFormData({ clientId: '', registrationDate: getTodayDate(), reportingMonth: 'February', reportingYear: new Date().getFullYear().toString(), region: '', township: '', clientName: '', dob: '', gestationalAge: '', birthWeight: '', dischargeDate: '', parentName: '', address: '', primaryPhone: '', secondaryPhone: '', kmcBinder: 'Yes', completionDate: '' });
+            }
+          };
+
+          const handleUpdateVisit = (visitIndex, field, value) => {
+            const updatedVisits = [...selectedClient.visits];
+            updatedVisits[visitIndex] = { ...updatedVisits[visitIndex], [field]: value };
+            
+            if (field === 'date') {
+              updatedVisits[visitIndex].done = !!value;
+              if (value && !updatedVisits[visitIndex].visitStatus) updatedVisits[visitIndex].visitStatus = 'Attended';
+            }
+            if (field === 'visitStatus') {
+              if (value === 'Attended') updatedVisits[visitIndex].done = true;
+              else if (value === 'Loss of contact' || value === 'Refer to higher center' || value === 'Death') updatedVisits[visitIndex].done = false;
+              else if (value === '') updatedVisits[visitIndex].done = !!updatedVisits[visitIndex].date;
+            }
+            if (field === 'kmcPracticed') {
+              if (value !== 'Yes') { 
+                  updatedVisits[visitIndex].kmcHours = ''; 
+                  updatedVisits[visitIndex].kmcTotalHours = ''; 
+              }
+              if (value !== 'No') { 
+                  updatedVisits[visitIndex].kmcNoCategory = ''; 
+                  updatedVisits[visitIndex].kmcNoReason = ''; 
+                  updatedVisits[visitIndex].kmcDiscontinueDate = ''; 
+              }
+            }
+            if (field === 'kmcNoCategory') {
+                updatedVisits[visitIndex].kmcNoReason = '';
+            }
+            if (field === 'hasDangerSign' && value !== 'Yes') {
+               updatedVisits[visitIndex].dangerSign = '';
+               updatedVisits[visitIndex].dangerSignOther = '';
+            }
+            if (field === 'dangerSign' && value !== 'Others') {
+               updatedVisits[visitIndex].dangerSignOther = '';
+            }
+
+            setSelectedClient({ ...selectedClient, visits: updatedVisits });
+          };
+
+          const handleSaveVisits = async () => { 
+             const { error } = await supabase.from('kmc_clients').update({ visits: selectedClient.visits, manualOutcome: selectedClient.manualOutcome }).eq('id', selectedClient.id);
+             if (error) {
+                 alert(`Error updating visits: ${error.message}`);
+             } else {
+                 setClients(clients.map(c => c.id === selectedClient.id ? selectedClient : c)); 
+                 setIsVisitModalOpen(false); 
+             }
+          };
+
+          const handleAddVisit = () => {
+              const lastVisit = selectedClient.visits[selectedClient.visits.length - 1];
+              let nextSched = '';
+              if (lastVisit && lastVisit.date) {
+                  nextSched = addDays(lastVisit.date, 14); 
+              } else if (lastVisit && lastVisit.scheduledDate) {
+                  nextSched = addDays(lastVisit.scheduledDate, 14);
+              }
+
+              const newVisit = { 
+                  visitNum: selectedClient.visits.length + 1, 
+                  scheduledDate: nextSched, 
+                  date: '', weight: '', temp: '', kmcPracticed: '', kmcHours: '', kmcTotalHours: '', kmcNoCategory: '', kmcNoReason: '', kmcDiscontinueDate: '', visitStatus: '', feedingType: '', hasDangerSign: '', dangerSign: '', dangerSignOther: '', clientExperience: '', comments: '', done: false 
+              };
+
+              const updatedClient = { ...selectedClient, visits: [...selectedClient.visits, newVisit] };
+              setSelectedClient(updatedClient);
+              setActiveVisitTab(updatedClient.visits.length - 1);
+          };
+
+          const openVisitTracker = (client) => { 
+             setSelectedClient({ ...client }); 
+             setActiveVisitTab(0); 
+             setShowGradPrompt(false);
+             setGradOutcome('Completed');
+             setIsVisitModalOpen(true); 
+          };
+          
+          const handleDeleteClient = (id) => setConfirmModal({ 
+              isOpen: true, title: 'Delete Client', message: 'Are you sure?', 
+              onConfirm: async () => { 
+                  const { error } = await supabase.from('kmc_clients').delete().eq('id', id);
+                  if (error) alert(`Error deleting: ${error.message}`);
+                  else setClients(clients.filter(c => c.id !== id)); 
+                  setConfirmModal({ isOpen: false }); 
+              }
+          });
+
+          const handleClearAllData = () => setConfirmModal({ 
+              isOpen: true, title: 'CLEAR ALL CLIENT DATA', message: 'CRITICAL WARNING: This will permanently delete ALL client records from the cloud. Are you sure?', 
+              onConfirm: async () => { 
+                  const { error } = await supabase.from('kmc_clients').delete().neq('id', '0');
+                  if (error) alert(`Error clearing data: ${error.message}`);
+                  else setClients([]); 
+                  setConfirmModal({ isOpen: false }); 
+              }
+          });
+
+          const handleAddRegion = () => { const r = newRegion.trim(); if (!r || locations[r]) return; setLocations({ ...locations, [r]: [] }); setNewRegion(''); if (!selectedRegionForTownship) setSelectedRegionForTownship(r); };
+          const handleDeleteRegion = (region) => setConfirmModal({ isOpen: true, title: 'Delete Region', message: `Delete region "${region}"?`, onConfirm: () => { const newLocs = { ...locations }; delete newLocs[region]; setLocations(newLocs); if (selectedRegionForTownship === region) setSelectedRegionForTownship(Object.keys(newLocs)[0] || ''); setConfirmModal({ isOpen: false }); }});
+          const handleAddTownship = () => { const t = newTownship.trim(); if (!t || !selectedRegionForTownship || locations[selectedRegionForTownship].includes(t)) return; const updatedLocs = { ...locations }; updatedLocs[selectedRegionForTownship] = [...updatedLocs[selectedRegionForTownship], t].sort(); setLocations(updatedLocs); setNewTownship(''); };
+          const handleDeleteTownship = (region, township) => { const newLocs = { ...locations }; newLocs[region] = newLocs[region].filter(t => t !== township); setLocations(newLocs); };
+
+          const escapeCSV = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+          const handleExportCSV = () => {
+            const maxV = Math.max(...clients.map(c => c.visits ? c.visits.length : 0), 3);
+            const baseHeaders = ['ID', 'Registration Date', 'Reporting Month', 'Reporting Year', 'Region', 'Township', 'Client Name', 'DOB', 'Gestational Age (wks)', 'Birth Weight (Kg)', 'Discharge Date', 'Parent Name', 'Primary Phone', 'Secondary Phone', 'Address', 'KMC Binder', 'Auto-LBW', 'Auto-Prem', 'Outcome', 'Manual Outcome', 'Completion Date'];
+            
+            let visitHeaders = [];
+            const visitCols = ['Scheduled', 'Date', 'Weight', 'Temp', 'KMC', 'KMC Hrs/Day', 'KMC Total Hrs', 'KMC No Category', 'KMC No Reason', 'KMC Discontinue Date', 'Status', 'Feeding Type', 'Has Danger Sign', 'Danger Sign', 'Danger Sign Other', 'Client Exp', 'Notes'];
+            
+            for (let i = 1; i <= maxV; i++) {
+                visitCols.forEach(col => visitHeaders.push(`Visit ${i} ${col}`));
+            }
+
+            const headers = [...baseHeaders, ...visitHeaders];
+
+            const rows = clients.map(c => {
+              const outcome = deriveOutcome(c);
+              const vArray = c.visits || []; 
+              
+              let rowData = [ 
+                  escapeCSV(c.id), escapeCSV(c.registrationDate), escapeCSV(c.reportingMonth), escapeCSV(c.reportingYear || '2026'), escapeCSV(c.region), escapeCSV(c.township), escapeCSV(c.clientName), escapeCSV(c.dob), escapeCSV(c.gestationalAge), escapeCSV(c.birthWeight), escapeCSV(c.dischargeDate), escapeCSV(c.parentName), escapeCSV(c.primaryPhone), escapeCSV(c.secondaryPhone), escapeCSV(c.address), escapeCSV(c.kmcBinder), escapeCSV(c.birthWeight < 2.5 ? 'Yes' : 'No'), escapeCSV(c.gestationalAge < 37 ? 'Yes' : 'No'), escapeCSV(outcome), escapeCSV(c.manualOutcome || ''), escapeCSV(c.completionDate) 
+              ];
+
+              for (let i = 0; i < maxV; i++) {
+                  const v = vArray[i] || {};
+                  rowData.push(escapeCSV(v.scheduledDate), escapeCSV(v.date), escapeCSV(v.weight), escapeCSV(v.temp), escapeCSV(v.kmcPracticed), escapeCSV(v.kmcHours), escapeCSV(v.kmcTotalHours), escapeCSV(v.kmcNoCategory), escapeCSV(v.kmcNoReason), escapeCSV(v.kmcDiscontinueDate), escapeCSV(v.visitStatus), escapeCSV(v.feedingType), escapeCSV(v.hasDangerSign), escapeCSV(v.dangerSign), escapeCSV(v.dangerSignOther), escapeCSV(v.clientExperience), escapeCSV(v.comments));
+              }
+              return rowData;
+            });
+            const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `KMC_Data_Export_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+          };
+
+          const handleImportCSV = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+              try {
+                const rows = event.target.result.split('\n').filter(row => row.trim() !== '');
+                if (rows.length < 2) return; 
+                const parsedClients = rows.slice(1).map(rowStr => {
+                  const cols = parseCSVRow(rowStr);
+                  if (cols.length < 21) return null; 
+
+                  const baseCols = 21;
+                  const colsPerVisit = 17;
+                  const extractedVisits = [];
+                  
+                  const numVisits = Math.floor((cols.length - baseCols) / colsPerVisit);
+                  for (let v = 0; v < numVisits; v++) {
+                      const offset = baseCols + (v * colsPerVisit);
+                      if (!cols[offset] && !cols[offset+1] && !cols[offset+10]) continue;
+                      
+                      extractedVisits.push({
+                          visitNum: v + 1,
+                          scheduledDate: cols[offset], date: cols[offset+1], weight: cols[offset+2], temp: cols[offset+3], kmcPracticed: cols[offset+4], kmcHours: cols[offset+5], kmcTotalHours: cols[offset+6], kmcNoCategory: cols[offset+7], kmcNoReason: cols[offset+8], kmcDiscontinueDate: cols[offset+9], visitStatus: cols[offset+10], feedingType: cols[offset+11], hasDangerSign: cols[offset+12], dangerSign: cols[offset+13], dangerSignOther: cols[offset+14], clientExperience: cols[offset+15], comments: cols[offset+16], done: !!cols[offset+1] || cols[offset+10] === 'Attended'
+                      });
+                  }
+
+                  if (extractedVisits.length === 0) {
+                      for(let i=1; i<=3; i++) extractedVisits.push({ visitNum: i, scheduledDate: '', date: '', weight: '', temp: '', kmcPracticed: '', kmcHours: '', kmcTotalHours: '', kmcNoCategory: '', kmcNoReason: '', kmcDiscontinueDate: '', visitStatus: '', feedingType: '', hasDangerSign: '', dangerSign: '', dangerSignOther: '', clientExperience: '', comments: '', done: false });
+                  }
+
+                  return {
+                    id: cols[0], registrationDate: cols[1], reportingMonth: cols[2], reportingYear: cols[3], region: cols[4], township: cols[5], clientName: cols[6], dob: cols[7], gestationalAge: parseInt(cols[8], 10), birthWeight: parseFloat(cols[9]), dischargeDate: cols[10], parentName: cols[11], primaryPhone: cols[12], secondaryPhone: cols[13], address: cols[14], kmcBinder: cols[15], manualOutcome: cols[19], completionDate: cols[20], 
+                    visits: extractedVisits
+                  };
+                }).filter(Boolean);
+                if (parsedClients.length > 0) {
+                  const { error } = await supabase.from('kmc_clients').upsert(parsedClients);
+                  if(error) {
+                      alert(`Error uploading to database: ${error.message}`);
+                      return;
+                  }
+                  setClients(prev => {
+                    const existingMap = new Map(prev.map(c => [c.id, c]));
+                    parsedClients.forEach(c => existingMap.set(c.id, c));
+                    return Array.from(existingMap.values());
+                  });
+                  alert(`Successfully imported ${parsedClients.length} clients!`);
+                }
+              } catch (err) { alert("Error importing CSV file."); }
+              e.target.value = null; 
+            };
+            reader.readAsText(file);
+          };
+
+          const DashboardCard = ({ title, value, subtitle, icon, color }) => (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex items-center space-x-4 hover-card cursor-default">
+              <div className={`p-4 rounded-full ${color} text-white`}><i className={`fa-solid ${icon} text-xl`}></i></div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">{title}</p>
+                <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+                {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+              </div>
+            </div>
+          );
+
+          // GLOBAL FILTER COMPONENT
+          const GlobalFilterBar = () => (
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row items-center gap-4 hover-card">
+                <div className="flex items-center text-gray-800 font-bold shrink-0">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3 text-blue-600">
+                        <i className="fa-solid fa-filter"></i>
+                    </div>
+                    Global Dashboard Filter:
+                </div>
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+                    <div>
+                        <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Township</label>
+                        <select value={trendFilterTownship} onChange={(e) => setTrendFilterTownship(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer bg-gray-50 transition-colors">
+                            <option value="All">All Townships</option>
+                            {Object.values(locations).flat().sort().map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Reporting Year</label>
+                        <select value={trendFilterYear} onChange={(e) => setTrendFilterYear(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer bg-gray-50 transition-colors">
+                            <option value="All">All Years</option>
+                            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Reporting Month</label>
+                        <select value={trendFilterMonth} onChange={(e) => setTrendFilterMonth(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer bg-gray-50 transition-colors">
+                            <option value="All">All Months</option>
+                            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                    </div>
+                </div>
+            </div>
+          );
+
+          if (authChecking) return <SplashScreen isFading={false} />;
+          if (!session) return <><SplashScreen isFading={splashFading} /><LoginForm supabase={supabase} /></>;
+
+          return (
+            <div className="min-h-screen bg-gray-50 flex font-sans">
+              
+              {showSplash && <SplashScreen isFading={splashFading} />}
+
+              {/* SIDEBAR */}
+              <div className="w-64 bg-slate-900 text-white flex flex-col z-20 shadow-xl fixed h-full">
+                <div className="p-6 border-b border-slate-800 flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white shrink-0">
+                    <i className="fa-solid fa-person-breastfeeding text-xl"></i>
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-lg leading-tight">KMC Tracker</h1>
+                    <p className="text-[10px] text-blue-400 mt-0.5">
+                        {userRole === 'admin' ? 'Admin Access' : 'Data Entry Mode'}
+                    </p>
+                  </div>
+                </div>
+                <nav className="flex-1 p-4 space-y-2 flex flex-col">
+                  {userRole === 'admin' && (
+                    <button onClick={() => setActiveTab('dashboard')} className={`btn-active w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+                      <i className="fa-solid fa-chart-line w-5"></i><span className="font-medium">Visual Dashboard</span>
+                    </button>
+                  )}
+
+                  <button onClick={() => setActiveTab('registry')} className={`btn-active w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'registry' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+                    <i className="fa-solid fa-users w-5"></i><span className="font-medium">Client Registry</span>
+                  </button>
+
+                  {userRole === 'admin' && (
+                    <button onClick={() => setActiveTab('data')} className={`btn-active w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'data' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+                      <i className="fa-solid fa-database w-5"></i><span className="font-medium">Data Management</span>
+                    </button>
+                  )}
+                  
+                  <div className="mt-auto pt-4 border-t border-slate-800">
+                    <button onClick={() => supabase.auth.signOut()} className="btn-active w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500 hover:text-white transition-colors">
+                      <i className="fa-solid fa-right-from-bracket w-5"></i><span className="font-medium">Logout</span>
+                    </button>
+                  </div>
+                </nav>
+              </div>
+
+              {/* MAIN CONTENT */}
+              <div className="flex-1 flex flex-col overflow-hidden ml-64">
+                {/* TOP HEADER */}
+                <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shrink-0 relative">
+                  <h2 className="text-xl font-bold text-gray-800">
+                    {activeTab === 'dashboard' && 'Academic Data Visualizations'}
+                    {activeTab === 'registry' && 'Client Data Registry'}
+                    {activeTab === 'data' && 'Data & Settings Management'}
+                  </h2>
+                  <div className="flex items-center space-x-6 relative">
+                    <div className="relative">
+                      <button className={`btn-active relative p-2 rounded-full transition-colors ${isNotiOpen ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`} onClick={() => setIsNotiOpen(!isNotiOpen)} title="Notifications">
+                        <i className="fa-solid fa-bell text-xl"></i>
+                        {overdueCount > 0 && <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-pulse">{overdueCount}</span>}
+                      </button>
+                      
+                      {isNotiOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsNotiOpen(false)}></div>
+                          <div className="animate-pop-in absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden transform origin-top-right transition-all">
+                            <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                              <h3 className="font-bold text-gray-800 text-sm">Follow-up Action Required</h3>
+                              <span className="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">{overdueCount}</span>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                              {overdueClients.length === 0 ? (
+                                <div className="p-6 text-sm text-gray-500 text-center flex flex-col items-center">
+                                  <i className="fa-solid fa-circle-check text-green-400 text-3xl mb-2"></i>
+                                  <p>All follow-ups are up to date!</p>
+                                </div>
+                              ) : (
+                                <ul className="divide-y divide-gray-100">
+                                  {overdueClients.map(client => {
+                                    const status = deriveOutcome(client);
+                                    return (
+                                      <li key={client.id} className="p-4 hover:bg-blue-50/50 flex flex-col gap-2 transition-colors cursor-pointer">
+                                        <div className="flex justify-between items-start">
+                                          <div>
+                                            <p className="text-sm font-bold text-gray-800">{client.clientName}</p>
+                                            <p className="text-xs text-gray-500">{client.id} • {client.township}</p>
+                                            {(client.primaryPhone || client.secondaryPhone) && (
+                                              <p className="text-xs text-gray-600 mt-0.5 flex items-center font-medium">
+                                                <i className="fa-solid fa-phone text-[10px] mr-1 text-gray-400"></i> {client.primaryPhone || 'N/A'} {client.secondaryPhone && <span className="ml-1 text-gray-400">/ {client.secondaryPhone}</span>}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${status === 'Defaulted' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>{status}</span>
+                                        </div>
+                                        <button onClick={() => { setIsNotiOpen(false); setActiveTab('registry'); openVisitTracker(client); }} className="btn-active w-full mt-1 text-xs bg-white border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-md font-medium transition-colors flex items-center justify-center">
+                                          <i className="fa-regular fa-calendar-check mr-1.5"></i> Resolve Issue
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </header>
+
+                {/* SCROLLABLE CONTENT AREA */}
+                <main className="flex-1 overflow-y-auto p-8 relative">
+                  
+                  {isLoadingData && (
+                     <div className="absolute top-0 left-0 w-full h-1 bg-blue-100 overflow-hidden z-50">
+                        <div className="w-1/3 h-full bg-blue-600 rounded animate-pulse" style={{animation: "progress 2s ease-in-out infinite"}}></div>
+                     </div>
+                  )}
+
+                  {/* --- VISUAL DASHBOARD TAB (ADMIN ONLY) --- */}
+                  {activeTab === 'dashboard' && userRole === 'admin' && (
+                    <div className="space-y-6 max-w-7xl mx-auto animate-pop-in">
+                      
+                      <GlobalFilterBar />
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <DashboardCard title="Total Registered" value={metrics.total} icon="fa-heart-pulse" color="bg-blue-500" />
+                        <DashboardCard title="Active (On Track)" value={metrics.onTrack} icon="fa-wave-square" color="bg-orange-500" />
+                        <DashboardCard title="Successfully Completed" value={metrics.completed} icon="fa-circle-check" color="bg-green-500" subtitle="Graduated KMC" />
+                        <DashboardCard title="Drop Off / Death" value={metrics.dropOff + metrics.death} icon="fa-triangle-exclamation" color="bg-red-500" subtitle="Requires Attention" />
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                        {/* CHART 1: Registration Trend */}
+                        <VisualizationCard 
+                          id="chart-registration-trend" 
+                          title="1. First Contact / Registration Trend" 
+                          subtitle="Time Series: Registrations/Follow-ups by KMC team over time"
+                        >
+                            {analytics.registrationTrendData.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">No registration data available</div>
+                            ) : (
+                               <ResponsiveContainer width="100%" height="100%">
+                                  <AreaChart data={analytics.registrationTrendData} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                    <defs>
+                                      <linearGradient id="colorReg" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                    <XAxis dataKey="month" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} allowDecimals={false}/>
+                                    <Tooltip cursor={{stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Area type="monotone" dataKey="registrations" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorReg)" activeDot={{r: 6}}>
+                                        <LabelList dataKey="registrations" position="top" offset={10} style={{ fill: '#3b82f6', fontSize: '12px', fontWeight: 'bold' }}/>
+                                    </Area>
+                                  </AreaChart>
+                               </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+                        
+                        {/* CHART 2: Monthly KMC Enrollment Trend by Township */}
+                        <VisualizationCard 
+                          id="chart-trend" 
+                          title="2. Enrollment Disaggregated by Township" 
+                          subtitle="Service Uptake Breakdown"
+                        >
+                           <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={trendChartData.data} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                <XAxis dataKey="month" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                <Legend verticalAlign="top" height={36} wrapperStyle={{fontSize: '12px'}}/>
+                                {trendChartData.townshipsList.map((t, idx) => (
+                                    <Bar key={t} dataKey={t} stackId="a" fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'][idx % 7]} />
+                                ))}
+                              </BarChart>
+                           </ResponsiveContainer>
+                        </VisualizationCard>
+
+                        {/* CHART 3: Average Weight Gain (Reverted to LineChart) */}
+                        <VisualizationCard id="chart-weight" title="3. Average Weight Progression" subtitle="Outcome: Strongest clinical evidence of KMC effectiveness (with 'n' count)">
+                           <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={analytics.weightData} margin={{ top: 30, right: 30, left: -20, bottom: 10 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                <XAxis dataKey="visit" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                <YAxis domain={['auto', 'auto']} tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} unit="kg"/>
+                                <Tooltip formatter={(value, name, props) => {
+                                    const nVal = props.payload && props.payload.n !== undefined ? props.payload.n : 0;
+                                    return [`${value} kg (n=${nVal})`, 'Avg Weight'];
+                                }} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                <Line type="monotone" dataKey="weight" stroke="#ec4899" strokeWidth={4} dot={{r: 6, strokeWidth: 2, fill: '#fff'}} activeDot={{r: 8}} name="Avg Weight (kg)">
+                                   <LabelList content={(props) => {
+                                        const { x, y, value, index } = props;
+                                        if (!value) return null;
+                                        const d = analytics.weightData[index] || {};
+                                        return <text x={x} y={y - 12} fill="#ec4899" fontSize="12" fontWeight="bold" textAnchor="middle">{value}kg (n={d.n || 0})</text>;
+                                   }} />
+                                </Line>
+                              </LineChart>
+                           </ResponsiveContainer>
+                        </VisualizationCard>
+
+                        {/* CHART 4: Final Outcomes */}
+                        <VisualizationCard 
+                          id="chart-outcomes" 
+                          title="4. Final Clinical Outcomes" 
+                          subtitle={outcomeView === 'bar' ? "Effectiveness: Patient status (Count)" : "Effectiveness: Patient status (%)"}
+                          headerExtras={
+                            <div className="flex bg-gray-200 rounded p-0.5">
+                                <button onClick={() => setOutcomeView('bar')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${outcomeView === 'bar' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Bar</button>
+                                <button onClick={() => setOutcomeView('pie')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${outcomeView === 'pie' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Pie</button>
+                            </div>
+                          }
+                        >
+                          {outcomeView === 'bar' ? (
+                             <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={analytics.outcomeData} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                  <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                  <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                  <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
+                                      {analytics.outcomeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                      <LabelList dataKey="count" position="top" offset={10} style={{ fill: '#475569', fontSize: '12px', fontWeight: 'bold' }}/>
+                                  </Bar>
+                                </BarChart>
+                             </ResponsiveContainer>
+                          ) : (
+                             <ResponsiveContainer width="100%" height="100%">
+                               <PieChart>
+                                 <Pie data={analytics.outcomeData} cx="50%" cy="50%" innerRadius={0} outerRadius={80} dataKey="count" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                                   {analytics.outcomeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                 </Pie>
+                                 <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                 <Legend verticalAlign="bottom" height={36}/>
+                               </PieChart>
+                             </ResponsiveContainer>
+                          )}
+                        </VisualizationCard>
+
+                        {/* CHART 5: Follow-up Attendance */}
+                        <VisualizationCard 
+                          id="chart-attendance" 
+                          title="5. Follow-up Attendance Rate" 
+                          subtitle={attendanceView === 'bar' ? "Continuity of Care: Post-discharge follow-up (%)" : "Total attended vs missed/pending"}
+                          headerExtras={
+                            <div className="flex bg-gray-200 rounded p-0.5">
+                                <button onClick={() => setAttendanceView('bar')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${attendanceView === 'bar' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Bar</button>
+                                <button onClick={() => setAttendanceView('pie')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${attendanceView === 'pie' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Pie</button>
+                            </div>
+                          }
+                        >
+                          {attendanceView === 'bar' ? (
+                             <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={analytics.attendanceData} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                  <XAxis dataKey="visit" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                  <YAxis domain={[0, 100]} tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} unit="%"/>
+                                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                  <Bar dataKey="attendance" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="% Attended" barSize={50}>
+                                      <LabelList dataKey="attendance" position="top" offset={10} formatter={(val) => `${val}%`} style={{ fill: '#8b5cf6', fontSize: '12px', fontWeight: 'bold' }}/>
+                                  </Bar>
+                                </BarChart>
+                             </ResponsiveContainer>
+                          ) : (
+                             <ResponsiveContainer width="100%" height="100%">
+                               <PieChart>
+                                 <Pie data={analytics.attendancePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                                   {analytics.attendancePieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                 </Pie>
+                                 <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                 <Legend verticalAlign="bottom" height={36}/>
+                               </PieChart>
+                             </ResponsiveContainer>
+                          )}
+                        </VisualizationCard>
+
+                        {/* CHART 6: KMC Discontinuation Trend */}
+                        <VisualizationCard 
+                          id="chart-discontinuation-trend" 
+                          title="6. KMC Discontinuation Trend" 
+                          subtitle="Time Series: Frequency of KMC discontinuation by month"
+                        >
+                            {analytics.discontinuationTrendData.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">No discontinuation data available</div>
+                            ) : (
+                               <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={analytics.discontinuationTrendData} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                    <XAxis dataKey="month" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} allowDecimals={false}/>
+                                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Bar dataKey="stops" fill="#ef4444" radius={[4, 4, 0, 0]} name="Discontinued Cases" barSize={40}>
+                                        <LabelList dataKey="stops" position="top" offset={10} style={{ fill: '#ef4444', fontSize: '12px', fontWeight: 'bold' }}/>
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                        {/* CHART 7: KMC Barriers */}
+                        <VisualizationCard 
+                          id="chart-barriers" 
+                          title="7. Reasons for No KMC Practice" 
+                          subtitle={barrierView === 'bar' ? "Frequency of specific barriers reported (Count)" : "Proportion of barrier categories (%)"}
+                          headerExtras={
+                            <div className="flex bg-gray-200 rounded p-0.5">
+                                <button onClick={() => setBarrierView('bar')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${barrierView === 'bar' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Bar</button>
+                                <button onClick={() => setBarrierView('pie')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${barrierView === 'pie' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Pie</button>
+                            </div>
+                          }
+                        >
+                            {analytics.barrierBarData.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">
+                                    <i className="fa-solid fa-circle-check text-green-400 mr-2 text-lg"></i> No barriers reported
+                                </div>
+                            ) : barrierView === 'bar' ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={analytics.barrierBarData} layout="vertical" margin={{ top: 20, right: 50, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0"/>
+                                    <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis dataKey="name" type="category" width={150} tick={{fontSize: 10, fill: '#475569'}} axisLine={false} tickLine={false}/>
+                                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={20}>
+                                        <LabelList dataKey="count" position="right" offset={10} style={{ fill: '#ef4444', fontSize: '12px', fontWeight: 'bold' }}/>
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                               <ResponsiveContainer width="100%" height="100%">
+                                 <PieChart>
+                                   <Pie data={analytics.barrierPieData} cx="50%" cy="45%" innerRadius={40} outerRadius={70} dataKey="value" label={({name, percent}) => `${(percent * 100).toFixed(0)}%`}>
+                                     {analytics.barrierPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][index % 5]} />)}
+                                   </Pie>
+                                   <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                   <Legend verticalAlign="bottom" height={40} wrapperStyle={{fontSize: '10px'}}/>
+                                 </PieChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                        {/* CHART 8: KMC Hours vs Weight Gain (Scatter) */}
+                        <VisualizationCard 
+                          id="chart-kmc-weight-scatter" 
+                          title="8. Correlation: KMC Hours & Weight Gain" 
+                          subtitle="Scatter Plot: Relationship between average KMC hours/day and total weight gain"
+                        >
+                            {analytics.kmcWeightScatter.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">
+                                    Not enough data to map correlation
+                                </div>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: -20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                    <XAxis type="number" dataKey="kmcHours" name="Avg KMC" unit=" hrs" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}>
+                                      <Label value="Avg KMC Hours per Day" offset={-10} position="insideBottom" style={{fontSize: '10px', fill: '#64748b'}} />
+                                    </XAxis>
+                                    <YAxis type="number" dataKey="weightGain" name="Weight Gain" unit=" kg" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <Tooltip cursor={{strokeDasharray: '3 3'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Scatter name="Infants" data={analytics.kmcWeightScatter} fill="#3b82f6" />
+                                  </ScatterChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                        {/* CHART 9: Weight Gain by KMC Duration Category (Bar) */}
+                        <VisualizationCard 
+                          id="chart-kmc-weight-bar" 
+                          title="9. Impact of KMC Duration on Growth" 
+                          subtitle="Bar Chart: Average weight gain based on KMC hours category"
+                        >
+                            {analytics.kmcWeightScatter.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">
+                                    Not enough data
+                                </div>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={analytics.kmcWeightBar} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                    <XAxis dataKey="category" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} unit="kg"/>
+                                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Bar dataKey="avgGain" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Avg Gain" barSize={50}>
+                                        <LabelList dataKey="avgGain" position="top" offset={10} formatter={(val) => `${val} kg`} style={{ fill: '#8b5cf6', fontSize: '12px', fontWeight: 'bold' }}/>
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                        {/* CHART 10: Weight Gain by Feeding Method (Trend) */}
+                        <VisualizationCard 
+                          id="chart-feed-weight-trend" 
+                          title="10. Impact of Feeding Method on Growth Trend" 
+                          subtitle="Line Chart: Average weight progression by predominant feeding method"
+                        >
+                            {analytics.feedingTrendData.every(d => !d['Exclusive Breast Feeding'] && !d['Formula Feeding'] && !d['Mixed Feeding']) ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">
+                                    Not enough data
+                                </div>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={analytics.feedingTrendData} margin={{ top: 30, right: 30, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                                    <XAxis dataKey="visit" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis domain={['auto', 'auto']} tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} unit="kg"/>
+                                    <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Legend verticalAlign="top" height={36} wrapperStyle={{fontSize: '12px'}}/>
+                                    <Line type="monotone" dataKey="Exclusive Breast Feeding" stroke="#10b981" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} connectNulls />
+                                    <Line type="monotone" dataKey="Formula Feeding" stroke="#ef4444" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} connectNulls />
+                                    <Line type="monotone" dataKey="Mixed Feeding" stroke="#f59e0b" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} connectNulls />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                        {/* CHART 11: Encountered Danger Signs */}
+                        <VisualizationCard 
+                          id="chart-danger-signs" 
+                          title="11. Encountered Danger Signs" 
+                          subtitle={dangerView === 'bar' ? "Frequency of reported danger signs (Count)" : "Proportion of danger signs (%)"}
+                          headerExtras={
+                            <div className="flex bg-gray-200 rounded p-0.5">
+                                <button onClick={() => setDangerView('bar')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${dangerView === 'bar' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Bar</button>
+                                <button onClick={() => setDangerView('pie')} className={`px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded ${dangerView === 'pie' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Pie</button>
+                            </div>
+                          }
+                        >
+                            {analytics.dangerBarData.length === 0 ? (
+                                <div className="flex h-full items-center justify-center text-gray-400 text-sm font-medium">
+                                    <i className="fa-solid fa-circle-check text-green-400 mr-2 text-lg"></i> No danger signs reported
+                                </div>
+                            ) : dangerView === 'bar' ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={analytics.dangerBarData} layout="vertical" margin={{ top: 20, right: 50, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0"/>
+                                    <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false}/>
+                                    <YAxis dataKey="name" type="category" width={150} tick={{fontSize: 10, fill: '#475569'}} axisLine={false} tickLine={false}/>
+                                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                    <Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} barSize={20}>
+                                        <LabelList dataKey="count" position="right" offset={10} style={{ fill: '#f97316', fontSize: '12px', fontWeight: 'bold' }}/>
+                                    </Bar>
+                                  </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                               <ResponsiveContainer width="100%" height="100%">
+                                 <PieChart>
+                                   <Pie data={analytics.dangerPieData} cx="50%" cy="45%" innerRadius={40} outerRadius={70} dataKey="value" label={({name, percent}) => `${(percent * 100).toFixed(0)}%`}>
+                                     {analytics.dangerPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={['#f97316', '#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'][index % 6]} />)}
+                                   </Pie>
+                                   <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                   <Legend verticalAlign="bottom" height={40} wrapperStyle={{fontSize: '10px'}}/>
+                                 </PieChart>
+                                </ResponsiveContainer>
+                            )}
+                        </VisualizationCard>
+
+                      </div>
+
+                    </div>
+                  )}
+
+                  {/* --- CLIENT REGISTRY TAB (ALL ROLES) --- */}
+                  {activeTab === 'registry' && (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full min-h-[500px] animate-pop-in">
+                      <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 flex-wrap gap-4">
+                        <div className="flex items-center space-x-2 w-full lg:w-auto lg:flex-1 max-w-3xl">
+                          <div className="relative w-36 shrink-0 hover-card">
+                            <i className="fa-solid fa-location-dot absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm"></i>
+                            <select className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white cursor-pointer" value={searchTownship} onChange={(e) => setSearchTownship(e.target.value)}>
+                              <option value="All">All Townships</option>
+                              {Object.values(locations).flat().sort().map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                            </div>
+                          </div>
+
+                          <div className="relative w-36 shrink-0 hover-card">
+                            <i className="fa-solid fa-filter absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm"></i>
+                            <select className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white cursor-pointer" value={searchStatus} onChange={(e) => setSearchStatus(e.target.value)}>
+                              <option value="All">All Statuses</option>
+                              <option value="Active">Active (On Track)</option>
+                              <option value="Completed">Completed (Alive)</option>
+                              <option value="Overdue">Overdue</option>
+                              <option value="Defaulted">Drop Off (Defaulted)</option>
+                              <option value="Referred">Referred</option>
+                              <option value="Death">Death</option>
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                            </div>
+                          </div>
+
+                          <div className="relative flex-1 hover-card">
+                            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="text" placeholder="Search ID, Baby Name, or Parent Name..." className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                          </div>
+                        </div>
+
+                        <button onClick={() => setIsClientModalOpen(true)} className="btn-active shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-sm hover:shadow-md">
+                          <i className="fa-solid fa-user-plus"></i><span className="hidden sm:inline">Register New Client</span><span className="sm:hidden">Register</span>
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto flex-1">
+                        <table className="w-full text-left text-sm whitespace-nowrap">
+                          <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm">
+                            <tr>
+                              <th className="px-4 py-3 font-semibold">ID / Reg. Month</th>
+                              <th className="px-4 py-3 font-semibold">Baby / Age / Parent</th>
+                              <th className="px-4 py-3 font-semibold">Region & Township</th>
+                              <th className="px-4 py-3 font-semibold text-center">Clinical Flags</th>
+                              <th className="px-4 py-3 font-semibold text-center">Follow-up Visits</th>
+                              <th className="px-4 py-3 font-semibold">Outcome</th>
+                              <th className="px-4 py-3 font-semibold text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {filteredClients.length === 0 ? (
+                              <tr><td colSpan="7" className="px-4 py-12 text-center text-gray-500">No clients found matching your search criteria.</td></tr>
+                            ) : (
+                              filteredClients.map((client) => {
+                                const isLBW = client.birthWeight !== '' && !isNaN(client.birthWeight) && Number(client.birthWeight) < 2.5;
+                                const isPrem = client.gestationalAge !== '' && !isNaN(client.gestationalAge) && Number(client.gestationalAge) < 37;
+                                const outcome = deriveOutcome(client);
+
+                                return (
+                                  <tr key={client.id} className="hover:bg-blue-50 transition-colors cursor-pointer group" onClick={() => openVisitTracker(client)}>
+                                    <td className="px-4 py-3">
+                                      <div className="font-bold text-gray-800 group-hover:text-blue-600 transition-colors">{client.id}</div>
+                                      <div className="text-xs text-gray-500">{client.reportingMonth} {client.reportingYear}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="font-medium text-gray-800">{client.clientName}</div>
+                                      <div className="text-xs text-blue-600 font-medium">Age: {calculateAgeInDays(client.dob)} days</div>
+                                      <div className="text-xs text-gray-500">c/o {client.parentName}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="text-gray-800">{client.township}</div>
+                                      <div className="text-xs text-gray-500">{client.region}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                      <div className="flex flex-col items-center space-y-1">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-100">Wt: {client.birthWeight}kg</span>
+                                        {isLBW && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-50 text-red-700 border border-red-100">LBW</span>}
+                                        {isPrem && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-50 text-orange-700 border border-orange-100">Prem ({client.gestationalAge}wk)</span>}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-col items-center space-y-1">
+                                        <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-[140px]">
+                                          {(client.visits || []).map((visit, i) => {
+                                            const num = i + 1;
+                                            const isDone = visit.done || visit.visitStatus === 'Attended';
+                                            const diffDays = getDiffDays(visit.scheduledDate);
+                                            const isManualDropOff = visit.visitStatus === 'Loss of contact';
+                                            const isDeath = visit.visitStatus === 'Death';
+                                            const isDropOff = isManualDropOff || (!isDone && !isDeath && diffDays > 30);
+                                            const isOverdue = !isDone && !isDropOff && !isDeath && diffDays > 7;
+
+                                            return (
+                                              <div key={num} className="flex items-center mb-1" title={`Scheduled: ${visit.scheduledDate || 'Not set'}`}>
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors ${
+                                                  isDeath ? 'bg-stone-500 border-stone-500 text-white' :
+                                                  isDone ? 'bg-green-500 border-green-500 text-white shadow-sm' : 
+                                                  isDropOff ? 'bg-red-500 border-red-500 text-white' :
+                                                  isOverdue ? 'bg-orange-100 border-orange-500 text-orange-600' : 
+                                                  'bg-white border-gray-300 text-gray-400 group-hover:border-blue-300'
+                                                }`}>
+                                                  {isDeath || isDropOff ? <i className="fa-solid fa-xmark text-[10px]"></i> : num}
+                                                </div>
+                                                {num < client.visits.length && <div className={`w-2 h-0.5 transition-colors ${isDone ? 'bg-green-500' : 'bg-gray-200 group-hover:bg-blue-100'}`}></div>}
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex inline-flex items-center space-x-1 ${
+                                        outcome === 'Death' ? 'bg-stone-100 text-stone-700' :
+                                        outcome === 'Completed' ? 'bg-green-100 text-green-700' : 
+                                        outcome === 'Defaulted' ? 'bg-red-100 text-red-700' : 
+                                        outcome === 'Overdue' ? 'bg-orange-100 text-orange-700' :
+                                        outcome === 'Referred' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-blue-100 text-blue-700'
+                                      }`}>
+                                        {outcome === 'Completed' && <i className="fa-solid fa-circle-check text-[10px]"></i>}
+                                        {(outcome === 'Active' || outcome === 'Overdue' || outcome === 'Referred') && <i className="fa-solid fa-wave-square text-[10px]"></i>}
+                                        {(outcome === 'Defaulted' || outcome === 'Death') && <i className="fa-solid fa-triangle-exclamation text-[10px]"></i>}
+                                        <span>{outcome}</span>
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      <div className="flex justify-end items-center space-x-3">
+                                        <button onClick={(e) => { e.stopPropagation(); openVisitTracker(client); }} className="btn-active text-blue-600 hover:text-white font-medium text-sm flex items-center hover:bg-blue-600 bg-blue-50 px-3 py-1 rounded-md transition-all">
+                                          <span>Tracker</span><i className="fa-solid fa-chevron-right ml-1.5 text-[10px]"></i>
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.id); }} className="btn-active text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded opacity-0 group-hover:opacity-100 transition-all" title="Delete Client">
+                                          <i className="fa-solid fa-trash-can"></i>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- DATA MANAGEMENT TAB (ADMIN ONLY) --- */}
+                  {activeTab === 'data' && userRole === 'admin' && (
+                    <div className="max-w-5xl mx-auto space-y-6 animate-pop-in">
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover-card">
+                        <div className="border-b border-gray-100 p-5 bg-gray-50 flex items-center">
+                          <i className="fa-solid fa-database text-blue-600 text-xl mr-3"></i>
+                          <h3 className="font-bold text-gray-800 text-lg">Data Backup, Export & Import</h3>
+                        </div>
+                        <div className="p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                          <div>
+                            <h4 className="font-semibold text-gray-800">Export Registry to Excel/CSV</h4>
+                            <p className="text-sm text-gray-500 mt-1">Download a complete backup of all client records, visits, and outcomes.</p>
+                          </div>
+                          <button onClick={handleExportCSV} className="btn-active shrink-0 flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-medium transition-all shadow-sm hover:shadow-md">
+                            <i className="fa-solid fa-download"></i><span>Download CSV Data</span>
+                          </button>
+                        </div>
+                        <div className="p-6 border-t border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-50">
+                          <div>
+                            <h4 className="font-semibold text-gray-800">Import Data</h4>
+                            <p className="text-sm text-gray-500 mt-1">Upload a previously exported CSV file to restore or update client records. (Matches by ID)</p>
+                          </div>
+                          <input type="file" ref={fileInputRef} id="csv-upload" className="hidden" accept=".csv" onChange={handleImportCSV} />
+                          <label htmlFor="csv-upload" className="btn-active cursor-pointer shrink-0 flex items-center space-x-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 px-5 py-3 rounded-lg font-medium transition-all shadow-sm hover:shadow-md">
+                            <i className="fa-solid fa-upload"></i><span>Upload CSV Data</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col hover-card">
+                          <div className="border-b border-gray-100 p-5 bg-gray-50 flex items-center">
+                            <i className="fa-solid fa-location-dot text-indigo-600 mr-3"></i><h3 className="font-bold text-gray-800">Manage Regions</h3>
+                          </div>
+                          <div className="p-5 flex-1">
+                            <div className="flex space-x-2 mb-4">
+                              <input type="text" placeholder="Add new region..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors" value={newRegion} onChange={e => setNewRegion(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRegion()} />
+                              <button onClick={handleAddRegion} className="btn-active bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm hover:shadow">Add</button>
+                            </div>
+                            <ul className="space-y-2 max-h-60 overflow-y-auto">
+                              {Object.keys(locations).map(region => (
+                                <li key={region} className="flex justify-between items-center bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-lg border border-gray-100 transition-colors">
+                                  <span className="font-medium text-gray-700 text-sm">{region}</span>
+                                  <button onClick={() => handleDeleteRegion(region)} className="btn-active text-gray-400 hover:text-red-500 p-1 transition-colors"><i className="fa-solid fa-trash-can"></i></button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col hover-card">
+                          <div className="border-b border-gray-100 p-5 bg-gray-50 flex items-center">
+                            <i className="fa-solid fa-location-dot text-teal-600 mr-3"></i><h3 className="font-bold text-gray-800">Manage Townships</h3>
+                          </div>
+                          <div className="p-5 flex-1 flex flex-col">
+                            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-3 text-sm font-medium text-gray-700 outline-none focus:border-teal-500 bg-gray-50 transition-colors" value={selectedRegionForTownship} onChange={e => setSelectedRegionForTownship(e.target.value)}>
+                              <option value="" disabled>Select Region First</option>
+                              {Object.keys(locations).map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                            <div className="flex space-x-2 mb-4">
+                              <input type="text" placeholder="Add new township..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-500 transition-colors" value={newTownship} onChange={e => setNewTownship(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTownship()} disabled={!selectedRegionForTownship} />
+                              <button onClick={handleAddTownship} disabled={!selectedRegionForTownship} className="btn-active bg-teal-600 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors shadow-sm hover:shadow">Add</button>
+                            </div>
+                            <ul className="space-y-2 max-h-48 overflow-y-auto flex-1">
+                              {(locations[selectedRegionForTownship] || []).map(township => (
+                                <li key={township} className="flex justify-between items-center bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-lg border border-gray-100 transition-colors">
+                                  <span className="font-medium text-gray-700 text-sm">{township}</span>
+                                  <button onClick={() => handleDeleteTownship(selectedRegionForTownship, township)} className="btn-active text-gray-400 hover:text-red-500 p-1 transition-colors"><i className="fa-solid fa-trash-can"></i></button>
+                                </li>
+                              ))}
+                              {selectedRegionForTownship && locations[selectedRegionForTownship]?.length === 0 && (
+                                <li className="text-center text-gray-400 text-sm py-4 italic">No townships added yet.</li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-red-50 rounded-xl border border-red-200 overflow-hidden mt-8 hover-card">
+                        <div className="p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                          <div className="flex items-center space-x-4">
+                            <div className="bg-red-100 p-3 rounded-full text-red-600"><i className="fa-solid fa-triangle-exclamation text-2xl"></i></div>
+                            <div>
+                              <h4 className="font-bold text-red-800">Danger Zone: Delete All Client Data</h4>
+                              <p className="text-sm text-red-600 mt-1">This action is permanent and will remove all registered clients from the system.</p>
+                            </div>
+                          </div>
+                          <button onClick={handleClearAllData} className="btn-active shrink-0 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-lg font-medium transition-all shadow-sm hover:shadow-md">Clear All Data</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </main>
+              </div>
+
+              {/* MODALS */}
+              {/* Register New Client Modal */}
+              {isClientModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-pop-in">
+                    <div className="sticky top-0 bg-white border-b border-gray-100 p-6 flex justify-between items-center z-10">
+                      <h2 className="text-xl font-bold text-gray-800 flex items-center"><i className="fa-solid fa-user-plus mr-2 text-blue-600"></i> Register New Client</h2>
+                      <button onClick={() => setIsClientModalOpen(false)} className="btn-active text-gray-400 hover:text-red-500 transition-colors bg-gray-100 hover:bg-red-50 w-8 h-8 rounded-full flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <form onSubmit={handleSaveClient} className="p-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="col-span-1 md:col-span-4 pb-2 border-b border-gray-100"><h3 className="font-semibold text-blue-800">1. Tracking & Location</h3></div>
+                        
+                        <div className="col-span-1 md:col-span-4">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Client ID (Registration Code)</label>
+                            <input type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors hover:border-blue-300" value={formData.clientId} onChange={e => setFormData({...formData, clientId: e.target.value})} placeholder="Leave blank to auto-generate (e.g. KMC-001-XXXX)"/>
+                        </div>
+
+                        <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Date of Registration</label>
+                            <input required type="date" max={getTodayDate()} className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors hover:border-blue-300 cursor-pointer" value={formData.registrationDate} onChange={e => setFormData({...formData, registrationDate: e.target.value})} title="First contact / follow up by KMC team"/></div>
+                            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Reporting Month</label>
+                            <select className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors hover:border-blue-300 cursor-pointer" value={formData.reportingMonth} onChange={e => setFormData({...formData, reportingMonth: e.target.value})}>
+                                {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m}>{m}</option>)}
+                            </select></div>
+                        </div>
+
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Region</label><select required className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors hover:border-blue-300 cursor-pointer" value={formData.region} onChange={e => { const r = e.target.value; setFormData({...formData, region: r, township: locations[r]?.[0] || ''}); }}><option value="" disabled>Select Region</option>{Object.keys(locations).map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Township</label><select required className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 transition-colors hover:border-blue-300 cursor-pointer" value={formData.township} onChange={e => setFormData({...formData, township: e.target.value})} disabled={!formData.region}><option value="" disabled>Select Township</option>{(locations[formData.region] || []).map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                        
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Reporting Year</label>
+                        <select className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors hover:border-blue-300 cursor-pointer" value={formData.reportingYear} onChange={e => setFormData({...formData, reportingYear: e.target.value})}>
+                            {['2025', '2026', '2027', '2028', '2029', '2030'].map(y => <option key={y}>{y}</option>)}
+                        </select></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Given Newborn KMC Kit?</label><select className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300 cursor-pointer" value={formData.kmcBinder} onChange={e => setFormData({...formData, kmcBinder: e.target.value})}><option>Yes</option><option>No</option></select></div>
+
+                        <div className="col-span-1 md:col-span-4 pb-2 border-b border-gray-100 mt-2 flex items-center justify-between">
+                          <h3 className="font-semibold text-blue-800">2. Clinical & Baby Info</h3>
+                          {(() => {
+                            const isLbw = formData.birthWeight !== '' && !isNaN(formData.birthWeight) && Number(formData.birthWeight) < 2.5;
+                            const isPrem = formData.gestationalAge !== '' && !isNaN(formData.gestationalAge) && Number(formData.gestationalAge) < 37;
+                            if (isLbw || isPrem) {
+                                return (
+                                    <div className="flex space-x-2 animate-pop-in">
+                                        {isLbw && <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded font-bold">Auto-Flagged: LBW</span>}
+                                        {isPrem && <span className="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded font-bold">Auto-Flagged: Premature</span>}
+                                    </div>
+                                );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                        <div className="md:col-span-2"><label className="block text-xs font-semibold text-gray-600 mb-1">Baby's Name / ID Name</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} placeholder="e.g. Baby Name"/></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Date of Birth (DOB)</label><input required type="date" max={getTodayDate()} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300 cursor-pointer" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})}/></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Gestational Age (Weeks)</label><input required type="number" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.gestationalAge} onChange={e => setFormData({...formData, gestationalAge: e.target.value})} placeholder="e.g. 35"/></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Birth Weight (kg)</label><input required type="number" step="0.01" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.birthWeight} onChange={e => setFormData({...formData, birthWeight: e.target.value})} placeholder="e.g. 2.0"/></div>
+                        <div><label className="block text-xs font-semibold text-gray-600 mb-1">Discharge Date</label><input required type="date" max={getTodayDate()} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300 cursor-pointer" value={formData.dischargeDate} onChange={e => setFormData({...formData, dischargeDate: e.target.value})}/></div>
+                        <div className="md:col-span-2">
+                          <div className="bg-blue-50 p-2 rounded-lg border border-blue-100 flex items-start space-x-2 mt-1 transition-colors hover:bg-blue-100 cursor-default">
+                            <i className="fa-regular fa-calendar-check text-blue-500 shrink-0 mt-0.5"></i>
+                            <p className="text-xs text-blue-800"><strong>Auto-Scheduling:</strong> Visits will be scheduled automatically based on the Discharge Date (+3 Days, +10 Days, +24 Days).</p>
+                          </div>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-4 pb-2 border-b border-gray-100 mt-2"><h3 className="font-semibold text-blue-800">3. Family & Contact</h3></div>
+                        <div className="md:col-span-2"><label className="block text-xs font-semibold text-gray-600 mb-1">Parent's Name</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.parentName} onChange={e => setFormData({...formData, parentName: e.target.value})} placeholder="Mother/Father Name"/></div>
+                        <div className="md:col-span-1"><label className="block text-xs font-semibold text-gray-600 mb-1">Primary Phone</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.primaryPhone} onChange={e => setFormData({...formData, primaryPhone: e.target.value})} placeholder="e.g. 09-123456789"/></div>
+                        <div className="md:col-span-1"><label className="block text-xs font-semibold text-gray-600 mb-1">Secondary Phone</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.secondaryPhone} onChange={e => setFormData({...formData, secondaryPhone: e.target.value})} placeholder="Alt Contact"/></div>
+                        <div className="md:col-span-4"><label className="block text-xs font-semibold text-gray-600 mb-1">Address</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors hover:border-blue-300" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="House No, Street, Quarter"/></div>
+                      </div>
+                      <div className="pt-6 mt-4 border-t border-gray-100 flex justify-end space-x-3">
+                        <button type="button" onClick={() => setIsClientModalOpen(false)} className="btn-active px-5 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">Cancel</button>
+                        <button type="submit" className="btn-active px-5 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors shadow-sm hover:shadow-md">Register Client</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Visit Tracker Modal (With Tabs & Auto Alert) */}
+              {isVisitModalOpen && selectedClient && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                  <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-pop-in">
+                    
+                    <div className="bg-blue-600 text-white p-6 flex justify-between items-start shrink-0">
+                      <div>
+                        <h2 className="text-2xl font-bold mb-1 flex items-center"><i className="fa-regular fa-calendar-check mr-2"></i> Follow-up Care Tracker</h2>
+                        <div className="flex space-x-4 text-sm text-blue-100">
+                          <span><strong>Client:</strong> {selectedClient.clientName} ({selectedClient.id})</span>
+                          <span><strong>Age:</strong> {calculateAgeInDays(selectedClient.dob)} Days</span>
+                          <span><strong>Birth Wt:</strong> {selectedClient.birthWeight}kg</span>
+                        </div>
+                      </div>
+                      <button onClick={() => setIsVisitModalOpen(false)} className="btn-active text-blue-200 hover:text-white transition-colors bg-blue-700 hover:bg-blue-800 w-8 h-8 rounded-full flex items-center justify-center"><i className="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+
+                    {/* Circular Scroll Tabs */}
+                    <div className="bg-blue-50 border-b border-blue-100 flex items-center justify-between px-4 py-2 shrink-0">
+                        <button onClick={() => setActiveVisitTab(prev => prev === 0 ? selectedClient.visits.length - 1 : prev - 1)} className="btn-active p-2 text-blue-600 hover:bg-blue-200 rounded-full transition-colors"><i className="fa-solid fa-chevron-left"></i></button>
+                        
+                        <div className="flex space-x-2 overflow-x-auto px-2 scrollbar-hide flex-1 justify-center">
+                            {selectedClient.visits.map((v, idx) => (
+                                <button 
+                                  key={idx} 
+                                  onClick={() => setActiveVisitTab(idx)}
+                                  className={`px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap ${activeVisitTab === idx ? 'bg-blue-600 text-white shadow-md' : 'text-blue-600 hover:bg-blue-100'}`}
+                                >
+                                  Visit {idx + 1}
+                                  {(v.done || v.visitStatus === 'Attended') && <i className="fa-solid fa-circle-check ml-1.5 text-xs"></i>}
+                                </button>
+                            ))}
+                            <button onClick={handleAddVisit} className="btn-active px-4 py-2 rounded-lg font-bold text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap border border-blue-200 shadow-sm transition-colors">
+                                <i className="fa-solid fa-plus mr-1"></i> Add Visit
+                            </button>
+                        </div>
+
+                        <button onClick={() => setActiveVisitTab(prev => prev === selectedClient.visits.length - 1 ? 0 : prev + 1)} className="btn-active p-2 text-blue-600 hover:bg-blue-200 rounded-full transition-colors"><i className="fa-solid fa-chevron-right"></i></button>
+                    </div>
+
+                    {/* GRADUATION BANNER */}
+                    {checkGraduation(selectedClient).meets && !selectedClient.manualOutcome && deriveOutcome(selectedClient) !== 'Completed' && deriveOutcome(selectedClient) !== 'Death' && (
+                      <div className="bg-green-50 border-b border-green-200 px-6 py-4 flex flex-col sm:flex-row items-center justify-between shrink-0">
+                          <div>
+                              <h4 className="text-green-800 font-bold flex items-center"><i className="fa-solid fa-flag-checkered mr-2"></i> Graduation Criteria Met</h4>
+                              <p className="text-green-700 text-xs mt-1">Baby has reached <strong>{checkGraduation(selectedClient).cga} wks CGA</strong> or <strong>{checkGraduation(selectedClient).maxW} kg</strong>. Do you want to stop follow-up?</p>
+                          </div>
+                          {!showGradPrompt ? (
+                              <button onClick={() => setShowGradPrompt(true)} className="mt-3 sm:mt-0 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors shrink-0">
+                                  Complete Follow-up
+                              </button>
+                          ) : (
+                              <div className="mt-3 sm:mt-0 flex items-center space-x-2 bg-white p-2 rounded-lg border border-green-300 shadow-sm shrink-0">
+                                  <select className="border border-gray-300 rounded p-1 text-xs outline-none focus:border-green-500 cursor-pointer" value={gradOutcome} onChange={e => setGradOutcome(e.target.value)}>
+                                      <option value="Completed">Alive (Graduated)</option>
+                                      <option value="Death">Death</option>
+                                  </select>
+                                  <button onClick={() => { setSelectedClient({...selectedClient, manualOutcome: gradOutcome}); setShowGradPrompt(false); }} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-sm">Confirm</button>
+                                  <button onClick={() => setShowGradPrompt(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 px-2.5 py-1.5 rounded text-xs transition-colors"><i className="fa-solid fa-xmark"></i></button>
+                              </div>
+                          )}
+                      </div>
+                    )}
+
+                    {/* MANUAL CLOSED BANNER */}
+                    {selectedClient.manualOutcome && (
+                      <div className="bg-gray-100 border-b border-gray-200 px-6 py-3 flex justify-between items-center shrink-0">
+                          <span className="text-sm font-bold text-gray-700 flex items-center"><i className="fa-solid fa-lock mr-2"></i> Follow-up Manually Closed: <span className={`ml-2 px-2 py-0.5 rounded text-xs text-white ${selectedClient.manualOutcome === 'Completed' ? 'bg-green-500' : 'bg-stone-500'}`}>{selectedClient.manualOutcome === 'Completed' ? 'Alive (Graduated)' : selectedClient.manualOutcome}</span></span>
+                          <button onClick={() => setSelectedClient({...selectedClient, manualOutcome: ''})} className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-bold transition-colors">Undo</button>
+                      </div>
+                    )}
+
+                    <div className="p-6 overflow-y-auto bg-gray-50 flex-1 relative">
+                        {/* Render Active Visit Card */}
+                        {(() => {
+                          const i = activeVisitTab;
+                          const visit = selectedClient.visits[i] || {};
+                          const isDone = visit.done || visit.visitStatus === 'Attended';
+                          const isManualDropOff = visit.visitStatus === 'Loss of contact';
+                          const isManualRefer = visit.visitStatus === 'Refer to higher center';
+                          const isDeath = visit.visitStatus === 'Death';
+                          const diffDays = getDiffDays(visit.scheduledDate);
+                          const isDropOff = isManualDropOff || (!isDone && !isManualRefer && !isDeath && diffDays > 30);
+                          const isOverdue = !isDone && !isDropOff && !isManualRefer && !isDeath && diffDays > 7;
+                          
+                          const kmcCategories = Object.keys(kmcBarriers);
+                          const selectedReasonObj = visit.kmcNoCategory && visit.kmcNoReason ? kmcBarriers[visit.kmcNoCategory]?.find(r => r.reason === visit.kmcNoReason) : null;
+
+                          // Auto Growth Alert Logic & Percentage
+                          let prevWeight = i === 0 ? selectedClient.birthWeight : selectedClient.visits[i-1]?.weight;
+                          let currentWeight = visit.weight;
+                          let weightDiff = (currentWeight && prevWeight) ? (parseFloat(currentWeight) - parseFloat(prevWeight)).toFixed(2) : null;
+                          let weightDiffPct = (currentWeight && prevWeight && parseFloat(prevWeight) > 0) ? (((parseFloat(currentWeight) - parseFloat(prevWeight)) / parseFloat(prevWeight)) * 100).toFixed(1) : null;
+
+                          // Danger Sign Dynamic Color
+                          const hasDanger = visit.hasDangerSign === 'Yes';
+                          const noDanger = visit.hasDangerSign === 'No';
+
+                          return (
+                            <div key={`visit-tab-${i}`} className={`animate-slide-in bg-white rounded-xl border-2 p-5 shadow-sm transition-all flex flex-col justify-between ${isDone ? 'border-green-500' : isDeath ? 'border-stone-400' : isDropOff ? 'border-red-300' : isOverdue ? 'border-orange-300' : isManualRefer ? 'border-purple-300' : 'border-blue-200'}`}>
+                              <div>
+                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
+                                  <h4 className={`font-bold flex items-center text-lg ${isDone ? 'text-green-600' : isDeath ? 'text-stone-600' : isDropOff ? 'text-red-500' : isOverdue ? 'text-orange-500' : isManualRefer ? 'text-purple-600' : 'text-blue-600'}`}>
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm mr-2 text-white transition-colors shadow-sm ${isDone ? 'bg-green-500' : isDeath ? 'bg-stone-500' : isDropOff ? 'bg-red-500' : isOverdue ? 'bg-orange-500' : isManualRefer ? 'bg-purple-500' : 'bg-blue-500'}`}>
+                                      {isDeath || isDropOff ? <i className="fa-solid fa-xmark"></i> : i+1}
+                                    </div>
+                                    Follow-up {i+1} Details
+                                  </h4>
+                                  {isDone && <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full"><i className="fa-solid fa-check mr-1"></i> Completed</span>}
+                                </div>
+                                
+                                <div className="space-y-4 mb-4">
+                                  <div>
+                                    <div className="flex justify-between items-baseline mb-1">
+                                      <label className="block text-xs uppercase font-bold text-gray-500">Date of Visit</label>
+                                      {visit.scheduledDate && !isDone && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Expected: {visit.scheduledDate}</span>}
+                                    </div>
+                                    <input type="date" max={getTodayDate()} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-300 cursor-pointer bg-gray-50 focus:bg-white" value={visit.date || ''} onChange={(e) => handleUpdateVisit(i, 'date', e.target.value)}/>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="flex items-center mb-1">
+                                            <label className="block text-xs uppercase font-bold text-gray-500">Weight (kg)</label>
+                                            {weightDiff !== null && (
+                                                weightDiff < 0 
+                                                ? <span className="ml-2 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold animate-pulse"><i className="fa-solid fa-arrow-trend-down mr-1"></i>Loss {Math.abs(weightDiff)}kg ({Math.abs(weightDiffPct)}%)</span>
+                                                : weightDiff == 0
+                                                ? <span className="ml-2 text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">No Gain (0%)</span>
+                                                : <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold"><i className="fa-solid fa-arrow-trend-up mr-1"></i>+{weightDiff}kg (+{weightDiffPct}%)</span>
+                                            )}
+                                        </div>
+                                        <input type="number" step="0.01" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-300 bg-gray-50 focus:bg-white" value={visit.weight || ''} onChange={(e) => handleUpdateVisit(i, 'weight', e.target.value)}/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs uppercase font-bold text-gray-500 mb-1">Temp (°C)</label>
+                                        <input type="number" step="0.1" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-300 bg-gray-50 focus:bg-white" value={visit.temp || ''} onChange={(e) => handleUpdateVisit(i, 'temp', e.target.value)}/>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-xs uppercase font-bold text-gray-500 mb-1">Visit Status</label>
+                                      <select className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-300 cursor-pointer bg-gray-50 focus:bg-white" value={visit.visitStatus || ''} onChange={(e) => handleUpdateVisit(i, 'visitStatus', e.target.value)}>
+                                        <option value="">- Pending -</option>
+                                        <option value="Attended">Attended</option>
+                                        <option value="Refer to higher center">Refer to higher center</option>
+                                        <option value="Loss of contact">Loss of contact</option>
+                                        <option value="Death">Death</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs uppercase font-bold text-gray-500 mb-1">Types of Feeding</label>
+                                      <select className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-300 cursor-pointer bg-gray-50 focus:bg-white" value={visit.feedingType || ''} onChange={(e) => handleUpdateVisit(i, 'feedingType', e.target.value)}>
+                                        <option value="">- Select -</option>
+                                        <option value="Exclusive Breast Feeding">Exclusive Breast Feeding</option>
+                                        <option value="Formula Feeding">Formula Feeding</option>
+                                        <option value="Mixed Feeding">Mixed Feeding</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className={`p-3 rounded-lg border transition-colors duration-300 ${hasDanger ? 'bg-red-50 border-red-300' : noDanger ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
+                                    <div>
+                                      <label className={`block text-xs uppercase font-bold mb-1 transition-colors ${hasDanger ? 'text-red-700' : noDanger ? 'text-green-700' : 'text-slate-500'}`}>Any Danger Signs?</label>
+                                      <select className={`w-full border rounded-lg p-2 text-sm outline-none transition-colors cursor-pointer bg-white ${hasDanger ? 'border-red-400 focus:border-red-600' : noDanger ? 'border-green-300 focus:border-green-500' : 'border-slate-300 focus:border-blue-500'}`} value={visit.hasDangerSign || ''} onChange={(e) => handleUpdateVisit(i, 'hasDangerSign', e.target.value)}>
+                                        <option value="">- Select -</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                      </select>
+                                    </div>
+                                    
+                                    {hasDanger && (
+                                      <div className="animate-pop-in mt-3 space-y-2 border-t border-red-200 pt-3">
+                                        <div>
+                                          <label className="block text-[10px] uppercase font-bold text-red-600 mb-1">Select Danger Sign</label>
+                                          <select className="w-full border border-red-300 rounded-lg p-2 text-sm outline-none focus:border-red-500 bg-white transition-colors hover:border-red-400 cursor-pointer" value={visit.dangerSign || ''} onChange={(e) => handleUpdateVisit(i, 'dangerSign', e.target.value)}>
+                                            <option value="">- Select -</option>
+                                            <option value="Can't sucking well">Can't sucking well</option>
+                                            <option value="Hyperthermia/Hypothermia">Hyperthermia/Hypothermia</option>
+                                            <option value="Fits">Fits</option>
+                                            <option value="Floppy">Floppy</option>
+                                            <option value="Fast breathing/ Chest indrawing">Fast breathing/ Chest indrawing</option>
+                                            <option value="Others">Others</option>
+                                          </select>
+                                        </div>
+                                        {visit.dangerSign === 'Others' && (
+                                          <div className="animate-pop-in">
+                                            <input type="text" className="w-full border border-red-300 rounded-lg p-2 text-sm outline-none focus:border-red-500 transition-colors hover:border-red-400" placeholder="Please specify danger sign..." value={visit.dangerSignOther || ''} onChange={(e) => handleUpdateVisit(i, 'dangerSignOther', e.target.value)} />
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                    <div>
+                                      <label className="block text-xs uppercase font-bold text-blue-800 mb-1">KMC Practiced?</label>
+                                      <select className="w-full border border-blue-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-400 cursor-pointer bg-white" value={visit.kmcPracticed || ''} onChange={(e) => { const val = e.target.value; const updatedVisits = [...selectedClient.visits]; updatedVisits[i] = { ...updatedVisits[i], kmcPracticed: val }; if (val !== 'Yes') { updatedVisits[i].kmcHours = ''; updatedVisits[i].kmcTotalHours = ''; } if (val !== 'No') { updatedVisits[i].kmcNoCategory = ''; updatedVisits[i].kmcNoReason = ''; updatedVisits[i].kmcDiscontinueDate = ''; } setSelectedClient({ ...selectedClient, visits: updatedVisits }); }}>
+                                        <option value="">- Select -</option><option value="Yes">Yes</option><option value="No">No</option>
+                                      </select>
+                                    </div>
+                                    {visit.kmcPracticed === 'Yes' && (
+                                      <div className="animate-pop-in mt-3 grid grid-cols-2 gap-4 border-t border-blue-200 pt-3">
+                                        <div className="relative"><label className="block text-[10px] uppercase font-bold text-blue-800 mb-1">Hr / Day</label><div className="relative"><input type="number" min="0" max="24" className="w-full border border-blue-300 rounded-lg p-2 pr-8 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-400 bg-white" placeholder="e.g. 20" value={visit.kmcHours || ''} onChange={(e) => handleUpdateVisit(i, 'kmcHours', e.target.value)} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 font-bold">hr</span></div></div>
+                                        <div className="relative"><label className="block text-[10px] uppercase font-bold text-blue-800 mb-1">Total Hr (All Time)</label><div className="relative"><input type="number" min="0" className="w-full border border-blue-300 rounded-lg p-2 pr-8 text-sm outline-none focus:border-blue-500 transition-colors hover:border-blue-400 bg-white" placeholder="Total" value={visit.kmcTotalHours || ''} onChange={(e) => handleUpdateVisit(i, 'kmcTotalHours', e.target.value)} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 font-bold">hr</span></div></div>
+                                      </div>
+                                    )}
+                                    {visit.kmcPracticed === 'No' && (
+                                      <div className="animate-pop-in mt-3 space-y-3 border-t border-blue-200 pt-3">
+                                        <div>
+                                          <label className="block text-[10px] uppercase font-bold text-blue-800 mb-1">When was KMC discontinued?</label>
+                                          <input type="date" max={getTodayDate()} className="w-full border border-blue-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 bg-white transition-colors hover:border-blue-400 cursor-pointer" value={visit.kmcDiscontinueDate || ''} onChange={(e) => handleUpdateVisit(i, 'kmcDiscontinueDate', e.target.value)}/>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] uppercase font-bold text-blue-800 mb-1">Barrier Category</label>
+                                          <select className="w-full border border-blue-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 bg-white transition-colors hover:border-blue-400 cursor-pointer" value={visit.kmcNoCategory || ''} onChange={(e) => handleUpdateVisit(i, 'kmcNoCategory', e.target.value)}>
+                                            <option value="">- Select Category -</option>{kmcCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                          </select>
+                                        </div>
+                                        {visit.kmcNoCategory && (
+                                          <div className="animate-pop-in">
+                                            <label className="flex items-center text-[10px] uppercase font-bold text-blue-800 mb-1">
+                                              Specific Reason
+                                              {selectedReasonObj && (
+                                                <div className="relative group ml-1">
+                                                  <span className="text-blue-600 bg-blue-200 rounded-full w-4 h-4 flex items-center justify-center font-black cursor-help text-[10px] border border-blue-300 transition-colors">*</span>
+                                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity whitespace-normal text-left font-normal leading-relaxed">{selectedReasonObj.detail}</div>
+                                                </div>
+                                              )}
+                                            </label>
+                                            <select className="w-full border border-blue-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 bg-white transition-colors hover:border-blue-400 cursor-pointer" value={visit.kmcNoReason || ''} onChange={(e) => handleUpdateVisit(i, 'kmcNoReason', e.target.value)}>
+                                              <option value="">- Select Reason -</option>{kmcBarriers[visit.kmcNoCategory].map(r => (<option key={r.reason} value={r.reason}>{r.reason}</option>))}
+                                            </select>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div><label className="block text-xs uppercase font-bold text-gray-500 mb-1">Client Experience on KMC (CFM)</label><textarea rows="2" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 resize-none transition-colors hover:border-blue-300 bg-gray-50 focus:bg-white" placeholder="Feedback or complaints..." value={visit.clientExperience || ''} onChange={(e) => handleUpdateVisit(i, 'clientExperience', e.target.value)}></textarea></div>
+                                  <div><label className="block text-xs uppercase font-bold text-gray-500 mb-1">Clinical Notes & Suggestions</label><textarea rows="2" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-blue-500 resize-none transition-colors hover:border-blue-300 bg-gray-50 focus:bg-white" placeholder="Provider advice..." value={visit.comments || ''} onChange={(e) => handleUpdateVisit(i, 'comments', e.target.value)}></textarea></div>
+                                </div>
+                              </div>
+                              
+                              {/* Bottom Alerts */}
+                              {isDeath && <div className="animate-pop-in bg-stone-100 text-stone-800 text-sm px-3 py-2 rounded-lg flex items-center mt-4 font-bold border border-stone-200"><i className="fa-solid fa-triangle-exclamation mr-2 text-lg"></i> Patient Deceased</div>}
+                              {!isDeath && isDropOff && <div className="animate-pop-in bg-red-100 text-red-800 text-sm px-3 py-2 rounded-lg flex items-center mt-4 font-bold border border-red-200"><i className="fa-solid fa-triangle-exclamation mr-2 text-lg"></i> {isManualDropOff ? 'Manual Drop Off (Lost)' : 'Drop Off (over 30 Days)'}</div>}
+                              {!isDeath && isOverdue && <div className="animate-pop-in bg-orange-50 text-orange-700 text-sm px-3 py-2 rounded-lg flex items-center mt-4 border border-orange-200 font-bold"><i className="fa-solid fa-triangle-exclamation mr-2 text-lg"></i> Overdue (&gt; 7 Days)</div>}
+                              {!isDeath && isManualRefer && <div className="animate-pop-in bg-purple-100 text-purple-800 text-sm px-3 py-2 rounded-lg flex items-center mt-4 font-bold border border-purple-200"><i className="fa-solid fa-wave-square mr-2 text-lg"></i> Referred to Higher Center</div>}
+                            </div>
+                          );
+                        })()}
+                    </div>
+
+                    <div className="bg-white p-4 border-t border-gray-200 flex justify-between items-center shrink-0">
+                      <div className={`hidden sm:inline-block px-4 py-2 rounded-lg border font-bold text-xs transition-colors ${
+                        deriveOutcome(selectedClient) === 'Death' ? 'bg-stone-100 text-stone-800 border-stone-200' :
+                        deriveOutcome(selectedClient) === 'Completed' ? 'bg-green-100 text-green-800 border-green-200' :
+                        deriveOutcome(selectedClient) === 'Defaulted' ? 'bg-red-100 text-red-800 border-red-200' :
+                        deriveOutcome(selectedClient) === 'Overdue' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                        deriveOutcome(selectedClient) === 'Referred' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                        'bg-blue-50 text-blue-800 border-blue-200'
+                      }`}>Status: {deriveOutcome(selectedClient)}</div>
+                      
+                      <div className="flex space-x-3 w-full sm:w-auto justify-end">
+                          <button onClick={() => setIsVisitModalOpen(false)} className="btn-active px-5 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">Discard</button>
+                          <button onClick={handleSaveVisits} className="btn-active px-5 py-2 text-white bg-green-600 hover:bg-green-700 rounded-lg font-medium flex items-center space-x-2 transition-all shadow-sm hover:shadow-md">
+                            <i className="fa-solid fa-circle-check"></i><span>Save All</span>
+                          </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirm Modal */}
+              {confirmModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all animate-pop-in">
+                    <div className="p-6">
+                      <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4 mx-auto"><i className="fa-solid fa-triangle-exclamation text-red-600 text-xl"></i></div>
+                      <h3 className="text-lg font-bold text-center text-gray-900 mb-2">{confirmModal.title}</h3>
+                      <p className="text-sm text-center text-gray-500 mb-6">{confirmModal.message}</p>
+                      <div className="flex space-x-3">
+                        <button onClick={() => setConfirmModal({ isOpen: false })} className="btn-active flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+                        <button onClick={confirmModal.onConfirm} className="btn-active flex-1 bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-all shadow-sm hover:shadow-md shadow-red-200">Confirm</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

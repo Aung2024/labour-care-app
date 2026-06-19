@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#2563eb">
+  <title>KMC Tracker - MNCH</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/hrt-register.css" />
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/kmc-utils.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/offline-status-bar.js"></script>
+  <script src="js/lang-apply.js"></script>
+  <script src="js/register-sw.js"></script>
+  <style>
+    :root {
+      --kmc-accent: #2563eb;
+      --kmc-accent-dark: #1d4ed8;
+      --kmc-surface: #ffffff;
+      --kmc-border: #e2e8f0;
+      --kmc-muted: #64748b;
+      --kmc-radius: 12px;
+    }
+    body {
+      font-family: 'Pyidaungsu', 'Myanmar Text', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(145deg, #1e3a8a 0%, #2563eb 45%, #1e40af 100%);
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page-header {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%);
+      color: #fff;
+      padding: calc(0.65rem + env(safe-area-inset-top, 0px))
+        calc(0.85rem + env(safe-area-inset-right, 0px))
+        0.65rem calc(0.85rem + env(safe-area-inset-left, 0px));
+      box-shadow: 0 4px 24px rgba(30, 64, 175, 0.35);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .kmc-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .kmc-header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+    .kmc-title {
+      font-weight: 700;
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+    .kmc-back-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0 0.65rem;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .kmc-back-btn:hover { background: rgba(255,255,255,0.22); }
+    .language-switcher {
+      display: inline-flex;
+      gap: 0.35rem;
+      background: rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 0.25rem;
+    }
+    .language-btn {
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.92);
+      border-radius: 8px;
+      padding: 0.4rem 0.65rem;
+      min-height: 44px;
+      min-width: 44px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .language-btn.active {
+      background: rgba(255,255,255,0.95);
+      color: var(--kmc-accent-dark);
+    }
+    .main-wrap {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
+    }
+    .card-panel {
+      background: var(--kmc-surface);
+      border-radius: var(--kmc-radius);
+      box-shadow: 0 1px 3px rgba(15,23,42,0.06), 0 4px 20px rgba(15,23,42,0.06);
+      border: 1px solid rgba(255,255,255,0.65);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+    }
+    #tableState.card-panel { padding: 0; overflow: hidden; }
+    .kmc-dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    @media (min-width: 640px) { .kmc-dashboard { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; } }
+    @media (min-width: 1024px) { .kmc-dashboard { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; } }
+    .kmc-stat-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 0.85rem 0.95rem;
+      border-left: 4px solid var(--kmc-accent);
+      box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-height: 88px;
+    }
+    .kmc-stat-card-clickable { cursor: pointer; touch-action: manipulation; transition: transform 0.15s, box-shadow 0.15s; }
+    .kmc-stat-card-clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,0.12); }
+    .kmc-stat-card-clickable.selected { outline: 2px solid var(--kmc-accent); outline-offset: 2px; }
+    .kmc-stat-card .stat-icon {
+      width: 1.75rem; height: 1.75rem; border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.8rem; margin-bottom: 0.25rem;
+      background: #eff6ff; color: var(--kmc-accent);
+    }
+    .kmc-stat-card .stat-value { font-size: 1.55rem; font-weight: 800; color: #1e293b; line-height: 1.1; }
+    .kmc-stat-card .stat-label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--kmc-muted); }
+    .kmc-stat-card.success { border-left-color: #10b981; }
+    .kmc-stat-card.warning { border-left-color: #f59e0b; }
+    .kmc-stat-card.danger { border-left-color: #ef4444; }
+    .kmc-stat-card.success .stat-icon { background: #ecfdf5; color: #10b981; }
+    .kmc-stat-card.warning .stat-icon { background: #fffbeb; color: #f59e0b; }
+    .kmc-stat-card.danger .stat-icon { background: #fef2f2; color: #ef4444; }
+    .kmc-search-bar { margin-bottom: 1rem; }
+    .kmc-search-bar input {
+      width: 100%;
+      border: 1px solid var(--kmc-border);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      min-height: 44px;
+      background: #fff;
+    }
+    .kmc-info-banner {
+      font-size: 0.8rem;
+      color: var(--kmc-muted);
+      margin: 0 0 0.75rem;
+      line-height: 1.5;
+    }
+    .hrt-pill--kmc-lbw { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .hrt-pill--kmc-preterm { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+    .kmc-weight { font-weight: 700; color: #1e293b; }
+    .kmc-age-pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+    .kmc-status-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.4rem 0.6rem;
+      min-height: 36px;
+      cursor: pointer;
+      touch-action: manipulation;
+      text-decoration: none;
+    }
+    .kmc-status-btn:hover { background: #dbeafe; color: #1e40af; }
+    .kmc-status-btn.secondary {
+      border-color: #e2e8f0;
+      background: #fff;
+      color: #475569;
+    }
+    .hrt-register-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+    .hrt-phone-call-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 36px;
+      min-height: 36px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+      text-decoration: none;
+    }
+    .visit-schedule-hint {
+      font-size: 0.68rem;
+      color: var(--kmc-muted);
+      margin-top: 0.25rem;
+    }
+    .kmc-modal-section { margin-bottom: 1rem; }
+    .kmc-modal-section label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 0.35rem;
+    }
+    .kmc-modal-section input,
+    .kmc-modal-section select,
+    .kmc-modal-section textarea {
+      width: 100%;
+      border: 1px solid var(--kmc-border);
+      border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.9rem;
+      min-height: 44px;
+    }
+    .kmc-choice-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .kmc-choice-chip {
+      border: 1px solid var(--kmc-border);
+      background: #fff;
+      border-radius: 999px;
+      padding: 0.45rem 0.85rem;
+      min-height: 44px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .kmc-choice-chip.selected {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+    }
+    @media (max-width: 900px) {
+      .kmc-stat-card { min-height: 0; padding: 0.65rem 0.7rem; }
+      .kmc-stat-card .stat-value { font-size: 1.3rem; }
+    }
+    @media (hover: none) and (pointer: coarse) {
+      .kmc-status-btn { min-height: 44px; min-width: 44px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="kmc-header-row">
+      <div class="kmc-header-brand">
+        <button type="button" class="kmc-back-btn" onclick="location.href='home.html'" aria-label="Back">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <span class="kmc-title lang-text" data-en="KMC Tracker" data-mm="KMC Tracker">KMC Tracker</span>
+      </div>
+      <div class="language-switcher" role="group" aria-label="Language">
+        <button type="button" class="language-btn" data-lang="en" onclick="setLang('en')">ENG</button>
+        <button type="button" class="language-btn" data-lang="mm" onclick="setLang('mm')">MM</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <div id="offlineBanner" class="alert alert-warning d-none" role="alert"></div>
+
+    <div id="dashboardState" class="d-none">
+      <div class="kmc-dashboard">
+        <div class="kmc-stat-card kmc-stat-card-clickable danger selected" data-filter="all" onclick="setKmcCardFilter('all')" role="button" tabindex="0">
+          <span class="stat-icon"><i class="fas fa-baby"></i></span>
+          <span class="stat-value" id="statTotalKmc">0</span>
+          <span class="stat-label" id="statTotalKmcLabel">Active KMC babies</span>
+        </div>
+        <div class="kmc-stat-card kmc-stat-card-clickable success" data-filter="on_track" onclick="setKmcCardFilter('on_track')" role="button" tabindex="0">
+          <span class="stat-icon"><i class="fas fa-calendar-check"></i></span>
+          <span class="stat-value" id="statActiveKmc">0</span>
+          <span class="stat-label" id="statActiveKmcLabel">On track</span>
+        </div>
+        <div class="kmc-stat-card kmc-stat-card-clickable warning" data-filter="overdue_followup" onclick="setKmcCardFilter('overdue_followup')" role="button" tabindex="0">
+          <span class="stat-icon"><i class="fas fa-clock"></i></span>
+          <span class="stat-value" id="statOverdueKmc">0</span>
+          <span class="stat-label" id="statOverdueKmcLabel">Overdue</span>
+        </div>
+        <div class="kmc-stat-card kmc-stat-card-clickable danger" data-filter="lost_to_followup" onclick="setKmcCardFilter('lost_to_followup')" role="button" tabindex="0">
+          <span class="stat-icon"><i class="fas fa-user-slash"></i></span>
+          <span class="stat-value" id="statDefaultedKmc">0</span>
+          <span class="stat-label" id="statDefaultedKmcLabel">Defaulter/lost</span>
+        </div>
+        <div class="kmc-stat-card kmc-stat-card-clickable success" data-filter="complete" onclick="setKmcCardFilter('complete')" role="button" tabindex="0">
+          <span class="stat-icon"><i class="fas fa-circle-check"></i></span>
+          <span class="stat-value" id="statCompletedKmc">0</span>
+          <span class="stat-label" id="statCompletedKmcLabel">Completed</span>
+        </div>
+      </div>
+      <div class="kmc-search-bar">
+        <input type="search" id="kmcSearchInput" placeholder="" oninput="filterKmcRows()">
+      </div>
+    </div>
+
+    <div id="loadingState" class="card-panel text-center py-5">
+      <div class="spinner-border text-primary mb-3" role="status"></div>
+      <p class="mb-0 text-muted" id="loadingText">Loading KMC registry…</p>
+    </div>
+
+    <div id="emptyState" class="card-panel text-center py-5 d-none">
+      <i class="fas fa-baby fa-2x text-muted mb-3"></i>
+      <p class="mb-0 text-muted" id="emptyText">No KMC-eligible babies in your caseload.</p>
+    </div>
+
+    <div id="tableState" class="card-panel d-none">
+      <div class="hrt-register-toolbar">
+        <h2 id="registryTitle">KMC registry</h2>
+        <p class="hint" id="registryHint"></p>
+      </div>
+      <div id="kmcRows" class="hrt-register-wrap"></div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="visitModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="visitModalTitle">Record newborn visit</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="kmc-info-banner" id="visitModalSummary"></p>
+          <div class="kmc-modal-section">
+            <label for="visitNumberDisplay" id="visitNumberLabel">Visit</label>
+            <input type="text" id="visitNumberDisplay" readonly>
+          </div>
+          <div class="kmc-modal-section">
+            <label for="visitDateInput" id="visitDateLabel">Visit date</label>
+            <input type="date" id="visitDateInput">
+          </div>
+          <div class="kmc-modal-section">
+            <label for="visitWeightInput" id="visitWeightLabel">Weight (grams)</label>
+            <input type="number" id="visitWeightInput" min="300" max="6000" step="1" inputmode="numeric">
+          </div>
+          <div class="kmc-modal-section">
+            <label id="kmcPracticedLabel">KMC practiced today?</label>
+            <div class="kmc-choice-row" id="kmcPracticedChoices">
+              <button type="button" class="kmc-choice-chip" data-value="yes" onclick="setKmcPracticed('yes')">Yes</button>
+              <button type="button" class="kmc-choice-chip" data-value="no" onclick="setKmcPracticed('no')">No</button>
+            </div>
+          </div>
+          <div class="kmc-modal-section">
+            <label for="visitHoursInput" id="visitHoursLabel">KMC hours per day</label>
+            <input type="number" id="visitHoursInput" min="0" max="24" step="0.5" inputmode="decimal">
+          </div>
+          <div class="kmc-modal-section">
+            <label for="visitStatusSelect" id="visitStatusLabel">Visit status</label>
+            <select id="visitStatusSelect">
+              <option value="Attended">Attended</option>
+              <option value="Loss of contact">Loss of contact</option>
+              <option value="Refer to higher center">Refer to higher center</option>
+              <option value="Death">Death</option>
+            </select>
+          </div>
+          <div class="kmc-modal-section">
+            <label for="visitNotesInput" id="visitNotesLabel">Notes (optional)</label>
+            <textarea id="visitNotesInput" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="visitCancelBtn">Cancel</button>
+          <button type="button" class="btn btn-primary" id="visitSaveBtn" onclick="saveKmcVisit()">Save visit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var lang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    var CONCURRENCY = 8;
+    var _currentUser = null;
+    var _currentUserName = '';
+    var _kmcCardFilter = 'all';
+    var _visitPatientId = null;
+    var _visitRow = null;
+    var _kmcPracticed = '';
+
+    var I18N = {
+      en: {
+        loading: 'Loading KMC registry…',
+        empty: 'No KMC-eligible babies in your caseload.',
+        offline: 'KMC registry requires an internet connection.',
+        registryTitle: 'KMC registry',
+        registryHint: 'Babies with birth weight under 2000 g or born ≥3 weeks before EDD. Track 4 newborn visits (+3, +14, +42 days).',
+        searchPlaceholder: 'Search baby or mother name…',
+        statTotal: 'Active KMC babies',
+        statActive: 'On track',
+        statOverdue: 'Overdue visit',
+        statDefaulted: 'Defaulter/lost',
+        statCompleted: 'Completed',
+        babyCol: 'Baby',
+        motherCol: 'Mother',
+        weightCol: 'Birth weight',
+        ageCol: 'Age (days)',
+        reasonCol: 'KMC reason',
+        visitsCol: 'Newborn visits',
+        statusCol: 'Status',
+        contactCol: 'Contact',
+        actionCol: 'Action',
+        recordVisit: 'Record visit',
+        newbornForm: 'Newborn form',
+        callPatient: 'Call',
+        visitModalTitle: 'Record newborn visit',
+        visitNumberLabel: 'Visit number',
+        visitDateLabel: 'Visit date',
+        visitWeightLabel: 'Weight (grams)',
+        kmcPracticedLabel: 'KMC practiced today?',
+        visitHoursLabel: 'KMC hours per day',
+        visitStatusLabel: 'Visit status',
+        visitNotesLabel: 'Notes (optional)',
+        yes: 'Yes',
+        no: 'No',
+        cancel: 'Cancel',
+        save: 'Save visit',
+        saving: 'Saving…',
+        visitSaved: 'Visit saved.',
+        saveFailed: 'Could not save visit. Try again.',
+        days: ' days',
+        noWeight: '—',
+        scheduleHint: 'Schedule: V1 birth · V2 +3d · V3 +14d · V4 +42d'
+      },
+      mm: {
+        loading: 'KMC မှတ်တမ်း ဖတ်နေသည်…',
+        empty: 'KMC လိုအပ်သော ကလေး မရှိသေးပါ။',
+        offline: 'KMC မှတ်တမ်းအတွက် အင်တာနက် လိုအပ်သည်။',
+        registryTitle: 'KMC မှတ်တမ်း',
+        registryHint: 'မွေးချိန်အလေးချိန် 2000g အောက် သို့မဟုတ် EDD ထက် ≥၃ ပတ်စောက် မွေးဖွားသော ကလေးများ။ newborn visit ၄ ကြိမ် (+၃၊ +၁၄၊ +၄၂ ရက်)။',
+        searchPlaceholder: 'ကလေး/မိခင် အမည် ရှာပါ…',
+        statTotal: 'Active KMC babies',
+        statActive: 'On track',
+        statOverdue: 'Overdue',
+        statDefaulted: 'Defaulter/lost',
+        statCompleted: 'Completed',
+        babyCol: 'ကလေး',
+        motherCol: 'မိခင်',
+        weightCol: 'မွေးချိန်အလေးချိန်',
+        ageCol: 'အသက် (ရက်)',
+        reasonCol: 'KMC အကြောင်းရင်း',
+        visitsCol: 'Newborn visits',
+        statusCol: 'Status',
+        contactCol: 'ဆက်သွယ်ရန်',
+        actionCol: 'Action',
+        recordVisit: 'Visit မှတ်ရန်',
+        newbornForm: 'Newborn form',
+        callPatient: 'ဖုန်းခေါ်',
+        visitModalTitle: 'Newborn visit မှတ်ရန်',
+        visitNumberLabel: 'Visit နံပါတ်',
+        visitDateLabel: 'Visit ရက်',
+        visitWeightLabel: 'အလေးချိန် (gram)',
+        kmcPracticedLabel: 'KMC လုပ်ခဲ့ပါသလား?',
+        visitHoursLabel: 'KMC နာရီ/ရက်',
+        visitStatusLabel: 'Visit status',
+        visitNotesLabel: 'မှတ်ချက်',
+        yes: 'လုပ်ခဲ့',
+        no: 'မလုပ်',
+        cancel: 'ပယ်ဖျက်',
+        save: 'သိမ်းရန်',
+        saving: 'သိမ်းနေသည်…',
+        visitSaved: 'Visit သိမ်းပြီး။',
+        saveFailed: 'သိမ်း၍မရပါ။ ထပ်စမ်းပါ။',
+        days: ' ရက်',
+        noWeight: '—',
+        scheduleHint: 'V1 မွေးချိန် · V2 +၃ရက် · V3 +၁၄ရက် · V4 +၄၂ရက်'
+      }
+    };
+
+    function tr(key) {
+      var pack = I18N[lang] || I18N.en;
+      return pack[key] != null ? pack[key] : (I18N.en[key] || key);
+    }
+
+    function setLang(next) {
+      lang = next === 'en' ? 'en' : 'mm';
+      localStorage.setItem('appLanguage', lang);
+      applyStaticI18n();
+      if (window._kmcRows) renderAll(getFilteredKmcRows());
+    }
+
+    function applyStaticI18n() {
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var en = el.getAttribute('data-en');
+        var mm = el.getAttribute('data-mm');
+        el.textContent = lang === 'en' ? (en || mm) : (mm || en);
+      });
+      document.getElementById('loadingText').textContent = tr('loading');
+      document.getElementById('emptyText').textContent = tr('empty');
+      document.getElementById('registryTitle').textContent = tr('registryTitle');
+      document.getElementById('registryHint').textContent = tr('registryHint');
+      document.getElementById('statTotalKmcLabel').textContent = tr('statTotal');
+      document.getElementById('statActiveKmcLabel').textContent = tr('statActive');
+      document.getElementById('statOverdueKmcLabel').textContent = tr('statOverdue');
+      document.getElementById('statDefaultedKmcLabel').textContent = tr('statDefaulted');
+      document.getElementById('statCompletedKmcLabel').textContent = tr('statCompleted');
+      var search = document.getElementById('kmcSearchInput');
+      if (search) search.placeholder = tr('searchPlaceholder');
+      document.getElementById('visitModalTitle').textContent = tr('visitModalTitle');
+      document.getElementById('visitNumberLabel').textContent = tr('visitNumberLabel');
+      document.getElementById('visitDateLabel').textContent = tr('visitDateLabel');
+      document.getElementById('visitWeightLabel').textContent = tr('visitWeightLabel');
+      document.getElementById('kmcPracticedLabel').textContent = tr('kmcPracticedLabel');
+      document.getElementById('visitHoursLabel').textContent = tr('visitHoursLabel');
+      document.getElementById('visitStatusLabel').textContent = tr('visitStatusLabel');
+      document.getElementById('visitNotesLabel').textContent = tr('visitNotesLabel');
+      document.getElementById('visitCancelBtn').textContent = tr('cancel');
+      document.getElementById('visitSaveBtn').textContent = tr('save');
+      var chips = document.querySelectorAll('#kmcPracticedChoices .kmc-choice-chip');
+      if (chips[0]) chips[0].textContent = tr('yes');
+      if (chips[1]) chips[1].textContent = tr('no');
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function isRegionalOfficerRole(role) {
+      if (!role || typeof role !== 'string') return false;
+      return role.toLowerCase().replace(/\s+/g, ' ') === 'regional officer';
+    }
+
+    function isCompleted(row) {
+      return window.KmcUtils && KmcUtils.rowIsCompleted(row);
+    }
+
+    function rowTrackingStatus(row) {
+      return KmcUtils.rowTrackingStatus(row);
+    }
+
+    function statusBadgeHtml(status) {
+      var label = lang === 'mm' ? status.labelMm : status.labelEn;
+      return '<span class="hrt-outcome-badge hrt-outcome-' + status.key + '"><i class="fas fa-circle"></i>' +
+        escapeHtml(label) + '</span>';
+    }
+
+    function statusTrackHtml(completedCount, row) {
+      var max = KmcUtils.NEWBORN_VISIT_COUNT;
+      var nextVisit = Math.min((completedCount || 0) + 1, max);
+      var status = rowTrackingStatus(row);
+      var dots = [];
+      for (var i = 1; i <= max; i++) {
+        var cls = '';
+        if (i <= completedCount) cls = 'visited';
+        else if (i === nextVisit && completedCount < max) {
+          cls = status.key === 'overdue_followup' || status.key === 'lost_to_followup' ? status.key : 'next';
+        }
+        dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
+      }
+      return '<span class="hrt-status-track">' + dots.join('') + '</span>' +
+        '<div class="visit-schedule-hint">' + escapeHtml(tr('scheduleHint')) + '</div>';
+    }
+
+    function reasonPillsHtml(reasons) {
+      if (!reasons || !reasons.length) return '<span class="text-muted">—</span>';
+      return reasons.map(function (r) {
+        if (r === 'low_weight') {
+          return '<span class="hrt-pill hrt-pill--kmc-lbw">' + escapeHtml(lang === 'mm' ? 'LBW <2000g' : 'LBW <2000g') + '</span>';
+        }
+        return '<span class="hrt-pill hrt-pill--kmc-preterm">' + escapeHtml(lang === 'mm' ? 'Preterm' : 'Preterm') + '</span>';
+      }).join(' ');
+    }
+
+    function phoneHref(patient) {
+      var raw = patient.phone || patient.phoneNumber || patient.emergency_phone || '';
+      var digits = String(raw).replace(/\D/g, '');
+      if (!digits) return '';
+      return 'tel:' + digits;
+    }
+
+    function phoneCellHtml(patient) {
+      var href = phoneHref(patient);
+      var display = patient.phone || patient.phoneNumber || patient.emergency_phone || '—';
+      if (!href) return escapeHtml(display);
+      return '<a href="' + escapeHtml(href) + '" onclick="event.stopPropagation();">' + escapeHtml(display) + '</a>';
+    }
+
+    function formatWeightGram(w) {
+      if (w == null || isNaN(w)) return tr('noWeight');
+      return Math.round(w) + ' g';
+    }
+
+    function setKmcCardFilter(filter) {
+      _kmcCardFilter = filter || 'all';
+      document.querySelectorAll('.kmc-stat-card-clickable').forEach(function (el) {
+        el.classList.toggle('selected', el.dataset.filter === _kmcCardFilter);
+      });
+      renderAll(getFilteredKmcRows());
+    }
+
+    function getFilteredKmcRows() {
+      if (!window._kmcRows) return [];
+      var q = (window._kmcFilterQuery || '').trim().toLowerCase();
+      var statusFilter = _kmcCardFilter || 'all';
+      return window._kmcRows.filter(function (r) {
+        var p = r.patient || {};
+        var baby = (r.babyName || '').toLowerCase();
+        var mother = (p.name || p.patientName || '').toLowerCase();
+        var phone = String(p.phone || p.phoneNumber || '').toLowerCase();
+        if (q && baby.indexOf(q) === -1 && mother.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
+        if (statusFilter !== 'all') {
+          var status = rowTrackingStatus(r);
+          if (statusFilter === 'complete') {
+            if (status.key !== 'complete') return false;
+          } else if (status.key !== statusFilter) return false;
+        } else if (isCompleted(r)) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    function filterKmcRows() {
+      var input = document.getElementById('kmcSearchInput');
+      window._kmcFilterQuery = input ? input.value : '';
+      renderAll(getFilteredKmcRows());
+    }
+
+    function updateDashboardStats(allRows) {
+      var rows = allRows || [];
+      var onTrack = 0, overdue = 0, lost = 0, completed = 0, current = 0;
+      rows.forEach(function (r) {
+        if (isCompleted(r)) { completed++; return; }
+        current++;
+        var status = rowTrackingStatus(r);
+        if (status.key === 'on_track') onTrack++;
+        else if (status.key === 'overdue_followup') overdue++;
+        else if (status.key === 'lost_to_followup') lost++;
+      });
+      document.getElementById('statTotalKmc').textContent = current;
+      document.getElementById('statActiveKmc').textContent = onTrack;
+      document.getElementById('statOverdueKmc').textContent = overdue;
+      document.getElementById('statDefaultedKmc').textContent = lost;
+      document.getElementById('statCompletedKmc').textContent = completed;
+      try {
+        sessionStorage.setItem('kmcActiveFollowUpCount', String(onTrack + overdue + lost));
+        sessionStorage.setItem('kmcActiveFollowUpCountAt', String(Date.now()));
+      } catch (e) { /* ignore */ }
+    }
+
+    function kmcToolsHtml(patientId, row) {
+      var html = '<span class="hrt-register-actions">';
+      if (!isCompleted(row)) {
+        html += '<button type="button" class="kmc-status-btn" onclick="event.stopPropagation(); openVisitModal(\'' +
+          escapeHtml(patientId) + '\')"><i class="fas fa-plus"></i><span>' + escapeHtml(tr('recordVisit')) + '</span></button>';
+      }
+      html += '<a class="kmc-status-btn secondary" href="newborn-care-page.html?patient=' + encodeURIComponent(patientId) +
+        '" onclick="event.stopPropagation();"><i class="fas fa-file-medical"></i><span>' + escapeHtml(tr('newbornForm')) + '</span></a>';
+      html += '</span>';
+      return html;
+    }
+
+    function contactHtml(patient) {
+      var href = phoneHref(patient);
+      if (!href) return '<span class="text-muted">—</span>';
+      return '<a class="hrt-phone-call-btn" href="' + escapeHtml(href) + '" onclick="event.stopPropagation();" title="' +
+        escapeHtml(tr('callPatient')) + '"><i class="fas fa-phone"></i></a>';
+    }
+
+    function renderAll(rows) {
+      updateDashboardStats(window._kmcRows || []);
+      var display = rows || [];
+      var container = document.getElementById('kmcRows');
+      container.innerHTML = '<div class="hrt-register-desktop"><table class="hrt-register-table"><thead><tr>' +
+        '<th>' + escapeHtml(tr('babyCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('motherCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('weightCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('ageCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('reasonCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('visitsCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('statusCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('contactCol')) + '</th>' +
+        '<th>' + escapeHtml(tr('actionCol')) + '</th>' +
+        '</tr></thead><tbody id="kmcDesktopBody"></tbody></table></div>' +
+        '<div class="hrt-mobile-register" id="kmcMobileBody"></div>';
+      var desktopBody = document.getElementById('kmcDesktopBody');
+      var mobileBody = document.getElementById('kmcMobileBody');
+
+      display.forEach(function (r) {
+        var p = r.patient || {};
+        var patientId = p.id || '';
+        var babyName = escapeHtml(r.babyName || '—');
+        var motherName = escapeHtml(p.name || p.patientName || '—');
+        var ageDays = r.ageDays != null ? r.ageDays : null;
+        var ageHtml = ageDays != null
+          ? '<span class="kmc-age-pill">' + ageDays + escapeHtml(tr('days')) + '</span>'
+          : '<span class="text-muted">—</span>';
+
+        var trEl = document.createElement('tr');
+        trEl.innerHTML =
+          '<td><div class="hrt-patient-main">' + babyName + '</div></td>' +
+          '<td><div class="hrt-pregnancy-meta">' + motherName + '</div><div class="hrt-patient-meta">' + phoneCellHtml(p) + '</div></td>' +
+          '<td><span class="kmc-weight">' + escapeHtml(formatWeightGram(r.birthWeightGram)) + '</span></td>' +
+          '<td>' + ageHtml + '</td>' +
+          '<td>' + reasonPillsHtml(r.reasons) + '</td>' +
+          '<td>' + statusTrackHtml(r.completedVisitCount || 0, r) + '</td>' +
+          '<td>' + statusBadgeHtml(rowTrackingStatus(r)) + '</td>' +
+          '<td>' + contactHtml(p) + '</td>' +
+          '<td>' + kmcToolsHtml(patientId, r) + '</td>';
+        desktopBody.appendChild(trEl);
+
+        var card = document.createElement('div');
+        card.className = 'hrt-mobile-card';
+        card.innerHTML =
+          '<div class="hrt-mobile-card-main">' +
+            '<div class="hrt-mobile-top">' +
+              '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
+              '<div class="hrt-mobile-id">' + escapeHtml(tr('motherCol')) + ': ' + motherName + '</div></div>' +
+              '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
+            '</div>' +
+            '<div class="hrt-mobile-grid">' +
+              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
+                '<div class="hrt-mobile-value">' + escapeHtml(formatWeightGram(r.birthWeightGram)) + '</div></div>' +
+              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('ageCol')) + '</span>' +
+                '<div class="hrt-mobile-value">' + (ageDays != null ? ageDays + tr('days') : '—') + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('reasonCol')) + '</span>' +
+                '<div class="hrt-mobile-value">' + reasonPillsHtml(r.reasons) + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('visitsCol')) + '</span>' +
+                '<div class="hrt-mobile-value">' + statusTrackHtml(r.completedVisitCount || 0, r) + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('contactCol')) + ' / ' + escapeHtml(tr('actionCol')) + '</span>' +
+                '<div class="hrt-mobile-value">' + contactHtml(p) + ' ' + kmcToolsHtml(patientId, r) + '</div></div>' +
+            '</div>' +
+          '</div>';
+        mobileBody.appendChild(card);
+      });
+    }
+
+    function setKmcPracticed(val) {
+      _kmcPracticed = val;
+      document.querySelectorAll('#kmcPracticedChoices .kmc-choice-chip').forEach(function (btn) {
+        btn.classList.toggle('selected', btn.dataset.value === val);
+      });
+    }
+
+    function openVisitModal(patientId) {
+      var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId; });
+      if (!row) return;
+      _visitPatientId = patientId;
+      _visitRow = row;
+      var nextNum = Math.min((row.completedVisitCount || 0) + 1, KmcUtils.NEWBORN_VISIT_COUNT);
+      document.getElementById('visitNumberDisplay').value = 'V' + nextNum;
+      document.getElementById('visitDateInput').value = new Date().toISOString().split('T')[0];
+      document.getElementById('visitWeightInput').value = row.birthWeightGram != null ? String(row.birthWeightGram) : '';
+      document.getElementById('visitHoursInput').value = '';
+      document.getElementById('visitStatusSelect').value = 'Attended';
+      document.getElementById('visitNotesInput').value = '';
+      _kmcPracticed = '';
+      document.querySelectorAll('#kmcPracticedChoices .kmc-choice-chip').forEach(function (btn) {
+        btn.classList.remove('selected');
+      });
+      var dueStr = '';
+      if (row.birthDateStr && nextNum > 1 && BirthDeliveryAnchor) {
+        dueStr = BirthDeliveryAnchor.getRecommendedCareDateForVisit(row.birthDateStr, nextNum) || '';
+      }
+      document.getElementById('visitModalSummary').textContent =
+        (row.babyName || '') + (dueStr ? ' · ' + (lang === 'mm' ? 'Due ' : 'Due ') + dueStr : '');
+      var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('visitModal'));
+      modal.show();
+    }
+
+    async function saveKmcVisit() {
+      if (!_visitPatientId || !_currentUser) return;
+      var btn = document.getElementById('visitSaveBtn');
+      btn.disabled = true;
+      btn.textContent = tr('saving');
+      try {
+        var row = _visitRow;
+        var visitNumber = Math.min((row.completedVisitCount || 0) + 1, KmcUtils.NEWBORN_VISIT_COUNT);
+        var visitDate = document.getElementById('visitDateInput').value;
+        var weight = document.getElementById('visitWeightInput').value;
+        var hours = document.getElementById('visitHoursInput').value;
+        var status = document.getElementById('visitStatusSelect').value;
+        var notes = document.getElementById('visitNotesInput').value.trim();
+        if (!visitDate) throw new Error('date required');
+
+        var db = firebase.firestore();
+        await db.collection('patients').doc(_visitPatientId).collection('kmc_visits').add({
+          visitNumber: visitNumber,
+          visitDate: visitDate,
+          weightGram: weight !== '' ? parseFloat(weight) : null,
+          kmcPracticed: _kmcPracticed || null,
+          kmcHours: hours !== '' ? parseFloat(hours) : null,
+          visitStatus: status,
+          notes: notes || null,
+          recordedBy: _currentUser.uid,
+          recordedByName: _currentUserName || _currentUser.displayName || '',
+          recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        var completedSet = KmcUtils.getCompletedVisitNumbers(row.newbornCare || {}, (row.kmcVisits || []).concat([{
+          visitNumber: visitNumber,
+          visitDate: visitDate
+        }]));
+        row.kmcVisits = (row.kmcVisits || []).concat([{
+          visitNumber: visitNumber,
+          visitDate: visitDate,
+          visitStatus: status
+        }]);
+        row.completedVisitCount = completedSet.size;
+
+        bootstrap.Modal.getInstance(document.getElementById('visitModal')).hide();
+        renderAll(getFilteredKmcRows());
+        alert(tr('visitSaved'));
+      } catch (e) {
+        console.error('KMC visit save', e);
+        alert(tr('saveFailed'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = tr('save');
+      }
+    }
+
+    async function fetchPatientsForRole(db, currentUser, userRole) {
+      var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      var query = db.collection('patients');
+      var allPatients = [];
+
+      if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
+        var patientMap = new Map();
+        var newSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('created_by', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var oldSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('createdBy', '==', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        var sharedSnap = await smartFirestoreQuery(
+          Promise.resolve(db.collection('patients').where('care_team_midwife_ids', 'array-contains', currentUser.uid)),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        [newSnap, oldSnap, sharedSnap].forEach(function (snap) {
+          if (snap && typeof snap.forEach === 'function' && !snap.empty) {
+            snap.forEach(function (doc) {
+              if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+                patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+              }
+            });
+          }
+        });
+        allPatients = Array.from(patientMap.values());
+      } else if (userRole === 'Regional Officer' || isRegionalOfficerRole(userRole)) {
+        var uDoc = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc && uDoc.exists) {
+          var reg = uDoc.data().region;
+          if (reg) {
+            var rs = await smartFirestoreQuery(
+              Promise.resolve(query.where('region', '==', reg)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (rs && typeof rs.forEach === 'function' && !rs.empty) {
+              rs.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'TMO') {
+        var uDoc2 = await smartFirestoreQuery(
+          Promise.resolve(db.collection('users').doc(currentUser.uid)),
+          { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+        );
+        if (uDoc2 && uDoc2.exists) {
+          var tw = uDoc2.data().township;
+          if (tw) {
+            var ts = await smartFirestoreQuery(
+              Promise.resolve(query.where('township', '==', tw)),
+              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+            );
+            if (ts && typeof ts.forEach === 'function' && !ts.empty) {
+              ts.forEach(function (doc) {
+                if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+              });
+            }
+          }
+        }
+      } else if (userRole === 'Super Admin' || userRole === 'admin') {
+        var snapshot = await smartFirestoreQuery(
+          Promise.resolve(query),
+          { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+        );
+        if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
+          snapshot.forEach(function (doc) {
+            if (doc && doc.id && doc.data) allPatients.push({ id: doc.id, ...doc.data() });
+          });
+        }
+      }
+      return allPatients;
+    }
+
+    async function fetchLatestAnc(db, patientId) {
+      var ref = db.collection('patients').doc(patientId).collection('antenatal_visits');
+      var snap;
+      try { snap = await ref.orderBy('visitDate', 'desc').limit(1).get(); }
+      catch (e) {
+        try { snap = await ref.orderBy('timestamp', 'desc').limit(1).get(); }
+        catch (e2) { snap = await ref.limit(1).get(); }
+      }
+      if (!snap || snap.empty) return null;
+      return snap.docs[0].data() || null;
+    }
+
+    async function fetchKmcVisits(db, patientId) {
+      try {
+        var snap = await db.collection('patients').doc(patientId).collection('kmc_visits').get();
+        var visits = [];
+        snap.forEach(function (d) { visits.push(d.data() || {}); });
+        return visits;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function mapWithConcurrency(items, limit, fn) {
+      var out = [];
+      for (var i = 0; i < items.length; i += limit) {
+        var batch = items.slice(i, i + limit);
+        var part = await Promise.all(batch.map(fn));
+        out.push.apply(out, part);
+      }
+      return out;
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      if (!user) { window.location.href = 'login.html'; return; }
+      _currentUser = user;
+      applyStaticI18n();
+
+      if (window.OfflineManager && window.OfflineManager.isOfflineMode()) {
+        document.getElementById('offlineBanner').textContent = tr('offline');
+        document.getElementById('offlineBanner').classList.remove('d-none');
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+        return;
+      }
+
+      var db = firebase.firestore();
+      var userRole = 'Midwife';
+      try {
+        var userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
+        if (!userData) {
+          var uq = await smartFirestoreQuery(
+            Promise.resolve(db.collection('users').doc(user.uid)),
+            { preferCache: /iPhone|iPad|iPod/.test(navigator.userAgent), timeout: 8000, retries: 2, fallbackToCache: true }
+          );
+          userData = uq && uq.exists ? uq.data() : null;
+        }
+        if (userData && userData.role) userRole = userData.role;
+        if (userData && userData.name) _currentUserName = userData.name;
+        else if (user.displayName) _currentUserName = user.displayName;
+      } catch (e) {
+        console.warn('KMC role load', e);
+      }
+
+      try {
+        var patients = await fetchPatientsForRole(db, user, userRole);
+        var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
+          var newbornDoc = await BirthDeliveryAnchor.fetchNewbornCareDoc(db, p.id);
+          var newbornCare = newbornDoc ? newbornDoc.data : null;
+          var birthAnchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(p.id);
+          var latestAnc = await fetchLatestAnc(db, p.id);
+          var evalResult = KmcUtils.evaluateKmcEligibility(p, newbornCare, birthAnchor, latestAnc);
+          if (!evalResult.eligible) return null;
+
+          var kmcVisits = await fetchKmcVisits(db, p.id);
+          var completedSet = KmcUtils.getCompletedVisitNumbers(newbornCare, kmcVisits);
+          var ageDays = KmcUtils.ageInDaysFromBirth(evalResult.birthDateStr);
+
+          return {
+            patient: p,
+            babyName: evalResult.babyName,
+            reasons: evalResult.reasons,
+            birthDateStr: evalResult.birthDateStr,
+            birthWeightGram: evalResult.birthWeightGram,
+            ageDays: ageDays,
+            newbornCare: newbornCare,
+            kmcVisits: kmcVisits,
+            completedVisitCount: completedSet.size,
+            completed: completedSet.size >= KmcUtils.NEWBORN_VISIT_COUNT
+          };
+        });
+
+        var rows = enriched.filter(Boolean);
+        rows.sort(function (a, b) {
+          var aDone = isCompleted(a), bDone = isCompleted(b);
+          if (aDone !== bDone) return aDone ? 1 : -1;
+          var lateA = KmcUtils.getDaysLateForNextVisit(a.birthDateStr, a.completedVisitCount || 0);
+          var lateB = KmcUtils.getDaysLateForNextVisit(b.birthDateStr, b.completedVisitCount || 0);
+          if (lateA !== lateB) return (lateB || 0) - (lateA || 0);
+          return (b.ageDays || 0) - (a.ageDays || 0);
+        });
+
+        window._kmcRows = rows;
+        window._kmcFilterQuery = '';
+        _kmcCardFilter = 'all';
+
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('dashboardState').classList.remove('d-none');
+
+        if (rows.length === 0) {
+          document.getElementById('emptyState').classList.remove('d-none');
+          try {
+            sessionStorage.setItem('kmcActiveFollowUpCount', '0');
+            sessionStorage.setItem('kmcActiveFollowUpCountAt', String(Date.now()));
+          } catch (e) { /* ignore */ }
+        } else {
+          document.getElementById('tableState').classList.remove('d-none');
+          renderAll(getFilteredKmcRows());
+        }
+      } catch (e) {
+        console.error('KMC load failed', e);
+        document.getElementById('loadingState').classList.add('d-none');
+        document.getElementById('emptyState').classList.remove('d-none');
+      }
+    });
+  </script>
+</body>
+</html>

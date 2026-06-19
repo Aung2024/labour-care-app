@@ -111,6 +111,10 @@
       box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25), var(--card-shadow);
     }
 
+    .care-card.kmc-active-highlight {
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25), var(--card-shadow);
+    }
+
     .main-container {
       max-width: 1400px;
       margin: 0 auto;
@@ -383,6 +387,7 @@
 
     .care-card.primary::before { background: linear-gradient(90deg, #10b981, #059669); }
     .care-card.hrt::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
+    .care-card.kmc::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
     .care-card.registration::before { background: linear-gradient(90deg, #0891b2, #0e7490); }
     .care-card.dashboard::before { background: linear-gradient(90deg, #6b7280, #4b5563); }
     .care-card#cmeCard::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
@@ -411,6 +416,7 @@
     .care-icon.registration { color: #0891b2; }
     .care-icon.primary { color: #10b981; }
     .care-icon.hrt { color: #ef4444; }
+    .care-icon.kmc { color: #2563eb; }
     .care-icon.dashboard { color: #4b5563; }
     .care-icon.management { color: #7c3aed; }
     .care-icon.scoreboard { color: #f59e0b; }
@@ -488,6 +494,7 @@
     .care-action.registration { background: linear-gradient(135deg, #0891b2, #0e7490); }
     .care-action.primary { background: linear-gradient(135deg, #10b981, #059669); }
     .care-action.hrt { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .care-action.kmc { background: linear-gradient(135deg, #3b82f6, #2563eb); }
     .care-action.dashboard { background: linear-gradient(135deg, #6b7280, #4b5563); }
     .care-action.management { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
     .care-action.scoreboard { background: linear-gradient(135deg, #ffc107, #ff9800); color: #1f2937; font-weight: 700; }
@@ -920,6 +927,7 @@
             }
             loadPendingTransferCount();
             loadHrtCardNotifyCount();
+            loadKmcCardNotifyCount();
           }, 500);
         }
       } catch (error) {
@@ -1067,6 +1075,28 @@
       } else {
         badge.classList.add('d-none');
         card.classList.remove('hrt-active-highlight');
+      }
+    }
+
+    /** Badge on KMC card — count cached when user opens KMC Tracker. */
+    function loadKmcCardNotifyCount() {
+      const card = document.getElementById('kmcCard');
+      const badge = document.getElementById('kmcActiveBadge');
+      if (!card || !badge) return;
+
+      let count = 0;
+      try {
+        const raw = sessionStorage.getItem('kmcActiveFollowUpCount');
+        if (raw != null && raw !== '') count = parseInt(raw, 10) || 0;
+      } catch (e) { /* ignore */ }
+
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.classList.remove('d-none');
+        card.classList.add('kmc-active-highlight');
+      } else {
+        badge.classList.add('d-none');
+        card.classList.remove('kmc-active-highlight');
       }
     }
 
@@ -1401,7 +1431,7 @@
       
       navigationInProgress = true;
 
-      const onlineOnly = ['dashboard', 'township-report', 'admin', 'manage-midwives', 'cme', 'scoreboard', 'high-risk-tracking', 'patient-transfers'];
+      const onlineOnly = ['dashboard', 'township-report', 'admin', 'manage-midwives', 'cme', 'scoreboard', 'high-risk-tracking', 'kmc-tracking', 'patient-transfers'];
       if (onlineOnly.includes(careType) && typeof navigator !== 'undefined' && navigator.onLine === false) {
         alert('This feature is available online only. Please reconnect to the internet and try again.');
         navigationInProgress = false;
@@ -1440,6 +1470,9 @@
             break;
           case 'high-risk-tracking':
             window.location.href = 'high-risk-tracking.html';
+            break;
+          case 'kmc-tracking':
+            window.location.href = 'kmc-tracking.html';
             break;
         }
       }, 100);
@@ -1484,6 +1517,7 @@
       if (pageInitialized) {
         loadPendingTransferCount();
         loadHrtCardNotifyCount();
+        loadKmcCardNotifyCount();
       }
     }
 
@@ -1513,10 +1547,14 @@
         if (!document.hidden && currentUser) {
           loadPendingTransferCount();
           loadHrtCardNotifyCount();
+          loadKmcCardNotifyCount();
         }
       });
       window.addEventListener('pageshow', function () {
-        if (currentUser) loadHrtCardNotifyCount();
+        if (currentUser) {
+          loadHrtCardNotifyCount();
+          loadKmcCardNotifyCount();
+        }
       });
     });
   </script>
@@ -1746,6 +1784,21 @@
         </div>
         <a href="#" class="care-action hrt" onclick="event.preventDefault(); navigateToCare('high-risk-tracking');">
           <i class="fas fa-bell"></i><span class="lang-text" data-en="View" data-mm="ကြည့်ရှုရန်">View</span>
+        </a>
+      </div>
+
+      <!-- KMC Tracker -->
+      <div class="care-card kmc" id="kmcCard" onclick="navigateToCare('kmc-tracking')">
+        <span class="care-card-notify-badge d-none" id="kmcActiveBadge" title="KMC babies needing follow-up">0</span>
+        <div class="care-card-header">
+          <div class="care-icon kmc"><i class="fas fa-baby"></i></div>
+          <h3 class="care-title"><span class="lang-text" data-en="KMC Tracker" data-mm="KMC Tracker">KMC Tracker</span></h3>
+        </div>
+        <p class="care-description" style="margin: 0 0 0.65rem;">
+          <span class="lang-text" data-en="Track kangaroo mother care for low birth weight and preterm babies." data-mm="မွေးချိန်အလေးချိန်နည်းသော နှင့် မွေးမစေ့ ကလေးများအတွက် KMC စောင့်ကြည့်ခြင်း">Track kangaroo mother care for low birth weight and preterm babies.</span>
+        </p>
+        <a href="#" class="care-action kmc" onclick="event.preventDefault(); navigateToCare('kmc-tracking');">
+          <i class="fas fa-heart"></i><span class="lang-text" data-en="View" data-mm="ကြည့်ရှုရန်">View</span>
         </a>
       </div>
 
