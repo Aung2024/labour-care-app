@@ -10,6 +10,7 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/kmc-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <style>
     @media print {
@@ -414,6 +415,8 @@
     let patientId = null;
     let immediateCareData = null;
     let newbornCareData = null;
+    let newbornCareVisits = [];
+    let kmcActions = [];
     let reportDb;
     let reportLang = localStorage.getItem('appLanguage') || 'mm';
 
@@ -595,19 +598,46 @@
           console.log("No immediate newborn care data:", error);
         }
 
-        // Load newborn care data
+        // Load newborn care visit history
         try {
-          const newbornCareSnapshot = await reportDb.collection("patients")
+          const newbornRef = reportDb.collection("patients")
             .doc(patientId)
-            .collection("newborn_care")
-            .limit(1)
-            .get();
+            .collection("newborn_care");
+          let newbornCareSnapshot;
+          try {
+            newbornCareSnapshot = await newbornRef.orderBy("visit_number", "asc").get();
+          } catch (orderError) {
+            newbornCareSnapshot = await newbornRef.get();
+          }
           
           if (!newbornCareSnapshot.empty) {
-            newbornCareData = newbornCareSnapshot.docs[0].data();
+            newbornCareVisits = [];
+            newbornCareSnapshot.forEach(function (doc) {
+              const data = doc.data() || {};
+              if (!data.visit_number) data.visit_number = 1;
+              newbornCareVisits.push(data);
+            });
+            newbornCareVisits.sort(function (a, b) {
+              const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
+              const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
+              if (av !== bv) return av - bv;
+              return String(a.visitDate || a.birth_time || '').localeCompare(String(b.visitDate || b.birth_time || ''));
+            });
+            newbornCareData = newbornCareVisits[newbornCareVisits.length - 1];
           }
         } catch (error) {
           console.log("No newborn care data:", error);
+        }
+
+        try {
+          const actionSnap = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("kmc_actions")
+            .get();
+          kmcActions = [];
+          actionSnap.forEach(function (doc) { kmcActions.push(doc.data() || {}); });
+        } catch (error) {
+          kmcActions = [];
         }
 
         // Populate report
@@ -698,6 +728,67 @@
 
       html += '</div></div>';
       container.innerHTML = html;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderKmcReportSection() {
+      if (!newbornCareVisits.length || !window.KmcUtils) return '';
+      const latestDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
+      const potential = newbornCareVisits.some(function (v) { return !!v.potential_kmc; });
+      const reasons = latestDecision.kmc_eligible_reasons || newbornCareVisits[0].kmc_eligible_reasons || [];
+      const completeOutcome = KmcUtils.getCompletionOutcome({ kmcActions: kmcActions });
+      let html = '<div class="treatment-item mb-3">';
+      html += '<div class="treatment-header">KMC Tracking</div>';
+      html += '<div class="treatment-content">';
+      html += '<p><strong>Potential KMC:</strong> ' + (potential ? t('yes') : t('no')) + '</p>';
+      if (reasons && reasons.length) {
+        html += '<p><strong>Eligibility reason:</strong> ' + escapeHtml(KmcUtils.reasonLabels(reasons, getReportLang()).join(', ')) + '</p>';
+      }
+      if (latestDecision.kmc_selected) {
+        html += '<p><strong>KMC Decision:</strong> ' + escapeHtml(String(latestDecision.kmc_selected).toUpperCase()) + '</p>';
+      }
+      if (latestDecision.kmc_selected === 'no') {
+        html += '<p><strong>Reason category:</strong> ' + escapeHtml(latestDecision.kmc_no_category || t('notRecorded')) + '</p>';
+        html += '<p><strong>Reason:</strong> ' + escapeHtml(latestDecision.kmc_no_reason || t('notRecorded')) + '</p>';
+      }
+      const dischargeDate = KmcUtils.getLatestDischargeDate(newbornCareVisits);
+      if (dischargeDate) html += '<p><strong>Discharge date:</strong> ' + escapeHtml(dischargeDate) + '</p>';
+      if (completeOutcome) html += '<p><strong>Completion outcome:</strong> ' + escapeHtml(completeOutcome.labelEn) + '</p>';
+
+      const kmcVisits = KmcUtils.getCompletedKmcVisits(newbornCareVisits);
+      if (kmcVisits.length) {
+        html += '<div style="overflow-x:auto;"><table class="table table-sm table-bordered mb-0"><thead><tr>' +
+          '<th>Visit</th><th>Date</th><th>Weight</th><th>KMC hrs/day</th><th>Total hrs</th><th>Feeding</th></tr></thead><tbody>';
+        kmcVisits.forEach(function (visit) {
+          const v = visit && visit.data ? visit.data : visit;
+          const feeding = [v.feeding_type, v.feeding_method].filter(Boolean).join(' / ');
+          html += '<tr>' +
+            '<td>' + escapeHtml(v.visit_number || v.visitNumber || '') + '</td>' +
+            '<td>' + escapeHtml(v.visitDate || v.visit_date || '') + '</td>' +
+            '<td>' + escapeHtml(v.body_weight_gram ? v.body_weight_gram + ' g' : t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(v.kmc_hours_per_day != null ? v.kmc_hours_per_day : t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(v.kmc_total_hours != null ? v.kmc_total_hours : t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(feeding || t('notRecorded')) + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      const weightTrend = newbornCareVisits
+        .filter(function (v) { return v.body_weight_gram; })
+        .map(function (v) { return 'V' + (v.visit_number || 1) + ': ' + v.body_weight_gram + ' g'; })
+        .join(' → ');
+      if (weightTrend) html += '<p class="mt-2"><strong>Weight trend:</strong> ' + escapeHtml(weightTrend) + '</p>';
+      html += '</div></div>';
+      return html;
     }
 
     function populateNewbornCareInfo() {
@@ -809,6 +900,8 @@
       }
 
       html += '</div></div>';
+
+      html += renderKmcReportSection();
 
       container.innerHTML = html;
     }
