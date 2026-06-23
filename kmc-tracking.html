@@ -178,6 +178,27 @@
     .hrt-pill--kmc-lbw { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
     .hrt-pill--kmc-preterm { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
     .kmc-weight { font-weight: 700; color: #1e293b; }
+    .kmc-weight-block { display: flex; flex-direction: column; gap: 0.2rem; }
+    .kmc-weight-primary { font-weight: 800; color: #1e293b; }
+    .kmc-weight-trend { font-size: 0.78rem; font-weight: 700; }
+    .kmc-weight-trend.gain { color: #047857; }
+    .kmc-weight-trend.loss { color: #b91c1c; }
+    .kmc-weight-history {
+      font-size: 0.72rem;
+      color: #64748b;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .kmc-status-track-btn {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      text-align: left;
+      width: 100%;
+      cursor: pointer;
+    }
     .kmc-age-pill {
       display: inline-block;
       font-size: 0.75rem;
@@ -545,11 +566,25 @@
     }
 
     function statusTrackHtml(completedCount, row) {
+      var totalDots = Math.max(6, Math.min(10, (completedCount || 0) + 1));
+      var status = rowTrackingStatus(row);
+      var dots = [];
+      var nextVisit = (completedCount || 0) + 1;
+      for (var i = 1; i <= totalDots; i++) {
+        var cls = '';
+        if (i <= (completedCount || 0)) cls = 'visited';
+        else if (i === nextVisit) {
+          cls = status.key === 'overdue_followup' || status.key === 'lost_to_followup' ? status.key : 'next';
+        }
+        dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
+      }
       var due = row && row.nextDueDate ? row.nextDueDate : null;
       var nextText = due ? 'Next due: ' + due : 'Next due: pending discharge date';
-      return '<div><strong>' + escapeHtml(String(completedCount || 0)) + '</strong> KMC visit(s)</div>' +
+      var pid = row && row.patient ? (row.patient.id || '') : '';
+      return '<button type="button" class="kmc-status-track-btn" onclick="event.stopPropagation(); showKmcVisitStatusDetails(\'' + escapeHtml(pid) + '\')">' +
+        '<span class="hrt-status-track">' + dots.join('') + '</span>' +
         '<div class="visit-schedule-hint">' + escapeHtml(nextText) + '</div>' +
-        '<div class="visit-schedule-hint">' + escapeHtml(tr('scheduleHint')) + '</div>';
+        '</button>';
     }
 
     function reasonPillsHtml(reasons) {
@@ -579,6 +614,72 @@
     function formatWeightGram(w) {
       if (w == null || isNaN(w)) return tr('noWeight');
       return Math.round(w) + ' g';
+    }
+
+    function getWeightPoints(row) {
+      var visits = (row && row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
+      visits.sort(function (a, b) {
+        var av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
+        var bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
+        return av - bv;
+      });
+      return visits
+        .map(function (v) {
+          return {
+            visit: parseInt(v.visit_number || v.visitNumber, 10) || 1,
+            weight: parseFloat(v.body_weight_gram)
+          };
+        })
+        .filter(function (p) { return !isNaN(p.weight) && p.weight > 0; });
+    }
+
+    function weightCellHtml(row) {
+      var points = getWeightPoints(row);
+      if (!points.length) return '<span class="text-muted">—</span>';
+      var latest = points[points.length - 1];
+      var trendClass = '';
+      var trendText = '';
+      if (points.length >= 2) {
+        var prev = points[points.length - 2];
+        var diff = Math.round((latest.weight - prev.weight) * 10) / 10;
+        if (diff > 0) {
+          trendClass = 'gain';
+          trendText = '<i class="fas fa-arrow-up"></i> +' + diff + ' g';
+        } else if (diff < 0) {
+          trendClass = 'loss';
+          trendText = '<i class="fas fa-arrow-down"></i> ' + diff + ' g';
+        } else {
+          trendText = '<i class="fas fa-minus"></i> 0 g';
+        }
+      }
+      var compactHistory = points.map(function (p) { return 'V' + p.visit + ':' + Math.round(p.weight); }).join(' → ');
+      return '<div class="kmc-weight-block">' +
+        '<div class="kmc-weight-primary">' + escapeHtml(Math.round(latest.weight) + ' g') + '</div>' +
+        (trendText ? '<div class="kmc-weight-trend ' + trendClass + '">' + trendText + '</div>' : '') +
+        '<div class="kmc-weight-history">' + escapeHtml(compactHistory) + '</div>' +
+        '</div>';
+    }
+
+    function showKmcVisitStatusDetails(patientId) {
+      var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId; });
+      if (!row) return;
+      var status = rowTrackingStatus(row);
+      var daysLate = KmcUtils.getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
+      var overdueText = 'Not overdue';
+      if (daysLate != null && daysLate >= 0) {
+        overdueText = daysLate > 14
+          ? ('Defaulted/Lost by ' + (daysLate - 14) + ' day(s) beyond defaulter threshold')
+          : ('Overdue by ' + daysLate + ' day(s)');
+      }
+      var nextDue = row.nextDueDate || 'Pending discharge date';
+      var message = [
+        'Baby: ' + (row.babyName || '—'),
+        'Status: ' + (status.labelEn || status.labelMm || status.key),
+        'Completed KMC visits: ' + (row.completedVisitCount || 0),
+        'Next due date: ' + nextDue,
+        overdueText
+      ].join('\n');
+      alert(message);
     }
 
     function setKmcCardFilter(filter) {
@@ -678,7 +779,6 @@
       var container = document.getElementById('kmcRows');
       container.innerHTML = '<div class="hrt-register-desktop"><table class="hrt-register-table"><thead><tr>' +
         '<th>' + escapeHtml(tr('babyCol')) + '</th>' +
-        '<th>' + escapeHtml(tr('motherCol')) + '</th>' +
         '<th>' + escapeHtml(tr('weightCol')) + '</th>' +
         '<th>' + escapeHtml(tr('ageCol')) + '</th>' +
         '<th>' + escapeHtml(tr('reasonCol')) + '</th>' +
@@ -692,7 +792,7 @@
       var mobileBody = document.getElementById('kmcMobileBody');
 
       if (!display.length) {
-        desktopBody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No KMC Yes babies match this filter.</td></tr>';
+        desktopBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No KMC Yes babies match this filter.</td></tr>';
         mobileBody.innerHTML = '<div class="hrt-mobile-card text-muted">No KMC Yes babies match this filter.</div>';
         return;
       }
@@ -701,7 +801,7 @@
         var p = r.patient || {};
         var patientId = p.id || '';
         var babyName = escapeHtml(r.babyName || '—');
-        var motherName = escapeHtml(p.name || p.patientName || '—');
+        var phone = phoneCellHtml(p);
         var ageDays = r.ageDays != null ? r.ageDays : null;
         var ageHtml = ageDays != null
           ? '<span class="kmc-age-pill">' + ageDays + escapeHtml(tr('days')) + '</span>'
@@ -709,9 +809,8 @@
 
         var trEl = document.createElement('tr');
         trEl.innerHTML =
-          '<td><div class="hrt-patient-main">' + babyName + '</div></td>' +
-          '<td><div class="hrt-pregnancy-meta">' + motherName + '</div><div class="hrt-patient-meta">' + phoneCellHtml(p) + '</div></td>' +
-          '<td><span class="kmc-weight">' + escapeHtml(formatWeightGram(r.birthWeightGram)) + '</span></td>' +
+          '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + phone + '</div></td>' +
+          '<td>' + weightCellHtml(r) + '</td>' +
           '<td>' + ageHtml + '</td>' +
           '<td>' + reasonPillsHtml(r.reasons) + '</td>' +
           '<td>' + statusTrackHtml(r.completedVisitCount || 0, r) + '</td>' +
@@ -726,12 +825,12 @@
           '<div class="hrt-mobile-card-main">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
-              '<div class="hrt-mobile-id">' + escapeHtml(tr('motherCol')) + ': ' + motherName + '</div></div>' +
+              '<div class="hrt-mobile-id">' + phone + '</div></div>' +
               '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
-                '<div class="hrt-mobile-value">' + escapeHtml(formatWeightGram(r.birthWeightGram)) + '</div></div>' +
+                '<div class="hrt-mobile-value">' + weightCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('ageCol')) + '</span>' +
                 '<div class="hrt-mobile-value">' + (ageDays != null ? ageDays + tr('days') : '—') + '</div></div>' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('reasonCol')) + '</span>' +
@@ -974,6 +1073,16 @@
           var potentialKmc = !!(evalResult.eligible || newbornCareVisits.some(function (v) { return !!v.potential_kmc; }));
           if (!potentialKmc) return null;
 
+          var reasonSet = new Set();
+          (evalResult.reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+          (decision.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+          newbornCareVisits.forEach(function (v) {
+            (v.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+            var w = parseFloat(v.body_weight_gram);
+            if (!isNaN(w) && w > 0 && w < 2000) reasonSet.add('low_weight');
+          });
+          var mergedReasons = Array.from(reasonSet);
+
           var kmcActions = await fetchKmcActions(db, p.id);
           var dischargeDate = KmcUtils.getLatestDischargeDate(newbornCareVisits);
           var completedKmcVisits = KmcUtils.getCompletedKmcVisits(newbornCareVisits);
@@ -984,7 +1093,7 @@
           return {
             patient: p,
             babyName: evalResult.babyName || (latestNewbornCare && latestNewbornCare.baby_name),
-            reasons: (decision.kmc_eligible_reasons || evalResult.reasons || []),
+            reasons: mergedReasons,
             birthDateStr: evalResult.birthDateStr,
             birthWeightGram: evalResult.birthWeightGram || (newbornCare && newbornCare.body_weight_gram),
             ageDays: ageDays,

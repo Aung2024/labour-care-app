@@ -472,6 +472,12 @@
       margin-bottom: 0.35rem;
       flex-wrap: wrap;
     }
+    .kmc-status-track-btn {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+    }
     .hrt-track-dot {
       width: 17px;
       height: 17px;
@@ -1660,7 +1666,35 @@
         }
         dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
       }
-      return '<span class="hrt-status-track">' + dots.join('') + '</span>';
+      var pid = row && row.patient ? (row.patient.id || '') : '';
+      return '<button type="button" class="kmc-status-track-btn" onclick="event.stopPropagation(); showHrtVisitStatusDetails(\'' + escapeHtml(pid) + '\')">' +
+        '<span class="hrt-status-track">' + dots.join('') + '</span>' +
+        '</button>';
+    }
+
+    function showHrtVisitStatusDetails(patientId) {
+      var row = (window._hrtRows || []).find(function (r) { return (r.patient || {}).id === patientId; });
+      if (!row) return;
+      var status = rowTrackingStatus(row);
+      var daysLate = getDaysLateForNextVisit(row);
+      var due = getNextVisitDueDate(row);
+      var dueLabel = due ? formatDateVal(due.toISOString().split('T')[0]) : 'Not available';
+      var overdueText = 'Not overdue';
+      if (daysLate != null && daysLate >= 0) {
+        if (daysLate > getFollowUpGraceDays(row)) {
+          overdueText = 'Defaulted/Lost by ' + (daysLate - getFollowUpGraceDays(row)) + ' day(s) beyond threshold';
+        } else {
+          overdueText = 'Overdue by ' + daysLate + ' day(s)';
+        }
+      }
+      var message = [
+        'Patient: ' + ((row.patient && (row.patient.name || row.patient.patientName)) || '—'),
+        'Status: ' + status.label,
+        'Completed ANC visits: ' + (row.ancVisitCount || 0),
+        'Next visit due date: ' + dueLabel,
+        overdueText
+      ].join('\n');
+      alert(message);
     }
 
     function formatRegisterNo(p) {
