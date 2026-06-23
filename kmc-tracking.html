@@ -400,6 +400,20 @@
     </div>
   </div>
 
+  <div class="modal fade" id="visitStatusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Visit status details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <pre id="visitStatusModalBody" style="white-space:pre-wrap;margin:0;font-family:inherit;"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     var lang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
     var CONCURRENCY = 8;
@@ -623,7 +637,7 @@
         var bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
         return av - bv;
       });
-      return visits
+      var points = visits
         .map(function (v) {
           return {
             visit: parseInt(v.visit_number || v.visitNumber, 10) || 1,
@@ -631,6 +645,12 @@
           };
         })
         .filter(function (p) { return !isNaN(p.weight) && p.weight > 0; });
+      var hasVisit1 = points.some(function (p) { return p.visit === 1; });
+      var birthWeight = parseFloat(row && row.birthWeightGram);
+      if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
+        points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
+      }
+      return points;
     }
 
     function weightCellHtml(row) {
@@ -651,8 +671,12 @@
         } else {
           trendText = '<i class="fas fa-minus"></i> 0 g';
         }
+      } else {
+        trendText = '<i class="fas fa-minus"></i> 0 g';
       }
-      var compactHistory = points.map(function (p) { return 'V' + p.visit + ':' + Math.round(p.weight); }).join(' → ');
+      var compactHistory = points.map(function (p) {
+        return (p.isBirthBaseline ? 'Birth' : ('V' + p.visit)) + ':' + Math.round(p.weight);
+      }).join(' → ');
       return '<div class="kmc-weight-block">' +
         '<div class="kmc-weight-primary">' + escapeHtml(Math.round(latest.weight) + ' g') + '</div>' +
         (trendText ? '<div class="kmc-weight-trend ' + trendClass + '">' + trendText + '</div>' : '') +
@@ -679,7 +703,8 @@
         'Next due date: ' + nextDue,
         overdueText
       ].join('\n');
-      alert(message);
+      document.getElementById('visitStatusModalBody').textContent = message;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('visitStatusModal')).show();
     }
 
     function setKmcCardFilter(filter) {
