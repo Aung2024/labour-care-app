@@ -630,6 +630,30 @@
       return Math.round(w) + ' g';
     }
 
+    function parseWeightGramFromRecord(record) {
+      if (!record) return null;
+      var gram = parseFloat(record.body_weight_gram || record.birth_weight_gram || record.birthWeightGram);
+      if (!isNaN(gram) && gram > 0) return gram;
+      var kg = parseFloat(record.birth_weight_kg || record.birthWeightKg);
+      if (!isNaN(kg) && kg > 0) return kg * 1000;
+      var lb = parseFloat(record.birth_weight_lb || record.birthWeight || record.birth_weight);
+      if (!isNaN(lb) && lb > 0) return lb * 453.59237;
+      return null;
+    }
+
+    function getBestBirthWeightGram(row) {
+      var visits = row && row.newbornCareVisits ? row.newbornCareVisits : [];
+      var visitOne = visits.find(function (v) {
+        return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
+      });
+      return parseWeightGramFromRecord(visitOne) ||
+        parseWeightGramFromRecord(row && row.immediateNewbornCare) ||
+        parseWeightGramFromRecord(row && row.newbornCare) ||
+        parseWeightGramFromRecord(row && row.patient) ||
+        parseFloat(row && row.birthWeightGram) ||
+        null;
+    }
+
     function getWeightPoints(row) {
       var visits = (row && row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
       visits.sort(function (a, b) {
@@ -646,7 +670,7 @@
         })
         .filter(function (p) { return !isNaN(p.weight) && p.weight > 0; });
       var hasVisit1 = points.some(function (p) { return p.visit === 1; });
-      var birthWeight = parseFloat(row && row.birthWeightGram);
+      var birthWeight = getBestBirthWeightGram(row);
       if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
         points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
       }
@@ -674,9 +698,15 @@
       } else {
         trendText = '<i class="fas fa-minus"></i> 0 g';
       }
-      var compactHistory = points.map(function (p) {
-        return (p.isBirthBaseline ? 'Birth' : ('V' + p.visit)) + ':' + Math.round(p.weight);
-      }).join(' → ');
+      var maxVisit = Math.max(getMaxNewbornVisitNumber(row.newbornCareVisits), points[points.length - 1].visit);
+      var byVisit = {};
+      points.forEach(function (p) { byVisit[p.visit] = p; });
+      var historyParts = [];
+      for (var i = 1; i <= maxVisit; i++) {
+        var point = byVisit[i];
+        historyParts.push((i === 1 ? 'Birth' : ('V' + i)) + ':' + (point ? Math.round(point.weight) : '—'));
+      }
+      var compactHistory = historyParts.join(' → ');
       return '<div class="kmc-weight-block">' +
         '<div class="kmc-weight-primary">' + escapeHtml(Math.round(latest.weight) + ' g') + '</div>' +
         (trendText ? '<div class="kmc-weight-trend ' + trendClass + '">' + trendText + '</div>' : '') +
@@ -787,6 +817,8 @@
         html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openCompleteModal(\'' +
           escapeHtml(patientId) + '\')"><i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
       }
+      html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openNewbornReport(\'' +
+        escapeHtml(patientId) + '\')" title="View newborn report"><i class="fas fa-eye"></i><span>Report</span></button>';
       html += '</span>';
       return html;
     }
@@ -796,6 +828,18 @@
       if (!href) return '<span class="text-muted">—</span>';
       return '<a class="hrt-phone-call-btn" href="' + escapeHtml(href) + '" onclick="event.stopPropagation();" title="' +
         escapeHtml(tr('callPatient')) + '"><i class="fas fa-phone"></i></a>';
+    }
+
+    function openNewbornReport(patientId) {
+      if (!patientId) return;
+      window.location.href = 'newborn-report.html?patient=' + encodeURIComponent(patientId);
+    }
+
+    function getMaxNewbornVisitNumber(visits) {
+      return (visits || []).reduce(function (max, v) {
+        var n = parseInt(v.visit_number || v.visitNumber, 10);
+        return !isNaN(n) && n > 0 ? Math.max(max, n) : max;
+      }, 0);
     }
 
     function renderAll(rows) {
@@ -833,6 +877,7 @@
           : '<span class="text-muted">—</span>';
 
         var trEl = document.createElement('tr');
+        trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "')");
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + phone + '</div></td>' +
           '<td>' + weightCellHtml(r) + '</td>' +
@@ -847,7 +892,7 @@
         var card = document.createElement('div');
         card.className = 'hrt-mobile-card';
         card.innerHTML =
-          '<div class="hrt-mobile-card-main">' +
+          '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\')">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
               '<div class="hrt-mobile-id">' + phone + '</div></div>' +
@@ -1033,6 +1078,15 @@
       }
     }
 
+    async function fetchImmediateNewbornCare(db, patientId) {
+      try {
+        var snap = await db.collection('patients').doc(patientId).collection('immediate_newborn_care').limit(1).get();
+        return snap && !snap.empty ? (snap.docs[0].data() || {}) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function fetchKmcActions(db, patientId) {
       try {
         var snap = await db.collection('patients').doc(patientId).collection('kmc_actions').get();
@@ -1091,6 +1145,7 @@
           var newbornCareVisits = await fetchNewbornCareVisits(db, p.id);
           var newbornCare = newbornCareVisits[0] || null;
           var latestNewbornCare = newbornCareVisits[newbornCareVisits.length - 1] || newbornCare;
+          var immediateNewbornCare = await fetchImmediateNewbornCare(db, p.id);
           var birthAnchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(p.id);
           var latestAnc = await fetchLatestAnc(db, p.id);
           var evalResult = KmcUtils.evaluateKmcEligibility(p, newbornCare, birthAnchor, latestAnc);
@@ -1106,13 +1161,14 @@
             var w = parseFloat(v.body_weight_gram);
             if (!isNaN(w) && w > 0 && w < 2000) reasonSet.add('low_weight');
           });
+          var sourceBirthWeight = parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p);
+          if (sourceBirthWeight != null && sourceBirthWeight < 2000) reasonSet.add('low_weight');
           var mergedReasons = Array.from(reasonSet);
 
           var kmcActions = await fetchKmcActions(db, p.id);
           var dischargeDate = KmcUtils.getLatestDischargeDate(newbornCareVisits);
-          var completedKmcVisits = KmcUtils.getCompletedKmcVisits(newbornCareVisits);
-          var postDischargeCount = KmcUtils.getPostDischargeVisitCount(newbornCareVisits, dischargeDate);
-          var nextDueDate = KmcUtils.formatDateInput(KmcUtils.getKmcDueDate(dischargeDate, postDischargeCount));
+          var newbornVisitCount = getMaxNewbornVisitNumber(newbornCareVisits);
+          var nextDueDate = KmcUtils.formatDateInput(KmcUtils.getKmcDueDate(dischargeDate, newbornVisitCount));
           var ageDays = KmcUtils.ageInDaysFromBirth(evalResult.birthDateStr);
 
           return {
@@ -1120,16 +1176,17 @@
             babyName: evalResult.babyName || (latestNewbornCare && latestNewbornCare.baby_name),
             reasons: mergedReasons,
             birthDateStr: evalResult.birthDateStr,
-            birthWeightGram: evalResult.birthWeightGram || (newbornCare && newbornCare.body_weight_gram),
+            birthWeightGram: parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p) || evalResult.birthWeightGram,
             ageDays: ageDays,
             newbornCare: newbornCare,
+            immediateNewbornCare: immediateNewbornCare,
             newbornCareVisits: newbornCareVisits,
             kmcActions: kmcActions,
             kmcSelected: (decision.kmc_selected || '').toLowerCase(),
             potentialKmc: potentialKmc,
             dischargeDate: dischargeDate,
-            completedPostDischargeVisitCount: postDischargeCount,
-            completedVisitCount: completedKmcVisits.length,
+            completedPostDischargeVisitCount: newbornVisitCount,
+            completedVisitCount: newbornVisitCount,
             nextDueDate: nextDueDate,
             completed: !!KmcUtils.getCompleteAction(kmcActions)
           };

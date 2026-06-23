@@ -195,7 +195,7 @@
 
     var base = parseDateOnlyLocal(dischargeDate);
     if (!base) return null;
-    base.setMonth(base.getMonth() + (count - 1));
+    base.setMonth(base.getMonth() + (count - 2));
     return base;
   }
 

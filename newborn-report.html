@@ -670,7 +670,8 @@
         document.getElementById("babyName").textContent = newbornCareData.baby_name || t('notRecorded');
         document.getElementById("babyGender").textContent = newbornCareData.gender === 'male' ? t('male') : (newbornCareData.gender === 'female' ? t('female') : t('notRecorded'));
         document.getElementById("birthTime").textContent = newbornCareData.birth_time ? new Date(newbornCareData.birth_time).toLocaleString() : t('notRecorded');
-        document.getElementById("birthWeight").textContent = newbornCareData.birth_weight_lb ? `${newbornCareData.birth_weight_lb} lb` : t('notRecorded');
+        const birthWeightGram = getBestBirthWeightGram();
+        document.getElementById("birthWeight").textContent = birthWeightGram != null ? `${Math.round(birthWeightGram)} g` : t('notRecorded');
         document.getElementById("birthLength").textContent = newbornCareData.birth_length_cm ? `${newbornCareData.birth_length_cm} cm` : t('notRecorded');
         document.getElementById("headCircumference").textContent = newbornCareData.head_circumference_cm ? `${newbornCareData.head_circumference_cm} cm` : t('notRecorded');
       } else {
@@ -739,17 +740,65 @@
         .replace(/'/g, '&#39;');
     }
 
+    function parseWeightGramFromRecord(record) {
+      if (!record) return null;
+      const gram = parseFloat(record.body_weight_gram || record.birth_weight_gram || record.birthWeightGram);
+      if (!isNaN(gram) && gram > 0) return gram;
+      const kg = parseFloat(record.birth_weight_kg || record.birthWeightKg);
+      if (!isNaN(kg) && kg > 0) return kg * 1000;
+      const lb = parseFloat(record.birth_weight_lb || record.birthWeight || record.birth_weight);
+      if (!isNaN(lb) && lb > 0) return lb * 453.59237;
+      return null;
+    }
+
+    function getBestBirthWeightGram() {
+      const visitOne = newbornCareVisits.find(function (v) {
+        return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
+      });
+      return parseWeightGramFromRecord(visitOne) ||
+        parseWeightGramFromRecord(immediateCareData) ||
+        parseWeightGramFromRecord(newbornCareVisits[0]) ||
+        parseWeightGramFromRecord(newbornCareData) ||
+        parseWeightGramFromRecord(currentPatient);
+    }
+
+    function getNormalizedNewbornVisitRows() {
+      const byVisit = {};
+      let maxVisit = 1;
+      newbornCareVisits.forEach(function (v) {
+        const n = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+        byVisit[n] = v;
+        maxVisit = Math.max(maxVisit, n);
+      });
+      const rows = [];
+      const birthWeight = getBestBirthWeightGram();
+      for (let n = 1; n <= maxVisit; n++) {
+        const data = byVisit[n] || null;
+        const row = data ? Object.assign({}, data) : { visit_number: n, missing_visit: true };
+        if (n === 1 && row.body_weight_gram == null && birthWeight != null) {
+          row.body_weight_gram = Math.round(birthWeight);
+          row.birth_weight_baseline = true;
+        }
+        rows.push(row);
+      }
+      return rows;
+    }
+
     function renderKmcReportSection() {
       if (!newbornCareVisits.length || !window.KmcUtils) return '';
-      const allVisits = newbornCareVisits.slice().sort(function (a, b) {
-        const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
-        const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
-        if (av !== bv) return av - bv;
-        return String(a.visitDate || a.visit_date || a.birth_time || '').localeCompare(String(b.visitDate || b.visit_date || b.birth_time || ''));
-      });
+      const allVisits = getNormalizedNewbornVisitRows();
       const latestDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
       const potential = newbornCareVisits.some(function (v) { return !!v.potential_kmc; });
-      const reasons = latestDecision.kmc_eligible_reasons || newbornCareVisits[0].kmc_eligible_reasons || [];
+      const reasonSet = new Set();
+      (latestDecision.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+      newbornCareVisits.forEach(function (v) {
+        (v.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+        const w = parseFloat(v.body_weight_gram);
+        if (!isNaN(w) && w > 0 && w < 2000) reasonSet.add('low_weight');
+      });
+      const birthWeight = getBestBirthWeightGram();
+      if (birthWeight != null && birthWeight < 2000) reasonSet.add('low_weight');
+      const reasons = Array.from(reasonSet);
       const completeOutcome = KmcUtils.getCompletionOutcome({ kmcActions: kmcActions });
       let html = '<div class="treatment-item mb-3">';
       html += '<div class="treatment-header">KMC Tracking</div>';
@@ -774,9 +823,12 @@
           '<th>Visit</th><th>Date</th><th>Weight</th><th>KMC</th><th>KMC hrs/day</th><th>Total hrs</th><th>Feeding</th></tr></thead><tbody>';
         allVisits.forEach(function (v) {
           const feeding = [v.feeding_type, v.feeding_method].filter(Boolean).join(' / ');
+          const visitNo = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+          const visitLabel = visitNo === 1 ? 'Visit 1 (Weight at Birth)' : ('Visit ' + visitNo);
+          const dateLabel = v.missing_visit ? t('notRecorded') : (v.visitDate || v.visit_date || (v.birth_time ? new Date(v.birth_time).toISOString().split('T')[0] : ''));
           html += '<tr>' +
-            '<td>' + escapeHtml(v.visit_number || v.visitNumber || '') + '</td>' +
-            '<td>' + escapeHtml(v.visitDate || v.visit_date || (v.birth_time ? new Date(v.birth_time).toISOString().split('T')[0] : '')) + '</td>' +
+            '<td>' + escapeHtml(visitLabel) + '</td>' +
+            '<td>' + escapeHtml(dateLabel || t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.body_weight_gram ? v.body_weight_gram + ' g' : t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.kmc_selected ? String(v.kmc_selected).toUpperCase() : t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.kmc_hours_per_day != null ? v.kmc_hours_per_day : t('notRecorded')) + '</td>' +
@@ -836,7 +888,8 @@
       html += '<p><strong>' + t('babyName') + '</strong> ' + (newbornCareData.baby_name || t('notRecorded')) + '</p>';
       html += '<p><strong>' + t('gender') + '</strong> ' + (newbornCareData.gender === 'male' ? t('male') : (newbornCareData.gender === 'female' ? t('female') : t('notRecorded'))) + '</p>';
       html += '<p><strong>' + t('birthTime') + '</strong> ' + (newbornCareData.birth_time ? new Date(newbornCareData.birth_time).toLocaleString() : t('notRecorded')) + '</p>';
-      html += '<p><strong>' + t('birthWeight') + '</strong> ' + (newbornCareData.birth_weight_lb ? newbornCareData.birth_weight_lb + ' lb' : t('notRecorded')) + '</p>';
+      const birthWeightGram = getBestBirthWeightGram();
+      html += '<p><strong>' + t('birthWeight') + '</strong> ' + (birthWeightGram != null ? Math.round(birthWeightGram) + ' g' : t('notRecorded')) + '</p>';
       html += '<p><strong>' + t('birthLength') + '</strong> ' + (newbornCareData.birth_length_cm ? newbornCareData.birth_length_cm + ' cm' : t('notRecorded')) + '</p>';
       html += '<p><strong>' + t('headCircumference') + '</strong> ' + (newbornCareData.head_circumference_cm ? newbornCareData.head_circumference_cm + ' cm' : t('notRecorded')) + '</p>';
       html += '<p><strong>' + t('birthplace') + '</strong> ' + (newbornCareData.birthplace || t('notRecorded')) + '</p>';
