@@ -533,19 +533,41 @@
       }
       
       const result = [];
+
+      function parseClockToMinutes(timeStr) {
+        const [h, m] = String(timeStr || '').split(':').map(Number);
+        if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+          return null;
+        }
+        return h * 60 + m;
+      }
+
+      function formatMinutesAsClock(totalMinutes) {
+        const wrappedMinutes = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+        const h = Math.floor(wrappedMinutes / 60);
+        const m = wrappedMinutes % 60;
+        return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+      }
       
       // Parse second stage time if provided and valid
       let secondStageMin = null;
       if (secondStage && secondStage.trim() !== '' && secondStage !== 'null' && secondStage !== 'undefined') {
-        const [ssh, ssm] = secondStage.split(':').map(Number);
-        if (!isNaN(ssh) && !isNaN(ssm) && ssh >= 0 && ssh <= 23 && ssm >= 0 && ssm <= 59) {
-          secondStageMin = ssh * 60 + ssm;
+        const parsedSecondStageMin = parseClockToMinutes(secondStage);
+        if (parsedSecondStageMin !== null) {
+          secondStageMin = parsedSecondStageMin;
         } else {
           console.error('❌ Invalid second stage time format:', secondStage);
         }
       }
       
       const startMin = sh * 60 + sm;
+      let secondStageTimelineMin = null;
+      if (secondStageMin !== null) {
+        secondStageTimelineMin = secondStageMin;
+        if (secondStageTimelineMin < startMin) {
+          secondStageTimelineMin += 24 * 60; // Second stage is after midnight.
+        }
+      }
       
       // Check if first and second stage times are the same
       const timesAreSame = secondStageMin !== null && secondStageMin === startMin;
@@ -554,9 +576,6 @@
       let effectiveStartMin = startMin;
       if (timesAreSame) {
         effectiveStartMin = startMin - (3 * 60); // 3 hours before
-        if (effectiveStartMin < 0) {
-          effectiveStartMin += 24 * 60; // Wrap around midnight
-        }
         console.log('⚠️ First and second stage times are the same - starting 3 hours before:', effectiveStartMin);
       }
       
@@ -565,88 +584,73 @@
       let currentMin = effectiveStartMin;
       const endMin = startMin + (12 * 60); // 12 hours from actual start
       
-      // Determine where to stop first stage generation
-      // If second stage exists, stop just before it (or at it if times are same)
-      const firstStageEndMin = secondStageMin !== null ? secondStageMin : endMin;
-      
-      if (secondStageMin !== null && secondStageMin < startMin && !timesAreSame) {
-        // If second stage is before start (and not same), skip first stage
-        console.log('⚠️ Second stage is before start time, skipping first stage');
-      } else {
-        // Generate 30-minute intervals (for FHR and Contractions)
-        // Stop 30 minutes before second stage (or at endMin if no second stage)
-        currentMin = effectiveStartMin;
-        const stopBeforeSecondStage = secondStageMin !== null ? Math.max(effectiveStartMin, secondStageMin - 30) : endMin;
-        while (currentMin < stopBeforeSecondStage) {
-          const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
-          const h = Math.floor(totalMins / 60);
-          const m = totalMins % 60;
-          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
-          
-          result.push({
-            time: timeStr,
-            isSecondStage: false,
-            interval: '30min'
-          });
-          
-          currentMin += 30;
-          
-          if (result.length > 100) {
-            console.error('❌ Too many timepoints generated, breaking loop');
-            break;
-          }
-        }
+      // Generate 30-minute intervals (for FHR and Contractions)
+      // Stop 30 minutes before second stage (or at endMin if no second stage)
+      currentMin = effectiveStartMin;
+      const stopBeforeSecondStage = secondStageTimelineMin !== null ? Math.max(effectiveStartMin, secondStageTimelineMin - 30) : endMin;
+      while (currentMin < stopBeforeSecondStage) {
+        const timeStr = formatMinutesAsClock(currentMin);
         
-        // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
-        // Stop at second stage time (or endMin if no second stage)
-        // When times are same, stop at secondStageMin (not endMin)
-        currentMin = effectiveStartMin;
-        let hourCount = 0;
-        const stopBeforeSecondStageHourly = secondStageMin !== null ? secondStageMin : endMin;
-        while (currentMin < stopBeforeSecondStageHourly) {
-          const totalMins = currentMin % (24 * 60);
-          const h = Math.floor(totalMins / 60);
-          const m = totalMins % 60;
-          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
-          
-          result.push({
-            time: timeStr,
-            isSecondStage: false,
-            interval: '60min'
-          });
-          
-          hourCount++;
-          console.log(`  📅 Added 1-hour timepoint: ${timeStr} (count: ${hourCount})`);
-          
-          currentMin += 60;
-          
-          if (hourCount > 50) {
-            console.error('❌ Too many 1-hour timepoints, breaking loop');
-            break;
-          }
-        }
+        result.push({
+          time: timeStr,
+          isSecondStage: false,
+          interval: '30min',
+          absoluteMin: currentMin
+        });
         
-        console.log(`✅ Generated ${hourCount} 1-hour interval timepoints (stopped at ${stopBeforeSecondStageHourly})`);
+        currentMin += 30;
+        
+        if (result.length > 100) {
+          console.error('❌ Too many timepoints generated, breaking loop');
+          break;
+        }
       }
       
+      // Generate 1-hour intervals (for Support, Woman, Baby, Meds, SDM, etc.)
+      // Stop at second stage time (or endMin if no second stage)
+      // When times are same, stop at secondStageMin (not endMin)
+      currentMin = effectiveStartMin;
+      let hourCount = 0;
+      const stopBeforeSecondStageHourly = secondStageTimelineMin !== null ? secondStageTimelineMin : endMin;
+      while (currentMin < stopBeforeSecondStageHourly) {
+        const timeStr = formatMinutesAsClock(currentMin);
+        
+        result.push({
+          time: timeStr,
+          isSecondStage: false,
+          interval: '60min',
+          absoluteMin: currentMin
+        });
+        
+        hourCount++;
+        console.log(`  📅 Added 1-hour timepoint: ${timeStr} (count: ${hourCount})`);
+        
+        currentMin += 60;
+        
+        if (hourCount > 50) {
+          console.error('❌ Too many 1-hour timepoints, breaking loop');
+          break;
+        }
+      }
+      
+      console.log(`✅ Generated ${hourCount} 1-hour interval timepoints (stopped at ${stopBeforeSecondStageHourly})`);
+      
       // Generate second stage timepoints if applicable
-      if (secondStageMin !== null) {
-        console.log('🎯 Starting second stage timepoint generation at:', secondStageMin);
-        const endSecondStageMin = secondStageMin + (15 * 12); // 12 intervals of 15 min = 3 hours
+      if (secondStageTimelineMin !== null) {
+        console.log('🎯 Starting second stage timepoint generation at:', secondStageTimelineMin);
+        const endSecondStageMin = secondStageTimelineMin + (15 * 12); // 12 intervals of 15 min = 3 hours
         
         // Generate 15-minute intervals for second stage (for FHR, Contractions, Cervix)
-        currentMin = secondStageMin;
+        currentMin = secondStageTimelineMin;
         let secondStage15minCount = 0;
         while (currentMin <= endSecondStageMin) {
-          const totalMins = currentMin % (24 * 60); // Wrap around 24 hours
-          const h = Math.floor(totalMins / 60);
-          const m = totalMins % 60;
-          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          const timeStr = formatMinutesAsClock(currentMin);
           
           const tp = {
             time: timeStr,
             isSecondStage: true,
-            interval: '15min'
+            interval: '15min',
+            absoluteMin: currentMin
           };
           
           result.push(tp);
@@ -660,12 +664,9 @@
         // Mark 15-min intervals at hourly boundaries to also support hourly sections
         // This avoids creating duplicate pills while still supporting all section types
         const hourlyBoundaryTimes = new Set();
-        currentMin = secondStageMin;
+        currentMin = secondStageTimelineMin;
         while (currentMin <= endSecondStageMin) {
-          const totalMins = currentMin % (24 * 60);
-          const h = Math.floor(totalMins / 60);
-          const m = totalMins % 60;
-          const timeStr = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+          const timeStr = formatMinutesAsClock(currentMin);
           hourlyBoundaryTimes.add(timeStr);
           currentMin += 60;
         }
@@ -713,11 +714,10 @@
         uniqueTimepoints.push(preferred);
       });
       
-      // Sort by time
+      // Sort by generated timeline minutes, not plain HH:MM clock time. This keeps
+      // next-day values like 00:11 after evening values such as 22:11.
       uniqueTimepoints.sort((a, b) => {
-        const timeA = a.time || a;
-        const timeB = b.time || b;
-        return timeA.localeCompare(timeB);
+        return (a.absoluteMin ?? Number.MAX_SAFE_INTEGER) - (b.absoluteMin ?? Number.MAX_SAFE_INTEGER);
       });
       
       state.timepoints = uniqueTimepoints;
@@ -1890,8 +1890,7 @@
       // Use scroll to see all
       allTimepoints.forEach((tp, idx) => {
         const timeStr = tp.time || tp;
-        // Check if second stage using multiple methods
-        const isSecondStage = tp.isSecondStage || (tp.interval === '15min');
+        const isSecondStage = tp.isSecondStage === true;
         const isActive = idx === currentIndex;
         
         // Debug for second stage pills

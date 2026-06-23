@@ -1454,6 +1454,20 @@
       return el && el.value ? el.value : 'No';
     }
 
+    function formatLocalDateInputValue(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function parseLocalDateInputValue(dateStr) {
+      const parts = String(dateStr || '').split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return null;
+      const [year, month, day] = parts;
+      return new Date(year, month - 1, day);
+    }
+
     // Calculate postpartum period based on visit date (not current date)
     function calculatePostpartumPeriod() {
       const deliveredDateTimeInput = document.getElementById('deliveredDateTime');
@@ -1486,15 +1500,19 @@
           return;
         }
         
-        // Use visit date if available, otherwise use current date
-        let referenceDate = new Date();
+        // Use the current clock time for today's visit. For a backdated visit,
+        // use end-of-day because the visit field stores only a date, not a time.
+        const now = new Date();
+        let referenceDate = now;
         if (visitDateInput && visitDateInput.value) {
-          // Get visit date and combine with current time for accurate calculation
-          const visitDate = new Date(visitDateInput.value);
+          const visitDate = parseLocalDateInputValue(visitDateInput.value);
           if (!isNaN(visitDate.getTime())) {
-            // Use visit date with current time (or end of day) for calculation
-            referenceDate = new Date(visitDate);
-            referenceDate.setHours(23, 59, 59, 999); // End of visit day
+            if (visitDateInput.value === formatLocalDateInputValue(now)) {
+              referenceDate = now;
+            } else {
+              referenceDate = visitDate;
+              referenceDate.setHours(23, 59, 59, 999);
+            }
           }
         }
         
@@ -1628,7 +1646,7 @@
           document.getElementById('patientName').textContent = currentPatient.name || 'Unknown';
           document.getElementById('patientAge').textContent = currentPatient.age || 'N/A';
           document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
-          const today = new Date().toISOString().split('T')[0];
+          const today = formatLocalDateInputValue(new Date());
           document.getElementById('visitDate').value = today;
           setDefaultPncOutcomesAlive();
           showLoading(false);
@@ -1653,7 +1671,7 @@
         document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
         
         // Set default visit date to today
-        const today = new Date().toISOString().split('T')[0];
+        const today = formatLocalDateInputValue(new Date());
         document.getElementById('visitDate').value = today;
         
         // Calculate visit number
