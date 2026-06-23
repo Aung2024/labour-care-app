@@ -129,6 +129,31 @@
     }
   }
 
+  async function patientHasPostnatalNewbornActivity(patientId) {
+    if (!patientId || typeof firebase === 'undefined' || !firebase.firestore) return false;
+    const patientRef = firebase.firestore().collection('patients').doc(patientId);
+    const checks = [
+      patientRef.collection('immediate_newborn_care').limit(1).get(),
+      patientRef.collection('newborn_care').limit(1).get(),
+      patientRef.collection('postpartum_visits').limit(1).get()
+    ];
+
+    try {
+      const snapshots = await Promise.all(checks.map(function (check) {
+        return check.catch(function (error) {
+          console.warn('[StatusManager] Could not check postnatal/newborn activity:', error);
+          return null;
+        });
+      }));
+      return snapshots.some(function (snap) {
+        return snap && !snap.empty;
+      });
+    } catch (error) {
+      console.warn('[StatusManager] Could not check postnatal/newborn activity:', error);
+      return false;
+    }
+  }
+
   /**
    * Update patient status in Firestore
    */
@@ -282,8 +307,24 @@
     return checkAndUpdateToPostnatalCare(patientId, reason || 'Newborn care recorded');
   }
 
-  async function checkAndUpdateToPostnatalCare(patientId, reason) {
+  async function checkAndUpdateToPostnatalCare(patientId, reason, options) {
     reason = reason || 'Postnatal or newborn care activity';
+    options = options || {};
+
+    if (!patientId || String(patientId).indexOf('OFFLINE-') === 0) {
+      if (options.assumeActivityRecorded) {
+        updateLocalPatientStatusMirror(patientId, PATIENT_STATUSES.POSTNATAL_NEWBORN);
+      }
+      return false;
+    }
+
+    if (options.localOnly || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      if (options.assumeActivityRecorded) {
+        updateLocalPatientStatusMirror(patientId, PATIENT_STATUSES.POSTNATAL_NEWBORN);
+      }
+      return true;
+    }
+
     try {
       const patientDoc = await firebase.firestore()
         .collection('patients')
@@ -306,6 +347,25 @@
       console.error('[StatusManager] Error checking postnatal care status:', error);
       return false;
     }
+  }
+
+  async function reconcilePostnatalNewbornStatus(patientId, options) {
+    options = options || {};
+    if (!patientId || String(patientId).indexOf('OFFLINE-') === 0) return false;
+
+    const hasActivity = options.assumeActivityRecorded
+      ? true
+      : await patientHasPostnatalNewbornActivity(patientId);
+
+    if (!hasActivity) {
+      return true;
+    }
+
+    return checkAndUpdateToPostnatalCare(
+      patientId,
+      options.reason || 'Postnatal/newborn care status reconciliation',
+      { assumeActivityRecorded: true }
+    );
   }
 
   async function getPatientStatus(patientId) {
@@ -436,6 +496,8 @@
     checkAndUpdateToTransfer,
     getPatientStatus,
     reconcileAntenatalStatuses,
+    reconcilePostnatalNewbornStatus,
+    patientHasPostnatalNewbornActivity,
     normalizePatientStatus,
     getStatusRank,
     shouldAdvanceStatus,
