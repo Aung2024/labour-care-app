@@ -252,10 +252,10 @@
     (reasons || []).forEach(function (r) {
       if (r === 'low_weight') {
         en.push('Low birth weight (<2000g)');
-        mm.push('မွေးချိန်အလေးချိန် (<2000g)');
+        mm.push('ပေါင်ချိန်မပြည့် (LBW)');
       } else if (r === 'preterm') {
         en.push('Preterm (≥3 wks before EDD)');
-        mm.push('မွေးမစေ့ (EDD ထက် ≥၃ ပတ်)');
+        mm.push('လမစေ့ (Preterm)');
       }
     });
     return lang === 'mm' ? mm : en;

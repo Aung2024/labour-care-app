@@ -91,6 +91,50 @@
     }
   }
 
+  function createChoiceButton(select, opt, layout) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    if (layout === 'cards') {
+      btn.className = 'choice-card';
+    } else if (layout === 'toggle') {
+      btn.className = 'choice-toggle-btn';
+    } else {
+      btn.className = 'choice-chip';
+    }
+    btn.dataset.value = opt.value;
+    btn.setAttribute('aria-pressed', 'false');
+
+    if (layout === 'cards') {
+      var label = document.createElement('span');
+      label.className = 'choice-card__label lang-text';
+      copyLangAttrs(opt, label);
+      label.textContent = getOptionLabel(opt);
+      btn.appendChild(label);
+    } else {
+      copyLangAttrs(opt, btn);
+      btn.textContent = getOptionLabel(opt);
+    }
+
+    var dangerValues = (select.dataset.choiceDanger || '').split('|').filter(Boolean);
+    if (dangerValues.indexOf(opt.value) >= 0) {
+      btn.classList.add(layout === 'cards' ? 'choice-card--danger' : 'choice-chip--danger');
+    }
+
+    return btn;
+  }
+
+  function renderChoiceButtons(select, group, layout) {
+    group.innerHTML = '';
+    group.className = layout === 'cards' ? 'choice-cards' : (layout === 'toggle' ? 'choice-toggle' : 'choice-chips');
+    Array.from(select.options).forEach(function (opt) {
+      if (isPlaceholderOption(opt)) return;
+      group.appendChild(createChoiceButton(select, opt, layout));
+    });
+    applyChipDensity(select, group, layout);
+    applyCardLayout(select, group, layout);
+    syncChoiceFromSelect(select);
+  }
+
   function syncChoiceFromSelect(select) {
     var wrap = select.closest('.choice-control');
     if (!wrap) return;
@@ -151,43 +195,7 @@
     }
     wrap.insertBefore(group, select);
 
-    var dangerValues = (select.dataset.choiceDanger || '').split('|').filter(Boolean);
-
-    Array.from(select.options).forEach(function (opt) {
-      if (isPlaceholderOption(opt)) return;
-
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      if (layout === 'cards') {
-        btn.className = 'choice-card';
-      } else if (layout === 'toggle') {
-        btn.className = 'choice-toggle-btn';
-      } else {
-        btn.className = 'choice-chip';
-      }
-      btn.dataset.value = opt.value;
-      btn.setAttribute('aria-pressed', 'false');
-
-      if (layout === 'cards') {
-        var label = document.createElement('span');
-        label.className = 'choice-card__label lang-text';
-        copyLangAttrs(opt, label);
-        label.textContent = getOptionLabel(opt);
-        btn.appendChild(label);
-      } else {
-        copyLangAttrs(opt, btn);
-        btn.textContent = getOptionLabel(opt);
-      }
-
-      if (dangerValues.indexOf(opt.value) >= 0) {
-        btn.classList.add(layout === 'cards' ? 'choice-card--danger' : 'choice-chip--danger');
-      }
-
-      group.appendChild(btn);
-    });
-
-    applyChipDensity(select, group, layout);
-    applyCardLayout(select, group, layout);
+    renderChoiceButtons(select, group, layout);
 
     group.addEventListener('click', function (e) {
       var btn = e.target.closest('.choice-chip, .choice-card, .choice-toggle-btn');
@@ -209,6 +217,19 @@
   var ChoiceControls = {
     init: function (root) {
       (root || document).querySelectorAll('select[data-choice]').forEach(enhanceSelect);
+    },
+    refreshOptions: function (root) {
+      var target = root || document;
+      var selects = target.matches && target.matches('select[data-choice]')
+        ? [target]
+        : Array.from(target.querySelectorAll('select[data-choice]'));
+      selects.forEach(function (select) {
+        var enhanced = enhanceSelect(select);
+        var wrap = enhanced.closest('.choice-control');
+        var layout = enhanced.dataset.choiceLayout || 'chips';
+        var group = wrap && wrap.querySelector('.choice-chips, .choice-cards, .choice-toggle');
+        if (group) renderChoiceButtons(enhanced, group, layout);
+      });
     },
     syncAll: function (root) {
       (root || document).querySelectorAll('select[data-choice-enhanced="1"]').forEach(syncChoiceFromSelect);
