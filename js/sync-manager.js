@@ -384,7 +384,7 @@
           } else if (window.StatusManager && storeName === 'pending_pnc_visits') {
             await StatusManager.checkAndUpdateToPostnatalCare(patientId, 'PNC visit synced from offline');
           } else if (window.StatusManager && storeName === 'pending_newborn_records') {
-            await StatusManager.checkAndUpdateToBirthed(patientId, 'Newborn care synced from offline');
+            await StatusManager.checkAndUpdateToPostnatalCare(patientId, 'Newborn care synced from offline');
           }
         } catch (statusErr) {
           console.warn('[SyncManager] Status update failed (non-critical):', statusErr);

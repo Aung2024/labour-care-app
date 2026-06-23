@@ -9,32 +9,66 @@
   const PATIENT_STATUSES = {
     REGISTERED: 'registered',
     ANTENATAL: 'antenatal_care',
-    IN_LABOUR: 'in_labour',
-    BIRTHED: 'birthed',
-    POSTNATAL: 'postnatal_care',
+    INTRAPARTUM: 'intrapartum',
+    POSTNATAL_NEWBORN: 'postnatal_newborn_care',
     ANC_TRANSFER: 'anc_transfer',
     LABOUR_TRANSFER: 'labour_transfer',
     PNC_TRANSFER: 'pnc_transfer'
   };
 
-  const ADVANCED_STATUSES = new Set([
-    PATIENT_STATUSES.IN_LABOUR,
-    PATIENT_STATUSES.BIRTHED,
-    PATIENT_STATUSES.POSTNATAL,
+  const TRANSFER_STATUSES = new Set([
     PATIENT_STATUSES.ANC_TRANSFER,
     PATIENT_STATUSES.LABOUR_TRANSFER,
     PATIENT_STATUSES.PNC_TRANSFER
   ]);
 
+  const STATUS_RANK = {};
+  STATUS_RANK[PATIENT_STATUSES.REGISTERED] = 0;
+  STATUS_RANK[PATIENT_STATUSES.ANTENATAL] = 1;
+  STATUS_RANK[PATIENT_STATUSES.INTRAPARTUM] = 2;
+  STATUS_RANK[PATIENT_STATUSES.POSTNATAL_NEWBORN] = 3;
+  STATUS_RANK[PATIENT_STATUSES.ANC_TRANSFER] = 4;
+  STATUS_RANK[PATIENT_STATUSES.LABOUR_TRANSFER] = 4;
+  STATUS_RANK[PATIENT_STATUSES.PNC_TRANSFER] = 4;
+
   function normalizePatientStatus(status) {
     if (status == null || status === '') return PATIENT_STATUSES.REGISTERED;
     const s = String(status).toLowerCase().trim().replace(/[\s-]+/g, '_');
     if (s === 'antenatal' || s === 'anc' || s === 'antenatal_care') return PATIENT_STATUSES.ANTENATAL;
-    if (s === 'in_labour' || s === 'labour' || s === 'labour_care') return PATIENT_STATUSES.IN_LABOUR;
-    if (s === 'birthed' || s === 'birthed_postnatal') return PATIENT_STATUSES.BIRTHED;
-    if (s === 'postnatal' || s === 'postnatal_care' || s === 'postpartum') return PATIENT_STATUSES.POSTNATAL;
+    if (s === 'intrapartum' || s === 'in_labour' || s === 'labour' || s === 'labour_care') return PATIENT_STATUSES.INTRAPARTUM;
+    if (s === 'birthed' || s === 'birthed_postnatal') return PATIENT_STATUSES.POSTNATAL_NEWBORN;
+    if (s === 'postnatal' || s === 'postnatal_care' || s === 'postpartum' || s === 'postnatal_newborn' || s === 'postnatal_newborn_care') return PATIENT_STATUSES.POSTNATAL_NEWBORN;
     if (s === 'registered' || s === 'register') return PATIENT_STATUSES.REGISTERED;
     return s;
+  }
+
+  function getStatusRank(status) {
+    const normalized = normalizePatientStatus(status);
+    return Object.prototype.hasOwnProperty.call(STATUS_RANK, normalized) ? STATUS_RANK[normalized] : 0;
+  }
+
+  function shouldAdvanceStatus(currentStatus, newStatus) {
+    const current = normalizePatientStatus(currentStatus);
+    const next = normalizePatientStatus(newStatus);
+    if (TRANSFER_STATUSES.has(current)) return false;
+    if (TRANSFER_STATUSES.has(next)) return true;
+    return getStatusRank(next) >= getStatusRank(current);
+  }
+
+  function getMirroredPatientStatus(patientId) {
+    if (!patientId) return PATIENT_STATUSES.REGISTERED;
+    try {
+      if (sessionStorage.getItem('selectedPatientId') === patientId) {
+        const raw = sessionStorage.getItem('selectedPatientData');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return normalizePatientStatus(parsed.status);
+        }
+      }
+    } catch (e) {
+      console.warn('[StatusManager] sessionStorage status read failed:', e);
+    }
+    return PATIENT_STATUSES.REGISTERED;
   }
 
   function isRegisteredLikeStatus(status) {
@@ -44,6 +78,12 @@
 
   function updateLocalPatientStatusMirror(patientId, newStatus) {
     if (!patientId || !newStatus) return;
+    const mirroredStatus = getMirroredPatientStatus(patientId);
+    if (!shouldAdvanceStatus(mirroredStatus, newStatus)) {
+      newStatus = mirroredStatus;
+    } else {
+      newStatus = normalizePatientStatus(newStatus);
+    }
 
     try {
       if (sessionStorage.getItem('selectedPatientId') === patientId) {
@@ -94,7 +134,22 @@
    */
   async function updatePatientStatus(patientId, newStatus, reason) {
     reason = reason || '';
+    newStatus = normalizePatientStatus(newStatus);
     try {
+      const patientRef = firebase.firestore().collection('patients').doc(patientId);
+      const patientDoc = await patientRef.get();
+      if (patientDoc.exists) {
+        const currentStatus = normalizePatientStatus(patientDoc.data().status);
+        if (currentStatus === newStatus) {
+          updateLocalPatientStatusMirror(patientId, currentStatus);
+          return true;
+        }
+        if (!shouldAdvanceStatus(currentStatus, newStatus)) {
+          updateLocalPatientStatusMirror(patientId, currentStatus);
+          return true;
+        }
+      }
+
       await firebase.firestore()
         .collection('patients')
         .doc(patientId)
@@ -157,7 +212,7 @@
       return true;
     }
 
-    if (ADVANCED_STATUSES.has(currentStatus)) {
+    if (!shouldAdvanceStatus(currentStatus, PATIENT_STATUSES.ANTENATAL)) {
       return true;
     }
 
@@ -186,7 +241,7 @@
     );
   }
 
-  async function checkAndUpdateToInLabour(patientId) {
+  async function checkAndUpdateToIntrapartum(patientId) {
     try {
       const patientDoc = await firebase.firestore()
         .collection('patients')
@@ -200,50 +255,35 @@
 
       const currentStatus = normalizePatientStatus(patientDoc.data().status);
 
-      if (currentStatus === PATIENT_STATUSES.REGISTERED ||
-          currentStatus === PATIENT_STATUSES.ANTENATAL) {
+      if (shouldAdvanceStatus(currentStatus, PATIENT_STATUSES.INTRAPARTUM)) {
         return updatePatientStatus(
           patientId,
-          PATIENT_STATUSES.IN_LABOUR,
+          PATIENT_STATUSES.INTRAPARTUM,
           'Active first stage time recorded'
         );
       }
 
       return true;
     } catch (error) {
-      console.error('[StatusManager] Error checking in labour status:', error);
+      console.error('[StatusManager] Error checking intrapartum status:', error);
       return false;
     }
+  }
+
+  async function checkAndUpdateToInLabour(patientId) {
+    return checkAndUpdateToIntrapartum(patientId);
+  }
+
+  async function checkAndUpdateToLabourCare(patientId) {
+    return checkAndUpdateToIntrapartum(patientId);
   }
 
   async function checkAndUpdateToBirthed(patientId, reason) {
-    reason = reason || 'Birth recorded';
-    try {
-      const patientDoc = await firebase.firestore()
-        .collection('patients')
-        .doc(patientId)
-        .get();
-
-      if (!patientDoc.exists) {
-        console.error('[StatusManager] Patient not found:', patientId);
-        return false;
-      }
-
-      const currentStatus = normalizePatientStatus(patientDoc.data().status);
-
-      if (currentStatus === PATIENT_STATUSES.IN_LABOUR) {
-        return updatePatientStatus(patientId, PATIENT_STATUSES.BIRTHED, reason);
-      }
-
-      return true;
-    } catch (error) {
-      console.error('[StatusManager] Error checking birthed status:', error);
-      return false;
-    }
+    return checkAndUpdateToPostnatalCare(patientId, reason || 'Newborn care recorded');
   }
 
   async function checkAndUpdateToPostnatalCare(patientId, reason) {
-    reason = reason || 'Postnatal activity';
+    reason = reason || 'Postnatal or newborn care activity';
     try {
       const patientDoc = await firebase.firestore()
         .collection('patients')
@@ -257,8 +297,8 @@
 
       const currentStatus = normalizePatientStatus(patientDoc.data().status);
 
-      if (currentStatus !== PATIENT_STATUSES.POSTNATAL) {
-        return updatePatientStatus(patientId, PATIENT_STATUSES.POSTNATAL, reason);
+      if (shouldAdvanceStatus(currentStatus, PATIENT_STATUSES.POSTNATAL_NEWBORN)) {
+        return updatePatientStatus(patientId, PATIENT_STATUSES.POSTNATAL_NEWBORN, reason);
       }
 
       return true;
@@ -351,12 +391,10 @@
         return 'Registered';
       case PATIENT_STATUSES.ANTENATAL:
         return 'Antenatal Care';
-      case PATIENT_STATUSES.IN_LABOUR:
-        return 'In Labour';
-      case PATIENT_STATUSES.BIRTHED:
-        return 'Birthed';
-      case PATIENT_STATUSES.POSTNATAL:
-        return 'Postnatal Care';
+      case PATIENT_STATUSES.INTRAPARTUM:
+        return 'Intrapartum';
+      case PATIENT_STATUSES.POSTNATAL_NEWBORN:
+        return 'Postnatal & Newborn Care';
       case PATIENT_STATUSES.ANC_TRANSFER:
         return 'ANC Transfer';
       case PATIENT_STATUSES.LABOUR_TRANSFER:
@@ -374,11 +412,9 @@
         return 'badge bg-secondary';
       case PATIENT_STATUSES.ANTENATAL:
         return 'badge bg-success';
-      case PATIENT_STATUSES.IN_LABOUR:
+      case PATIENT_STATUSES.INTRAPARTUM:
         return 'badge bg-danger';
-      case PATIENT_STATUSES.BIRTHED:
-        return 'badge bg-warning';
-      case PATIENT_STATUSES.POSTNATAL:
+      case PATIENT_STATUSES.POSTNATAL_NEWBORN:
         return 'badge bg-info';
       case PATIENT_STATUSES.ANC_TRANSFER:
       case PATIENT_STATUSES.LABOUR_TRANSFER:
@@ -392,13 +428,17 @@
   global.StatusManager = {
     updatePatientStatus,
     checkAndUpdateToAntenatalCare,
+    checkAndUpdateToIntrapartum,
     checkAndUpdateToInLabour,
+    checkAndUpdateToLabourCare,
     checkAndUpdateToBirthed,
     checkAndUpdateToPostnatalCare,
     checkAndUpdateToTransfer,
     getPatientStatus,
     reconcileAntenatalStatuses,
     normalizePatientStatus,
+    getStatusRank,
+    shouldAdvanceStatus,
     isRegisteredLikeStatus,
     updateLocalPatientStatusMirror,
     getStatusDisplayName,
