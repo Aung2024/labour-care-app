@@ -44,14 +44,16 @@
 
   async function getActiveJointCareLink(patientId, uid) {
     if (!patientId || !uid) return null;
-    const snap = await firebase.firestore().collection(LINK_COLLECTION)
-      .where('patientId', '==', patientId)
-      .where('linkedMidwifeId', '==', uid)
-      .where('status', '==', 'active')
-      .limit(1)
+    const doc = await firebase.firestore()
+      .collection(LINK_COLLECTION)
+      .doc(uid)
+      .collection('patients')
+      .doc(patientId)
       .get();
-    if (snap.empty) return null;
-    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    if (!doc.exists) return null;
+    const data = doc.data() || {};
+    if (data.status !== 'active') return null;
+    return { id: doc.id, ...data };
   }
 
   async function canAccessPatient(patientId, patientData, user, profile) {
@@ -94,7 +96,10 @@
     };
 
     const db = firebase.firestore();
-    await db.collection(LINK_COLLECTION).doc(linkId).set(link, { merge: true });
+    await db.collection(LINK_COLLECTION).doc(user.uid).collection('patients').doc(patientId).set({
+      ...link,
+      linkId
+    }, { merge: true });
     await logJointCareEvent('joint_care_link_created', user.uid, patientId, {
       patientUniqueId,
       ownerMidwifeId,
@@ -154,34 +159,29 @@
     return !!uid && visitCreatorId(visit) === uid && isWithinEditWindow(visit);
   }
 
+  function buildEditRequestId(patientId, visitType, visitId, uid) {
+    return [patientId, visitType, visitId, uid].map(function (part) {
+      return String(part || '').replace(/[^\w-]/g, '_');
+    }).join('__');
+  }
+
   async function findUnusedApproval(patientId, visitType, visitId, uid) {
-    const snap = await firebase.firestore().collection(EDIT_REQUEST_COLLECTION)
-      .where('patientId', '==', patientId)
-      .where('visitType', '==', visitType)
-      .where('visitId', '==', visitId)
-      .where('requesterId', '==', uid)
-      .where('status', '==', 'approved')
-      .where('used', '==', false)
-      .limit(1)
-      .get();
-    if (snap.empty) return null;
-    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    const requestId = buildEditRequestId(patientId, visitType, visitId, uid);
+    const doc = await firebase.firestore().collection(EDIT_REQUEST_COLLECTION).doc(requestId).get();
+    if (!doc.exists) return null;
+    const data = doc.data() || {};
+    if (data.status !== 'approved' || data.used === true) return null;
+    return { id: doc.id, ...data };
   }
 
   async function requestVisitEdit(patient, visitType, visitId, visit, user, reason) {
     if (!patient || !patient.id || !user) throw new Error('Missing patient or user.');
     const db = firebase.firestore();
-    const existing = await db.collection(EDIT_REQUEST_COLLECTION)
-      .where('patientId', '==', patient.id)
-      .where('visitType', '==', visitType)
-      .where('visitId', '==', visitId)
-      .where('requesterId', '==', user.uid)
-      .where('status', '==', 'pending')
-      .limit(1)
-      .get();
-    if (!existing.empty) return { id: existing.docs[0].id, alreadyPending: true };
+    const requestId = buildEditRequestId(patient.id, visitType, visitId, user.uid);
+    const existing = await db.collection(EDIT_REQUEST_COLLECTION).doc(requestId).get();
+    if (existing.exists && (existing.data() || {}).status === 'pending') return { id: existing.id, alreadyPending: true };
 
-    const ref = await db.collection(EDIT_REQUEST_COLLECTION).add({
+    await db.collection(EDIT_REQUEST_COLLECTION).doc(requestId).set({
       patientId: patient.id,
       patientName: patient.name || '',
       patientUniqueId: normalizePatientUniqueId(patient.patient_unique_id || patient.patientUniqueId),
@@ -197,9 +197,10 @@
       reason: reason || '',
       status: 'pending',
       used: false,
-      requestedAt: nowServer()
-    });
-    return { id: ref.id, alreadyPending: false };
+      requestedAt: nowServer(),
+      updatedAt: nowServer()
+    }, { merge: true });
+    return { id: requestId, alreadyPending: false };
   }
 
   async function markApprovalUsed(approvalId, uid) {
@@ -230,6 +231,7 @@
     canUserEditVisitNow,
     findUnusedApproval,
     requestVisitEdit,
-    markApprovalUsed
+    markApprovalUsed,
+    buildEditRequestId
   };
 })();
