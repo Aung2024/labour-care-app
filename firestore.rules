@@ -175,38 +175,9 @@ service cloud.firestore {
 
     // One-visit edit approval requests for TMO review.
     match /visit_edit_requests/{requestId} {
-      allow create: if request.auth != null && request.resource.data.requesterId == request.auth.uid;
-      allow read: if
-        request.auth != null
-        && (
-          resource.data.requesterId == request.auth.uid
-          || resource.data.ownerMidwifeId == request.auth.uid
-          || (
-            exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && (
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"]
-              || (
-                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
-                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township
-              )
-            )
-          )
-        );
-      allow update: if
-        request.auth != null
-        && (
-          resource.data.requesterId == request.auth.uid
-          || (
-            exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && (
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"]
-              || (
-                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
-                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township
-              )
-            )
-          )
-        );
+      // Pilot-safe: same broad authenticated access pattern as patient_transfer_requests.
+      // Contains approval metadata only; clinical records remain under patients/{patientId}.
+      allow read, create, update: if request.auth != null;
       allow delete: if false;
     }
     

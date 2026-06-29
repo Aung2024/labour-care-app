@@ -94,10 +94,65 @@
     .status { font-weight: 800; margin-top: 0.5rem; }
     .status.error { color: #b91c1c; }
     .status.ok { color: #047857; }
+    .request-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+    }
+    .request-modal-backdrop.show { display: flex; }
+    .request-modal {
+      width: min(92vw, 420px);
+      background: #fff;
+      border-radius: 22px;
+      padding: 1.1rem;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    }
+    .request-modal h2 {
+      margin: 0 0 0.45rem;
+      font-size: 1.05rem;
+      font-weight: 900;
+      color: #111827;
+    }
+    .request-modal p {
+      margin: 0 0 0.8rem;
+      color: #64748b;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .request-modal textarea {
+      width: 100%;
+      min-height: 96px;
+      border: 1px solid #d1d5db;
+      border-radius: 14px;
+      padding: 0.75rem;
+      resize: vertical;
+    }
+    .request-modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 0.85rem;
+    }
+    .request-modal-actions button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 12px;
+      padding: 0.55rem 0.9rem;
+      font-weight: 800;
+    }
+    .request-modal-cancel { background: #e5e7eb; color: #111827; }
+    .request-modal-send { background: #f59e0b; color: #111827; }
     @media (max-width: 560px) {
       .sub { display: none; }
       .btn-soft span { display: none; }
       .visit-actions .btn-action { width: 100%; justify-content: center; }
+      .request-modal-actions { flex-direction: column; }
     }
   </style>
 </head>
@@ -121,11 +176,24 @@
       <div id="emptyState" class="empty" style="display:none;">No visits found.</div>
     </section>
   </main>
+  <div id="requestApprovalModal" class="request-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="requestApprovalTitle">
+    <div class="request-modal">
+      <h2 id="requestApprovalTitle">Request TMO Approval</h2>
+      <p>Explain why this visit needs editing. This request unlocks one edit after TMO approval.</p>
+      <textarea id="requestApprovalReason" placeholder="Reason for edit request"></textarea>
+      <div class="request-modal-actions">
+        <button type="button" class="request-modal-cancel" onclick="closeApprovalModal()">Cancel</button>
+        <button type="button" class="request-modal-send" onclick="submitApprovalModal()">Send Request</button>
+      </div>
+    </div>
+  </div>
   <script>
     let currentUser = null;
     let currentPatient = null;
     let visitType = null;
     let visitConfig = null;
+    let pendingApprovalVisitId = null;
+    let pendingApprovalVisit = null;
 
     function qs(name) { return new URLSearchParams(window.location.search).get(name); }
     function escapeHtml(value) {
@@ -147,16 +215,37 @@
       const base = visitConfig.form + '?patient=' + encodeURIComponent(currentPatient.id) + '&editVisitId=' + encodeURIComponent(visitId) + '&editVisitType=' + encodeURIComponent(visitType);
       return approvalId ? base + '&editApprovalId=' + encodeURIComponent(approvalId) : base;
     }
-    async function requestApproval(visitId, visit) {
-      const reason = prompt('Reason for edit request (shown to TMO):') || '';
+    function requestApproval(visitId, visit) {
+      pendingApprovalVisitId = visitId;
+      pendingApprovalVisit = visit;
+      const modal = document.getElementById('requestApprovalModal');
+      const reason = document.getElementById('requestApprovalReason');
+      if (reason) reason.value = '';
+      if (modal) modal.classList.add('show');
+    }
+    function closeApprovalModal() {
+      const modal = document.getElementById('requestApprovalModal');
+      if (modal) modal.classList.remove('show');
+      pendingApprovalVisitId = null;
+      pendingApprovalVisit = null;
+    }
+    async function submitApprovalModal() {
+      if (!pendingApprovalVisitId) return;
+      const reasonEl = document.getElementById('requestApprovalReason');
+      const reason = reasonEl ? reasonEl.value.trim() : '';
       try {
-        const result = await JointCareUtils.requestVisitEdit(currentPatient, visitType, visitId, visit, currentUser, reason);
+        const result = await JointCareUtils.requestVisitEdit(currentPatient, visitType, pendingApprovalVisitId, pendingApprovalVisit, currentUser, reason);
+        closeApprovalModal();
         setStatus(result.alreadyPending ? 'An edit request is already pending for this visit.' : 'Edit request sent to TMO.', 'ok');
         await loadVisits();
       } catch (e) {
         setStatus(e.message || 'Could not request approval.', 'error');
       }
     }
+    document.addEventListener('click', function (event) {
+      const modal = document.getElementById('requestApprovalModal');
+      if (modal && event.target === modal) closeApprovalModal();
+    });
     async function loadVisits() {
       const container = document.getElementById('visitsContainer');
       const empty = document.getElementById('emptyState');

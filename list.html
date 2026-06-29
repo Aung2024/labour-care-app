@@ -643,6 +643,76 @@
       background: #0284c7;
     }
 
+    .patient-id-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+    }
+
+    .patient-id-modal-backdrop.show {
+      display: flex;
+    }
+
+    .patient-id-modal {
+      width: min(92vw, 390px);
+      background: #ffffff;
+      border-radius: 22px;
+      padding: 1.25rem;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+      text-align: center;
+    }
+
+    .patient-id-modal-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      margin: 0 auto 0.85rem;
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+    }
+
+    .patient-id-modal-title {
+      margin: 0 0 0.6rem;
+      color: #0f172a;
+      font-size: 1.05rem;
+      font-weight: 900;
+    }
+
+    .patient-id-modal-value {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 16px;
+      color: #075985;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      padding: 0.9rem;
+      word-break: break-word;
+    }
+
+    .patient-id-modal-close {
+      margin-top: 1rem;
+      min-height: 44px;
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: #fff;
+      font-weight: 800;
+      touch-action: manipulation;
+    }
+
 
     /* Loading State */
     .loading-container {
@@ -985,6 +1055,15 @@
       <button class="btn btn-primary btn-lg" onclick="window.location.href='patient-enhanced.html'">
         <i class="fas fa-plus me-2"></i><span class="lang-text" data-en="Register New Patient" data-mm="လူနာအသစ် မှတ်ပုံတင်ရန်">Register New Patient</span>
       </button>
+    </div>
+  </div>
+
+  <div id="patientIdModalBackdrop" class="patient-id-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="patientIdModalTitle">
+    <div class="patient-id-modal">
+      <div class="patient-id-modal-icon"><i class="fas fa-id-card"></i></div>
+      <h3 id="patientIdModalTitle" class="patient-id-modal-title">Serial Patient ID</h3>
+      <div id="patientIdModalValue" class="patient-id-modal-value">-</div>
+      <button type="button" class="patient-id-modal-close" onclick="closePatientIdModal()">OK</button>
     </div>
   </div>
 
@@ -2096,16 +2175,37 @@
         const patientId = button.getAttribute('data-patient-id');
         const patient = findPatientById(patientId);
         if (!patient) {
-          alert('Patient details not found. Please refresh and try again.');
+          showPatientIdModal('Not found');
           return;
         }
         const serialId = patient.patient_unique_id || patient.patientUniqueId || 'Not recorded';
-        alert('Serial Patient ID: ' + serialId);
+        showPatientIdModal(serialId);
       } catch (error) {
         console.error('Error showing patient details:', error);
-        alert('Error showing patient details: ' + error.message);
+        showPatientIdModal('Not recorded');
       }
     }
+
+    function showPatientIdModal(serialId) {
+      const backdrop = document.getElementById('patientIdModalBackdrop');
+      const value = document.getElementById('patientIdModalValue');
+      if (!backdrop || !value) {
+        alert('Serial Patient ID: ' + serialId);
+        return;
+      }
+      value.textContent = serialId || 'Not recorded';
+      backdrop.classList.add('show');
+    }
+
+    function closePatientIdModal() {
+      const backdrop = document.getElementById('patientIdModalBackdrop');
+      if (backdrop) backdrop.classList.remove('show');
+    }
+
+    document.addEventListener('click', function (event) {
+      const backdrop = document.getElementById('patientIdModalBackdrop');
+      if (backdrop && event.target === backdrop) closePatientIdModal();
+    });
 
     // Handle edit patient button click
     function handleEditPatient(button) {
