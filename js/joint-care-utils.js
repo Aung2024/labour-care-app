@@ -183,8 +183,6 @@
     if (!patient || !patient.id || !user) throw new Error('Missing patient or user.');
     const db = firebase.firestore();
     const requestId = buildEditRequestId(patient.id, visitType, visitId, user.uid);
-    const existing = await db.collection(EDIT_REQUEST_COLLECTION).doc(requestId).get();
-    if (existing.exists && (existing.data() || {}).status === 'pending') return { id: existing.id, alreadyPending: true };
 
     await db.collection(EDIT_REQUEST_COLLECTION).doc(requestId).set({
       patientId: patient.id,
