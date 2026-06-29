@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#4b5563" />
+  <title>Midwife Report - m-MNCH Care</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/register-sw.js"></script>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #e5e7eb;
+      --card: #ffffff;
+      --brand: #4b5563;
+      --brand-dark: #374151;
+      --accent: #10b981;
+      --paper: #f8fafc;
+      --danger: #dc2626;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: var(--ink);
+      font-family: Inter, "Pyidaungsu", "Myanmar Text", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .page-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+      color: white;
+      padding: calc(0.85rem + env(safe-area-inset-top, 0px)) 1rem 0.85rem;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.2);
+    }
+
+    .header-inner,
+    .report-wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+
+    .title-block p {
+      margin: 0.2rem 0 0;
+      color: rgba(255,255,255,0.82);
+      font-size: 0.82rem;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .header-btn {
+      min-height: 44px;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 12px;
+      padding: 0.55rem 0.75rem;
+      background: rgba(255,255,255,0.16);
+      color: white;
+      text-decoration: none;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      touch-action: manipulation;
+    }
+
+    .header-btn:hover { color: white; background: rgba(255,255,255,0.24); }
+
+    .report-wrap {
+      padding: 1rem calc(1rem + env(safe-area-inset-right, 0px)) calc(2rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px));
+    }
+
+    .panel {
+      background: var(--card);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,0.65);
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+
+    .filter-panel {
+      padding: 1rem;
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .filter-field label {
+      display: block;
+      font-weight: 800;
+      color: #334155;
+      font-size: 0.82rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .filter-field input {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0.55rem 0.7rem;
+      font: inherit;
+    }
+
+    .filter-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.9rem;
+    }
+
+    .btn-report {
+      border: 0;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 0.6rem 0.9rem;
+      font-weight: 900;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      touch-action: manipulation;
+    }
+
+    .btn-primary-report { background: var(--accent); color: white; }
+    .btn-secondary-report { background: #e2e8f0; color: #334155; }
+    .btn-print-report { background: #2563eb; color: white; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .summary-card {
+      background: white;
+      border-radius: 16px;
+      padding: 0.9rem;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+      border-left: 5px solid var(--accent);
+    }
+
+    .summary-card .value {
+      display: block;
+      font-size: 1.55rem;
+      line-height: 1;
+      font-weight: 900;
+      color: var(--ink);
+    }
+
+    .summary-card .label {
+      margin-top: 0.35rem;
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .state-panel {
+      padding: 1.25rem;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .event-cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    .event-card {
+      background: white;
+      border-radius: 18px;
+      padding: 1rem;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+      border-left: 5px solid #94a3b8;
+    }
+
+    .event-card.anc { border-left-color: #10b981; }
+    .event-card.pnc { border-left-color: #7c3aed; }
+    .event-card.newborn { border-left-color: #2563eb; }
+    .event-card.labour { border-left-color: #ef4444; }
+    .event-card.registration { border-left-color: #0891b2; }
+
+    .event-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+
+    .event-name {
+      font-weight: 900;
+      color: var(--ink);
+      line-height: 1.25;
+    }
+
+    .event-meta {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-top: 0.2rem;
+      line-height: 1.4;
+    }
+
+    .service-pill {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 0.25rem 0.55rem;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 0.7rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .event-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-top: 0.8rem;
+    }
+
+    .event-field {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 0.55rem;
+      background: #f8fafc;
+      min-width: 0;
+    }
+
+    .event-field span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .event-field strong {
+      display: block;
+      margin-top: 0.15rem;
+      font-size: 0.88rem;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+
+    .table-section {
+      padding: 1rem;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      font-weight: 900;
+      color: var(--brand-dark);
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+
+    .screen-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+      font-size: 0.82rem;
+    }
+
+    .screen-table th,
+    .screen-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 0.62rem 0.7rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .screen-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .screen-table .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #fff;
+      font-weight: 900;
+    }
+
+    .screen-table thead .sticky-col {
+      background: #f1f5f9;
+    }
+
+    .print-only { display: none; }
+
+    @media (min-width: 768px) {
+      .filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .summary-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .event-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .header-inner { align-items: flex-start; }
+      .header-btn span { display: none; }
+      .filter-grid { grid-template-columns: 1fr; }
+      .filter-actions .btn-report { flex: 1 1 100%; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .event-grid { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 7mm;
+      }
+
+      body {
+        background: #fff !important;
+        color: #000;
+        font-family: "Pyidaungsu", "Myanmar Text", Arial, sans-serif;
+      }
+
+      .no-print,
+      .page-header,
+      .filter-panel,
+      .summary-grid,
+      .screen-only,
+      .state-panel {
+        display: none !important;
+      }
+
+      .report-wrap {
+        max-width: none;
+        padding: 0;
+      }
+
+      .panel {
+        box-shadow: none;
+        border: none;
+        margin: 0;
+        border-radius: 0;
+        overflow: visible;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+
+      .print-title {
+        text-align: center;
+        margin: 0 0 4mm;
+        font-weight: 900;
+        font-size: 12px;
+      }
+
+      .print-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 3mm;
+        font-size: 8px;
+      }
+
+      .print-register-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-size: 6.2px;
+        line-height: 1.22;
+      }
+
+      .print-register-table th,
+      .print-register-table td {
+        border: 1px solid #000;
+        padding: 2px 2px;
+        text-align: center;
+        vertical-align: middle;
+        overflow-wrap: anywhere;
+      }
+
+      .print-register-table th {
+        font-weight: 900;
+        background: #f2f2f2 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .print-register-table td.text-left {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header no-print">
+    <div class="header-inner">
+      <div class="title-block">
+        <h1><i class="fas fa-file-medical me-2"></i>Midwife Report</h1>
+        <p id="subtitle">Daily service register for TMO reporting</p>
+      </div>
+      <div class="header-actions">
+        <a class="header-btn" href="home.html"><i class="fas fa-arrow-left"></i><span>Home</span></a>
+        <button type="button" class="header-btn" onclick="window.print()"><i class="fas fa-print"></i><span>Print</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="report-wrap">
+    <section class="panel filter-panel no-print">
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label for="fromDate">From date</label>
+          <input type="date" id="fromDate">
+        </div>
+        <div class="filter-field">
+          <label for="fromTime">From time</label>
+          <input type="time" id="fromTime" value="00:00">
+        </div>
+        <div class="filter-field">
+          <label for="toDate">To date</label>
+          <input type="date" id="toDate">
+        </div>
+        <div class="filter-field">
+          <label for="toTime">To time</label>
+          <input type="time" id="toTime" value="23:59">
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button type="button" class="btn-report btn-primary-report" onclick="generateReport()"><i class="fas fa-sync-alt"></i>Generate report</button>
+        <button type="button" class="btn-report btn-secondary-report" onclick="setTodayRange()"><i class="fas fa-calendar-day"></i>Today</button>
+        <button type="button" class="btn-report btn-print-report" onclick="window.print()"><i class="fas fa-print"></i>Print A4 landscape</button>
+      </div>
+    </section>
+
+    <section class="summary-grid no-print" id="summaryGrid">
+      <div class="summary-card"><span class="value" id="sumRows">0</span><span class="label">Rows</span></div>
+      <div class="summary-card"><span class="value" id="sumNew">0</span><span class="label">New clients</span></div>
+      <div class="summary-card"><span class="value" id="sumOld">0</span><span class="label">Old clients</span></div>
+      <div class="summary-card"><span class="value" id="sumAnc">0</span><span class="label">ANC</span></div>
+      <div class="summary-card"><span class="value" id="sumPnc">0</span><span class="label">PNC</span></div>
+      <div class="summary-card"><span class="value" id="sumNewborn">0</span><span class="label">Newborn/Labour</span></div>
+    </section>
+
+    <section class="panel state-panel" id="statePanel">Choose a date range and generate the report.</section>
+
+    <section class="screen-only" id="screenReport" style="display:none;">
+      <div class="event-cards" id="eventCards"></div>
+
+      <section class="panel table-section">
+        <h2 class="section-title"><i class="fas fa-user"></i>Client & Visit</h2>
+        <div class="table-scroll"><table class="screen-table" id="clientTable"></table></div>
+      </section>
+
+      <section class="panel table-section">
+        <h2 class="section-title"><i class="fas fa-vial"></i>Examination & Labs</h2>
+        <div class="table-scroll"><table class="screen-table" id="examTable"></table></div>
+      </section>
+
+      <section class="panel table-section">
+        <h2 class="section-title"><i class="fas fa-stethoscope"></i>Clinical, Follow-up & Transfer</h2>
+        <div class="table-scroll"><table class="screen-table" id="clinicalTable"></table></div>
+      </section>
+    </section>
+
+    <section class="panel print-only" id="printReport">
+      <h2 class="print-title">သားဖွားဆရာမ နေ့စဉ်မှတ်တမ်း / Midwife Daily Register</h2>
+      <div class="print-meta">
+        <div id="printMidwife">Midwife: -</div>
+        <div id="printPeriod">Period: -</div>
+        <div id="printGenerated">Generated: -</div>
+      </div>
+      <table class="print-register-table" id="printTable"></table>
+    </section>
+  </main>
+
+  <script>
+    var currentUser = null;
+    var currentProfile = null;
+    var currentRows = [];
+    var patientCache = new Map();
+    var transferCache = new Map();
+    var CONCURRENCY = 6;
+
+    var COLUMNS = [
+      ['date', 'Date'],
+      ['no', 'No'],
+      ['newClient', 'New Client'],
+      ['oldClient', 'Old Client'],
+      ['patientName', 'Patient Name'],
+      ['addressOccupation', 'Address / Occupation'],
+      ['gravida', 'Gravida'],
+      ['parity', 'Parity'],
+      ['lmp', 'LMP'],
+      ['edd', 'EDD'],
+      ['weight', 'Weight'],
+      ['height', 'Height'],
+      ['ga', 'GA'],
+      ['urineGlucose', 'Urine Glucose'],
+      ['urineProtein', 'Urine Protein'],
+      ['hb', 'Hb%'],
+      ['syphilis', 'Syphilis'],
+      ['pmct', 'PMCT'],
+      ['tb', 'TB'],
+      ['bloodPressure', 'BP'],
+      ['fundalHeight', 'Fundal Height'],
+      ['fetalHeartRate', 'FHR'],
+      ['fetalPresentation', 'Fetal Presentation'],
+      ['symptomsTreatment', 'Symptoms & Treatment'],
+      ['totalVisits', 'Total Visits'],
+      ['nextVisitDate', 'Next Visit Date'],
+      ['transferReasonPlace', 'Transfer Reason / Place'],
+      ['remark', 'Remark']
+    ];
+
+    function $(id) { return document.getElementById(id); }
+    function val(id) { return ($(id) && $(id).value) || ''; }
+    function dash(value) {
+      if (value == null || value === '' || value === undefined) return '-';
+      return String(value);
+    }
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    function parseDate(value) {
+      if (!value) return null;
+      if (value && typeof value.toDate === 'function') return value.toDate();
+      if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+      var str = String(value);
+      var date = new Date(str);
+      if (!isNaN(date.getTime())) return date;
+      var m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+      return null;
+    }
+    function dateOnly(value) {
+      var d = parseDate(value);
+      if (!d) return '';
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function displayDate(value) {
+      var ymd = dateOnly(value);
+      return ymd || dash(value);
+    }
+    function dateTimeMs(dateStr, timeStr, endOfDay) {
+      if (!dateStr) return endOfDay ? 8640000000000000 : -8640000000000000;
+      var t = timeStr || (endOfDay ? '23:59' : '00:00');
+      var d = new Date(dateStr + 'T' + t + ':00');
+      return d.getTime();
+    }
+    function inRange(value, fromMs, toMs) {
+      var d = parseDate(value);
+      if (!d) return false;
+      return d.getTime() >= fromMs && d.getTime() <= toMs;
+    }
+    function firstOf() {
+      for (var i = 0; i < arguments.length; i++) {
+        if (arguments[i] != null && arguments[i] !== '') return arguments[i];
+      }
+      return '';
+    }
+    function lower(value) { return String(value || '').toLowerCase(); }
+    function isCreator(data, uid) {
+      if (!data || !uid) return false;
+      return data.createdBy === uid || data.created_by === uid || data.recordedBy === uid || data.recorded_by === uid || data.midwifeId === uid || data.midwife_id === uid;
+    }
+    function getCreator(data) {
+      return firstOf(data.createdBy, data.created_by, data.recordedBy, data.recorded_by, data.midwifeId, data.midwife_id);
+    }
+    function getPatientCreatedDate(patient) {
+      return firstOf(patient.registrationDate, patient.createdAt, patient.created_at, patient.timestamp, patient.registeredAt, patient.lastUpdated);
+    }
+    function isNewClientForEvent(patient, eventDate) {
+      var reg = dateOnly(getPatientCreatedDate(patient));
+      return !!(reg && reg === dateOnly(eventDate));
+    }
+    function serviceLabel(type) {
+      return {
+        registration: 'Registration',
+        anc: 'ANC',
+        pnc: 'PNC',
+        newborn: 'Newborn',
+        labour: 'Labour'
+      }[type] || type;
+    }
+    function formatBp(data) {
+      return firstOf(data.bloodPressure, data.blood_pressure, data.systolicBP && data.diastolicBP ? data.systolicBP + '/' + data.diastolicBP : '');
+    }
+    function formatAddress(patient) {
+      return firstOf(patient.address, patient.village, patient.ward, patient.township);
+    }
+    function formatGa(patient, data) {
+      return firstOf(data.gestationalAge, data.manualGestationalAge, data.gestational_age, patient.gestational_age);
+    }
+    function fieldFrom(data, names) {
+      for (var i = 0; i < names.length; i++) {
+        if (data[names[i]] != null && data[names[i]] !== '') return data[names[i]];
+      }
+      return '';
+    }
+    async function mapWithConcurrency(items, limit, mapper) {
+      var out = new Array(items.length);
+      var next = 0;
+      async function worker() {
+        while (next < items.length) {
+          var index = next++;
+          out[index] = await mapper(items[index], index);
+        }
+      }
+      var workers = [];
+      for (var i = 0; i < Math.min(limit, items.length); i++) workers.push(worker());
+      await Promise.all(workers);
+      return out;
+    }
+    async function getUserProfile(uid) {
+      try {
+        var cached = window.UserCache ? await UserCache.get(uid) : null;
+        if (cached) return cached;
+      } catch (e) { /* ignore */ }
+      var doc = await firebase.firestore().collection('users').doc(uid).get();
+      return doc.exists ? (doc.data() || {}) : {};
+    }
+    async function fetchPatient(patientId) {
+      if (!patientId) return null;
+      if (patientCache.has(patientId)) return patientCache.get(patientId);
+      try {
+        var doc = await firebase.firestore().collection('patients').doc(patientId).get();
+        var patient = doc.exists ? { id: doc.id, ...doc.data() } : { id: patientId };
+        patientCache.set(patientId, patient);
+        return patient;
+      } catch (e) {
+        console.warn('Patient fetch failed', patientId, e);
+        var fallback = { id: patientId };
+        patientCache.set(patientId, fallback);
+        return fallback;
+      }
+    }
+    function parentPatientId(doc) {
+      try {
+        return doc.ref.parent.parent.id;
+      } catch (e) {
+        return '';
+      }
+    }
+    async function fetchCollectionGroupEvents(collectionName, type, uid) {
+      var db = firebase.firestore();
+      var docs = new Map();
+      var fields = ['createdBy', 'created_by', 'recordedBy', 'recorded_by'];
+      for (var i = 0; i < fields.length; i++) {
+        try {
+          var snap = await db.collectionGroup(collectionName).where(fields[i], '==', uid).limit(400).get();
+          snap.forEach(function (doc) {
+            docs.set(doc.ref.path, { id: doc.id, patientId: parentPatientId(doc), type: type, data: doc.data() || {} });
+          });
+        } catch (e) {
+          console.warn('Collection group failed', collectionName, fields[i], e);
+        }
+      }
+      return Array.from(docs.values());
+    }
+    async function fetchOwnedPatients(uid) {
+      var db = firebase.firestore();
+      var map = new Map();
+      async function addSnap(query) {
+        try {
+          var snap = await query.get();
+          snap.forEach(function (doc) { map.set(doc.id, { id: doc.id, ...doc.data() }); });
+        } catch (e) {
+          console.warn('Owned patient query failed', e);
+        }
+      }
+      await addSnap(db.collection('patients').where('created_by', '==', uid));
+      await addSnap(db.collection('patients').where('createdBy', '==', uid));
+      try {
+        var links = await db.collection('joint_care_links').doc(uid).collection('patients').where('status', '==', 'active').limit(200).get();
+        await mapWithConcurrency(links.docs, CONCURRENCY, async function (linkDoc) {
+          var linkedPatient = await fetchPatient(linkDoc.id);
+          if (linkedPatient) map.set(linkDoc.id, linkedPatient);
+        });
+      } catch (e) {
+        console.warn('Joint-care patient lookup failed', e);
+      }
+      map.forEach(function (patient, id) { patientCache.set(id, patient); });
+      return Array.from(map.values());
+    }
+    async function fetchPatientSubcollectionEvents(patient, collectionName, type, uid) {
+      try {
+        var snap = await firebase.firestore().collection('patients').doc(patient.id).collection(collectionName).limit(100).get();
+        var out = [];
+        snap.forEach(function (doc) {
+          var data = doc.data() || {};
+          if (isCreator(data, uid) || patient.created_by === uid || patient.createdBy === uid) {
+            out.push({ id: doc.id, patientId: patient.id, type: type, data: data });
+          }
+        });
+        return out;
+      } catch (e) {
+        console.warn('Subcollection fetch failed', patient.id, collectionName, e);
+        return [];
+      }
+    }
+    async function fetchFallbackEvents(uid) {
+      var patients = await fetchOwnedPatients(uid);
+      var nested = await mapWithConcurrency(patients, CONCURRENCY, async function (patient) {
+        var groups = await Promise.all([
+          fetchPatientSubcollectionEvents(patient, 'antenatal_visits', 'anc', uid),
+          fetchPatientSubcollectionEvents(patient, 'postpartum_visits', 'pnc', uid),
+          fetchPatientSubcollectionEvents(patient, 'newborn_care', 'newborn', uid),
+          fetchPatientSubcollectionEvents(patient, 'labour_care', 'labour', uid)
+        ]);
+        return groups.flat();
+      });
+      return nested.flat();
+    }
+    async function fetchEvents(uid) {
+      var grouped = await Promise.all([
+        fetchCollectionGroupEvents('antenatal_visits', 'anc', uid),
+        fetchCollectionGroupEvents('postpartum_visits', 'pnc', uid),
+        fetchCollectionGroupEvents('newborn_care', 'newborn', uid),
+        fetchCollectionGroupEvents('labour_care', 'labour', uid)
+      ]);
+      var events = grouped.flat();
+      if (!events.length) events = await fetchFallbackEvents(uid);
+
+      var ownedPatients = await fetchOwnedPatients(uid);
+      ownedPatients.forEach(function (patient) {
+        events.push({ id: 'registration-' + patient.id, patientId: patient.id, type: 'registration', data: { visitDate: getPatientCreatedDate(patient), createdBy: uid } });
+      });
+
+      var deduped = new Map();
+      events.forEach(function (ev) {
+        var key = ev.type + '/' + ev.patientId + '/' + ev.id;
+        deduped.set(key, ev);
+      });
+      return Array.from(deduped.values());
+    }
+    function eventDate(ev) {
+      var d = ev.data || {};
+      if (ev.type === 'newborn') return firstOf(d.visitDate, d.birth_time, d.createdAt, d.timestamp);
+      if (ev.type === 'labour') return firstOf(d.visitDate, d.labourDate, d.createdAt, d.timestamp, d.startTime, d.deliveryDate);
+      return firstOf(d.visitDate, d.visit_date, d.createdAt, d.timestamp);
+    }
+    function eventVisitNumber(ev) {
+      var d = ev.data || {};
+      return firstOf(d.visitNumber, d.visit_number, d.pncVisitNumber, d.labourVisitNumber);
+    }
+    async function fetchTransferInfo(patientId) {
+      if (transferCache.has(patientId)) return transferCache.get(patientId);
+      var info = '';
+      try {
+        var snap = await firebase.firestore().collection('patient_transfer_requests').where('patientId', '==', patientId).limit(3).get();
+        snap.forEach(function (doc) {
+          var d = doc.data() || {};
+          if (!info) info = [d.reason || d.transferReason, d.targetTownship || d.toTownship || d.facilityName || d.targetMidwifeName].filter(Boolean).join(' / ');
+        });
+      } catch (e) { /* ignore */ }
+      transferCache.set(patientId, info);
+      return info;
+    }
+    function buildSymptomsTreatment(type, data) {
+      var parts = [];
+      [
+        data.chiefComplaint,
+        data.otherSymptoms,
+        data.treatment,
+        data.clinicalNotes,
+        data.clinical_notes,
+        data.otherFindings,
+        data.coinfectionNotes,
+        data.remark,
+        data.remarks
+      ].forEach(function (value) {
+        if (value && parts.indexOf(String(value)) === -1) parts.push(String(value));
+      });
+      if (!parts.length && type === 'newborn') parts.push(firstOf(data.outcome, data.kmc_selected));
+      return parts.join('; ');
+    }
+    async function totalVisitsUpTo(patientId, untilMs, allEvents) {
+      return allEvents.filter(function (ev) {
+        if (ev.patientId !== patientId || ev.type === 'registration') return false;
+        var d = parseDate(eventDate(ev));
+        return d && d.getTime() <= untilMs;
+      }).length;
+    }
+    async function toReportRow(ev, index, allEvents) {
+      var patient = await fetchPatient(ev.patientId);
+      var data = ev.data || {};
+      var evDate = eventDate(ev);
+      var evMs = parseDate(evDate) ? parseDate(evDate).getTime() : Date.now();
+      var isNew = ev.type === 'registration' || isNewClientForEvent(patient, evDate);
+      var bp = formatBp(data);
+      var transfer = await fetchTransferInfo(ev.patientId);
+      return {
+        date: displayDate(evDate),
+        no: index + 1,
+        service: serviceLabel(ev.type),
+        newClient: isNew ? 'Yes' : '',
+        oldClient: isNew ? '' : 'Yes',
+        patientName: firstOf(patient.name, patient.patientName, data.patientName),
+        addressOccupation: formatAddress(patient),
+        gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
+        parity: firstOf(data.parity, patient.parity),
+        lmp: displayDate(firstOf(data.lmp, patient.lmp)),
+        edd: displayDate(firstOf(data.edd, data.manualEdd, patient.edd)),
+        weight: firstOf(data.weight, data.body_weight_gram),
+        height: firstOf(data.height, data.heightCm, patient.height),
+        ga: formatGa(patient, data),
+        urineGlucose: fieldFrom(data, ['urineGlucose', 'urineSugar', 'urine_sugar']),
+        urineProtein: fieldFrom(data, ['urineProtein', 'urine_protein']),
+        hb: fieldFrom(data, ['hemoglobin', 'hb', 'hbPercent', 'hb_percentage', 'hbResult']),
+        syphilis: fieldFrom(data, ['syphilis', 'syphilisResult', 'syphilis_result']),
+        pmct: fieldFrom(data, ['pmct', 'pmctResult', 'hivResult', 'hiv_result']),
+        tb: firstOf(data.tbSymptoms, data.tb, data.tbScreening),
+        bloodPressure: bp,
+        fundalHeight: firstOf(data.fundalHeight, data.fundal_height),
+        fetalHeartRate: firstOf(data.fetalHeartRate, data.fetal_heart_rate),
+        fetalPresentation: firstOf(data.fetalPresentation, data.fetal_presentation),
+        symptomsTreatment: buildSymptomsTreatment(ev.type, data),
+        totalVisits: await totalVisitsUpTo(ev.patientId, evMs, allEvents),
+        nextVisitDate: displayDate(firstOf(data.nextVisitDate, data.follow_up_appointment_date, data.next_visit_date)),
+        transferReasonPlace: transfer || firstOf(data.transferReason, data.transferPlace),
+        remark: firstOf(data.remark, data.remarks, ev.type === 'registration' ? 'Registration' : ''),
+        _type: ev.type,
+        _patientId: ev.patientId
+      };
+    }
+    function setTodayRange() {
+      var today = new Date();
+      var ymd = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      $('fromDate').value = ymd;
+      $('toDate').value = ymd;
+      $('fromTime').value = '00:00';
+      $('toTime').value = '23:59';
+    }
+    function setState(message, isError) {
+      $('statePanel').style.display = message ? '' : 'none';
+      $('statePanel').textContent = message || '';
+      $('statePanel').style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+    function updateSummary(rows) {
+      $('sumRows').textContent = rows.length;
+      $('sumNew').textContent = rows.filter(function (r) { return r.newClient; }).length;
+      $('sumOld').textContent = rows.filter(function (r) { return r.oldClient; }).length;
+      $('sumAnc').textContent = rows.filter(function (r) { return r._type === 'anc'; }).length;
+      $('sumPnc').textContent = rows.filter(function (r) { return r._type === 'pnc'; }).length;
+      $('sumNewborn').textContent = rows.filter(function (r) { return r._type === 'newborn' || r._type === 'labour'; }).length;
+    }
+    function renderCards(rows) {
+      $('eventCards').innerHTML = rows.map(function (r) {
+        return '<article class="event-card ' + escapeHtml(r._type) + '">' +
+          '<div class="event-top"><div><div class="event-name">' + escapeHtml(r.patientName || '-') + '</div>' +
+          '<div class="event-meta">' + escapeHtml(r.date) + ' · ' + escapeHtml(r.addressOccupation || '-') + '</div></div>' +
+          '<span class="service-pill">' + escapeHtml(r.service) + '</span></div>' +
+          '<div class="event-grid">' +
+          fieldCard('New/Old', r.newClient ? 'New client' : 'Old client') +
+          fieldCard('G/P', 'G' + dash(r.gravida) + ' / P' + dash(r.parity)) +
+          fieldCard('BP / Weight', dash(r.bloodPressure) + ' · ' + dash(r.weight)) +
+          fieldCard('GA / EDD', dash(r.ga) + ' · ' + dash(r.edd)) +
+          fieldCard('Next visit', r.nextVisitDate) +
+          fieldCard('Symptoms & treatment', r.symptomsTreatment) +
+          '</div></article>';
+      }).join('');
+    }
+    function fieldCard(label, value) {
+      return '<div class="event-field"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(dash(value)) + '</strong></div>';
+    }
+    function renderTable(id, columns, rows) {
+      var head = '<thead><tr>' + columns.map(function (col, i) {
+        return '<th' + (i === 0 ? ' class="sticky-col"' : '') + '>' + escapeHtml(col[1]) + '</th>';
+      }).join('') + '</tr></thead>';
+      var body = '<tbody>' + rows.map(function (row) {
+        return '<tr>' + columns.map(function (col, i) {
+          return '<td' + (i === 0 ? ' class="sticky-col"' : '') + '>' + escapeHtml(dash(row[col[0]])) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody>';
+      $(id).innerHTML = head + body;
+    }
+    function renderScreenTables(rows) {
+      renderTable('clientTable', [
+        ['no', 'No'], ['date', 'Date'], ['service', 'Service'], ['newClient', 'New'], ['oldClient', 'Old'],
+        ['patientName', 'Patient'], ['addressOccupation', 'Address'], ['gravida', 'G'], ['parity', 'P'], ['lmp', 'LMP'], ['edd', 'EDD']
+      ], rows);
+      renderTable('examTable', [
+        ['no', 'No'], ['weight', 'Weight'], ['height', 'Height'], ['ga', 'GA'], ['urineGlucose', 'Urine glucose'],
+        ['urineProtein', 'Urine protein'], ['hb', 'Hb%'], ['syphilis', 'Syphilis'], ['pmct', 'PMCT'], ['tb', 'TB'], ['bloodPressure', 'BP']
+      ], rows);
+      renderTable('clinicalTable', [
+        ['no', 'No'], ['fundalHeight', 'Fundal height'], ['fetalHeartRate', 'FHR'], ['fetalPresentation', 'Presentation'],
+        ['symptomsTreatment', 'Symptoms & treatment'], ['totalVisits', 'Total visits'], ['nextVisitDate', 'Next visit'],
+        ['transferReasonPlace', 'Transfer'], ['remark', 'Remark']
+      ], rows);
+    }
+    function renderPrint(rows) {
+      var head = '<thead><tr>' + COLUMNS.map(function (col) { return '<th>' + escapeHtml(col[1]) + '</th>'; }).join('') + '</tr></thead>';
+      var body = '<tbody>' + rows.map(function (row) {
+        return '<tr>' + COLUMNS.map(function (col) {
+          var align = ['patientName', 'addressOccupation', 'symptomsTreatment', 'transferReasonPlace', 'remark'].indexOf(col[0]) >= 0 ? ' class="text-left"' : '';
+          return '<td' + align + '>' + escapeHtml(dash(row[col[0]])) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody>';
+      $('printTable').innerHTML = head + body;
+      var midwifeName = firstOf(currentProfile && currentProfile.name, currentUser && currentUser.displayName, currentUser && currentUser.email);
+      $('printMidwife').textContent = 'Midwife: ' + dash(midwifeName);
+      $('printPeriod').textContent = 'Period: ' + dash(val('fromDate')) + ' ' + dash(val('fromTime')) + ' - ' + dash(val('toDate')) + ' ' + dash(val('toTime'));
+      $('printGenerated').textContent = 'Generated: ' + new Date().toLocaleString();
+    }
+    function renderReport(rows) {
+      currentRows = rows;
+      updateSummary(rows);
+      if (!rows.length) {
+        $('screenReport').style.display = 'none';
+        setState('No report rows found for this date range.');
+        renderPrint([]);
+        return;
+      }
+      setState('');
+      $('screenReport').style.display = '';
+      renderCards(rows);
+      renderScreenTables(rows);
+      renderPrint(rows);
+    }
+    async function generateReport() {
+      if (!currentUser) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setState('Midwife Report is available online only. Please reconnect and try again.', true);
+        return;
+      }
+      setState('Loading report data...');
+      $('screenReport').style.display = 'none';
+      var fromMs = dateTimeMs(val('fromDate'), val('fromTime'), false);
+      var toMs = dateTimeMs(val('toDate'), val('toTime'), true);
+      try {
+        var events = await fetchEvents(currentUser.uid);
+        var filtered = events.filter(function (ev) { return inRange(eventDate(ev), fromMs, toMs); });
+        filtered.sort(function (a, b) {
+          var ad = parseDate(eventDate(a));
+          var bd = parseDate(eventDate(b));
+          return (ad ? ad.getTime() : 0) - (bd ? bd.getTime() : 0);
+        });
+        var rows = await mapWithConcurrency(filtered, CONCURRENCY, async function (ev, index) {
+          return toReportRow(ev, index, events);
+        });
+        renderReport(rows);
+      } catch (error) {
+        console.error('Midwife report failed', error);
+        setState('Could not load report: ' + (error && error.message ? error.message : String(error)), true);
+      }
+    }
+    firebase.auth().onAuthStateChanged(async function (user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!user) {
+        window.location.href = 'login.html';
+        return;
+      }
+      currentUser = user;
+      currentProfile = await getUserProfile(user.uid);
+      setTodayRange();
+      $('subtitle').textContent = firstOf(currentProfile && currentProfile.name, user.email, 'Midwife') + ' · Daily service register';
+      await generateReport();
+    });
+  </script>
+</body>
+</html>

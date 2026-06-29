@@ -386,6 +386,13 @@
       color: #64748b;
       margin-top: 0.15rem;
     }
+    .tracking-noti-detail {
+      font-size: 0.72rem;
+      color: #991b1b;
+      margin-top: 0.18rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
     .tracking-status-pill {
       flex-shrink: 0;
       font-size: 0.68rem;
@@ -1146,7 +1153,11 @@
         postnatal: 'Postnatal & Newborn Care',
         ancTransfer: 'ANC Transfer',
         labourTransfer: 'Labour Transfer',
-        pncTransfer: 'PNC Transfer'
+        pncTransfer: 'PNC Transfer',
+        due: 'Due',
+        visitShort: 'V',
+        lateDays: 'd late',
+        dueToday: 'due today'
       },
       mm: {
         pageTitle: 'လူနာရွေးချယ်ရန် - မိခင်နှင့်ကလေး ကျန်းမာရေးစောင့်ရှောက်မှု',
@@ -1184,7 +1195,11 @@
         postnatal: 'မွေးပြီးမိခင်နှင့်ကလေး စောင့်ရှောက်မှု',
         ancTransfer: 'ANC လွှဲပြောင်း',
         labourTransfer: 'Labour လွှဲပြောင်း',
-        pncTransfer: 'PNC လွှဲပြောင်း'
+        pncTransfer: 'PNC လွှဲပြောင်း',
+        due: 'ရက်ချိန်း',
+        visitShort: 'Visit',
+        lateDays: 'ရက်လွန်',
+        dueToday: 'ယနေ့လာရန်'
       }
     };
 
@@ -1629,6 +1644,33 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function formatTrackingDueDate(dateValue) {
+      if (!dateValue) return '';
+      const parsed = window.AncTrackingStatus && AncTrackingStatus.parseDateOnlyLocal
+        ? AncTrackingStatus.parseDateOnlyLocal(dateValue)
+        : new Date(dateValue);
+      if (!parsed || isNaN(parsed.getTime())) return String(dateValue);
+      if (getListLang() === 'en') {
+        return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+      return [
+        parsed.getFullYear(),
+        String(parsed.getMonth() + 1).padStart(2, '0'),
+        String(parsed.getDate()).padStart(2, '0')
+      ].join('-');
+    }
+
+    function trackingTimingText(tracking) {
+      if (!tracking || !tracking.dueDate) return '';
+      const visitText = tracking.nextVisitNumber ? (listT('visitShort') + tracking.nextVisitNumber) : '';
+      const dueText = listT('due') + ' ' + formatTrackingDueDate(tracking.dueDate);
+      const daysLate = Math.max(0, parseInt(tracking.daysLate, 10) || 0);
+      const lateText = daysLate === 0
+        ? listT('dueToday')
+        : (getListLang() === 'en' ? (daysLate + listT('lateDays')) : (daysLate + ' ' + listT('lateDays')));
+      return [visitText, dueText, lateText].filter(Boolean).join(' · ');
+    }
+
     function normalizeListStatus(status) {
       if (window.StatusManager && typeof StatusManager.normalizePatientStatus === 'function') {
         return StatusManager.normalizePatientStatus(status);
@@ -1932,9 +1974,11 @@
           }
         };
         const ageText = patient.age ? patient.age + ' yrs' : '';
+        const timingText = trackingTimingText(tracking);
         li.innerHTML =
           '<div><div class="tracking-noti-name">' + escapeHtml(patient.name || 'Unknown') + '</div>' +
-          (ageText ? '<div class="tracking-noti-meta">' + escapeHtml(ageText) + '</div>' : '') + '</div>' +
+          (ageText ? '<div class="tracking-noti-meta">' + escapeHtml(ageText) + '</div>' : '') +
+          (timingText ? '<div class="tracking-noti-detail">' + escapeHtml(timingText) + '</div>' : '') + '</div>' +
           '<span class="tracking-status-pill ' + escapeHtml(tracking.key) + '">' + escapeHtml(tracking.label) + '</span>';
         listEl.appendChild(li);
       });
