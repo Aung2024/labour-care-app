@@ -1180,6 +1180,11 @@
         </div>
       </div>
 
+      <div class="treatment-section" id="otherVisitsInfo">
+        <h5 class="lang-text" data-en="Other facility ANC visits" data-mm="အခြား ကျန်းမာရေးဌာန ANC Visit များ">Other facility ANC visits</h5>
+        <div id="otherVisitsContent"></div>
+      </div>
+
       <!-- Print: full 8-row ANC schedule register -->
       <div class="anc-book-print">
         <h5 class="section-heading lang-text" data-en="ANC visit register" data-mm="ANC မှတ်တမ်း">ANC visit register</h5>
@@ -1657,9 +1662,7 @@
       document.getElementById("earlyAncVisit").textContent = hasEarlyANC ? t('earlyAncYes') : t('earlyAncNo');
       
       document.getElementById("totalAncVisits").textContent = antenatalVisits.length;
-      const lastVisitOtherCount = antenatalVisits.length > 0 
-        ? (parseInt(antenatalVisits[antenatalVisits.length - 1].otherVisitCount, 10) || 0)
-        : 0;
+      const lastVisitOtherCount = getLatestOtherVisitsForReport().length;
       document.getElementById("totalOverallVisits").textContent = antenatalVisits.length + lastVisitOtherCount;
       
       const latestVisit = antenatalVisits.length > 0 ? antenatalVisits[antenatalVisits.length - 1] : null;
@@ -1877,6 +1880,7 @@
         bloodPressure: visit.bloodPressure || '-',
         pulseRate: visit.pulseRate || '-',
         temperature,
+        chiefComplaint: visit.chiefComplaint || '-',
         gaValue: ga.gaValue,
         gaWeeks: ga.gaWeeks,
         fundalHeight: visit.fundalHeight || '-',
@@ -1988,6 +1992,10 @@
       return `
         <div class="visit-panel-meta">
           <strong>${escapeHtml(d.visitDate)}</strong> · ${L('Gestational Age', 'ကိုယ်ဝန်ဆောင်ကာလ')} ${escapeHtml(d.gaValue)}
+        </div>
+        <div class="visit-card-group">
+          <h6 class="lang-text" data-en="Chief Complaint" data-mm="ဆေးခန်းလာရသော အကြောင်းရင်း">Chief Complaint</h6>
+          <p>${escapeHtml(d.chiefComplaint)}</p>
         </div>
         <div class="visit-card-group">
           <h6 class="lang-text" data-en="Vital Signs" data-mm="Vital Signs">Vital Signs</h6>
@@ -2340,6 +2348,44 @@
       populateHighRiskInfo();
       populateDangerSignsInfo();
       populateGBVInfo();
+      populateOtherVisitsInfo();
+    }
+
+    function getLatestOtherVisitsForReport() {
+      for (let i = antenatalVisits.length - 1; i >= 0; i--) {
+        const visit = antenatalVisits[i] || {};
+        if (Array.isArray(visit.otherVisits) && visit.otherVisits.length) return visit.otherVisits;
+        const legacy = parseInt(visit.otherVisitCount, 10) || 0;
+        if (legacy > 0) {
+          return Array.from({ length: legacy }, function (_, idx) {
+            return { visitNumber: idx + 1, visitDate: '', facilityType: 'Other', facilityName: 'Legacy outside visit' };
+          });
+        }
+      }
+      return [];
+    }
+
+    function populateOtherVisitsInfo() {
+      const container = document.getElementById('otherVisitsContent');
+      if (!container) return;
+      const visits = getLatestOtherVisitsForReport();
+      if (!visits.length) {
+        container.innerHTML = '<p class="text-muted">No other-facility ANC visits recorded.</p>';
+        return;
+      }
+      let html = '<div class="table-scroll"><table class="anc-block-table"><thead><tr>' +
+        '<th>Visit #</th><th>Date</th><th>Facility Type</th><th>Facility Name</th>' +
+        '</tr></thead><tbody>';
+      visits.forEach(function (v, index) {
+        html += '<tr>' +
+          '<td>' + escapeHtml(v.visitNumber || index + 1) + '</td>' +
+          '<td>' + escapeHtml(v.visitDate || '-') + '</td>' +
+          '<td>' + escapeHtml(v.facilityType || '-') + '</td>' +
+          '<td>' + escapeHtml(v.facilityName || '-') + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
     }
 
     function populateTreatmentInfo() {

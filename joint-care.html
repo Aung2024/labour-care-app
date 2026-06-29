@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0284c7" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Joint Care - m-MNCH Care</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/joint-care-utils.js"></script>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --surface: #ffffff;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      font-family: Inter, "Myanmar Text", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #e0f2fe 0%, #f8fafc 45%, #dbeafe 100%);
+      color: #0f172a;
+    }
+
+    .page-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      padding: calc(0.85rem + env(safe-area-inset-top, 0px)) 1rem 0.85rem;
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.22);
+    }
+
+    .header-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .title-wrap { min-width: 0; }
+    .title-wrap h1 { margin: 0; font-size: 1.25rem; font-weight: 800; line-height: 1.25; }
+    .title-wrap p { margin: 0.2rem 0 0; font-size: 0.85rem; opacity: 0.9; }
+
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .btn-soft {
+      min-height: 44px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.18);
+      color: white;
+      padding: 0.55rem 0.75rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 1rem calc(1rem + env(safe-area-inset-right, 0px)) calc(2rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px));
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.75rem;
+      align-items: end;
+    }
+
+    label { font-weight: 800; font-size: 0.9rem; margin-bottom: 0.35rem; }
+
+    .patient-id-input {
+      width: 100%;
+      min-height: 48px;
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 0.75rem 0.9rem;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .patient-id-input:focus {
+      border-color: var(--primary);
+      outline: none;
+      box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.16);
+    }
+
+    .btn-primary-care {
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      touch-action: manipulation;
+    }
+
+    .btn-primary-care:disabled { opacity: 0.65; }
+    .hint { margin: 0.65rem 0 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+    .status { margin-top: 0.75rem; font-weight: 700; }
+    .status.error { color: #b91c1c; }
+    .status.ok { color: #047857; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-title h2 { margin: 0; font-size: 1.05rem; font-weight: 900; }
+    .count-pill { background: #e0f2fe; color: #075985; padding: 0.25rem 0.65rem; border-radius: 999px; font-weight: 800; font-size: 0.8rem; }
+
+    .patient-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .patient-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 1rem;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+
+    .patient-name { font-size: 1rem; font-weight: 900; margin-bottom: 0.25rem; }
+    .patient-meta { color: var(--muted); font-size: 0.86rem; line-height: 1.45; margin-bottom: 0.75rem; }
+    .patient-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 800; color: #075985; }
+    .empty { color: var(--muted); text-align: center; padding: 1.25rem; }
+
+    @media (max-width: 560px) {
+      .header-inner { align-items: flex-start; }
+      .title-wrap h1 { font-size: 1.1rem; }
+      .title-wrap p { display: none; }
+      .btn-soft span { display: none; }
+      .search-row { grid-template-columns: 1fr; }
+      .btn-primary-care { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="header-inner">
+      <div class="title-wrap">
+        <h1><i class="fas fa-user-friends me-2"></i>Joint Care</h1>
+        <p>Use the serial Patient ID as the passkey for shared care.</p>
+      </div>
+      <div class="header-actions">
+        <a class="btn-soft" href="home.html"><i class="fas fa-arrow-left"></i><span>Home</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="panel">
+      <form id="jointCareForm" class="search-row">
+        <div>
+          <label for="patientUniqueId">Patient ID</label>
+          <input id="patientUniqueId" class="patient-id-input" autocomplete="off" placeholder="e.g. MDY-003-260001" />
+        </div>
+        <button id="linkButton" type="submit" class="btn-primary-care">
+          <i class="fas fa-key"></i> Link Patient
+        </button>
+      </form>
+      <p class="hint">Enter the serial Patient ID from registration. This does not transfer ownership; dashboard attribution remains with the original midwife.</p>
+      <div id="statusMessage" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>Linked Joint Care Patients</h2>
+        <span id="linkedCount" class="count-pill">0</span>
+      </div>
+      <div id="linkedPatients" class="patient-grid"></div>
+      <div id="emptyState" class="empty">No Joint Care patients linked yet.</div>
+    </section>
+  </main>
+
+  <script>
+    let currentUser = null;
+    let currentProfile = null;
+    let linkedPatients = [];
+
+    function setStatus(message, type) {
+      const el = document.getElementById('statusMessage');
+      el.textContent = message || '';
+      el.className = 'status' + (type ? ' ' + type : '');
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function selectPatient(patient) {
+      sessionStorage.setItem('selectedPatientId', patient.id);
+      sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
+      try {
+        const recent = JSON.parse(localStorage.getItem('recentPatients') || '[]').filter(function (id) { return id !== patient.id; });
+        recent.unshift(patient.id);
+        localStorage.setItem('recentPatients', JSON.stringify(recent.slice(0, 5)));
+      } catch (e) { /* optional */ }
+      window.location.href = 'patient-care-hub.html';
+    }
+
+    function renderPatients() {
+      const grid = document.getElementById('linkedPatients');
+      const empty = document.getElementById('emptyState');
+      const count = document.getElementById('linkedCount');
+      count.textContent = String(linkedPatients.length);
+      grid.innerHTML = '';
+      empty.style.display = linkedPatients.length ? 'none' : 'block';
+      linkedPatients.forEach(function (patient) {
+        const card = document.createElement('div');
+        card.className = 'patient-card';
+        card.innerHTML = `
+          <div class="patient-name">${escapeHtml(patient.name || 'Unknown Patient')}</div>
+          <div class="patient-meta">
+            <div><span class="patient-id">${escapeHtml(patient.patient_unique_id || patient.patientUniqueId || '-')}</span></div>
+            <div>Age: ${escapeHtml(patient.age || '-')} · Parity: ${escapeHtml(patient.parity || '-')}</div>
+            <div>${escapeHtml(patient.township || '')}${patient.region ? ' · ' + escapeHtml(patient.region) : ''}</div>
+          </div>
+          <button class="btn-primary-care w-100" type="button"><i class="fas fa-notes-medical"></i> Open Care Hub</button>
+        `;
+        card.querySelector('button').addEventListener('click', function () { selectPatient(patient); });
+        grid.appendChild(card);
+      });
+    }
+
+    async function loadLinkedPatients() {
+      if (!currentUser) return;
+      const db = firebase.firestore();
+      const snap = await db.collection('joint_care_links')
+        .where('linkedMidwifeId', '==', currentUser.uid)
+        .where('status', '==', 'active')
+        .limit(80)
+        .get();
+
+      const rows = [];
+      for (const doc of snap.docs) {
+        const link = doc.data() || {};
+        try {
+          const patientDoc = await db.collection('patients').doc(link.patientId).get();
+          if (patientDoc.exists) rows.push({ id: patientDoc.id, ...patientDoc.data(), _jointCareLinkId: doc.id });
+        } catch (e) {
+          rows.push({
+            id: link.patientId,
+            name: link.patientName,
+            age: link.patientAge,
+            patient_unique_id: link.patientUniqueId,
+            township: link.patientTownship,
+            region: link.patientRegion,
+            _jointCareLinkId: doc.id
+          });
+        }
+      }
+      linkedPatients = rows.sort(function (a, b) {
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      });
+      renderPatients();
+    }
+
+    async function handleLinkSubmit(event) {
+      event.preventDefault();
+      const input = document.getElementById('patientUniqueId');
+      const button = document.getElementById('linkButton');
+      const patientUniqueId = JointCareUtils.normalizePatientUniqueId(input.value);
+      if (!patientUniqueId) {
+        setStatus('Please enter a Patient ID.', 'error');
+        return;
+      }
+
+      button.disabled = true;
+      setStatus('Searching for patient...', '');
+      try {
+        const db = firebase.firestore();
+        const snap = await db.collection('patients')
+          .where('patient_unique_id', '==', patientUniqueId)
+          .limit(1)
+          .get();
+
+        if (snap.empty) {
+          setStatus('No patient found with this Patient ID. Please check the serial ID and try again.', 'error');
+          return;
+        }
+
+        const patientDoc = snap.docs[0];
+        const result = await JointCareUtils.createJointCareLink(patientDoc, currentUser, currentProfile);
+        input.value = '';
+        await loadLinkedPatients();
+        setStatus(result.alreadyOwner ? 'This is already your patient. Opening from your patient list is also available.' : 'Joint Care access linked successfully.', 'ok');
+      } catch (error) {
+        console.error('Joint Care link failed:', error);
+        setStatus(error && error.message ? error.message : 'Could not link this patient. Please try again online.', 'error');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!user) {
+        window.location.href = 'login.html';
+        return;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setStatus('Joint Care linking is available online only. Reconnect and try again.', 'error');
+        return;
+      }
+      currentUser = user;
+      currentProfile = await JointCareUtils.getUserProfile(user.uid);
+      await loadLinkedPatients();
+    });
+
+    document.getElementById('jointCareForm').addEventListener('submit', handleLinkSubmit);
+  </script>
+</body>
+</html>

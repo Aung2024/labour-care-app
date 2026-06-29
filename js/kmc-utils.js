@@ -238,12 +238,12 @@
 
     var daysLate = getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
     if (daysLate == null || daysLate < 0) {
-      return { key: 'on_track', labelEn: 'Active KMC', labelMm: 'Active KMC' };
+      return { key: 'on_track', labelEn: 'Active KMC', labelMm: 'ရက်ချိန်းမှန်သော KMC' };
     }
     if (daysLate <= DEFAULTED_AFTER_DAYS) {
-      return { key: 'overdue_followup', labelEn: 'Overdue', labelMm: 'Overdue' };
+      return { key: 'overdue_followup', labelEn: 'Overdue', labelMm: 'ရက်ချိန်းလွန်သော KMC' };
     }
-    return { key: 'lost_to_followup', labelEn: 'Defaulted/Lost', labelMm: 'Defaulted/Lost' };
+    return { key: 'lost_to_followup', labelEn: 'Defaulted/Lost', labelMm: 'အဆက်အသွယ်မရသော KMC' };
   }
 
   function reasonLabels(reasons, lang) {
@@ -273,8 +273,8 @@
     var outcome = action.outcome || action.resolvedReason || '';
     if (outcome === 'dead' || outcome === 'death') return { key: 'death', labelEn: 'Dead', labelMm: 'သေဆုံး' };
     if (outcome === 'transfer' || outcome === 'transferred') return { key: 'transfer', labelEn: 'Transfer', labelMm: 'လွှဲပြောင်း' };
-    if (outcome === 'discontinuation' || outcome === 'kmc_discontinuation') return { key: 'discontinuation', labelEn: 'KMC Discontinuation', labelMm: 'KMC Discontinuation' };
-    return { key: 'alive', labelEn: 'KMC complete & Alive', labelMm: 'KMC complete & Alive' };
+    if (outcome === 'discontinuation' || outcome === 'kmc_discontinuation') return { key: 'discontinuation', labelEn: 'KMC Discontinuation', labelMm: 'KMC ရပ်ဆိုင်း' };
+    return { key: 'alive', labelEn: 'KMC complete & Alive', labelMm: 'KMC ပြီးမြောက်ပြီး အသက်ရှင်' };
   }
 
   global.KmcUtils = {

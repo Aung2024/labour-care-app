@@ -18,6 +18,7 @@
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/status-manager.js"></script>
+  <script src="js/joint-care-utils.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
@@ -1070,7 +1071,11 @@
     let currentNewbornDocId = null;
     let currentKmcEvaluation = null;
     let latestAncForKmc = null;
-    const isNewKmcVisit = new URLSearchParams(window.location.search).get('kmcVisit') === 'next';
+    const newbornUrlParams = new URLSearchParams(window.location.search);
+    let editVisitId = newbornUrlParams.get('editVisitId');
+    let editApprovalId = newbornUrlParams.get('editApprovalId');
+    let isEditMode = !!editVisitId;
+    const isNewKmcVisit = newbornUrlParams.get('kmcVisit') === 'next';
 
     function normalizeNewbornCareLayout() {
       const form = document.getElementById('newbornCareForm');
@@ -1397,7 +1402,7 @@
     }
 
     // Get patient ID from URL
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = newbornUrlParams;
     patientId = urlParams.get('patient');
 
     function generateBabyName(motherName) {
@@ -1769,9 +1774,9 @@
             const n = parseInt(getVisitData(item).visit_number, 10) || 1;
             return Math.max(max, n);
           }, 1);
-          const selected = isNewKmcVisit
-            ? null
-            : newbornCareVisits[newbornCareVisits.length - 1];
+          const selected = isEditMode
+            ? newbornCareVisits.find(function (item) { return item.id === editVisitId; })
+            : (isNewKmcVisit ? null : newbornCareVisits[newbornCareVisits.length - 1]);
           const base = selected || newbornCareVisits[newbornCareVisits.length - 1];
           if (base) {
             populateNewbornCareFields(getVisitData(base));
@@ -1906,8 +1911,14 @@
           feeding_type: kmcSelected === 'yes' ? document.getElementById('feeding_type').value || null : null,
           feeding_method: kmcSelected === 'yes' ? document.getElementById('feeding_method').value || null : null,
           patientId: patientId,
-          recordedBy: currentUser.uid
+          recordedBy: currentUser.uid,
+          createdBy: currentNewbornDocId ? undefined : currentUser.uid,
+          createdAt: currentNewbornDocId ? undefined : firebase.firestore.FieldValue.serverTimestamp()
         };
+        if (currentNewbornDocId) {
+          delete formData.createdBy;
+          delete formData.createdAt;
+        }
 
         const queuedPayload = {
           _collection: 'newborn_care',
@@ -1932,7 +1943,14 @@
             let cloudId = null;
             if (currentNewbornDocId) {
               cloudId = currentNewbornDocId;
+              cloudData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+              cloudData.updatedBy = currentUser.uid;
+              delete cloudData.createdAt;
+              delete cloudData.createdBy;
               await collectionRef.doc(cloudId).set(cloudData, { merge: true });
+              if (editApprovalId && window.JointCareUtils) {
+                await JointCareUtils.markApprovalUsed(editApprovalId, currentUser.uid);
+              }
             } else {
               const created = await collectionRef.add(cloudData);
               cloudId = created.id;

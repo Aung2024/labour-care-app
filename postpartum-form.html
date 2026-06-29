@@ -18,6 +18,7 @@
   <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/status-manager.js"></script>
+  <script src="js/joint-care-utils.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
@@ -743,6 +744,25 @@
               </div>
             </div>
           </div>
+
+          <div class="mt-3 border rounded-3 p-3 bg-light">
+            <h6 class="fw-bold mb-2"><i class="fas fa-history me-2"></i><span class="lang-text" data-en="ANC history for this pregnancy" data-mm="ဤကိုယ်ဝန်အတွက် ANC သမိုင်း">ANC history for this pregnancy</span></h6>
+            <div id="ancHistorySummary" class="small text-muted">Loading ANC history...</div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label lang-text" data-en="Other PNC Visits" data-mm="အခြား ကျန်းမာရေးဌာနတွင် ပြသခဲ့သော PNC Visit များ">Other PNC Visits</label>
+            <div class="d-flex flex-wrap gap-3 mb-2">
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="no" checked onchange="toggleOtherVisitsSection()"> No</label>
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="yes" onchange="toggleOtherVisitsSection()"> Yes</label>
+            </div>
+            <div id="otherVisitsSection" class="border rounded-3 p-3 bg-light" style="display:none;">
+              <div id="otherVisitsRows" class="d-grid gap-2"></div>
+              <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addOtherVisitRow()">
+                <i class="fas fa-plus me-1"></i><span class="lang-text" data-en="Add Other Visit" data-mm="အခြား Visit ထည့်ရန်">Add Other Visit</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Vital Signs -->
@@ -1202,6 +1222,9 @@
     let patientId = null;
     let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
     let deliveryAnchorLocked = false;
+    let editVisitId = null;
+    let editApprovalId = null;
+    let isEditMode = false;
 
     const PNC_SCHEDULE_VISIT_COUNT = window.BirthDeliveryAnchor
       ? BirthDeliveryAnchor.CARE_SCHEDULE_VISIT_COUNT
@@ -1209,6 +1232,9 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
+    editVisitId = urlParams.get('editVisitId');
+    editApprovalId = urlParams.get('editApprovalId');
+    isEditMode = !!editVisitId;
     updateBackToPncLink();
 
     window.onAppLanguageChange = function (lang) {
@@ -1679,6 +1705,10 @@
         
         // Load delivery date/time from first visit if available
         await loadDeliveryDateTimeFromFirstVisit();
+        await loadAncHistorySummary();
+        if (isEditMode) {
+          await loadPncVisitForEdit();
+        }
         
         showLoading(false);
         
@@ -1686,6 +1716,144 @@
         console.error('Error loading patient:', error);
         alert('Could not load patient data. Please try again.');
         showLoading(false);
+      }
+    }
+
+    async function loadPncVisitForEdit() {
+      if (!editVisitId || !currentPatient || !currentPatient.id) return;
+      const doc = await firebase.firestore()
+        .collection('patients')
+        .doc(currentPatient.id)
+        .collection('postpartum_visits')
+        .doc(editVisitId)
+        .get();
+      if (!doc.exists) {
+        alert('The selected PNC visit could not be found.');
+        window.location.href = 'visit-edit.html?type=pnc&patient=' + encodeURIComponent(currentPatient.id);
+        return;
+      }
+      const data = doc.data() || {};
+      if (data.visitDate) document.getElementById('visitDate').value = normalizeDateInput(data.visitDate);
+      if (data.visitNumber) document.getElementById('visitNumber').value = data.visitNumber;
+      if (data.deliveredDateTime) document.getElementById('deliveredDateTime').value = data.deliveredDateTime;
+      applyPncVisitDataToForm(data);
+      applyOtherVisitsToUi(data.otherVisits || []);
+      calculatePostpartumPeriod();
+      updatePncVisitSchedule();
+      const submitBtn = document.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Update PNC Visit" data-mm="PNC Visit ပြင်ဆင်သိမ်းရန်">Update PNC Visit</span>';
+    }
+
+    function normalizeDateInput(value) {
+      if (!value) return '';
+      if (value.toDate && typeof value.toDate === 'function') return value.toDate().toISOString().split('T')[0];
+      if (typeof value === 'string') return value.split('T')[0];
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+    }
+
+    function toggleOtherVisitsSection() {
+      const selected = document.querySelector('input[name="hasOtherVisits"]:checked');
+      const section = document.getElementById('otherVisitsSection');
+      if (!section) return;
+      const show = selected && selected.value === 'yes';
+      section.style.display = show ? '' : 'none';
+      if (show && document.querySelectorAll('#otherVisitsRows .other-visit-row').length === 0) {
+        addOtherVisitRow();
+      }
+    }
+
+    function addOtherVisitRow(data) {
+      const rows = document.getElementById('otherVisitsRows');
+      if (!rows) return;
+      const row = document.createElement('div');
+      row.className = 'other-visit-row row g-2 align-items-end';
+      row.innerHTML = `
+        <div class="col-6 col-md-2">
+          <label class="form-label small">Visit #</label>
+          <input type="number" min="1" class="form-control other-visit-number" value="${data && data.visitNumber ? String(data.visitNumber).replace(/"/g, '&quot;') : ''}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small">Visit Date</label>
+          <input type="date" class="form-control other-visit-date" value="${data && data.visitDate ? normalizeDateInput(data.visitDate) : ''}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small">Facility Type</label>
+          <select class="form-select other-visit-facility-type">
+            <option value="">Select</option>
+            <option value="Private">Private</option>
+            <option value="Public">Public</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small">Facility Name</label>
+          <input type="text" class="form-control other-visit-facility-name" value="${data && data.facilityName ? String(data.facilityName).replace(/"/g, '&quot;') : ''}">
+        </div>
+        <div class="col-12 col-md-1">
+          <button type="button" class="btn btn-outline-danger w-100" style="min-height:44px;" onclick="this.closest('.other-visit-row').remove();">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>`;
+      rows.appendChild(row);
+      if (data && data.facilityType) row.querySelector('.other-visit-facility-type').value = data.facilityType;
+    }
+
+    function collectOtherVisitsFromUi() {
+      const selected = document.querySelector('input[name="hasOtherVisits"]:checked');
+      if (!selected || selected.value !== 'yes') return [];
+      return Array.from(document.querySelectorAll('#otherVisitsRows .other-visit-row')).map(function (row) {
+        return {
+          visitNumber: parseInt(row.querySelector('.other-visit-number')?.value, 10) || null,
+          visitDate: row.querySelector('.other-visit-date')?.value || null,
+          facilityType: row.querySelector('.other-visit-facility-type')?.value || null,
+          facilityName: row.querySelector('.other-visit-facility-name')?.value || null
+        };
+      }).filter(function (item) {
+        return item.visitNumber || item.visitDate || item.facilityType || item.facilityName;
+      });
+    }
+
+    function applyOtherVisitsToUi(visits) {
+      const rows = document.getElementById('otherVisitsRows');
+      if (!rows) return;
+      rows.innerHTML = '';
+      const list = Array.isArray(visits) ? visits : [];
+      const yes = document.querySelector('input[name="hasOtherVisits"][value="yes"]');
+      const no = document.querySelector('input[name="hasOtherVisits"][value="no"]');
+      if (list.length) {
+        if (yes) yes.checked = true;
+        list.forEach(addOtherVisitRow);
+      } else if (no) {
+        no.checked = true;
+      }
+      toggleOtherVisitsSection();
+    }
+
+    async function loadAncHistorySummary() {
+      const el = document.getElementById('ancHistorySummary');
+      if (!el || !currentPatient || !currentPatient.id || !navigator.onLine) return;
+      try {
+        const snap = await firebase.firestore()
+          .collection('patients')
+          .doc(currentPatient.id)
+          .collection('antenatal_visits')
+          .orderBy('visitDate', 'asc')
+          .get();
+        let appVisits = 0;
+        let otherVisits = [];
+        snap.forEach(function (doc) {
+          const data = doc.data() || {};
+          appVisits++;
+          if (Array.isArray(data.otherVisits)) {
+            otherVisits = data.otherVisits;
+          } else if (data.otherVisitCount) {
+            otherVisits = new Array(parseInt(data.otherVisitCount, 10) || 0).fill(null);
+          }
+        });
+        const total = appVisits + otherVisits.length;
+        el.innerHTML = 'App-recorded ANC visits: <strong>' + appVisits + '</strong> · Other-facility ANC visits: <strong>' + otherVisits.length + '</strong> · Total known ANC visits: <strong>' + total + '</strong>';
+      } catch (e) {
+        el.textContent = 'ANC history could not be loaded.';
       }
     }
 
@@ -1822,6 +1990,9 @@
         });
         if (prev) {
           applyPncVisitDataToForm(prev);
+          if (!isEditMode && Array.isArray(prev.otherVisits)) {
+            applyOtherVisitsToUi(prev.otherVisits);
+          }
         } else {
           setDefaultPncOutcomesAlive();
         }
@@ -2106,9 +2277,46 @@
           newbornOutcome: document.querySelector('input[name="newbornOutcome"]:checked').value,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser.uid,
+          recordedBy: currentUser.uid,
+          otherVisits: collectOtherVisitsFromUi(),
+          hasOtherVisits: collectOtherVisitsFromUi().length > 0 ? 'yes' : 'no',
           _needsVisitNumber: shouldDeferVisitNumber,
           syncState: 'pending'
         };
+
+        if (isEditMode && editVisitId) {
+          const updateData = { ...formData };
+          delete updateData._needsVisitNumber;
+          delete updateData.syncState;
+          delete updateData.createdAt;
+          delete updateData.createdBy;
+          updateData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+          updateData.updatedBy = currentUser.uid;
+
+          const db = firebase.firestore();
+          await db.collection('patients')
+            .doc(currentPatient.id)
+            .collection('postpartum_visits')
+            .doc(editVisitId)
+            .set(updateData, { merge: true });
+
+          await db.collection('patients').doc(currentPatient.id).update({
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+            lastPostpartumVisit: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          if (editApprovalId && window.JointCareUtils) {
+            await JointCareUtils.markApprovalUsed(editApprovalId, currentUser.uid);
+          }
+
+          if (window.AppDialog && AppDialog.alert) {
+            await AppDialog.alert('PNC visit updated.', { title: 'Updated' });
+          } else {
+            alert('PNC visit updated.');
+          }
+          window.location.href = 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id);
+          return;
+        }
 
         const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
           'pending_pnc_visits',

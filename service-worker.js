@@ -1,11 +1,12 @@
 
-const CACHE_NAME = 'mch-care-v133-moh';
+const CACHE_NAME = 'mch-care-v134-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
   './home.html',
   './user-manual.html',
   './list.html',
+  './joint-care.html',
   './login.html',
   './registration.html',
   './patient-transfers.html',
@@ -31,6 +32,8 @@ const FILES_TO_CACHE = [
   './postpartum-form.html',
   './postpartum-history.html',
   './postpartum-report.html',
+  './visit-edit.html',
+  './visit-edit-approvals.html',
   './immediate-newborn-care.html',
   './immediate-newborn-care-form.html',
   './newborn-care-page.html',
@@ -68,6 +71,7 @@ const FILES_TO_CACHE = [
   './js/session-manager.js',
   './js/audit-logger.js',
   './js/patient-session.js',
+  './js/joint-care-utils.js',
   './js/lang-apply.js',
   './js/high-risk-utils.js',
   './js/anc-tracking-status.js',

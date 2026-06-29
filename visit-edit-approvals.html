@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#7c3aed" />
+  <title>Visit Edit Approvals - m-MNCH Care</title>
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/joint-care-utils.js"></script>
+  <style>
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      background: #f5f3ff;
+      font-family: Inter, "Myanmar Text", system-ui, sans-serif;
+      color: #111827;
+    }
+    .header {
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: white;
+      padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 1rem 0.9rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-inner, main {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    h1 { font-size: 1.2rem; margin: 0; font-weight: 900; }
+    .btn-home {
+      color: white;
+      border: 1px solid rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.18);
+      border-radius: 12px;
+      padding: 0.55rem 0.75rem;
+      min-height: 44px;
+      text-decoration: none;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    main {
+      padding: 1rem calc(1rem + env(safe-area-inset-right, 0px)) calc(2rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px));
+    }
+    .request-card {
+      background: white;
+      border: 1px solid #e9d5ff;
+      border-radius: 18px;
+      padding: 1rem;
+      margin-bottom: 0.85rem;
+      box-shadow: 0 10px 24px rgba(88, 28, 135, 0.08);
+    }
+    .request-title { font-weight: 900; margin-bottom: 0.3rem; }
+    .meta { color: #64748b; font-size: 0.9rem; line-height: 1.55; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; }
+    .btn-action {
+      min-height: 44px;
+      border: 0;
+      border-radius: 12px;
+      padding: 0.55rem 0.8rem;
+      font-weight: 900;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn-approve { background: #16a34a; color: white; }
+    .btn-reject { background: #dc2626; color: white; }
+    .empty { background: white; border-radius: 18px; padding: 1.5rem; text-align: center; color: #64748b; }
+    .status { font-weight: 800; margin-bottom: 0.75rem; }
+    @media (max-width: 560px) {
+      .btn-home span { display: none; }
+      .actions .btn-action { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1><i class="fas fa-user-check me-2"></i>Visit Edit Approvals</h1>
+      <a href="home.html" class="btn-home"><i class="fas fa-arrow-left"></i><span>Home</span></a>
+    </div>
+  </header>
+  <main>
+    <div id="status" class="status"></div>
+    <div id="requests"></div>
+    <div id="empty" class="empty" style="display:none;">No pending edit requests.</div>
+  </main>
+  <script>
+    let currentUser = null;
+    let currentProfile = null;
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function fmt(value) {
+      const d = JointCareUtils.timestampToDate(value);
+      return d ? d.toLocaleString() : '-';
+    }
+    function setStatus(value) {
+      document.getElementById('status').textContent = value || '';
+    }
+    async function updateRequest(id, status) {
+      const note = status === 'rejected' ? (prompt('Reason for rejection:') || '') : '';
+      await firebase.firestore().collection('visit_edit_requests').doc(id).update({
+        status: status,
+        reviewedBy: currentUser.uid,
+        reviewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        reviewerRole: currentProfile.role || 'TMO',
+        rejectionReason: note || null
+      });
+      setStatus(status === 'approved' ? 'Request approved for one edit.' : 'Request rejected.');
+      await loadRequests();
+    }
+    async function loadRequests() {
+      const container = document.getElementById('requests');
+      const empty = document.getElementById('empty');
+      container.innerHTML = '';
+      empty.style.display = 'none';
+      const db = firebase.firestore();
+      let query = db.collection('visit_edit_requests').where('status', '==', 'pending');
+      const role = String(currentProfile.role || '').toLowerCase();
+      if (role === 'tmo' && currentProfile.township) {
+        query = query.where('township', '==', currentProfile.township);
+      }
+      const snap = await query.limit(100).get();
+      if (snap.empty) {
+        empty.style.display = 'block';
+        return;
+      }
+      snap.docs.forEach(function (doc) {
+        const r = doc.data() || {};
+        const card = document.createElement('div');
+        card.className = 'request-card';
+        card.innerHTML = `
+          <div class="request-title">${escapeHtml((r.visitType || '').toUpperCase())} Visit ${escapeHtml(r.visitNumber || '')} · ${escapeHtml(r.patientName || 'Unknown Patient')}</div>
+          <div class="meta">
+            Patient ID: ${escapeHtml(r.patientUniqueId || r.patientId || '-')}<br>
+            Visit date: ${escapeHtml(r.visitDate || '-')} · Requested: ${escapeHtml(fmt(r.requestedAt))}<br>
+            Requester: ${escapeHtml(r.requesterEmail || r.requesterId || '-')}<br>
+            Reason: ${escapeHtml(r.reason || '-')}
+          </div>
+          <div class="actions">
+            <button type="button" class="btn-action btn-approve"><i class="fas fa-check"></i> Approve One Edit</button>
+            <button type="button" class="btn-action btn-reject"><i class="fas fa-times"></i> Reject</button>
+          </div>
+        `;
+        card.querySelector('.btn-approve').onclick = function () { updateRequest(doc.id, 'approved'); };
+        card.querySelector('.btn-reject').onclick = function () { updateRequest(doc.id, 'rejected'); };
+        container.appendChild(card);
+      });
+    }
+    firebase.auth().onAuthStateChanged(async function (user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!user) { window.location.href = 'login.html'; return; }
+      currentUser = user;
+      currentProfile = await JointCareUtils.getUserProfile(user.uid);
+      const role = String(currentProfile && currentProfile.role || '').toLowerCase();
+      if (role !== 'tmo' && role !== 'super admin' && role !== 'admin') {
+        document.body.innerHTML = '<div class="empty">Access denied.</div>';
+        return;
+      }
+      await loadRequests();
+    });
+  </script>
+</body>
+</html>

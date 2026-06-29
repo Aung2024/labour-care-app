@@ -131,6 +131,75 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
     }
+
+    // Joint Care links: a midwife can self-link by serial Patient ID without changing ownership.
+    match /joint_care_links/{linkId} {
+      allow create: if
+        request.auth != null
+        && request.resource.data.linkedMidwifeId == request.auth.uid
+        && request.resource.data.status == "active";
+      allow read: if
+        request.auth != null
+        && (
+          resource.data.linkedMidwifeId == request.auth.uid
+          || resource.data.ownerMidwifeId == request.auth.uid
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin", "TMO", "Regional Officer"]
+          )
+        );
+      allow update: if
+        request.auth != null
+        && (
+          resource.data.linkedMidwifeId == request.auth.uid
+          || resource.data.ownerMidwifeId == request.auth.uid
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"]
+          )
+        );
+      allow delete: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"];
+    }
+
+    // One-visit edit approval requests for TMO review.
+    match /visit_edit_requests/{requestId} {
+      allow create: if request.auth != null && request.resource.data.requesterId == request.auth.uid;
+      allow read: if
+        request.auth != null
+        && (
+          resource.data.requesterId == request.auth.uid
+          || resource.data.ownerMidwifeId == request.auth.uid
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && (
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"]
+              || (
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
+                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township
+              )
+            )
+          )
+        );
+      allow update: if
+        request.auth != null
+        && (
+          resource.data.requesterId == request.auth.uid
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && (
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["Super Admin", "admin"]
+              || (
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
+                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township
+              )
+            )
+          )
+        );
+      allow delete: if false;
+    }
     
     // Provider Consents collection
     match /provider_consents/{userId} {
