@@ -2015,6 +2015,11 @@
         return;
       }
       applyAncVisitDataToForm(doc.data() || {});
+      const visitNumberInput = document.getElementById('visitNumber');
+      if (visitNumberInput) {
+        visitNumberInput.readOnly = true;
+        visitNumberInput.setAttribute('readonly', 'readonly');
+      }
       const submitText = document.querySelector('button[type="submit"] .lang-text');
       if (submitText) {
         submitText.setAttribute('data-en', 'Update Visit Data');
@@ -3780,16 +3785,19 @@
         
         // Collect all form data with null-safe access
         const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+        const effectiveVisitNumber = isEditMode
+          ? (getInt('visitNumber') || visitCount)
+          : visitCount;
 
         const visitData = {
-          visitNumber: shouldDeferVisitNumber ? null : visitCount,
+          visitNumber: shouldDeferVisitNumber && !isEditMode ? null : effectiveVisitNumber,
           visitNumberOther: getValue('visitNumberOther'),
           visitDate: getValue('visitDate'),
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser?.uid || '',
           healthFacility: currentPatient?.township || 'Unknown Facility',
-          totalAncVisits: shouldDeferVisitNumber ? null : (visitCount - 1),
+          totalAncVisits: shouldDeferVisitNumber && !isEditMode ? null : Math.max(0, effectiveVisitNumber - 1),
           
           // Main table data
           weight: getNumber('weight'),
