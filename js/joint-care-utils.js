@@ -166,12 +166,17 @@
   }
 
   async function findUnusedApproval(patientId, visitType, visitId, uid) {
-    const requestId = buildEditRequestId(patientId, visitType, visitId, uid);
-    const doc = await firebase.firestore().collection(EDIT_REQUEST_COLLECTION).doc(requestId).get();
-    if (!doc.exists) return null;
-    const data = doc.data() || {};
-    if (data.status !== 'approved' || data.used === true) return null;
-    return { id: doc.id, ...data };
+    try {
+      const requestId = buildEditRequestId(patientId, visitType, visitId, uid);
+      const doc = await firebase.firestore().collection(EDIT_REQUEST_COLLECTION).doc(requestId).get();
+      if (!doc.exists) return null;
+      const data = doc.data() || {};
+      if (data.status !== 'approved' || data.used === true) return null;
+      return { id: doc.id, ...data };
+    } catch (error) {
+      console.warn('[JointCare] approval lookup failed:', error);
+      return null;
+    }
   }
 
   async function requestVisitEdit(patient, visitType, visitId, visit, user, reason) {

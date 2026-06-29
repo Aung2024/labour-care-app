@@ -281,30 +281,35 @@
     async function loadLinkedPatients() {
       if (!currentUser) return;
       const db = firebase.firestore();
-      const snap = await db.collection('joint_care_links')
-        .doc(currentUser.uid)
-        .collection('patients')
-        .where('status', '==', 'active')
-        .limit(80)
-        .get();
-
       const rows = [];
-      for (const doc of snap.docs) {
-        const link = doc.data() || {};
-        try {
-          const patientDoc = await db.collection('patients').doc(link.patientId).get();
-          if (patientDoc.exists) rows.push({ id: patientDoc.id, ...patientDoc.data(), _jointCareLinkId: doc.id });
-        } catch (e) {
-          rows.push({
-            id: link.patientId,
-            name: link.patientName,
-            age: link.patientAge,
-            patient_unique_id: link.patientUniqueId,
-            township: link.patientTownship,
-            region: link.patientRegion,
-            _jointCareLinkId: doc.id
-          });
+      try {
+        const snap = await db.collection('joint_care_links')
+          .doc(currentUser.uid)
+          .collection('patients')
+          .where('status', '==', 'active')
+          .limit(80)
+          .get();
+
+        for (const doc of snap.docs) {
+          const link = doc.data() || {};
+          try {
+            const patientDoc = await db.collection('patients').doc(link.patientId).get();
+            if (patientDoc.exists) rows.push({ id: patientDoc.id, ...patientDoc.data(), _jointCareLinkId: doc.id });
+          } catch (e) {
+            rows.push({
+              id: link.patientId,
+              name: link.patientName,
+              age: link.patientAge,
+              patient_unique_id: link.patientUniqueId,
+              township: link.patientTownship,
+              region: link.patientRegion,
+              _jointCareLinkId: doc.id
+            });
+          }
         }
+      } catch (error) {
+        console.warn('Could not load Joint Care links:', error);
+        setStatus('Could not load linked patients. You can still enter a Patient ID to link.', 'error');
       }
       linkedPatients = rows.sort(function (a, b) {
         return String(a.name || '').localeCompare(String(b.name || ''));

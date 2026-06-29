@@ -137,12 +137,25 @@ service cloud.firestore {
       allow read, write: if false;
 
       match /patients/{patientId} {
-        allow create, read, update: if
+        allow read: if
+          request.auth != null
+          && request.auth.uid == midwifeId;
+        allow create: if
+          request.auth != null
+          && request.auth.uid == midwifeId
+          && request.resource.data.linkedMidwifeId == request.auth.uid
+          && request.resource.data.patientId == patientId
+          && request.resource.data.status == "active";
+        allow update: if
           request.auth != null
           && request.auth.uid == midwifeId
           && (
             !('linkedMidwifeId' in request.resource.data)
             || request.resource.data.linkedMidwifeId == request.auth.uid
+          )
+          && (
+            !('patientId' in request.resource.data)
+            || request.resource.data.patientId == patientId
           );
         allow read: if
           request.auth != null
