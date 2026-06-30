@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10b981">
   <title>Immunization - Maternal & Child Health Care System</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
   <link rel="stylesheet" href="css/style.css" />
   <script src="js/vendor/firebase-app.js"></script>
@@ -14,274 +14,820 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/register-sw.js"></script>
   <style>
     :root {
-      --primary-color: #10b981;
-      --secondary-color: #059669;
-      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      --card-hover-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      --brand: #10b981;
+      --brand-dark: #059669;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #d1d5db;
+      --paper: #f8fafc;
+      --oral: #dbeafe;
+      --injection: #dcfce7;
+      --due: #fef3c7;
+      --late: #fee2e2;
+      --done: #d1fae5;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Inter', sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0;
       min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
+      min-height: 100dvh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: var(--ink);
+      font-family: Inter, "Pyidaungsu", "Myanmar Text", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
+
     .medical-header {
-      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-      color: white;
-      padding: 1.5rem;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
       position: sticky;
       top: 0;
-      z-index: 100;
-    }
-    .header-content {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-    .app-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
-    .page-subtitle { font-size: 0.9rem; opacity: 0.9; }
-    .main-container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
-    .patient-info-bar {
-      background: white;
-      border-radius: 15px;
-      padding: 1.25rem;
-      margin-bottom: 1.5rem;
-      box-shadow: var(--card-shadow);
-      border-left: 5px solid var(--primary-color);
-    }
-    .patient-name { font-size: 1.25rem; font-weight: 600; color: var(--primary-color); }
-    .info-label { font-size: 0.8rem; color: #6b7280; }
-    .info-value { font-size: 1rem; font-weight: 600; color: #374151; }
-    .hub-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-    }
-    .hub-card {
-      background: white;
-      border-radius: 16px;
-      padding: 2rem;
-      box-shadow: var(--card-shadow);
-      transition: all 0.3s ease;
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-      display: block;
-      border-top: 4px solid var(--primary-color);
-      position: relative;
-      overflow: hidden;
-    }
-    .hub-card:hover {
-      transform: translateY(-6px);
-      box-shadow: var(--card-hover-shadow);
-    }
-    .hub-card.record::before { background: linear-gradient(90deg, #10b981, #059669); }
-    .hub-card.records::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
-    .hub-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 4px;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-    .hub-card:hover::before { opacity: 1; }
-    .hub-card-icon {
-      width: 64px;
-      height: 64px;
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.75rem;
-      margin-bottom: 1rem;
-    }
-    .hub-card.record .hub-card-icon { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
-    .hub-card.records .hub-card-icon { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
-    .hub-card-title { font-size: 1.35rem; font-weight: 700; color: #1f2937; margin-bottom: 0.5rem; }
-    .hub-card-desc { font-size: 0.95rem; color: #6b7280; line-height: 1.5; }
-    .btn-back {
-      background: rgba(255,255,255,0.2);
+      z-index: 20;
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
       color: white;
-      border: 1px solid rgba(255,255,255,0.5);
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-weight: 600;
+      padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 1rem 0.9rem;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.22);
+    }
+
+    .header-content,
+    .main-container {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .header-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .app-title {
+      margin: 0;
+      font-size: 1.1rem;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+
+    .page-subtitle {
+      margin: 0.2rem 0 0;
+      color: rgba(255, 255, 255, 0.86);
+      font-size: 0.82rem;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .language-switcher {
+      display: inline-flex;
+      gap: 0.25rem;
+      padding: 0.18rem;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.12);
+    }
+
+    .language-btn,
+    .header-btn,
+    .add-btn {
+      min-height: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .language-btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 0.45rem 0.65rem;
+      background: transparent;
+      color: rgba(255,255,255,0.84);
+      font-weight: 900;
+    }
+
+    .language-btn.active {
+      background: rgba(255,255,255,0.94);
+      color: var(--brand-dark);
+    }
+
+    .header-btn {
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 12px;
+      padding: 0.55rem 0.72rem;
+      background: rgba(255,255,255,0.16);
+      color: white;
+      text-decoration: none;
+      font-weight: 800;
       display: inline-flex;
       align-items: center;
+      gap: 0.4rem;
+    }
+
+    .header-btn:hover { color: white; background: rgba(255,255,255,0.24); }
+
+    .main-container {
+      padding: 1rem calc(1rem + env(safe-area-inset-right, 0px)) calc(2rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px));
+    }
+
+    .panel {
+      background: white;
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,0.7);
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+
+    .baby-panel {
+      padding: 1rem;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    .baby-name {
+      font-size: 1.05rem;
+      font-weight: 900;
+      color: var(--brand-dark);
+      line-height: 1.3;
+    }
+
+    .baby-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.35rem;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 999px;
+      background: #f0fdf4;
+      color: #065f46;
+      border: 1px solid #bbf7d0;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .add-btn {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      padding: 0.72rem 0.9rem;
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+      color: white;
+      font-weight: 900;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       gap: 0.5rem;
       text-decoration: none;
-      transition: all 0.2s;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.24);
     }
-    .btn-back:hover { background: rgba(255,255,255,0.3); color: white; }
-    .footer {
+
+    .add-btn:hover { color: white; filter: brightness(1.02); }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+
+    .summary-card {
+      background: white;
+      border-radius: 16px;
+      padding: 0.85rem;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.09);
+      border-left: 5px solid var(--brand);
+    }
+
+    .summary-card .value {
+      display: block;
+      font-size: 1.45rem;
+      line-height: 1;
+      font-weight: 900;
+      color: var(--ink);
+    }
+
+    .summary-card .label {
+      margin-top: 0.35rem;
+      display: block;
+      color: var(--muted);
+      font-size: 0.66rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .schedule-header {
+      padding: 1rem 1rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+
+    .schedule-title {
+      margin: 0;
+      font-size: 1rem;
+      color: #334155;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .schedule-hint {
+      margin: 0.25rem 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      justify-content: flex-end;
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #334155;
+    }
+
+    .legend span {
+      border-radius: 999px;
+      padding: 0.22rem 0.5rem;
+      border: 1px solid var(--line);
+      background: white;
+      white-space: nowrap;
+    }
+
+    .legend .done { background: var(--done); border-color: #86efac; color: #166534; }
+    .legend .due { background: var(--due); border-color: #fcd34d; color: #92400e; }
+    .legend .late { background: var(--late); border-color: #fca5a5; color: #991b1b; }
+
+    .schedule-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .schedule-table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 0.82rem;
+    }
+
+    .schedule-table th,
+    .schedule-table td {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 0.65rem 0.7rem;
+      vertical-align: top;
+    }
+
+    .schedule-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 900;
       text-align: center;
-      padding: 1.5rem;
-      color: rgba(255,255,255,0.9);
-      font-size: 0.9rem;
-      margin-top: 2rem;
+      white-space: nowrap;
     }
-    .footer a { color: inherit; text-decoration: none; }
+
+    .schedule-table th:first-child,
+    .schedule-table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #fff;
+      border-left: 1px solid var(--line);
+      min-width: 118px;
+    }
+
+    .schedule-table thead th:first-child { background: #f1f5f9; z-index: 3; }
+
+    .age-cell {
+      font-weight: 900;
+      color: #7f1d1d;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .age-icon {
+      display: block;
+      font-size: 1.55rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .due-date {
+      margin-top: 0.35rem;
+      display: block;
+      color: #475569;
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+
+    .vaccine-stack {
+      display: grid;
+      gap: 0.38rem;
+    }
+
+    .vaccine-chip {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.42rem;
+      align-items: start;
+      border-radius: 10px;
+      padding: 0.48rem 0.55rem;
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      min-height: 44px;
+    }
+
+    .vaccine-chip.oral { background: var(--oral); border-color: #bfdbfe; }
+    .vaccine-chip.injection { background: var(--injection); border-color: #bbf7d0; }
+    .vaccine-chip.done { background: var(--done); border-color: #86efac; }
+    .vaccine-chip.due { background: var(--due); border-color: #fcd34d; }
+    .vaccine-chip.late { background: var(--late); border-color: #fca5a5; }
+
+    .vaccine-icon {
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+
+    .vaccine-name {
+      font-weight: 900;
+      color: #0f172a;
+      line-height: 1.25;
+    }
+
+    .vaccine-meta {
+      display: block;
+      color: #475569;
+      font-size: 0.7rem;
+      font-weight: 700;
+      margin-top: 0.15rem;
+      line-height: 1.25;
+    }
+
+    .disease-cell {
+      color: #334155;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .records-panel {
+      padding: 1rem;
+    }
+
+    .records-list {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: 0.75rem;
+    }
+
+    .record-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      background: #f8fafc;
+      padding: 0.72rem 0.8rem;
+    }
+
+    .record-name {
+      font-weight: 900;
+      color: #0f172a;
+      line-height: 1.3;
+    }
+
+    .record-date {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-top: 0.15rem;
+    }
+
+    .status-badge {
+      border-radius: 999px;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.7rem;
+      font-weight: 900;
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    .status-badge.done { background: var(--done); color: #166534; }
+    .status-badge.due { background: var(--due); color: #92400e; }
+    .status-badge.late { background: var(--late); color: #991b1b; }
+    .status-badge.pending { background: #f1f5f9; color: #475569; }
+
+    .state-panel {
+      padding: 1.25rem;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    @media (min-width: 768px) {
+      .baby-panel {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+      .add-btn { width: auto; min-width: 190px; }
+      .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .header-content { align-items: flex-start; }
+      .header-btn span { display: none; }
+      .language-btn { padding: 0.45rem 0.55rem; }
+      .main-container { padding-top: 0.85rem; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .schedule-header { display: block; }
+      .legend { justify-content: flex-start; margin-top: 0.7rem; }
+      .record-row { grid-template-columns: 1fr; }
+      .status-badge { justify-self: start; }
+    }
   </style>
 </head>
 <body>
-  <!-- Header (consistent with patient-care-hub) -->
-  <div class="medical-header">
+  <header class="medical-header">
     <div class="header-content">
       <div>
         <h1 class="app-title">
           <i class="fas fa-syringe me-2"></i>
           <span class="lang-text" data-en="Immunization" data-mm="ကာကွယ်ဆေးထိုးခြင်း">Immunization</span>
         </h1>
-        <p class="page-subtitle lang-text" data-en="Record vaccines & view Plan vs Actual" data-mm="ကာကွယ်ဆေးမှတ်သားပြီး အစီအစဉ် နှင့် လက်တွေ့ ကြည့်ရှုရန်">Record vaccines & view Plan vs Actual</p>
+        <p class="page-subtitle lang-text" data-en="Records, progress, and recommended dates in one place" data-mm="မှတ်တမ်း၊ တိုးတက်မှုနှင့် ထိုးရန်ရက်များကို တစ်နေရာတည်းတွင် ကြည့်ရန်">Records, progress, and recommended dates in one place</p>
       </div>
-      <a href="#" class="btn-back" onclick="goBack(); return false;">
-        <i class="fas fa-arrow-left"></i>
-        <span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
-      </a>
+      <div class="header-actions">
+        <div class="language-switcher" role="group" aria-label="Language">
+          <button type="button" class="language-btn" data-lang="en">ENG</button>
+          <button type="button" class="language-btn" data-lang="mm">MM</button>
+        </div>
+        <a href="#" class="header-btn" onclick="goBack(); return false;">
+          <i class="fas fa-arrow-left"></i>
+          <span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
+        </a>
+      </div>
     </div>
-  </div>
+  </header>
 
-  <div class="main-container">
-    <!-- Patient/Baby Info Bar -->
-    <div id="patientInfoBar" class="patient-info-bar" style="display: none;">
-      <div class="row align-items-center">
-        <div class="col-md-8">
-          <div class="patient-name mb-1" id="patientName">-</div>
-          <div class="row g-2">
-            <div class="col-auto">
-              <span class="info-label lang-text" data-en="Baby:" data-mm="ကလေး:">Baby:</span>
-              <span class="info-value ms-1" id="babyName">-</span>
-            </div>
-            <div class="col-auto">
-              <span class="info-label lang-text" data-en="Birth:" data-mm="မွေးရက်:">Birth:</span>
-              <span class="info-value ms-1" id="birthDate">-</span>
-            </div>
+  <main class="main-container">
+    <section id="loadingState" class="panel state-panel">
+      <div class="spinner-border text-success" role="status"></div>
+      <p class="mt-2 mb-0 lang-text" data-en="Loading immunization record..." data-mm="ကာကွယ်ဆေးမှတ်တမ်း ဖတ်နေသည်...">Loading immunization record...</p>
+    </section>
+
+    <section id="content" style="display:none;">
+      <section class="panel baby-panel">
+        <div>
+          <div class="baby-name" id="patientName">-</div>
+          <div class="baby-meta">
+            <span class="meta-pill"><i class="fas fa-baby"></i><span class="lang-text" data-en="Baby" data-mm="ကလေး">Baby</span>: <span id="babyName">-</span></span>
+            <span class="meta-pill"><i class="fas fa-calendar"></i><span class="lang-text" data-en="Birth" data-mm="မွေးရက်">Birth</span>: <span id="birthDate">-</span></span>
+            <span class="meta-pill"><i class="fas fa-hourglass-half"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>: <span id="currentAge">-</span></span>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Loading -->
-    <div id="loadingState" class="text-center py-5 text-white">
-      <div class="spinner-border" role="status"></div>
-      <p class="mt-2 lang-text" data-en="Loading..." data-mm="ခေတ္တစောင့်ပါ...">Loading...</p>
-    </div>
-
-    <!-- Hub Cards -->
-    <div id="hubCards" class="hub-cards" style="display: none;">
-      <a href="#" id="recordCard" class="hub-card record">
-        <div class="hub-card-icon">
+        <a id="addVaccineBtn" href="#" class="add-btn">
           <i class="fas fa-plus-circle"></i>
-        </div>
-        <h3 class="hub-card-title lang-text" data-en="Record New Vaccine" data-mm="ကာကွယ်ဆေးအသစ် မှတ်သားရန်">Record New Vaccine</h3>
-      </a>
-      <a href="#" id="recordsCard" class="hub-card records">
-        <div class="hub-card-icon">
-          <i class="fas fa-clipboard-list"></i>
-        </div>
-        <h3 class="hub-card-title lang-text" data-en="Vaccine Records" data-mm="ကာကွယ်ဆေး မှတ်တမ်းများ">Vaccine Records</h3>
-      </a>
-    </div>
-  </div>
+          <span class="lang-text" data-en="Add New Vaccine" data-mm="ကာကွယ်ဆေး အသစ်ထည့်ရန်">Add New Vaccine</span>
+        </a>
+      </section>
 
-  <footer class="footer">
-    <i class="fas fa-heart me-1"></i> MNCH App 2025 | Developed by Jhpiego Myanmar for MoH.
-    <p class="mb-0 mt-1"><a href="privacy-policy.html" target="_blank">Privacy Policy</a></p>
-  </footer>
+      <section class="summary-grid">
+        <div class="summary-card"><span class="value" id="sumGiven">0</span><span class="label lang-text" data-en="Given" data-mm="ထိုးပြီး">Given</span></div>
+        <div class="summary-card"><span class="value" id="sumDue">0</span><span class="label lang-text" data-en="Due soon" data-mm="ထိုးရန်နီး">Due soon</span></div>
+        <div class="summary-card"><span class="value" id="sumLate">0</span><span class="label lang-text" data-en="Overdue" data-mm="ရက်ကျော်">Overdue</span></div>
+        <div class="summary-card"><span class="value" id="sumTotal">0</span><span class="label lang-text" data-en="Schedule items" data-mm="အစီအစဉ်">Schedule items</span></div>
+      </section>
 
+      <section class="panel">
+        <div class="schedule-header">
+          <div>
+            <h2 class="schedule-title"><i class="fas fa-table"></i><span class="lang-text" data-en="Myanmar Routine Immunization Schedule" data-mm="မြန်မာ ပုံမှန် ကာကွယ်ဆေးထိုး၊ ဆေးတိုက်ခြင်း အစီအစဉ်">Myanmar Routine Immunization Schedule</span></h2>
+            <p class="schedule-hint lang-text" data-en="Recommended dates are calculated from birth date. Actual dates come from saved vaccine records." data-mm="ထိုးရန်ရက်များကို မွေးရက်အပေါ်မူတည်တွက်ထားပြီး လက်တွေ့ရက်များကို သိမ်းထားသောမှတ်တမ်းမှ ပြထားသည်။">Recommended dates are calculated from birth date. Actual dates come from saved vaccine records.</p>
+          </div>
+          <div class="legend">
+            <span class="done lang-text" data-en="Given" data-mm="ထိုးပြီး">Given</span>
+            <span class="due lang-text" data-en="Due soon" data-mm="ထိုးရန်နီး">Due soon</span>
+            <span class="late lang-text" data-en="Overdue" data-mm="ရက်ကျော်">Overdue</span>
+          </div>
+        </div>
+        <div class="schedule-scroll">
+          <table class="schedule-table">
+            <thead>
+              <tr>
+                <th class="lang-text" data-en="Age" data-mm="အသက်">Age</th>
+                <th class="lang-text" data-en="Vaccine / drops" data-mm="ကာကွယ်ဆေးများ">Vaccine / drops</th>
+                <th class="lang-text" data-en="Recommended date" data-mm="ထိုးရန်ရက်">Recommended date</th>
+                <th class="lang-text" data-en="Actual date" data-mm="လက်တွေ့ထိုးရက်">Actual date</th>
+                <th class="lang-text" data-en="Diseases protected" data-mm="ကာကွယ်ပေးသော ရောဂါများ">Diseases protected</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel records-panel">
+        <h2 class="schedule-title"><i class="fas fa-clipboard-list"></i><span class="lang-text" data-en="Saved Vaccine Records" data-mm="သိမ်းထားသော ကာကွယ်ဆေးမှတ်တမ်းများ">Saved Vaccine Records</span></h2>
+        <div id="recordsList" class="records-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="js/lang-apply.js"></script>
   <script>
-    let patientId = null;
-    let currentUser = null;
-    const urlParams = new URLSearchParams(window.location.search);
-    patientId = urlParams.get('patient');
+    var patientId = new URLSearchParams(window.location.search).get('patient');
+    var currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    var patientData = null;
+    var babyName = '';
+    var babyBirthDate = null;
+    var vaccineRecords = [];
+
+    var VACCINES = {
+      bcg: { name: 'BCG', mm: 'ဘီစီဂျီ', type: 'injection' },
+      hepb: { name: 'Hepatitis B', mm: 'အသည်းရောင်အသားဝါ (ဘီ)', type: 'injection' },
+      polio1: { name: 'Polio (1st)', mm: 'ပိုလီယို (ပထမ)', type: 'oral' },
+      polio2: { name: 'Polio (2nd)', mm: 'ပိုလီယို (ဒုတိယ)', type: 'oral' },
+      polio3: { name: 'Polio (3rd)', mm: 'ပိုလီယို (တတိယ)', type: 'oral' },
+      rota1: { name: 'Rota (1st)', mm: 'ရိုတာ (ပထမ)', type: 'oral' },
+      rota2: { name: 'Rota (2nd)', mm: 'ရိုတာ (ဒုတိယ)', type: 'oral' },
+      pcv1: { name: 'PCV (1st)', mm: 'ပီစီဗီ (ပထမ)', type: 'injection' },
+      pcv2: { name: 'PCV (2nd)', mm: 'ပီစီဗီ (ဒုတိယ)', type: 'injection' },
+      pcv3: { name: 'PCV (3rd)', mm: 'ပီစီဗီ (တတိယ)', type: 'injection' },
+      pentavalent1: { name: 'Pentavalent (1st)', mm: 'ငါးမျိုးစပ် (ပထမ)', type: 'injection' },
+      pentavalent2: { name: 'Pentavalent (2nd)', mm: 'ငါးမျိုးစပ် (ဒုတိယ)', type: 'injection' },
+      pentavalent3: { name: 'Pentavalent (3rd)', mm: 'ငါးမျိုးစပ် (တတိယ)', type: 'injection' },
+      pentavalent4: { name: 'Pentavalent (4th)', mm: 'ငါးမျိုးစပ် (စတုတ္ထ)', type: 'injection' },
+      polio_inj: { name: 'Polio Injection', mm: 'ပိုလီယိုထိုးဆေး', type: 'injection' },
+      mr1: { name: 'Measles-Rubella (1st)', mm: 'ဝက်သက်-ဂျိုက်သိုး (ပထမ)', type: 'injection' },
+      mr2: { name: 'Measles-Rubella (2nd)', mm: 'ဝက်သက်-ဂျိုက်သိုး (ဒုတိယ)', type: 'injection' },
+      je: { name: 'Japanese Encephalitis', mm: 'ဂျပန်ဦးနှောက်ရောင်', type: 'injection' },
+      hpv1: { name: 'HPV (1st)', mm: 'အိတ်ချ်ပီဗီ (ပထမ)', type: 'injection' },
+      hpv2: { name: 'HPV (2nd)', mm: 'အိတ်ချ်ပီဗီ (ဒုတိယ)', type: 'injection' }
+    };
+
+    var SCHEDULE = [
+      { age: 'At Birth', ageMm: 'မွေးပြီးပြီးချင်း', icon: '👶', days: 0, vaccines: ['bcg', 'hepb'], disease: 'Severe tuberculosis, Hepatitis B', diseaseMm: 'ပြင်းထန်တီဘီရောဂါ၊ အသည်းရောင်အသားဝါ (ဘီ)' },
+      { age: '2 Months', ageMm: '၂ လ', icon: '🧒', days: 60, vaccines: ['polio1', 'rota1', 'pcv1', 'pentavalent1'], disease: 'Polio paralysis, severe diarrhea, severe pneumonia, diphtheria, pertussis, tetanus, hepatitis B, meningitis/pneumonia', diseaseMm: 'ပိုလီယိုအကြောသေရောဂါ၊ ပြင်းထန်ဝမ်းပျက်ဝမ်းလျှော၊ ပြင်းထန်အဆုတ်ရောင်၊ ဆုံဆို့၊ ကြက်ညှာ၊ မေးခိုင်၊ အသည်းရောင်အသားဝါ (ဘီ)၊ ဦးနှောက်အမြှေးရောင်/အဆုတ်ရောင်' },
+      { age: '4 Months', ageMm: '၄ လ', icon: '👧', days: 120, vaccines: ['polio2', 'rota2', 'pcv2', 'polio_inj', 'pentavalent2'], disease: 'Polio paralysis, severe diarrhea, severe pneumonia, diphtheria, pertussis, tetanus, hepatitis B, meningitis/pneumonia', diseaseMm: 'ပိုလီယိုအကြောသေရောဂါ၊ ပြင်းထန်ဝမ်းပျက်ဝမ်းလျှော၊ ပြင်းထန်အဆုတ်ရောင်၊ ဆုံဆို့၊ ကြက်ညှာ၊ မေးခိုင်၊ အသည်းရောင်အသားဝါ (ဘီ)၊ ဦးနှောက်အမြှေးရောင်/အဆုတ်ရောင်' },
+      { age: '6 Months', ageMm: '၆ လ', icon: '🧒', days: 180, vaccines: ['polio3', 'pcv3', 'pentavalent3'], disease: 'Polio paralysis, severe pneumonia, diphtheria, pertussis, tetanus, hepatitis B, meningitis/pneumonia', diseaseMm: 'ပိုလီယိုအကြောသေရောဂါ၊ ပြင်းထန်အဆုတ်ရောင်၊ ဆုံဆို့၊ ကြက်ညှာ၊ မေးခိုင်၊ အသည်းရောင်အသားဝါ (ဘီ)၊ ဦးနှောက်အမြှေးရောင်/အဆုတ်ရောင်' },
+      { age: '9 Months', ageMm: '၉ လ', icon: '👦', days: 270, vaccines: ['mr1', 'je'], disease: 'Measles, Rubella, Japanese Encephalitis', diseaseMm: 'ဝက်သက်၊ ဂျိုက်သိုး၊ ဂျပန်ဦးနှောက်ရောင်' },
+      { age: '1.5 Years', ageMm: '၁ နှစ်ခွဲ', icon: '🧍', days: 540, vaccines: ['mr2', 'pentavalent4'], disease: 'Measles, Rubella, diphtheria, pertussis, tetanus, hepatitis B, meningitis/pneumonia', diseaseMm: 'ဝက်သက်၊ ဂျိုက်သိုး၊ ဆုံဆို့၊ ကြက်ညှာ၊ မေးခိုင်၊ အသည်းရောင်အသားဝါ (ဘီ)၊ ဦးနှောက်အမြှေးရောင်/အဆုတ်ရောင်' },
+      { age: '6 Years', ageMm: '၆ နှစ်', icon: '🧒', days: 2190, vaccines: ['hpv1'], disease: 'Cervical cancer', diseaseMm: 'သားအိမ်ခေါင်းကင်ဆာ' },
+      { age: '10 Years', ageMm: '၁၀ နှစ်', icon: '👧', days: 3650, vaccines: ['hpv2'], disease: 'Cervical cancer', diseaseMm: 'သားအိမ်ခေါင်းကင်ဆာ' }
+    ];
+
+    var UI = {
+      en: { noPatient: 'No patient selected.', missingBirth: 'Birth date not recorded', noRecords: 'No vaccine records saved yet.', given: 'Given', pending: 'Pending', dueSoon: 'Due soon', overdue: 'Overdue', recommended: 'Recommended', actual: 'Actual', days: 'days', months: 'months', years: 'years', other: 'Other' },
+      mm: { noPatient: 'လူနာ မရွေးထားပါ။', missingBirth: 'မွေးရက် မရှိသေးပါ', noRecords: 'ကာကွယ်ဆေး မှတ်တမ်း မရှိသေးပါ။', given: 'ထိုးပြီး', pending: 'မထိုးရသေး', dueSoon: 'ထိုးရန်နီး', overdue: 'ရက်ကျော်', recommended: 'ထိုးရန်ရက်', actual: 'လက်တွေ့', days: 'ရက်', months: 'လ', years: 'နှစ်', other: 'အခြား' }
+    };
+
+    function tr(key) {
+      var pack = UI[currentLanguage] || UI.en;
+      return pack[key] || UI.en[key] || key;
+    }
+
+    window.onAppLanguageChange = function (lang) {
+      currentLanguage = lang || localStorage.getItem('appLanguage') || 'mm';
+      renderAll();
+    };
 
     function goBack() {
-      if (patientId) {
-        window.location.href = `patient-care-hub.html?patient=${patientId}`;
-      } else {
-        window.location.href = 'list.html';
+      if (patientId) window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
+      else window.location.href = 'list.html';
+    }
+
+    function addNewVaccine() {
+      if (!patientId) return alert(tr('noPatient'));
+      window.location.href = 'vaccine-record.html?patient=' + encodeURIComponent(patientId);
+    }
+
+    function parseDate(value) {
+      if (!value) return null;
+      if (value && typeof value.toDate === 'function') return value.toDate();
+      if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+      if (value && value.seconds) return new Date(value.seconds * 1000);
+      var d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function formatDate(value) {
+      var d = parseDate(value);
+      if (!d) return '-';
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function addDays(date, days) {
+      if (!date) return null;
+      var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+
+    function ageText(birth) {
+      if (!birth) return tr('missingBirth');
+      var diff = Math.max(0, Math.floor((new Date() - birth) / 86400000));
+      if (diff < 30) return diff + ' ' + tr('days');
+      if (diff < 365) return Math.floor(diff / 30) + ' ' + tr('months');
+      return Math.floor(diff / 365) + ' ' + tr('years');
+    }
+
+    function normalizeName(name) {
+      return String(name || '').toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+    }
+
+    function buildRecordMap() {
+      var map = {};
+      Object.keys(VACCINES).forEach(function (id) {
+        map[id] = [];
+      });
+      vaccineRecords.forEach(function (record) {
+        var id = record.vaccineId || '';
+        if (!id) {
+          var normalized = normalizeName(record.vaccineName);
+          Object.keys(VACCINES).forEach(function (key) {
+            if (normalizeName(VACCINES[key].name) === normalized) id = key;
+          });
+        }
+        if (!map[id]) map[id] = [];
+        map[id].push(record);
+      });
+      Object.keys(map).forEach(function (id) {
+        map[id].sort(function (a, b) {
+          return (parseDate(b.dateGiven) || 0) - (parseDate(a.dateGiven) || 0);
+        });
+      });
+      return map;
+    }
+
+    function vaccineLabel(id) {
+      var v = VACCINES[id];
+      if (!v) return id;
+      return currentLanguage === 'mm' ? v.mm : v.name;
+    }
+
+    function statusFor(vaccineId, dueDate, recordMap) {
+      var given = recordMap[vaccineId] && recordMap[vaccineId][0];
+      if (given) return { key: 'done', label: tr('given'), actual: formatDate(given.dateGiven) };
+      if (!dueDate) return { key: 'pending', label: tr('pending'), actual: '-' };
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var due = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+      var diff = Math.floor((due - today) / 86400000);
+      if (diff < 0) return { key: 'late', label: tr('overdue'), actual: '-' };
+      if (diff <= 14) return { key: 'due', label: tr('dueSoon'), actual: '-' };
+      return { key: 'pending', label: tr('pending'), actual: '-' };
+    }
+
+    function renderAll() {
+      if (!patientData) return;
+      var recordMap = buildRecordMap();
+      document.documentElement.lang = currentLanguage === 'mm' ? 'my' : 'en';
+      document.getElementById('patientName').textContent = patientData.name || patientData.patientName || 'Patient';
+      document.getElementById('babyName').textContent = babyName || '-';
+      document.getElementById('birthDate').textContent = babyBirthDate ? formatDate(babyBirthDate) : '-';
+      document.getElementById('currentAge').textContent = ageText(babyBirthDate);
+      document.getElementById('addVaccineBtn').onclick = function (event) {
+        event.preventDefault();
+        addNewVaccine();
+      };
+
+      var tbody = document.getElementById('scheduleTableBody');
+      var counts = { done: 0, due: 0, late: 0, total: 0 };
+      tbody.innerHTML = SCHEDULE.map(function (row) {
+        var dueDate = addDays(babyBirthDate, row.days);
+        var age = currentLanguage === 'mm' ? row.ageMm : row.age;
+        var disease = currentLanguage === 'mm' ? row.diseaseMm : row.disease;
+        var vaccineHtml = row.vaccines.map(function (id) {
+          var v = VACCINES[id] || {};
+          var s = statusFor(id, dueDate, recordMap);
+          counts.total += 1;
+          if (s.key === 'done') counts.done += 1;
+          if (s.key === 'due') counts.due += 1;
+          if (s.key === 'late') counts.late += 1;
+          return '<div class="vaccine-chip ' + (v.type || '') + ' ' + s.key + '">' +
+            '<span class="vaccine-icon">' + (v.type === 'oral' ? '💧' : '💉') + '</span>' +
+            '<span><span class="vaccine-name">' + escapeHtml(vaccineLabel(id)) + '</span>' +
+            '<span class="vaccine-meta">' + escapeHtml(s.label) + '</span></span>' +
+            '</div>';
+        }).join('');
+        var actualDates = row.vaccines.map(function (id) {
+          var s = statusFor(id, dueDate, recordMap);
+          return '<div class="vaccine-meta"><strong>' + escapeHtml(vaccineLabel(id)) + ':</strong> ' + escapeHtml(s.actual) + '</div>';
+        }).join('');
+        return '<tr>' +
+          '<td class="age-cell"><span class="age-icon">' + row.icon + '</span>' + escapeHtml(age) + '<span class="due-date">' + escapeHtml(formatDate(dueDate)) + '</span></td>' +
+          '<td><div class="vaccine-stack">' + vaccineHtml + '</div></td>' +
+          '<td><span class="status-badge pending">' + escapeHtml(formatDate(dueDate)) + '</span></td>' +
+          '<td>' + actualDates + '</td>' +
+          '<td class="disease-cell">' + escapeHtml(disease) + '</td>' +
+          '</tr>';
+      }).join('');
+
+      document.getElementById('sumGiven').textContent = counts.done;
+      document.getElementById('sumDue').textContent = counts.due;
+      document.getElementById('sumLate').textContent = counts.late;
+      document.getElementById('sumTotal').textContent = counts.total;
+      renderSavedRecords();
+    }
+
+    function renderSavedRecords() {
+      var list = document.getElementById('recordsList');
+      if (!vaccineRecords.length) {
+        list.innerHTML = '<div class="text-muted fw-bold">' + escapeHtml(tr('noRecords')) + '</div>';
+        return;
+      }
+      list.innerHTML = vaccineRecords.map(function (record) {
+        var name = currentLanguage === 'mm'
+          ? (record.vaccineNameMm || record.vaccineName || '-')
+          : (record.vaccineName || record.vaccineNameMm || '-');
+        return '<div class="record-row">' +
+          '<div><div class="record-name">' + escapeHtml(name) + '</div>' +
+          '<div class="record-date">' + escapeHtml(formatDate(record.dateGiven)) + (record.notes ? ' · ' + escapeHtml(record.notes) : '') + '</div></div>' +
+          '<span class="status-badge done">' + escapeHtml(tr('given')) + '</span>' +
+          '</div>';
+      }).join('');
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function loadData() {
+      try {
+        var patientDoc = await firebase.firestore().collection('patients').doc(patientId).get();
+        if (!patientDoc.exists) {
+          document.getElementById('loadingState').innerHTML = '<p class="text-danger mb-0">Patient not found.</p>';
+          return;
+        }
+        patientData = patientDoc.data() || {};
+
+        var newbornSnap = await firebase.firestore().collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
+        if (!newbornSnap.empty) {
+          var newborn = newbornSnap.docs[0].data() || {};
+          babyName = newborn.baby_name || newborn.babyName || '';
+          babyBirthDate = parseDate(newborn.birth_time || newborn.birthTime || newborn.dateOfBirth);
+        }
+        if (!babyName || !babyBirthDate) {
+          var immediateSnap = await firebase.firestore().collection('patients').doc(patientId).collection('immediate_newborn_care').limit(1).get();
+          if (!immediateSnap.empty) {
+            var immediate = immediateSnap.docs[0].data() || {};
+            babyName = babyName || immediate.baby_name || immediate.babyName || 'Baby';
+            babyBirthDate = babyBirthDate || parseDate(immediate.birth_time || immediate.birthTime || immediate.dateOfBirth);
+          }
+        }
+
+        var vaccSnap = await firebase.firestore().collection('patients').doc(patientId).collection('vaccinations').orderBy('dateGiven', 'desc').get();
+        vaccineRecords = [];
+        vaccSnap.forEach(function (doc) {
+          vaccineRecords.push({ id: doc.id, ...(doc.data() || {}) });
+        });
+
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('content').style.display = '';
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        document.getElementById('loadingState').innerHTML = '<p class="text-danger mb-0">Error loading immunization data.</p>';
       }
     }
 
-    document.getElementById('recordCard').addEventListener('click', function(e) {
-      e.preventDefault();
-      if (patientId) {
-        window.location.href = `vaccine-record.html?patient=${patientId}`;
-      } else {
-        alert('No patient selected.');
-      }
-    });
-
-    document.getElementById('recordsCard').addEventListener('click', function(e) {
-      e.preventDefault();
-      if (patientId) {
-        window.location.href = `vaccine-records.html?patient=${patientId}`;
-      } else {
-        alert('No patient selected.');
-      }
-    });
-
-    firebase.auth().onAuthStateChanged(async function(user) {
+    firebase.auth().onAuthStateChanged(async function (user) {
+      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
       if (!user) {
         window.location.href = 'login.html';
         return;
       }
-      currentUser = user;
       if (!patientId) {
-        document.getElementById('loadingState').innerHTML = '<p class="text-white">No patient ID. <a href="list.html" class="text-white text-decoration-underline">Select a patient</a>.</p>';
+        document.getElementById('loadingState').innerHTML = '<p class="text-white mb-0">' + escapeHtml(tr('noPatient')) + '</p>';
         return;
       }
-      await loadPatientData();
+      await loadData();
     });
-
-    async function loadPatientData() {
-      try {
-        const patientDoc = await firebase.firestore().collection('patients').doc(patientId).get();
-        if (!patientDoc.exists) {
-          document.getElementById('loadingState').innerHTML = '<p class="text-danger">Patient not found.</p>';
-          return;
-        }
-        const patientData = patientDoc.data();
-        document.getElementById('patientName').textContent = patientData.name || 'Patient';
-
-        let babyName = '-';
-        let birthDate = '-';
-        const newbornSnap = await firebase.firestore().collection('patients').doc(patientId).collection('newborn_care').limit(1).get();
-        if (!newbornSnap.empty) {
-          const nb = newbornSnap.docs[0].data();
-          babyName = nb.baby_name || '-';
-          if (nb.birth_time) {
-            const t = nb.birth_time.toDate ? nb.birth_time.toDate() : new Date(nb.birth_time);
-            birthDate = t.toLocaleDateString();
-          }
-        }
-        if (babyName === '-') {
-          const incSnap = await firebase.firestore().collection('patients').doc(patientId).collection('immediate_newborn_care').limit(1).get();
-          if (!incSnap.empty) {
-            const inc = incSnap.docs[0].data();
-            babyName = inc.baby_name || 'Baby';
-          }
-        }
-
-        document.getElementById('babyName').textContent = babyName;
-        document.getElementById('birthDate').textContent = birthDate;
-        document.getElementById('patientInfoBar').style.display = 'block';
-        document.getElementById('loadingState').style.display = 'none';
-        document.getElementById('hubCards').style.display = 'grid';
-      } catch (err) {
-        console.error(err);
-        document.getElementById('loadingState').innerHTML = '<p class="text-danger">Error loading data.</p>';
-      }
-    }
   </script>
 </body>
 </html>
