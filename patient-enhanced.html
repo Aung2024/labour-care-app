@@ -3038,60 +3038,24 @@
           region: userRegion
         });
         
-        if (duplicateCheck.hasDuplicates) {
-          console.log('⚠️ Duplicate patients found:', duplicateCheck.duplicates);
-          
-          // Show duplicate warning modal
-          window.DuplicateDetector.showWarning(
-            duplicateCheck.duplicates,
-            // onLink callback - user wants to use existing patient
-            async (existingPatientId) => {
-              console.log('User chose to link to existing patient:', existingPatientId);
-              
-              // Log the decision
-              if (window.AuditLogger) {
-                await window.AuditLogger.logPatientOperation(
-                  'duplicate_linked',
-                  existingPatientId,
-                  `User chose to link to existing patient instead of creating new record. Original name: ${data.name}, phone: ${data.phone || 'N/A'}`
-                );
-              }
-              
-              // Redirect to patient care hub with existing patient
-              sessionStorage.setItem('selectedPatientId', existingPatientId);
-              window.location.href = 'patient-care-hub.html';
-            },
-            // onContinue callback - user wants to create new patient
-            async (justification) => {
-              console.log('User chose to create new patient with justification:', justification);
-              
-              // Log the decision with justification
-              if (window.AuditLogger) {
-                await window.AuditLogger.logPatientOperation(
-                  'duplicate_override',
-                  null,
-                  `User created new patient despite duplicates. Justification: ${justification}. Name: ${data.name}, phone: ${data.phone || 'N/A'}`
-                );
-              }
-              
-              // Store justification in patient data
-              data.duplicateOverrideJustification = justification;
-              
-              // Continue with patient creation (will be called again below)
-              // We'll set a flag to skip duplicate check
-              data.skipDuplicateCheck = true;
-              
-              // Trigger form submission again
-              form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-            }
-          );
-          
-          // Reset button and return (wait for user decision)
+        if (duplicateCheck.phoneMatches && duplicateCheck.phoneMatches.length) {
+          console.log('⛔ Duplicate phone found:', duplicateCheck.phoneMatches);
+          messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-ban me-2"></i>This phone number already exists for another patient. Please check the patient list instead of registering a duplicate patient.</div>';
           if (submitBtn) {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
           }
           return;
+        }
+
+        if (duplicateCheck.nameMatches && duplicateCheck.nameMatches.length) {
+          console.log('⚠️ Duplicate name found:', duplicateCheck.nameMatches);
+          alert('This name already exists, you can still register but make sure it is not the same person.');
+          await window.DuplicateDetector.logCheck('checked', {
+            name: data.name,
+            age: parseInt(data.age),
+            phone: data.phone
+          }, duplicateCheck.nameMatches, 'name_warning_continue');
         } else {
           console.log('✅ No duplicates found');
         }

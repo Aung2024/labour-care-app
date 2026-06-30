@@ -26,6 +26,7 @@
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/choice-controls.js"></script>
   <style>
@@ -219,6 +220,84 @@
     .baby-name-auto {
       background: #f8fafc;
       color: #475569;
+    }
+
+    .baby-identity-panel {
+      border: 1px solid #d1fae5;
+      border-radius: 14px;
+      padding: 1rem;
+      margin: 0.75rem 0 1rem;
+      background: #f0fdf4;
+    }
+
+    .baby-identity-row {
+      border: 1px solid #bae6fd;
+      border-radius: 12px;
+      padding: 0.85rem;
+      margin-top: 0.75rem;
+      background: #ffffff;
+    }
+
+    .baby-identity-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      color: #0369a1;
+      font-weight: 800;
+    }
+
+    .identity-lock-note {
+      display: none;
+      margin-top: 0.5rem;
+      padding: 0.65rem 0.8rem;
+      border-radius: 10px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .identity-lock-note.show {
+      display: block;
+    }
+
+    .newborn-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: rgba(15, 23, 42, 0.48);
+      backdrop-filter: blur(4px);
+    }
+
+    .newborn-modal.show {
+      display: flex;
+    }
+
+    .newborn-modal-card {
+      width: min(92vw, 420px);
+      background: #ffffff;
+      border-radius: 22px;
+      padding: 1.25rem;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    }
+
+    .newborn-modal-title {
+      color: #065f46;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+    }
+
+    .newborn-modal-actions {
+      display: flex;
+      gap: 0.65rem;
+      justify-content: flex-end;
+      margin-top: 1rem;
     }
 
     .success-toast {
@@ -530,6 +609,29 @@
           </div>
         </div>
 
+        <div class="baby-identity-panel">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+              <label for="pregnancy_type" class="form-label">
+                <span class="lang-text" data-en="Pregnancy Type" data-mm="ကိုယ်ဝန်အမျိုးအစား">Pregnancy Type</span>
+              </label>
+              <select class="form-control" id="pregnancy_type" name="pregnancy_type" onchange="handleNewbornPregnancyTypeChange()">
+                <option value="single" data-en="Single" data-mm="တစ်ယောက်">Single</option>
+                <option value="twins" data-en="Twins" data-mm="အမွှာ">Twins</option>
+              </select>
+            </div>
+            <div class="col-md-6 text-md-end">
+              <button type="button" id="addBabyBtn" class="btn btn-outline-primary" style="display:none; min-height:44px;" onclick="addNewbornBabyRow()">
+                <i class="fas fa-plus me-2"></i><span class="lang-text" data-en="Add baby" data-mm="ကလေး ထည့်ရန်">Add baby</span>
+              </button>
+            </div>
+          </div>
+          <div id="babyIdentityRows"></div>
+          <div id="identityLockNote" class="identity-lock-note">
+            <i class="fas fa-lock me-2"></i><span class="lang-text" data-en="Delivery identity fields are locked after the first newborn visit." data-mm="ပထမအကြိမ် မွေးကင်းစကလေးစောင့်ရှောက်မှု သိမ်းပြီးပါက မွေးဖွားမှုအချက်အလက်များကို ပြင်ဆင်၍မရပါ။">Delivery identity fields are locked after the first newborn visit.</span>
+          </div>
+        </div>
+
         <div class="row g-3 mb-3">
           <div class="col-md-6">
             <label for="birth_time" class="form-label">
@@ -699,24 +801,10 @@
             <span class="lang-text" data-en="Immunization" data-mm="ကာကွယ်ဆေးထိုးခြင်း">Immunization</span>
           </label>
           <div class="grouped-field">
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="vitamin_k" name="vitamin_k" value="yes">
-              <label class="form-check-label" for="vitamin_k">
-                <span class="lang-text" data-en="Vitamin K" data-mm="ဗီတာမင်ကေ">Vitamin K</span>
-              </label>
-            </div>
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="hepatitis_b" name="hepatitis_b" value="yes">
-              <label class="form-check-label" for="hepatitis_b">
-                <span class="lang-text" data-en="Hepatitis B" data-mm="အသည်းရောင်အသားဝါ (ဘီ)">Hepatitis B</span>
-              </label>
-            </div>
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="bcg" name="bcg" value="yes">
-              <label class="form-check-label" for="bcg">
-                <span class="lang-text" data-en="BCG" data-mm="ဘီစီဂျီ">BCG</span>
-              </label>
-            </div>
+            <button type="button" class="btn btn-outline-success" style="min-height:44px;" onclick="openQuickVaccineModal()">
+              <i class="fas fa-syringe me-2"></i><span class="lang-text" data-en="Add Immunization Record" data-mm="ကာကွယ်ဆေးမှတ်တမ်း ထည့်ရန်">Add Immunization Record</span>
+            </button>
+            <div id="legacyImmunizationNote" class="form-hint mt-2"></div>
           </div>
         </div>
 
@@ -1047,6 +1135,43 @@
     </div>
   </div>
 
+  <div id="quickVaccineModal" class="newborn-modal" role="dialog" aria-modal="true" aria-labelledby="quickVaccineTitle" onclick="handleQuickVaccineBackdrop(event)">
+    <div class="newborn-modal-card">
+      <h4 id="quickVaccineTitle" class="newborn-modal-title lang-text" data-en="Add Immunization Record" data-mm="ကာကွယ်ဆေးမှတ်တမ်း ထည့်ရန်">Add Immunization Record</h4>
+      <p class="form-hint lang-text" data-en="This saves directly to the Immunization History page." data-mm="ဤမှတ်တမ်းသည် ကာကွယ်ဆေးမှတ်တမ်း စာမျက်နှာသို့ တိုက်ရိုက်သိမ်းမည်။">This saves directly to the Immunization History page.</p>
+      <div class="mb-3">
+        <label for="quickVaccineName" class="form-label lang-text" data-en="Vaccine name" data-mm="ကာကွယ်ဆေးအမည်">Vaccine name</label>
+        <select id="quickVaccineName" class="form-control">
+          <option value="vitamin_k" data-name="Vitamin K" data-mm="ဗီတာမင်ကေ">Vitamin K</option>
+          <option value="hep_b_birth" data-name="Hepatitis B" data-mm="အသည်းရောင်အသားဝါ (ဘီ)">Hepatitis B</option>
+          <option value="bcg" data-name="BCG" data-mm="ဘီစီဂျီ">BCG</option>
+          <option value="opv0" data-name="OPV-0" data-mm="ပိုလီယို (မွေးကင်းစ)">OPV-0</option>
+          <option value="other" data-name="Other" data-mm="အခြား">Other</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="quickVaccineOtherName" class="form-label lang-text" data-en="Other vaccine name" data-mm="အခြား ကာကွယ်ဆေးအမည်">Other vaccine name</label>
+        <input id="quickVaccineOtherName" type="text" class="form-control">
+      </div>
+      <div class="mb-3">
+        <label for="quickVaccineDate" class="form-label lang-text" data-en="Date given" data-mm="ထိုးသည့်ရက်">Date given</label>
+        <input id="quickVaccineDate" type="date" class="form-control">
+      </div>
+      <div class="mb-3">
+        <label for="quickVaccineNotes" class="form-label lang-text" data-en="Note" data-mm="မှတ်ချက်">Note</label>
+        <textarea id="quickVaccineNotes" class="form-control" rows="2"></textarea>
+      </div>
+      <div class="newborn-modal-actions">
+        <button type="button" class="btn btn-outline-secondary" onclick="closeQuickVaccineModal()">
+          <span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
+        </button>
+        <button type="button" class="btn btn-success" onclick="saveQuickVaccineRecord()">
+          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save to Immunization History" data-mm="ကာကွယ်ဆေးမှတ်တမ်းသို့ သိမ်းရန်">Save to Immunization History</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <footer class="footer" style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); color: #374151; text-align: center; padding: 2rem; margin-top: 2rem; border-radius: 20px; box-shadow: var(--card-shadow);">
     <div class="container">
       <p class="mb-0">
@@ -1070,12 +1195,14 @@
     let newbornCareVisits = [];
     let currentNewbornDocId = null;
     let currentKmcEvaluation = null;
+    let currentKmcBabyEvaluations = [];
     let latestAncForKmc = null;
     const newbornUrlParams = new URLSearchParams(window.location.search);
     let editVisitId = newbornUrlParams.get('editVisitId');
     let editApprovalId = newbornUrlParams.get('editApprovalId');
     let isEditMode = !!editVisitId;
     const isNewKmcVisit = newbornUrlParams.get('kmcVisit') === 'next';
+    const targetKmcBabyIndex = parseInt(newbornUrlParams.get('babyIndex'), 10) || null;
 
     function normalizeNewbornCareLayout() {
       const form = document.getElementById('newbornCareForm');
@@ -1597,24 +1724,50 @@
       if (!window.KmcUtils || !currentPatient) return null;
       const birthTime = document.getElementById('birth_time')?.value || null;
       const weight = document.getElementById('body_weight_gram')?.value || null;
+      const babyRows = collectBabyIdentityRows();
+      const babyCare = {
+        baby_name: document.getElementById('baby_name')?.value,
+        birth_time: birthTime,
+        body_weight_gram: weight,
+        babies: babyRows
+      };
+      currentKmcBabyEvaluations = KmcUtils.evaluateKmcEligibilityForBabies(
+        currentPatient,
+        babyCare,
+        null,
+        latestAncForKmc
+      );
       currentKmcEvaluation = KmcUtils.evaluateKmcEligibility(
         currentPatient,
         { birth_time: birthTime, body_weight_gram: weight, baby_name: document.getElementById('baby_name')?.value },
         null,
         latestAncForKmc
       );
-      const priorDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData));
-      const shouldShow = !!(currentKmcEvaluation && currentKmcEvaluation.eligible) || !!priorDecision;
+      const eligibleBabies = currentKmcBabyEvaluations.filter(function (item) {
+        const babyIndex = parseInt(item.babyIndex, 10) || 1;
+        return item.eligible && (!targetKmcBabyIndex || babyIndex === targetKmcBabyIndex);
+      });
+      const priorDecision = targetKmcBabyIndex
+        ? KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), targetKmcBabyIndex)
+        : KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData));
+      const shouldShow = eligibleBabies.length > 0 || !!priorDecision;
       const section = document.getElementById('kmcCareSection');
       if (section) section.style.display = 'block';
       const decisionWrap = document.getElementById('kmcDecisionWrap');
       if (decisionWrap) decisionWrap.style.display = shouldShow ? '' : 'none';
       const alertEl = document.getElementById('kmcEligibilityAlert');
-      if (alertEl && currentKmcEvaluation && currentKmcEvaluation.eligible) {
-        const reasonText = KmcUtils.reasonLabels(currentKmcEvaluation.reasons, currentLanguage).join(', ');
+      if (alertEl && eligibleBabies.length) {
+        const reasonSet = new Set();
+        eligibleBabies.forEach(function (item) {
+          (item.reasons || []).forEach(function (reason) { reasonSet.add(reason); });
+        });
+        const reasonText = KmcUtils.reasonLabels(Array.from(reasonSet), currentLanguage).join(', ');
+        const babyText = eligibleBabies.map(function (item) {
+          return (currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + item.babyIndex;
+        }).join(', ');
         alertEl.textContent = currentLanguage === 'mm'
-          ? 'KMC ဖြစ်နိုင်သောကလေး: ' + reasonText + '။ KMC Yes/No အတည်ပြုပါ။'
-          : 'Potential KMC baby: ' + reasonText + '. Please confirm KMC Yes/No.';
+          ? 'KMC ဖြစ်နိုင်သောကလေး: ' + babyText + ' (' + reasonText + ')။ KMC Yes/No အတည်ပြုပါ။'
+          : 'Potential KMC baby: ' + babyText + ' (' + reasonText + '). Please confirm KMC Yes/No.';
       } else if (alertEl && priorDecision) {
         alertEl.textContent = 'Previous KMC decision found for this baby.';
       } else if (alertEl && currentKmcEvaluation && (birthTime || weight)) {
@@ -1674,10 +1827,225 @@
         coords.map(function (p) { return '<circle cx="' + p.x + '" cy="' + p.y + '" r="4" fill="' + (gain ? '#10b981' : '#ef4444') + '" />'; }).join('');
     }
 
+    function normalizeNewbornOutcome(value) {
+      if (value === 'dead') return 'death';
+      return value || '';
+    }
+
+    function legacyOutcomeFromBaby(value) {
+      return value === 'death' ? 'dead' : value;
+    }
+
+    function hasSavedFirstNewbornVisit() {
+      return (newbornCareVisits || []).some(function (item) {
+        const data = getVisitData(item);
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+      });
+    }
+
+    function collectBabyIdentityRows() {
+      return Array.from(document.querySelectorAll('#babyIdentityRows [data-baby-row]')).map(function (row, index) {
+        return {
+          babyIndex: index + 1,
+          outcome: row.querySelector('[data-field="outcome"]')?.value || '',
+          gender: row.querySelector('[data-field="gender"]')?.value || '',
+          birthWeightGram: row.querySelector('[data-field="birthWeightGram"]')?.value ? parseFloat(row.querySelector('[data-field="birthWeightGram"]').value) : null,
+          birthTime: row.querySelector('[data-field="birthTime"]')?.value || ''
+        };
+      });
+    }
+
+    function syncFirstBabyToLegacyFields() {
+      const first = collectBabyIdentityRows()[0] || {};
+      if (first.gender) document.getElementById('gender').value = first.gender;
+      if (first.birthTime) document.getElementById('birth_time').value = first.birthTime;
+      if (first.birthWeightGram) document.getElementById('body_weight_gram').value = first.birthWeightGram;
+      if (first.outcome && document.getElementById('outcome_' + legacyOutcomeFromBaby(first.outcome))) {
+        document.getElementById('outcome_' + legacyOutcomeFromBaby(first.outcome)).checked = true;
+        toggleOutcomeFollowup();
+      }
+      evaluateKmcSection();
+      renderWeightTrend();
+    }
+
+    function renderBabyIdentityRows(babies, locked) {
+      const container = document.getElementById('babyIdentityRows');
+      if (!container) return;
+      const pregnancyType = document.getElementById('pregnancy_type')?.value || 'single';
+      const minRows = pregnancyType === 'twins' ? 2 : 1;
+      const rows = Array.isArray(babies) && babies.length ? babies.slice() : DeliveryNotesUtils.defaultBabies(minRows);
+      while (rows.length < minRows) rows.push(DeliveryNotesUtils.normalizeBaby({}, rows.length));
+      container.innerHTML = rows.map(function (baby, index) {
+        const canRemove = pregnancyType === 'twins' && rows.length > 2 && !locked;
+        const disabled = locked ? 'disabled' : '';
+        return `
+          <div class="baby-identity-row" data-baby-row>
+            <div class="baby-identity-header">
+              <span>${currentLanguage === 'en' ? 'Baby' : 'ကလေး'} ${index + 1}</span>
+              ${canRemove ? '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNewbornBabyRow(' + index + ')"><i class="fas fa-trash"></i></button>' : ''}
+            </div>
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Outcome" data-mm="ကလေးအခြေအနေ">Outcome</label>
+                <select class="form-control" data-field="outcome" onchange="syncFirstBabyToLegacyFields()" ${disabled}>
+                  <option value="">-</option>
+                  <option value="alive" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
+                  <option value="death" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
+                  <option value="stillbirth" ${baby.outcome === 'stillbirth' ? 'selected' : ''}>Stillbirth</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</label>
+                <select class="form-control" data-field="gender" onchange="syncFirstBabyToLegacyFields()" ${disabled}>
+                  <option value="">-</option>
+                  <option value="male" ${baby.gender === 'male' ? 'selected' : ''}>M</option>
+                  <option value="female" ${baby.gender === 'female' ? 'selected' : ''}>F</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Birth weight (g)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Birth weight (g)</label>
+                <input type="number" min="0" step="0.1" class="form-control" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}" oninput="syncFirstBabyToLegacyFields()" ${disabled}>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
+                <input type="datetime-local" class="form-control" data-field="birthTime" value="${baby.birthTime || ''}" oninput="syncFirstBabyToLegacyFields()" ${disabled}>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      const addBtn = document.getElementById('addBabyBtn');
+      if (addBtn) addBtn.style.display = pregnancyType === 'twins' && !locked ? '' : 'none';
+      const note = document.getElementById('identityLockNote');
+      if (note) note.classList.toggle('show', !!locked);
+      if (window.applyLanguage) window.applyLanguage(currentLanguage);
+      syncFirstBabyToLegacyFields();
+    }
+
+    function handleNewbornPregnancyTypeChange() {
+      const locked = hasSavedFirstNewbornVisit() && !isEditMode;
+      const type = document.getElementById('pregnancy_type').value || 'single';
+      const current = collectBabyIdentityRows();
+      renderBabyIdentityRows(type === 'twins' ? current : current.slice(0, 1), locked);
+    }
+
+    function addNewbornBabyRow() {
+      const babies = collectBabyIdentityRows();
+      babies.push(DeliveryNotesUtils.normalizeBaby({}, babies.length));
+      renderBabyIdentityRows(babies, false);
+    }
+
+    function removeNewbornBabyRow(index) {
+      const babies = collectBabyIdentityRows();
+      babies.splice(index, 1);
+      renderBabyIdentityRows(babies, false);
+    }
+
+    async function preloadDeliveryNotesIntoNewbornForm() {
+      if (!patientId || !window.DeliveryNotesUtils) return;
+      const existingFirst = sortedNewbornVisits().find(function (item) {
+        const data = getVisitData(item);
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+      });
+      const locked = hasSavedFirstNewbornVisit() && !isEditMode;
+      let source = null;
+      const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+      if (notes) {
+        source = DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
+      } else if (existingFirst) {
+        source = getVisitData(existingFirst);
+        await DeliveryNotesUtils.syncFromNewbornIfMissing(patientId, source, currentUser && currentUser.uid);
+      }
+      if (!source) {
+        renderBabyIdentityRows(DeliveryNotesUtils.defaultBabies(1), false);
+        return;
+      }
+      document.getElementById('pregnancy_type').value = source.pregnancy_type || (source.babies && source.babies.length > 1 ? 'twins' : 'single');
+      if (source.birthplace) document.getElementById('birthplace').value = source.birthplace;
+      if (source.mode_of_delivery) document.getElementById('mode_of_delivery').value = source.mode_of_delivery;
+      renderBabyIdentityRows(source.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(source).deliveryDetails.babies, locked);
+      applyIdentityFieldLock(locked);
+    }
+
+    function applyIdentityFieldLock(locked) {
+      ['pregnancy_type', 'gender', 'birth_time', 'body_weight_gram', 'birthplace', 'mode_of_delivery'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (locked) el.setAttribute('disabled', 'disabled');
+        else el.removeAttribute('disabled');
+      });
+      const nowBtn = document.getElementById('birthTimeNowBtn');
+      if (nowBtn) nowBtn.disabled = !!locked;
+      document.querySelectorAll('input[name="outcome"]').forEach(function (el) {
+        el.disabled = !!locked;
+      });
+    }
+
+    function openQuickVaccineModal() {
+      const modal = document.getElementById('quickVaccineModal');
+      if (!modal) return;
+      document.getElementById('quickVaccineDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('quickVaccineNotes').value = '';
+      document.getElementById('quickVaccineOtherName').value = '';
+      modal.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeQuickVaccineModal() {
+      const modal = document.getElementById('quickVaccineModal');
+      if (!modal) return;
+      modal.classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    function handleQuickVaccineBackdrop(event) {
+      if (event.target && event.target.id === 'quickVaccineModal') closeQuickVaccineModal();
+    }
+
+    async function saveQuickVaccineRecord() {
+      if (!patientId || !currentUser) {
+        alert(currentLanguage === 'mm' ? 'လူနာ သို့မဟုတ် အသုံးပြုသူ မတွေ့ပါ။' : 'Patient or user not found.');
+        return;
+      }
+      const select = document.getElementById('quickVaccineName');
+      const selected = select.options[select.selectedIndex];
+      const dateGiven = document.getElementById('quickVaccineDate').value;
+      const otherName = document.getElementById('quickVaccineOtherName').value.trim();
+      if (!dateGiven) {
+        alert(currentLanguage === 'mm' ? 'ထိုးသည့်ရက် ထည့်ပါ။' : 'Please enter date given.');
+        return;
+      }
+      if (select.value === 'other' && !otherName) {
+        alert(currentLanguage === 'mm' ? 'အခြား ကာကွယ်ဆေးအမည် ထည့်ပါ။' : 'Please enter the vaccine name.');
+        return;
+      }
+      const vaccineName = select.value === 'other' ? otherName : (selected.getAttribute('data-name') || selected.textContent);
+      const vaccineNameMm = select.value === 'other' ? otherName : (selected.getAttribute('data-mm') || vaccineName);
+      const payload = {
+        vaccineId: select.value,
+        vaccineName: vaccineName,
+        vaccineNameMm: vaccineNameMm,
+        type: 'newborn_quick',
+        dateGiven: dateGiven,
+        notes: document.getElementById('quickVaccineNotes').value.trim() || null,
+        recordedBy: currentUser.uid,
+        recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      try {
+        await firebase.firestore().collection('patients').doc(patientId).collection('vaccinations').add(payload);
+        closeQuickVaccineModal();
+        alert(currentLanguage === 'mm' ? 'ကာကွယ်ဆေးမှတ်တမ်း သိမ်းပြီးပါပြီ။' : 'Immunization record saved.');
+      } catch (error) {
+        console.error('Error saving quick vaccine record:', error);
+        alert(currentLanguage === 'mm' ? 'ကာကွယ်ဆေးမှတ်တမ်း သိမ်းမရပါ။' : 'Could not save immunization record.');
+      }
+    }
+
     function populateNewbornCareFields(data) {
       data = data || {};
       if (data.baby_name) document.getElementById('baby_name').value = data.baby_name;
       else applyAutoBabyName();
+      if (data.pregnancy_type) document.getElementById('pregnancy_type').value = data.pregnancy_type;
       if (data.gender) document.getElementById('gender').value = data.gender;
       if (data.birth_time) {
         document.getElementById('birth_time').value = data.birth_time;
@@ -1711,9 +2079,15 @@
       }
 
       if (data.anatomy_abnormalities) document.getElementById('anatomy_abnormalities').checked = true;
-      if (data.vitamin_k) document.getElementById('vitamin_k').checked = true;
-      if (data.hepatitis_b) document.getElementById('hepatitis_b').checked = true;
-      if (data.bcg) document.getElementById('bcg').checked = true;
+      const legacyImmunization = [
+        data.vitamin_k ? 'Vitamin K' : '',
+        data.hepatitis_b ? 'Hepatitis B' : '',
+        data.bcg ? 'BCG' : ''
+      ].filter(Boolean).join(', ');
+      const legacyNote = document.getElementById('legacyImmunizationNote');
+      if (legacyNote && legacyImmunization) {
+        legacyNote.textContent = (currentLanguage === 'en' ? 'Historical newborn record: ' : 'ယခင် newborn မှတ်တမ်း: ') + legacyImmunization;
+      }
       if (data.exclusive_breastfeeding_on_demand) document.getElementById('exclusive_breastfeeding_on_demand').checked = true;
 
       (data.difficult_breathing_signs || []).forEach(sign => {
@@ -1745,6 +2119,8 @@
       if (data.feeding_type) document.getElementById('feeding_type').value = data.feeding_type;
       if (data.feeding_method) document.getElementById('feeding_method').value = data.feeding_method;
       loadNewbornDangerSigns(data.danger_signs);
+      renderBabyIdentityRows(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, hasSavedFirstNewbornVisit() && !isEditMode);
+      applyIdentityFieldLock(hasSavedFirstNewbornVisit() && !isEditMode);
     }
 
     async function loadExistingNewbornCareData() {
@@ -1796,7 +2172,11 @@
           await applySharedDeliveryAnchor();
         }
 
+        if (!isEditMode) {
+          await preloadDeliveryNotesIntoNewbornForm();
+        }
         applyBirthTimeLock();
+        applyIdentityFieldLock(hasSavedFirstNewbornVisit() && !isEditMode);
         updateNewbornVisitSchedule();
         checkTemperatureAlert();
         checkHeartRateAlert();
@@ -1838,8 +2218,20 @@
       }
 
       const kmcEval = evaluateKmcSection();
-      const priorKmcDecision = window.KmcUtils ? KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData)) : null;
-      const potentialKmc = !!((kmcEval && kmcEval.eligible) || (priorKmcDecision && priorKmcDecision.potential_kmc));
+      const priorKmcDecision = window.KmcUtils
+        ? (targetKmcBabyIndex
+          ? KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), targetKmcBabyIndex)
+          : KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData)))
+        : null;
+      const eligibleBabyEvaluations = (currentKmcBabyEvaluations || []).filter(function (item) {
+        const babyIndex = parseInt(item.babyIndex, 10) || 1;
+        return item.eligible && (!targetKmcBabyIndex || babyIndex === targetKmcBabyIndex);
+      });
+      const kmcReasonSet = new Set();
+      eligibleBabyEvaluations.forEach(function (item) {
+        (item.reasons || []).forEach(function (reason) { kmcReasonSet.add(reason); });
+      });
+      const potentialKmc = !!(eligibleBabyEvaluations.length || (kmcEval && kmcEval.eligible) || (priorKmcDecision && priorKmcDecision.potential_kmc));
       const kmcSelected = getSelectedKmcValue();
       if (potentialKmc && !kmcSelected) {
         alert('This baby is potential KMC. Please select KMC Yes or No.');
@@ -1856,6 +2248,27 @@
       }
       
       try {
+        syncFirstBabyToLegacyFields();
+        const babyRows = collectBabyIdentityRows();
+        const kmcBabies = babyRows.map(function (baby) {
+          const evaluation = (currentKmcBabyEvaluations || []).find(function (item) {
+            return (parseInt(item.babyIndex, 10) || 1) === (parseInt(baby.babyIndex, 10) || 1);
+          }) || {};
+          const rowBabyIndex = parseInt(baby.babyIndex, 10) || 1;
+          const isEligible = !!evaluation.eligible && (!targetKmcBabyIndex || rowBabyIndex === targetKmcBabyIndex);
+          return {
+            babyIndex: baby.babyIndex,
+            babyName: baby.babyName || ((currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + baby.babyIndex),
+            potential_kmc: isEligible,
+            kmc_eligible_reasons: isEligible ? (evaluation.reasons || []) : [],
+            kmc_selected: isEligible ? kmcSelected : 'no',
+            kmc_no_category: isEligible && kmcSelected === 'no' ? document.getElementById('kmc_no_category').value || null : null,
+            kmc_no_reason: isEligible && kmcSelected === 'no' ? document.getElementById('kmc_no_reason').value || null : null,
+            discharge_date: isEligible && kmcSelected === 'yes' ? document.getElementById('discharge_date').value || null : null,
+            kmc_hours_per_day: isEligible && kmcSelected === 'yes' && document.getElementById('kmc_hours_per_day').value ? parseFloat(document.getElementById('kmc_hours_per_day').value) : null,
+            kmc_total_hours: isEligible && kmcSelected === 'yes' && document.getElementById('kmc_total_hours').value ? parseFloat(document.getElementById('kmc_total_hours').value) : null
+          };
+        });
         // Collect difficult breathing signs
         const difficultBreathingSigns = [];
         document.querySelectorAll('input[name="difficult_breathing_signs"]:checked').forEach(cb => {
@@ -1870,6 +2283,9 @@
         
         const formData = {
           baby_name: generateBabyName(currentPatient && currentPatient.name),
+          pregnancy_type: document.getElementById('pregnancy_type').value || 'single',
+          baby_count: babyRows.length || 1,
+          babies: babyRows,
           gender: document.getElementById('gender').value || null,
           birth_time: document.getElementById('birth_time').value || null,
           visit_number: parseInt(document.getElementById('visit_number').value, 10) || 1,
@@ -1889,9 +2305,6 @@
           eye_care_status: document.getElementById('eye_care_status').value || null,
           cord_care: document.querySelector('input[name="cord_care"]:checked')?.value || null,
           anatomy_abnormalities: document.getElementById('anatomy_abnormalities').checked,
-          vitamin_k: document.getElementById('vitamin_k').checked,
-          hepatitis_b: document.getElementById('hepatitis_b').checked,
-          bcg: document.getElementById('bcg').checked,
           exclusive_breastfeeding_on_demand: document.getElementById('exclusive_breastfeeding_on_demand').checked,
           follow_up_appointment_date: document.getElementById('follow_up_appointment_date').value || null,
           follow_up_manual_override: document.getElementById('followUpManualOverride').checked,
@@ -1901,7 +2314,8 @@
           cause_of_death: document.getElementById('cause_of_death').value || null,
           visitDate: new Date().toISOString().split('T')[0],
           potential_kmc: potentialKmc,
-          kmc_eligible_reasons: potentialKmc ? kmcEval.reasons : null,
+          kmc_eligible_reasons: potentialKmc ? Array.from(kmcReasonSet) : null,
+          kmc_babies: kmcBabies,
           kmc_selected: potentialKmc ? kmcSelected : (kmcSelected || null),
           kmc_no_category: kmcSelected === 'no' ? document.getElementById('kmc_no_category').value || null : null,
           kmc_no_reason: kmcSelected === 'no' ? document.getElementById('kmc_no_reason').value || null : null,
@@ -1975,6 +2389,14 @@
 
             if (cloudData.birth_time && window.BirthDeliveryAnchor) {
               await BirthDeliveryAnchor.syncDatetimeToNewbornCare(patientId, cloudData.birth_time);
+            }
+
+            if ((parseInt(cloudData.visit_number, 10) || 1) === 1 && window.DeliveryNotesUtils) {
+              await DeliveryNotesUtils.saveDeliveryNotes(
+                patientId,
+                DeliveryNotesUtils.deliveryNotesFromNewborn(cloudData),
+                currentUser.uid
+              );
             }
 
             return { cloudId };

@@ -417,6 +417,7 @@
     let newbornCareData = null;
     let newbornCareVisits = [];
     let kmcActions = [];
+    let vaccinationRecords = [];
     let reportDb;
     let reportLang = localStorage.getItem('appLanguage') || 'mm';
 
@@ -630,6 +631,23 @@
         }
 
         try {
+          const vaccinationSnap = await reportDb.collection("patients")
+            .doc(patientId)
+            .collection("vaccinations")
+            .get();
+          vaccinationRecords = [];
+          vaccinationSnap.forEach(function (doc) {
+            vaccinationRecords.push(doc.data() || {});
+          });
+          vaccinationRecords.sort(function (a, b) {
+            return String(a.dateGiven || '').localeCompare(String(b.dateGiven || ''));
+          });
+        } catch (error) {
+          console.log("No vaccination records:", error);
+          vaccinationRecords = [];
+        }
+
+        try {
           const actionSnap = await reportDb.collection("patients")
             .doc(patientId)
             .collection("kmc_actions")
@@ -786,6 +804,31 @@
 
     function renderKmcReportSection() {
       if (!newbornCareVisits.length || !window.KmcUtils) return '';
+      const latestWithBabyKmc = newbornCareVisits.slice().reverse().find(function (v) {
+        return Array.isArray(v.kmc_babies) && v.kmc_babies.length;
+      });
+      if (latestWithBabyKmc) {
+        let html = '<div class="treatment-item mb-3">';
+        html += '<div class="treatment-header">KMC Tracking</div>';
+        html += '<div class="treatment-content">';
+        html += '<div style="overflow-x:auto;"><table class="table table-sm table-bordered mb-0"><thead><tr>' +
+          '<th>Baby</th><th>Potential KMC</th><th>Reason</th><th>Decision</th><th>Discharge</th><th>Completion</th></tr></thead><tbody>';
+        latestWithBabyKmc.kmc_babies.forEach(function (baby) {
+          const babyIndex = parseInt(baby.babyIndex || baby.baby_index, 10) || 1;
+          const outcome = KmcUtils.getCompletionOutcome({ babyIndex: babyIndex, kmcActions: kmcActions });
+          html += '<tr>' +
+            '<td>' + escapeHtml(baby.babyName || ('Baby ' + babyIndex)) + '</td>' +
+            '<td>' + escapeHtml(baby.potential_kmc ? t('yes') : t('no')) + '</td>' +
+            '<td>' + escapeHtml(KmcUtils.reasonLabels(baby.kmc_eligible_reasons || [], getReportLang()).join(', ') || t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(baby.kmc_selected ? String(baby.kmc_selected).toUpperCase() : t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(baby.discharge_date || t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(outcome ? (getReportLang() === 'mm' ? outcome.labelMm : outcome.labelEn) : t('notRecorded')) + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+        html += '</div></div>';
+        return html;
+      }
       const allVisits = getNormalizedNewbornVisitRows();
       const latestDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
       const potential = newbornCareVisits.some(function (v) { return !!v.potential_kmc; });
@@ -939,10 +982,19 @@
         html += '<p><strong>' + t('anatomyAbnormalities') + '</strong> ' + t('anatomyPresent') + '</p>';
       }
 
-      const immunizations = [];
-      if (newbornCareData.vitamin_k) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'vitamin_k'));
-      if (newbornCareData.hepatitis_b) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'hepatitis_b'));
-      if (newbornCareData.bcg) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'bcg'));
+      const immunizations = vaccinationRecords.length
+        ? vaccinationRecords.map(function (record) {
+          const name = getReportLang() === 'mm'
+            ? (record.vaccineNameMm || record.vaccineName || record.vaccineId || '')
+            : (record.vaccineName || record.vaccineNameMm || record.vaccineId || '');
+          return escapeHtml(name) + (record.dateGiven ? ' (' + escapeHtml(record.dateGiven) + ')' : '');
+        })
+        : [];
+      if (!immunizations.length) {
+        if (newbornCareData.vitamin_k) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'vitamin_k'));
+        if (newbornCareData.hepatitis_b) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'hepatitis_b'));
+        if (newbornCareData.bcg) immunizations.push(i18nEntry(IMMUNIZATION_I18N, 'bcg'));
+      }
       if (immunizations.length > 0) {
         html += '<p><strong>' + t('immunization') + '</strong> ' + immunizations.join(', ') + '</p>';
       }

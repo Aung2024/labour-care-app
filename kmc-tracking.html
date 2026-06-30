@@ -630,6 +630,10 @@
         escapeHtml(label) + '</span>';
     }
 
+    function rowKey(row) {
+      return String((row && row.patient && row.patient.id) || '') + '::' + String((row && row.babyIndex) || 1);
+    }
+
     function statusTrackHtml(completedCount, row) {
       var totalDots = Math.max(6, Math.min(10, (completedCount || 0) + 1));
       var status = rowTrackingStatus(row);
@@ -645,8 +649,8 @@
       }
       var due = row && row.nextDueDate ? row.nextDueDate : null;
       var nextText = tr('nextDue') + ': ' + (due || tr('pendingDischargeDate'));
-      var pid = row && row.patient ? (row.patient.id || '') : '';
-      return '<button type="button" class="kmc-status-track-btn" onclick="event.stopPropagation(); showKmcVisitStatusDetails(\'' + escapeHtml(pid) + '\')">' +
+      var key = rowKey(row);
+      return '<button type="button" class="kmc-status-track-btn" onclick="event.stopPropagation(); showKmcVisitStatusDetails(\'' + escapeHtml(key) + '\')">' +
         '<span class="hrt-status-track">' + dots.join('') + '</span>' +
         '<div class="visit-schedule-hint">' + escapeHtml(nextText) + '</div>' +
         '</button>';
@@ -765,8 +769,8 @@
         '</div>';
     }
 
-    function showKmcVisitStatusDetails(patientId) {
-      var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId; });
+    function showKmcVisitStatusDetails(key) {
+      var row = (window._kmcRows || []).find(function (r) { return rowKey(r) === key; });
       if (!row) return;
       var status = rowTrackingStatus(row);
       var daysLate = KmcUtils.getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
@@ -863,12 +867,13 @@
     }
 
     function kmcToolsHtml(patientId, row) {
+      var babyIndex = (row && row.babyIndex) || 1;
       var html = '<span class="hrt-register-actions">';
       if (!isCompleted(row)) {
         html += '<a class="kmc-status-btn" href="newborn-care-page.html?patient=' + encodeURIComponent(patientId) +
-          '&kmcVisit=next" onclick="event.stopPropagation();"><i class="fas fa-plus"></i><span>' + escapeHtml(tr('recordVisit')) + '</span></a>';
+          '&kmcVisit=next&babyIndex=' + encodeURIComponent(babyIndex) + '" onclick="event.stopPropagation();"><i class="fas fa-plus"></i><span>' + escapeHtml(tr('recordVisit')) + '</span></a>';
         html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openCompleteModal(\'' +
-          escapeHtml(patientId) + '\')"><i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
+          escapeHtml(patientId) + '\',' + babyIndex + ')"><i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
       }
       html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openNewbornReport(\'' +
         escapeHtml(patientId) + '\')" title="' + escapeHtml(tr('report')) + '"><i class="fas fa-eye"></i><span>' + escapeHtml(tr('report')) + '</span></button>';
@@ -922,7 +927,8 @@
       display.forEach(function (r) {
         var p = r.patient || {};
         var patientId = p.id || '';
-        var babyName = escapeHtml(r.babyName || '—');
+        var babyName = escapeHtml((r.babyName || '—') + (r.babyIndex > 1 ? ' · Baby ' + r.babyIndex : ''));
+        var motherName = escapeHtml(p.name || p.patientName || '');
         var phone = phoneCellHtml(p);
         var ageDays = r.ageDays != null ? r.ageDays : null;
         var ageHtml = ageDays != null
@@ -932,7 +938,7 @@
         var trEl = document.createElement('tr');
         trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "')");
         trEl.innerHTML =
-          '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + phone + '</div></td>' +
+          '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + motherName + (motherName ? ' · ' : '') + phone + '</div></td>' +
           '<td>' + weightCellHtml(r) + '</td>' +
           '<td>' + ageHtml + '</td>' +
           '<td>' + reasonPillsHtml(r.reasons) + '</td>' +
@@ -948,7 +954,7 @@
           '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\')">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
-              '<div class="hrt-mobile-id">' + phone + '</div></div>' +
+              '<div class="hrt-mobile-id">' + motherName + (motherName ? ' · ' : '') + phone + '</div></div>' +
               '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
@@ -968,8 +974,9 @@
       });
     }
 
-    function openCompleteModal(patientId) {
-      var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId; });
+    function openCompleteModal(patientId, babyIndex) {
+      babyIndex = parseInt(babyIndex, 10) || 1;
+      var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId && ((parseInt(r.babyIndex, 10) || 1) === babyIndex); });
       if (!row) return;
       _completePatientId = patientId;
       _completeRow = row;
@@ -990,6 +997,7 @@
         var action = {
           type: 'kmc_resolved',
           outcome: outcome,
+          babyIndex: (_completeRow && _completeRow.babyIndex) || 1,
           notes: notes || null,
           recordedBy: _currentUser.uid,
           recordedByName: _currentUserName || _currentUser.displayName || '',
@@ -1001,6 +1009,7 @@
           _completeRow.kmcActions = (_completeRow.kmcActions || []).concat([{
             type: 'kmc_resolved',
             outcome: outcome,
+            babyIndex: (_completeRow && _completeRow.babyIndex) || 1,
             actionDate: action.actionDate
           }]);
           _completeRow.completed = true;
@@ -1203,51 +1212,62 @@
           var immediateNewbornCare = await fetchImmediateNewbornCare(db, p.id);
           var birthAnchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(p.id);
           var latestAnc = await fetchLatestAnc(db, p.id);
-          var evalResult = KmcUtils.evaluateKmcEligibility(p, newbornCare, birthAnchor, latestAnc);
-          var decision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
-          var potentialKmc = !!(evalResult.eligible || newbornCareVisits.some(function (v) { return !!v.potential_kmc; }));
-          if (!potentialKmc) return null;
-
-          var reasonSet = new Set();
-          (evalResult.reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
-          (decision.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
-          newbornCareVisits.forEach(function (v) {
-            (v.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
-            var w = parseFloat(v.body_weight_gram);
-            if (!isNaN(w) && w > 0 && w < 2000) reasonSet.add('low_weight');
-          });
-          var sourceBirthWeight = parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p);
-          if (sourceBirthWeight != null && sourceBirthWeight < 2000) reasonSet.add('low_weight');
-          var mergedReasons = Array.from(reasonSet);
-
           var kmcActions = await fetchKmcActions(db, p.id);
-          var dischargeDate = KmcUtils.getLatestDischargeDate(newbornCareVisits);
-          var newbornVisitCount = getMaxNewbornVisitNumber(newbornCareVisits);
-          var nextDueDate = KmcUtils.formatDateInput(KmcUtils.getKmcDueDate(dischargeDate, newbornVisitCount));
-          var ageDays = KmcUtils.ageInDaysFromBirth(evalResult.birthDateStr);
+          var babyEvaluations = KmcUtils.evaluateKmcEligibilityForBabies(p, newbornCare || latestNewbornCare || {}, birthAnchor, latestAnc);
+          return babyEvaluations.map(function (evalResult) {
+            var babyIndex = parseInt(evalResult.babyIndex, 10) || 1;
+            var decision = KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex) || {};
+            var potentialKmc = !!(evalResult.eligible || (decision && decision.potential_kmc));
+            if (!potentialKmc) return null;
 
-          return {
-            patient: p,
-            babyName: evalResult.babyName || (latestNewbornCare && latestNewbornCare.baby_name),
-            reasons: mergedReasons,
-            birthDateStr: evalResult.birthDateStr,
-            birthWeightGram: parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p) || evalResult.birthWeightGram,
-            ageDays: ageDays,
-            newbornCare: newbornCare,
-            immediateNewbornCare: immediateNewbornCare,
-            newbornCareVisits: newbornCareVisits,
-            kmcActions: kmcActions,
-            kmcSelected: (decision.kmc_selected || '').toLowerCase(),
-            potentialKmc: potentialKmc,
-            dischargeDate: dischargeDate,
-            completedPostDischargeVisitCount: newbornVisitCount,
-            completedVisitCount: newbornVisitCount,
-            nextDueDate: nextDueDate,
-            completed: !!KmcUtils.getCompleteAction(kmcActions)
-          };
+            var reasonSet = new Set();
+            (evalResult.reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+            (decision.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+            newbornCareVisits.forEach(function (v) {
+              if (Array.isArray(v.kmc_babies)) {
+                v.kmc_babies.forEach(function (b) {
+                  if ((parseInt(b.babyIndex || b.baby_index, 10) || 1) === babyIndex) {
+                    (b.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+                  }
+                });
+              } else if (babyIndex === 1) {
+                (v.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
+              }
+            });
+            var mergedReasons = Array.from(reasonSet);
+            var dischargeDate = KmcUtils.getLatestDischargeDateForBaby(newbornCareVisits, babyIndex);
+            var completedCount = KmcUtils.getPostDischargeVisitCountForBaby(newbornCareVisits, dischargeDate, babyIndex);
+            var newbornVisitCount = Math.max(getMaxNewbornVisitNumber(newbornCareVisits), completedCount);
+            var nextDueDate = KmcUtils.formatDateInput(KmcUtils.getKmcDueDate(dischargeDate, completedCount));
+            var ageDays = KmcUtils.ageInDaysFromBirth(evalResult.birthDateStr);
+            return {
+              patient: p,
+              babyIndex: babyIndex,
+              babyName: evalResult.babyName || ((latestNewbornCare && latestNewbornCare.baby_name) || 'Baby') + (babyIndex > 1 ? ' ' + babyIndex : ''),
+              reasons: mergedReasons,
+              birthDateStr: evalResult.birthDateStr,
+              birthWeightGram: evalResult.birthWeightGram || parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p),
+              ageDays: ageDays,
+              newbornCare: newbornCare,
+              immediateNewbornCare: immediateNewbornCare,
+              newbornCareVisits: newbornCareVisits,
+              kmcActions: kmcActions,
+              kmcSelected: (decision.kmc_selected || '').toLowerCase(),
+              potentialKmc: potentialKmc,
+              dischargeDate: dischargeDate,
+              completedPostDischargeVisitCount: completedCount,
+              completedVisitCount: newbornVisitCount,
+              nextDueDate: nextDueDate,
+              completed: !!KmcUtils.getCompleteActionForBaby(kmcActions, babyIndex)
+            };
+          }).filter(Boolean);
         });
 
-        var rows = enriched.filter(Boolean);
+        var rows = enriched.reduce(function (all, item) {
+          if (Array.isArray(item)) all.push.apply(all, item.filter(Boolean));
+          else if (item) all.push(item);
+          return all;
+        }, []);
         rows.sort(function (a, b) {
           var aDone = isCompleted(a), bDone = isCompleted(b);
           if (aDone !== bDone) return aDone ? 1 : -1;

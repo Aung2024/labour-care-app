@@ -108,6 +108,14 @@ async function searchDuplicatesByPhone(phoneNumber, options = {}) {
         // Continue with other queries
       }
     }
+
+    const scopedPatients = await fetchScopedPatientsForDuplicateCheck(options);
+    scopedPatients.forEach(patient => {
+      if (!seenIds.has(patient.id) && phoneMatchesPatient(patient, normalizedPhone)) {
+        seenIds.add(patient.id);
+        allMatches.push(patient);
+      }
+    });
     
     return allMatches;
   } catch (error) {
@@ -290,6 +298,56 @@ function normalizePhoneNumber(phone) {
   return phone.replace(/[^\d+]/g, '').trim();
 }
 
+function phoneMatchesPatient(patient, normalizedPhone) {
+  return ['phone', 'phoneNumber', 'phone_number'].some(field => normalizePhoneNumber(patient[field]) === normalizedPhone);
+}
+
+async function fetchScopedPatientsForDuplicateCheck(options = {}) {
+  const db = firebase.firestore();
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+  let queries = [];
+  if (options.userRole === 'Midwife' && options.userId) {
+    queries = [
+      db.collection('patients').where('created_by', '==', options.userId),
+      db.collection('patients').where('createdBy', '==', options.userId)
+    ];
+  } else if (options.userRole === 'Regional Officer' && options.region) {
+    queries = [db.collection('patients').where('region', '==', options.region)];
+  } else if (options.userRole === 'TMO' && options.township) {
+    queries = [db.collection('patients').where('township', '==', options.township)];
+  } else {
+    queries = [db.collection('patients')];
+  }
+  const patients = [];
+  const seen = new Set();
+  for (const query of queries) {
+    try {
+      const snap = await smartFirestoreQuery(
+        Promise.resolve(query),
+        { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+      );
+      if (snap && !snap.empty) {
+        snap.forEach(doc => {
+          if (!seen.has(doc.id)) {
+            seen.add(doc.id);
+            patients.push({ id: doc.id, ...doc.data() });
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Error fetching scoped patients for duplicate check:', error);
+    }
+  }
+  return patients;
+}
+
+async function searchDuplicatesByExactName(name, options = {}) {
+  const normalizedName = normalizeName(name);
+  if (!normalizedName) return [];
+  const patients = await fetchScopedPatientsForDuplicateCheck(options);
+  return patients.filter(patient => normalizeName(patient.name || patient.patientName || '') === normalizedName);
+}
+
 /**
  * Normalize name for comparison (lowercase, remove extra spaces)
  */
@@ -355,22 +413,11 @@ async function checkForDuplicates(patientData, options = {}) {
     console.log('📞 Phone matches found:', results.phoneMatches.length, results.phoneMatches);
   }
   
-  // Search by name and age
-  if (name && age) {
-    // Convert options to filterCriteria format
-    let filterCriteria = null;
-    if (options.userRole === 'Midwife' && options.userId) {
-      filterCriteria = { type: 'created_by', value: options.userId };
-    } else if (options.userRole === 'Regional Officer' && options.region) {
-      filterCriteria = { type: 'region', value: options.region };
-    } else if (options.userRole === 'TMO' && options.township) {
-      filterCriteria = { type: 'township', value: options.township };
-    }
-    // Super Admin: filterCriteria remains null (check all patients)
-    
-    console.log('👤 Searching for name/age duplicates:', { name, age, filterCriteria });
-    results.nameMatches = await searchDuplicatesByNameAge(name, age, 2, filterCriteria);
-    console.log('👤 Name/age matches found:', results.nameMatches.length, results.nameMatches);
+  // Search by exact name only; this is warning-only in the registration form.
+  if (name) {
+    console.log('👤 Searching for exact name duplicates:', { name });
+    results.nameMatches = await searchDuplicatesByExactName(name, options);
+    console.log('👤 Exact name matches found:', results.nameMatches.length, results.nameMatches);
   }
   
   // Combine and deduplicate
@@ -549,6 +596,8 @@ window.DuplicateDetector = {
   check: checkForDuplicates,
   searchByPhone: searchDuplicatesByPhone,
   searchByNameAge: searchDuplicatesByNameAge,
+  searchByExactName: searchDuplicatesByExactName,
+  normalizePhone: normalizePhoneNumber,
   showWarning: showDuplicateWarning,
   logCheck: logDuplicateCheck
 };

@@ -121,6 +121,67 @@
     };
   }
 
+  function normalizeBabyForKmc(baby, index, fallbackCare, patient) {
+    baby = baby || {};
+    fallbackCare = fallbackCare || {};
+    var babyIndex = parseInt(baby.babyIndex || baby.baby_index || index + 1, 10) || (index + 1);
+    var motherName = (patient && (patient.name || patient.patientName)) || '';
+    return {
+      babyIndex: babyIndex,
+      babyName: baby.babyName || baby.baby_name || fallbackCare.baby_name || (generateBabyName(motherName) + (babyIndex > 1 ? ' ' + babyIndex : '')),
+      birthWeightGram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.birth_weight_gram != null ? baby.birth_weight_gram : (baby.body_weight_gram != null ? baby.body_weight_gram : fallbackCare.body_weight_gram)),
+      birthTime: baby.birthTime || baby.birth_time || fallbackCare.birth_time || null,
+      gender: baby.gender || baby.sex || fallbackCare.gender || null,
+      outcome: baby.outcome || fallbackCare.outcome || null
+    };
+  }
+
+  function getBabiesFromNewbornCare(newbornCare, patient) {
+    newbornCare = newbornCare || {};
+    if (Array.isArray(newbornCare.babies) && newbornCare.babies.length) {
+      return newbornCare.babies.map(function (baby, index) {
+        return normalizeBabyForKmc(baby, index, newbornCare, patient);
+      });
+    }
+    return [normalizeBabyForKmc({}, 0, newbornCare, patient)];
+  }
+
+  function newbornCareForBaby(newbornCare, baby) {
+    baby = baby || {};
+    newbornCare = newbornCare || {};
+    var out = {};
+    Object.keys(newbornCare).forEach(function (key) { out[key] = newbornCare[key]; });
+    out.baby_index = baby.babyIndex;
+    out.baby_name = baby.babyName || newbornCare.baby_name;
+    out.body_weight_gram = baby.birthWeightGram != null ? baby.birthWeightGram : newbornCare.body_weight_gram;
+    out.birth_time = baby.birthTime || newbornCare.birth_time;
+    out.gender = baby.gender || newbornCare.gender;
+    out.outcome = baby.outcome || newbornCare.outcome;
+    return out;
+  }
+
+  function evaluateKmcEligibilityForBaby(patient, newbornCare, baby, birthAnchor, latestAnc) {
+    var care = newbornCareForBaby(newbornCare, baby);
+    var result = evaluateKmcEligibility(patient, care, null, latestAnc);
+    result.babyIndex = baby.babyIndex || 1;
+    result.babyName = baby.babyName || result.babyName;
+    result.birthWeightGram = baby.birthWeightGram != null && baby.birthWeightGram !== '' ? parseFloat(baby.birthWeightGram) : result.birthWeightGram;
+    result.birthDateStr = baby.birthTime ? getBirthDateStr({ birth_time: baby.birthTime }, null) : result.birthDateStr;
+    if (!result.birthDateStr && birthAnchor) result.birthDateStr = getBirthDateStr(null, birthAnchor);
+    if (result.birthDateStr && result.edd) result.daysBeforeEdd = daysBeforeEdd(result.birthDateStr, result.edd);
+    if (result.birthDateStr && result.edd && isPrematureBirth(result.birthDateStr, result.edd) && result.reasons.indexOf('preterm') === -1) {
+      result.reasons.push('preterm');
+      result.eligible = true;
+    }
+    return result;
+  }
+
+  function evaluateKmcEligibilityForBabies(patient, newbornCare, birthAnchor, latestAnc) {
+    return getBabiesFromNewbornCare(newbornCare, patient).map(function (baby) {
+      return evaluateKmcEligibilityForBaby(patient, newbornCare, baby, birthAnchor, latestAnc);
+    });
+  }
+
   function ageInDaysFromBirth(birthDateStr) {
     var birth = parseDateOnlyLocal(birthDateStr);
     if (!birth) return null;
@@ -152,6 +213,19 @@
     });
   }
 
+  function getCompletedKmcVisitsForBaby(newbornCareVisits, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    return getCompletedKmcVisits(newbornCareVisits).filter(function (visit) {
+      var d = normalizeVisitData(visit);
+      if (Array.isArray(d.kmc_babies)) {
+        return d.kmc_babies.some(function (b) {
+          return (parseInt(b.babyIndex || b.baby_index, 10) || 1) === babyIndex && String(b.kmc_selected || '').toLowerCase() === 'yes';
+        });
+      }
+      return babyIndex === 1;
+    });
+  }
+
   function getLatestKmcDecision(newbornCareVisits) {
     var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
       return (parseVisitDateMs(normalizeVisitData(b)) || 0) - (parseVisitDateMs(normalizeVisitData(a)) || 0);
@@ -159,6 +233,30 @@
     for (var i = 0; i < sorted.length; i++) {
       var d = normalizeVisitData(sorted[i]);
       if (d.kmc_selected) return d;
+    }
+    return null;
+  }
+
+  function getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
+      return (parseVisitDateMs(normalizeVisitData(b)) || 0) - (parseVisitDateMs(normalizeVisitData(a)) || 0);
+    });
+    for (var i = 0; i < sorted.length; i++) {
+      var d = normalizeVisitData(sorted[i]);
+      if (Array.isArray(d.kmc_babies)) {
+        for (var j = 0; j < d.kmc_babies.length; j++) {
+          var item = d.kmc_babies[j] || {};
+          if ((parseInt(item.babyIndex || item.baby_index, 10) || 1) === babyIndex && item.kmc_selected) {
+            var merged = {};
+            Object.keys(d).forEach(function (key) { merged[key] = d[key]; });
+            Object.keys(item).forEach(function (key) { merged[key] = item[key]; });
+            return merged;
+          }
+        }
+      } else if (babyIndex === 1 && d.kmc_selected) {
+        return d;
+      }
     }
     return null;
   }
@@ -172,6 +270,11 @@
       if (d.discharge_date) return d.discharge_date;
     }
     return null;
+  }
+
+  function getLatestDischargeDateForBaby(newbornCareVisits, babyIndex) {
+    var decision = getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex);
+    return decision && decision.discharge_date ? decision.discharge_date : getLatestDischargeDate(newbornCareVisits);
   }
 
   function addDays(dateOnly, days) {
@@ -209,6 +312,16 @@
     }).length;
   }
 
+  function getPostDischargeVisitCountForBaby(newbornCareVisits, dischargeDate, babyIndex) {
+    var discharge = parseDateOnlyLocal(dischargeDate);
+    if (!discharge) return 0;
+    return getCompletedKmcVisitsForBaby(newbornCareVisits, babyIndex).filter(function (visit) {
+      var d = normalizeVisitData(visit);
+      var visitDate = parseDateOnlyLocal(d.visitDate || d.visit_date || d.date || d.timestamp || d.recordedAt || d.recorded_at);
+      return visitDate && visitDate >= discharge;
+    }).length;
+  }
+
   function getDaysLateForKmc(dischargeDate, completedPostDischargeCount) {
     var due = getKmcDueDate(dischargeDate, completedPostDischargeCount);
     if (!due) return null;
@@ -228,6 +341,15 @@
       if (a.type === 'kmc_resolved' || a.type === 'resolved') return a;
     }
     return null;
+  }
+
+  function getCompleteActionForBaby(actions, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    var filtered = (actions || []).filter(function (action) {
+      var actionBabyIndex = parseInt(action && (action.babyIndex || action.baby_index), 10);
+      return !actionBabyIndex ? babyIndex === 1 : actionBabyIndex === babyIndex;
+    });
+    return getCompleteAction(filtered);
   }
 
   function rowTrackingStatus(row) {
@@ -264,11 +386,14 @@
   function rowIsCompleted(row) {
     if (!row) return false;
     if (row.completed) return true;
+    if (row.babyIndex) return !!getCompleteActionForBaby(row.kmcActions || row.actions || [], row.babyIndex);
     return !!getCompleteAction(row.kmcActions || row.actions || []);
   }
 
   function getCompletionOutcome(row) {
-    var action = row ? getCompleteAction(row.kmcActions || row.actions || []) : null;
+    var action = row && row.babyIndex
+      ? getCompleteActionForBaby(row.kmcActions || row.actions || [], row.babyIndex)
+      : (row ? getCompleteAction(row.kmcActions || row.actions || []) : null);
     if (!action) return null;
     var outcome = action.outcome || action.resolvedReason || '';
     if (outcome === 'dead' || outcome === 'death') return { key: 'death', labelEn: 'Dead', labelMm: 'သေဆုံး' };
@@ -286,14 +411,23 @@
     formatDateInput: formatDateInput,
     generateBabyName: generateBabyName,
     evaluateKmcEligibility: evaluateKmcEligibility,
+    evaluateKmcEligibilityForBaby: evaluateKmcEligibilityForBaby,
+    evaluateKmcEligibilityForBabies: evaluateKmcEligibilityForBabies,
+    getBabiesFromNewbornCare: getBabiesFromNewbornCare,
+    newbornCareForBaby: newbornCareForBaby,
     ageInDaysFromBirth: ageInDaysFromBirth,
     getCompletedKmcVisits: getCompletedKmcVisits,
+    getCompletedKmcVisitsForBaby: getCompletedKmcVisitsForBaby,
     getLatestKmcDecision: getLatestKmcDecision,
+    getLatestKmcDecisionForBaby: getLatestKmcDecisionForBaby,
     getLatestDischargeDate: getLatestDischargeDate,
+    getLatestDischargeDateForBaby: getLatestDischargeDateForBaby,
     getKmcDueDate: getKmcDueDate,
     getPostDischargeVisitCount: getPostDischargeVisitCount,
+    getPostDischargeVisitCountForBaby: getPostDischargeVisitCountForBaby,
     getDaysLateForKmc: getDaysLateForKmc,
     getCompleteAction: getCompleteAction,
+    getCompleteActionForBaby: getCompleteActionForBaby,
     getCompletionOutcome: getCompletionOutcome,
     rowTrackingStatus: rowTrackingStatus,
     reasonLabels: reasonLabels,

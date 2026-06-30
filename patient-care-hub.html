@@ -672,6 +672,87 @@
       font-weight: 500;
     }
 
+    .delivery-section {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      background: #ffffff;
+    }
+
+    .delivery-section-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0 0 0.85rem;
+      color: #92400e;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .delivery-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+
+    .delivery-field label {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: #374151;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .delivery-field input,
+    .delivery-field select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 0.6rem 0.7rem;
+      color: #111827;
+      background: #fff;
+    }
+
+    .baby-row {
+      padding: 0.9rem;
+      margin-top: 0.75rem;
+      border: 1px solid #fde68a;
+      border-radius: 14px;
+      background: #fffbeb;
+    }
+
+    .baby-row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      color: #92400e;
+      font-weight: 800;
+    }
+
+    .delivery-add-btn {
+      min-height: 44px;
+      margin-top: 0.75rem;
+      border: 1px dashed #d97706;
+      border-radius: 12px;
+      background: #fff7ed;
+      color: #92400e;
+      font-weight: 700;
+      padding: 0 0.9rem;
+    }
+
+    .delivery-remove-btn {
+      min-width: 44px;
+      min-height: 44px;
+      border: 0;
+      border-radius: 10px;
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
     @media (max-width: 768px) {
       .modal-content {
         width: 95%;
@@ -691,6 +772,10 @@
 
       .form-check-label {
         font-size: 0.9rem;
+      }
+
+      .delivery-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -779,13 +864,13 @@
         <div class="care-icon">
           <i class="fas fa-bed-pulse"></i>
         </div>
-        <h3 class="care-title lang-text" data-en="Labour Care" data-mm="မွေးဖွားစောင့်ရှောက်မှု">Labour Care</h3>
+        <h3 class="care-title lang-text" data-en="Labour Care" data-mm="မွေးဖွားစဉ်စောင့်ရှောက်မှု">Labour Care</h3>
         <div class="labour-actions">
           <a href="#" class="care-action labour-carousel" onclick="event.preventDefault(); navigateToLabourCarousel();">
             <i class="fas fa-mobile-alt me-2"></i><span class="lang-text" data-en="Start LCG" data-mm="LCG စရန် ">LCG</span>
           </a>
           <a href="#" class="care-action labour-third-stage" onclick="event.preventDefault(); openThirdStageModal();">
-            <i class="fas fa-clipboard-check me-2"></i><span class="lang-text" data-en="Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့်">Labour Third Stage</span>
+            <i class="fas fa-clipboard-check me-2"></i><span class="lang-text" data-en="Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း">Delivery Notes</span>
           </a>
         </div>
       </div>
@@ -862,6 +947,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/high-risk-utils.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
 
   <script>
     // Language switching
@@ -1778,7 +1864,7 @@
       window.location.href = 'list.html';
     }
 
-    // Third Stage Modal Functions
+    // Delivery Notes Modal Functions
     function openThirdStageModal() {
       if (!selectedPatient || !selectedPatient.id) {
         alert(currentLanguage === 'en' ? 'No patient selected' : 'လူနာ ရွေးချယ်ထားခြင်း မရှိပါ');
@@ -1786,7 +1872,7 @@
       }
 
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        alert('Labour third stage is available online only. Please reconnect to the internet and try again.');
+        alert('Delivery Notes is available online only. Please reconnect to the internet and try again.');
         return;
       }
 
@@ -1833,35 +1919,110 @@
 
       try {
         const patientId = selectedPatient.id;
-        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        
-        // Check if third stage data exists in records collection
-        const thirdStageQuery = firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('thirdStage');
-        
-        const thirdStageDoc = await smartFirestoreQuery(
-          Promise.resolve(thirdStageQuery),
-          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
-        );
+        const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
 
-        if (thirdStageDoc && thirdStageDoc.exists) {
-          const data = thirdStageDoc.data();
-          document.getElementById('thirdStageOxytocin').checked = data.oxytocinGiven === true;
-          document.getElementById('thirdStageCCT').checked = data.controlledCordTraction === true;
+        if (notes) {
+          document.getElementById('thirdStageOxytocin').checked = notes.thirdStage.oxytocinGiven === true;
+          document.getElementById('thirdStageCCT').checked = notes.thirdStage.controlledCordTraction === true;
+          document.getElementById('deliveryPregnancyType').value = notes.deliveryDetails.pregnancyType || 'single';
+          document.getElementById('deliveryMode').value = notes.deliveryDetails.modeOfDelivery || '';
+          document.getElementById('deliveryBirthPlace').value = notes.deliveryDetails.birthPlace || '';
+          renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
         } else {
-          // Reset checkboxes if no data
           document.getElementById('thirdStageOxytocin').checked = false;
           document.getElementById('thirdStageCCT').checked = false;
+          document.getElementById('deliveryPregnancyType').value = 'single';
+          document.getElementById('deliveryMode').value = '';
+          document.getElementById('deliveryBirthPlace').value = '';
+          renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         }
       } catch (error) {
-        console.error('Error loading third stage data:', error);
-        // Reset checkboxes on error
+        console.error('Error loading delivery notes:', error);
         document.getElementById('thirdStageOxytocin').checked = false;
         document.getElementById('thirdStageCCT').checked = false;
+        document.getElementById('deliveryPregnancyType').value = 'single';
+        renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
       }
+    }
+
+    function renderDeliveryBabyRows(babies) {
+      const container = document.getElementById('deliveryBabyRows');
+      if (!container) return;
+      const pregnancyType = document.getElementById('deliveryPregnancyType').value || 'single';
+      const minRows = pregnancyType === 'twins' ? 2 : 1;
+      const rows = Array.isArray(babies) && babies.length ? babies.slice() : DeliveryNotesUtils.defaultBabies(minRows);
+      while (rows.length < minRows) rows.push(DeliveryNotesUtils.normalizeBaby({}, rows.length));
+      container.innerHTML = rows.map((baby, index) => {
+        const canRemove = pregnancyType === 'twins' && rows.length > 2;
+        return `
+          <div class="baby-row" data-baby-row>
+            <div class="baby-row-header">
+              <span>${currentLanguage === 'en' ? 'Baby' : 'ကလေး'} ${index + 1}</span>
+              ${canRemove ? '<button type="button" class="delivery-remove-btn" onclick="removeDeliveryBabyRow(' + index + ')" aria-label="Remove baby"><i class="fas fa-trash"></i></button>' : ''}
+            </div>
+            <div class="delivery-grid">
+              <div class="delivery-field">
+                <label class="lang-text" data-en="Outcome" data-mm="ကလေးအခြေအနေ">Outcome</label>
+                <select data-field="outcome">
+                  <option value="">-</option>
+                  <option value="alive" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
+                  <option value="death" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
+                  <option value="stillbirth" ${baby.outcome === 'stillbirth' ? 'selected' : ''}>Stillbirth</option>
+                </select>
+              </div>
+              <div class="delivery-field">
+                <label class="lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</label>
+                <select data-field="gender">
+                  <option value="">-</option>
+                  <option value="male" ${baby.gender === 'male' ? 'selected' : ''}>M</option>
+                  <option value="female" ${baby.gender === 'female' ? 'selected' : ''}>F</option>
+                </select>
+              </div>
+              <div class="delivery-field">
+                <label class="lang-text" data-en="Birth weight (grams)" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်)">Birth weight (grams)</label>
+                <input type="number" min="0" inputmode="numeric" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}">
+              </div>
+              <div class="delivery-field">
+                <label class="lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
+                <input type="time" data-field="birthTime" value="${baby.birthTime || ''}">
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      const addBtn = document.getElementById('deliveryAddBabyBtn');
+      if (addBtn) addBtn.style.display = pregnancyType === 'twins' ? 'inline-flex' : 'none';
+      updateModalLanguage();
+    }
+
+    function handleDeliveryPregnancyTypeChange() {
+      const type = document.getElementById('deliveryPregnancyType').value;
+      const current = collectDeliveryBabies();
+      renderDeliveryBabyRows(type === 'twins' ? current : current.slice(0, 1));
+      const addBtn = document.getElementById('deliveryAddBabyBtn');
+      if (addBtn) addBtn.style.display = type === 'twins' ? 'inline-flex' : 'none';
+    }
+
+    function collectDeliveryBabies() {
+      return Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]')).map((row, index) => ({
+        babyIndex: index + 1,
+        outcome: row.querySelector('[data-field="outcome"]').value,
+        gender: row.querySelector('[data-field="gender"]').value,
+        birthWeightGram: row.querySelector('[data-field="birthWeightGram"]').value,
+        birthTime: row.querySelector('[data-field="birthTime"]').value
+      }));
+    }
+
+    function addDeliveryBabyRow() {
+      const babies = collectDeliveryBabies();
+      babies.push(DeliveryNotesUtils.normalizeBaby({}, babies.length));
+      renderDeliveryBabyRows(babies);
+    }
+
+    function removeDeliveryBabyRow(index) {
+      const babies = collectDeliveryBabies();
+      babies.splice(index, 1);
+      renderDeliveryBabyRows(babies);
     }
 
     async function saveThirdStageData() {
@@ -1871,7 +2032,7 @@
       }
 
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        alert('Labour third stage is available online only. Please reconnect to the internet and try again.');
+        alert('Delivery Notes is available online only. Please reconnect to the internet and try again.');
         return;
       }
 
@@ -1887,32 +2048,31 @@
         const oxytocinGiven = document.getElementById('thirdStageOxytocin').checked;
         const controlledCordTraction = document.getElementById('thirdStageCCT').checked;
 
-        const thirdStageData = {
-          oxytocinGiven: oxytocinGiven,
-          controlledCordTraction: controlledCordTraction,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedBy: currentUser.uid,
-          updatedAt: new Date().toISOString()
+        const deliveryNotesData = {
+          thirdStage: {
+            oxytocinGiven: oxytocinGiven,
+            controlledCordTraction: controlledCordTraction
+          },
+          deliveryDetails: {
+            pregnancyType: document.getElementById('deliveryPregnancyType').value || 'single',
+            modeOfDelivery: document.getElementById('deliveryMode').value,
+            birthPlace: document.getElementById('deliveryBirthPlace').value,
+            babies: collectDeliveryBabies()
+          }
         };
 
-        // Save to Firestore
-        await firebase.firestore()
-          .collection('patients')
-          .doc(patientId)
-          .collection('records')
-          .doc('thirdStage')
-          .set(thirdStageData, { merge: true });
+        await DeliveryNotesUtils.saveDeliveryNotes(patientId, deliveryNotesData, currentUser.uid);
 
         // Show success message
         const successMsg = currentLanguage === 'en' 
-          ? 'Third stage data saved successfully!' 
-          : 'တတိယအဆင့် ဒေတာ သိမ်းဆည်းပြီးပါပြီ!';
+          ? 'Delivery notes saved successfully!' 
+          : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ!';
         alert(successMsg);
 
         // Close modal
         closeThirdStageModal();
       } catch (error) {
-        console.error('Error saving third stage data:', error);
+        console.error('Error saving delivery notes:', error);
         const errorMsg = currentLanguage === 'en' 
           ? 'Error saving data: ' + error.message 
           : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + error.message;
@@ -1929,39 +2089,73 @@
     }
   </script>
 
-  <!-- Third Stage Modal -->
+  <!-- Delivery Notes Modal -->
   <div id="thirdStageModal" class="modal" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
-        <h4 class="modal-title lang-text" data-en="Active Management of Third Stage of Labour" data-mm="မွေးဖွားခြင်းတတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Active Management of Third Stage of Labour</h4>
+        <h4 class="modal-title lang-text" data-en="Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း">Delivery Notes</h4>
         <button type="button" class="modal-close" onclick="closeThirdStageModal()" aria-label="Close">
           <i class="fas fa-times"></i>
         </button>
       </div>
       <div class="modal-body">
-        <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="thirdStageOxytocin" name="thirdStageOxytocin">
-          <label class="form-check-label lang-text" for="thirdStageOxytocin" 
-            data-en="Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded."
-            data-mm="ကလေးမွေးပြီးပြီးချင်း၊ ဗိုက်ထဲတွင် နောက်ထပ်ကလေး မကျန်ကြောင်း သေချာလျှင် Oxytocin10 units IM အသားဆေးကို ကလေးမွေးပြီး တစ်မိနစ်အတွင်း ထိုးခြင်း။">
-            Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded.
-          </label>
-        </div>
-        <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="thirdStageCCT" name="thirdStageCCT">
-          <label class="form-check-label lang-text" for="thirdStageCCT"
-            data-en="Placenta delivery by Controlled cord traction method."
-            data-mm="သားအိမ်ကို ထိန်းပြီး ချက်ကြိုးကိုဆွဲ၍ အချင်းချခြင်း။">
-            Placenta delivery by Controlled cord traction method.
-          </label>
-        </div>
+        <section class="delivery-section">
+          <h5 class="delivery-section-title"><i class="fas fa-clipboard-check"></i><span class="lang-text" data-en="Management of Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Management of Labour Third Stage</span></h5>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="thirdStageOxytocin" name="thirdStageOxytocin">
+            <label class="form-check-label lang-text" for="thirdStageOxytocin" 
+              data-en="Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded."
+              data-mm="ကလေးမွေးပြီးပြီးချင်း၊ ဗိုက်ထဲတွင် နောက်ထပ်ကလေး မကျန်ကြောင်း သေချာလျှင် Oxytocin10 units IM အသားဆေးကို ကလေးမွေးပြီး တစ်မိနစ်အတွင်း ထိုးခြင်း။">
+              Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded.
+            </label>
+          </div>
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="thirdStageCCT" name="thirdStageCCT">
+            <label class="form-check-label lang-text" for="thirdStageCCT"
+              data-en="Placenta delivery by Controlled cord traction method."
+              data-mm="သားအိမ်ကို ထိန်းပြီး ချက်ကြိုးကိုဆွဲ၍ အချင်းချခြင်း။">
+              Placenta delivery by Controlled cord traction method.
+            </label>
+          </div>
+        </section>
+
+        <section class="delivery-section">
+          <h5 class="delivery-section-title"><i class="fas fa-baby"></i><span class="lang-text" data-en="Labour Details" data-mm="မွေးဖွားခြင်းအသေးစိတ်">Labour Details</span></h5>
+          <div class="delivery-grid">
+            <div class="delivery-field">
+              <label for="deliveryPregnancyType" class="lang-text" data-en="Pregnancy type" data-mm="ကိုယ်ဝန်အမျိုးအစား">Pregnancy type</label>
+              <select id="deliveryPregnancyType" onchange="handleDeliveryPregnancyTypeChange()">
+                <option value="single">Single</option>
+                <option value="twins">Twins</option>
+              </select>
+            </div>
+            <div class="delivery-field">
+              <label for="deliveryMode" class="lang-text" data-en="Mode of delivery" data-mm="မွေးဖွားနည်း">Mode of delivery</label>
+              <select id="deliveryMode">
+                <option value="">-</option>
+                <option value="normal">Normal vaginal delivery</option>
+                <option value="assisted">Assisted delivery</option>
+                <option value="c_section">C-section</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="delivery-field">
+              <label for="deliveryBirthPlace" class="lang-text" data-en="Birth place" data-mm="မွေးဖွားရာနေရာ">Birth place</label>
+              <input id="deliveryBirthPlace" type="text" autocomplete="off">
+            </div>
+          </div>
+          <div id="deliveryBabyRows"></div>
+          <button type="button" id="deliveryAddBabyBtn" class="delivery-add-btn" style="display:none;" onclick="addDeliveryBabyRow()">
+            <i class="fas fa-plus me-2"></i><span class="lang-text" data-en="Add another baby" data-mm="နောက်ထပ်ကလေး ထည့်ရန်">Add another baby</span>
+          </button>
+        </section>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="closeThirdStageModal()">
           <span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
         </button>
         <button type="button" class="btn btn-primary" onclick="saveThirdStageData()">
-          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save" data-mm="သိမ်းဆည်းရန်">Save</span>
+          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းရန်">Save Delivery Notes</span>
         </button>
       </div>
     </div>
