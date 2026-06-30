@@ -139,13 +139,95 @@
     }
 
     .filter-panel {
-      padding: 1rem;
+      padding: 0;
+    }
+
+    .filter-toggle {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      cursor: pointer;
+      touch-action: manipulation;
+      min-height: 44px;
+      text-align: left;
+    }
+
+    .filter-toggle-text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .filter-toggle-label {
+      display: block;
+      font-weight: 900;
+      color: var(--brand-dark);
+      font-size: 0.92rem;
+    }
+
+    .filter-toggle-summary {
+      display: block;
+      margin-top: 0.15rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .filter-chevron {
+      flex: 0 0 auto;
+      color: var(--muted);
+      transition: transform 0.2s ease;
+    }
+
+    .filter-panel.is-open .filter-chevron {
+      transform: rotate(180deg);
+    }
+
+    .filter-body {
+      padding: 0 1rem 1rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .filter-body[hidden] {
+      display: none;
     }
 
     .filter-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0.75rem;
+      padding-top: 0.85rem;
+    }
+
+    .filter-shortcuts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.75rem;
+    }
+
+    .filter-shortcut {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #334155;
+      min-height: 40px;
+      padding: 0.4rem 0.75rem;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 800;
+      touch-action: manipulation;
+    }
+
+    .filter-shortcut:hover,
+    .filter-shortcut:focus {
+      background: #eef2ff;
+      border-color: #a5b4fc;
     }
 
     .filter-field label {
@@ -187,7 +269,6 @@
 
     .btn-primary-report { background: var(--accent); color: white; }
     .btn-secondary-report { background: #e2e8f0; color: #334155; }
-    .btn-print-report { background: #2563eb; color: white; }
 
     .summary-grid {
       display: grid;
@@ -232,6 +313,7 @@
       display: grid;
       grid-template-columns: 1fr;
       gap: 0.75rem;
+      margin-bottom: 1.25rem;
     }
 
     .event-card {
@@ -369,7 +451,6 @@
     .print-only { display: none; }
 
     @media (min-width: 768px) {
-      .filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
       .summary-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .event-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -486,29 +567,34 @@
   </header>
 
   <main class="report-wrap">
-    <section class="panel filter-panel no-print">
-      <div class="filter-grid">
-        <div class="filter-field">
-          <label for="fromDate" data-i18n="fromDate">From date</label>
-          <input type="date" id="fromDate">
+    <section class="panel filter-panel no-print" id="filterPanel">
+      <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filterBody" onclick="toggleFilterPanel()">
+        <span class="filter-toggle-text">
+          <span class="filter-toggle-label" data-i18n="dateFilter">Date filter</span>
+          <span class="filter-toggle-summary" id="filterSummary">—</span>
+        </span>
+        <i class="fas fa-chevron-down filter-chevron" aria-hidden="true"></i>
+      </button>
+      <div class="filter-body" id="filterBody" hidden>
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label for="fromDate" data-i18n="fromDate">From date</label>
+            <input type="date" id="fromDate" onchange="updateFilterSummary()">
+          </div>
+          <div class="filter-field">
+            <label for="toDate" data-i18n="toDate">To date</label>
+            <input type="date" id="toDate" onchange="updateFilterSummary()">
+          </div>
         </div>
-        <div class="filter-field">
-          <label for="fromTime" data-i18n="fromTime">From time</label>
-          <input type="time" id="fromTime" value="00:00">
+        <div class="filter-shortcuts">
+          <button type="button" class="filter-shortcut" onclick="setThisWeekRange(true)"><span data-i18n="thisWeek">This week</span></button>
+          <button type="button" class="filter-shortcut" onclick="setTodayRange(true)"><span data-i18n="today">Today</span></button>
+          <button type="button" class="filter-shortcut" onclick="setThisMonthRange(true)"><span data-i18n="thisMonth">This month</span></button>
+          <button type="button" class="filter-shortcut" onclick="setLastMonthRange(true)"><span data-i18n="lastMonth">Last month</span></button>
         </div>
-        <div class="filter-field">
-          <label for="toDate" data-i18n="toDate">To date</label>
-          <input type="date" id="toDate">
+        <div class="filter-actions">
+          <button type="button" class="btn-report btn-primary-report" onclick="generateReport()"><i class="fas fa-sync-alt"></i><span data-i18n="generate">Generate report</span></button>
         </div>
-        <div class="filter-field">
-          <label for="toTime" data-i18n="toTime">To time</label>
-          <input type="time" id="toTime" value="23:59">
-        </div>
-      </div>
-      <div class="filter-actions">
-        <button type="button" class="btn-report btn-primary-report" onclick="generateReport()"><i class="fas fa-sync-alt"></i><span data-i18n="generate">Generate report</span></button>
-        <button type="button" class="btn-report btn-secondary-report" onclick="setTodayRange()"><i class="fas fa-calendar-day"></i><span data-i18n="today">Today</span></button>
-        <button type="button" class="btn-report btn-print-report" onclick="window.print()"><i class="fas fa-print"></i><span data-i18n="printA4">Print A4 landscape</span></button>
       </div>
     </section>
 
@@ -569,12 +655,13 @@
         home: 'Home',
         print: 'Print',
         fromDate: 'From date',
-        fromTime: 'From time',
         toDate: 'To date',
-        toTime: 'To time',
+        dateFilter: 'Date filter',
+        thisWeek: 'This week',
+        thisMonth: 'This month',
+        lastMonth: 'Last month',
         generate: 'Generate report',
         today: 'Today',
-        printA4: 'Print A4 landscape',
         rows: 'Rows',
         newClients: 'New clients',
         oldClients: 'Old clients',
@@ -615,12 +702,13 @@
         home: 'ပင်မ',
         print: 'ပရင့်',
         fromDate: 'စတင်ရက်',
-        fromTime: 'စတင်ချိန်',
         toDate: 'ပြီးဆုံးရက်',
-        toTime: 'ပြီးဆုံးချိန်',
+        dateFilter: 'ရက်အပိုင်းအခြား',
+        thisWeek: 'ယခုအပတ်',
+        thisMonth: 'ယခုလ',
+        lastMonth: 'ယခင်လ',
         generate: 'အစီရင်ခံစာ ထုတ်ရန်',
         today: 'ယနေ့',
-        printA4: 'A4 အလျားလိုက် ပရင့်',
         rows: 'မှတ်တမ်း',
         newClients: 'လူနာအသစ်',
         oldClients: 'လူနာဟောင်း',
@@ -742,16 +830,13 @@
       var ymd = dateOnly(value);
       return ymd || dash(value);
     }
-    function dateTimeMs(dateStr, timeStr, endOfDay) {
-      if (!dateStr) return endOfDay ? 8640000000000000 : -8640000000000000;
-      var t = timeStr || (endOfDay ? '23:59' : '00:00');
-      var d = new Date(dateStr + 'T' + t + ':00');
-      return d.getTime();
+    function formatYmd(date) {
+      return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     }
-    function inRange(value, fromMs, toMs) {
-      var d = parseDate(value);
-      if (!d) return false;
-      return d.getTime() >= fromMs && d.getTime() <= toMs;
+    function inRange(value, fromDate, toDate) {
+      var ymd = dateOnly(value);
+      if (!ymd || !fromDate || !toDate) return false;
+      return ymd >= fromDate && ymd <= toDate;
     }
     function firstOf() {
       for (var i = 0; i < arguments.length; i++) {
@@ -1046,13 +1131,59 @@
         _rawGa: rawGa(patient, data)
       };
     }
-    function setTodayRange() {
+    function setDateRange(fromDate, toDate, autoGenerate) {
+      $('fromDate').value = fromDate;
+      $('toDate').value = toDate;
+      updateFilterSummary();
+      if (autoGenerate) generateReport();
+    }
+    function setTodayRange(autoGenerate) {
       var today = new Date();
-      var ymd = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-      $('fromDate').value = ymd;
-      $('toDate').value = ymd;
-      $('fromTime').value = '00:00';
-      $('toTime').value = '23:59';
+      var ymd = formatYmd(today);
+      setDateRange(ymd, ymd, autoGenerate);
+    }
+    function setThisWeekRange(autoGenerate) {
+      var today = new Date();
+      var day = today.getDay();
+      var diffToMonday = day === 0 ? 6 : day - 1;
+      var monday = new Date(today);
+      monday.setDate(today.getDate() - diffToMonday);
+      var sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      setDateRange(formatYmd(monday), formatYmd(sunday), autoGenerate);
+    }
+    function setThisMonthRange(autoGenerate) {
+      var today = new Date();
+      var first = new Date(today.getFullYear(), today.getMonth(), 1);
+      var last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      setDateRange(formatYmd(first), formatYmd(last), autoGenerate);
+    }
+    function setLastMonthRange(autoGenerate) {
+      var today = new Date();
+      var first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      var last = new Date(today.getFullYear(), today.getMonth(), 0);
+      setDateRange(formatYmd(first), formatYmd(last), autoGenerate);
+    }
+    function updateFilterSummary() {
+      var from = val('fromDate');
+      var to = val('toDate');
+      var summary = $('filterSummary');
+      if (!summary) return;
+      if (!from && !to) {
+        summary.textContent = '—';
+        return;
+      }
+      summary.textContent = dash(from) + ' → ' + dash(to);
+    }
+    function toggleFilterPanel() {
+      var panel = $('filterPanel');
+      var body = $('filterBody');
+      var toggle = $('filterToggle');
+      if (!panel || !body || !toggle) return;
+      var open = body.hasAttribute('hidden');
+      body.toggleAttribute('hidden', !open);
+      panel.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
     function setState(message, isError) {
       $('statePanel').style.display = message ? '' : 'none';
@@ -1131,7 +1262,7 @@
       var midwifeName = firstOf(currentProfile && currentProfile.name, currentUser && currentUser.displayName, currentUser && currentUser.email);
       $('printTitle').textContent = tr('printTitle');
       $('printMidwife').textContent = tr('midwife') + ': ' + dash(midwifeName);
-      $('printPeriod').textContent = tr('period') + ': ' + dash(val('fromDate')) + ' ' + dash(val('fromTime')) + ' - ' + dash(val('toDate')) + ' ' + dash(val('toTime'));
+      $('printPeriod').textContent = tr('period') + ': ' + dash(val('fromDate')) + ' - ' + dash(val('toDate'));
       $('printGenerated').textContent = tr('generated') + ': ' + new Date().toLocaleString();
     }
     function renderReport(rows) {
@@ -1183,11 +1314,12 @@
       }
       setState(tr('loading'));
       $('screenReport').style.display = 'none';
-      var fromMs = dateTimeMs(val('fromDate'), val('fromTime'), false);
-      var toMs = dateTimeMs(val('toDate'), val('toTime'), true);
+      var fromDate = val('fromDate');
+      var toDate = val('toDate');
+      updateFilterSummary();
       try {
         var events = await fetchEvents(currentUser.uid);
-        var filtered = events.filter(function (ev) { return inRange(eventDate(ev), fromMs, toMs); });
+        var filtered = events.filter(function (ev) { return inRange(eventDate(ev), fromDate, toDate); });
         filtered.sort(function (a, b) {
           var ad = parseDate(eventDate(a));
           var bd = parseDate(eventDate(b));
@@ -1210,8 +1342,9 @@
       }
       currentUser = user;
       currentProfile = await getUserProfile(user.uid);
-      setTodayRange();
+      setThisWeekRange(false);
       applyLanguage();
+      updateFilterSummary();
       await generateReport();
     });
   </script>
