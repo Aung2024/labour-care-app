@@ -296,6 +296,12 @@
       display: block;
     }
 
+    #legacyGenderCol,
+    #legacyBirthIdentityRow,
+    #legacyOutcomeRadios {
+      display: none !important;
+    }
+
     .newborn-modal {
       position: fixed;
       inset: 0;
@@ -630,7 +636,7 @@
             <input type="text" class="form-control baby-name-auto" id="baby_name" name="baby_name" readonly aria-readonly="true">
             <small class="text-muted lang-text" data-en="Auto-generated from mother's name" data-mm="မိခင်အမည်မှ အလိုအလျောက် ထုတ်ပေးသည်">Auto-generated from mother's name</small>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-6" id="legacyGenderCol">
             <label for="gender" class="form-label">
               <span class="lang-text" data-en="Gender" data-mm="ကျား/မ">Gender</span>
             </label>
@@ -667,13 +673,13 @@
           </div>
         </div>
 
-        <div class="row g-3 mb-3">
+        <div class="row g-3 mb-3" id="legacyBirthIdentityRow">
           <div class="col-md-6">
             <label for="birth_time" class="form-label">
               <span class="lang-text" data-en="Birth Time" data-mm="မွေးဖွားသည့် အချိန်">Birth Time</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <div class="d-flex gap-2">
-              <input type="datetime-local" class="form-control" id="birth_time" name="birth_time" required onchange="onNewbornBirthTimeChanged(); evaluateKmcSection();" oninput="onNewbornBirthTimeChanged(); evaluateKmcSection();">
+              <input type="datetime-local" class="form-control" id="birth_time" name="birth_time" onchange="onNewbornBirthTimeChanged(); evaluateKmcSection();" oninput="onNewbornBirthTimeChanged(); evaluateKmcSection();">
               <button type="button" id="birthTimeNowBtn" class="btn btn-outline-secondary btn-sm" onclick="setCurrentDateTime('birth_time')">
                 <i class="fas fa-clock"></i> <span class="lang-text" data-en="Now" data-mm="ယခု">Now</span>
               </button>
@@ -684,7 +690,7 @@
             <label for="body_weight_gram" class="form-label">
               <span class="lang-text" data-en="Body Weight (gram)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Body Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
-            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" required onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend();" oninput="evaluateKmcSection(); renderWeightTrend();">
+            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend();" oninput="evaluateKmcSection(); renderWeightTrend();">
             <div class="weight-trend-panel" id="weightTrendPanel">
               <div class="weight-trend-summary" id="weightTrendSummary"></div>
               <svg class="weight-trend-chart" id="weightTrendChart" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
@@ -720,8 +726,8 @@
             </label>
             <select class="form-control" id="birthplace" name="birthplace" required data-choice>
               <option value="" data-en="Select birthplace" data-mm="မွေးဖွားသည့်နေရာ ရွေးချယ်ရန်">Select birthplace</option>
-              <option value="Home" data-en="Home" data-mm="အိမ်">Home</option>
               <option value="Facility" data-en="Facility" data-mm="ဆေးရုံ/ဆေးခန်း">Facility</option>
+              <option value="Private" data-en="Private" data-mm="ကိုယ်ပိုင်">Private</option>
             </select>
           </div>
           <div class="col-md-6">
@@ -864,14 +870,15 @@
           <div class="row g-3 mb-3" id="kmcDecisionWrap" style="display:none;">
             <div class="col-md-6">
               <label class="form-label d-block">
-                <span class="lang-text" data-en="KMC for this visit" data-mm="ဤအကြိမ် KMC">KMC for this visit</span>
+                <span class="lang-text" data-en="KMC for this baby" data-mm="ဤကလေးအတွက် KMC">KMC for this baby</span>
+                <span id="kmcDecisionBabyLabel" class="text-muted"></span>
               </label>
               <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="kmc_selected" id="kmc_selected_yes" value="yes" onchange="toggleKmcDecisionFields(); updateNewbornVisitSchedule();">
+                <input class="form-check-input" type="radio" name="kmc_selected" id="kmc_selected_yes" value="yes" onchange="persistActiveBabyState(); toggleKmcDecisionFields(); updateNewbornVisitSchedule();">
                 <label class="form-check-label" for="kmc_selected_yes">Yes</label>
               </div>
               <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="kmc_selected" id="kmc_selected_no" value="no" onchange="toggleKmcDecisionFields(); updateNewbornVisitSchedule();">
+                <input class="form-check-input" type="radio" name="kmc_selected" id="kmc_selected_no" value="no" onchange="persistActiveBabyState(); toggleKmcDecisionFields(); updateNewbornVisitSchedule();">
                 <label class="form-check-label" for="kmc_selected_no">No</label>
               </div>
             </div>
@@ -1135,17 +1142,19 @@
           <label class="form-label d-block mb-2">
             <span class="lang-text" data-en="Outcome" data-mm="ရလဒ်">Outcome</span><span class="required-marker" aria-hidden="true">*</span>
           </label>
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="radio" name="outcome" id="outcome_alive" value="alive" required onchange="toggleOutcomeFollowup()">
-            <label class="form-check-label" for="outcome_alive">
-              <span class="lang-text" data-en="Alive" data-mm="အသက်ရှင်">Alive</span>
-            </label>
-          </div>
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="radio" name="outcome" id="outcome_dead" value="dead" onchange="toggleOutcomeFollowup()">
-            <label class="form-check-label" for="outcome_dead">
-              <span class="lang-text" data-en="Dead" data-mm="သေဆုံး">Dead</span>
-            </label>
+          <div id="legacyOutcomeRadios">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="outcome" id="outcome_alive" value="alive" onchange="toggleOutcomeFollowup()">
+              <label class="form-check-label" for="outcome_alive">
+                <span class="lang-text" data-en="Alive" data-mm="အသက်ရှင်">Alive</span>
+              </label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="outcome" id="outcome_dead" value="dead" onchange="toggleOutcomeFollowup()">
+              <label class="form-check-label" for="outcome_dead">
+                <span class="lang-text" data-en="Dead" data-mm="သေဆုံး">Dead</span>
+              </label>
+            </div>
           </div>
 
           <!-- Follow-up: Cause of Death -->
@@ -1257,6 +1266,7 @@
     let isEditMode = !!editVisitId;
     const isNewKmcVisit = newbornUrlParams.get('kmcVisit') === 'next';
     const targetKmcBabyIndex = parseInt(newbornUrlParams.get('babyIndex'), 10) || null;
+    const isKmcTrackerVisit = isNewKmcVisit && !!targetKmcBabyIndex;
 
     const BABY_SPECIFIC_FIELD_IDS = [
       'gender', 'birth_time', 'body_weight_gram', 'birth_length_cm', 'head_circumference_cm',
@@ -1691,8 +1701,139 @@
         outcome: baby.outcome === 'death' ? 'dead' : (baby.outcome || ''),
         difficult_breathing_signs: baby.difficult_breathing_signs || [],
         eye_infection_findings: baby.eye_infection_findings || [],
-        danger_signs: baby.danger_signs || {}
+        danger_signs: baby.danger_signs || {},
+        kmc_selected: baby.kmc_selected || null,
+        kmc_no_category: baby.kmc_no_category || '',
+        kmc_no_reason: baby.kmc_no_reason || '',
+        discharge_date: baby.discharge_date || '',
+        kmc_hours_per_day: baby.kmc_hours_per_day != null ? baby.kmc_hours_per_day : '',
+        kmc_total_hours: baby.kmc_total_hours != null ? baby.kmc_total_hours : '',
+        feeding_type: baby.feeding_type || '',
+        feeding_method: baby.feeding_method || ''
       });
+    }
+
+    function updateKmcDecisionLabel() {
+      const label = document.getElementById('kmcDecisionBabyLabel');
+      if (!label) return;
+      if (newbornBabyStates.length > 1) {
+        label.textContent = currentLanguage === 'en'
+          ? (' (Baby ' + activeBabyIndex + ')')
+          : (' (ကလေး ' + activeBabyIndex + ')');
+      } else {
+        label.textContent = '';
+      }
+    }
+
+    function normalizeBirthplaceValue(value) {
+      if (!value) return '';
+      if (window.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBirthPlaceForNewborn) {
+        return DeliveryNotesUtils.normalizeBirthPlaceForNewborn(value) || value;
+      }
+      return value;
+    }
+
+    function getVisit1Data() {
+      const item = sortedNewbornVisits().find(function (v) {
+        const data = getVisitData(v);
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+      });
+      return item ? getVisitData(item) : null;
+    }
+
+    function mergeKmcBabiesIntoStates(kmcBabies) {
+      if (!Array.isArray(kmcBabies)) return;
+      kmcBabies.forEach(function (kb) {
+        const idx = (parseInt(kb.babyIndex || kb.baby_index, 10) || 1) - 1;
+        if (!newbornBabyStates[idx]) return;
+        newbornBabyStates[idx] = Object.assign({}, newbornBabyStates[idx], {
+          kmc_selected: kb.kmc_selected || newbornBabyStates[idx].kmc_selected || null,
+          kmc_no_category: kb.kmc_no_category || newbornBabyStates[idx].kmc_no_category || '',
+          kmc_no_reason: kb.kmc_no_reason || newbornBabyStates[idx].kmc_no_reason || '',
+          discharge_date: kb.discharge_date || newbornBabyStates[idx].discharge_date || '',
+          kmc_hours_per_day: kb.kmc_hours_per_day != null ? kb.kmc_hours_per_day : newbornBabyStates[idx].kmc_hours_per_day,
+          kmc_total_hours: kb.kmc_total_hours != null ? kb.kmc_total_hours : newbornBabyStates[idx].kmc_total_hours,
+          feeding_type: kb.feeding_type || newbornBabyStates[idx].feeding_type || '',
+          feeding_method: kb.feeding_method || newbornBabyStates[idx].feeding_method || ''
+        });
+      });
+    }
+
+    function clearVisitSpecificFormFields() {
+      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'birth_length_cm', 'head_circumference_cm', 'cause_of_death'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      ['difficult_breathing', 'eye_infection_status', 'cord_care', 'outcome', 'kmc_selected'].forEach(function (name) {
+        document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) { el.checked = false; });
+      });
+      document.querySelectorAll('input[name="difficult_breathing_signs"], input[name="eye_infection_findings"]').forEach(function (el) {
+        el.checked = false;
+      });
+      NEWBORN_DANGER_SIGN_IDS.forEach(function (key) {
+        const el = document.getElementById('danger_' + key);
+        if (el) el.checked = false;
+      });
+      const anatomy = document.getElementById('anatomy_abnormalities');
+      if (anatomy) anatomy.checked = false;
+      const ebf = document.getElementById('exclusive_breastfeeding_on_demand');
+      if (ebf) ebf.checked = false;
+      const eyeCare = document.getElementById('eye_care_status');
+      if (eyeCare) eyeCare.value = '';
+      ['discharge_date', 'kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day', 'kmc_total_hours', 'feeding_type', 'feeding_method'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      toggleDifficultBreathingFollowup();
+      toggleEyeInfectionFollowup();
+      toggleOutcomeFollowup();
+      toggleKmcDecisionFields();
+    }
+
+    function populateIdentityFromVisit(data, locked) {
+      data = data || {};
+      if (data.baby_name) document.getElementById('baby_name').value = data.baby_name;
+      else applyAutoBabyName();
+      if (data.pregnancy_type) document.getElementById('pregnancy_type').value = data.pregnancy_type;
+      if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
+      if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
+      renderBabyIdentityRows(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, !!locked);
+      mergeKmcBabiesIntoStates(data.kmc_babies);
+      syncFirstBabyToLegacyFields();
+      applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
+      applyIdentityFieldLock(!!locked);
+      updateKmcDecisionLabel();
+    }
+
+    function applyNewVisitShell(nextVisitNumber) {
+      document.getElementById('visit_number').value = nextVisitNumber;
+      clearVisitSpecificFormFields();
+      newbornBabyStates = newbornBabyStates.map(function (baby) {
+        return Object.assign({}, baby, {
+          temperature: '',
+          heart_rate: '',
+          respiration_rate: '',
+          clinical_notes: '',
+          difficult_breathing: null,
+          eye_infection_status: null,
+          cord_care: null,
+          anatomy_abnormalities: false,
+          exclusive_breastfeeding_on_demand: false,
+          difficult_breathing_signs: [],
+          eye_infection_findings: [],
+          danger_signs: {},
+          kmc_selected: null,
+          kmc_no_category: '',
+          kmc_no_reason: '',
+          discharge_date: '',
+          kmc_hours_per_day: '',
+          kmc_total_hours: '',
+          feeding_type: '',
+          feeding_method: '',
+          cause_of_death: ''
+        });
+      });
+      applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
     }
 
     function renderBabyTabs() {
@@ -1702,6 +1843,7 @@
       if (!newbornBabyStates.length || newbornBabyStates.length === 1) {
         strip.innerHTML = '';
         if (hint) hint.textContent = '';
+        updateKmcDecisionLabel();
         return;
       }
       strip.innerHTML = newbornBabyStates.map(function (baby) {
@@ -1714,6 +1856,7 @@
           ? 'Switch tabs to record each twin separately. Save once after all baby tabs are complete.'
           : 'အမွှာကလေးတစ်ယောက်ချင်းစီအတွက် tab ပြောင်း၍ မှတ်တမ်းဖြည့်ပါ။ ကလေးအားလုံးပြီးမှ တစ်ခါတည်း သိမ်းပါ။';
       }
+      updateKmcDecisionLabel();
     }
 
     async function switchBabyTab(nextIndex) {
@@ -1724,6 +1867,8 @@
       twinTabDirty = false;
       renderBabyTabs();
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
+      evaluateKmcSection();
+      updateKmcDecisionLabel();
     }
 
     // Get patient ID from URL
@@ -1943,11 +2088,9 @@
       );
       const eligibleBabies = currentKmcBabyEvaluations.filter(function (item) {
         const babyIndex = parseInt(item.babyIndex, 10) || 1;
-        return item.eligible && (!targetKmcBabyIndex || babyIndex === targetKmcBabyIndex);
+        return babyIndex === activeBabyIndex && item.eligible;
       });
-      const priorDecision = targetKmcBabyIndex
-        ? KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), targetKmcBabyIndex)
-        : KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData));
+      const priorDecision = KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), activeBabyIndex);
       const shouldShow = eligibleBabies.length > 0 || !!priorDecision;
       const section = document.getElementById('kmcCareSection');
       if (section) section.style.display = 'block';
@@ -1955,23 +2098,24 @@
       if (decisionWrap) decisionWrap.style.display = shouldShow ? '' : 'none';
       const alertEl = document.getElementById('kmcEligibilityAlert');
       if (alertEl && eligibleBabies.length) {
-        const reasonSet = new Set();
-        eligibleBabies.forEach(function (item) {
-          (item.reasons || []).forEach(function (reason) { reasonSet.add(reason); });
-        });
-        const reasonText = KmcUtils.reasonLabels(Array.from(reasonSet), currentLanguage).join(', ');
-        const babyText = eligibleBabies.map(function (item) {
-          return (currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + item.babyIndex;
-        }).join(', ');
+        const activeEval = eligibleBabies[0];
+        const reasonText = KmcUtils.reasonLabels(activeEval.reasons || [], currentLanguage).join(', ');
+        const babyLabel = (currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + activeBabyIndex;
         alertEl.textContent = currentLanguage === 'mm'
-          ? 'KMC ဖြစ်နိုင်သောကလေး: ' + babyText + ' (' + reasonText + ')။ KMC Yes/No အတည်ပြုပါ။'
-          : 'Potential KMC baby: ' + babyText + ' (' + reasonText + '). Please confirm KMC Yes/No.';
+          ? babyLabel + ' — KMC ဖြစ်နိုင်သည် (' + reasonText + ')။ KMC Yes/No ရွေးပါ။'
+          : babyLabel + ' — potential KMC (' + reasonText + '). Please select KMC Yes/No.';
       } else if (alertEl && priorDecision) {
-        alertEl.textContent = 'Previous KMC decision found for this baby.';
+        alertEl.textContent = currentLanguage === 'mm'
+          ? 'ဤကလေးအတွက် ယခင် KMC ဆုံးဖြတ်ချက် ရှိပြီးပါပြီ။'
+          : 'Previous KMC decision found for this baby.';
       } else if (alertEl && currentKmcEvaluation && (birthTime || weight)) {
-        alertEl.textContent = 'KMC eligibility checked: this baby is not currently LBW <2000g or documented as born at least 3 weeks before EDD.';
+        alertEl.textContent = currentLanguage === 'mm'
+          ? 'ဤကလေးသည် လက်ရှိ LBW <2000g သို့မဟုတ် EDD ထက် ၃ ပတ်စောက် မွေးဖွားခြင်း မဟုတ်ပါ။'
+          : 'KMC eligibility checked: this baby is not currently LBW <2000g or documented as born at least 3 weeks before EDD.';
       } else if (alertEl) {
-        alertEl.textContent = 'KMC eligibility: enter birth time and body weight. If weight is under 2000g or birth is at least 3 weeks before EDD, KMC Yes/No will appear.';
+        alertEl.textContent = currentLanguage === 'mm'
+          ? 'KMC အရည်အချက် — မွေးချိန်နှင့် ကိုယ်အလေးချိန် ထည့်ပါ။'
+          : 'KMC eligibility: enter birth time and body weight. If weight is under 2000g or birth is at least 3 weeks before EDD, KMC Yes/No will appear.';
       }
       if (shouldShow) {
         document.getElementById('kmc_selected_yes').required = true;
@@ -2167,28 +2311,23 @@
 
     async function preloadDeliveryNotesIntoNewbornForm() {
       if (!patientId || !window.DeliveryNotesUtils) return;
-      const existingFirst = sortedNewbornVisits().find(function (item) {
-        const data = getVisitData(item);
-        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
-      });
-      const locked = hasSavedFirstNewbornVisit() && !isEditMode;
+      if (hasSavedFirstNewbornVisit()) return;
       let source = null;
       const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
       if (notes) {
         source = DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
-      } else if (existingFirst) {
-        source = getVisitData(existingFirst);
-        await DeliveryNotesUtils.syncFromNewbornIfMissing(patientId, source, currentUser && currentUser.uid);
       }
       if (!source) {
         renderBabyIdentityRows(DeliveryNotesUtils.defaultBabies(1), false);
         return;
       }
       document.getElementById('pregnancy_type').value = source.pregnancy_type || (source.babies && source.babies.length > 1 ? 'twins' : 'single');
-      if (source.birthplace) document.getElementById('birthplace').value = source.birthplace;
+      if (source.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(source.birthplace);
       if (source.mode_of_delivery) document.getElementById('mode_of_delivery').value = source.mode_of_delivery;
-      renderBabyIdentityRows(source.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(source).deliveryDetails.babies, locked);
-      applyIdentityFieldLock(locked);
+      renderBabyIdentityRows(source.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(source).deliveryDetails.babies, false);
+      syncFirstBabyToLegacyFields();
+      applyIdentityFieldLock(false);
+      updateKmcDecisionLabel();
     }
 
     function applyIdentityFieldLock(locked) {
@@ -2278,7 +2417,7 @@
       if (data.visit_number) document.getElementById('visit_number').value = data.visit_number;
       if (data.birth_length_cm) document.getElementById('birth_length_cm').value = data.birth_length_cm;
       if (data.head_circumference_cm) document.getElementById('head_circumference_cm').value = data.head_circumference_cm;
-      if (data.birthplace) document.getElementById('birthplace').value = data.birthplace;
+      if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
       if (data.body_weight_gram) document.getElementById('body_weight_gram').value = data.body_weight_gram;
       if (data.temperature) document.getElementById('temperature').value = data.temperature;
@@ -2344,7 +2483,10 @@
       if (data.feeding_method) document.getElementById('feeding_method').value = data.feeding_method;
       loadNewbornDangerSigns(data.danger_signs);
       renderBabyIdentityRows(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, hasSavedFirstNewbornVisit() && !isEditMode);
+      mergeKmcBabiesIntoStates(data.kmc_babies);
+      applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
       applyIdentityFieldLock(hasSavedFirstNewbornVisit() && !isEditMode);
+      updateKmcDecisionLabel();
     }
 
     async function loadExistingNewbornCareData() {
@@ -2369,38 +2511,47 @@
         }
         newbornCareVisits = sortedNewbornVisits();
 
+        const visit1Data = getVisit1Data();
+        const hasVisit1 = !!visit1Data;
+        const isNewFollowUpVisit = hasVisit1 && !isEditMode && !isNewKmcVisit;
+
         if (newbornCareVisits.length) {
           const maxVisit = newbornCareVisits.reduce(function (max, item) {
             const n = parseInt(getVisitData(item).visit_number, 10) || 1;
             return Math.max(max, n);
           }, 1);
-          const selected = isEditMode
-            ? newbornCareVisits.find(function (item) { return item.id === editVisitId; })
-            : (isNewKmcVisit ? null : newbornCareVisits[newbornCareVisits.length - 1]);
-          const base = selected || newbornCareVisits[newbornCareVisits.length - 1];
-          if (base) {
-            populateNewbornCareFields(getVisitData(base));
-            currentNewbornDocId = selected ? selected.id : null;
-          }
-          if (isNewKmcVisit) {
-            document.getElementById('visit_number').value = maxVisit + 1;
-            document.getElementById('body_weight_gram').value = '';
-            document.getElementById('temperature').value = '';
-            document.getElementById('heart_rate').value = '';
-            document.getElementById('respiration_rate').value = '';
-            document.getElementById('clinical_notes').value = '';
-            document.querySelectorAll('input[name="outcome"]').forEach(function (el) { el.checked = false; });
+
+          if (isEditMode) {
+            const selected = newbornCareVisits.find(function (item) { return item.id === editVisitId; });
+            if (selected) {
+              populateNewbornCareFields(getVisitData(selected));
+              currentNewbornDocId = selected.id;
+            }
+          } else if (isNewKmcVisit || isNewFollowUpVisit) {
+            const identitySource = visit1Data || getVisitData(newbornCareVisits[newbornCareVisits.length - 1]);
+            populateIdentityFromVisit(identitySource, true);
+            applyNewVisitShell(maxVisit + 1);
+            currentNewbornDocId = null;
+          } else {
+            applyNewbornVisitNumber(1);
+            await preloadDeliveryNotesIntoNewbornForm();
           }
         } else {
           applyNewbornVisitNumber(1);
           await applySharedDeliveryAnchor();
-        }
-
-        if (!isEditMode) {
           await preloadDeliveryNotesIntoNewbornForm();
         }
+
+        if (isKmcTrackerVisit && targetKmcBabyIndex) {
+          activeBabyIndex = targetKmcBabyIndex;
+          renderBabyTabs();
+          applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1] || {}));
+          evaluateKmcSection();
+          updateKmcDecisionLabel();
+        }
+
         applyBirthTimeLock();
-        applyIdentityFieldLock(hasSavedFirstNewbornVisit() && !isEditMode);
+        applyIdentityFieldLock(hasVisit1 && !isEditMode);
         updateNewbornVisitSchedule();
         checkTemperatureAlert();
         checkHeartRateAlert();
@@ -2418,90 +2569,85 @@
 
       var birthplaceEl = document.getElementById('birthplace');
       if (!birthplaceEl || !birthplaceEl.value) {
-        alert(currentLanguage === 'mm' ? 'မွေးဖွားသည့်နေရာ ရွေးချယ်ပါ။' : 'Please select Birthplace (Home or Facility).');
+        alert(currentLanguage === 'mm' ? 'မွေးဖွားသည့်နေရာ ရွေးချယ်ပါ။' : 'Please select Birthplace (Facility or Private).');
         if (birthplaceEl) birthplaceEl.focus();
         return;
       }
 
-      const birthTimeEl = document.getElementById('birth_time');
-      const bodyWeightEl = document.getElementById('body_weight_gram');
-      const outcomeEl = document.querySelector('input[name="outcome"]:checked');
-      if (!birthTimeEl.value) {
-        alert('Please enter Birth Time.');
-        birthTimeEl.focus();
-        return;
-      }
-      if (!bodyWeightEl.value) {
-        alert('Please enter Body Weight.');
-        bodyWeightEl.focus();
-        return;
-      }
-      if (!outcomeEl) {
-        alert('Please select Outcome.');
+      persistActiveBabyState();
+      evaluateKmcSection();
+      const babyRows = collectBabyIdentityRows();
+      const visitNum = parseInt(document.getElementById('visit_number').value, 10) || 1;
+
+      const incompleteBaby = babyRows.find(function (baby) {
+        return !baby.birthTime || !baby.birthWeightGram || !baby.outcome;
+      });
+      if (incompleteBaby) {
+        await switchBabyTab(incompleteBaby.babyIndex || 1);
+        alert((currentLanguage === 'mm' ? 'ကလေး ' : 'Baby ') + (incompleteBaby.babyIndex || 1) + (currentLanguage === 'mm' ? ' အတွက် မွေးချိန်၊ ကိုယ်အလေးချိန်နှင့် ရလဒ် ဖြည့်ပါ။' : ': please enter birth time, birth weight, and outcome.'));
         return;
       }
 
-      const kmcEval = evaluateKmcSection();
-      const priorKmcDecision = window.KmcUtils
-        ? (targetKmcBabyIndex
-          ? KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), targetKmcBabyIndex)
-          : KmcUtils.getLatestKmcDecision(newbornCareVisits.map(getVisitData)))
-        : null;
-      const eligibleBabyEvaluations = (currentKmcBabyEvaluations || []).filter(function (item) {
-        const babyIndex = parseInt(item.babyIndex, 10) || 1;
-        return item.eligible && (!targetKmcBabyIndex || babyIndex === targetKmcBabyIndex);
-      });
-      const kmcReasonSet = new Set();
-      eligibleBabyEvaluations.forEach(function (item) {
-        (item.reasons || []).forEach(function (reason) { kmcReasonSet.add(reason); });
-      });
-      const potentialKmc = !!(eligibleBabyEvaluations.length || (kmcEval && kmcEval.eligible) || (priorKmcDecision && priorKmcDecision.potential_kmc));
-      const kmcSelected = getSelectedKmcValue();
-      if (potentialKmc && !kmcSelected) {
-        alert('This baby is potential KMC. Please select KMC Yes or No.');
-        return;
-      }
-      if (potentialKmc && kmcSelected === 'yes' && !document.getElementById('discharge_date').value) {
-        alert('Please enter Discharge Date for KMC tracking.');
-        document.getElementById('discharge_date').focus();
-        return;
-      }
-      if (potentialKmc && kmcSelected === 'no' && (!document.getElementById('kmc_no_category').value || !document.getElementById('kmc_no_reason').value)) {
-        alert('Please select the reason why KMC is not selected.');
-        return;
+      if (visitNum === 1) {
+        for (let i = 0; i < babyRows.length; i++) {
+          const baby = babyRows[i];
+          const rowBabyIndex = parseInt(baby.babyIndex, 10) || (i + 1);
+          const evaluation = (currentKmcBabyEvaluations || []).find(function (item) {
+            return (parseInt(item.babyIndex, 10) || 1) === rowBabyIndex;
+          }) || {};
+          if (!evaluation.eligible) continue;
+          const babyKmc = baby.kmc_selected || null;
+          if (!babyKmc) {
+            await switchBabyTab(rowBabyIndex);
+            alert(currentLanguage === 'mm'
+              ? ('ကလေး ' + rowBabyIndex + ' — KMC Yes/No ရွေးပါ။')
+              : ('Baby ' + rowBabyIndex + ' is potential KMC. Please select KMC Yes or No.'));
+            return;
+          }
+          if (babyKmc === 'yes' && !baby.discharge_date) {
+            await switchBabyTab(rowBabyIndex);
+            alert(currentLanguage === 'mm' ? 'KMC Yes — ဆေးရုံမှဆင်းသည့်ရက် ထည့်ပါ။' : 'Please enter Discharge Date for KMC tracking.');
+            document.getElementById('discharge_date').focus();
+            return;
+          }
+          if (babyKmc === 'no' && (!baby.kmc_no_category || !baby.kmc_no_reason)) {
+            await switchBabyTab(rowBabyIndex);
+            alert(currentLanguage === 'mm' ? 'KMC No — အကြောင်းရွေးချယ်ပါ။' : 'Please select the reason why KMC is not selected.');
+            return;
+          }
+        }
       }
       
       try {
-        persistActiveBabyState();
-        const babyRows = collectBabyIdentityRows();
-        const incompleteBaby = babyRows.find(function (baby) {
-          return !baby.birthTime || !baby.birthWeightGram || !baby.outcome;
-        });
-        if (incompleteBaby) {
-          await switchBabyTab(incompleteBaby.babyIndex || 1);
-          alert((currentLanguage === 'mm' ? 'ကလေး ' : 'Baby ') + (incompleteBaby.babyIndex || 1) + (currentLanguage === 'mm' ? ' အတွက် မွေးချိန်၊ ကိုယ်အလေးချိန်နှင့် ရလဒ် ဖြည့်ပါ။' : ': please enter birth time, birth weight, and outcome.'));
-          return;
-        }
         const firstBaby = babyRows[0] || {};
         const kmcBabies = babyRows.map(function (baby) {
           const evaluation = (currentKmcBabyEvaluations || []).find(function (item) {
             return (parseInt(item.babyIndex, 10) || 1) === (parseInt(baby.babyIndex, 10) || 1);
           }) || {};
-          const rowBabyIndex = parseInt(baby.babyIndex, 10) || 1;
-          const isEligible = !!evaluation.eligible && (!targetKmcBabyIndex || rowBabyIndex === targetKmcBabyIndex);
+          const isEligible = !!evaluation.eligible;
+          const babyKmc = baby.kmc_selected || null;
           return {
             babyIndex: baby.babyIndex,
             babyName: baby.babyName || ((currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + baby.babyIndex),
             potential_kmc: isEligible,
             kmc_eligible_reasons: isEligible ? (evaluation.reasons || []) : [],
-            kmc_selected: isEligible ? kmcSelected : 'no',
-            kmc_no_category: isEligible && kmcSelected === 'no' ? document.getElementById('kmc_no_category').value || null : null,
-            kmc_no_reason: isEligible && kmcSelected === 'no' ? document.getElementById('kmc_no_reason').value || null : null,
-            discharge_date: isEligible && kmcSelected === 'yes' ? document.getElementById('discharge_date').value || null : null,
-            kmc_hours_per_day: isEligible && kmcSelected === 'yes' && document.getElementById('kmc_hours_per_day').value ? parseFloat(document.getElementById('kmc_hours_per_day').value) : null,
-            kmc_total_hours: isEligible && kmcSelected === 'yes' && document.getElementById('kmc_total_hours').value ? parseFloat(document.getElementById('kmc_total_hours').value) : null
+            kmc_selected: isEligible ? babyKmc : 'no',
+            kmc_no_category: isEligible && babyKmc === 'no' ? baby.kmc_no_category || null : null,
+            kmc_no_reason: isEligible && babyKmc === 'no' ? baby.kmc_no_reason || null : null,
+            discharge_date: isEligible && babyKmc === 'yes' ? baby.discharge_date || null : null,
+            kmc_hours_per_day: isEligible && babyKmc === 'yes' && baby.kmc_hours_per_day ? parseFloat(baby.kmc_hours_per_day) : null,
+            kmc_total_hours: isEligible && babyKmc === 'yes' && baby.kmc_total_hours ? parseFloat(baby.kmc_total_hours) : null,
+            feeding_type: isEligible && babyKmc === 'yes' ? baby.feeding_type || null : null,
+            feeding_method: isEligible && babyKmc === 'yes' ? baby.feeding_method || null : null
           };
         });
+        const kmcReasonSet = new Set();
+        kmcBabies.forEach(function (item) {
+          if (item.potential_kmc) (item.kmc_eligible_reasons || []).forEach(function (reason) { kmcReasonSet.add(reason); });
+        });
+        const potentialKmc = kmcBabies.some(function (item) { return item.potential_kmc; });
+        const primaryKmcBaby = kmcBabies.find(function (item) { return item.potential_kmc && item.kmc_selected; }) || kmcBabies.find(function (item) { return item.potential_kmc; }) || kmcBabies[0] || {};
+        const kmcSelected = primaryKmcBaby.kmc_selected || null;
         // Collect difficult breathing signs
         const difficultBreathingSigns = [];
         document.querySelectorAll('input[name="difficult_breathing_signs"]:checked').forEach(cb => {
@@ -2543,20 +2689,20 @@
           follow_up_manual_override: document.getElementById('followUpManualOverride').checked,
           clinical_notes: document.getElementById('clinical_notes').value || null,
           danger_signs: collectNewbornDangerSigns(),
-          outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || outcomeEl.value),
+          outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || null),
           cause_of_death: firstBaby.causeOfDeath || firstBaby.cause_of_death || document.getElementById('cause_of_death').value || null,
           visitDate: new Date().toISOString().split('T')[0],
           potential_kmc: potentialKmc,
           kmc_eligible_reasons: potentialKmc ? Array.from(kmcReasonSet) : null,
           kmc_babies: kmcBabies,
           kmc_selected: potentialKmc ? kmcSelected : (kmcSelected || null),
-          kmc_no_category: kmcSelected === 'no' ? document.getElementById('kmc_no_category').value || null : null,
-          kmc_no_reason: kmcSelected === 'no' ? document.getElementById('kmc_no_reason').value || null : null,
-          discharge_date: kmcSelected === 'yes' ? document.getElementById('discharge_date').value || null : null,
-          kmc_hours_per_day: kmcSelected === 'yes' && document.getElementById('kmc_hours_per_day').value ? parseFloat(document.getElementById('kmc_hours_per_day').value) : null,
-          kmc_total_hours: kmcSelected === 'yes' && document.getElementById('kmc_total_hours').value ? parseFloat(document.getElementById('kmc_total_hours').value) : null,
-          feeding_type: kmcSelected === 'yes' ? document.getElementById('feeding_type').value || null : null,
-          feeding_method: kmcSelected === 'yes' ? document.getElementById('feeding_method').value || null : null,
+          kmc_no_category: kmcSelected === 'no' ? primaryKmcBaby.kmc_no_category || null : null,
+          kmc_no_reason: kmcSelected === 'no' ? primaryKmcBaby.kmc_no_reason || null : null,
+          discharge_date: kmcSelected === 'yes' ? primaryKmcBaby.discharge_date || null : null,
+          kmc_hours_per_day: kmcSelected === 'yes' && primaryKmcBaby.kmc_hours_per_day ? parseFloat(primaryKmcBaby.kmc_hours_per_day) : null,
+          kmc_total_hours: kmcSelected === 'yes' && primaryKmcBaby.kmc_total_hours ? parseFloat(primaryKmcBaby.kmc_total_hours) : null,
+          feeding_type: kmcSelected === 'yes' ? primaryKmcBaby.feeding_type || null : null,
+          feeding_method: kmcSelected === 'yes' ? primaryKmcBaby.feeding_method || null : null,
           patientId: patientId,
           recordedBy: currentUser.uid,
           createdBy: currentNewbornDocId ? undefined : currentUser.uid,

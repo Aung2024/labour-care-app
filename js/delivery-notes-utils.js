@@ -48,7 +48,7 @@
   function normalizeBirthPlaceForNewborn(value) {
     var v = String(value || '').toLowerCase();
     if (!v) return '';
-    if (v.indexOf('home') !== -1 || v.indexOf('အိမ်') !== -1) return 'Home';
+    if (v.indexOf('private') !== -1 || v.indexOf('home') !== -1 || v.indexOf('အိမ်') !== -1) return 'Private';
     return 'Facility';
   }
 
