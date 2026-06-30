@@ -317,7 +317,7 @@
     }
 
     .event-cards-panel {
-      margin-top: 1rem;
+      margin-bottom: 1rem;
       overflow: hidden;
     }
 
@@ -698,6 +698,19 @@
     <section class="panel state-panel" id="statePanel" data-i18n="chooseRange">Choose a date range and generate the report.</section>
 
     <section class="screen-only" id="screenReport" style="display:none;">
+      <section class="panel event-cards-panel" id="eventCardsPanel">
+        <button type="button" class="event-cards-toggle" id="eventCardsToggle" aria-expanded="false" aria-controls="eventCardsBody" onclick="toggleEventCardsPanel()">
+          <span>
+            <span class="event-cards-toggle-label" data-i18n="patientCards">Patient visit cards</span>
+            <span class="event-cards-toggle-count"> · <span id="eventCardsCount">0</span></span>
+          </span>
+          <i class="fas fa-chevron-down event-cards-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="event-cards-body" id="eventCardsBody" hidden>
+          <div class="event-cards" id="eventCards"></div>
+        </div>
+      </section>
+
       <section class="panel table-section">
         <h2 class="section-title"><i class="fas fa-user"></i><span data-i18n="clientVisit">Client & Visit</span></h2>
         <div class="table-scroll"><table class="screen-table" id="clientTable"></table></div>
@@ -711,19 +724,6 @@
       <section class="panel table-section">
         <h2 class="section-title"><i class="fas fa-stethoscope"></i><span data-i18n="clinicalFollow">Clinical, Follow-up & Transfer</span></h2>
         <div class="table-scroll"><table class="screen-table" id="clinicalTable"></table></div>
-      </section>
-
-      <section class="panel event-cards-panel" id="eventCardsPanel">
-        <button type="button" class="event-cards-toggle" id="eventCardsToggle" aria-expanded="false" aria-controls="eventCardsBody" onclick="toggleEventCardsPanel()">
-          <span>
-            <span class="event-cards-toggle-label" data-i18n="patientCards">Patient visit cards</span>
-            <span class="event-cards-toggle-count"> · <span id="eventCardsCount">0</span></span>
-          </span>
-          <i class="fas fa-chevron-down event-cards-chevron" aria-hidden="true"></i>
-        </button>
-        <div class="event-cards-body" id="eventCardsBody" hidden>
-          <div class="event-cards" id="eventCards"></div>
-        </div>
       </section>
     </section>
 
@@ -744,6 +744,7 @@
     var currentRows = [];
     var patientCache = new Map();
     var transferCache = new Map();
+    var testRecordsCache = new Map();
     var CONCURRENCY = 6;
     var currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
 
@@ -785,6 +786,9 @@
         labour: 'Labour',
         newClient: 'New client',
         oldClient: 'Old client',
+        clientType: 'Old/New',
+        clientNewShort: 'New',
+        clientOldShort: 'Old',
         newOld: 'New/Old',
         gp: 'G/P',
         bpWeight: 'BP / Weight',
@@ -833,6 +837,9 @@
         labour: 'မွေးဖွား',
         newClient: 'လူနာအသစ်',
         oldClient: 'လူနာဟောင်း',
+        clientType: 'ဟောင်း/အသစ်',
+        clientNewShort: 'အသစ်',
+        clientOldShort: 'ဟောင်း',
         newOld: 'အသစ်/ဟောင်း',
         gp: 'G/P',
         bpWeight: 'သွေးပေါင် / အလေးချိန်',
@@ -851,6 +858,7 @@
       no: { en: 'No', mm: 'စဉ်' },
       newClient: { en: 'New Client', mm: 'လူနာအသစ်' },
       oldClient: { en: 'Old Client', mm: 'လူနာဟောင်း' },
+      clientType: { en: 'Old/New', mm: 'ဟောင်း/အသစ်' },
       patientName: { en: 'Patient Name', mm: 'လူနာအမည်' },
       addressOccupation: { en: 'Address / Occupation', mm: 'လိပ်စာ / အလုပ်အကိုင်' },
       gravida: { en: 'Gravida', mm: 'Gravida' },
@@ -879,7 +887,7 @@
     };
 
     var COLUMNS = [
-      'date', 'no', 'newClient', 'oldClient', 'patientName', 'addressOccupation',
+      'date', 'no', 'clientType', 'patientName', 'addressOccupation',
       'gravida', 'parity', 'lmp', 'edd', 'weight', 'height', 'ga', 'urineGlucose',
       'urineProtein', 'hb', 'syphilis', 'pmct', 'tb', 'bloodPressure', 'fundalHeight',
       'fetalHeartRate', 'fetalPresentation', 'symptomsTreatment', 'totalVisits',
@@ -1139,6 +1147,64 @@
       transferCache.set(patientId, info);
       return info;
     }
+    async function fetchPatientTestRecords(patientId) {
+      if (!patientId) return [];
+      if (testRecordsCache.has(patientId)) return testRecordsCache.get(patientId);
+      try {
+        var snap = await firebase.firestore().collection('patients').doc(patientId).collection('testRecords').limit(100).get();
+        var records = [];
+        snap.forEach(function (doc) {
+          records.push({ id: doc.id, ...(doc.data() || {}) });
+        });
+        testRecordsCache.set(patientId, records);
+        return records;
+      } catch (e) {
+        console.warn('Test records fetch failed', patientId, e);
+        testRecordsCache.set(patientId, []);
+        return [];
+      }
+    }
+    async function preloadTestRecords(patientIds) {
+      var ids = Array.from(new Set((patientIds || []).filter(Boolean)));
+      await mapWithConcurrency(ids, CONCURRENCY, fetchPatientTestRecords);
+    }
+    function testRecordDate(record) {
+      return dateOnly(firstOf(record.testDate, record.timestamp, record.createdAt));
+    }
+    function testRecordSortMs(record) {
+      var d = parseDate(firstOf(record.timestamp, record.createdAt, record.testDate));
+      return d ? d.getTime() : 0;
+    }
+    function findLabTestForVisit(records, visitYmd, uid) {
+      if (!records || !records.length || !visitYmd) return null;
+      var candidates = records.filter(function (record) {
+        return testRecordDate(record) === visitYmd && isCreator(record, uid);
+      });
+      if (!candidates.length) {
+        candidates = records.filter(function (record) {
+          return testRecordDate(record) === visitYmd;
+        });
+      }
+      if (!candidates.length) return null;
+      candidates.sort(function (a, b) {
+        return testRecordSortMs(b) - testRecordSortMs(a);
+      });
+      return candidates[0];
+    }
+    function formatHbValue(value) {
+      if (value == null || value === '') return '';
+      var num = parseFloat(value);
+      if (!isNaN(num)) return String(num);
+      return String(value);
+    }
+    function labFieldsFromTest(test) {
+      if (!test) return { hb: '', syphilis: '', pmct: '' };
+      return {
+        hb: formatHbValue(firstOf(test.hemoglobinResult, test.hemoglobin, test.hb)),
+        syphilis: firstOf(test.syphilisResult, test.syphilis),
+        pmct: firstOf(test.hivResult, test.pmctResult, test.pmct)
+      };
+    }
     function buildSymptomsTreatment(type, data) {
       var parts = [];
       [
@@ -1164,20 +1230,22 @@
         return d && d.getTime() <= untilMs;
       }).length;
     }
-    async function toReportRow(ev, index, allEvents) {
+    async function toReportRow(ev, index, allEvents, uid) {
       var patient = await fetchPatient(ev.patientId);
       var data = ev.data || {};
       var evDate = eventDate(ev);
       var evMs = parseDate(evDate) ? parseDate(evDate).getTime() : Date.now();
+      var visitYmd = dateOnly(evDate);
       var isNew = ev.type === 'registration' || isNewClientForEvent(patient, evDate);
       var bp = formatBp(data);
       var transfer = await fetchTransferInfo(ev.patientId);
+      var labTest = findLabTestForVisit(await fetchPatientTestRecords(ev.patientId), visitYmd, uid);
+      var lab = labFieldsFromTest(labTest);
       return {
         date: displayDate(evDate),
         no: index + 1,
         service: serviceLabel(ev.type),
-        newClient: isNew ? tr('yes') : '',
-        oldClient: isNew ? '' : tr('yes'),
+        clientType: isNew ? tr('clientNewShort') : tr('clientOldShort'),
         patientName: firstOf(patient.name, patient.patientName, data.patientName),
         addressOccupation: formatAddress(patient),
         gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
@@ -1189,9 +1257,9 @@
         ga: formatGa(patient, data),
         urineGlucose: fieldFrom(data, ['urineGlucose', 'urineSugar', 'urine_sugar']),
         urineProtein: fieldFrom(data, ['urineProtein', 'urine_protein']),
-        hb: fieldFrom(data, ['hemoglobin', 'hb', 'hbPercent', 'hb_percentage', 'hbResult']),
-        syphilis: fieldFrom(data, ['syphilis', 'syphilisResult', 'syphilis_result']),
-        pmct: fieldFrom(data, ['pmct', 'pmctResult', 'hivResult', 'hiv_result']),
+        hb: lab.hb || formatHbValue(fieldFrom(data, ['hemoglobin', 'hb', 'hbPercent', 'hb_percentage', 'hbResult', 'hemoglobinResult'])),
+        syphilis: lab.syphilis || fieldFrom(data, ['syphilis', 'syphilisResult', 'syphilis_result']),
+        pmct: lab.pmct || fieldFrom(data, ['pmct', 'pmctResult', 'hivResult', 'hiv_result']),
         tb: firstOf(data.tbSymptoms, data.tb, data.tbScreening),
         bloodPressure: bp,
         fundalHeight: firstOf(data.fundalHeight, data.fundal_height),
@@ -1269,8 +1337,8 @@
     }
     function updateSummary(rows) {
       $('sumRows').textContent = rows.length;
-      $('sumNew').textContent = rows.filter(function (r) { return r.newClient; }).length;
-      $('sumOld').textContent = rows.filter(function (r) { return r.oldClient; }).length;
+      $('sumNew').textContent = rows.filter(function (r) { return r._isNew; }).length;
+      $('sumOld').textContent = rows.filter(function (r) { return !r._isNew; }).length;
       $('sumAnc').textContent = rows.filter(function (r) { return r._type === 'anc'; }).length;
       $('sumPnc').textContent = rows.filter(function (r) { return r._type === 'pnc'; }).length;
       $('sumNewborn').textContent = rows.filter(function (r) { return r._type === 'newborn' || r._type === 'labour'; }).length;
@@ -1343,14 +1411,13 @@
     }
     function displayCell(row, col) {
       if (col === 'service') return serviceLabel(row._type);
-      if (col === 'newClient') return row._isNew ? tr('yes') : '';
-      if (col === 'oldClient') return row._isNew ? '' : tr('yes');
+      if (col === 'clientType') return row._isNew ? tr('clientNewShort') : tr('clientOldShort');
       if (col === 'ga') return formatGaValue(row._rawGa || row.ga);
       return row[col];
     }
     function renderScreenTables(rows) {
       renderTable('clientTable', [
-        'no', 'date', 'service', 'newClient', 'oldClient',
+        'no', 'date', 'service', 'clientType',
         'patientName', 'addressOccupation', 'gravida', 'parity', 'lmp', 'edd'
       ], rows);
       renderTable('examTable', [
@@ -1427,6 +1494,7 @@
       }
       setState(tr('loading'));
       $('screenReport').style.display = 'none';
+      testRecordsCache.clear();
       var fromDate = val('fromDate');
       var toDate = val('toDate');
       updateFilterSummary();
@@ -1438,8 +1506,10 @@
           var bd = parseDate(eventDate(b));
           return (ad ? ad.getTime() : 0) - (bd ? bd.getTime() : 0);
         });
+        await preloadTestRecords(filtered.map(function (ev) { return ev.patientId; }));
+        var uid = currentUser.uid;
         var rows = await mapWithConcurrency(filtered, CONCURRENCY, async function (ev, index) {
-          return toReportRow(ev, index, events);
+          return toReportRow(ev, index, events, uid);
         });
         renderReport(rows);
       } catch (error) {
