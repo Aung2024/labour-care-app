@@ -946,10 +946,34 @@
   <script src="js/page-performance.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
 
   <script>
+    function showHubNotice(message, title) {
+      if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
+        return window.AppDialog.alert(String(message || ''), { title: title || 'Notice' });
+      }
+      const old = document.getElementById('hubNoticeModal');
+      if (old) old.remove();
+      const modal = document.createElement('div');
+      modal.id = 'hubNoticeModal';
+      modal.className = 'modal';
+      modal.style.display = 'block';
+      modal.innerHTML = '<div class="modal-content" style="max-width:420px;"><div class="modal-header"><h4 class="modal-title">' + (title || 'Notice') + '</h4></div><div class="modal-body"><p>' + String(message || '') + '</p></div><div class="modal-footer"><button type="button" class="btn btn-primary" id="hubNoticeOkBtn">OK</button></div></div>';
+      document.body.appendChild(modal);
+      document.body.style.overflow = 'hidden';
+      document.getElementById('hubNoticeOkBtn').addEventListener('click', function () {
+        modal.remove();
+        document.body.style.overflow = 'auto';
+      });
+      return Promise.resolve();
+    }
+    window.alert = function(message) {
+      showHubNotice(message, currentLanguage === 'mm' ? 'အသိပေးချက်' : 'Notice');
+    };
+
     // Language switching
     let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
 
@@ -1984,7 +2008,7 @@
               </div>
               <div class="delivery-field">
                 <label class="lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
-                <input type="time" data-field="birthTime" value="${baby.birthTime || ''}">
+                <input type="datetime-local" data-field="birthTime" value="${DeliveryNotesUtils.toDatetimeLocal(baby.birthTime) || ''}">
               </div>
             </div>
           </div>

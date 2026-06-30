@@ -36,6 +36,38 @@
     return v === 'male' || v === 'female' ? v : '';
   }
 
+  function normalizeDeliveryModeForNewborn(value) {
+    var v = String(value || '').toLowerCase();
+    if (!v) return '';
+    if (v === 'normal' || v === 'normal_vaginal' || v.indexOf('normal') !== -1) return 'normal_vaginal';
+    if (v === 'assisted' || v === 'assisted_vaginal' || v.indexOf('assisted') !== -1 || v.indexOf('forceps') !== -1 || v.indexOf('vacuum') !== -1) return 'assisted_vaginal';
+    if (v === 'c_section' || v === 'caesarean_section' || v === 'cesarean_section' || v.indexOf('section') !== -1) return 'caesarean_section';
+    return value;
+  }
+
+  function normalizeBirthPlaceForNewborn(value) {
+    var v = String(value || '').toLowerCase();
+    if (!v) return '';
+    if (v.indexOf('home') !== -1 || v.indexOf('အိမ်') !== -1) return 'Home';
+    return 'Facility';
+  }
+
+  function toDatetimeLocal(value, fallbackDate) {
+    if (!value) return '';
+    var s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+    if (/^\d{2}:\d{2}$/.test(s)) {
+      var date = fallbackDate || new Date().toISOString().split('T')[0];
+      return date + 'T' + s;
+    }
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') +
+        'T' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    return s;
+  }
+
   function toNumber(value) {
     if (value === undefined || value === null || value === '') return null;
     var n = parseFloat(value);
@@ -108,14 +140,19 @@
     return {
       pregnancy_type: notes.deliveryDetails.pregnancyType,
       baby_count: notes.deliveryDetails.babies.length || 1,
-      babies: notes.deliveryDetails.babies,
+      babies: notes.deliveryDetails.babies.map(function (baby) {
+        var copy = {};
+        Object.keys(baby).forEach(function (key) { copy[key] = baby[key]; });
+        copy.birthTime = toDatetimeLocal(copy.birthTime);
+        return copy;
+      }),
       gender: firstBaby.gender || null,
-      birth_time: firstBaby.birthTime || null,
+      birth_time: toDatetimeLocal(firstBaby.birthTime) || null,
       body_weight_gram: firstBaby.birthWeightGram || null,
       outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || null),
       cause_of_death: firstBaby.causeOfDeath || null,
-      mode_of_delivery: notes.deliveryDetails.modeOfDelivery || null,
-      birthplace: notes.deliveryDetails.birthPlace || null
+      mode_of_delivery: normalizeDeliveryModeForNewborn(notes.deliveryDetails.modeOfDelivery) || null,
+      birthplace: normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || null
     };
   }
 
@@ -179,6 +216,9 @@
     saveDeliveryNotes: saveDeliveryNotes,
     syncFromNewbornIfMissing: syncFromNewbornIfMissing,
     defaultBabies: defaultBabies,
-    normalizeBaby: normalizeBaby
+    normalizeBaby: normalizeBaby,
+    normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
+    normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
+    toDatetimeLocal: toDatetimeLocal
   };
 })(typeof window !== 'undefined' ? window : this);
