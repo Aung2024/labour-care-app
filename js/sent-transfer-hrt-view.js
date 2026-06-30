@@ -445,7 +445,6 @@
     rows.forEach(function (r) {
       var p = r.patient || {};
       var patientId = p.id || '';
-      var serialId = p.patient_unique_id || p.patientUniqueId || (r.transfer && (r.transfer.patientUniqueId || r.transfer.patient_unique_id)) || patientId;
       var patientName = escapeHtml(p.name || p.patientName || '\u2014');
       var ageText = escapeHtml(formatPatientAge(p));
       var phone = phoneCellHtml(p);
@@ -457,7 +456,7 @@
       trEl.setAttribute('onclick', "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "')");
       trEl.innerHTML =
         '<td><div class="hrt-patient-main">' + patientName + '</div><div class="hrt-patient-meta">' +
-          'Patient ID: ' + escapeHtml(serialId || '\u2014') + '<br>Age: ' + ageText + '<br>' + phone + '</div></td>' +
+          'Age: ' + ageText + '<br>' + phone + '</div></td>' +
         '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div></td>' +
         '<td>' + compactRiskListHtml(r.factorsUnique || []) + '</td>' +
         '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
@@ -472,7 +471,7 @@
       card.setAttribute('onclick', "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "')");
       card.innerHTML =
         '<div class="hrt-mobile-top">' +
-          '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">Patient ID: ' + escapeHtml(serialId || '\u2014') + '<br>Age: ' + ageText + '<br>' + phone + '</div></div>' +
+          '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">Age: ' + ageText + '<br>' + phone + '</div></div>' +
           '<div>' + transferStatusHtml(transferStatus) + '</div>' +
         '</div>' +
         '<div class="hrt-mobile-grid">' +
