@@ -19,6 +19,7 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/lang-apply.js"></script>
   <script src="js/register-sw.js"></script>
@@ -876,7 +877,7 @@
           escapeHtml(patientId) + '\',' + babyIndex + ')"><i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
       }
       html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openNewbornReport(\'' +
-        escapeHtml(patientId) + '\')" title="' + escapeHtml(tr('report')) + '"><i class="fas fa-eye"></i><span>' + escapeHtml(tr('report')) + '</span></button>';
+        escapeHtml(patientId) + '\',' + babyIndex + ')" title="' + escapeHtml(tr('report')) + '"><i class="fas fa-eye"></i><span>' + escapeHtml(tr('report')) + '</span></button>';
       html += '</span>';
       return html;
     }
@@ -888,9 +889,19 @@
         escapeHtml(tr('callPatient')) + '"><i class="fas fa-phone"></i></a>';
     }
 
-    function openNewbornReport(patientId) {
+    function openNewbornReport(patientId, babyIndex) {
       if (!patientId) return;
-      window.location.href = 'newborn-report.html?patient=' + encodeURIComponent(patientId);
+      babyIndex = parseInt(babyIndex, 10) || 1;
+      var url = 'newborn-report.html?patient=' + encodeURIComponent(patientId);
+      if (babyIndex > 1) url += '&babyIndex=' + encodeURIComponent(babyIndex);
+      window.location.href = url;
+    }
+
+    function kmcNotice(message, title) {
+      if (window.AppDialog && AppDialog.alert) {
+        return AppDialog.alert(String(message || ''), { title: title || 'Notice' });
+      }
+      alert(message);
     }
 
     function getMaxNewbornVisitNumber(visits) {
@@ -936,7 +947,7 @@
           : '<span class="text-muted">—</span>';
 
         var trEl = document.createElement('tr');
-        trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "')");
+        trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "'," + (parseInt(r.babyIndex, 10) || 1) + ")");
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + motherName + (motherName ? ' · ' : '') + phone + '</div></td>' +
           '<td>' + weightCellHtml(r) + '</td>' +
@@ -951,7 +962,7 @@
         var card = document.createElement('div');
         card.className = 'hrt-mobile-card';
         card.innerHTML =
-          '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\')">' +
+          '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\',' + (parseInt(r.babyIndex, 10) || 1) + ')">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
               '<div class="hrt-mobile-id">' + motherName + (motherName ? ' · ' : '') + phone + '</div></div>' +
@@ -1018,7 +1029,7 @@
         renderAll(getFilteredKmcRows());
       } catch (e) {
         console.error('KMC completion save', e);
-        alert(tr('saveFailed'));
+        kmcNotice(tr('saveFailed'), tr('error') || 'Error');
       } finally {
         btn.disabled = false;
         btn.textContent = tr('saveComplete');

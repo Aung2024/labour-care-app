@@ -32,6 +32,11 @@
   <script src="js/offline-sync.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/status-manager.js"></script>
+  <script src="js/high-risk-utils.js"></script>
+  <script src="js/anc-tracking-status.js"></script>
+  <script src="js/kmc-utils.js"></script>
+  <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/home-followup-badges.js"></script>
   <script src="js/sync-manager.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/offline-status-bar.js"></script>
@@ -931,8 +936,7 @@
               loadPatientStats();
             }
             loadPendingTransferCount();
-            loadHrtCardNotifyCount();
-            loadKmcCardNotifyCount();
+            refreshHomeFollowUpBadges();
           }, 500);
         }
       } catch (error) {
@@ -1014,6 +1018,26 @@
       }
     }
 
+    async function refreshHomeFollowUpBadges() {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        loadHrtCardNotifyCount();
+        loadKmcCardNotifyCount();
+        return;
+      }
+      if (!currentUser || !window.HomeFollowUpBadges) {
+        loadHrtCardNotifyCount();
+        loadKmcCardNotifyCount();
+        return;
+      }
+      try {
+        await HomeFollowUpBadges.refreshFollowUpBadges(firebase.firestore(), currentUser);
+      } catch (e) {
+        console.warn('Home follow-up badge refresh failed', e);
+      }
+      loadHrtCardNotifyCount();
+      loadKmcCardNotifyCount();
+    }
+
     async function loadPendingTransferCount() {
       if (!navigator.onLine || !currentUser) return;
       const card = document.getElementById('homeCardPatientTransfers');
@@ -1061,7 +1085,7 @@
       }
     }
 
-    /** Badge on HRT card only — uses count cached when user opens High Risk Tracking (no extra home queries). */
+    /** Badge on HRT card — refreshed on login via HomeFollowUpBadges, then read from sessionStorage. */
     function loadHrtCardNotifyCount() {
       const card = document.getElementById('hrtCard');
       const badge = document.getElementById('hrtActiveBadge');
@@ -1083,7 +1107,7 @@
       }
     }
 
-    /** Badge on KMC card — count cached when user opens KMC Tracker. */
+    /** Badge on KMC card — refreshed on login via HomeFollowUpBadges. */
     function loadKmcCardNotifyCount() {
       const card = document.getElementById('kmcCard');
       const badge = document.getElementById('kmcActiveBadge');
@@ -1530,8 +1554,7 @@
 
       if (pageInitialized) {
         loadPendingTransferCount();
-        loadHrtCardNotifyCount();
-        loadKmcCardNotifyCount();
+        refreshHomeFollowUpBadges();
       }
     }
 
@@ -1560,14 +1583,12 @@
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden && currentUser) {
           loadPendingTransferCount();
-          loadHrtCardNotifyCount();
-          loadKmcCardNotifyCount();
+          refreshHomeFollowUpBadges();
         }
       });
       window.addEventListener('pageshow', function () {
         if (currentUser) {
-          loadHrtCardNotifyCount();
-          loadKmcCardNotifyCount();
+          refreshHomeFollowUpBadges();
         }
       });
     });

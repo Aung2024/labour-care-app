@@ -22,6 +22,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/offline-visit-number.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -1312,6 +1313,9 @@
     window.onAppLanguageChange = function (lang) {
       currentLanguage = lang;
       renderBabyTabs();
+      if (document.querySelector('#babyIdentityRows [data-baby-row]')) {
+        renderActiveBabyIdentityPanel();
+      }
       updateNewbornVisitSchedule();
     };
 
@@ -1679,16 +1683,123 @@
       twinTabDirty = true;
     }
 
+    function readActiveBabyIdentityRow() {
+      const row = document.querySelector('#babyIdentityRows [data-baby-row]');
+      if (!row) return null;
+      const weightRaw = row.querySelector('[data-field="birthWeightGram"]')?.value || '';
+      const weightParsed = weightRaw === '' ? null : parseFloat(weightRaw);
+      return {
+        outcome: row.querySelector('[data-field="outcome"]')?.value || '',
+        gender: row.querySelector('[data-field="gender"]')?.value || '',
+        birthWeightGram: weightParsed != null && !isNaN(weightParsed) ? weightParsed : null,
+        birthTime: row.querySelector('[data-field="birthTime"]')?.value || ''
+      };
+    }
+
+    function syncIdentityRowToLegacyFields(identityRow) {
+      identityRow = identityRow || readActiveBabyIdentityRow();
+      if (!identityRow) return;
+      const genderEl = document.getElementById('gender');
+      if (genderEl && identityRow.gender) genderEl.value = identityRow.gender;
+      const birthTimeEl = document.getElementById('birth_time');
+      if (birthTimeEl && identityRow.birthTime) birthTimeEl.value = identityRow.birthTime;
+      const weightEl = document.getElementById('body_weight_gram');
+      if (weightEl && identityRow.birthWeightGram != null) weightEl.value = identityRow.birthWeightGram;
+      if (identityRow.outcome) {
+        const legacyOutcome = legacyOutcomeFromBaby(identityRow.outcome);
+        const outcomeEl = document.getElementById('outcome_' + legacyOutcome);
+        if (outcomeEl) {
+          outcomeEl.checked = true;
+          toggleOutcomeFollowup();
+        }
+      }
+    }
+
+    function getIdentityPanelLocked(locked) {
+      if (locked !== undefined) return !!locked;
+      return hasSavedFirstNewbornVisit() && !isEditMode;
+    }
+
+    function renderActiveBabyIdentityPanel(locked) {
+      const container = document.getElementById('babyIdentityRows');
+      if (!container || !newbornBabyStates.length) return;
+      locked = getIdentityPanelLocked(locked);
+      const pregnancyType = document.getElementById('pregnancy_type')?.value || 'single';
+      const index = activeBabyIndex - 1;
+      const baby = babyStateToFormState(newbornBabyStates[index] || {});
+      const canRemove = pregnancyType === 'twins' && newbornBabyStates.length > 2 && !locked;
+      const disabled = locked ? 'disabled' : '';
+      const outcome = baby.outcome === 'dead' ? 'death' : (baby.outcome || '');
+      const birthWeight = baby.birthWeightGram != null ? baby.birthWeightGram : (baby.body_weight_gram || '');
+      const birthTime = baby.birthTime || baby.birth_time || '';
+      container.innerHTML = `
+          <div class="baby-identity-row" data-baby-row>
+            <div class="baby-identity-header">
+              <span>${currentLanguage === 'en' ? 'Baby' : 'ကလေး'} ${activeBabyIndex}</span>
+              ${canRemove ? '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNewbornBabyRow(' + index + ')"><i class="fas fa-trash"></i></button>' : ''}
+            </div>
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Outcome" data-mm="ကလေးအခြေအနေ">Outcome</label>
+                <select class="form-control" data-field="outcome" onchange="syncActiveBabyIdentityFields()" ${disabled}>
+                  <option value="">-</option>
+                  <option value="alive" ${outcome === 'alive' ? 'selected' : ''}>Alive</option>
+                  <option value="death" ${outcome === 'death' ? 'selected' : ''}>Death</option>
+                  <option value="stillbirth" ${outcome === 'stillbirth' ? 'selected' : ''}>Stillbirth</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</label>
+                <select class="form-control" data-field="gender" onchange="syncActiveBabyIdentityFields()" ${disabled}>
+                  <option value="">-</option>
+                  <option value="male" ${baby.gender === 'male' ? 'selected' : ''}>M</option>
+                  <option value="female" ${baby.gender === 'female' ? 'selected' : ''}>F</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Birth weight (g)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Birth weight (g)</label>
+                <input type="number" min="0" step="0.1" class="form-control" data-field="birthWeightGram" value="${birthWeight}" oninput="syncActiveBabyIdentityFields()" ${disabled}>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
+                <input type="datetime-local" class="form-control" data-field="birthTime" value="${birthTime}" oninput="syncActiveBabyIdentityFields()" ${disabled}>
+              </div>
+            </div>
+          </div>
+        `;
+      if (window.applyLanguage) window.applyLanguage(currentLanguage);
+    }
+
     function persistActiveBabyState() {
       const idx = activeBabyIndex - 1;
       if (!newbornBabyStates[idx]) return;
       const current = collectBabySpecificFormState();
+      const identityRow = readActiveBabyIdentityRow();
+      let gender;
+      let birthTime;
+      let birthWeightGram;
+      let outcome;
+      if (identityRow) {
+        gender = identityRow.gender;
+        birthTime = identityRow.birthTime;
+        birthWeightGram = identityRow.birthWeightGram;
+        outcome = identityRow.outcome;
+        delete current.gender;
+        delete current.birth_time;
+        delete current.body_weight_gram;
+        delete current.outcome;
+      } else {
+        gender = current.gender || newbornBabyStates[idx].gender || '';
+        birthTime = current.birth_time || newbornBabyStates[idx].birthTime || '';
+        birthWeightGram = current.body_weight_gram ? parseFloat(current.body_weight_gram) : (newbornBabyStates[idx].birthWeightGram || null);
+        outcome = current.outcome === 'dead' ? 'death' : (current.outcome || newbornBabyStates[idx].outcome || '');
+      }
       newbornBabyStates[idx] = Object.assign({}, newbornBabyStates[idx], current, {
         babyIndex: activeBabyIndex,
-        gender: current.gender || newbornBabyStates[idx].gender || '',
-        birthTime: current.birth_time || newbornBabyStates[idx].birthTime || '',
-        birthWeightGram: current.body_weight_gram ? parseFloat(current.body_weight_gram) : (newbornBabyStates[idx].birthWeightGram || null),
-        outcome: current.outcome === 'dead' ? 'death' : (current.outcome || newbornBabyStates[idx].outcome || '')
+        gender: gender,
+        birthTime: birthTime,
+        birthWeightGram: birthWeightGram,
+        outcome: outcome
       });
     }
 
@@ -1866,6 +1977,7 @@
       activeBabyIndex = nextIndex;
       twinTabDirty = false;
       renderBabyTabs();
+      renderActiveBabyIdentityPanel();
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
       evaluateKmcSection();
       updateKmcDecisionLabel();
@@ -1953,8 +2065,7 @@
           }
           document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
           applyAutoBabyName();
-          applyNewbornVisitNumber(1);
-          updateNewbornVisitSchedule();
+          await loadExistingNewbornCareData();
           return;
         }
 
@@ -2213,20 +2324,21 @@
     }
 
     function syncActiveBabyIdentityFields() {
-      const row = document.querySelector('#babyIdentityRows [data-baby-row]');
-      if (!row) return;
-      const outcome = row.querySelector('[data-field="outcome"]')?.value || '';
-      const gender = row.querySelector('[data-field="gender"]')?.value || '';
-      const birthWeight = row.querySelector('[data-field="birthWeightGram"]')?.value || '';
-      const birthTime = row.querySelector('[data-field="birthTime"]')?.value || '';
-      if (gender) document.getElementById('gender').value = gender;
-      if (birthTime) document.getElementById('birth_time').value = birthTime;
-      if (birthWeight) document.getElementById('body_weight_gram').value = birthWeight;
-      if (outcome && document.getElementById('outcome_' + legacyOutcomeFromBaby(outcome))) {
-        document.getElementById('outcome_' + legacyOutcomeFromBaby(outcome)).checked = true;
-        toggleOutcomeFollowup();
+      const identityRow = readActiveBabyIdentityRow();
+      if (!identityRow) return;
+      const idx = activeBabyIndex - 1;
+      if (newbornBabyStates[idx]) {
+        newbornBabyStates[idx] = Object.assign({}, newbornBabyStates[idx], {
+          outcome: identityRow.outcome,
+          gender: identityRow.gender,
+          birthWeightGram: identityRow.birthWeightGram,
+          birthTime: identityRow.birthTime
+        });
       }
-      persistActiveBabyState();
+      if (newbornBabyStates.length === 1) {
+        syncIdentityRowToLegacyFields(identityRow);
+      }
+      markBabyTabDirty();
       evaluateKmcSection();
       renderWeightTrend();
     }
@@ -2243,51 +2355,13 @@
       newbornBabyStates = rows;
       if (!activeBabyIndex || activeBabyIndex > newbornBabyStates.length) activeBabyIndex = 1;
       renderBabyTabs();
-      const baby = newbornBabyStates[activeBabyIndex - 1] || newbornBabyStates[0] || {};
-      const index = activeBabyIndex - 1;
-      const canRemove = pregnancyType === 'twins' && rows.length > 2 && !locked;
-        const disabled = locked ? 'disabled' : '';
-      container.innerHTML = `
-          <div class="baby-identity-row" data-baby-row>
-            <div class="baby-identity-header">
-              <span>${currentLanguage === 'en' ? 'Baby' : 'ကလေး'} ${index + 1}</span>
-              ${canRemove ? '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNewbornBabyRow(' + index + ')"><i class="fas fa-trash"></i></button>' : ''}
-            </div>
-            <div class="row g-3">
-              <div class="col-md-3">
-                <label class="form-label lang-text" data-en="Outcome" data-mm="ကလေးအခြေအနေ">Outcome</label>
-                <select class="form-control" data-field="outcome" onchange="syncActiveBabyIdentityFields()" ${disabled}>
-                  <option value="">-</option>
-                  <option value="alive" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
-                  <option value="death" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
-                  <option value="stillbirth" ${baby.outcome === 'stillbirth' ? 'selected' : ''}>Stillbirth</option>
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</label>
-                <select class="form-control" data-field="gender" onchange="syncActiveBabyIdentityFields()" ${disabled}>
-                  <option value="">-</option>
-                  <option value="male" ${baby.gender === 'male' ? 'selected' : ''}>M</option>
-                  <option value="female" ${baby.gender === 'female' ? 'selected' : ''}>F</option>
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label lang-text" data-en="Birth weight (g)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Birth weight (g)</label>
-                <input type="number" min="0" step="0.1" class="form-control" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}" oninput="syncActiveBabyIdentityFields()" ${disabled}>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
-                <input type="datetime-local" class="form-control" data-field="birthTime" value="${baby.birthTime || ''}" oninput="syncActiveBabyIdentityFields()" ${disabled}>
-              </div>
-            </div>
-          </div>
-        `;
+      locked = getIdentityPanelLocked(locked);
+      renderActiveBabyIdentityPanel(locked);
       const addBtn = document.getElementById('addBabyBtn');
       if (addBtn) addBtn.style.display = pregnancyType === 'twins' && !locked ? '' : 'none';
       const note = document.getElementById('identityLockNote');
       if (note) note.classList.toggle('show', !!locked);
-      if (window.applyLanguage) window.applyLanguage(currentLanguage);
-      applyBabySpecificFormState(babyStateToFormState(baby));
+      applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1] || {}));
     }
 
     function handleNewbornPregnancyTypeChange() {
@@ -2342,6 +2416,9 @@
       document.querySelectorAll('input[name="outcome"]').forEach(function (el) {
         el.disabled = !!locked;
       });
+      if (document.querySelector('#babyIdentityRows [data-baby-row]')) {
+        renderActiveBabyIdentityPanel(locked);
+      }
     }
 
     function openQuickVaccineModal() {
@@ -2489,26 +2566,49 @@
       updateKmcDecisionLabel();
     }
 
-    async function loadExistingNewbornCareData() {
+    async function fetchNewbornCareVisitsForPatient() {
+      const visits = [];
+      const seenIds = new Set();
+      if (window.OfflineManager && patientId) {
+        const pending = await OfflineManager.getPendingRecords('pending_newborn_records');
+        pending.filter(function (r) {
+          const d = r.data || r;
+          return d.patientId === patientId;
+        }).forEach(function (r) {
+          const data = Object.assign({}, r.data || r);
+          if (!data.visit_number && data.visitNumber) data.visit_number = data.visitNumber;
+          if (!data.visit_number) data.visit_number = 1;
+          visits.push({ id: r.localId, data: data, pending: true });
+          seenIds.add(r.localId);
+        });
+      }
       try {
-        latestAncForKmc = await fetchLatestAncForKmc();
-        populateKmcCategoryOptions();
-        let snap;
         const collectionRef = firebase.firestore().collection('patients').doc(patientId).collection('newborn_care');
+        let snap;
         try {
           snap = await collectionRef.orderBy('visit_number', 'asc').get();
         } catch (e) {
           snap = await collectionRef.get();
         }
-
-        newbornCareVisits = [];
         if (snap && !snap.empty) {
           snap.forEach(function (doc) {
+            if (seenIds.has(doc.id)) return;
             const data = doc.data() || {};
             if (!data.visit_number) data.visit_number = 1;
-            newbornCareVisits.push({ id: doc.id, data: data });
+            visits.push({ id: doc.id, data: data });
           });
         }
+      } catch (e) {
+        console.warn('Could not load newborn care visits:', e);
+      }
+      return visits;
+    }
+
+    async function loadExistingNewbornCareData() {
+      try {
+        latestAncForKmc = await fetchLatestAncForKmc();
+        populateKmcCategoryOptions();
+        newbornCareVisits = await fetchNewbornCareVisitsForPatient();
         newbornCareVisits = sortedNewbornVisits();
 
         const visit1Data = getVisit1Data();
@@ -2538,6 +2638,14 @@
           }
         } else {
           applyNewbornVisitNumber(1);
+          if (window.OfflineVisitNumber) {
+            const nextVisit = await OfflineVisitNumber.resolveNextVisitNumber({
+              patientId: patientId,
+              collectionName: 'newborn_care',
+              pendingStore: 'pending_newborn_records'
+            });
+            document.getElementById('visit_number').value = nextVisit;
+          }
           await applySharedDeliveryAnchor();
           await preloadDeliveryNotesIntoNewbornForm();
         }

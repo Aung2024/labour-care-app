@@ -22,6 +22,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
+  <script src="js/offline-visit-number.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -1674,7 +1675,24 @@
           document.getElementById('patientPhone').textContent = currentPatient.phone || 'Not provided';
           const today = formatLocalDateInputValue(new Date());
           document.getElementById('visitDate').value = today;
+          if (window.OfflineVisitNumber) {
+            const nextVisit = await OfflineVisitNumber.resolveNextVisitNumber({
+              patientId: patientId,
+              collectionName: 'postpartum_visits',
+              pendingStore: 'pending_pnc_visits',
+              maxVisitNumber: PNC_SCHEDULE_VISIT_COUNT
+            });
+            document.getElementById('visitNumber').value = nextVisit;
+          } else {
+            document.getElementById('visitNumber').value = 1;
+          }
           setDefaultPncOutcomesAlive();
+          try {
+            await loadDeliveryDateTimeFromFirstVisit();
+          } catch (offlineDeliveryErr) {
+            console.warn('Offline PNC: could not load delivery anchor', offlineDeliveryErr);
+          }
+          updatePncVisitSchedule();
           showLoading(false);
           return;
         }
@@ -2226,11 +2244,12 @@
         });
 
         const shouldDeferVisitNumber = !!(window.OfflineManager && window.OfflineManager.shouldQueueForSync && window.OfflineManager.shouldQueueForSync());
+        const resolvedVisitNumber = parseInt(document.getElementById('visitNumber').value, 10) || 1;
         
         const formData = {
           patientId: currentPatient.id,
           visitDate: document.getElementById('visitDate').value,
-          visitNumber: shouldDeferVisitNumber ? null : parseInt(document.getElementById('visitNumber').value),
+          visitNumber: resolvedVisitNumber,
           deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
           postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
           postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
