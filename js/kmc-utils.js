@@ -137,7 +137,7 @@
     var motherName = (patient && (patient.name || patient.patientName)) || '';
     return {
       babyIndex: babyIndex,
-      babyName: baby.babyName || baby.baby_name || fallbackCare.baby_name || twinBabyName(motherName, babyIndex, fallbackCare),
+      babyName: baby.babyName || baby.baby_name || twinBabyName(motherName, babyIndex, fallbackCare),
       birthWeightGram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.birth_weight_gram != null ? baby.birth_weight_gram : (baby.body_weight_gram != null ? baby.body_weight_gram : fallbackCare.body_weight_gram)),
       birthTime: baby.birthTime || baby.birth_time || fallbackCare.birth_time || null,
       gender: baby.gender || baby.sex || fallbackCare.gender || null,

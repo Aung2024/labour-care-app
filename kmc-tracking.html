@@ -643,12 +643,14 @@
     }
 
     function resolveKmcBabyName(patient, visit1, babyIndex, evalResult) {
-      if (evalResult && evalResult.babyName) return evalResult.babyName;
+      var twins = visit1 && (visit1.pregnancy_type === 'twins' || (Array.isArray(visit1.babies) && visit1.babies.length > 1));
       if (visit1 && Array.isArray(visit1.babies)) {
         var matched = visit1.babies.find(function (b) {
           return (parseInt(b.babyIndex || b.baby_index, 10) || 1) === babyIndex;
         });
-        if (matched && (matched.babyName || matched.baby_name)) return matched.babyName || matched.baby_name;
+        if (matched && (matched.babyName || matched.baby_name)) {
+          return formatTwinBabyLabel(matched.babyName || matched.baby_name, babyIndex, twins);
+        }
       }
       if (window.KmcUtils && KmcUtils.twinBabyName) {
         return KmcUtils.twinBabyName(
@@ -659,15 +661,18 @@
       }
       var mother = (patient && (patient.name || patient.patientName)) || '';
       var base = mother ? ('Baby ' + mother) : 'Baby';
-      var twins = visit1 && (visit1.pregnancy_type === 'twins' || (Array.isArray(visit1.babies) && visit1.babies.length > 1));
-      return twins && babyIndex > 1 ? (base + ' ' + babyIndex) : base;
+      return formatTwinBabyLabel(base, babyIndex, twins);
     }
 
-    function formatKmcBabyDisplayName(name, babyIndex) {
+    function formatTwinBabyLabel(name, babyIndex, isTwins) {
       name = String(name || '—').trim();
-      if (!babyIndex || babyIndex <= 1) return name;
+      if (!isTwins || !babyIndex) return name;
       if (new RegExp('\\s' + babyIndex + '$').test(name)) return name;
-      return name + ' · Baby ' + babyIndex;
+      return name.replace(/\s+\d+$/, '') + ' ' + babyIndex;
+    }
+
+    function formatKmcBabyDisplayName(name, babyIndex, isTwins) {
+      return formatTwinBabyLabel(name, babyIndex, isTwins);
     }
 
     function statusTrackHtml(completedCount, row) {
@@ -973,7 +978,8 @@
       display.forEach(function (r) {
         var p = r.patient || {};
         var patientId = p.id || '';
-        var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex));
+        var isTwins = r.newbornCare && (r.newbornCare.pregnancy_type === 'twins' || (Array.isArray(r.newbornCare.babies) && r.newbornCare.babies.length > 1));
+        var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex, isTwins));
         var motherName = escapeHtml(p.name || p.patientName || '');
         var phone = phoneCellHtml(p);
         var ageDays = r.ageDays != null ? r.ageDays : null;
