@@ -121,6 +121,15 @@
     };
   }
 
+  function twinBabyName(motherName, babyIndex, fallbackCare) {
+    fallbackCare = fallbackCare || {};
+    var base = generateBabyName(motherName);
+    var babiesCount = Array.isArray(fallbackCare.babies) ? fallbackCare.babies.length : 0;
+    var isTwins = fallbackCare.pregnancy_type === 'twins' || babiesCount > 1;
+    if (isTwins && babyIndex) return base + ' ' + babyIndex;
+    return base;
+  }
+
   function normalizeBabyForKmc(baby, index, fallbackCare, patient) {
     baby = baby || {};
     fallbackCare = fallbackCare || {};
@@ -128,7 +137,7 @@
     var motherName = (patient && (patient.name || patient.patientName)) || '';
     return {
       babyIndex: babyIndex,
-      babyName: baby.babyName || baby.baby_name || fallbackCare.baby_name || (generateBabyName(motherName) + (babyIndex > 1 ? ' ' + babyIndex : '')),
+      babyName: baby.babyName || baby.baby_name || fallbackCare.baby_name || twinBabyName(motherName, babyIndex, fallbackCare),
       birthWeightGram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.birth_weight_gram != null ? baby.birth_weight_gram : (baby.body_weight_gram != null ? baby.body_weight_gram : fallbackCare.body_weight_gram)),
       birthTime: baby.birthTime || baby.birth_time || fallbackCare.birth_time || null,
       gender: baby.gender || baby.sex || fallbackCare.gender || null,
@@ -410,6 +419,7 @@
     parseDateOnlyLocal: parseDateOnlyLocal,
     formatDateInput: formatDateInput,
     generateBabyName: generateBabyName,
+    twinBabyName: twinBabyName,
     evaluateKmcEligibility: evaluateKmcEligibility,
     evaluateKmcEligibilityForBaby: evaluateKmcEligibilityForBaby,
     evaluateKmcEligibilityForBabies: evaluateKmcEligibilityForBabies,

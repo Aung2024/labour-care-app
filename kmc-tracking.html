@@ -635,6 +635,41 @@
       return String((row && row.patient && row.patient.id) || '') + '::' + String((row && row.babyIndex) || 1);
     }
 
+    function getVisit1NewbornCare(visits) {
+      if (!Array.isArray(visits) || !visits.length) return null;
+      return visits.find(function (v) {
+        return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
+      }) || visits[0];
+    }
+
+    function resolveKmcBabyName(patient, visit1, babyIndex, evalResult) {
+      if (evalResult && evalResult.babyName) return evalResult.babyName;
+      if (visit1 && Array.isArray(visit1.babies)) {
+        var matched = visit1.babies.find(function (b) {
+          return (parseInt(b.babyIndex || b.baby_index, 10) || 1) === babyIndex;
+        });
+        if (matched && (matched.babyName || matched.baby_name)) return matched.babyName || matched.baby_name;
+      }
+      if (window.KmcUtils && KmcUtils.twinBabyName) {
+        return KmcUtils.twinBabyName(
+          (patient && (patient.name || patient.patientName)) || '',
+          babyIndex,
+          visit1 || {}
+        );
+      }
+      var mother = (patient && (patient.name || patient.patientName)) || '';
+      var base = mother ? ('Baby ' + mother) : 'Baby';
+      var twins = visit1 && (visit1.pregnancy_type === 'twins' || (Array.isArray(visit1.babies) && visit1.babies.length > 1));
+      return twins && babyIndex > 1 ? (base + ' ' + babyIndex) : base;
+    }
+
+    function formatKmcBabyDisplayName(name, babyIndex) {
+      name = String(name || '—').trim();
+      if (!babyIndex || babyIndex <= 1) return name;
+      if (new RegExp('\\s' + babyIndex + '$').test(name)) return name;
+      return name + ' · Baby ' + babyIndex;
+    }
+
     function statusTrackHtml(completedCount, row) {
       var totalDots = Math.max(6, Math.min(10, (completedCount || 0) + 1));
       var status = rowTrackingStatus(row);
@@ -938,7 +973,7 @@
       display.forEach(function (r) {
         var p = r.patient || {};
         var patientId = p.id || '';
-        var babyName = escapeHtml((r.babyName || '—') + (r.babyIndex > 1 ? ' · Baby ' + r.babyIndex : ''));
+        var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex));
         var motherName = escapeHtml(p.name || p.patientName || '');
         var phone = phoneCellHtml(p);
         var ageDays = r.ageDays != null ? r.ageDays : null;
@@ -1218,7 +1253,7 @@
         var patients = await fetchPatientsForRole(db, user, userRole);
         var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
           var newbornCareVisits = await fetchNewbornCareVisits(db, p.id);
-          var newbornCare = newbornCareVisits[0] || null;
+          var newbornCare = getVisit1NewbornCare(newbornCareVisits);
           var latestNewbornCare = newbornCareVisits[newbornCareVisits.length - 1] || newbornCare;
           var immediateNewbornCare = await fetchImmediateNewbornCare(db, p.id);
           var birthAnchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(p.id);
@@ -1254,7 +1289,7 @@
             return {
               patient: p,
               babyIndex: babyIndex,
-              babyName: evalResult.babyName || ((latestNewbornCare && latestNewbornCare.baby_name) || 'Baby') + (babyIndex > 1 ? ' ' + babyIndex : ''),
+              babyName: resolveKmcBabyName(p, newbornCare, babyIndex, evalResult),
               reasons: mergedReasons,
               birthDateStr: evalResult.birthDateStr,
               birthWeightGram: evalResult.birthWeightGram || parseWeightGramFromRecord(newbornCare) || parseWeightGramFromRecord(immediateNewbornCare) || parseWeightGramFromRecord(p),

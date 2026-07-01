@@ -14,6 +14,7 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -171,13 +172,35 @@
     ];
 
     const lang = localStorage.getItem('appLanguage') || 'en';
+
+    function vaccNotice(message, title) {
+      if (window.AppDialog && AppDialog.alert) {
+        return AppDialog.alert(String(message || ''), { title: title || (lang === 'mm' ? 'အသိပေးချက်' : 'Notice') });
+      }
+      alert(message);
+    }
+
+    function parseBirthDate(raw) {
+      if (!raw) return null;
+      if (typeof raw === 'string') {
+        const parsed = new Date(raw);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      }
+      if (raw.toDate && typeof raw.toDate === 'function') {
+        return raw.toDate();
+      }
+      if (raw.seconds) {
+        return new Date(raw.seconds * 1000);
+      }
+      return null;
+    }
     document.querySelectorAll('.lang-text').forEach(el => {
       el.textContent = el.dataset[lang] || el.dataset.en || el.textContent;
     });
 
     firebase.auth().onAuthStateChanged(async (user) => {
       if (!user) { window.location.href = 'login.html'; return; }
-      if (!patientId) { alert('No patient ID'); goBack(); return; }
+      if (!patientId) { vaccNotice(lang === 'mm' ? 'လူနာ ID မပါဝင်ပါ။' : 'No patient ID'); goBack(); return; }
       await loadBabyInfo();
       renderVaccineOptions();
       document.getElementById('dateGiven').valueAsDate = new Date();
@@ -189,22 +212,27 @@
         if (!newbornSnap.empty) {
           const d = newbornSnap.docs[0].data();
           babyName = d.baby_name || 'Baby';
-          if (d.birth_time) {
-            babyBirthDate = d.birth_time.toDate ? d.birth_time.toDate() : new Date(d.birth_time.seconds * 1000);
+          babyBirthDate = parseBirthDate(d.birth_time);
+          if (!babyName && Array.isArray(d.babies) && d.babies.length) {
+            const first = d.babies[0];
+            babyName = first.babyName || first.baby_name || babyName;
+            if (!babyBirthDate) babyBirthDate = parseBirthDate(first.birthTime || first.birth_time);
           }
         }
         if (!babyName) babyName = 'Baby';
         document.getElementById('babyNameDisplay').textContent = babyName;
-        document.getElementById('babyAgeDisplay').textContent = babyBirthDate ? `(${formatAge(babyBirthDate)})` : '';
+        document.getElementById('babyAgeDisplay').textContent = formatAge(babyBirthDate);
         document.getElementById('babyInfoBar').style.display = 'block';
       } catch (e) { console.warn(e); }
     }
 
     function formatAge(birth) {
-      const d = Math.floor((Date.now() - birth) / 86400000);
-      if (d < 30) return `${d} days`;
-      if (d < 365) return `${Math.floor(d/30)} months`;
-      return `${Math.floor(d/365)} years`;
+      if (!birth || isNaN(birth.getTime())) return '';
+      const d = Math.floor((Date.now() - birth.getTime()) / 86400000);
+      if (d < 0) return '';
+      if (d < 30) return `(${d} ${lang === 'mm' ? 'ရက်' : 'days'})`;
+      if (d < 365) return `(${Math.floor(d / 30)} ${lang === 'mm' ? 'လ' : 'months'})`;
+      return `(${Math.floor(d / 365)} ${lang === 'mm' ? 'နှစ်' : 'years'})`;
     }
 
     function renderVaccineOptions() {
@@ -235,10 +263,10 @@
           recordedBy: firebase.auth().currentUser.uid,
           recordedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
-        alert(lang === 'mm' ? 'ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ။' : 'Vaccine record saved successfully.');
+        await vaccNotice(lang === 'mm' ? 'ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ။' : 'Vaccine record saved successfully.', lang === 'mm' ? 'သိမ်းပြီး' : 'Saved');
         window.location.href = `vaccine-home.html?patient=${patientId}`;
       } catch (err) {
-        alert('Error: ' + err.message);
+        vaccNotice('Error: ' + err.message, lang === 'mm' ? 'အမှား' : 'Error');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Record" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Record</span>';

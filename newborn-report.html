@@ -360,11 +360,13 @@
             <div><strong class="lang-text" data-en="Age:" data-mm="အသက်:">Age:</strong> <span id="patientAge">-</span></div>
             <div><strong class="lang-text" data-en="Parity:" data-mm="မွေးဖွားကြိမ်:">Parity:</strong> <span id="patientParity">-</span></div>
           </div>
-          <div class="summary-card">
+          <div class="summary-card" id="babyInfoSummaryCard">
             <h6 class="lang-text" data-en="Baby Information" data-mm="ကလေး အချက်အလက်">Baby Information</h6>
-            <div><strong class="lang-text" data-en="Baby Name:" data-mm="ကလေး၏ အမည်:">Baby Name:</strong> <span id="babyName">-</span></div>
-            <div><strong class="lang-text" data-en="Gender:" data-mm="ကျား/မ:">Gender:</strong> <span id="babyGender">-</span></div>
-            <div><strong class="lang-text" data-en="Birth Time:" data-mm="မွေးဖွားချိန်:">Birth Time:</strong> <span id="birthTime">-</span></div>
+            <div id="babyInfoSummaryContent">
+              <div><strong class="lang-text" data-en="Baby Name:" data-mm="ကလေး၏ အမည်:">Baby Name:</strong> <span id="babyName">-</span></div>
+              <div><strong class="lang-text" data-en="Gender:" data-mm="ကျား/မ:">Gender:</strong> <span id="babyGender">-</span></div>
+              <div><strong class="lang-text" data-en="Birth Time:" data-mm="မွေးဖွားချိန်:">Birth Time:</strong> <span id="birthTime">-</span></div>
+            </div>
           </div>
           <div class="summary-card">
             <h6 class="lang-text" data-en="Birth Details" data-mm="မွေးဖွားမှု အသေးစိတ်">Birth Details</h6>
@@ -689,6 +691,54 @@
       document.getElementById("patientAge").textContent = currentPatient.age || 'N/A';
       document.getElementById("patientParity").textContent = currentPatient.parity || 'N/A';
 
+      const container = document.getElementById('babyInfoSummaryContent');
+      const visit1 = newbornCareVisits.find(function (v) {
+        return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
+      }) || newbornCareData;
+      const babies = visit1 && Array.isArray(visit1.babies) && visit1.babies.length
+        ? visit1.babies
+        : null;
+      const motherName = currentPatient.name || '';
+
+      function babyDisplayName(baby, index) {
+        const idx = parseInt(baby.babyIndex || baby.baby_index, 10) || (index + 1);
+        return baby.babyName || baby.baby_name || ('Baby ' + motherName + (babies && babies.length > 1 ? (' ' + idx) : '')).trim();
+      }
+
+      function formatGender(g) {
+        return g === 'male' ? t('male') : (g === 'female' ? t('female') : t('notRecorded'));
+      }
+
+      function formatBirthTime(raw) {
+        if (!raw) return t('notRecorded');
+        try {
+          const d = typeof raw === 'string' ? new Date(raw) : (raw.toDate ? raw.toDate() : new Date(raw));
+          return isNaN(d.getTime()) ? t('notRecorded') : d.toLocaleString();
+        } catch (e) {
+          return t('notRecorded');
+        }
+      }
+
+      if (babies && babies.length > 1 && container) {
+        container.innerHTML = babies.map(function (baby, index) {
+          const idx = parseInt(baby.babyIndex || baby.baby_index, 10) || (index + 1);
+          const weight = baby.birthWeightGram != null ? Math.round(baby.birthWeightGram) + ' g' : t('notRecorded');
+          const outcome = baby.outcome ? String(baby.outcome) : t('notRecorded');
+          return '<div class="mb-3 pb-2' + (index < babies.length - 1 ? ' border-bottom' : '') + '">' +
+            '<div class="fw-bold mb-1">' + escapeHtml(getReportLang() === 'mm' ? ('ကလေး ' + idx) : ('Baby ' + idx)) + '</div>' +
+            '<div><strong>' + t('babyName') + '</strong> ' + escapeHtml(babyDisplayName(baby, index)) + '</div>' +
+            '<div><strong>' + t('gender') + '</strong> ' + escapeHtml(formatGender(baby.gender)) + '</div>' +
+            '<div><strong>' + t('birthTime') + '</strong> ' + escapeHtml(formatBirthTime(baby.birthTime || baby.birth_time)) + '</div>' +
+            '<div><strong>' + t('birthWeight') + '</strong> ' + escapeHtml(weight) + '</div>' +
+            '<div><strong>Outcome:</strong> ' + escapeHtml(outcome) + '</div>' +
+            '</div>';
+        }).join('');
+        document.getElementById("birthWeight").textContent = t('notRecorded');
+        document.getElementById("birthLength").textContent = t('notRecorded');
+        document.getElementById("headCircumference").textContent = t('notRecorded');
+        return;
+      }
+
       if (newbornCareData) {
         document.getElementById("babyName").textContent = newbornCareData.baby_name || t('notRecorded');
         document.getElementById("babyGender").textContent = newbornCareData.gender === 'male' ? t('male') : (newbornCareData.gender === 'female' ? t('female') : t('notRecorded'));
@@ -697,10 +747,8 @@
         document.getElementById("birthWeight").textContent = birthWeightGram != null ? `${Math.round(birthWeightGram)} g` : t('notRecorded');
         document.getElementById("birthLength").textContent = newbornCareData.birth_length_cm ? `${newbornCareData.birth_length_cm} cm` : t('notRecorded');
         document.getElementById("headCircumference").textContent = newbornCareData.head_circumference_cm ? `${newbornCareData.head_circumference_cm} cm` : t('notRecorded');
-      } else {
-        document.getElementById("babyName").textContent = t('notRecorded');
-        document.getElementById("babyGender").textContent = t('notRecorded');
-        document.getElementById("birthTime").textContent = t('notRecorded');
+      } else if (container) {
+        container.innerHTML = '<div><strong>' + t('babyName') + '</strong> ' + t('notRecorded') + '</div>';
         document.getElementById("birthWeight").textContent = t('notRecorded');
         document.getElementById("birthLength").textContent = t('notRecorded');
         document.getElementById("headCircumference").textContent = t('notRecorded');
