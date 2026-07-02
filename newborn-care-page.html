@@ -1295,6 +1295,7 @@
     function normalizeNewbornCareLayout() {
       const workspace = document.getElementById('babyWorkspace');
       const babyInfo = document.getElementById('babyInfoSection');
+      const kmc = document.getElementById('kmcCareSection');
       const followUp = document.getElementById('newbornFollowUpSection');
       const danger = workspace ? workspace.querySelector('.danger-signs-section') : null;
       const assessment = document.getElementById('assessmentSection');
@@ -1302,13 +1303,14 @@
 
       function moveBefore(node, beforeNode) {
         if (!node || !beforeNode) return;
-        if (node.parentElement !== workspace || beforeNode.parentElement !== workspace) return;
+        if (beforeNode.parentElement !== workspace) return;
         if (node.nextElementSibling === beforeNode) return;
         workspace.insertBefore(node, beforeNode);
       }
 
-      // Desired order inside babyWorkspace: Baby Info → Follow-up → Danger signs → Assessment
-      if (babyInfo && followUp) moveBefore(babyInfo, followUp);
+      // Desired order inside babyWorkspace: Baby Info → KMC → Follow-up → Danger signs → Assessment
+      if (babyInfo && kmc) moveBefore(babyInfo, kmc);
+      if (kmc && followUp) moveBefore(kmc, followUp);
       if (followUp && danger) moveBefore(followUp, danger);
       if (danger && assessment) moveBefore(danger, assessment);
     }
@@ -1698,7 +1700,7 @@
     }
 
     function isTwinMode() {
-      return (document.getElementById('pregnancy_type')?.value || 'single') === 'twins';
+      return false;
     }
 
     function updateTwinTabBarVisibility() {
@@ -1726,7 +1728,7 @@
     }
 
     function initBabyStatesFromBabies(babies, locked) {
-      const pregnancyType = document.getElementById('pregnancy_type')?.value || 'single';
+      const pregnancyType = 'single';
       const minRows = pregnancyType === 'twins' ? 2 : 1;
       const rows = (Array.isArray(babies) && babies.length ? babies.slice() : DeliveryNotesUtils.defaultBabies(minRows)).map(function (baby, index) {
         return Object.assign({}, babyStateToFormState(baby), baby, {
@@ -1743,7 +1745,7 @@
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1] || {}));
       applyAutoBabyName();
       const addBtn = document.getElementById('addBabyBtn');
-      if (addBtn) addBtn.style.display = pregnancyType === 'twins' && !locked ? '' : 'none';
+      if (addBtn) addBtn.style.display = !isCurrentBabyPatient() && pregnancyType === 'twins' && !locked ? '' : 'none';
       const note = document.getElementById('identityLockNote');
       if (note) note.classList.toggle('show', !!locked);
       updatePregnancyTypeRowVisibility();
@@ -1752,9 +1754,7 @@
     function updatePregnancyTypeRowVisibility() {
       const row = document.getElementById('pregnancyTypeRow');
       if (!row) return;
-      const locked = getIdentityPanelLocked();
-      const twinsFromDelivery = isTwinMode() && locked;
-      row.style.display = twinsFromDelivery ? 'none' : '';
+      row.style.display = 'none';
     }
 
     function persistActiveBabyState() {
@@ -1800,7 +1800,7 @@
     function updateKmcDecisionLabel() {
       const label = document.getElementById('kmcDecisionBabyLabel');
       if (!label) return;
-      if (newbornBabyStates.length > 1) {
+      if (!isCurrentBabyPatient() && newbornBabyStates.length > 1) {
         label.textContent = currentLanguage === 'en'
           ? (' (Baby ' + activeBabyIndex + ')')
           : (' (ကလေး ' + activeBabyIndex + ')');
@@ -2219,7 +2219,9 @@
       if (alertEl && eligibleBabies.length) {
         const activeEval = eligibleBabies[0];
         const reasonText = KmcUtils.reasonLabels(activeEval.reasons || [], currentLanguage).join(', ');
-        const babyLabel = (currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + activeBabyIndex;
+        const babyLabel = (!isCurrentBabyPatient() && newbornBabyStates.length > 1)
+          ? ((currentLanguage === 'en' ? 'Baby ' : 'ကလေး ') + activeBabyIndex)
+          : (currentLanguage === 'mm' ? 'ဤကလေး' : 'This baby');
         alertEl.textContent = currentLanguage === 'mm'
           ? babyLabel + ' — KMC ဖြစ်နိုင်သည် (' + reasonText + ')။ KMC Yes/No ရွေးပါ။'
           : babyLabel + ' — potential KMC (' + reasonText + '). Please select KMC Yes/No.';
@@ -2656,7 +2658,10 @@
       });
       if (incompleteBaby) {
         await switchBabyTab(incompleteBaby.babyIndex || 1);
-        alert((currentLanguage === 'mm' ? 'ကလေး ' : 'Baby ') + (incompleteBaby.babyIndex || 1) + (currentLanguage === 'mm' ? ' အတွက် မွေးချိန်၊ ကိုယ်အလေးချိန်နှင့် ရလဒ် ဖြည့်ပါ။' : ': please enter birth time, birth weight, and outcome.'));
+        const babyLabel = (!isCurrentBabyPatient() && babyRows.length > 1)
+          ? ((currentLanguage === 'mm' ? 'ကလေး ' : 'Baby ') + (incompleteBaby.babyIndex || 1))
+          : (currentLanguage === 'mm' ? 'ဤကလေး' : 'This baby');
+        alert(babyLabel + (currentLanguage === 'mm' ? ' အတွက် မွေးချိန်၊ ကိုယ်အလေးချိန်နှင့် ရလဒ် ဖြည့်ပါ။' : ': please enter birth time, birth weight, and outcome.'));
         return;
       }
 
@@ -2671,9 +2676,12 @@
           const babyKmc = baby.kmc_selected || null;
           if (!babyKmc) {
             await switchBabyTab(rowBabyIndex);
+            const label = (!isCurrentBabyPatient() && babyRows.length > 1)
+              ? (currentLanguage === 'mm' ? ('ကလေး ' + rowBabyIndex) : ('Baby ' + rowBabyIndex))
+              : (currentLanguage === 'mm' ? 'ဤကလေး' : 'This baby');
             alert(currentLanguage === 'mm'
-              ? ('ကလေး ' + rowBabyIndex + ' — KMC Yes/No ရွေးပါ။')
-              : ('Baby ' + rowBabyIndex + ' is potential KMC. Please select KMC Yes or No.'));
+              ? (label + ' — KMC Yes/No ရွေးပါ။')
+              : (label + ' is potential KMC. Please select KMC Yes or No.'));
             return;
           }
           if (babyKmc === 'yes' && !baby.discharge_date) {

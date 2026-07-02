@@ -49,6 +49,7 @@
 
   function babyDisplayName(motherName, birthOrder, explicitName) {
     if (explicitName) return explicitName;
+    motherName = String(motherName || '').replace(/^Baby\s+/i, '').trim();
     var base = motherName ? ('Baby ' + motherName) : 'Baby';
     return birthOrder ? (base + ' ' + birthOrder) : base;
   }
