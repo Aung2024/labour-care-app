@@ -1254,6 +1254,7 @@
   <script src="js/user-cache.js"></script>
   <script src="js/clinical-validator.js"></script>
   <script src="js/duplicate-detector.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script>
@@ -2689,6 +2690,7 @@
       const ageInput = document.getElementById('age');
       const ageRiskAlert = document.getElementById('ageRiskAlert');
       const ageValue = ageInput ? parseInt(ageInput.value, 10) : NaN;
+      updatePatientTypeFields();
       
       if (Number.isNaN(ageValue) || ageValue === 0) {
         if (ageRiskAlert) {
@@ -2720,6 +2722,44 @@
       }
       
       return isHighRisk;
+    }
+
+    function isBabyRegistration() {
+      const ageValue = parseInt(document.getElementById('age')?.value, 10);
+      return Number.isFinite(ageValue) && ageValue < 12;
+    }
+
+    function updatePatientTypeFields() {
+      const babyMode = isBabyRegistration();
+      const babyFields = document.getElementById('babyPatientFields');
+      const prompt = document.getElementById('babyPatientPrompt');
+      if (babyFields) babyFields.style.display = babyMode ? '' : 'none';
+      if (prompt) prompt.style.display = babyMode ? 'block' : 'none';
+
+      ['dateOfBirth', 'babySex', 'motherName'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.required = babyMode;
+      });
+      ['gravidaSelect', 'parityPrimarySelect'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.required = !babyMode;
+      });
+    }
+
+    async function resolveMotherPatientIdForBaby(data) {
+      const serial = (data.motherPatientSerial || '').trim();
+      if (!serial || isOfflineNow() || !window.firebase || !firebase.firestore) return null;
+      try {
+        const snap = await firebase.firestore()
+          .collection('patients')
+          .where('patient_unique_id', '==', serial)
+          .limit(1)
+          .get();
+        if (!snap.empty) return snap.docs[0].id;
+      } catch (e) {
+        console.warn('Mother serial lookup failed:', e);
+      }
+      return null;
     }
 
     const liveDuplicateState = {
@@ -3126,7 +3166,21 @@
         return;
       }
 
-      if (!data.gravida_value || data.parity_primary === '' || data.parity_primary == null) {
+      const registeringBaby = isBabyRegistration();
+
+      if (registeringBaby && (!data.dateOfBirth || !data.babySex || !data.motherName)) {
+        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
+          (currentLanguage === 'mm'
+            ? 'ကလေးလူနာအတွက် မွေးသက္ကရာဇ်၊ ကျား/မ နှင့် မိခင်အမည် ဖြည့်ရန် လိုအပ်ပါသည်။'
+            : 'Baby patients require date of birth, sex, and mother name.') + '</div>';
+        if (submitBtn) {
+          submitBtn.innerHTML = originalText;
+          submitBtn.disabled = false;
+        }
+        return;
+      }
+
+      if (!registeringBaby && (!data.gravida_value || data.parity_primary === '' || data.parity_primary == null)) {
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
           (currentLanguage === 'mm'
             ? 'ကိုယ်ဝန်ဆောင် အကြိမ် (Gravida) နှင့် မွေးဖွားအကြိမ် (Parity) ရွေးချယ်ပါ။'
@@ -3260,7 +3314,12 @@
         }
         if (!data.patientUniqueId) {
           try {
-            const idResult = await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode, facilityCode);
+            const idResult = registeringBaby && window.BabyPatientUtils
+              ? { uniqueId: await BabyPatientUtils.generateBabyPatientUniqueId(firebase.firestore(), {
+                tsp_code: resolvedTspCode,
+                facility_code: facilityCode
+              }) }
+              : await generatePatientUniqueId(resolvedRegionShort, resolvedTspCode, facilityCode);
             data.patientUniqueId = idResult.uniqueId;
             if (patientUniqueIdHidden) patientUniqueIdHidden.value = idResult.uniqueId;
             if (patientUniqueIdDisplay) patientUniqueIdDisplay.value = idResult.uniqueId;
@@ -3289,11 +3348,19 @@
         const ageRisk = (Number.isFinite(ageValue) && (ageValue < 18 || ageValue >= 35)) ? 'Yes' : 'No';
         const firstPregnancyRisk = Number.isFinite(gravidaValue) && gravidaValue === 1;
         const registrationDateDisplay = formatRegistrationDateDisplay(data.registration_date);
+        const patientType = registeringBaby ? 'baby' : 'mother';
+        const babyDob = registeringBaby ? (data.dateOfBirth || null) : null;
+        const babyBirthTime = registeringBaby ? (data.birthTime || (babyDob ? (babyDob + 'T00:00') : null)) : null;
+        const birthWeightGram = registeringBaby && data.birthWeightGram !== ''
+          ? parseFloat(data.birthWeightGram)
+          : null;
+        const linkedMotherPatientId = registeringBaby ? await resolveMotherPatientIdForBaby(data) : null;
         
         // Convert field names to snake_case for consistency (no duplicates)
         const processedData = {
           name: data.name,
           age: parseInt(data.age),
+          patient_type: patientType,
           township: data.township,
           region: data.region,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),
@@ -3324,6 +3391,16 @@
           tsp_code: resolvedTspCode || null,
           facility_code: facilityCode,
           patient_unique_id: data.patientUniqueId || null,
+          mother_patient_id: linkedMotherPatientId,
+          mother_patient_serial: registeringBaby ? (data.motherPatientSerial || null) : null,
+          mother_name: registeringBaby ? (data.motherName || null) : null,
+          date_of_birth: babyDob,
+          birth_time: babyBirthTime,
+          sex: registeringBaby ? (data.babySex || null) : null,
+          gender: registeringBaby ? (data.babySex || null) : null,
+          birth_weight_gram: birthWeightGram,
+          maternal_edd: registeringBaby ? (data.maternalEdd || null) : null,
+          maternal_edd_source: registeringBaby && data.maternalEdd ? 'registration' : null,
           
           // Contact info
           phone: data.phone || null,
@@ -3362,6 +3439,7 @@
         const patientDataForConsent = {
           name: processedData.name,
           age: processedData.age,
+          patient_type: processedData.patient_type,
           parity: processedData.parity,
           phone: processedData.phone || null,
           patient_address: processedData.patient_address || null,
@@ -3385,6 +3463,16 @@
           tsp_code: processedData.tsp_code || null,
           facility_code: facilityCode,
           patient_unique_id: processedData.patient_unique_id || null,
+          mother_patient_id: processedData.mother_patient_id || null,
+          mother_patient_serial: processedData.mother_patient_serial || null,
+          mother_name: processedData.mother_name || null,
+          date_of_birth: processedData.date_of_birth || null,
+          birth_time: processedData.birth_time || null,
+          sex: processedData.sex || null,
+          gender: processedData.gender || null,
+          birth_weight_gram: processedData.birth_weight_gram || null,
+          maternal_edd: processedData.maternal_edd || null,
+          maternal_edd_source: processedData.maternal_edd_source || null,
           township: userTownship,
           region: userRegion,
           created_by: user.uid
@@ -3565,10 +3653,91 @@
                 <label for="age" class="form-label required-field">
                   <i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>
                 </label>
-                <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="12" max="50" pattern="[0-9]*" inputmode="numeric">
+                <input type="number" name="age" id="age" class="form-control" placeholder="Enter age" required min="0" max="110" pattern="[0-9]*" inputmode="numeric">
                 <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
                   <i class="fas fa-exclamation-triangle me-2"></i>
                   <span>Age risk alert will appear here.</span>
+                </div>
+                <div id="babyPatientPrompt" class="alert alert-info hide" style="display: none;">
+                  <i class="fas fa-baby me-2"></i>
+                  <span class="lang-text" data-en="Age is under 12. This will be registered as a baby patient. Please complete DOB and mother details below." data-mm="အသက် ၁၂ နှစ်အောက် ဖြစ်ပါသည်။ ကလေးလူနာအဖြစ် မှတ်ပုံတင်မည်ဖြစ်၍ မွေးသက္ကရာဇ်နှင့် မိခင်အချက်အလက်များ ဖြည့်ပါ။">Age is under 12. This will be registered as a baby patient. Please complete DOB and mother details below.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="babyPatientFields" class="form-section" style="display: none; margin-top: 1rem;">
+            <h5 class="mb-3">
+              <i class="fas fa-baby me-2"></i>
+              <span class="lang-text" data-en="Baby Patient Details" data-mm="ကလေးလူနာ အချက်အလက်">Baby Patient Details</span>
+            </h5>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="dateOfBirth" class="form-label">
+                    <i class="fas fa-calendar-day"></i><span class="lang-text" data-en="Date of Birth" data-mm="မွေးသက္ကရာဇ်">Date of Birth</span>
+                    <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
+                  </label>
+                  <input type="date" name="dateOfBirth" id="dateOfBirth" class="form-control">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="birthTime" class="form-label">
+                    <i class="fas fa-clock"></i><span class="lang-text" data-en="Birth Time" data-mm="မွေးချိန်">Birth Time</span>
+                  </label>
+                  <input type="datetime-local" name="birthTime" id="birthTime" class="form-control">
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="babySex" class="form-label">
+                    <i class="fas fa-venus-mars"></i><span class="lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</span>
+                    <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
+                  </label>
+                  <select name="babySex" id="babySex" class="form-control">
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="birthWeightGram" class="form-label">
+                    <i class="fas fa-weight"></i><span class="lang-text" data-en="Birth Weight (grams)" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်)">Birth Weight (grams)</span>
+                  </label>
+                  <input type="number" name="birthWeightGram" id="birthWeightGram" class="form-control" min="0" step="0.1" inputmode="decimal">
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="motherPatientSerial" class="form-label">
+                    <i class="fas fa-id-card"></i><span class="lang-text" data-en="Mother Patient Serial ID (if known)" data-mm="မိခင်လူနာ Serial ID (သိရှိပါက)">Mother Patient Serial ID (if known)</span>
+                  </label>
+                  <input type="text" name="motherPatientSerial" id="motherPatientSerial" class="form-control" placeholder="e.g. TSP-003-260001">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="motherName" class="form-label">
+                    <i class="fas fa-person-breastfeeding"></i><span class="lang-text" data-en="Mother Name" data-mm="မိခင်အမည်">Mother Name</span>
+                    <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
+                  </label>
+                  <input type="text" name="motherName" id="motherName" class="form-control" placeholder="Enter mother name">
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="maternalEdd" class="form-label">
+                    <i class="fas fa-calendar-plus"></i><span class="lang-text" data-en="Mother EDD / Preterm reference (if known)" data-mm="မိခင် EDD / ကိုယ်ဝန်အပတ် အထောက်အထား (သိရှိပါက)">Mother EDD / Preterm reference (if known)</span>
+                  </label>
+                  <input type="date" name="maternalEdd" id="maternalEdd" class="form-control">
                 </div>
               </div>
             </div>

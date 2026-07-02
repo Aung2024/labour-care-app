@@ -15,6 +15,7 @@
   <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
@@ -642,6 +643,28 @@
       }) || visits[0];
     }
 
+    function babyPatientCareFromRecord(patient) {
+      patient = patient || {};
+      if (!(window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient))) return null;
+      return {
+        visit_number: 1,
+        pregnancy_type: 'single',
+        baby_name: patient.name || 'Baby',
+        birth_time: patient.birth_time || (patient.date_of_birth ? (patient.date_of_birth + 'T00:00') : null),
+        body_weight_gram: patient.birth_weight_gram || null,
+        gender: patient.sex || patient.gender || null,
+        outcome: patient.birth_outcome || 'alive',
+        babies: [{
+          babyIndex: 1,
+          babyName: patient.name || 'Baby',
+          birthTime: patient.birth_time || (patient.date_of_birth ? (patient.date_of_birth + 'T00:00') : null),
+          birthWeightGram: patient.birth_weight_gram || null,
+          gender: patient.sex || patient.gender || null,
+          outcome: patient.birth_outcome || 'alive'
+        }]
+      };
+    }
+
     function resolveKmcBabyName(patient, visit1, babyIndex, evalResult) {
       var twins = visit1 && (visit1.pregnancy_type === 'twins' || (Array.isArray(visit1.babies) && visit1.babies.length > 1));
       if (visit1 && Array.isArray(visit1.babies)) {
@@ -1258,12 +1281,17 @@
       try {
         var patients = await fetchPatientsForRole(db, user, userRole);
         var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {
+          if (!(window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(p)) &&
+              Array.isArray(p.baby_patient_ids) && p.baby_patient_ids.length) {
+            return [];
+          }
           var newbornCareVisits = await fetchNewbornCareVisits(db, p.id);
-          var newbornCare = getVisit1NewbornCare(newbornCareVisits);
+          var babyPatientCare = babyPatientCareFromRecord(p);
+          var newbornCare = getVisit1NewbornCare(newbornCareVisits) || babyPatientCare;
           var latestNewbornCare = newbornCareVisits[newbornCareVisits.length - 1] || newbornCare;
           var immediateNewbornCare = await fetchImmediateNewbornCare(db, p.id);
           var birthAnchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(p.id);
-          var latestAnc = await fetchLatestAnc(db, p.id);
+          var latestAnc = babyPatientCare ? null : await fetchLatestAnc(db, p.id);
           var kmcActions = await fetchKmcActions(db, p.id);
           var babyEvaluations = KmcUtils.evaluateKmcEligibilityForBabies(p, newbornCare || latestNewbornCare || {}, birthAnchor, latestAnc);
           return babyEvaluations.map(function (evalResult) {

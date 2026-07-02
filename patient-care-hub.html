@@ -849,7 +849,7 @@
     <!-- Care Cards -->
     <div id="careCardsContainer" class="care-cards-grid" style="display: none;">
       <!-- Antenatal Care Card -->
-      <div class="care-card antenatal" onclick="navigateToCare('antenatal')">
+      <div class="care-card antenatal" data-care-audience="mother" onclick="navigateToCare('antenatal')">
         <div class="care-icon">
           <i class="fas fa-person-breastfeeding"></i>
         </div>
@@ -860,7 +860,7 @@
       </div>
 
       <!-- Labour Care Card -->
-      <div class="care-card labour">
+      <div class="care-card labour" data-care-audience="mother">
         <div class="care-icon">
           <i class="fas fa-bed-pulse"></i>
         </div>
@@ -876,7 +876,7 @@
       </div>
 
       <!-- Immediate New Born Care Card -->
-      <div class="care-card newborn" onclick="navigateToCare('newborn')">
+      <div class="care-card newborn" data-care-audience="baby" onclick="navigateToCare('newborn')">
         <div class="care-icon">
           <i class="fas fa-baby"></i>
         </div>
@@ -887,7 +887,7 @@
       </div>
 
       <!-- Postnatal Care Card -->
-      <div class="care-card postnatal" onclick="navigateToCare('postnatal')">
+      <div class="care-card postnatal" data-care-audience="mother" onclick="navigateToCare('postnatal')">
         <div class="care-icon">
           <i class="fas fa-hands-holding-child"></i>
         </div>
@@ -898,7 +898,7 @@
       </div>
 
       <!-- Vaccine / Immunization Card -->
-      <div class="care-card baby" onclick="navigateToCare('vaccine-home')">
+      <div class="care-card baby" data-care-audience="baby" onclick="navigateToCare('vaccine-home')">
         <div class="care-icon">
           <i class="fas fa-syringe"></i>
         </div>
@@ -909,14 +909,14 @@
       </div>
 
       <!-- Overall Patient Report Card -->
-      <div class="care-card" style="border-top: 4px solid #6366f1;" onclick="navigateToCare('overall-report')">
+      <div class="care-card" data-care-audience="both" id="reportCareCard" style="border-top: 4px solid #6366f1;" onclick="navigateToCare('overall-report')">
         <div class="care-icon" style="color: #6366f1;">
           <i class="fas fa-file-medical-alt"></i>
         </div>
-        <h3 class="care-title lang-text" data-en="Overall Patient Report" data-mm="လူနာ အစီရင်ခံစာ">Overall Patient Report</h3>
+        <h3 class="care-title lang-text" id="reportCareTitle" data-en="Overall Patient Report" data-mm="လူနာ အစီရင်ခံစာ">Overall Patient Report</h3>
        
         <a href="#" class="care-action" style="background: linear-gradient(135deg, #6366f1, #4f46e5);" onclick="event.preventDefault(); navigateToCare('overall-report');">
-          <i class="fas fa-file-pdf me-2"></i><span class="lang-text" data-en="View Complete Report" data-mm="ပြည့်စုံသော အစီရင်ခံစာ ကြည့်ရှုရန်">View Complete Report</span>
+          <i class="fas fa-file-pdf me-2"></i><span class="lang-text" id="reportCareActionText" data-en="View Complete Report" data-mm="ပြည့်စုံသော အစီရင်ခံစာ ကြည့်ရှုရန်">View Complete Report</span>
         </a>
       </div>
     </div>
@@ -948,6 +948,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/high-risk-utils.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
 
   <script>
@@ -1281,6 +1282,7 @@
       const p = selectedPatient || {};
       const unknown = hubT('Unknown', 'မသိ');
       document.getElementById('patientName').textContent = p.name || unknown;
+      applyPatientTypeHubLayout();
 
       const { displayStatus, statusClass } = resolveHubStatus(p.status || p.treatmentStatus);
       document.getElementById('patientStatus').innerHTML =
@@ -1303,6 +1305,29 @@
         metaEl.innerHTML = metaParts.map(function (text, i) {
           return (i > 0 ? '<span class="pcs-sep">·</span>' : '') + '<span>' + escapeHtmlHub(String(text)) + '</span>';
         }).join('');
+      }
+    }
+
+    function selectedPatientType() {
+      if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(selectedPatient)) return 'baby';
+      return selectedPatient && selectedPatient.patient_type === 'baby' ? 'baby' : 'mother';
+    }
+
+    function applyPatientTypeHubLayout() {
+      const type = selectedPatientType();
+      document.querySelectorAll('[data-care-audience]').forEach(function (card) {
+        const audience = card.getAttribute('data-care-audience') || 'both';
+        card.style.display = (audience === 'both' || audience === type) ? '' : 'none';
+      });
+
+      const reportTitle = document.getElementById('reportCareTitle');
+      const reportText = document.getElementById('reportCareActionText');
+      if (type === 'baby') {
+        if (reportTitle) reportTitle.textContent = hubT('Newborn Report', 'မွေးကင်းစကလေး အစီရင်ခံစာ');
+        if (reportText) reportText.textContent = hubT('View Newborn Report', 'မွေးကင်းစကလေး အစီရင်ခံစာ ကြည့်ရန်');
+      } else {
+        if (reportTitle) reportTitle.textContent = hubT('Overall Patient Report', 'လူနာ အစီရင်ခံစာ');
+        if (reportText) reportText.textContent = hubT('View Complete Report', 'ပြည့်စုံသော အစီရင်ခံစာ ကြည့်ရှုရန်');
       }
     }
 
@@ -1336,6 +1361,9 @@
     async function loadCareStats() {
       try {
         const patientId = selectedPatient.id;
+        if (selectedPatientType() === 'baby') {
+          return;
+        }
         const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
         
         // Load ANC visits - use smart query for Safari compatibility
@@ -1803,7 +1831,11 @@
           window.location.href = 'immediate-newborn-care.html';
           break;
         case 'overall-report':
-          window.location.href = 'overall-patient-report.html';
+          if (selectedPatientType() === 'baby') {
+            window.location.href = 'newborn-report.html?patient=' + selectedPatient.id;
+          } else {
+            window.location.href = 'overall-patient-report.html';
+          }
           break;
       }
     }

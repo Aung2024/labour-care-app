@@ -329,6 +329,21 @@
             transferred_at: firebase.firestore.FieldValue.serverTimestamp(),
             transferred_by_request_id: id
           });
+          if (patient.patient_type !== 'baby' && Array.isArray(patient.baby_patient_ids)) {
+            patient.baby_patient_ids.forEach(function (babyId) {
+              if (!babyId) return;
+              const babyRef = firebase.firestore().collection('patients').doc(babyId);
+              tx.set(babyRef, {
+                created_by: currentUser.uid,
+                createdBy: currentUser.uid,
+                care_team_midwife_ids: [currentUser.uid],
+                transferred_with_mother_patient_id: req.patientId,
+                transferred_from_midwife_id: previousOwnerId || null,
+                transferred_at: firebase.firestore.FieldValue.serverTimestamp(),
+                transferred_by_request_id: id
+              }, { merge: true });
+            });
+          }
           tx.update(reqRef, {
             status: 'accepted',
             acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),

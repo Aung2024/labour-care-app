@@ -956,6 +956,14 @@
         >
       </div>
       <div class="filter-chips">
+        <div class="filter-chip active" data-patient-type-filter="mother" onclick="setPatientTypeFilter('mother', event)">
+          <i class="fas fa-person-breastfeeding me-1"></i> <span class="lang-text" data-en="Mommy" data-mm="မိခင်">Mommy</span>
+        </div>
+        <div class="filter-chip" data-patient-type-filter="baby" onclick="setPatientTypeFilter('baby', event)">
+          <i class="fas fa-baby me-1"></i> <span class="lang-text" data-en="Baby" data-mm="ကလေး">Baby</span>
+        </div>
+      </div>
+      <div class="filter-chips">
         <div class="filter-chip active" data-filter="all" onclick="setStatusFilter('all', event)">
           <i class="fas fa-users me-1"></i> <span class="lang-text" data-en="All Patients" data-mm="လူနာအားလုံး">All Patients</span>
         </div>
@@ -1097,6 +1105,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/anc-tracking-status.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
 
   <script>
     let currentUser = null;
@@ -1106,6 +1115,7 @@
     let currentUserProfile = null;
     let allPatients = [];
     let filteredPatients = [];
+    let currentPatientTypeFilter = 'mother';
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
@@ -1715,9 +1725,29 @@
       }
     }
 
+    function patientTypeOf(patient) {
+      if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient)) return 'baby';
+      return (patient && patient.patient_type === 'baby') ? 'baby' : 'mother';
+    }
+
+    function setPatientTypeFilter(type, event) {
+      if (event) event.stopPropagation();
+      currentPatientTypeFilter = type === 'baby' ? 'baby' : 'mother';
+      document.querySelectorAll('[data-patient-type-filter]').forEach(function (chip) {
+        chip.classList.toggle('active', chip.getAttribute('data-patient-type-filter') === currentPatientTypeFilter);
+      });
+      updateSectionTitle();
+      filterPatients();
+    }
+
     function updateSectionTitle() {
       const el = document.getElementById('sectionTitleText');
-      if (el) el.textContent = statusFilterTitle(currentStatusFilter);
+      if (el) {
+        const typeTitle = currentPatientTypeFilter === 'baby'
+          ? (currentLanguage === 'mm' ? 'ကလေးလူနာ' : 'Baby Patients')
+          : (currentLanguage === 'mm' ? 'မိခင်လူနာ' : 'Mommy Patients');
+        el.textContent = typeTitle + ' · ' + statusFilterTitle(currentStatusFilter);
+      }
     }
 
     function updateMidwifeFilterLanguage() {
@@ -2113,6 +2143,10 @@
     const parityDisplay = patient.parity || '-';
     const ageDisplay = patient.age ? `${patient.age} ${listT('years')}` : '-';
     const riskDisplay = isHighRisk ? listT('highRisk') : listT('normal');
+      const isBaby = patientTypeOf(patient) === 'baby';
+      const babyDobDisplay = patient.date_of_birth ? formatDate(patient.date_of_birth) : '-';
+      const babyMotherDisplay = patient.mother_name || '-';
+      const babyWeightDisplay = patient.birth_weight_gram ? `${patient.birth_weight_gram} g` : '-';
       
       // Apply data masking
       const displayName = patient.name || listT('unknown');
@@ -2127,22 +2161,22 @@
         </div>
       <div class="patient-highlight-grid">
         <div class="info-chip">
-          <span>${escapeHtml(listT('age'))}</span>
-          <strong>${ageDisplay}</strong>
+          <span>${escapeHtml(isBaby ? 'DOB' : listT('age'))}</span>
+          <strong>${isBaby ? babyDobDisplay : ageDisplay}</strong>
         </div>
         <div class="info-chip">
-          <span>${escapeHtml(listT('parity'))}</span>
-          <strong>${parityDisplay}</strong>
+          <span>${escapeHtml(isBaby ? 'Mother' : listT('parity'))}</span>
+          <strong>${escapeHtml(isBaby ? babyMotherDisplay : parityDisplay)}</strong>
         </div>
       </div>
       <div class="patient-stat-grid">
         <div class="info-chip">
-          <span>GA</span>
-          <strong>${gaDisplay}</strong>
+          <span>${isBaby ? 'Birth wt' : 'GA'}</span>
+          <strong>${isBaby ? babyWeightDisplay : gaDisplay}</strong>
         </div>
         <div class="info-chip">
-          <span>EDD</span>
-          <strong>${eddDisplay}</strong>
+          <span>${isBaby ? 'Serial' : 'EDD'}</span>
+          <strong>${escapeHtml(isBaby ? (patient.patient_unique_id || '-') : eddDisplay)}</strong>
         </div>
         <div class="info-chip ${isHighRisk ? 'risk-high' : 'risk-normal'}">
           <span>${escapeHtml(listT('risk'))}</span>
@@ -2174,6 +2208,10 @@
 
       const ageDisplay = patient.age ? `${patient.age} ${listT('years')}` : '-';
       const parityDisplay = patient.parity || '-';
+      const isBaby = patientTypeOf(patient) === 'baby';
+      const rowMeta = isBaby
+        ? ('DOB: ' + (patient.date_of_birth ? formatDate(patient.date_of_birth) : '-') + ' · Mother: ' + (patient.mother_name || '-') + ' · ' + (patient.patient_unique_id || '-'))
+        : (ageDisplay + ' · ' + escapeHtml(listT('parity')) + ': ' + parityDisplay);
       
       // Apply data masking
       const displayName = patient.name || listT('unknown');
@@ -2181,7 +2219,7 @@
       row.innerHTML = `
         <td>
           <div class="fw-semibold text-dark mb-1">${displayName}</div>
-          <div class="text-muted" style="font-size: 0.8rem;">${ageDisplay} · ${escapeHtml(listT('parity'))}: ${parityDisplay}</div>
+          <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(rowMeta)}</div>
           ${trackingBadgeHtml(patient.id)}
         </td>
         <td>
@@ -2338,6 +2376,8 @@
       const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
       
       filteredPatients = allPatients.filter(patient => {
+        if (patientTypeOf(patient) !== currentPatientTypeFilter) return false;
+
         // Status filter
         if (currentStatusFilter !== 'all') {
           const patientStatus = patient.status || 'registered';
@@ -2353,11 +2393,15 @@
           const name = (patient.name || '').toLowerCase();
           const phone = (patient.phone || '').toLowerCase();
           const address = (patient.patient_address || patient.patientAddress || '').toLowerCase();
+          const motherName = (patient.mother_name || '').toLowerCase();
           const id = patient.id.toLowerCase();
+          const serial = (patient.patient_unique_id || patient.patientUniqueId || '').toLowerCase();
           
           if (!name.includes(searchTerm) && 
               !phone.includes(searchTerm) && 
               !address.includes(searchTerm) &&
+              !motherName.includes(searchTerm) &&
+              !serial.includes(searchTerm) &&
               !id.includes(searchTerm)) {
             return false;
           }

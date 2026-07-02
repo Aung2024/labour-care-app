@@ -198,6 +198,14 @@
       .collection('records')
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
+    if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
+      try {
+        var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId);
+        payload.linkedBabyPatientIds = babyIds;
+      } catch (e) {
+        console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
+      }
+    }
     return payload;
   }
 

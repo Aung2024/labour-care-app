@@ -397,6 +397,63 @@
       return null;
     }
 
+    async function generateLinkedMotherSerial(patientData) {
+      const tspCode = String(patientData.tsp_code || 'UNK').replace(/[^A-Za-z0-9-]/g, '') || 'UNK';
+      const facilityCode = String(patientData.facility_code || '003').trim().padStart(3, '0').substring(0, 3);
+      const safeFacility = /^\d{3}$/.test(facilityCode) ? facilityCode : '003';
+      const yearSuffix = new Date().getFullYear().toString().slice(-2);
+      const counterId = tspCode.replace(/[^A-Za-z0-9]/g, '') + '_' + safeFacility + '_' + yearSuffix;
+      const db = firebase.firestore();
+      const counterRef = db.collection('patient_counters').doc(counterId);
+      const serial = await db.runTransaction(async function (tx) {
+        const snap = await tx.get(counterRef);
+        let current = 0;
+        if (snap.exists && typeof snap.data().lastSerial === 'number') current = snap.data().lastSerial;
+        const next = current + 1;
+        tx.set(counterRef, {
+          lastSerial: next,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        return next;
+      });
+      return tspCode + '-' + safeFacility + '-' + yearSuffix + String(serial).padStart(4, '0');
+    }
+
+    async function ensureMinimalMotherForBaby(patientId, userDataPt) {
+      if (!patientData || patientData.patient_type !== 'baby' || patientData.mother_patient_id || !patientData.mother_name) {
+        return patientData && patientData.mother_patient_id ? patientData.mother_patient_id : null;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+      const db = firebase.firestore();
+      const motherId = db.collection('patients').doc().id;
+      const motherSerial = await generateLinkedMotherSerial(patientData);
+      const motherPayload = {
+        patient_type: 'mother',
+        name: patientData.mother_name,
+        age: null,
+        township: patientData.township || (userDataPt && userDataPt.township) || '',
+        region: patientData.region || (userDataPt && userDataPt.region) || '',
+        region_short_code: patientData.region_short_code || null,
+        tsp_code: patientData.tsp_code || null,
+        facility_code: patientData.facility_code || '003',
+        patient_unique_id: motherSerial,
+        created_by: currentUser.uid,
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        status: 'registered',
+        linked_from_baby_registration: true,
+        baby_patient_ids: firebase.firestore.FieldValue.arrayUnion(patientId)
+      };
+      await db.collection('patients').doc(motherId).set(motherPayload, { merge: true });
+      await db.collection('patients').doc(patientId).set({
+        mother_patient_id: motherId,
+        mother_patient_serial: motherSerial,
+        updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      patientData.mother_patient_id = motherId;
+      patientData.mother_patient_serial = motherSerial;
+      return motherId;
+    }
+
     function selectMethod(method) {
       document.querySelectorAll('.method-option').forEach(opt => {
         opt.classList.remove('selected');
@@ -628,6 +685,20 @@
             alert('Saved successfully on local and cloud.');
           } else {
             alert('Saved successfully on local storage — please sync later!');
+          }
+          if (patientData.patient_type === 'baby' && syncResult.cloudOk) {
+            try {
+              const resolvedMotherId = await ensureMinimalMotherForBaby(patientId, userDataPt);
+              if (resolvedMotherId) {
+                await firebase.firestore().collection('patients').doc(resolvedMotherId).set({
+                  baby_patient_ids: firebase.firestore.FieldValue.arrayUnion(patientId),
+                  patient_type: 'mother',
+                  updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+              }
+            } catch (linkErr) {
+              console.warn('Baby saved, but mother link update failed:', linkErr);
+            }
           }
         } else if (patientId) {
           sessionStorage.setItem('selectedPatientId', patientId);

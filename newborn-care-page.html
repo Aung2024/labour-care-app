@@ -27,6 +27,7 @@
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/choice-controls.js"></script>
@@ -1983,6 +1984,27 @@
       babyNameEl.value = generateBabyName(currentPatient.name, idx);
     }
 
+    function isCurrentBabyPatient() {
+      return window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(currentPatient);
+    }
+
+    function applyBabyPatientIdentityFromRecord() {
+      if (!isCurrentBabyPatient()) return;
+      const baby = {
+        babyIndex: 1,
+        babyName: currentPatient.name || '',
+        gender: currentPatient.sex || currentPatient.gender || '',
+        birthTime: currentPatient.birth_time || (currentPatient.date_of_birth ? (currentPatient.date_of_birth + 'T00:00') : ''),
+        birthWeightGram: currentPatient.birth_weight_gram || '',
+        outcome: currentPatient.birth_outcome || 'alive'
+      };
+      const pregnancyType = document.getElementById('pregnancy_type');
+      if (pregnancyType) pregnancyType.value = 'single';
+      activeBabyIndex = 1;
+      initBabyStatesFromBabies([baby], true);
+      updateTwinTabBarVisibility();
+    }
+
     async function waitForCurrentUserOffline(maxMs = 4000) {
       const start = Date.now();
       while (Date.now() - start < maxMs) {
@@ -2048,6 +2070,7 @@
             return;
           }
           document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+          applyBabyPatientIdentityFromRecord();
           applyAutoBabyName();
           await loadExistingNewbornCareData();
           return;
@@ -2066,6 +2089,7 @@
 
         currentPatient = patientDoc.data();
         document.getElementById('patientNameDisplay').textContent = currentPatient.name || 'Unknown Patient';
+        applyBabyPatientIdentityFromRecord();
         applyAutoBabyName();
 
         // Load existing newborn care data if any
@@ -2318,6 +2342,10 @@
 
     async function preloadDeliveryNotesIntoNewbornForm() {
       if (!patientId || !window.DeliveryNotesUtils) return;
+      if (isCurrentBabyPatient()) {
+        applyBabyPatientIdentityFromRecord();
+        return;
+      }
       if (hasSavedFirstNewbornVisit()) return;
       let source = null;
       const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
@@ -2814,7 +2842,7 @@
               await BirthDeliveryAnchor.syncDatetimeToNewbornCare(patientId, cloudData.birth_time);
             }
 
-            if ((parseInt(cloudData.visit_number, 10) || 1) === 1 && window.DeliveryNotesUtils) {
+            if (!isCurrentBabyPatient() && (parseInt(cloudData.visit_number, 10) || 1) === 1 && window.DeliveryNotesUtils) {
               await DeliveryNotesUtils.saveDeliveryNotes(
                 patientId,
                 DeliveryNotesUtils.deliveryNotesFromNewborn(cloudData),

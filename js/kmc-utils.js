@@ -63,7 +63,7 @@
     if (!patient && !latestAnc) return null;
     var p = patient || {};
     var a = latestAnc || {};
-    return p.edd || p.EDD || a.edd || a.manualEdd || a.manual_edd || null;
+    return p.edd || p.EDD || p.maternal_edd || p.manualEdd || p.manual_edd || a.edd || a.manualEdd || a.manual_edd || null;
   }
 
   function getBirthDateStr(newbornCare, birthAnchor) {

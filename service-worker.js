@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v164-moh';
+const CACHE_NAME = 'mch-care-v165-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const FILES_TO_CACHE = [
   './patient-consent.html',
   './provider-consent.html',
   './patient-care-hub.html',
+  './baby-patient-backfill.html',
   './patient-enhanced.html',
   './edit-patient.html',
   './antenatal-care.html',
@@ -82,6 +83,7 @@ const FILES_TO_CACHE = [
   './js/high-risk-utils.js',
   './js/anc-tracking-status.js',
   './js/kmc-utils.js',
+  './js/baby-patient-utils.js',
   './js/birth-delivery-anchor.js',
   './js/delivery-notes-utils.js',
   './js/offline-visit-number.js',

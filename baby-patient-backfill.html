@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baby Patient Backfill</title>
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css">
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
+  <style>
+    body { background: #f8fafc; color: #0f172a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .wrap { max-width: 860px; margin: 32px auto; padding: 20px; }
+    .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15, 23, 42, .08); }
+    pre { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 16px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="panel">
+      <h1 class="h3 mb-3">Baby Patient Backfill</h1>
+      <p class="text-muted">Creates linked baby patient records from existing Delivery Notes or newborn visit 1 data. Run dry-run first, then run small write batches.</p>
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-4">
+          <label for="limit" class="form-label">Batch size</label>
+          <input id="limit" class="form-control" type="number" min="1" max="200" value="50">
+        </div>
+        <div class="col-sm-4">
+          <div class="form-check">
+            <input id="dryRun" class="form-check-input" type="checkbox" checked>
+            <label for="dryRun" class="form-check-label">Dry run only</label>
+          </div>
+        </div>
+        <div class="col-sm-4">
+          <button id="runBtn" class="btn btn-primary w-100" type="button" onclick="runBackfill()">Run backfill</button>
+        </div>
+      </div>
+      <hr>
+      <pre id="output">Waiting.</pre>
+    </div>
+  </main>
+
+  <script>
+    let currentUser = null;
+
+    firebase.auth().onAuthStateChanged(function (user) {
+      currentUser = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+      if (!currentUser) window.location.href = 'login.html';
+    });
+
+    async function runBackfill() {
+      const out = document.getElementById('output');
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      out.textContent = 'Running...';
+      try {
+        const result = await BabyPatientUtils.backfillExistingBabyPatients({
+          limit: parseInt(document.getElementById('limit').value, 10) || 50,
+          dryRun: document.getElementById('dryRun').checked,
+          userId: currentUser && currentUser.uid
+        });
+        out.textContent = JSON.stringify(result, null, 2);
+      } catch (e) {
+        out.textContent = 'Error: ' + (e.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
