@@ -292,6 +292,35 @@
       text-align: right;
     }
 
+    .baby-info-cell {
+      min-width: 8.5rem;
+    }
+
+    .baby-info-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .baby-info-stack span {
+      color: #6b7280;
+    }
+
+    .baby-info-stack strong {
+      color: #111827;
+      font-weight: 600;
+    }
+
+    .baby-info-kmc-yes {
+      color: #047857;
+    }
+
+    .baby-info-kmc-no {
+      color: #6b7280;
+    }
+
     .patients-table .btn-secondary {
       padding: 0.4rem 0.75rem;
     }
@@ -1157,8 +1186,10 @@
     let selectedMidwifeId = 'all'; // For Super Admin midwife filter
     let allMidwives = []; // Store all midwives for Super Admin
     const patientTrackingMap = new Map();
+    const babyInfoMap = new Map();
     let trackingPanelOpen = false;
     const TRACKING_CONCURRENCY = 6;
+    const BABY_INFO_CONCURRENCY = 6;
     let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
 
     const LIST_I18N = {
@@ -1180,8 +1211,12 @@
         patients: 'patients',
         name: 'Name',
         status: 'Status',
+        babyInfo: 'Baby Info',
+        totalVisits: 'Total Visits',
+        kmcLabel: 'KMC',
         edit: 'Edit',
         age: 'Age',
+        mother: 'Mother',
         parity: 'Parity',
         risk: 'Risk',
         normal: 'Normal',
@@ -1222,8 +1257,12 @@
         patients: 'လူနာ',
         name: 'အမည်',
         status: 'အခြေအနေ',
+        babyInfo: 'ကလေးအချက်အလက်',
+        totalVisits: 'Newborn လည်ပတ်မှု',
+        kmcLabel: 'KMC',
         edit: 'ပြင်ရန်',
         age: 'အသက်',
+        mother: 'မိခင်',
         parity: 'Parity',
         risk: 'အန္တရာယ်',
         normal: 'ပုံမှန်',
@@ -1420,17 +1459,17 @@
         if (typeof navigator !== 'undefined' && navigator.onLine === false && window.LabourCareOffline) {
           const scope = userRole === 'Regional Officer' ? currentUserRegion : currentUserTownship;
           allPatients = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, scope);
-          filteredPatients = [...allPatients];
           document.getElementById('loadingContainer').style.display = 'none';
           if (allPatients.length === 0) {
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('emptyMessage').textContent = 'No cached/offline patients found on this device.';
           } else {
-            displayPatients();
+            updateSectionTitle();
+            filterPatients();
             reconcileRegisteredPatientStatuses().then(function () {
               return loadPatientTrackingStatuses();
             }).then(function () {
-              displayPatients();
+              filterPatients();
             });
           }
           return;
@@ -1630,10 +1669,12 @@
             : listT('noPatientsRegistered');
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
-          console.log('✅ Displaying', allPatients.length, 'patients');
+          console.log('✅ Displaying patients with default filters');
           await reconcileRegisteredPatientStatuses();
+          await reconcileLinkedMotherParityFromBabies();
           await loadPatientTrackingStatuses();
-          displayPatients();
+          updateSectionTitle();
+          filterPatients();
         }
         
       } catch (error) {
@@ -1765,6 +1806,103 @@
       return (patient && patient.patient_type === 'baby') ? 'baby' : 'mother';
     }
 
+    function babyBirthDateValue(patient) {
+      if (!patient) return null;
+      const raw = patient.date_of_birth || patient.birth_time || patient.birthTime || null;
+      if (!raw) return null;
+      const parsed = new Date(String(raw).split('T')[0]);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function formatBabyAgeDisplay(patient) {
+      const birthDate = babyBirthDateValue(patient);
+      if (!birthDate) return '-';
+      const now = new Date();
+      const diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
+      const months = Math.floor(diffDays / 30);
+      const years = Math.floor(months / 12);
+      const remainingMonths = months % 12;
+      if (currentLanguage === 'mm') {
+        if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
+        if (months > 0) return months + ' လ';
+        return Math.max(0, diffDays) + ' ရက်';
+      }
+      if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
+      if (months > 0) return months + 'm';
+      return Math.max(0, diffDays) + 'd';
+    }
+
+    function getBabyInfo(patientId) {
+      return babyInfoMap.get(patientId) || null;
+    }
+
+    function babyInfoCellHtml(patientId) {
+      const info = getBabyInfo(patientId);
+      const visitText = info && !info.loading && info.visitCount != null
+        ? String(info.visitCount)
+        : '—';
+      let kmcText = '—';
+      let kmcClass = '';
+      if (info && !info.loading && info.kmcYes != null) {
+        kmcText = info.kmcYes ? 'YES' : 'NO';
+        kmcClass = info.kmcYes ? 'baby-info-kmc-yes' : 'baby-info-kmc-no';
+      }
+      return '<td class="baby-info-cell">' +
+        '<div class="baby-info-stack">' +
+          '<div><span>' + escapeHtml(listT('totalVisits')) + ': </span><strong>' + escapeHtml(visitText) + '</strong></div>' +
+          '<div><span>' + escapeHtml(listT('kmcLabel')) + ': </span><strong class="' + kmcClass + '">' + escapeHtml(kmcText) + '</strong></div>' +
+        '</div>' +
+      '</td>';
+    }
+
+    async function fetchBabyInfoForPatient(db, patientId) {
+      const ref = db.collection('patients').doc(patientId).collection('newborn_care');
+      const snap = await ref.get();
+      let visitCount = 0;
+      let kmcYes = false;
+      if (snap && typeof snap.forEach === 'function' && !snap.empty) {
+        visitCount = snap.size;
+        snap.forEach(function (doc) {
+          const data = doc.data() || {};
+          if (String(data.kmc_selected || '').toLowerCase() === 'yes') kmcYes = true;
+        });
+      }
+      return { visitCount: visitCount, kmcYes: kmcYes, loading: false };
+    }
+
+    async function loadBabyPatientInfo() {
+      if (currentPatientTypeFilter !== 'baby') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!window.firebase || !firebase.firestore) return;
+
+      const db = firebase.firestore();
+      const babyPatients = filteredPatients.filter(function (p) {
+        return patientTypeOf(p) === 'baby';
+      });
+      if (!babyPatients.length) return;
+
+      babyPatients.forEach(function (patient) {
+        if (!babyInfoMap.has(patient.id)) {
+          babyInfoMap.set(patient.id, { visitCount: null, kmcYes: null, loading: true });
+        }
+      });
+      displayPatients();
+
+      for (let i = 0; i < babyPatients.length; i += BABY_INFO_CONCURRENCY) {
+        const batch = babyPatients.slice(i, i + BABY_INFO_CONCURRENCY);
+        await Promise.all(batch.map(async function (patient) {
+          try {
+            const info = await fetchBabyInfoForPatient(db, patient.id);
+            babyInfoMap.set(patient.id, info);
+          } catch (err) {
+            console.warn('Baby info load failed for', patient.id, err);
+            babyInfoMap.set(patient.id, { visitCount: 0, kmcYes: false, loading: false });
+          }
+        }));
+        if (currentPatientTypeFilter === 'baby') displayPatients();
+      }
+    }
+
     function setPatientTypeFilter(type, event) {
       if (event) event.stopPropagation();
       currentPatientTypeFilter = type === 'baby' ? 'baby' : 'mother';
@@ -1774,6 +1912,9 @@
       updateSectionTitle();
       displayRecentPatients();
       filterPatients();
+      if (currentPatientTypeFilter === 'baby') {
+        loadBabyPatientInfo();
+      }
     }
 
     function updateSectionTitle() {
@@ -1936,8 +2077,43 @@
         }));
       }
 
-      if (statusUpdated) {
-        filteredPatients = [...allPatients];
+        if (statusUpdated) {
+          filterPatients();
+        }
+    }
+
+    async function reconcileLinkedMotherParityFromBabies() {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!window.firebase || !firebase.firestore) return;
+
+      const db = firebase.firestore();
+      const mothersNeedingUpdate = allPatients.filter(function (mother) {
+        return patientTypeOf(mother) === 'mother' &&
+          mother.linked_from_baby_registration &&
+          (!mother.parity || mother.gravida == null) &&
+          Array.isArray(mother.baby_patient_ids) &&
+          mother.baby_patient_ids.length;
+      });
+
+      for (let i = 0; i < mothersNeedingUpdate.length; i++) {
+        const mother = mothersNeedingUpdate[i];
+        for (let j = 0; j < mother.baby_patient_ids.length; j++) {
+          const baby = allPatients.find(function (p) { return p.id === mother.baby_patient_ids[j]; });
+          if (!baby) continue;
+          const updates = {};
+          if (mother.gravida == null && baby.gravida != null) updates.gravida = baby.gravida;
+          if (!mother.parity && baby.parity) updates.parity = baby.parity;
+          if (mother.parity_primary == null && baby.parity_primary != null) updates.parity_primary = baby.parity_primary;
+          if (mother.parity_secondary == null && baby.parity_secondary != null) updates.parity_secondary = baby.parity_secondary;
+          if (Object.keys(updates).length === 0) continue;
+          try {
+            await db.collection('patients').doc(mother.id).set(updates, { merge: true });
+            Object.assign(mother, updates);
+          } catch (err) {
+            console.warn('Linked mother parity backfill failed for', mother.id, err);
+          }
+          break;
+        }
       }
     }
 
@@ -2128,11 +2304,14 @@
       const table = document.createElement('table');
       table.className = 'table table-hover patients-table align-middle';
       const showingBabyPatients = currentPatientTypeFilter === 'baby';
+      const infoColumnHeader = showingBabyPatients
+        ? escapeHtml(listT('babyInfo'))
+        : escapeHtml(listT('status'));
       table.innerHTML = `
         <thead>
           <tr>
             <th scope="col">${escapeHtml(listT('name'))}</th>
-            ${showingBabyPatients ? '' : '<th scope="col">' + escapeHtml(listT('status')) + '</th>'}
+            <th scope="col">${infoColumnHeader}</th>
             <th scope="col" class="text-end">${escapeHtml(listT('edit'))}</th>
           </tr>
         </thead>
@@ -2181,7 +2360,7 @@
     const ageDisplay = patient.age ? `${patient.age} ${listT('years')}` : '-';
     const riskDisplay = isHighRisk ? listT('highRisk') : listT('normal');
       const isBaby = patientTypeOf(patient) === 'baby';
-      const babyDobDisplay = patient.date_of_birth ? formatDate(patient.date_of_birth) : '-';
+      const babyAgeDisplay = formatBabyAgeDisplay(patient);
       const babyMotherDisplay = patient.mother_name || '-';
       const babyWeightDisplay = patient.birth_weight_gram ? `${patient.birth_weight_gram} g` : '-';
       
@@ -2198,11 +2377,11 @@
         </div>
       <div class="patient-highlight-grid">
         <div class="info-chip">
-          <span>${escapeHtml(isBaby ? 'DOB' : listT('age'))}</span>
-          <strong>${isBaby ? babyDobDisplay : ageDisplay}</strong>
+          <span>${escapeHtml(isBaby ? listT('age') : listT('age'))}</span>
+          <strong>${isBaby ? babyAgeDisplay : ageDisplay}</strong>
         </div>
         <div class="info-chip">
-          <span>${escapeHtml(isBaby ? 'Mother' : listT('parity'))}</span>
+          <span>${escapeHtml(isBaby ? listT('mother') : listT('parity'))}</span>
           <strong>${escapeHtml(isBaby ? babyMotherDisplay : parityDisplay)}</strong>
         </div>
       </div>
@@ -2246,8 +2425,9 @@
       const ageDisplay = patient.age ? `${patient.age} ${listT('years')}` : '-';
       const parityDisplay = patient.parity || '-';
       const isBaby = patientTypeOf(patient) === 'baby';
+      const babyAgeDisplay = formatBabyAgeDisplay(patient);
       const rowMeta = isBaby
-        ? ('DOB: ' + (patient.date_of_birth ? formatDate(patient.date_of_birth) : '-') + ' · Mother: ' + (patient.mother_name || '-'))
+        ? (listT('age') + ': ' + babyAgeDisplay + ' · ' + listT('mother') + ': ' + (patient.mother_name || '-'))
         : (ageDisplay + ' · ' + escapeHtml(listT('parity')) + ': ' + parityDisplay);
       
       // Apply data masking
@@ -2259,7 +2439,7 @@
           <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(rowMeta)}</div>
           ${isBaby ? '' : trackingBadgeHtml(patient.id)}
         </td>
-        ${isBaby ? '' : `<td>
+        ${isBaby ? babyInfoCellHtml(patient.id) : `<td>
           <span class="status-pill ${statusInfo.className}">
             <i class="fas fa-circle" style="font-size: 0.5rem;"></i> ${escapeHtml(statusInfo.label)}
           </span>
@@ -2448,6 +2628,9 @@
       });
       
       displayPatients();
+      if (currentPatientTypeFilter === 'baby') {
+        loadBabyPatientInfo();
+      }
     }
 
     function toggleViewMenu(event) {

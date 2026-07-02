@@ -143,6 +143,9 @@
       var active = btn.dataset.value === val;
       btn.classList.toggle('is-active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.disabled = !!select.disabled;
+      btn.classList.toggle('is-disabled', !!select.disabled);
+      btn.setAttribute('aria-disabled', select.disabled ? 'true' : 'false');
     });
   }
 
@@ -200,6 +203,7 @@
     group.addEventListener('click', function (e) {
       var btn = e.target.closest('.choice-chip, .choice-card, .choice-toggle-btn');
       if (!btn) return;
+      if (select.disabled || btn.disabled) return;
       var newVal = btn.dataset.value;
       if (select.value !== newVal) {
         select.value = newVal;

@@ -928,6 +928,12 @@
       if (completeOutcome) html += '<p><strong>Completion outcome:</strong> ' + escapeHtml(completeOutcome.labelEn) + '</p>';
 
       if (allVisits.length) {
+        function visitWeightGram(v) {
+          const visitNo = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+          const raw = visitNo > 1 ? (v.current_weight_gram || v.visit_weight_gram || v.body_weight_gram) : v.body_weight_gram;
+          const parsed = parseFloat(raw);
+          return !isNaN(parsed) && parsed > 0 ? parsed : null;
+        }
         html += '<div style="overflow-x:auto;"><table class="table table-sm table-bordered mb-0"><thead><tr>' +
           '<th>Visit</th><th>Date</th><th>Weight</th><th>KMC</th><th>KMC hrs/day</th><th>Total hrs</th><th>Feeding</th></tr></thead><tbody>';
         allVisits.forEach(function (v) {
@@ -935,10 +941,11 @@
           const visitNo = parseInt(v.visit_number || v.visitNumber, 10) || 1;
           const visitLabel = visitNo === 1 ? 'Visit 1 (Weight at Birth)' : ('Visit ' + visitNo);
           const dateLabel = v.missing_visit ? t('notRecorded') : (v.visitDate || v.visit_date || (v.birth_time ? new Date(v.birth_time).toISOString().split('T')[0] : ''));
+          const weightGram = visitWeightGram(v);
           html += '<tr>' +
             '<td>' + escapeHtml(visitLabel) + '</td>' +
             '<td>' + escapeHtml(dateLabel || t('notRecorded')) + '</td>' +
-            '<td>' + escapeHtml(v.body_weight_gram ? v.body_weight_gram + ' g' : t('notRecorded')) + '</td>' +
+            '<td>' + escapeHtml(weightGram != null ? Math.round(weightGram) + ' g' : t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.kmc_selected ? String(v.kmc_selected).toUpperCase() : t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.kmc_hours_per_day != null ? v.kmc_hours_per_day : t('notRecorded')) + '</td>' +
             '<td>' + escapeHtml(v.kmc_total_hours != null ? v.kmc_total_hours : t('notRecorded')) + '</td>' +
@@ -949,11 +956,17 @@
       }
 
       const chartPoints = allVisits
-        .filter(function (v) { return v.body_weight_gram != null && !isNaN(parseFloat(v.body_weight_gram)); })
+        .filter(function (v) {
+          const visitNo = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+          const raw = visitNo > 1 ? (v.current_weight_gram || v.visit_weight_gram || v.body_weight_gram) : v.body_weight_gram;
+          return raw != null && !isNaN(parseFloat(raw));
+        })
         .map(function (v) {
+          const visitNo = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+          const raw = visitNo > 1 ? (v.current_weight_gram || v.visit_weight_gram || v.body_weight_gram) : v.body_weight_gram;
           return {
-            visit: parseInt(v.visit_number || v.visitNumber, 10) || 1,
-            weight: parseFloat(v.body_weight_gram)
+            visit: visitNo,
+            weight: parseFloat(raw)
           };
         });
       if (chartPoints.length >= 2) {

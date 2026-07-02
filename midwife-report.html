@@ -14,6 +14,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/register-sw.js"></script>
   <style>
     :root {
@@ -958,6 +959,13 @@
       if (!data || !uid) return false;
       return data.createdBy === uid || data.created_by === uid || data.recordedBy === uid || data.recorded_by === uid || data.midwifeId === uid || data.midwife_id === uid;
     }
+    function isBabyPatientRecord(patient) {
+      if (!patient) return false;
+      if (window.BabyPatientUtils && typeof BabyPatientUtils.isBabyPatient === 'function') {
+        return BabyPatientUtils.isBabyPatient(patient);
+      }
+      return String(patient.patient_type || '').toLowerCase() === 'baby';
+    }
     function getCreator(data) {
       return firstOf(data.createdBy, data.created_by, data.recordedBy, data.recorded_by, data.midwifeId, data.midwife_id);
     }
@@ -1075,7 +1083,9 @@
         console.warn('Joint-care patient lookup failed', e);
       }
       map.forEach(function (patient, id) { patientCache.set(id, patient); });
-      return Array.from(map.values());
+      return Array.from(map.values()).filter(function (patient) {
+        return !isBabyPatientRecord(patient);
+      });
     }
     async function fetchPatientSubcollectionEvents(patient, collectionName, type, uid) {
       try {
@@ -1110,6 +1120,7 @@
       var result = await fetchMidwifePatientEvents(uid);
       var events = result.events.slice();
       result.patients.forEach(function (patient) {
+        if (isBabyPatientRecord(patient)) return;
         if (patient.created_by === uid || patient.createdBy === uid) {
           events.push({
             id: 'registration-' + patient.id,

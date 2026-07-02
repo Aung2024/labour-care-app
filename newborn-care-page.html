@@ -744,13 +744,23 @@
           </div>
           <div class="col-md-6">
             <label for="body_weight_gram" class="form-label">
-              <span class="lang-text" data-en="Body Weight (gram)" data-mm="ကိုယ်အလေးချိန် (ဂရမ်)">Body Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
+              <span class="lang-text" data-en="Birth Weight (gram)" data-mm="မွေးချိန် ကိုယ်အလေးချိန် (ဂရမ်)">Birth Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend();" oninput="evaluateKmcSection(); renderWeightTrend();">
             <div class="weight-trend-panel" id="weightTrendPanel">
               <div class="weight-trend-summary" id="weightTrendSummary"></div>
               <svg class="weight-trend-chart" id="weightTrendChart" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3" id="currentWeightRow" style="display:none;">
+          <div class="col-md-6">
+            <label for="current_weight_gram" class="form-label">
+              <span class="lang-text" data-en="Current Visit Weight (gram)" data-mm="ယခုအကြိမ် ကိုယ်အလေးချိန် (ဂရမ်)">Current Visit Weight (gram)</span>
+            </label>
+            <input type="number" class="form-control" id="current_weight_gram" name="current_weight_gram" step="0.1" min="0" placeholder="" onchange="renderWeightTrend();" oninput="renderWeightTrend();">
+            <small class="form-hint lang-text" data-en="Use this for Visit 2 onward weight trend and KMC follow-up." data-mm="အကြိမ် ၂ မှစ၍ ကိုယ်အလေးချိန်တိုး/ကျနှင့် KMC follow-up အတွက် အသုံးပြုပါ။">Use this for Visit 2 onward weight trend and KMC follow-up.</small>
           </div>
         </div>
 
@@ -1286,6 +1296,7 @@
 
     const BABY_SPECIFIC_FIELD_IDS = [
       'gender', 'birth_time', 'body_weight_gram', 'birth_length_cm', 'head_circumference_cm',
+      'current_weight_gram',
       'temperature', 'temperature_unit', 'heart_rate', 'respiration_rate', 'eye_care_status',
       'follow_up_appointment_date', 'clinical_notes', 'cause_of_death',
       'discharge_date', 'kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day',
@@ -1375,6 +1386,13 @@
         : inferred;
       document.getElementById('visit_number').value = visitNum;
       applyBirthTimeLock();
+      updateCurrentWeightVisibility();
+    }
+
+    function updateCurrentWeightVisibility() {
+      const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
+      const row = document.getElementById('currentWeightRow');
+      if (row) row.style.display = visitNum > 1 ? '' : 'none';
     }
 
     function getRecommendedNewbornDateForVisit(birthDateStr, targetVisitNumber) {
@@ -1844,11 +1862,11 @@
     }
 
     function clearVisitSpecificFormFields() {
-      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'birth_length_cm', 'head_circumference_cm', 'cause_of_death'].forEach(function (id) {
+      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'birth_length_cm', 'head_circumference_cm', 'cause_of_death', 'current_weight_gram'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      ['difficult_breathing', 'eye_infection_status', 'cord_care', 'outcome', 'kmc_selected'].forEach(function (name) {
+      ['difficult_breathing', 'eye_infection_status', 'cord_care', 'outcome'].forEach(function (name) {
         document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) { el.checked = false; });
       });
       document.querySelectorAll('input[name="difficult_breathing_signs"], input[name="eye_infection_findings"]').forEach(function (el) {
@@ -1864,7 +1882,7 @@
       if (ebf) ebf.checked = false;
       const eyeCare = document.getElementById('eye_care_status');
       if (eyeCare) eyeCare.value = '';
-      ['discharge_date', 'kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day', 'kmc_total_hours', 'feeding_type', 'feeding_method'].forEach(function (id) {
+      ['kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day', 'kmc_total_hours', 'feeding_type', 'feeding_method'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -1892,7 +1910,9 @@
       document.getElementById('visit_number').value = nextVisitNumber;
       clearVisitSpecificFormFields();
       newbornBabyStates = newbornBabyStates.map(function (baby) {
+        const keepKmcYes = String(baby.kmc_selected || '').toLowerCase() === 'yes';
         return Object.assign({}, baby, {
+          current_weight_gram: '',
           temperature: '',
           heart_rate: '',
           respiration_rate: '',
@@ -1905,10 +1925,10 @@
           difficult_breathing_signs: [],
           eye_infection_findings: [],
           danger_signs: {},
-          kmc_selected: null,
+          kmc_selected: keepKmcYes ? 'yes' : null,
           kmc_no_category: '',
           kmc_no_reason: '',
-          discharge_date: '',
+          discharge_date: keepKmcYes ? (baby.discharge_date || '') : '',
           kmc_hours_per_day: '',
           kmc_total_hours: '',
           feeding_type: '',
@@ -1918,6 +1938,8 @@
       });
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
       applyAutoBabyName();
+      updateCurrentWeightVisibility();
+      applyKmcDecisionLockForVisit();
     }
 
     function renderBabyTabs() {
@@ -2178,8 +2200,24 @@
       document.getElementById('feeding_type').required = isYes;
       document.getElementById('feeding_method').required = isYes;
       if (isNo && window.ChoiceControls) ChoiceControls.refreshOptions(document.getElementById('kmcNoReasonWrap'));
+      applyKmcDecisionLockForVisit();
       if (window.ChoiceControls) ChoiceControls.syncAll();
       updateNewbornVisitSchedule();
+    }
+
+    function applyKmcDecisionLockForVisit() {
+      const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
+      const lockKmcYes = visitNum > 1 && getSelectedKmcValue() === 'yes';
+      document.querySelectorAll('input[name="kmc_selected"]').forEach(function (el) {
+        el.disabled = lockKmcYes;
+      });
+      const discharge = document.getElementById('discharge_date');
+      if (discharge) {
+        discharge.readOnly = lockKmcYes;
+        discharge.classList.toggle('next-visit-readonly', lockKmcYes);
+      }
+      const decisionWrap = document.getElementById('kmcDecisionWrap');
+      if (decisionWrap) decisionWrap.classList.toggle('kmc-decision-locked', lockKmcYes);
     }
 
     function evaluateKmcSection() {
@@ -2254,13 +2292,16 @@
       const summary = document.getElementById('weightTrendSummary');
       const svg = document.getElementById('weightTrendChart');
       if (!panel || !summary || !svg) return;
-      const currentWeight = parseFloat(document.getElementById('body_weight_gram')?.value);
       const currentVisit = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
+      const currentWeight = currentVisit > 1
+        ? parseFloat(document.getElementById('current_weight_gram')?.value)
+        : parseFloat(document.getElementById('body_weight_gram')?.value);
       const points = sortedNewbornVisits().map(function (item) {
         const d = getVisitData(item);
+        const visit = parseInt(d.visit_number || d.visitNumber, 10) || 1;
         return {
-          visit: parseInt(d.visit_number || d.visitNumber, 10) || 1,
-          weight: parseFloat(d.body_weight_gram)
+          visit: visit,
+          weight: parseFloat(visit > 1 ? (d.current_weight_gram || d.visit_weight_gram || d.body_weight_gram) : d.body_weight_gram)
         };
       }).filter(function (p) {
         return !isNaN(p.weight) && p.weight > 0 && p.visit < currentVisit;
@@ -2272,7 +2313,8 @@
       }
       panel.style.display = 'block';
       const prev = points[points.length - 2].weight;
-      const diff = Math.round((currentWeight - prev) * 10) / 10;
+      const latest = points[points.length - 1].weight;
+      const diff = Math.round((latest - prev) * 10) / 10;
       const gain = diff >= 0;
       summary.className = 'weight-trend-summary ' + (gain ? 'gain' : 'loss');
       summary.innerHTML = '<i class="fas fa-arrow-' + (gain ? 'up' : 'down') + '"></i><span>' +
@@ -2626,6 +2668,7 @@
 
         applyBirthTimeLock();
         applyIdentityFieldLock(hasVisit1 && !isEditMode);
+        updateCurrentWeightVisibility();
         updateNewbornVisitSchedule();
         checkTemperatureAlert();
         checkHeartRateAlert();
@@ -2753,6 +2796,7 @@
           birthplace: document.getElementById('birthplace').value || null,
           mode_of_delivery: document.getElementById('mode_of_delivery').value || null,
           body_weight_gram: firstBaby.birthWeightGram != null ? parseFloat(firstBaby.birthWeightGram) : (document.getElementById('body_weight_gram').value ? parseFloat(document.getElementById('body_weight_gram').value) : null),
+          current_weight_gram: visitNum > 1 && document.getElementById('current_weight_gram').value ? parseFloat(document.getElementById('current_weight_gram').value) : null,
           temperature: document.getElementById('temperature').value ? parseFloat(document.getElementById('temperature').value) : null,
           temperature_unit: document.getElementById('temperature_unit').value || 'C',
           heart_rate: document.getElementById('heart_rate').value ? parseInt(document.getElementById('heart_rate').value) : null,

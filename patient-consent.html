@@ -441,7 +441,18 @@
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         status: 'registered',
         linked_from_baby_registration: true,
-        baby_patient_ids: firebase.firestore.FieldValue.arrayUnion(patientId)
+        baby_patient_ids: firebase.firestore.FieldValue.arrayUnion(patientId),
+        parity: patientData.parity || '',
+        gravida: patientData.gravida != null ? patientData.gravida : null,
+        parity_primary: patientData.parity_primary != null ? patientData.parity_primary : null,
+        parity_secondary: patientData.parity_secondary != null ? patientData.parity_secondary : null,
+        youngest_child_age_years: patientData.youngest_child_age_years != null ? patientData.youngest_child_age_years : null,
+        youngest_child_age_months: patientData.youngest_child_age_months != null ? patientData.youngest_child_age_months : null,
+        youngest_child_interval_months: patientData.youngest_child_interval_months != null ? patientData.youngest_child_interval_months : null,
+        pregnancy_within_24_months: patientData.pregnancy_within_24_months === true,
+        frequent_pregnancy: patientData.frequent_pregnancy || 'No',
+        primigravida_risk: patientData.primigravida_risk === true,
+        first_pregnancy_risk: patientData.first_pregnancy_risk === true
       };
       await db.collection('patients').doc(motherId).set(motherPayload, { merge: true });
       await db.collection('patients').doc(patientId).set({
@@ -690,11 +701,27 @@
             try {
               const resolvedMotherId = await ensureMinimalMotherForBaby(patientId, userDataPt);
               if (resolvedMotherId) {
-                await firebase.firestore().collection('patients').doc(resolvedMotherId).set({
+                const motherLinkUpdate = {
                   baby_patient_ids: firebase.firestore.FieldValue.arrayUnion(patientId),
                   patient_type: 'mother',
                   updated_at: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
+                };
+                if (patientData.gravida != null) motherLinkUpdate.gravida = patientData.gravida;
+                if (patientData.parity) motherLinkUpdate.parity = patientData.parity;
+                if (patientData.parity_primary != null) motherLinkUpdate.parity_primary = patientData.parity_primary;
+                if (patientData.parity_secondary != null) motherLinkUpdate.parity_secondary = patientData.parity_secondary;
+                if (patientData.youngest_child_age_years != null) {
+                  motherLinkUpdate.youngest_child_age_years = patientData.youngest_child_age_years;
+                }
+                if (patientData.youngest_child_age_months != null) {
+                  motherLinkUpdate.youngest_child_age_months = patientData.youngest_child_age_months;
+                }
+                if (patientData.pregnancy_within_24_months === true) {
+                  motherLinkUpdate.pregnancy_within_24_months = true;
+                }
+                if (patientData.frequent_pregnancy) motherLinkUpdate.frequent_pregnancy = patientData.frequent_pregnancy;
+                if (patientData.primigravida_risk === true) motherLinkUpdate.primigravida_risk = true;
+                await firebase.firestore().collection('patients').doc(resolvedMotherId).set(motherLinkUpdate, { merge: true });
               }
             } catch (linkErr) {
               console.warn('Baby saved, but mother link update failed:', linkErr);
