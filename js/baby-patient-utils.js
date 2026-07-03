@@ -47,6 +47,97 @@
     return beforeBirthday ? years - 1 : years;
   }
 
+  function normalizePersonName(name) {
+    return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  }
+
+  function babyBirthDateValue(patient) {
+    if (!patient) return null;
+    var raw = patient.date_of_birth || patient.birth_time || patient.birthTime || null;
+    if (!raw) return null;
+    var parsed = new Date(String(raw).split('T')[0]);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function formatBabyAgeDisplay(patient, language) {
+    var birthDate = babyBirthDateValue(patient);
+    if (!birthDate) return '-';
+    var now = new Date();
+    var diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
+    var months = Math.floor(diffDays / 30);
+    var years = Math.floor(months / 12);
+    var remainingMonths = months % 12;
+    var lang = language || 'en';
+    if (lang === 'mm') {
+      if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
+      if (months > 0) return months + ' လ';
+      return Math.max(0, diffDays) + ' ရက်';
+    }
+    if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
+    if (months > 0) return months + 'm';
+    return Math.max(0, diffDays) + 'd';
+  }
+
+  function motherCandidateScore(data) {
+    data = data || {};
+    var score = 0;
+    if (data.age != null && data.age !== '') score += 10;
+    if (!data.linked_from_baby_registration) score += 5;
+    if (data.hasConsent === true || data.consentStatus === 'consented') score += 3;
+    if (data.phone || data.phoneNumber) score += 1;
+    return score;
+  }
+
+  async function fetchScopedMotherCandidates(db, options) {
+    options = options || {};
+    var queries = [];
+    if (options.userRole === 'Midwife' && options.userId) {
+      queries.push(db.collection('patients').where('created_by', '==', options.userId).limit(500));
+    } else if (options.township) {
+      queries.push(db.collection('patients').where('township', '==', options.township).limit(500));
+    } else if (options.region) {
+      queries.push(db.collection('patients').where('region', '==', options.region).limit(500));
+    } else {
+      queries.push(db.collection('patients').limit(500));
+    }
+    var seen = {};
+    var patients = [];
+    for (var i = 0; i < queries.length; i++) {
+      try {
+        var snap = await queries[i].get();
+        snap.forEach(function (doc) {
+          if (seen[doc.id]) return;
+          seen[doc.id] = true;
+          patients.push({ id: doc.id, data: doc.data() || {} });
+        });
+      } catch (e) {
+        console.warn('Mother lookup query failed:', e);
+      }
+    }
+    return patients;
+  }
+
+  async function findExistingMotherPatient(db, motherName, options) {
+    if (!db || !motherName) return null;
+    var normalizedTarget = normalizePersonName(motherName);
+    if (!normalizedTarget) return null;
+    var candidates = await fetchScopedMotherCandidates(db, options || {});
+    var matches = candidates.filter(function (item) {
+      if (isBabyPatient(item.data)) return false;
+      return normalizePersonName(item.data.name || item.data.patientName) === normalizedTarget;
+    });
+    if (!matches.length) return null;
+    matches.sort(function (a, b) {
+      return motherCandidateScore(b.data) - motherCandidateScore(a.data);
+    });
+    var best = matches[0];
+    return {
+      id: best.id,
+      data: best.data,
+      serial: best.data.patient_unique_id || best.data.patientUniqueId || null
+    };
+  }
+
   function babyDisplayName(motherName, birthOrder, explicitName) {
     if (explicitName) return explicitName;
     motherName = String(motherName || '').replace(/^Baby\s+/i, '').trim();
@@ -354,6 +445,9 @@
     copyLegacyBabyCareToBabyPatients: copyLegacyBabyCareToBabyPatients,
     backfillExistingBabyPatients: backfillExistingBabyPatients,
     dateFromBirthTime: dateFromBirthTime,
-    ageInYears: ageInYears
+    ageInYears: ageInYears,
+    formatBabyAgeDisplay: formatBabyAgeDisplay,
+    findExistingMotherPatient: findExistingMotherPatient,
+    normalizePersonName: normalizePersonName
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -1131,6 +1131,10 @@
       <p class="empty-text">
         <span id="emptyMessage">There are no patients registered yet.</span>
       </p>
+      <p class="empty-text" id="emptyFilterHint" style="display: none;"></p>
+      <button type="button" class="btn btn-outline-light btn-sm mb-3" id="emptyFilterSwitchBtn" style="display: none;" onclick="switchToSuggestedPatientTypeFilter()">
+        <span id="emptyFilterSwitchLabel"></span>
+      </button>
       <button class="btn btn-primary btn-lg" onclick="window.location.href='patient-enhanced.html'">
         <i class="fas fa-plus me-2"></i><span class="lang-text" data-en="Register New Patient" data-mm="လူနာအသစ် မှတ်ပုံတင်ရန်">Register New Patient</span>
       </button>
@@ -1180,6 +1184,7 @@
     let allPatients = [];
     let filteredPatients = [];
     let currentPatientTypeFilter = 'mother';
+    let suggestedPatientTypeFilter = null;
     let currentStatusFilter = 'all';
     let recentPatients = [];
     let currentView = 'list';
@@ -1206,6 +1211,12 @@
         noPatientsRegistered: 'There are no patients registered yet. Click "Register New Patient" to get started.',
         unableToLoad: 'Unable to load patients. Please check your internet connection, ensure VPN is working, or try using mobile data instead of WiFi. Then refresh the page.',
         noSearchMatch: 'No patients match your search criteria.',
+        noSearchMatchOtherType: 'No {currentType} patients match your search. Try the {otherType} tab — {count} match found.',
+        noSearchMatchOtherTypePlural: 'No {currentType} patients match your search. Try the {otherType} tab — {count} matches found.',
+        switchToBaby: 'Switch to Baby',
+        switchToMommy: 'Switch to Mommy',
+        patientTypeMommy: 'Mommy',
+        patientTypeBaby: 'Baby',
         noStatusMatch: 'No patients found with status: ',
         patient: 'patient',
         patients: 'patients',
@@ -1252,6 +1263,12 @@
         noPatientsRegistered: 'မှတ်ပုံတင်ထားသော လူနာ မရှိသေးပါ။ လူနာအသစ် မှတ်ပုံတင်ရန် နှိပ်ပါ။',
         unableToLoad: 'လူနာများ ဖတ်၍မရပါ။ အင်တာနက်/VPN စစ်ဆေးပြီး ပြန်လည် refresh လုပ်ပါ။',
         noSearchMatch: 'ရှာဖွေမှုနှင့် ကိုက်ညီသော လူနာ မရှိပါ။',
+        noSearchMatchOtherType: '{currentType} လူနာတွင် ရှာဖွေမှုနှင့် မကိုက်ညီပါ။ {otherType} tab ကို စမ်းကြည့်ပါ — {count} ခု တွေ့သည်။',
+        noSearchMatchOtherTypePlural: '{currentType} လူနာတွင် ရှာဖွေမှုနှင့် မကိုက်ညီပါ။ {otherType} tab ကို စမ်းကြည့်ပါ — {count} ခု တွေ့သည်။',
+        switchToBaby: 'Baby သို့ ပြောင်းရန်',
+        switchToMommy: 'Mommy သို့ ပြောင်းရန်',
+        patientTypeMommy: 'Mommy',
+        patientTypeBaby: 'Baby',
         noStatusMatch: 'ဤ status ဖြင့် လူနာ မတွေ့ပါ: ',
         patient: 'လူနာ',
         patients: 'လူနာ',
@@ -1903,6 +1920,69 @@
       }
     }
 
+    function patientMatchesSearch(patient, searchTerm) {
+      if (!searchTerm) return true;
+      const name = (patient.name || '').toLowerCase();
+      const phone = (patient.phone || '').toLowerCase();
+      const address = (patient.patient_address || patient.patientAddress || '').toLowerCase();
+      const motherName = (patient.mother_name || '').toLowerCase();
+      const id = (patient.id || '').toLowerCase();
+      const serial = (patient.patient_unique_id || patient.patientUniqueId || '').toLowerCase();
+      return name.includes(searchTerm) ||
+        phone.includes(searchTerm) ||
+        address.includes(searchTerm) ||
+        motherName.includes(searchTerm) ||
+        serial.includes(searchTerm) ||
+        id.includes(searchTerm);
+    }
+
+    function countSearchMatchesForType(type, searchTerm) {
+      if (!searchTerm) return 0;
+      return allPatients.filter(function (patient) {
+        return patientTypeOf(patient) === type && patientMatchesSearch(patient, searchTerm);
+      }).length;
+    }
+
+    function updateEmptyFilterHint(searchTerm) {
+      const hintEl = document.getElementById('emptyFilterHint');
+      const switchBtn = document.getElementById('emptyFilterSwitchBtn');
+      const switchLabel = document.getElementById('emptyFilterSwitchLabel');
+      suggestedPatientTypeFilter = null;
+      if (!hintEl || !switchBtn || !switchLabel) return;
+
+      hintEl.style.display = 'none';
+      switchBtn.style.display = 'none';
+      hintEl.textContent = '';
+      switchLabel.textContent = '';
+
+      if (!searchTerm || currentStatusFilter !== 'all') return;
+
+      const otherType = currentPatientTypeFilter === 'baby' ? 'mother' : 'baby';
+      const otherCount = countSearchMatchesForType(otherType, searchTerm);
+      if (!otherCount) return;
+
+      suggestedPatientTypeFilter = otherType;
+      const currentTypeLabel = currentPatientTypeFilter === 'baby'
+        ? listT('patientTypeBaby')
+        : listT('patientTypeMommy');
+      const otherTypeLabel = otherType === 'baby'
+        ? listT('patientTypeBaby')
+        : listT('patientTypeMommy');
+      const template = otherCount === 1 ? listT('noSearchMatchOtherType') : listT('noSearchMatchOtherTypePlural');
+      hintEl.textContent = template
+        .replace('{currentType}', currentTypeLabel)
+        .replace('{otherType}', otherTypeLabel)
+        .replace('{count}', String(otherCount));
+      hintEl.style.display = 'block';
+      switchLabel.textContent = otherType === 'baby' ? listT('switchToBaby') : listT('switchToMommy');
+      switchBtn.style.display = 'inline-block';
+    }
+
+    function switchToSuggestedPatientTypeFilter() {
+      if (!suggestedPatientTypeFilter) return;
+      setPatientTypeFilter(suggestedPatientTypeFilter, null);
+    }
+
     function setPatientTypeFilter(type, event) {
       if (event) event.stopPropagation();
       currentPatientTypeFilter = type === 'baby' ? 'baby' : 'mother';
@@ -2278,14 +2358,22 @@
         document.getElementById('patientsGrid').style.display = 'none';
         document.getElementById('patientsList').style.display = 'none';
         document.getElementById('emptyState').style.display = 'block';
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
         
         if (currentStatusFilter !== 'all') {
           document.getElementById('emptyMessage').textContent = listT('noStatusMatch') + statusFilterTitle(currentStatusFilter);
+          updateEmptyFilterHint('');
+        } else if (searchTerm) {
+          document.getElementById('emptyMessage').textContent = listT('noSearchMatch');
+          updateEmptyFilterHint(searchTerm);
         } else {
           document.getElementById('emptyMessage').textContent = listT('noSearchMatch');
-          }
-          return;
+          updateEmptyFilterHint('');
         }
+        return;
+      }
+      
+      updateEmptyFilterHint('');
         
       document.getElementById('emptyState').style.display = 'none';
       
@@ -2607,19 +2695,7 @@
         
         // Search filter
         if (searchTerm) {
-          const name = (patient.name || '').toLowerCase();
-          const phone = (patient.phone || '').toLowerCase();
-          const address = (patient.patient_address || patient.patientAddress || '').toLowerCase();
-          const motherName = (patient.mother_name || '').toLowerCase();
-          const id = patient.id.toLowerCase();
-          const serial = (patient.patient_unique_id || patient.patientUniqueId || '').toLowerCase();
-          
-          if (!name.includes(searchTerm) && 
-              !phone.includes(searchTerm) && 
-              !address.includes(searchTerm) &&
-              !motherName.includes(searchTerm) &&
-              !serial.includes(searchTerm) &&
-              !id.includes(searchTerm)) {
+          if (!patientMatchesSearch(patient, searchTerm)) {
             return false;
           }
         }

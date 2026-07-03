@@ -244,7 +244,7 @@
       <h1>
         <span class="lang-text" data-en="Patient Consent" data-mm="လူနာ ခွင့်ပြုချက်">Patient Consent</span>
       </h1>
-      <p style="color: var(--text-secondary);">
+      <p style="color: var(--text-secondary);" id="consentIntroText">
         <span class="lang-text" data-en="Please read this to the patient and obtain consent" data-mm="ကျေးဇူးပြု၍ ဤအရာကို လူနာထံ ဖတြပြီး ခွင့်ပြုချက် ရယူပါ">Please read this to the patient and obtain consent</span>
       </p>
     </div>
@@ -325,6 +325,9 @@
           </button>
         </div>
         <div class="patient-name-input">
+          <label for="patientNameInput" id="consentGiverLabel" class="form-label" style="font-weight: 500; margin-bottom: 0.35rem;">
+            <span class="lang-text" data-en="Patient name" data-mm="လူနာအမည်">Patient name</span>
+          </label>
           <input type="text" id="patientNameInput" placeholder="Patient Name (or type name)" required>
         </div>
       </div>
@@ -362,6 +365,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/consent-manager.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -420,13 +424,43 @@
     }
 
     async function ensureMinimalMotherForBaby(patientId, userDataPt) {
-      if (!patientData || patientData.patient_type !== 'baby' || patientData.mother_patient_id || !patientData.mother_name) {
+      if (!patientData || patientData.patient_type !== 'baby' || !patientData.mother_name) {
         return patientData && patientData.mother_patient_id ? patientData.mother_patient_id : null;
       }
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return patientData.mother_patient_id || null;
+      }
+
       const db = firebase.firestore();
-      const motherId = db.collection('patients').doc().id;
-      const motherSerial = await generateLinkedMotherSerial(patientData);
+      let motherId = patientData.mother_patient_id || null;
+      let motherSerial = patientData.mother_patient_serial || null;
+
+      if (!motherId && window.BabyPatientUtils && BabyPatientUtils.findExistingMotherPatient) {
+        const existing = await BabyPatientUtils.findExistingMotherPatient(db, patientData.mother_name, {
+          userRole: userDataPt && userDataPt.role,
+          userId: currentUser && currentUser.uid,
+          township: patientData.township || (userDataPt && userDataPt.township) || '',
+          region: patientData.region || (userDataPt && userDataPt.region) || ''
+        });
+        if (existing) {
+          motherId = existing.id;
+          motherSerial = existing.serial || null;
+          patientData.mother_patient_id = motherId;
+          patientData.mother_patient_serial = motherSerial;
+          await db.collection('patients').doc(patientId).set({
+            mother_patient_id: motherId,
+            mother_patient_serial: motherSerial,
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      }
+
+      if (motherId) {
+        return motherId;
+      }
+
+      motherId = db.collection('patients').doc().id;
+      motherSerial = await generateLinkedMotherSerial(patientData);
       const motherPayload = {
         patient_type: 'mother',
         name: patientData.mother_name,
@@ -463,6 +497,56 @@
       patientData.mother_patient_id = motherId;
       patientData.mother_patient_serial = motherSerial;
       return motherId;
+    }
+
+    function isBabyConsentPatient(data) {
+      return data && String(data.patient_type || '').toLowerCase() === 'baby';
+    }
+
+    function consentGiverDefaultName(data) {
+      if (!data) return '';
+      if (isBabyConsentPatient(data)) {
+        return data.mother_name || data.emergency_contact || '';
+      }
+      return data.name || '';
+    }
+
+    function formatConsentPatientAge(data) {
+      if (!data) return 'N/A';
+      if (isBabyConsentPatient(data) && window.BabyPatientUtils) {
+        const ageText = BabyPatientUtils.formatBabyAgeDisplay(data, localStorage.getItem('appLanguage') || 'en');
+        return ageText && ageText !== '-' ? ageText : 'N/A';
+      }
+      if (data.age === 0 || data.age === '0') return '0';
+      return data.age != null && data.age !== '' ? data.age : 'N/A';
+    }
+
+    function configureBabyConsentUi(data) {
+      const isBaby = isBabyConsentPatient(data);
+      const intro = document.getElementById('consentIntroText');
+      const giverLabel = document.getElementById('consentGiverLabel');
+      const nameInput = document.getElementById('patientNameInput');
+      const verbalNote = document.querySelector('#verbalConsentNote .lang-text');
+
+      if (intro) {
+        intro.innerHTML = isBaby
+          ? '<span class="lang-text" data-en="Please read this to the baby\'s mother or guardian and obtain consent on their behalf" data-mm="ကလေး၏ မိခင် သို့မဟုတ် အုပ်ထိန်းသူထံ ဖတ်ပြပြီး ခွင့်ပြုချက် ရယူပါ">Please read this to the baby\'s mother or guardian and obtain consent on their behalf</span>'
+          : '<span class="lang-text" data-en="Please read this to the patient and obtain consent" data-mm="ကျေးဇူးပြု၍ ဤအရာကို လူနာထံ ဖတြပြီး ခွင့်ပြုချက် ရယူပါ">Please read this to the patient and obtain consent</span>';
+      }
+      if (giverLabel) {
+        giverLabel.innerHTML = isBaby
+          ? '<span class="lang-text" data-en="Consent giver name (mother or guardian)" data-mm="ခွင့်ပြုချက် ပေးသူ (မိခင် သို့မဟုတ် အုပ်ထိန်းသူ)">Consent giver name (mother or guardian)</span>'
+          : '<span class="lang-text" data-en="Patient name" data-mm="လူနာအမည်">Patient name</span>';
+      }
+      if (nameInput) {
+        nameInput.placeholder = isBaby ? 'Mother or guardian name' : 'Patient Name (or type name)';
+        nameInput.value = consentGiverDefaultName(data);
+      }
+      if (verbalNote && isBaby) {
+        verbalNote.setAttribute('data-en', 'Provider Attestation: The mother or guardian provided verbal consent but prefers not to sign.');
+        verbalNote.setAttribute('data-mm', 'စောင့်ရှောက်မှု ပေးသူ အတည်ပြုချက်: မိခင် သို့မဟုတ် အုပ်ထိန်းသူသည် နှုတ်ဖြင့် ခွင့်ပြုချက် ပေးထားသော်လည်း လက်မှတ်ထိုးရန် မနှစ်သက်ပါ။');
+        verbalNote.textContent = 'Provider Attestation: The mother or guardian provided verbal consent but prefers not to sign.';
+      }
     }
 
     function selectMethod(method) {
@@ -596,7 +680,9 @@
           const patientName = document.getElementById('patientNameInput').value.trim();
           
           if (!signature || !patientName) {
-            alert('Please provide signature and patient name');
+            alert(isBabyConsentPatient(patientData)
+              ? 'Please provide signature and consent giver name (mother or guardian)'
+              : 'Please provide signature and patient name');
             acceptBtn.disabled = false;
             acceptBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Accept & Continue';
             return;
@@ -604,10 +690,17 @@
           
           consentData.signature = signature;
           consentData.patientName = patientName;
+          consentData.consentGiverName = patientName;
         } else {
-          // For verbal consent, use patient name from patientData (already collected during registration)
-          const patientName = patientData.name || 'Unknown';
+          const patientName = (document.getElementById('patientNameInput').value.trim()
+            || consentGiverDefaultName(patientData)
+            || patientData.name
+            || 'Unknown');
           consentData.patientName = patientName;
+          consentData.consentGiverName = patientName;
+          consentData.providerAttestation = isBabyConsentPatient(patientData)
+            ? 'Mother or guardian provided verbal consent but prefers not to sign'
+            : 'Patient provided verbal consent but prefers not to sign';
         }
 
         // Get provider info (cache / Firestore — works offline when profile was cached)
@@ -918,10 +1011,17 @@
       const patientInfoText = document.getElementById('patientInfoText');
       if (patientInfoBox && patientInfoText) {
         const name = patientData.name || 'Unknown';
-        const age = patientData.age || 'N/A';
-        patientInfoText.textContent = `Name: ${name}, Age: ${age}`;
+        const age = formatConsentPatientAge(patientData);
+        if (isBabyConsentPatient(patientData)) {
+          const motherName = patientData.mother_name || 'Unknown';
+          patientInfoText.textContent = `Name: ${name}, Age: ${age}, Mother: ${motherName}`;
+        } else {
+          patientInfoText.textContent = `Name: ${name}, Age: ${age}`;
+        }
         patientInfoBox.style.display = 'block';
       }
+
+      configureBabyConsentUi(patientData);
 
       // Initialize signature pad
       initSignaturePad();
