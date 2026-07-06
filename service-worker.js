@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v176-moh';
+const CACHE_NAME = 'mch-care-v177-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',

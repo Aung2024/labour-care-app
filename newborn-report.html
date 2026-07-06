@@ -18,6 +18,22 @@
       body { margin: 0; background: #fff; }
       .no-print { display: none !important; }
       .page-break { page-break-before: always; }
+      .report-container {
+        box-shadow: none;
+        max-width: none;
+        padding: 0;
+      }
+      .newborn-visits-screen {
+        display: none !important;
+      }
+      .newborn-book-print,
+      .report-print-only-section {
+        display: block !important;
+      }
+      @page {
+        size: A4 landscape;
+        margin: 10mm;
+      }
     }
 
     :root {
@@ -242,6 +258,45 @@
       color: #666;
     }
 
+    .newborn-book-print {
+      display: none;
+    }
+
+    .report-print-only-section {
+      display: none;
+    }
+
+    .visits-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+    }
+
+    .visits-table th,
+    .visits-table td {
+      border: 1px solid #333;
+      padding: 5px 4px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .visits-table th {
+      background: #e8e8e8;
+      color: #111;
+      font-weight: 700;
+      font-size: 0.65rem;
+    }
+
+    .visits-table .visit-number {
+      font-weight: 700;
+      background: #f5f5f5;
+    }
+
+    .visits-table .notes-cell {
+      text-align: left;
+      min-width: 120px;
+    }
+
     .loading {
       text-align: center;
       padding: 50px;
@@ -383,9 +438,30 @@
       <!-- Newborn Care Visits -->
       <div class="treatment-section">
         <h5><i class="fas fa-stethoscope me-2"></i><span class="lang-text" data-en="Newborn Care Visits" data-mm="မွေးကင်းစကလေး လာရောက်မှတ်တမ်းများ">Newborn Care Visits</span></h5>
-        <div id="newbornCareInfo" class="treatment-info">
+        <div id="newbornCareInfo" class="treatment-info newborn-visits-screen">
           <!-- Visit tabs populated here -->
         </div>
+        <div class="newborn-book-print">
+          <h5 class="section-heading lang-text" data-en="Newborn care visit register" data-mm="မွေးကင်းစကလေး မှတ်တမ်း">Newborn care visit register</h5>
+          <table class="visits-table">
+            <thead>
+              <tr>
+                <th class="lang-text" data-en="No" data-mm="အကြိမ်">No</th>
+                <th class="lang-text" data-en="Date" data-mm="ရက်စွဲ">Date</th>
+                <th class="lang-text" data-en="Weight (g)" data-mm="အလေးချိန် (ဂရမ်)">Weight (g)</th>
+                <th class="lang-text" data-en="Temp" data-mm="အပူချိန်">Temp</th>
+                <th class="lang-text" data-en="HR" data-mm="နှလုံးခုန်">HR</th>
+                <th class="lang-text" data-en="RR" data-mm="အသက်ရှု">RR</th>
+                <th class="lang-text" data-en="Breathing" data-mm="အသက်ရှူရခက်">Breathing</th>
+                <th class="lang-text" data-en="Feeding" data-mm="နို့တိုက်">Feeding</th>
+                <th class="lang-text" data-en="Outcome" data-mm="ရလဒ်">Outcome</th>
+                <th class="lang-text" data-en="Notes" data-mm="မှတ်ချက်">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="newbornPrintTableBody"></tbody>
+          </table>
+        </div>
+        <div id="newbornKmcPrintSection" class="report-print-only-section"></div>
       </div>
 
       <!-- Clinical Notes -->
@@ -545,6 +621,7 @@
       populateImmediateCareInfo();
       populateNewbornCareInfo();
       generateRecommendations();
+      applyReportLanguage();
     }
 
     initReportLanguageUI();
@@ -963,14 +1040,90 @@
       if (visitHadPotentialKmc(visit) && visit.kmc_selected) {
         html += '<p><strong>KMC:</strong> ' + escapeHtml(String(visit.kmc_selected).toUpperCase()) + '</p>';
       }
+      const outcomeRaw = visit.outcome || visit.baby_outcome || '';
+      if (outcomeRaw) {
+        html += '<p><strong>' + t('outcome') + '</strong> ' + escapeHtml(formatVisitOutcome(visit)) + '</p>';
+      }
       if (visit.clinical_notes) html += '<p><strong>' + t('clinicalNotes') + '</strong> ' + escapeHtml(visit.clinical_notes) + '</p>';
       html += '</div>';
       return html;
     }
 
+    function formatReportDate(value) {
+      if (!value) return t('notRecorded');
+      if (typeof value === 'string') {
+        if (value.length >= 10) return value.slice(0, 10);
+        var parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+          return parsed.getFullYear() + '-' + String(parsed.getMonth() + 1).padStart(2, '0') + '-' + String(parsed.getDate()).padStart(2, '0');
+        }
+      }
+      if (value && typeof value.toDate === 'function') {
+        var d = value.toDate();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      }
+      if (value && value.seconds) {
+        var d2 = new Date(value.seconds * 1000);
+        return d2.getFullYear() + '-' + String(d2.getMonth() + 1).padStart(2, '0') + '-' + String(d2.getDate()).padStart(2, '0');
+      }
+      return t('notRecorded');
+    }
+
+    function formatVisitOutcome(visit) {
+      var raw = visit && (visit.outcome || visit.baby_outcome) || '';
+      if (raw === 'dead' || raw === 'death') return t('dead');
+      if (raw === 'alive') return t('alive');
+      return raw ? String(raw) : t('notRecorded');
+    }
+
+    function formatFeedingSummary(visit) {
+      var parts = [];
+      if (visit.feeding_type) parts.push(visit.feeding_type);
+      if (visit.feeding_method && visit.feeding_method !== visit.feeding_type) parts.push(visit.feeding_method);
+      return parts.length ? parts.join(' / ') : t('notRecorded');
+    }
+
+    function renderNewbornPrintTable(rows) {
+      var tbody = document.getElementById('newbornPrintTableBody');
+      if (!tbody) return;
+      if (!rows || !rows.length) {
+        tbody.innerHTML = '<tr><td colspan="10">' + escapeHtml(t('noNewbornCareData')) + '</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(function (visit, index) {
+        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || (index + 1);
+        var weight = visit.current_weight_gram != null
+          ? visit.current_weight_gram
+          : (visit.body_weight_gram != null ? visit.body_weight_gram : '');
+        var tempUnit = visit.temperature_unit === 'F' ? '°F' : '°C';
+        var temp = visit.temperature ? (visit.temperature + ' ' + tempUnit) : t('notRecorded');
+        var breathing = visit.difficult_breathing
+          ? (visit.difficult_breathing === 'yes' ? t('yes') : t('no'))
+          : t('notRecorded');
+        var visitDate = formatReportDate(
+          visit.visit_date || visit.visitDate || visit.recorded_at || visit.birth_time
+        );
+        return '<tr>' +
+          '<td class="visit-number">' + n + '</td>' +
+          '<td>' + escapeHtml(visitDate) + '</td>' +
+          '<td>' + escapeHtml(weight !== '' ? String(weight) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(temp) + '</td>' +
+          '<td>' + escapeHtml(visit.heart_rate != null ? String(visit.heart_rate) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(visit.respiration_rate != null ? String(visit.respiration_rate) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(breathing) + '</td>' +
+          '<td>' + escapeHtml(formatFeedingSummary(visit)) + '</td>' +
+          '<td>' + escapeHtml(formatVisitOutcome(visit)) + '</td>' +
+          '<td class="notes-cell">' + escapeHtml(visit.clinical_notes || t('notRecorded')) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
     function populateNewbornCareInfo() {
       const container = document.getElementById('newbornCareInfo');
+      const kmcPrint = document.getElementById('newbornKmcPrintSection');
       const rows = getReportNewbornVisitRows();
+      renderNewbornPrintTable(rows);
+      if (kmcPrint) kmcPrint.innerHTML = renderKmcReportSection();
       if (!rows.length) {
         container.innerHTML = '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
         return;
