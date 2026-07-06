@@ -116,6 +116,37 @@
     return null;
   }
 
+  async function fetchDeliveryNotesBirthTime(db, patientId) {
+    if (!global.DeliveryNotesUtils || !DeliveryNotesUtils.fetchDeliveryNotes) return null;
+    try {
+      var notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+      if (!notes) return null;
+      var legacy = DeliveryNotesUtils.legacyFieldsFromDelivery
+        ? DeliveryNotesUtils.legacyFieldsFromDelivery(notes)
+        : null;
+      if (legacy && legacy.birth_time) return datetimeLocalFromStored(legacy.birth_time);
+      var babies = notes.deliveryDetails && notes.deliveryDetails.babies;
+      if (Array.isArray(babies) && babies.length && babies[0].birthTime) {
+        return datetimeLocalFromStored(babies[0].birthTime);
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  async function fetchPatientBirthFallback(db, patientId) {
+    try {
+      var doc = await db.collection('patients').doc(patientId).get();
+      if (!doc.exists) return null;
+      var data = doc.data() || {};
+      if (data.birth_time) return datetimeLocalFromStored(data.birth_time);
+      if (data.date_of_birth) {
+        var dateOnly = String(data.date_of_birth).split('T')[0];
+        return dateOnly ? dateOnly + 'T00:00' : null;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
   async function fetchSharedDeliveryAnchor(patientId) {
     var result = { datetimeLocal: null, locked: false, source: null };
     if (!patientId || !global.firebase) return result;
@@ -131,6 +162,14 @@
       }
     }
 
+    var deliveryNotesTime = await fetchDeliveryNotesBirthTime(db, patientId);
+    if (deliveryNotesTime) {
+      result.datetimeLocal = deliveryNotesTime;
+      result.locked = false;
+      result.source = 'delivery_notes';
+      return result;
+    }
+
     var firstPnc = await fetchFirstPncVisit(db, patientId);
     if (firstPnc && firstPnc.deliveredDateTime) {
       result.datetimeLocal = datetimeLocalFromStored(firstPnc.deliveredDateTime);
@@ -139,6 +178,14 @@
         result.source = 'pnc_visit_1';
         return result;
       }
+    }
+
+    var patientBirth = await fetchPatientBirthFallback(db, patientId);
+    if (patientBirth) {
+      result.datetimeLocal = patientBirth;
+      result.locked = false;
+      result.source = 'patient_record';
+      return result;
     }
 
     return result;

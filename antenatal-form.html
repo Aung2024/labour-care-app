@@ -1120,7 +1120,7 @@
         <div id="manualGAEDDSection" class="row g-3 mt-1" style="display: none;">
           <div class="col-md-6">
             <label for="manualGestationalAge" class="form-label lang-text" data-en="Manual Gestational Age (if LMP unknown)" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်) ">Manual Gestational Age (if LMP unknown)</label>
-            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA(); updateAncVisitSchedule();">
+            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA(); calculateGestationalAgeAndEDD(); updateEarlyAncDisplay(); updateAncVisitSchedule();">
           </div>
           <div class="col-md-6">
             <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
@@ -1242,7 +1242,7 @@
           <div class="row g-3 align-items-end">
             <div class="col-md-6 col-sm-6">
               <label for="urineProtein" class="form-label lang-text" data-en="Urine Protein" data-mm="ပရိုတင်းဓာတ်">Urine Protein</label>
-              <select id="urineProtein" name="urineProtein" class="form-control" data-choice>
+              <select id="urineProtein" name="urineProtein" class="form-control" data-choice onchange="updateUrineAlerts()">
                 <option value="">Not tested</option>
                 <option value="Negative">Negative</option>
                 <option value="Trace">Trace</option>
@@ -1250,10 +1250,20 @@
                 <option value="++">++</option>
                 <option value="+++">+++</option>
               </select>
+              <div id="urineProteinAlert" class="clinical-risk-alert danger hide">
+                <span class="risk-mm">
+                  <span class="risk-title">⚠️ သတိပြုရန်</span>
+                  ဆီးတွင် ပရိုတင်းဓာတ် အပြုသဘောဖြစ်နေပါသည်။ နောက်ဆက်တွဲ စစ်ဆေးမှုနှင့် ကုသမှု လိုအပ်နိုင်ပါသည်။
+                </span>
+                <span class="risk-en">
+                  <span class="risk-title">⚠️ Alert</span>
+                  Urine protein is positive. Further assessment and management may be required.
+                </span>
+              </div>
             </div>
             <div class="col-md-6 col-sm-6">
               <label for="urineSugar" class="form-label lang-text" data-en="Urine Glucose" data-mm="ဂလူးကို့စ်">Urine Glucose</label>
-              <select id="urineSugar" name="urineSugar" class="form-control" data-choice>
+              <select id="urineSugar" name="urineSugar" class="form-control" data-choice onchange="updateUrineAlerts()">
                 <option value="">Not tested</option>
                 <option value="Negative">Negative</option>
                 <option value="Trace">Trace</option>
@@ -1261,6 +1271,16 @@
                 <option value="++">++</option>
                 <option value="+++">+++</option>
               </select>
+              <div id="urineSugarAlert" class="clinical-risk-alert danger hide">
+                <span class="risk-mm">
+                  <span class="risk-title">⚠️ သတိပြုရန်</span>
+                  ဆီးတွင် ဂလူးကို့စ် အပြုသဘောဖြစ်နေပါသည်။ နောက်ဆက်တွဲ စစ်ဆေးမှုနှင့် ကုသမှု လိုအပ်နိုင်ပါသည်။
+                </span>
+                <span class="risk-en">
+                  <span class="risk-title">⚠️ Alert</span>
+                  Urine glucose is positive. Further assessment and management may be required.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1366,7 +1386,7 @@
                 <div class="card-body">
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="gbv_bruise_cuts" name="gbv_bruise_cuts">
-                    <label class="form-check-label lang-text" data-en="Bruise, Cuts and injuries around the body/genital areas" data-mm="ရိုက်နှိပ်ခြင်း၊ ထိုးကြိတ်ခံရခြင်းကြောင့် အနာတရများရှိနေခြင်း" for="gbv_bruise_cuts">Bruise, Cuts and injuries around the body/genital areas</label>
+                    <label class="form-check-label lang-text" data-en="Bruise, Cuts and injuries around the body/genital areas" data-mm="ရိုက်နှက်ခြင်း၊ ထိုးကြိတ်ခံရခြင်းကြောင့် အနာတရများရှိနေခြင်း" for="gbv_bruise_cuts">Bruise, Cuts and injuries around the body/genital areas</label>
                   </div>
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="gbv_fatigue_pallor" name="gbv_fatigue_pallor">
@@ -2249,6 +2269,32 @@
     function updateOtherVisitCountMirror() {
       const el = document.getElementById('otherVisitCount');
       if (el) el.value = String(collectOtherVisitsFromUi().length);
+      updateEarlyAncDisplay();
+      updateAncVisitSchedule();
+    }
+
+    function getEarliestDateString(dates) {
+      const parsed = (dates || []).filter(Boolean).map(function (d) {
+        return parseDateOnlyLocal(d);
+      }).filter(function (d) { return d && !isNaN(d.getTime()); });
+      if (!parsed.length) return null;
+      parsed.sort(function (a, b) { return a - b; });
+      return formatDateYMD(parsed[0]);
+    }
+
+    function getEffectiveFirstAncVisitDate() {
+      const candidates = [];
+      if (cachedFirstAncVisitDate) candidates.push(cachedFirstAncVisitDate);
+      const visitDateInput = document.getElementById('visitDate');
+      if (visitDateInput && visitDateInput.value) candidates.push(visitDateInput.value);
+      collectOtherVisitsFromUi().forEach(function (visit) {
+        if (visit.visitDate) candidates.push(visit.visitDate);
+      });
+      return getEarliestDateString(candidates) || (visitDateInput ? visitDateInput.value : null) || null;
+    }
+
+    function getFirstAncVisitDateForSave() {
+      return getEffectiveFirstAncVisitDate();
     }
 
     async function ensureHistoricalAncDataLoaded() {
@@ -3128,31 +3174,26 @@
       updateAncVisitSchedule();
     }
 
-    function getEffectiveFirstAncVisitDate() {
-      if (cachedFirstAncVisitDate) return cachedFirstAncVisitDate;
-      const visitDateInput = document.getElementById('visitDate');
-      return visitDateInput?.value || null;
-    }
-
-    function getFirstAncVisitDateForSave() {
-      return getEffectiveFirstAncVisitDate();
-    }
-
     const EARLY_ANC_MAX_WEEKS = 14;
     const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
 
     function getEarlyAncGestationalAgeDays() {
       const lmpInput = document.getElementById('lmp');
       const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked');
-      if (!lmpInput?.value || lmpStatus?.value === 'unknown') return null;
       const firstDate = getEffectiveFirstAncVisitDate();
-      if (!firstDate) return null;
-      const l = parseDateOnlyLocal(lmpInput.value);
-      const v = parseDateOnlyLocal(firstDate);
-      if (!l || !v || isNaN(l.getTime()) || isNaN(v.getTime())) return null;
-      const totalDays = Math.floor((v - l) / 86400000);
-      if (totalDays < 0) return null;
-      return totalDays;
+      if (lmpInput?.value && lmpStatus?.value !== 'unknown' && firstDate) {
+        const l = parseDateOnlyLocal(lmpInput.value);
+        const v = parseDateOnlyLocal(firstDate);
+        if (l && v && !isNaN(l.getTime()) && !isNaN(v.getTime())) {
+          const totalDays = Math.floor((v - l) / 86400000);
+          if (totalDays >= 0) return totalDays;
+        }
+      }
+      const manualGa = parseFloat(document.getElementById('manualGestationalAge')?.value);
+      if (!isNaN(manualGa) && manualGa > 0) {
+        return Math.round(manualGa * 7);
+      }
+      return null;
     }
 
     function getEarlyAncGestationalAgeWeeks() {
@@ -3179,12 +3220,29 @@
       badge.classList.remove('yes', 'no', 'unknown');
 
       if (!lmpInput?.value || lmpStatus?.value === 'unknown' || totalDays === null) {
+        const manualGa = parseFloat(document.getElementById('manualGestationalAge')?.value);
+        if (!isNaN(manualGa) && manualGa > 0) {
+          const isEarly = manualGa < EARLY_ANC_MAX_WEEKS;
+          const weeks = Math.floor(manualGa);
+          const days = Math.round((manualGa - weeks) * 7);
+          badge.classList.add(isEarly ? 'yes' : 'no');
+          if (isEarly) {
+            statusText.textContent = currentLanguage === 'en'
+              ? `Yes — first ANC at ${weeks} weeks ${days} days (manual GA, within 14 weeks)`
+              : `Yes — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (ကိုယ်ဝန်ဆောင်ကာလ၊ ၁၄ ပတ်အတွင်း)`;
+          } else {
+            statusText.textContent = currentLanguage === 'en'
+              ? `No — first ANC at ${weeks} weeks ${days} days (manual GA, after 14 weeks)`
+              : `No — ပထမအကြိမ် ANC ${weeks} ပတ် ${days} ရက် (ကိုယ်ဝန်ဆောင်ကာလ၊ ၁၄ ပတ်ကျော်ပြီ)`;
+          }
+          return;
+        }
         badge.classList.add('unknown');
-        statusText.setAttribute('data-en', 'Enter LMP and first visit date to calculate');
-        statusText.setAttribute('data-mm', 'LMP နှင့် ပထမအကြိမ် ANC ပြသရက် ထည့်ပါ');
+        statusText.setAttribute('data-en', 'Enter LMP or manual GA and first visit date to calculate');
+        statusText.setAttribute('data-mm', 'LMP သို့မဟုတ် ကိုယ်ဝန်ဆောင်ကာလ နှင့် ပထမအကြိမ် ANC ပြသရက် ထည့်ပါ');
         statusText.textContent = currentLanguage === 'en'
-          ? 'Enter LMP and first visit date to calculate'
-          : 'LMP နှင့် ပထမအကြိမ် ANC ပြသရက် ထည့်ပါ';
+          ? 'Enter LMP or manual GA and first visit date to calculate'
+          : 'LMP သို့မဟုတ် ကိုယ်ဝန်ဆောင်ကာလ နှင့် ပထမအကြိမ် ANC ပြသရက် ထည့်ပါ';
         return;
       }
 
@@ -3345,6 +3403,22 @@
       }
     }
 
+    function isUrineResultPositive(value) {
+      const v = String(value || '').trim();
+      if (!v || v === 'Negative') return false;
+      return v === 'Trace' || v === '+' || v === '++' || v === '+++';
+    }
+
+    function updateUrineAlerts() {
+      const protein = document.getElementById('urineProtein')?.value || '';
+      const sugar = document.getElementById('urineSugar')?.value || '';
+      const proteinAlert = document.getElementById('urineProteinAlert');
+      const sugarAlert = document.getElementById('urineSugarAlert');
+      if (proteinAlert) proteinAlert.classList.toggle('hide', !isUrineResultPositive(protein));
+      if (sugarAlert) sugarAlert.classList.toggle('hide', !isUrineResultPositive(sugar));
+      applyClinicalRiskLanguage();
+    }
+
     function updateClinicalAlerts() {
       const anemia = document.getElementById('anemiaStatus')?.value === 'Yes';
       const edema = document.getElementById('pittingEdema')?.value === 'Yes';
@@ -3353,6 +3427,7 @@
       if (anemiaAlert) anemiaAlert.classList.toggle('hide', !anemia);
       if (edemaAlert) edemaAlert.classList.toggle('hide', !edema);
       applyClinicalRiskLanguage();
+      updateUrineAlerts();
     }
 
     function applyBloodPressureToForm(visit) {
@@ -3440,12 +3515,15 @@
     function calculateEDDFromGA() {
       const gaInput = document.getElementById('manualGestationalAge');
       const eddInput = document.getElementById('manualEdd');
+      const visitDate = document.getElementById('visitDate')?.value;
       
-      if (gaInput.value) {
-        const today = new Date();
-        const weeksFromNow = 40 - parseFloat(gaInput.value); // Assuming 40 weeks full term
-        const eddDate = new Date(today.getTime() + (weeksFromNow * 7 * 24 * 60 * 60 * 1000));
-        eddInput.value = eddDate.toISOString().split('T')[0];
+      if (gaInput.value && visitDate) {
+        const anchor = parseDateOnlyLocal(visitDate);
+        if (anchor) {
+          const weeksFromAnchor = 40 - parseFloat(gaInput.value);
+          const eddDate = addDaysLocal(anchor, Math.round(weeksFromAnchor * 7));
+          eddInput.value = formatDateYMD(eddDate);
+        }
       }
     }
 

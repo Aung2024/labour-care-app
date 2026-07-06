@@ -228,6 +228,8 @@
       maternal_edd: firstOf(ancContext.maternal_edd, mother.edd, mother.manualEdd, mother.manual_edd) || null,
       gestational_age_at_birth: firstOf(ancContext.gestational_age_at_birth, mother.gestational_age, mother.gestationalAge) || null,
       maternal_edd_source: ancContext.maternal_edd_source || (mother.edd ? 'mother_patient' : null),
+      phone: firstOf(mother.phone, mother.phoneNumber) || null,
+      phoneNumber: firstOf(mother.phoneNumber, mother.phone) || null,
       township: mother.township || null,
       region: mother.region || null,
       region_short_code: mother.region_short_code || null,

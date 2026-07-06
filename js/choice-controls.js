@@ -205,7 +205,11 @@
       if (!btn) return;
       if (select.disabled || btn.disabled) return;
       var newVal = btn.dataset.value;
-      if (select.value !== newVal) {
+      if (select.value === newVal) {
+        select.value = '';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        select.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
         select.value = newVal;
         select.dispatchEvent(new Event('change', { bubbles: true }));
         select.dispatchEvent(new Event('input', { bubbles: true }));

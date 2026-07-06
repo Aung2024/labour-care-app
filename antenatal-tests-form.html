@@ -17,6 +17,7 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="js/register-sw.js"></script>
   <style>
     :root {
@@ -682,11 +683,15 @@
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label lang-text" data-en="Ultrasound Services Received" data-mm="Ultrasound ဝန်ဆောင်မှု ရရှိခဲ့/မရှိ">Ultrasound Services Received</label>
-              <select class="form-select" id="ultrasoundServices">
+              <select class="form-select" id="ultrasoundServices" onchange="toggleUltrasoundDetails()">
                 <option value="">Select</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
               </select>
+            </div>
+            <div class="col-md-12" id="ultrasoundDetailsWrap" style="display:none;">
+              <label class="form-label lang-text" data-en="Ultrasound findings / details" data-mm="Ultrasound ရလဒ် / အသေးစိတ်">Ultrasound findings / details</label>
+              <textarea class="form-control" id="ultrasoundDetails" rows="3" placeholder=""></textarea>
             </div>
           </div>
         </div>
@@ -784,6 +789,12 @@
     function toggleAlert(id, show) {
       var el = document.getElementById(id);
       if (el) el.classList.toggle('hide', !show);
+    }
+
+    function toggleUltrasoundDetails() {
+      const val = document.getElementById('ultrasoundServices')?.value;
+      const wrap = document.getElementById('ultrasoundDetailsWrap');
+      if (wrap) wrap.style.display = val === 'Yes' ? '' : 'none';
     }
 
     function updateLabClinicalAlerts() {
@@ -1220,6 +1231,8 @@
         
         // Ultrasound Services
         document.getElementById('ultrasoundServices').value = testData.ultrasoundServices || '';
+        document.getElementById('ultrasoundDetails').value = testData.ultrasoundDetails || '';
+        toggleUltrasoundDetails();
 
         document.getElementById('additionalLabTestName').value = testData.additionalLabTestName || '';
         document.getElementById('additionalLabTestFindings').value = testData.additionalLabTestFindings || '';
@@ -1276,6 +1289,9 @@
           
           // Ultrasound Services
           ultrasoundServices: document.getElementById('ultrasoundServices').value,
+          ultrasoundDetails: document.getElementById('ultrasoundServices').value === 'Yes'
+            ? (document.getElementById('ultrasoundDetails').value || '')
+            : '',
 
           additionalLabTestName: (document.getElementById('additionalLabTestName').value || '').trim(),
           additionalLabTestFindings: (document.getElementById('additionalLabTestFindings').value || '').trim(),
@@ -1316,7 +1332,10 @@
             .doc(currentTestId)
             .update(cloudData);
           
-          alert('Test results updated successfully!');
+          await AppDialog.alert(
+            currentLanguage === 'mm' ? 'ဓာတ်ခွဲစမ်းသပ်ရလဒ်များ ပြင်ဆင်ပြီးပါပြီ။' : 'Test results updated successfully!',
+            { title: currentLanguage === 'mm' ? 'သိမ်းဆည်းပြီး' : 'Saved' }
+          );
         } else {
           // Create new test record
           console.log('Creating new test record for patient:', currentPatient.id);
@@ -1325,7 +1344,10 @@
             .collection('testRecords')
             .add(cloudData);
           
-          alert('Test results saved successfully!');
+          await AppDialog.alert(
+            currentLanguage === 'mm' ? 'ဓာတ်ခွဲစမ်းသပ်ရလဒ်များ သိမ်းဆည်းပြီးပါပြီ။' : 'Test results saved successfully!',
+            { title: currentLanguage === 'mm' ? 'သိမ်းဆည်းပြီး' : 'Saved' }
+          );
         }
         
         // Redirect back to tests page

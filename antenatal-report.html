@@ -1623,6 +1623,21 @@
     const EARLY_ANC_MAX_WEEKS = 14;
     const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
 
+    function getEarliestFirstAncDateForReport(firstVisit) {
+      const dates = [];
+      const visitDate = firstVisit.visitDate || firstVisit.visit_date || firstVisit.timestamp || firstVisit.createdAt;
+      if (visitDate) dates.push(visitDate);
+      if (Array.isArray(firstVisit.otherVisits)) {
+        firstVisit.otherVisits.forEach(function (ov) {
+          if (ov && ov.visitDate) dates.push(ov.visitDate);
+        });
+      }
+      const parsed = dates.map(function (d) { return new Date(d); }).filter(function (d) { return !isNaN(d.getTime()); });
+      if (!parsed.length) return null;
+      parsed.sort(function (a, b) { return a - b; });
+      return parsed[0];
+    }
+
     function computeEarlyAncFromVisits(visits, patient) {
       if (!visits || !visits.length) return false;
       const sorted = visits.slice().sort(function(a, b) {
@@ -1632,17 +1647,17 @@
       });
       const first = sorted[0];
       if (!first) return false;
+      const firstVisitDate = getEarliestFirstAncDateForReport(first);
       const lmp = first.lmp || patient?.lmp;
       const lmpStatus = first.lmpStatus || patient?.lmpStatus;
-      if (!isLMPUnknownForReport(lmp, lmpStatus)) {
+      if (!isLMPUnknownForReport(lmp, lmpStatus) && firstVisitDate) {
         const lmpDate = new Date(lmp);
-        const visitDate = new Date(first.visitDate || first.visit_date || first.timestamp || first.createdAt);
-        if (!isNaN(lmpDate.getTime()) && !isNaN(visitDate.getTime())) {
-          const days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+        if (!isNaN(lmpDate.getTime()) && !isNaN(firstVisitDate.getTime())) {
+          const days = Math.floor((firstVisitDate.getTime() - lmpDate.getTime()) / 86400000);
           if (days >= 0) return days < EARLY_ANC_MAX_DAYS;
         }
       }
-      const ga = first.gestationalAge != null ? first.gestationalAge : first.gestational_age;
+      const ga = first.manualGestationalAge != null ? first.manualGestationalAge : (first.gestationalAge != null ? first.gestationalAge : first.gestational_age);
       if (ga != null && ga !== '') {
         const weeks = parseFloat(ga);
         if (!isNaN(weeks) && weeks > 0) return weeks < EARLY_ANC_MAX_WEEKS;
@@ -1821,7 +1836,20 @@
       let gaCalculated = false;
 
       if (isLMPUnknown) {
-        gaValue = t('unknown');
+        const manualGa = visit.manualGestationalAge != null ? visit.manualGestationalAge : visit.gestationalAge;
+        if (manualGa != null && manualGa !== '') {
+          const weeks = parseFloat(manualGa);
+          if (!isNaN(weeks) && weeks > 0) {
+            gaWeeks = Math.floor(weeks);
+            const gaDays = Math.round((weeks - gaWeeks) * 7);
+            gaValue = `${gaWeeks}w ${gaDays}d`;
+            gaCalculated = true;
+          } else {
+            gaValue = t('unknown');
+          }
+        } else {
+          gaValue = t('unknown');
+        }
       } else if (visitDateObj && lmp) {
         try {
           let lmpDate;
@@ -2673,6 +2701,10 @@
               ${labChipHtml('Hb (g/dl)', 'Hb (g/dl)', test.hemoglobinResult || '-', null)}
               ${labChipHtml('Blood group', 'သွေးအုပ်စု', test.bloodGroup || '-', null)}
               ${labChipHtml('Rh', 'Rh', rhFactor, 'rh')}
+              ${test.ultrasoundServices === 'Yes' ? `<div class="lab-chip lab-chip-wide">
+                <span class="lab-chip-label lang-text" data-en="Ultrasound" data-mm="Ultrasound">Ultrasound</span>
+                <span class="lab-chip-value">${escapeHtml(test.ultrasoundDetails || test.ultrasoundServices)}</span>
+              </div>` : (test.ultrasoundServices ? labChipHtml('Ultrasound', 'Ultrasound', test.ultrasoundServices, null) : '')}
               <div class="lab-chip lab-chip-wide">
                 <span class="lab-chip-label lang-text" data-en="Treatment" data-mm="ကုသမှု">Treatment</span>
                 <span class="lab-chip-value">${escapeHtml(test.treatmentGiven || '-')}</span>
@@ -2696,6 +2728,7 @@
           <td>${escapeHtml(test.hemoglobinResult || '-')}</td>
           <td>${escapeHtml(test.bloodGroup || '-')}</td>
           <td${rowClass(rhFactor, 'rh')}>${escapeHtml(rhFactor)}</td>
+          <td>${escapeHtml(test.ultrasoundServices === 'Yes' ? (test.ultrasoundDetails || 'Yes') : (test.ultrasoundServices || '-'))}</td>
           <td>${escapeHtml(test.treatmentGiven || '-')}</td>
         </tr>`;
       });
@@ -2703,7 +2736,7 @@
       cardsHtml += '</div>';
       cardsHtml += `<table class="lab-print-table"><thead><tr>
         <th>No</th><th>Date</th><th>GA</th><th>Lab</th><th>HIV</th><th>Malaria</th><th>Syphilis</th>
-        <th>Hep B</th><th>Hep C</th><th>Hb</th><th>Blood Grp</th><th>Rh</th><th>Treatment</th>
+        <th>Hep B</th><th>Hep C</th><th>Hb</th><th>Blood Grp</th><th>Rh</th><th>Ultrasound</th><th>Treatment</th>
       </tr></thead><tbody>${printRows}</tbody></table>`;
 
       container.innerHTML = cardsHtml;

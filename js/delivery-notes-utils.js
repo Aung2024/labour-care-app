@@ -206,6 +206,16 @@
         console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
       }
     }
+    if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
+      try {
+        var legacy = legacyFieldsFromDelivery(normalized);
+        if (legacy && legacy.birth_time) {
+          await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time);
+        }
+      } catch (e) {
+        console.warn('Delivery notes saved, but birth anchor sync failed:', e);
+      }
+    }
     return payload;
   }
 

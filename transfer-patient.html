@@ -428,6 +428,19 @@
           <div class="form-section">
             <h4><i class="fas fa-hospital"></i><span class="lang-text" data-en="Referral Details" data-mm="လွှဲပြောင်းမှု အသေးစိတ်">Referral Details</span></h4>
             <div class="row g-3 two-col">
+              <div class="col-12">
+                <label class="form-label lang-text" data-en="Transfer destination" data-mm="လွှဲပြောင်းရာအမှတ်">Transfer destination</label>
+                <div class="d-flex flex-wrap gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="transferDestination" id="transferDestinationInternal" value="internal" checked onchange="onTransferDestinationChange()">
+                    <label class="form-check-label lang-text" for="transferDestinationInternal" data-en="Internal (app midwife)" data-mm="အတွင်းပိုင်း (app midwife)">Internal (app midwife)</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="transferDestination" id="transferDestinationExternal" value="external" onchange="onTransferDestinationChange()">
+                    <label class="form-check-label lang-text" for="transferDestinationExternal" data-en="External (hospital/facility not on app)" data-mm="ပြင်ပ (app တွင် မပါဝင်သော ဆေးရုံ/ကျန်းမာရေးဌာန)">External (hospital/facility not on app)</label>
+                  </div>
+                </div>
+              </div>
               <div class="col-12 col-md-6">
                 <label for="referralTime" class="form-label required-mark lang-text" data-en="Referral time" data-mm="လွှဲပြောင်းချိန်">Referral time</label>
                 <input type="datetime-local" id="referralTime" class="form-control" required />
@@ -443,7 +456,7 @@
                 </select>
               </div>
               <div class="col-12">
-                <label for="referralFacility" class="form-label lang-text" data-en="Referral facility" data-mm="လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန">Referral facility</label>
+                <label for="referralFacility" class="form-label lang-text" id="referralFacilityLabel" data-en="Referral facility" data-mm="လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန">Referral facility</label>
                 <input type="text" id="referralFacility" class="form-control" placeholder="" />
               </div>
               <div class="col-12">
@@ -484,7 +497,7 @@
             </div>
           </div>
 
-          <div class="form-section">
+          <div class="form-section" id="internalMidwifeSection">
             <h4><i class="fas fa-user-nurse"></i><span class="lang-text" data-en="Transfer to Midwife" data-mm="လက်ခံမည့်သူ အချက်အလက်များ">Transfer Data </span></h4>
             <div class="row g-3 two-col">
               <div class="col-12 col-md-6">
@@ -576,6 +589,7 @@
       selectPatient: { en: 'Please select a patient.', mm: 'လူနာကို ရွေးချယ်ပါ။' },
       referralTime: { en: 'Please enter referral time.', mm: 'လွှဲပြောင်းချိန် ထည့်ပါ။' },
       selectMidwife: { en: 'Please select at least one receiving midwife.', mm: 'လက်ခံမည့် midwife အနည်းဆုံး တစ်ဦး ရွေးပါ။' },
+      externalFacility: { en: 'Please enter the external referral facility.', mm: 'ပြင်ပ လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန ထည့်ပါ။' },
       patientNotFound: { en: 'Patient not found.', mm: 'လူနာ မတွေ့ပါ။' },
       loadPatientsFail: { en: 'Unable to load patients. Please try again.', mm: 'လူနာစာရင်း မတင်နိုင်ပါ။ ထပ်စမ်းကြည့်ပါ။' },
       noPatients: { en: 'No patients found.', mm: 'လူနာ မရှိပါ။' },
@@ -587,6 +601,10 @@
       success: {
         en: 'Referral record saved and transfer request sent. The receiving midwife can accept from Transfer Requests.',
         mm: 'ညွှန်းပို့မှတ်တမ်း သိမ်းပြီး လွှဲပြောင်းတောင်းဆိုချက် ပို့ပြီးပါပြီ။ လက်ခံမည့် midwife သည် Transfer Requests မှ လက်ခံနိုင်ပါသည်။'
+      },
+      successExternal: {
+        en: 'External referral recorded. The patient is marked as referred to the external facility.',
+        mm: 'ပြင်ပ လွှဲပြောင်းညွှန်းပို့မှု မှတ်တမ်းတင်ပြီးပါပြီ။ လူနာကို ပြင်ပ ဆေးရုံ/ကျန်းမာရေးဌာနသို့ လွှဲပြောင်းထားပါသည်။'
       },
       errorTitle: { en: 'Error', mm: 'အမှား' },
       successTitle: { en: 'Success', mm: 'အောင်မြင်ပါသည်' },
@@ -773,6 +791,7 @@
         ChoiceControls.refreshLabels(document);
       }
         refreshSubmitState();
+        onTransferDestinationChange();
       } catch (error) {
         AppDialog.alert(error.message, { title: t('transferTitle') });
       }
@@ -1070,14 +1089,38 @@
       refreshSubmitState();
     }
 
+    function getTransferDestination() {
+      const el = document.querySelector('input[name="transferDestination"]:checked');
+      return el ? el.value : 'internal';
+    }
+
+    function isExternalTransfer() {
+      return getTransferDestination() === 'external';
+    }
+
+    function onTransferDestinationChange() {
+      const external = isExternalTransfer();
+      const section = document.getElementById('internalMidwifeSection');
+      const facilityLabel = document.getElementById('referralFacilityLabel');
+      if (section) section.style.display = external ? 'none' : '';
+      if (facilityLabel) {
+        facilityLabel.classList.toggle('required-mark', external);
+      }
+      refreshSubmitState();
+    }
+
     function refreshSubmitState() {
+      const external = isExternalTransfer();
       const ids = Array.from(document.querySelectorAll('.mw-check:checked')).map((el) => el.value);
       const referralTime = (document.getElementById('referralTime').value || '').trim();
+      const referralFacility = (document.getElementById('referralFacility').value || '').trim();
       const btn = document.getElementById('submitBtn');
-      btn.disabled = !(selectedPatientId && ids.length > 0 && referralTime);
+      const valid = selectedPatientId && referralTime && (external ? referralFacility : ids.length > 0);
+      btn.disabled = !valid;
     }
 
     document.getElementById('referralTime').addEventListener('input', refreshSubmitState);
+    document.getElementById('referralFacility').addEventListener('input', refreshSubmitState);
 
     function getReferralFormData() {
       const getValue = (id) => {
@@ -1088,6 +1131,8 @@
         referralTime: getValue('referralTime'),
         referralMode: getValue('referralMode'),
         referralFacility: getValue('referralFacility'),
+        transferDestination: getTransferDestination(),
+        externalFacility: isExternalTransfer() ? getValue('referralFacility') : null,
         mainSymptoms: getValue('mainSymptoms'),
         treatmentBeforeReferral: getValue('treatmentBeforeReferral'),
         medications: getValue('medications'),
@@ -1117,21 +1162,28 @@
     async function saveReferralRecords(patientId, referralData) {
       const db = firebase.firestore();
       const patientRef = db.collection('patients').doc(patientId);
+      const external = referralData.transferDestination === 'external';
       await patientRef.collection('records').doc('transferRecord').set({
         ...referralData,
         patientId
       });
-      await patientRef.collection('records').doc('endTreatment').set({
-        outcome: 'transfer',
-        recordedBy: currentUser.uid,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      const mapping = getTransferStatusMapping(transferType);
+      if (!external) {
+        await patientRef.collection('records').doc('endTreatment').set({
+          outcome: 'transfer',
+          recordedBy: currentUser.uid,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      const mapping = external
+        ? { status: 'referred_external', reason: 'Referred to external facility: ' + (referralData.externalFacility || referralData.referralFacility || 'not specified') }
+        : getTransferStatusMapping(transferType);
       if (window.StatusManager && StatusManager.checkAndUpdateToTransfer) {
         await StatusManager.checkAndUpdateToTransfer(patientId, mapping.status, mapping.reason);
       } else {
         await patientRef.update({
           status: mapping.status,
+          transferDestination: referralData.transferDestination || 'internal',
+          externalFacility: referralData.externalFacility || null,
           last_updated: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -1152,13 +1204,20 @@
       const township = document.getElementById('townshipSelect').value || null;
       const ids = Array.from(document.querySelectorAll('.mw-check:checked')).map((el) => el.value);
       const referralData = getReferralFormData();
+      const external = isExternalTransfer();
 
       if (!patientId) return AppDialog.alert(t('selectPatient'), { title: t('transferTitle') });
       if (!referralData.referralTime) return AppDialog.alert(t('referralTime'), { title: t('transferTitle') });
-      if (ids.length === 0) return AppDialog.alert(t('selectMidwife'), { title: t('transferTitle') });
+      if (external) {
+        if (!(referralData.referralFacility || '').trim()) {
+          return AppDialog.alert(t('externalFacility'), { title: t('transferTitle') });
+        }
+      } else if (ids.length === 0) {
+        return AppDialog.alert(t('selectMidwife'), { title: t('transferTitle') });
+      }
 
       const patient = allPatients.find((p) => p.id === patientId) || {};
-      const recipients = allMidwives.filter((u) => ids.includes(u.id)).map((u) => ({
+      const recipients = external ? [] : allMidwives.filter((u) => ids.includes(u.id)).map((u) => ({
         uid: u.id,
         name: u.name || u.email || 'Midwife',
         region: u.region || null,
@@ -1173,29 +1232,39 @@
       try {
         await saveReferralRecords(patientId, referralData);
 
-        await firebase.firestore().collection('patient_transfer_requests').add({
-          patientId,
-          patientUniqueId: patient.patientUniqueId || patient.patient_unique_id || null,
-          patientName: patient.name || null,
-          fromMidwifeId: currentUser.uid,
-          fromMidwifeName: currentUserData?.name || currentUser.email || 'Midwife',
-          fromMidwifeEmail: currentUser.email || null,
-          fromRegion: currentUserData?.region || null,
-          fromTownship: currentUserData?.township || null,
-          targetRegion: region,
-          targetTownship: township,
-          targetMidwifeIds: ids,
-          recipients,
-          notes: notes || null,
-          referralRecord: referralData,
-          careContext: transferType,
-          status: 'pending',
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          acceptedBy: []
-        });
+        if (!external) {
+          await firebase.firestore().collection('patient_transfer_requests').add({
+            patientId,
+            patientUniqueId: patient.patientUniqueId || patient.patient_unique_id || null,
+            patientName: patient.name || null,
+            fromMidwifeId: currentUser.uid,
+            fromMidwifeName: currentUserData?.name || currentUser.email || 'Midwife',
+            fromMidwifeEmail: currentUser.email || null,
+            fromRegion: currentUserData?.region || null,
+            fromTownship: currentUserData?.township || null,
+            targetRegion: region,
+            targetTownship: township,
+            targetMidwifeIds: ids,
+            recipients,
+            notes: notes || null,
+            referralRecord: referralData,
+            careContext: transferType,
+            transferDestination: 'internal',
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            acceptedBy: []
+          });
+        }
 
         if (window.AuditLogger && AuditLogger.logAuditEvent) {
-          AuditLogger.logAuditEvent('transfer_request_created', 'patient', patientId, { recipientCount: ids.length, careContext: transferType });
+          AuditLogger.logAuditEvent(
+            external ? 'external_referral_recorded' : 'transfer_request_created',
+            'patient',
+            patientId,
+            external
+              ? { externalFacility: referralData.externalFacility || referralData.referralFacility, careContext: transferType }
+              : { recipientCount: ids.length, careContext: transferType }
+          );
         }
         try {
           sessionStorage.removeItem('sentTransferHrt:' + currentUser.uid);
@@ -1203,7 +1272,7 @@
           sessionStorage.removeItem('transferPatientPicker:' + currentUser.uid);
         } catch (e) { /* ignore */ }
 
-        await AppDialog.alert(t('success'), { title: t('successTitle') });
+        await AppDialog.alert(external ? t('successExternal') : t('success'), { title: t('successTitle') });
 
         if (referFlow) {
           window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);

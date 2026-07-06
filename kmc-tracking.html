@@ -734,16 +734,64 @@
       }).join(' ');
     }
 
+    function getKmcClientName(patient) {
+      patient = patient || {};
+      if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient)) {
+        return patient.mother_name || patient._kmcMotherName || patient.name || patient.patientName || '';
+      }
+      return patient.mother_name || patient._kmcMotherName || patient.name || patient.patientName || '';
+    }
+
+    function getKmcContactPatient(patient) {
+      patient = patient || {};
+      var phone = patient._kmcPhone || patient.phone || patient.phoneNumber || patient.emergency_phone || '';
+      return {
+        phone: phone,
+        phoneNumber: phone,
+        emergency_phone: patient.emergency_phone || ''
+      };
+    }
+
+    async function enrichKmcPatientContact(db, patient) {
+      patient = patient || {};
+      if (!(window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient))) {
+        return Object.assign({}, patient, {
+          _kmcMotherName: patient.name || patient.patientName || '',
+          _kmcPhone: patient.phone || patient.phoneNumber || patient.emergency_phone || ''
+        });
+      }
+      var motherName = patient.mother_name || '';
+      var phone = patient.phone || patient.phoneNumber || '';
+      if ((!phone || !motherName) && patient.mother_patient_id) {
+        try {
+          var mdoc = await db.collection('patients').doc(patient.mother_patient_id).get();
+          if (mdoc.exists) {
+            var mother = mdoc.data() || {};
+            if (!phone) phone = mother.phone || mother.phoneNumber || mother.emergency_phone || '';
+            if (!motherName) motherName = mother.name || mother.patientName || '';
+          }
+        } catch (e) {
+          console.warn('KMC mother phone lookup', e);
+        }
+      }
+      return Object.assign({}, patient, {
+        _kmcMotherName: motherName,
+        _kmcPhone: phone
+      });
+    }
+
     function phoneHref(patient) {
-      var raw = patient.phone || patient.phoneNumber || patient.emergency_phone || '';
+      var contact = getKmcContactPatient(patient);
+      var raw = contact.phone || contact.phoneNumber || contact.emergency_phone || '';
       var digits = String(raw).replace(/\D/g, '');
       if (!digits) return '';
       return 'tel:' + digits;
     }
 
     function phoneCellHtml(patient) {
+      var contact = getKmcContactPatient(patient);
       var href = phoneHref(patient);
-      var display = patient.phone || patient.phoneNumber || patient.emergency_phone || '—';
+      var display = contact.phone || contact.phoneNumber || contact.emergency_phone || '—';
       if (!href) return escapeHtml(display);
       return '<a href="' + escapeHtml(href) + '" onclick="event.stopPropagation();">' + escapeHtml(display) + '</a>';
     }
@@ -1008,7 +1056,7 @@
         var patientId = p.id || '';
         var isTwins = r.newbornCare && (r.newbornCare.pregnancy_type === 'twins' || (Array.isArray(r.newbornCare.babies) && r.newbornCare.babies.length > 1));
         var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex, isTwins));
-        var motherName = escapeHtml(p.name || p.patientName || '');
+        var motherName = escapeHtml(getKmcClientName(p));
         var phone = phoneCellHtml(p);
         var ageDays = r.ageDays != null ? r.ageDays : null;
         var ageHtml = ageDays != null
@@ -1060,7 +1108,7 @@
       if (!row) return;
       _completePatientId = patientId;
       _completeRow = row;
-      document.getElementById('completeModalSummary').textContent = (row.babyName || '') + ' · ' + ((row.patient || {}).name || (row.patient || {}).patientName || '');
+      document.getElementById('completeModalSummary').textContent = (row.babyName || '') + ' · ' + getKmcClientName(row.patient || {});
       document.getElementById('completeOutcomeSelect').value = 'alive';
       document.getElementById('completeNotesInput').value = '';
       bootstrap.Modal.getOrCreateInstance(document.getElementById('completeModal')).show();
@@ -1290,6 +1338,7 @@
               Array.isArray(p.baby_patient_ids) && p.baby_patient_ids.length) {
             return [];
           }
+          p = await enrichKmcPatientContact(db, p);
           var newbornCareVisits = await fetchNewbornCareVisits(db, p.id);
           var babyPatientCare = babyPatientCareFromRecord(p);
           var newbornCare = getVisit1NewbornCare(newbornCareVisits) || babyPatientCare;

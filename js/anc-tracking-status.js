@@ -175,7 +175,26 @@
       var data = visitRawData(v);
       if (isKnownLmpValue(data.lmp) && !any) any = data.lmp;
     });
-    return any || null;
+    if (any) return any;
+
+    var sorted = (visits || []).slice().sort(function (a, b) {
+      var da = visitRawData(a);
+      var db = visitRawData(b);
+      var dA = parseDateOnlyLocal(da.visitDate || da.visit_date);
+      var dB = parseDateOnlyLocal(db.visitDate || db.visit_date);
+      return (dA ? dA.getTime() : 0) - (dB ? dB.getTime() : 0);
+    });
+    if (sorted.length) {
+      var first = visitRawData(sorted[0]);
+      var manualGa = parseFloat(first.manualGestationalAge != null ? first.manualGestationalAge : first.gestationalAge);
+      var visitDate = parseDateOnlyLocal(first.visitDate || first.visit_date);
+      if (!isNaN(manualGa) && manualGa > 0 && visitDate) {
+        var pseudo = addDaysLocal(visitDate, -Math.round(manualGa * 7));
+        return formatDateYMD(pseudo);
+      }
+    }
+
+    return null;
   }
 
   function getRecordedNextVisitDate(visits) {

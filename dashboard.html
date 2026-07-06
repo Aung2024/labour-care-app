@@ -904,6 +904,7 @@
             var endTreatmentEntry = getRecEntry('endTreatment');
             var transferRecordEntry = getRecEntry('transferRecord');
             var outcomeRecordEntry = getRecEntry('outcomeRecord');
+            var deliveryNotesEntry = getRecEntry('deliveryNotes');
 
             var matchDate = function(entry, keys) { if (!entry) return null; return recordIsWithinFilter(entry.data, keys) ? entry : null; };
             var birthRecord = matchDate(birthRecordEntry, ['deliveryDate','birthDate','timestamp','date']);
@@ -919,6 +920,7 @@
               secondStageDoc: getRecDoc('secondStage'),
               thirdStage: getRecDoc('thirdStage'),
               birthRecord: birthRecord, endTreatment: endTreatment, transferRecord: transferRecord, outcomeRecord: outcomeRecord,
+              deliveryNotes: deliveryNotesEntry,
               newbornCare: nbSnap && !nbSnap.empty ? { id: nbSnap.docs[0].id, data: nbSnap.docs[0].data() || {} } : null,
               immediateNewbornCare: immNbSnap && !immNbSnap.empty ? { id: immNbSnap.docs[0].id, data: immNbSnap.docs[0].data() || {} } : null,
               hrtActions: cloneSnapshotDocs(hrtSnap)
@@ -1049,6 +1051,47 @@
       return 'alive';
     }
 
+    function normalizeNewbornOutcomeValue(value) {
+      var o = String(value || '').toLowerCase().trim();
+      if (!o || o === 'alive') return 'alive';
+      if (o === 'stillbirth' || o === 'still_birth') return 'stillbirth';
+      if (o === 'neonatal_death' || o === 'neonatal death' || o === 'neonataldeath' || o === 'death' || o === 'dead') return 'neonatal_death';
+      return 'alive';
+    }
+
+    function getNewbornOutcomeForPatient(patient) {
+      if (!patient) return null;
+      var deliveryNotes = patient.deliveryNotes ? patient.deliveryNotes.data : null;
+      if (deliveryNotes) {
+        var babies = ((deliveryNotes.deliveryDetails || {}).babies || deliveryNotes.babies || []);
+        for (var i = 0; i < babies.length; i++) {
+          var bo = normalizeNewbornOutcomeValue(babies[i].outcome);
+          if (bo !== 'alive') return bo;
+        }
+        if (babies.length) return 'alive';
+      }
+      var nbCare = patient.newbornCare ? patient.newbornCare.data : null;
+      if (nbCare) {
+        var nbOutcome = normalizeNewbornOutcomeValue(nbCare.baby_outcome || nbCare.outcome);
+        if (nbOutcome !== 'alive') return nbOutcome;
+        if (Array.isArray(nbCare.babies)) {
+          for (var j = 0; j < nbCare.babies.length; j++) {
+            var babyOutcome = normalizeNewbornOutcomeValue(nbCare.babies[j].outcome || nbCare.babies[j].baby_outcome);
+            if (babyOutcome !== 'alive') return babyOutcome;
+          }
+        }
+        return 'alive';
+      }
+      var birthRec = patient.birthRecord ? patient.birthRecord.data : null;
+      if (birthRec) {
+        var br = normalizeNewbornOutcomeValue(birthRec.newbornOutcome || birthRec.newbornStatus);
+        if (br !== 'alive') return br;
+      }
+      var profile = patient.profile || patient.registration || {};
+      if (profile.birth_outcome) return normalizeNewbornOutcomeValue(profile.birth_outcome);
+      return null;
+    }
+
     function isPphFromLatestPncVisit(pncData) {
       if (!pncData) return false;
       return String(pncData.vaginalBleeding || '').trim() === 'Heavy bleeding';
@@ -1134,6 +1177,21 @@
     var EARLY_ANC_MAX_WEEKS = 14;
     var EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
 
+    function getEarliestFirstAncDateDashboard(first) {
+      var dates = [];
+      var visitDate = first.visitDate || first.visit_date || first.timestamp || first.createdAt;
+      if (visitDate) dates.push(visitDate);
+      if (Array.isArray(first.otherVisits)) {
+        first.otherVisits.forEach(function (ov) {
+          if (ov && ov.visitDate) dates.push(ov.visitDate);
+        });
+      }
+      var parsed = dates.map(parseDateValue).filter(Boolean);
+      if (!parsed.length) return null;
+      parsed.sort(function (a, b) { return a.getTime() - b.getTime(); });
+      return parsed[0];
+    }
+
     function isEarlyAncPatient(patient, visits) {
       visits = visits || [];
       if (!visits.length) return false;
@@ -1142,17 +1200,20 @@
       var first = (firstWrap && firstWrap.data) ? firstWrap.data : firstWrap;
       if (!first) return false;
       var profile = (patient && patient.profile) || patient || {};
+      var firstVisitDate = getEarliestFirstAncDateDashboard(first);
       var lmp = first.lmp || profile.lmp;
       var lmpStatus = first.lmpStatus || profile.lmpStatus;
-      if (lmp && lmpStatus !== 'unknown' && lmp !== 'unknown' && lmp !== 'Unknown') {
+      if (lmp && lmpStatus !== 'unknown' && lmp !== 'unknown' && lmp !== 'Unknown' && firstVisitDate) {
         var lmpDate = parseDateValue(lmp);
-        var visitDate = parseDateValue(first.visitDate || first.visit_date || first.timestamp || first.createdAt);
-        if (lmpDate && visitDate) {
-          var days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+        if (lmpDate && firstVisitDate) {
+          var days = Math.floor((firstVisitDate.getTime() - lmpDate.getTime()) / 86400000);
           if (days >= 0) return days < EARLY_ANC_MAX_DAYS;
         }
       }
       var gaWeeks = parseGestationalAgeWeeks(first);
+      if (gaWeeks == null && first.manualGestationalAge != null) {
+        gaWeeks = parseFloat(first.manualGestationalAge);
+      }
       if (gaWeeks != null) return gaWeeks < EARLY_ANC_MAX_WEEKS;
       return false;
     }
@@ -1495,6 +1556,13 @@
 
           var immCare = patient.immediateNewbornCare ? patient.immediateNewbornCare.data : null;
           if (immCare && isAffirmative(immCare.gasping_or_no_breathing)) m.resuscitated++;
+
+          var nbOutcome = getNewbornOutcomeForPatient(patient);
+          if (nbOutcome) {
+            if (nbOutcome === 'alive') m.newbornOutcomeAlive++;
+            else if (nbOutcome === 'stillbirth') m.newbornOutcomeStillbirth++;
+            else if (nbOutcome === 'neonatal_death') m.newbornOutcomeNeonatalDeath++;
+          }
         }
 
         // PNC timing & danger signs
@@ -1552,10 +1620,6 @@
             if (matOutcome === 'alive') m.maternalOutcomeAlive++;
             else if (matOutcome === 'dead_obstetric') m.maternalOutcomeDeadObstetric++;
             else if (matOutcome === 'dead_other') m.maternalOutcomeDeadOther++;
-            var nbOutcome = normalizeNewbornOutcomeFromPnc(latestPnc);
-            if (nbOutcome === 'alive') m.newbornOutcomeAlive++;
-            else if (nbOutcome === 'stillbirth') m.newbornOutcomeStillbirth++;
-            else if (nbOutcome === 'neonatal_death') m.newbornOutcomeNeonatalDeath++;
             if (isPphFromLatestPncVisit(latestPnc)) m.pphCases++;
           }
         }
