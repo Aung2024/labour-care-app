@@ -655,20 +655,33 @@
       return String(name || '').toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
     }
 
+    var VACCINE_ID_ALIASES = {
+      hep_b_birth: 'hepb',
+      hepatitis_b: 'hepb',
+      hepatitis_b_birth: 'hepb'
+    };
+
+    function resolveVaccineId(record) {
+      var id = String(record && record.vaccineId || '').trim();
+      if (id && VACCINES[id]) return id;
+      if (id && VACCINE_ID_ALIASES[id]) return VACCINE_ID_ALIASES[id];
+      var normalized = normalizeName(record && record.vaccineName);
+      if (normalized) {
+        Object.keys(VACCINES).forEach(function (key) {
+          if (normalizeName(VACCINES[key].name) === normalized) id = key;
+        });
+      }
+      return id && VACCINES[id] ? id : '';
+    }
+
     function buildRecordMap() {
       var map = {};
       Object.keys(VACCINES).forEach(function (id) {
         map[id] = [];
       });
       vaccineRecords.forEach(function (record) {
-        var id = record.vaccineId || '';
-        if (!id) {
-          var normalized = normalizeName(record.vaccineName);
-          Object.keys(VACCINES).forEach(function (key) {
-            if (normalizeName(VACCINES[key].name) === normalized) id = key;
-          });
-        }
-        if (!map[id]) map[id] = [];
+        var id = resolveVaccineId(record);
+        if (!id) return;
         map[id].push(record);
       });
       Object.keys(map).forEach(function (id) {

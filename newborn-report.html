@@ -820,12 +820,61 @@
       return rows;
     }
 
+    function isAnchorOnlyNewbornVisit(visit) {
+      if (!visit) return true;
+      var substantiveFields = [
+        'body_weight_gram', 'current_weight_gram', 'temperature', 'heart_rate',
+        'respiration_rate', 'clinical_notes', 'gender', 'mode_of_delivery',
+        'birthplace', 'difficult_breathing', 'feeding_type', 'feeding_method',
+        'exclusive_breastfeeding_on_demand', 'kmc_hours_per_day', 'eye_care_status'
+      ];
+      return !substantiveFields.some(function (key) {
+        var val = visit[key];
+        return val != null && val !== '';
+      });
+    }
+
+    function newbornVisitRichnessScore(visit) {
+      if (!visit) return 0;
+      return Object.keys(visit).filter(function (key) {
+        var val = visit[key];
+        return val != null && val !== '' && typeof val !== 'object';
+      }).length;
+    }
+
+    function visitHadPotentialKmc(visit) {
+      if (!visit) return false;
+      if (visit.potential_kmc) return true;
+      if (Array.isArray(visit.kmc_eligible_reasons) && visit.kmc_eligible_reasons.length) return true;
+      if (Array.isArray(visit.kmc_babies)) {
+        return visit.kmc_babies.some(function (baby) {
+          return baby.potential_kmc || (baby.kmc_eligible_reasons || []).length;
+        });
+      }
+      return false;
+    }
+
     function getReportNewbornVisitRows() {
-      return (newbornCareVisits || []).slice().sort(function (a, b) {
+      var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
         const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
         const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
         if (av !== bv) return av - bv;
         return String(a.visitDate || a.visit_date || a.birth_time || '').localeCompare(String(b.visitDate || b.visit_date || b.birth_time || ''));
+      });
+      var filtered = sorted.filter(function (v) { return !isAnchorOnlyNewbornVisit(v); });
+      if (!filtered.length && sorted.length) {
+        filtered = [sorted[sorted.length - 1]];
+      }
+      var byVisit = {};
+      filtered.forEach(function (v) {
+        var n = parseInt(v.visit_number || v.visitNumber, 10) || 1;
+        var existing = byVisit[n];
+        if (!existing || newbornVisitRichnessScore(v) > newbornVisitRichnessScore(existing)) {
+          byVisit[n] = v;
+        }
+      });
+      return Object.keys(byVisit).map(function (n) { return parseInt(n, 10); }).sort(function (a, b) { return a - b; }).map(function (n) {
+        return byVisit[n];
       });
     }
 
@@ -839,7 +888,7 @@
         latestWithBabyKmc.kmc_babies.forEach(function (baby) {
           const babyIndex = parseInt(baby.babyIndex || baby.baby_index, 10) || 1;
           const outcome = KmcUtils.getCompletionOutcome({ babyIndex: babyIndex, kmcActions: kmcActions });
-          const showRow = baby.potential_kmc || (baby.kmc_eligible_reasons || []).length || baby.kmc_selected;
+          const showRow = baby.potential_kmc || (baby.kmc_eligible_reasons || []).length;
           if (!showRow) return;
           rowsHtml += '<tr id="kmc-report-baby-' + babyIndex + '">' +
             '<td>' + escapeHtml(baby.babyName || ('Baby ' + babyIndex)) + '</td>' +
@@ -861,9 +910,10 @@
         return html;
       }
       const latestDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
-      const hasKmcStory = latestDecision.kmc_selected ||
+      const hasKmcStory = latestDecision.potential_kmc ||
         (latestDecision.kmc_eligible_reasons || []).length ||
-        latestDecision.potential_kmc;
+        latestDecision.kmc_selected === 'yes' ||
+        newbornCareVisits.some(function (v) { return visitHadPotentialKmc(v); });
       if (!hasKmcStory) return '';
 
       const reasonSet = new Set();
@@ -879,10 +929,10 @@
       if (reasons.length) {
         html += '<p><strong>KMC reason:</strong> ' + escapeHtml(KmcUtils.reasonLabels(reasons, getReportLang()).join(', ')) + '</p>';
       }
-      if (latestDecision.kmc_selected) {
+      if (latestDecision.kmc_selected === 'yes') {
         html += '<p><strong>KMC Decision:</strong> ' + escapeHtml(String(latestDecision.kmc_selected).toUpperCase()) + '</p>';
       }
-      if (latestDecision.kmc_selected === 'no') {
+      if (latestDecision.kmc_selected === 'no' && visitHadPotentialKmc(latestDecision)) {
         html += '<p><strong>Reason category:</strong> ' + escapeHtml(latestDecision.kmc_no_category || t('notRecorded')) + '</p>';
         html += '<p><strong>Reason:</strong> ' + escapeHtml(latestDecision.kmc_no_reason || t('notRecorded')) + '</p>';
       }
@@ -910,7 +960,9 @@
       if (visit.feeding_type) html += '<p><strong>Feeding Type:</strong> ' + escapeHtml(visit.feeding_type) + '</p>';
       if (visit.feeding_method) html += '<p><strong>Feeding Method:</strong> ' + escapeHtml(visit.feeding_method) + '</p>';
       if (visit.exclusive_breastfeeding_on_demand) html += '<p><strong>' + t('exclusiveBreastfeeding') + '</strong> ' + t('yes') + '</p>';
-      if (visit.kmc_selected) html += '<p><strong>KMC:</strong> ' + escapeHtml(String(visit.kmc_selected).toUpperCase()) + '</p>';
+      if (visitHadPotentialKmc(visit) && visit.kmc_selected) {
+        html += '<p><strong>KMC:</strong> ' + escapeHtml(String(visit.kmc_selected).toUpperCase()) + '</p>';
+      }
       if (visit.clinical_notes) html += '<p><strong>' + t('clinicalNotes') + '</strong> ' + escapeHtml(visit.clinical_notes) + '</p>';
       html += '</div>';
       return html;

@@ -1963,19 +1963,35 @@
     async function fetchBabyInfoForPatient(db, patientId) {
       const ref = db.collection('patients').doc(patientId).collection('newborn_care');
       const snap = await ref.get();
-      let visitCount = 0;
-      let maxVisitNumber = 0;
-      let kmcYes = false;
+      var visitNumbers = new Set();
+      var maxVisitNumber = 0;
+      var kmcYes = false;
       if (snap && typeof snap.forEach === 'function' && !snap.empty) {
         snap.forEach(function (doc) {
           const data = doc.data() || {};
+          if (isAnchorOnlyNewbornVisitForList(data)) return;
           const visitNum = parseInt(data.visit_number || data.visitNumber, 10) || 1;
+          visitNumbers.add(visitNum);
           maxVisitNumber = Math.max(maxVisitNumber, visitNum);
           if (String(data.kmc_selected || '').toLowerCase() === 'yes') kmcYes = true;
         });
-        visitCount = Math.max(snap.size, maxVisitNumber);
       }
+      var visitCount = Math.max(visitNumbers.size, maxVisitNumber);
       return { visitCount: visitCount, kmcYes: kmcYes, loading: false };
+    }
+
+    function isAnchorOnlyNewbornVisitForList(visit) {
+      if (!visit) return true;
+      var substantiveFields = [
+        'body_weight_gram', 'current_weight_gram', 'temperature', 'heart_rate',
+        'respiration_rate', 'clinical_notes', 'gender', 'mode_of_delivery',
+        'birthplace', 'difficult_breathing', 'feeding_type', 'feeding_method',
+        'exclusive_breastfeeding_on_demand', 'kmc_hours_per_day', 'eye_care_status'
+      ];
+      return !substantiveFields.some(function (key) {
+        var val = visit[key];
+        return val != null && val !== '';
+      });
     }
 
     async function loadBabyPatientInfo() {
