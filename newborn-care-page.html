@@ -1408,7 +1408,9 @@
       if (!input) return;
       if (anchor.datetimeLocal) {
         input.value = anchor.datetimeLocal;
-        if (anchor.locked) deliveryAnchorLocked = true;
+        if (anchor.locked || anchor.source === 'patient_record' || anchor.source === 'linked_baby') {
+          deliveryAnchorLocked = true;
+        }
       }
       applyBirthTimeLock();
       updateNewbornVisitSchedule();
@@ -1908,10 +1910,13 @@
     function applyNewVisitShell(nextVisitNumber) {
       document.getElementById('visit_number').value = nextVisitNumber;
       clearVisitSpecificFormFields();
+      const visit1Data = getVisit1Data() || {};
+      const visit1HadPotentialKmc = !!(visit1Data.potential_kmc ||
+        (Array.isArray(visit1Data.kmc_eligible_reasons) && visit1Data.kmc_eligible_reasons.length));
       newbornBabyStates = newbornBabyStates.map(function (baby) {
         const priorKmc = String(baby.kmc_selected || '').toLowerCase();
         const keepKmcYes = priorKmc === 'yes';
-        const keepKmcNo = priorKmc === 'no';
+        const keepKmcNo = priorKmc === 'no' && visit1HadPotentialKmc;
         return Object.assign({}, baby, {
           current_weight_gram: '',
           temperature: '',
@@ -2024,8 +2029,32 @@
       const pregnancyType = document.getElementById('pregnancy_type');
       if (pregnancyType) pregnancyType.value = 'single';
       activeBabyIndex = 1;
+      if (baby.birthTime) {
+        deliveryAnchorLocked = true;
+        const birthTimeEl = document.getElementById('birth_time');
+        if (birthTimeEl) birthTimeEl.value = baby.birthTime;
+      }
       initBabyStatesFromBabies([baby], true);
       updateTwinTabBarVisibility();
+      applyBirthTimeLock();
+    }
+
+    function hadPriorPotentialKmcDecision(decision) {
+      if (!decision) return false;
+      if (decision.potential_kmc) return true;
+      if (Array.isArray(decision.kmc_eligible_reasons) && decision.kmc_eligible_reasons.length) return true;
+      if (String(decision.kmc_selected || '').toLowerCase() === 'yes') return true;
+      if (String(decision.kmc_selected || '').toLowerCase() === 'no') {
+        return !!(decision.potential_kmc || (decision.kmc_eligible_reasons || []).length);
+      }
+      return false;
+    }
+
+    function shouldLockNewbornIdentityFields() {
+      const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
+      if (hasSavedFirstNewbornVisit() && !isEditMode) return true;
+      if (deliveryAnchorLocked && visitNum === 1 && document.getElementById('birth_time')?.value) return true;
+      return false;
     }
 
     async function waitForCurrentUserOffline(maxMs = 4000) {
@@ -2249,12 +2278,23 @@
         return babyIndex === activeBabyIndex && item.eligible;
       });
       const priorDecision = KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), activeBabyIndex);
-      const shouldShow = eligibleBabies.length > 0 || !!priorDecision;
+      const shouldShow = eligibleBabies.length > 0 || hadPriorPotentialKmcDecision(priorDecision);
       const section = document.getElementById('kmcCareSection');
-      if (section) section.style.display = 'block';
+      if (section) section.style.display = shouldShow ? 'block' : 'none';
       const decisionWrap = document.getElementById('kmcDecisionWrap');
       if (decisionWrap) decisionWrap.style.display = shouldShow ? '' : 'none';
       const alertEl = document.getElementById('kmcEligibilityAlert');
+      if (!shouldShow) {
+        if (alertEl) {
+          alertEl.textContent = '';
+          alertEl.style.display = 'none';
+        }
+        setRadioValue('kmc_selected', null);
+        document.getElementById('kmc_selected_yes').required = false;
+        document.getElementById('kmc_selected_no').required = false;
+        toggleKmcDecisionFields();
+        return currentKmcEvaluation;
+      }
       if (alertEl && eligibleBabies.length) {
         if (hasSavedFirstNewbornVisit() && getSelectedKmcValue() === 'yes') {
           alertEl.textContent = '';
@@ -2270,26 +2310,12 @@
             ? 'KMC လုပ်ရမည်။ (' + reasonText + ')။ KMC Yes/No ရွေးပါ။'
             : babyLabel + ' — KMC required (' + reasonText + '). Please select KMC Yes/No.';
         }
-      } else if (alertEl && priorDecision) {
-        alertEl.textContent = currentLanguage === 'mm'
-          ? 'ဤကလေးအတွက် ယခင် KMC ဆုံးဖြတ်ချက် ရှိပြီးပါပြီ။'
-          : 'Previous KMC decision found for this baby.';
-      } else if (alertEl && currentKmcEvaluation && (birthTime || weight)) {
-        alertEl.textContent = currentLanguage === 'mm'
-          ? 'ဤကလေးသည် လက်ရှိ LBW <2000g သို့မဟုတ် EDD ထက် ၃ ပတ်စောက် မွေးဖွားခြင်း မဟုတ်ပါ။'
-          : 'KMC eligibility checked: this baby is not currently LBW <2000g or documented as born at least 3 weeks before EDD.';
       } else if (alertEl) {
-        alertEl.textContent = currentLanguage === 'mm'
-          ? 'KMC အရည်အချက် — မွေးချိန်နှင့် ကိုယ်အလေးချိန် ထည့်ပါ။'
-          : 'KMC eligibility: enter birth time and body weight. If weight is under 2000g or birth is at least 3 weeks before EDD, KMC Yes/No will appear.';
+        alertEl.textContent = '';
+        alertEl.style.display = 'none';
       }
-      if (shouldShow) {
-        document.getElementById('kmc_selected_yes').required = true;
-        document.getElementById('kmc_selected_no').required = true;
-      } else {
-        document.getElementById('kmc_selected_yes').required = false;
-        document.getElementById('kmc_selected_no').required = false;
-      }
+      document.getElementById('kmc_selected_yes').required = true;
+      document.getElementById('kmc_selected_no').required = true;
       toggleKmcDecisionFields();
       return currentKmcEvaluation;
     }
@@ -2415,7 +2441,7 @@
         const birthTimeEl = document.getElementById('birth_time');
         if (birthTimeEl && !birthTimeEl.value) birthTimeEl.value = source.birth_time;
       }
-      applyIdentityFieldLock(false);
+      applyIdentityFieldLock(shouldLockNewbornIdentityFields());
       updateKmcDecisionLabel();
     }
 
@@ -2576,7 +2602,7 @@
       initBabyStatesFromBabies(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, hasSavedFirstNewbornVisit() && !isEditMode);
       mergeKmcBabiesIntoStates(data.kmc_babies);
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
-      applyIdentityFieldLock(hasSavedFirstNewbornVisit() && !isEditMode);
+      applyIdentityFieldLock(shouldLockNewbornIdentityFields());
       updateKmcDecisionLabel();
     }
 
@@ -2678,7 +2704,7 @@
         }
 
         applyBirthTimeLock();
-        applyIdentityFieldLock(hasVisit1 && !isEditMode);
+        applyIdentityFieldLock(shouldLockNewbornIdentityFields());
         updateCurrentWeightVisibility();
         updateNewbornVisitSchedule();
         checkTemperatureAlert();

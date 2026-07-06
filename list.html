@@ -150,7 +150,7 @@
       color: white;
     }
 
-    /* Recent Patients Section */
+    /* Section titles */
     .section-title {
       font-size: 1.3rem;
       font-weight: 600;
@@ -782,7 +782,65 @@
     /* Loading State */
     .loading-container {
       text-align: center;
-      padding: 4rem 2rem;
+      padding: 3rem 1.5rem;
+    }
+
+    .list-load-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+
+    .list-load-mascot {
+      font-size: 2.75rem;
+      line-height: 1;
+      animation: listLoadBounce 1.1s ease-in-out infinite;
+    }
+
+    @keyframes listLoadBounce {
+      0%, 100% { transform: translateY(0) rotate(-4deg); }
+      50% { transform: translateY(-10px) rotate(4deg); }
+    }
+
+    .list-load-dots {
+      display: inline-flex;
+      gap: 0.45rem;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .list-load-dots span {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: #fbbf24;
+      animation: listLoadDot 1.2s ease-in-out infinite;
+    }
+
+    .list-load-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .list-load-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes listLoadDot {
+      0%, 80%, 100% { transform: scale(0.65); opacity: 0.45; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    .list-load-message {
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.45;
+      min-height: 2.9rem;
+      transition: opacity 0.25s ease;
+    }
+
+    .list-load-sub {
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 0.88rem;
+      margin: 0;
     }
 
     .spinner-border {
@@ -1067,16 +1125,6 @@
       </div>
     </div>
 
-    <!-- Recent Patients Section -->
-    <div id="recentPatientsSection" style="display: none;">
-      <h3 class="section-title">
-        <i class="fas fa-clock"></i> <span class="lang-text" data-en="Recently Viewed Patients" data-mm="မကြာသေးမီ ကြည့်ရှုခဲ့သော လူနာများ">Recently Viewed Patients</span>
-      </h3>
-      <div id="recentPatientsGrid" class="patients-grid mb-4">
-        <!-- Recent patients will be populated here -->
-      </div>
-    </div>
-
     <!-- All Patients Section -->
     <h3 class="section-title view-section-header">
       <div class="view-toggle">
@@ -1106,10 +1154,12 @@
 
     <!-- Loading State -->
     <div id="loadingContainer" class="loading-container">
-      <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading...</span>
+      <div class="list-load-stage" aria-live="polite" aria-busy="true">
+        <div class="list-load-mascot" id="listLoadMascot" aria-hidden="true">🩺</div>
+        <div class="list-load-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="list-load-message" id="loadingPatientsText">Rounding up your patients...</div>
+        <p class="list-load-sub lang-text" data-en="Smart chart, warm hearts — almost there." data-mm="မှတ်တမ်းများ စုစည်းနေသည် — ခဏလောက်ပါ။">Smart chart, warm hearts — almost there.</p>
       </div>
-      <p class="mt-3 text-white" id="loadingPatientsText">Loading patients...</p>
     </div>
 
     <!-- Patients Grid -->
@@ -1186,7 +1236,7 @@
     let currentPatientTypeFilter = 'mother';
     let suggestedPatientTypeFilter = null;
     let currentStatusFilter = 'all';
-    let recentPatients = [];
+    let listLoadMessageTimer = null;
     let currentView = 'list';
     let selectedMidwifeId = 'all'; // For Super Admin midwife filter
     let allMidwives = []; // Store all midwives for Super Admin
@@ -1458,16 +1508,45 @@
         document.getElementById('midwifeFilterContainer').style.display = 'none';
       }
       
-      // Load recent patients
-      loadRecentPatients();
-      
       // Load all patients
       await loadPatients();
     });
 
+    function startListLoadingMessages() {
+      const messages = currentLanguage === 'mm'
+        ? ['လူနာစာရင်း စုစည်းနေသည်... 👶', 'မှတ်တမ်းများ ရှာဖွေနေသည်... 🔍', 'နောက်ဆုံးအချက်အလက် စစ်ဆေးနေသည်... ✨', 'ခဏစောင့်ပါ — မကြာပါဘူး... 💚']
+        : ['Rounding up your patients... 🩺', 'Checking who needs a cuddle... 👶', 'Polishing the patient list... ✨', 'Almost there — stethoscope ready... 💚'];
+      const mascots = ['🩺', '👶', '💚', '✨'];
+      let index = 0;
+      const textEl = document.getElementById('loadingPatientsText');
+      const mascotEl = document.getElementById('listLoadMascot');
+      if (listLoadMessageTimer) clearInterval(listLoadMessageTimer);
+      if (textEl) textEl.textContent = messages[0];
+      if (mascotEl) mascotEl.textContent = mascots[0];
+      listLoadMessageTimer = setInterval(function () {
+        index = (index + 1) % messages.length;
+        if (textEl) {
+          textEl.style.opacity = '0';
+          setTimeout(function () {
+            textEl.textContent = messages[index];
+            textEl.style.opacity = '1';
+          }, 120);
+        }
+        if (mascotEl) mascotEl.textContent = mascots[index % mascots.length];
+      }, 1400);
+    }
+
+    function stopListLoadingMessages() {
+      if (listLoadMessageTimer) {
+        clearInterval(listLoadMessageTimer);
+        listLoadMessageTimer = null;
+      }
+    }
+
     // Load patients from Firestore with optimization
     async function loadPatients() {
       try {
+        startListLoadingMessages();
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
         const isIOS = isAppleMobileOrTablet();
@@ -1476,6 +1555,7 @@
         if (typeof navigator !== 'undefined' && navigator.onLine === false && window.LabourCareOffline) {
           const scope = userRole === 'Regional Officer' ? currentUserRegion : currentUserTownship;
           allPatients = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, scope);
+          stopListLoadingMessages();
           document.getElementById('loadingContainer').style.display = 'none';
           if (allPatients.length === 0) {
             document.getElementById('emptyState').style.display = 'block';
@@ -1663,6 +1743,7 @@
           updateFilterIndicator();
         }
         
+        stopListLoadingMessages();
         document.getElementById('loadingContainer').style.display = 'none';
         
         if (allPatients.length === 0) {
@@ -1686,16 +1767,23 @@
             : listT('noPatientsRegistered');
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
-          console.log('✅ Displaying patients with default filters');
-          await reconcileRegisteredPatientStatuses();
-          await reconcileLinkedMotherParityFromBabies();
-          await loadPatientTrackingStatuses();
+          console.log('✅ Displaying patients immediately; enriching in background');
           updateSectionTitle();
           filterPatients();
+          reconcileRegisteredPatientStatuses()
+            .then(function () { return reconcileLinkedMotherParityFromBabies(); })
+            .then(function () {
+              filterPatients();
+              return loadPatientTrackingStatuses();
+            })
+            .catch(function (err) {
+              console.warn('Background patient enrichment failed', err);
+            });
         }
         
       } catch (error) {
         console.error('Error loading patients:', error);
+        stopListLoadingMessages();
         document.getElementById('loadingContainer').style.display = 'none';
         
         // Show user-friendly error message
@@ -1876,13 +1964,16 @@
       const ref = db.collection('patients').doc(patientId).collection('newborn_care');
       const snap = await ref.get();
       let visitCount = 0;
+      let maxVisitNumber = 0;
       let kmcYes = false;
       if (snap && typeof snap.forEach === 'function' && !snap.empty) {
-        visitCount = snap.size;
         snap.forEach(function (doc) {
           const data = doc.data() || {};
+          const visitNum = parseInt(data.visit_number || data.visitNumber, 10) || 1;
+          maxVisitNumber = Math.max(maxVisitNumber, visitNum);
           if (String(data.kmc_selected || '').toLowerCase() === 'yes') kmcYes = true;
         });
+        visitCount = Math.max(snap.size, maxVisitNumber);
       }
       return { visitCount: visitCount, kmcYes: kmcYes, loading: false };
     }
@@ -1990,7 +2081,6 @@
         chip.classList.toggle('active', chip.getAttribute('data-patient-type-filter') === currentPatientTypeFilter);
       });
       updateSectionTitle();
-      displayRecentPatients();
       filterPatients();
       if (currentPatientTypeFilter === 'baby') {
         loadBabyPatientInfo();
@@ -2620,9 +2710,6 @@
       sessionStorage.setItem('selectedPatientId', patient.id);
       sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
       
-      // Add to recent patients
-      addToRecentPatients(patient);
-      
       // Redirect: OG doctors to LCG-only hub if email ends with @test.com
       try {
         const user = firebase && firebase.auth ? firebase.auth().currentUser : null;
@@ -2774,64 +2861,6 @@
     });
 
     updateViewToggleUI();
-
-    // Load recent patients from localStorage
-    function loadRecentPatients() {
-      const recent = localStorage.getItem('recentPatients');
-      if (recent) {
-        recentPatients = JSON.parse(recent);
-        
-        if (recentPatients.length > 0) {
-          displayRecentPatients();
-        }
-      }
-    }
-
-    // Display recent patients
-    function displayRecentPatients() {
-      const section = document.getElementById('recentPatientsSection');
-      const grid = document.getElementById('recentPatientsGrid');
-
-      if (currentPatientTypeFilter === 'baby') {
-        if (section) section.style.display = 'none';
-        if (grid) grid.innerHTML = '';
-        return;
-      }
-      
-      grid.innerHTML = '';
-      
-      const recentToShow = recentPatients
-        .map(function (patientId) { return allPatients.find(function (p) { return p.id === patientId; }); })
-        .filter(function (patient) { return patient && patientTypeOf(patient) === currentPatientTypeFilter; })
-        .slice(0, 3);
-      
-      recentToShow.forEach(patient => {
-        const card = createPatientCard(patient);
-        grid.appendChild(card);
-      });
-      
-      if (recentToShow.length > 0) {
-        section.style.display = 'block';
-      } else {
-        section.style.display = 'none';
-      }
-    }
-
-    // Add patient to recent patients
-    function addToRecentPatients(patient) {
-      if (patient && patientTypeOf(patient) === 'baby') return;
-      // Remove if already exists
-      recentPatients = recentPatients.filter(id => id !== patient.id);
-      
-      // Add to beginning
-      recentPatients.unshift(patient.id);
-      
-      // Keep only last 5
-      recentPatients = recentPatients.slice(0, 5);
-      
-      // Save to localStorage
-      localStorage.setItem('recentPatients', JSON.stringify(recentPatients));
-    }
 
     // Load all midwives for Super Admin filter
     async function loadMidwives() {

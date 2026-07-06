@@ -133,6 +133,26 @@
     return null;
   }
 
+  async function fetchLinkedBabyBirthTime(db, patientId) {
+    try {
+      var doc = await db.collection('patients').doc(patientId).get();
+      if (!doc.exists) return null;
+      var data = doc.data() || {};
+      var babyIds = Array.isArray(data.baby_patient_ids) ? data.baby_patient_ids : [];
+      for (var i = 0; i < babyIds.length; i++) {
+        var babyDoc = await db.collection('patients').doc(babyIds[i]).get();
+        if (!babyDoc.exists) continue;
+        var baby = babyDoc.data() || {};
+        if (baby.birth_time) return datetimeLocalFromStored(baby.birth_time);
+        if (baby.date_of_birth) {
+          var dateOnly = String(baby.date_of_birth).split('T')[0];
+          if (dateOnly) return dateOnly + 'T00:00';
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
   async function fetchPatientBirthFallback(db, patientId) {
     try {
       var doc = await db.collection('patients').doc(patientId).get();
@@ -180,10 +200,18 @@
       }
     }
 
+    var linkedBabyBirth = await fetchLinkedBabyBirthTime(db, patientId);
+    if (linkedBabyBirth) {
+      result.datetimeLocal = linkedBabyBirth;
+      result.locked = true;
+      result.source = 'linked_baby';
+      return result;
+    }
+
     var patientBirth = await fetchPatientBirthFallback(db, patientId);
     if (patientBirth) {
       result.datetimeLocal = patientBirth;
-      result.locked = false;
+      result.locked = true;
       result.source = 'patient_record';
       return result;
     }
