@@ -1,44 +1,51 @@
-# User Manual Screenshot Checklist
+# User Manual Screenshots
 
-Add real screenshots to this folder using the exact filenames below. The manual page at `user-manual.html` will automatically show the screenshot when the file exists; until then it shows a placeholder box.
+Mobile viewport (iPhone 13). Filenames match `m-MNCH_Care_User_Manual.docx` placeholders.
 
-Recommended screenshot style:
+Capture:
+```bash
+npm install --prefix scripts playwright
+npx --prefix scripts playwright install chromium
+MANUAL_EMAIL=you@example.com MANUAL_PASSWORD=secret node scripts/capture-manual-screenshots.mjs
+```
 
-- Use phone/mobile vertical screenshots first. Recommended size is around 390×844 or 430×932.
-- Prefer Myanmar UI screenshots unless English is specifically needed.
-- Use one consistent demo patient and demo midwife account.
-- Avoid real patient names, phone numbers, addresses, or clinical data.
-- Crop only if it improves readability; keep buttons and headings visible.
-- The placeholders in `user-manual.html` are vertical phone-shaped boxes. Wide desktop screenshots should only be used for reports if a mobile screenshot cannot explain the screen clearly.
+Long forms use **two mobile screenshots** (top + scrolled section), e.g. ANC, PNC, Newborn, Registration alerts.
 
-## Required Files
+## Files
 
-1. `01-login.png` — Login screen
-2. `02-registration.png` — Account registration form
-3. `03-registration-success.png` — Account approval / waiting screen
-4. `03-provider-consent.png` — Provider consent screen
-5. `04-home.png` — Home screen
-6. `05-patient-registration.png` — Patient registration form
-7. `06-patient-consent.png` — Patient consent screen
-8. `07-patient-list.png` — Patient list and filters
-9. `08-patient-care-hub.png` — Patient Care Hub
-10. `09-anc-hub.png` — ANC hub
-11. `10-anc-form.png` — ANC visit form
-12. `11-anc-report.png` — ANC report
-13. `12-anc-tests.png` — ANC tests page
-14. `13-labour-setup.png` — Labour setup
-15. `14-lcg-entry.png` — LCG entry page
-16. `15-lcg-summary.png` — LCG summary / chart view
-17. `16-transfer.png` — Transfer / referral screen
-18. `17-newborn-hub.png` — Newborn care hub
-19. `18-newborn-form.png` — Immediate newborn care form
-20. `19-newborn-report.png` — Newborn report
-21. `20-pnc-hub.png` — PNC hub
-22. `21-pnc-form.png` — PNC visit form
-23. `22-pnc-report.png` — PNC report
-24. `23-vaccine-home.png` — Immunization hub
-25. `24-vaccine-record.png` — Vaccine record form
-26. `25-overall-report.png` — Overall patient report
-27. `26-print-report.png` — Print / PDF report view
-28. `27-offline-sync.png` — Offline banner / sync button
-29. `28-home-cards.png` — Home screen showing extra cards such as Dashboard, HRT, CME, Transfers, and Scoreboard
+- `01-login.png` — ok
+- `02-registration.png` — ok
+- `03-registration-success.png` — ok
+- `03-provider-consent.png` — ok_login_flow
+- `04-home.png` — ok
+- `28-home-cards.png` — ok
+- `05-patient-registration.png` — ok
+- `05b-registration-alerts.png` — ok
+- `06-patient-consent.png` — ok
+- `07-patient-list.png` — ok
+- `08-patient-care-hub.png` — ok
+- `09-anc-hub.png` — ok
+- `10-anc-form-top.png` — ok
+- `10-anc-form-vitals.png` — ok
+- `10-anc-form.png` — skipped_legacy
+- `11-anc-report.png` — ok
+- `12-anc-tests.png` — ok
+- `13-labour-setup.png` — ok
+- `14-lcg-entry.png` — ok
+- `15-lcg-summary.png` — ok
+- `16-transfer.png` — ok
+- `17-newborn-hub.png` — ok
+- `18-newborn-form.png` — ok
+- `18-newborn-identity.png` — ok
+- `18-newborn-vitals-kmc.png` — ok
+- `19-newborn-report.png` — ok
+- `20-pnc-hub.png` — ok
+- `21-pnc-form-top.png` — ok
+- `21-pnc-form-exam.png` — ok
+- `21-pnc-form.png` — skipped_legacy
+- `22-pnc-report.png` — ok
+- `23-vaccine-home.png` — ok
+- `24-vaccine-record.png` — ok
+- `25-overall-report.png` — ok
+- `26-print-report.png` — ok
+- `27-offline-sync.png` — ok
