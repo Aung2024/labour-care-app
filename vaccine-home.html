@@ -453,9 +453,143 @@
       .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
 
+    .viber-btn {
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 12px;
+      padding: 0.55rem 0.72rem;
+      background: rgba(115, 96, 242, 0.92);
+      color: white;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      min-height: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+
+    .viber-btn:hover:not(:disabled) { background: rgba(98, 78, 220, 0.98); color: white; }
+    .viber-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .viber-btn.loading { opacity: 0.75; pointer-events: none; }
+
+    .viber-share-card-host {
+      position: fixed;
+      left: -10000px;
+      top: 0;
+      width: 820px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .viber-share-card {
+      background: #ffffff;
+      color: #111827;
+      font-family: Inter, "Pyidaungsu", "Myanmar Text", system-ui, sans-serif;
+      padding: 1.25rem;
+      border: 1px solid #d1d5db;
+    }
+
+    .vsc-header {
+      border-bottom: 3px solid #10b981;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .vsc-title {
+      font-size: 1.35rem;
+      font-weight: 900;
+      color: #059669;
+    }
+
+    .vsc-subtitle {
+      margin-top: 0.2rem;
+      font-size: 0.82rem;
+      color: #64748b;
+      font-weight: 700;
+    }
+
+    .vsc-baby {
+      display: grid;
+      gap: 0.35rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .vsc-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .vsc-pill {
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.78rem;
+      font-weight: 800;
+      background: #f1f5f9;
+      color: #334155;
+    }
+
+    .vsc-pill.done { background: #d1fae5; color: #065f46; }
+    .vsc-pill.due { background: #fef3c7; color: #92400e; }
+    .vsc-pill.late { background: #fee2e2; color: #991b1b; }
+
+    .vsc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .vsc-table th,
+    .vsc-table td {
+      border: 1px solid #e2e8f0;
+      padding: 0.35rem 0.4rem;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .vsc-table th {
+      background: #f8fafc;
+      font-weight: 800;
+      color: #334155;
+    }
+
+    .vsc-records-title {
+      font-size: 0.88rem;
+      font-weight: 900;
+      margin: 0 0 0.45rem;
+      color: #111827;
+    }
+
+    .vsc-record {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.78rem;
+    }
+
+    .vsc-record-name { font-weight: 800; }
+    .vsc-record-date { color: #64748b; font-weight: 600; }
+
+    .vsc-footer {
+      margin-top: 0.85rem;
+      padding-top: 0.65rem;
+      border-top: 1px solid #e2e8f0;
+      font-size: 0.72rem;
+      color: #64748b;
+      font-weight: 600;
+    }
+
     @media (max-width: 560px) {
       .header-content { align-items: flex-start; }
-      .header-btn span { display: none; }
+      .header-btn span,
+      .viber-btn span { display: none; }
       .language-btn { padding: 0.45rem 0.55rem; }
       .main-container { padding-top: 0.85rem; }
       .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -481,6 +615,11 @@
           <button type="button" class="language-btn" data-lang="en">ENG</button>
           <button type="button" class="language-btn" data-lang="mm">MM</button>
         </div>
+        <button type="button" id="sendViberBtn" class="viber-btn" onclick="sendViberRecord()" disabled
+          title="Mother phone number required">
+          <i class="fab fa-viber"></i>
+          <span class="lang-text" data-en="Send Viber" data-mm="Viber ပို့ရန်">Send Viber</span>
+        </button>
         <a href="#" class="header-btn" onclick="goBack(); return false;">
           <i class="fas fa-arrow-left"></i>
           <span class="lang-text" data-en="Back" data-mm="နောက်သို့">Back</span>
@@ -553,6 +692,11 @@
     </section>
   </main>
 
+  <div id="vaccineShareCardHost" class="viber-share-card-host" aria-hidden="true">
+    <div id="vaccineShareCard" class="viber-share-card"></div>
+  </div>
+
+  <script src="js/vendor/html2canvas.min.js"></script>
   <script src="js/lang-apply.js"></script>
   <script>
     var patientId = new URLSearchParams(window.location.search).get('patient');
@@ -561,6 +705,8 @@
     var babyName = '';
     var babyBirthDate = null;
     var vaccineRecords = [];
+    var motherPhone = '';
+    var motherName = '';
 
     var VACCINES = {
       bcg: { name: 'BCG', mm: 'ဘီစီဂျီ', type: 'injection' },
@@ -597,8 +743,28 @@
     ];
 
     var UI = {
-      en: { noPatient: 'No patient selected.', missingBirth: 'Birth date not recorded', noRecords: 'No vaccine records saved yet.', given: 'Given', pending: 'Pending', dueSoon: 'Due soon', overdue: 'Overdue', recommended: 'Recommended', actual: 'Actual', days: 'days', months: 'months', years: 'years', other: 'Other' },
-      mm: { noPatient: 'လူနာ မရွေးထားပါ။', missingBirth: 'မွေးရက် မရှိသေးပါ', noRecords: 'ကာကွယ်ဆေး မှတ်တမ်း မရှိသေးပါ။', given: 'ထိုးပြီး', pending: 'မထိုးရသေး', dueSoon: 'ထိုးရန်နီး', overdue: 'ရက်ကျော်', recommended: 'ထိုးရန်ရက်', actual: 'လက်တွေ့', days: 'ရက်', months: 'လ', years: 'နှစ်', other: 'အခြား' }
+      en: {
+        noPatient: 'No patient selected.', missingBirth: 'Birth date not recorded', noRecords: 'No vaccine records saved yet.',
+        given: 'Given', pending: 'Pending', dueSoon: 'Due soon', overdue: 'Overdue', recommended: 'Recommended', actual: 'Actual',
+        days: 'days', months: 'months', years: 'years', other: 'Other',
+        mother: 'Mother', baby: 'Baby', birth: 'Birth', age: 'Age', scheduleItems: 'Schedule items',
+        shareTitle: 'Immunization record', shareText: 'Vaccine record for your baby',
+        noMotherPhone: 'No mother phone number on file. Add phone in patient registration, then try again.',
+        viberFallbackHint: 'Immunization image saved to your device. Viber will open — please attach the saved image in the chat.',
+        shareError: 'Could not create the immunization image. Please try again.',
+        generatingImage: 'Preparing image...', noPhoneTitle: 'Mother phone number required'
+      },
+      mm: {
+        noPatient: 'လူနာ မရွေးထားပါ။', missingBirth: 'မွေးရက် မရှိသေးပါ', noRecords: 'ကာကွယ်ဆေး မှတ်တမ်း မရှိသေးပါ။',
+        given: 'ထိုးပြီး', pending: 'မထိုးရသေး', dueSoon: 'ထိုးရန်နီး', overdue: 'ရက်ကျော်', recommended: 'ထိုးရန်ရက်', actual: 'လက်တွေ့',
+        days: 'ရက်', months: 'လ', years: 'နှစ်', other: 'အခြား',
+        mother: 'မိခင်', baby: 'ကလေး', birth: 'မွေးရက်', age: 'အသက်', scheduleItems: 'အစီအစဉ်',
+        shareTitle: 'ကာကွယ်ဆေးမှတ်တမ်း', shareText: 'သင်၏ကလေး ကာကွယ်ဆေးမှတ်တမ်း',
+        noMotherPhone: 'မိခင် ဖုန်းနံပါတ် မရှိသေးပါ။ လူနာမှတ်ပုံတင်တွင် ဖုန်းထည့်ပြီး ပြန်ကြိုးစားပါ။',
+        viberFallbackHint: 'ကာကွယ်ဆေးပုံကို သင့်ဖုန်းတွင် သိမ်းပြီးပါပြီ။ Viber ဖွင့်လာပါမည် — chat တွင် ပုံကို attach လုပ်ပေးပါ။',
+        shareError: 'ကာကွယ်ဆေးပုံ မပြုလုပ်နိုင်ပါ။ ပြန်ကြိုးစားပါ။',
+        generatingImage: 'ပုံပြင်ဆင်နေသည်...', noPhoneTitle: 'မိခင် ဖုန်းနံပါတ် လိုအပ်သည်'
+      }
     };
 
     function tr(key) {
@@ -760,6 +926,7 @@
       document.getElementById('sumLate').textContent = counts.late;
       document.getElementById('sumTotal').textContent = counts.total;
       renderSavedRecords();
+      updateViberButton();
     }
 
     function renderSavedRecords() {
@@ -787,6 +954,179 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function normalizeViberPhone(raw) {
+      var digits = String(raw || '').replace(/\D/g, '');
+      if (!digits) return '';
+      if (digits.indexOf('959') === 0 && digits.length >= 11) return digits;
+      if (digits.indexOf('95') === 0 && digits.length >= 10) return digits;
+      if (digits.indexOf('09') === 0 && digits.length >= 9) return '95' + digits.slice(1);
+      if (digits.indexOf('9') === 0 && digits.length >= 8) return '95' + digits;
+      return digits;
+    }
+
+    async function resolveMotherContact(db, patient) {
+      patient = patient || {};
+      var phone = patient.phone || patient.phoneNumber || patient.emergency_phone || '';
+      var name = patient.name || patient.patientName || '';
+      if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient)) {
+        name = patient.mother_name || name;
+        if ((!phone || !patient.mother_name) && patient.mother_patient_id) {
+          try {
+            var mdoc = await db.collection('patients').doc(patient.mother_patient_id).get();
+            if (mdoc.exists) {
+              var mother = mdoc.data() || {};
+              if (!phone) phone = mother.phone || mother.phoneNumber || mother.emergency_phone || '';
+              if (!name || name === (patient.name || '')) name = mother.name || mother.patientName || name;
+            }
+          } catch (e) {
+            console.warn('Immunization mother phone lookup', e);
+          }
+        }
+      }
+      motherPhone = String(phone || '').trim();
+      motherName = String(name || '').trim();
+    }
+
+    function updateViberButton() {
+      var btn = document.getElementById('sendViberBtn');
+      if (!btn) return;
+      var hasPhone = !!normalizeViberPhone(motherPhone);
+      btn.disabled = !hasPhone;
+      btn.title = hasPhone ? (tr('shareTitle') + ' — ' + motherPhone) : tr('noPhoneTitle');
+    }
+
+    function buildShareCard() {
+      var recordMap = buildRecordMap();
+      var counts = { done: 0, due: 0, late: 0, total: 0 };
+      var rowsHtml = SCHEDULE.map(function (row) {
+        var dueDate = addDays(babyBirthDate, row.days);
+        var age = currentLanguage === 'mm' ? row.ageMm : row.age;
+        var vaccineLines = row.vaccines.map(function (id) {
+          var s = statusFor(id, dueDate, recordMap);
+          counts.total += 1;
+          if (s.key === 'done') counts.done += 1;
+          if (s.key === 'due') counts.due += 1;
+          if (s.key === 'late') counts.late += 1;
+          return '<div><strong>' + escapeHtml(vaccineLabel(id)) + '</strong> — ' + escapeHtml(s.label) +
+            (s.actual !== '-' ? ' (' + escapeHtml(s.actual) + ')' : '') + '</div>';
+        }).join('');
+        return '<tr>' +
+          '<td>' + escapeHtml(age) + '<br><span style="color:#64748b;font-weight:600;">' + escapeHtml(formatDate(dueDate)) + '</span></td>' +
+          '<td>' + vaccineLines + '</td>' +
+          '</tr>';
+      }).join('');
+
+      var recordsHtml = vaccineRecords.length
+        ? vaccineRecords.map(function (record) {
+          var name = currentLanguage === 'mm'
+            ? (record.vaccineNameMm || record.vaccineName || '-')
+            : (record.vaccineName || record.vaccineNameMm || '-');
+          return '<div class="vsc-record"><div><div class="vsc-record-name">' + escapeHtml(name) + '</div>' +
+            (record.notes ? '<div class="vsc-record-date">' + escapeHtml(record.notes) + '</div>' : '') +
+            '</div><div class="vsc-record-date">' + escapeHtml(formatDate(record.dateGiven)) + '</div></div>';
+        }).join('')
+        : '<div class="vsc-record-date">' + escapeHtml(tr('noRecords')) + '</div>';
+
+      var title = currentLanguage === 'mm' ? 'ကာကွယ်ဆေးမှတ်တမ်း' : 'Immunization Record';
+      var subtitle = currentLanguage === 'mm'
+        ? 'မိခင်နှင့် ကလေးကျန်းမာရေး စောင့်ရှောက်မှု'
+        : 'Maternal & Child Health Care System';
+      var scheduleTitle = currentLanguage === 'mm'
+        ? 'ပုံမှန် ကာကွယ်ဆေးထိုး၊ ဆေးတိုက်ခြင်း အစီအစဉ်'
+        : 'Myanmar Routine Immunization Schedule';
+      var savedTitle = currentLanguage === 'mm'
+        ? 'သိမ်းထားသော ကာကွယ်ဆေးမှတ်တမ်းများ'
+        : 'Saved Vaccine Records';
+      var generatedLabel = currentLanguage === 'mm' ? 'ထုတ်ယူသည့်ရက်' : 'Generated';
+
+      document.getElementById('vaccineShareCard').innerHTML =
+        '<div class="vsc-header">' +
+          '<div class="vsc-title">' + escapeHtml(title) + '</div>' +
+          '<div class="vsc-subtitle">' + escapeHtml(subtitle) + '</div>' +
+        '</div>' +
+        '<div class="vsc-baby">' +
+          (motherName ? '<div>' + escapeHtml(tr('mother')) + ': ' + escapeHtml(motherName) + '</div>' : '') +
+          '<div>' + escapeHtml(tr('baby')) + ': ' + escapeHtml(babyName || '-') + '</div>' +
+          '<div>' + escapeHtml(tr('birth')) + ': ' + escapeHtml(babyBirthDate ? formatDate(babyBirthDate) : '-') +
+            ' · ' + escapeHtml(tr('age')) + ': ' + escapeHtml(ageText(babyBirthDate)) + '</div>' +
+        '</div>' +
+        '<div class="vsc-summary">' +
+          '<span class="vsc-pill done">' + escapeHtml(tr('given')) + ': ' + counts.done + '</span>' +
+          '<span class="vsc-pill due">' + escapeHtml(tr('dueSoon')) + ': ' + counts.due + '</span>' +
+          '<span class="vsc-pill late">' + escapeHtml(tr('overdue')) + ': ' + counts.late + '</span>' +
+          '<span class="vsc-pill">' + escapeHtml(tr('scheduleItems')) + ': ' + counts.total + '</span>' +
+        '</div>' +
+        '<div class="vsc-records-title">' + escapeHtml(scheduleTitle) + '</div>' +
+        '<table class="vsc-table"><thead><tr>' +
+          '<th>' + escapeHtml(currentLanguage === 'mm' ? 'အသက်' : 'Age') + '</th>' +
+          '<th>' + escapeHtml(currentLanguage === 'mm' ? 'ကာကွယ်ဆေးများ' : 'Vaccines') + '</th>' +
+        '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+        '<div class="vsc-records-title">' + escapeHtml(savedTitle) + '</div>' +
+        recordsHtml +
+        '<div class="vsc-footer">' + escapeHtml(generatedLabel) + ': ' + escapeHtml(formatDate(new Date())) + '</div>';
+    }
+
+    async function sendViberRecord() {
+      if (!normalizeViberPhone(motherPhone)) {
+        alert(tr('noMotherPhone'));
+        return;
+      }
+      if (typeof html2canvas !== 'function') {
+        alert(tr('shareError'));
+        return;
+      }
+      var btn = document.getElementById('sendViberBtn');
+      btn.disabled = true;
+      btn.classList.add('loading');
+      try {
+        buildShareCard();
+        var card = document.getElementById('vaccineShareCard');
+        var canvas = await html2canvas(card, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+        var blob = await new Promise(function (resolve) {
+          canvas.toBlob(resolve, 'image/png', 0.92);
+        });
+        if (!blob) throw new Error('PNG export failed');
+        var safeName = String(babyName || 'record').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_');
+        var fileName = 'Immunization_' + safeName + '.png';
+        var file = new File([blob], fileName, { type: 'image/png' });
+        var viberNumber = normalizeViberPhone(motherPhone);
+
+        if (navigator.share && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: tr('shareTitle'),
+            text: tr('shareText')
+          });
+        } else {
+          var url = URL.createObjectURL(blob);
+          var link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          setTimeout(function () {
+            window.location.href = 'viber://chat?number=' + encodeURIComponent(viberNumber);
+          }, 400);
+          alert(tr('viberFallbackHint'));
+        }
+      } catch (error) {
+        if (error && error.name !== 'AbortError') {
+          console.error(error);
+          alert(tr('shareError'));
+        }
+      } finally {
+        btn.classList.remove('loading');
+        updateViberButton();
+      }
     }
 
     async function loadData() {
@@ -824,6 +1164,8 @@
         vaccSnap.forEach(function (doc) {
           vaccineRecords.push({ id: doc.id, ...(doc.data() || {}) });
         });
+
+        await resolveMotherContact(firebase.firestore(), patientData);
 
         document.getElementById('loadingState').style.display = 'none';
         document.getElementById('content').style.display = '';

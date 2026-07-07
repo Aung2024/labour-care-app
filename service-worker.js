@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v177-moh';
+const CACHE_NAME = 'mch-care-v178-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -62,6 +62,7 @@ const FILES_TO_CACHE = [
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
+  './js/vendor/html2canvas.min.js',
   './js/firebase.js',
   './js/auth-guard.js',
   './js/user-cache.js',
