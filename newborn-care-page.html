@@ -1619,13 +1619,56 @@
     }
 
     function applyBirthTimeLock() {
-      const input = document.getElementById('birth_time');
+      applyIdentityFieldLock(false);
+    }
+
+    function applyIdentityFieldLock(forcedAllLocked) {
+      const visitSavedLock = hasSavedFirstNewbornVisit() && !isEditMode;
+      const allLocked = visitSavedLock || !!forcedAllLocked;
+
+      function fieldLocked(id) {
+        if (allLocked) return true;
+        if (id === 'birth_time') {
+          return deliveryAnchorLocked && !!document.getElementById('birth_time')?.value;
+        }
+        return false;
+      }
+
+      ['pregnancy_type', 'gender', 'birth_time', 'body_weight_gram', 'birthplace', 'mode_of_delivery'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const locked = fieldLocked(id);
+        if (id === 'birth_time') {
+          el.readOnly = locked;
+          el.classList.toggle('next-visit-readonly', locked);
+        } else if (el.tagName === 'SELECT') {
+          if (locked) {
+            el.setAttribute('disabled', 'disabled');
+            el.setAttribute('data-choice-locked', '1');
+          } else {
+            el.removeAttribute('disabled');
+            el.removeAttribute('data-choice-locked');
+          }
+        } else {
+          el.readOnly = locked;
+          el.classList.toggle('next-visit-readonly', locked);
+          if (locked) el.setAttribute('disabled', 'disabled');
+          else el.removeAttribute('disabled');
+        }
+      });
+
       const nowBtn = document.getElementById('birthTimeNowBtn');
-      if (!input) return;
-      const shouldLock = deliveryAnchorLocked && !!input.value;
-      input.readOnly = shouldLock;
-      input.classList.toggle('next-visit-readonly', shouldLock);
-      if (nowBtn) nowBtn.style.display = shouldLock ? 'none' : '';
+      if (nowBtn) {
+        const birthLocked = fieldLocked('birth_time');
+        nowBtn.disabled = birthLocked;
+        nowBtn.style.display = birthLocked ? 'none' : '';
+      }
+
+      const note = document.getElementById('identityLockNote');
+      if (note) note.classList.toggle('show', allLocked);
+
+      updatePregnancyTypeRowVisibility();
+      if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
     const NEWBORN_DANGER_SIGN_IDS = [
@@ -1778,8 +1821,6 @@
       applyAutoBabyName();
       const addBtn = document.getElementById('addBabyBtn');
       if (addBtn) addBtn.style.display = !isCurrentBabyPatient() && pregnancyType === 'twins' && !locked ? '' : 'none';
-      const note = document.getElementById('identityLockNote');
-      if (note) note.classList.toggle('show', !!locked);
       updatePregnancyTypeRowVisibility();
     }
 
@@ -2047,9 +2088,10 @@
         const birthTimeEl = document.getElementById('birth_time');
         if (birthTimeEl) birthTimeEl.value = baby.birthTime;
       }
-      initBabyStatesFromBabies([baby], true);
+      initBabyStatesFromBabies([baby], shouldLockNewbornIdentityFields());
       updateTwinTabBarVisibility();
       applyBirthTimeLock();
+      applyIdentityFieldLock(shouldLockNewbornIdentityFields());
     }
 
     function hadPriorPotentialKmcDecision(decision) {
@@ -2508,22 +2550,8 @@
         }
       }
 
-      applyIdentityFieldLock(shouldLockNewbornIdentityFields());
       applyBirthTimeLock();
       updateKmcDecisionLabel();
-      if (window.ChoiceControls) ChoiceControls.syncAll();
-    }
-
-    function applyIdentityFieldLock(locked) {
-      ['pregnancy_type', 'gender', 'birth_time', 'body_weight_gram', 'birthplace', 'mode_of_delivery'].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (locked) el.setAttribute('disabled', 'disabled');
-        else el.removeAttribute('disabled');
-      });
-      const nowBtn = document.getElementById('birthTimeNowBtn');
-      if (nowBtn) nowBtn.disabled = !!locked;
-      updatePregnancyTypeRowVisibility();
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 

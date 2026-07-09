@@ -135,17 +135,60 @@
     syncChoiceFromSelect(select);
   }
 
+  function isSelectLocked(select) {
+    if (!select) return false;
+    if (select.disabled) return true;
+    if (select.getAttribute('data-choice-locked') === '1') return true;
+    var wrap = select.closest('.choice-control');
+    return !!(wrap && wrap.classList.contains('choice-control--locked'));
+  }
+
+  function ensureLockedValueEl(wrap) {
+    var existing = wrap.querySelector('.choice-locked-value');
+    if (existing) return existing;
+    var el = document.createElement('div');
+    el.className = 'choice-locked-value';
+    el.setAttribute('aria-live', 'polite');
+    wrap.appendChild(el);
+    return el;
+  }
+
   function syncChoiceFromSelect(select) {
     var wrap = select.closest('.choice-control');
     if (!wrap) return;
     var val = select.value;
+    var locked = isSelectLocked(select);
+    var group = wrap.querySelector('.choice-chips, .choice-cards, .choice-toggle');
+    var lockedValueEl = wrap.querySelector('.choice-locked-value');
+
+    wrap.classList.toggle('choice-control--locked', locked);
+
+    if (locked) {
+      wrap.querySelectorAll('.choice-chip, .choice-card, .choice-toggle-btn').forEach(function (btn) {
+        btn.style.display = 'none';
+        btn.disabled = true;
+        btn.classList.add('is-disabled');
+        btn.setAttribute('aria-disabled', 'true');
+      });
+      if (group) group.style.display = 'none';
+      var displayEl = ensureLockedValueEl(wrap);
+      var opt = findOption(select, val);
+      displayEl.textContent = opt ? getOptionLabel(opt) : '—';
+      displayEl.style.display = '';
+      return;
+    }
+
+    if (lockedValueEl) lockedValueEl.style.display = 'none';
+    if (group) group.style.display = '';
+
     wrap.querySelectorAll('.choice-chip, .choice-card, .choice-toggle-btn').forEach(function (btn) {
       var active = btn.dataset.value === val;
+      btn.style.display = '';
       btn.classList.toggle('is-active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-      btn.disabled = !!select.disabled;
-      btn.classList.toggle('is-disabled', !!select.disabled);
-      btn.setAttribute('aria-disabled', select.disabled ? 'true' : 'false');
+      btn.disabled = false;
+      btn.classList.remove('is-disabled');
+      btn.setAttribute('aria-disabled', 'false');
     });
   }
 
