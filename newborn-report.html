@@ -441,6 +441,23 @@
         <div id="newbornCareInfo" class="treatment-info newborn-visits-screen">
           <!-- Visit tabs populated here -->
         </div>
+        <div id="newbornMeasurementsHistory" class="treatment-info newborn-measurements-screen mb-3" style="display:none;">
+          <h6 class="mb-2 lang-text" data-en="Length and head circumference by visit" data-mm="အကြိမ်အလိုက် အရပ်အမြင့် နှင့် ဉီးခေါင်းပတ်လည်">Length and head circumference by visit</h6>
+          <div style="overflow-x:auto;">
+            <table class="visits-table newborn-measurements-table">
+              <thead>
+                <tr>
+                  <th class="lang-text" data-en="Visit" data-mm="အကြိမ်">Visit</th>
+                  <th class="lang-text" data-en="Date" data-mm="ရက်စွဲ">Date</th>
+                  <th class="lang-text" data-en="Length (cm)" data-mm="အရပ်အမြင့် (စ.m)">Length (cm)</th>
+                  <th class="lang-text" data-en="Head circ. (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စ.m)">Head circ. (cm)</th>
+                  <th class="lang-text" data-en="Weight (g)" data-mm="အလေးချိန် (ဂရမ်)">Weight (g)</th>
+                </tr>
+              </thead>
+              <tbody id="newbornMeasurementsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="newborn-book-print">
           <h5 class="section-heading lang-text" data-en="Newborn care visit register" data-mm="မွေးကင်းစကလေး မှတ်တမ်း">Newborn care visit register</h5>
           <table class="visits-table">
@@ -449,6 +466,8 @@
                 <th class="lang-text" data-en="No" data-mm="အကြိမ်">No</th>
                 <th class="lang-text" data-en="Date" data-mm="ရက်စွဲ">Date</th>
                 <th class="lang-text" data-en="Weight (g)" data-mm="အလေးချိန် (ဂရမ်)">Weight (g)</th>
+                <th class="lang-text" data-en="Length (cm)" data-mm="အရပ်အမြင့် (စ.m)">Length (cm)</th>
+                <th class="lang-text" data-en="Head circ. (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စ.m)">Head circ. (cm)</th>
                 <th class="lang-text" data-en="Temp" data-mm="အပူချိန်">Temp</th>
                 <th class="lang-text" data-en="HR" data-mm="နှလုံးခုန်">HR</th>
                 <th class="lang-text" data-en="RR" data-mm="အသက်ရှု">RR</th>
@@ -516,6 +535,10 @@
       birthWeight: { en: 'Birth Weight:', mm: 'မွေးချိန် အလေးချိန်:' },
       birthLength: { en: 'Birth Length:', mm: 'မွေးချိန် အရပ်အမြင့်:' },
       headCircumference: { en: 'Head Circumference:', mm: 'ဉီးခေါင်းပတ်လည်:' },
+      lengthCm: { en: 'Length (cm):', mm: 'အရပ်အမြင့် (စ.m):' },
+      headCircCm: { en: 'Head circumference (cm):', mm: 'ဉီးခေါင်းပတ်လည် (စ.m):' },
+      measurementsHistory: { en: 'Length and head circumference by visit', mm: 'အကြိမ်အလိုက် အရပ်အမြင့် နှင့် ဉီးခေါင်းပတ်လည်' },
+      noMeasurementHistory: { en: 'No length or head circumference measurements recorded yet.', mm: 'အရပ်အမြင့် သို့မဟုတ် ဉီးခေါင်းပတ်လည် မှတ်တမ်း မရှိသေးပါ။' },
       birthplace: { en: 'Birthplace:', mm: 'မွေးဖွားသည့်နေရာ:' },
       modeOfDelivery: { en: 'Mode of Delivery:', mm: 'မွေးဖွားသည့်နည်းလမ်း:' },
       motherName: { en: "Mother's Name:", mm: 'မိခင်၏အမည်:' },
@@ -676,29 +699,8 @@
 
         // Load newborn care visit history
         try {
-          const newbornRef = reportDb.collection("patients")
-            .doc(patientId)
-            .collection("newborn_care");
-          let newbornCareSnapshot;
-          try {
-            newbornCareSnapshot = await newbornRef.orderBy("visit_number", "asc").get();
-          } catch (orderError) {
-            newbornCareSnapshot = await newbornRef.get();
-          }
-          
-          if (!newbornCareSnapshot.empty) {
-            newbornCareVisits = [];
-            newbornCareSnapshot.forEach(function (doc) {
-              const data = doc.data() || {};
-              if (!data.visit_number) data.visit_number = 1;
-              newbornCareVisits.push(data);
-            });
-            newbornCareVisits.sort(function (a, b) {
-              const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
-              const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
-              if (av !== bv) return av - bv;
-              return String(a.visitDate || a.birth_time || '').localeCompare(String(b.visitDate || b.birth_time || ''));
-            });
+          newbornCareVisits = await fetchNewbornCareVisitsForReport(patientId, currentPatient);
+          if (newbornCareVisits.length) {
             newbornCareData = newbornCareVisits[newbornCareVisits.length - 1];
           }
         } catch (error) {
@@ -733,17 +735,14 @@
           kmcActions = [];
         }
 
-        // Populate report
         populatePatientInfo();
         populateImmediateCareInfo();
         populateNewbornCareInfo();
         generateRecommendations();
-        
-        // Show report and hide loading
+
         document.getElementById("loadingState").style.display = "none";
         document.getElementById("reportContent").style.display = "block";
-        
-        // Set report generation info
+
         document.getElementById("reportDate").textContent = new Date().toLocaleString();
         document.getElementById("generatedBy").textContent = currentUser.email || 'System';
 
@@ -781,6 +780,68 @@
       }) || newbornCareData || {};
     }
 
+    async function fetchNewbornCareVisitsForReport(targetPatientId, patient) {
+      patient = patient || {};
+      async function loadFrom(pid) {
+        if (!pid) return [];
+        const newbornRef = reportDb.collection('patients').doc(pid).collection('newborn_care');
+        let snap;
+        try {
+          snap = await newbornRef.orderBy('visit_number', 'asc').get();
+        } catch (orderError) {
+          snap = await newbornRef.get();
+        }
+        if (snap.empty) return [];
+        const rows = [];
+        snap.forEach(function (doc) {
+          const data = doc.data() || {};
+          if (!data.visit_number) data.visit_number = 1;
+          rows.push(data);
+        });
+        rows.sort(function (a, b) {
+          const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
+          const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
+          if (av !== bv) return av - bv;
+          return String(a.visitDate || a.visit_date || a.birth_time || '').localeCompare(String(b.visitDate || b.visit_date || b.birth_time || ''));
+        });
+        return rows;
+      }
+
+      let visits = await loadFrom(targetPatientId);
+      if (!visits.length && window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient) && patient.mother_patient_id) {
+        visits = await loadFrom(patient.mother_patient_id);
+      }
+      return visits;
+    }
+
+    function parseMeasurementCm(record, field) {
+      if (!record) return null;
+      var camel = field.replace(/_([a-z])/g, function (_, c) { return c.toUpperCase(); });
+      var val = parseFloat(record[field] != null ? record[field] : record[camel]);
+      if (isNaN(val) || val <= 0) return null;
+      return val;
+    }
+
+    function formatMeasurementCm(value) {
+      return value != null ? (value + ' cm') : t('notRecorded');
+    }
+
+    function getMeasurementFromVisits(field) {
+      var visit1 = getVisitOneData();
+      var fromVisit1 = parseMeasurementCm(visit1, field);
+      if (fromVisit1 != null) return fromVisit1;
+      for (var i = 0; i < newbornCareVisits.length; i++) {
+        var val = parseMeasurementCm(newbornCareVisits[i], field);
+        if (val != null) return val;
+      }
+      return null;
+    }
+
+    function visitHasMeasurementHistory(visit) {
+      return parseMeasurementCm(visit, 'birth_length_cm') != null ||
+        parseMeasurementCm(visit, 'head_circumference_cm') != null;
+    }
+
     function populatePatientInfo() {
       const visit1 = getVisitOneData();
       const name = visit1.baby_name || currentPatient.name || t('unknown');
@@ -791,8 +852,8 @@
 
       const birthWeightGram = getBestBirthWeightGram();
       document.getElementById('birthWeight').textContent = birthWeightGram != null ? Math.round(birthWeightGram) + ' g' : t('notRecorded');
-      document.getElementById('birthLength').textContent = visit1.birth_length_cm ? visit1.birth_length_cm + ' cm' : t('notRecorded');
-      document.getElementById('headCircumference').textContent = visit1.head_circumference_cm ? visit1.head_circumference_cm + ' cm' : t('notRecorded');
+      document.getElementById('birthLength').textContent = formatMeasurementCm(getMeasurementFromVisits('birth_length_cm'));
+      document.getElementById('headCircumference').textContent = formatMeasurementCm(getMeasurementFromVisits('head_circumference_cm'));
       document.getElementById('birthPlaceDetail').textContent = visit1.birthplace || t('notRecorded');
       document.getElementById('birthModeDetail').textContent = formatDeliveryMode(visit1.mode_of_delivery);
     }
@@ -900,8 +961,8 @@
     function isAnchorOnlyNewbornVisit(visit) {
       if (!visit) return true;
       var substantiveFields = [
-        'body_weight_gram', 'current_weight_gram', 'temperature', 'heart_rate',
-        'respiration_rate', 'clinical_notes', 'gender', 'mode_of_delivery',
+        'body_weight_gram', 'current_weight_gram', 'birth_length_cm', 'head_circumference_cm',
+        'temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'gender', 'mode_of_delivery',
         'birthplace', 'difficult_breathing', 'feeding_type', 'feeding_method',
         'exclusive_breastfeeding_on_demand', 'kmc_hours_per_day', 'eye_care_status'
       ];
@@ -1030,6 +1091,10 @@
       const tempUnit = visit.temperature_unit === 'F' ? '°F' : '°C';
       let html = '<div class="treatment-content">';
       html += '<p><strong>' + t('bodyWeight') + '</strong> ' + escapeHtml(weight) + '</p>';
+      var lengthCm = parseMeasurementCm(visit, 'birth_length_cm');
+      var headCm = parseMeasurementCm(visit, 'head_circumference_cm');
+      html += '<p><strong>' + t('lengthCm') + '</strong> ' + escapeHtml(formatMeasurementCm(lengthCm)) + '</p>';
+      html += '<p><strong>' + t('headCircCm') + '</strong> ' + escapeHtml(formatMeasurementCm(headCm)) + '</p>';
       if (visit.temperature) html += '<p><strong>' + t('temperature') + '</strong> ' + visit.temperature + ' ' + tempUnit + '</p>';
       if (visit.heart_rate) html += '<p><strong>' + t('heartRate') + '</strong> ' + escapeHtml(String(visit.heart_rate)) + '</p>';
       if (visit.respiration_rate) html += '<p><strong>' + t('respirationRate') + '</strong> ' + escapeHtml(String(visit.respiration_rate)) + '</p>';
@@ -1083,11 +1148,40 @@
       return parts.length ? parts.join(' / ') : t('notRecorded');
     }
 
+    function renderNewbornMeasurementsHistory(rows) {
+      var section = document.getElementById('newbornMeasurementsHistory');
+      var tbody = document.getElementById('newbornMeasurementsTableBody');
+      if (!section || !tbody) return;
+      var historyRows = (rows || []).filter(visitHasMeasurementHistory);
+      if (!historyRows.length) {
+        section.style.display = 'none';
+        tbody.innerHTML = '';
+        return;
+      }
+      section.style.display = 'block';
+      tbody.innerHTML = historyRows.map(function (visit, index) {
+        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || (index + 1);
+        var weight = visit.current_weight_gram != null
+          ? visit.current_weight_gram
+          : (visit.body_weight_gram != null ? visit.body_weight_gram : '');
+        var visitDate = formatReportDate(
+          visit.visit_date || visit.visitDate || visit.recorded_at || visit.birth_time
+        );
+        return '<tr>' +
+          '<td class="visit-number">' + n + '</td>' +
+          '<td>' + escapeHtml(visitDate) + '</td>' +
+          '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'birth_length_cm'))) + '</td>' +
+          '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'head_circumference_cm'))) + '</td>' +
+          '<td>' + escapeHtml(weight !== '' ? String(weight) : t('notRecorded')) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
     function renderNewbornPrintTable(rows) {
       var tbody = document.getElementById('newbornPrintTableBody');
       if (!tbody) return;
       if (!rows || !rows.length) {
-        tbody.innerHTML = '<tr><td colspan="10">' + escapeHtml(t('noNewbornCareData')) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12">' + escapeHtml(t('noNewbornCareData')) + '</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(function (visit, index) {
@@ -1107,6 +1201,8 @@
           '<td class="visit-number">' + n + '</td>' +
           '<td>' + escapeHtml(visitDate) + '</td>' +
           '<td>' + escapeHtml(weight !== '' ? String(weight) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'birth_length_cm'))) + '</td>' +
+          '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'head_circumference_cm'))) + '</td>' +
           '<td>' + escapeHtml(temp) + '</td>' +
           '<td>' + escapeHtml(visit.heart_rate != null ? String(visit.heart_rate) : t('notRecorded')) + '</td>' +
           '<td>' + escapeHtml(visit.respiration_rate != null ? String(visit.respiration_rate) : t('notRecorded')) + '</td>' +
@@ -1123,6 +1219,7 @@
       const kmcPrint = document.getElementById('newbornKmcPrintSection');
       const rows = getReportNewbornVisitRows();
       renderNewbornPrintTable(rows);
+      renderNewbornMeasurementsHistory(newbornCareVisits);
       if (kmcPrint) kmcPrint.innerHTML = renderKmcReportSection();
       if (!rows.length) {
         container.innerHTML = '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
