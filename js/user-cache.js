@@ -84,10 +84,10 @@ async function getUserData(userId, forceRefresh = false) {
     const userDoc = await smartFirestoreQuery(
       Promise.resolve(userQuery),
       { 
-        preferCache: isIOS, 
+        preferCache: forceRefresh ? false : isIOS, 
         timeout: 8000, 
         retries: 2, 
-        fallbackToCache: true 
+        fallbackToCache: forceRefresh ? false : true
       }
     );
     

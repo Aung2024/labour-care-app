@@ -909,6 +909,7 @@
       } else if (!pageInitialized) {
         waitForAuthAndLoad();
       } else if (resolved) {
+        loadUserData();
         loadPendingTransferCount();
         refreshHomeFollowUpBadges();
       }
@@ -953,12 +954,14 @@
         if (currentUser.isPilotCachedUser) {
           userData = {
             role: localStorage.getItem('role') || 'Midwife',
+            provider_type: localStorage.getItem('providerType') || 'midwife',
             email: localStorage.getItem('userEmail') || currentUser.email || '',
             township: localStorage.getItem('userTownship') || '',
             region: localStorage.getItem('userRegion') || ''
           };
         } else if (window.UserCache) {
-          userData = await window.UserCache.get(currentUser.uid);
+          const refreshProfile = typeof navigator === 'undefined' || navigator.onLine !== false;
+          userData = await window.UserCache.get(currentUser.uid, refreshProfile);
         } else {
           // Fallback to direct query if cache not available
           const userQuery = db.collection("users").doc(currentUser.uid);
@@ -971,6 +974,14 @@
         
         if (userData) {
           userRole = userData.role;
+          const providerType = (window.RoleDisplay && RoleDisplay.normalizeProviderType)
+            ? RoleDisplay.normalizeProviderType(userData.provider_type)
+            : (userData.provider_type === 'hospital' ? 'hospital' : 'midwife');
+          try {
+            localStorage.setItem('providerType', providerType);
+          } catch (storageError) {
+            console.warn('Could not persist providerType', storageError);
+          }
           
           document.getElementById("userEmail").textContent = currentUser.email;
           const roleDisplay = window.RoleDisplay
@@ -1695,6 +1706,7 @@
       }
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden && currentUser) {
+          loadUserData();
           loadPendingTransferCount();
           refreshHomeFollowUpBadges();
         }
@@ -1703,6 +1715,7 @@
         if (event.persisted) {
           recoverHomeFromCache();
         } else if (currentUser) {
+          loadUserData();
           refreshHomeFollowUpBadges();
         }
       });

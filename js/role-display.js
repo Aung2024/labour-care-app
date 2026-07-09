@@ -45,6 +45,9 @@
     if (roleOrUser && typeof roleOrUser === 'object') {
       role = roleOrUser.role;
       providerType = roleOrUser.provider_type;
+      if (!providerType && global.localStorage) {
+        providerType = localStorage.getItem('providerType');
+      }
     } else {
       role = roleOrUser;
       providerType = global.localStorage ? localStorage.getItem('providerType') : null;
