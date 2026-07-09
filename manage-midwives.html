@@ -112,6 +112,14 @@
             <label class="form-label">Township</label>
             <select id="editTownship" class="form-select"></select>
           </div>
+          <div class="mb-3">
+            <label class="form-label">Account label</label>
+            <select id="editProviderType" class="form-select">
+              <option value="midwife">Midwife</option>
+              <option value="hospital">Hospital</option>
+            </select>
+            <div class="form-text">Same system access — label only.</div>
+          </div>
           <div class="mb-2">
             <label class="form-label">Account status</label>
             <select id="editApproved" class="form-select">
@@ -136,6 +144,7 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/township-region.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/role-display.js"></script>
   <script>
     let allMidwives = [];
     let editingId = null;
@@ -259,6 +268,9 @@
 
       wrap.innerHTML = rows.map(function(m) {
         const approved = m.approved !== false;
+        const typeLabel = window.RoleDisplay
+          ? RoleDisplay.getMidwifeLevelDisplayLabel(m.provider_type)
+          : (m.provider_type === 'hospital' ? 'Hospital' : 'Midwife');
         const badge = approved
           ? '<span class="badge badge-approved">Approved</span>'
           : '<span class="badge badge-pending">Pending</span>';
@@ -266,7 +278,7 @@
           <div class="mw-row d-flex justify-content-between align-items-start gap-2 flex-wrap">
             <div>
               <div class="fw-bold">${escapeHtml(m.name || 'Unnamed midwife')}</div>
-              <div class="mw-meta">${escapeHtml(m.email || '-')}</div>
+              <div class="mw-meta">${escapeHtml(typeLabel)} · ${escapeHtml(m.email || '-')}</div>
               <div class="mw-meta">${escapeHtml(m.region || 'No region')} · ${escapeHtml(m.township || 'No township')}</div>
               ${m.phone ? '<div class="mw-meta">' + escapeHtml(m.phone) + '</div>' : ''}
             </div>
@@ -298,6 +310,9 @@
       document.getElementById('editName').value = m.name || '';
       document.getElementById('editPhone').value = m.phone || '';
       document.getElementById('editApproved').value = m.approved === false ? 'false' : 'true';
+      document.getElementById('editProviderType').value = (window.RoleDisplay
+        ? RoleDisplay.normalizeProviderType(m.provider_type)
+        : (m.provider_type === 'hospital' ? 'hospital' : 'midwife'));
 
       const rSel = document.getElementById('editRegion');
       const regions = Object.keys(window.MYANMAR_REGIONS || {}).sort();
@@ -319,6 +334,7 @@
       const region = document.getElementById('editRegion').value.trim();
       const township = document.getElementById('editTownship').value.trim();
       const approved = document.getElementById('editApproved').value === 'true';
+      const providerType = document.getElementById('editProviderType').value;
       if (!name) {
         await AppDialog.alert('Name is required.', { title: 'Edit Midwife' });
         return;
@@ -334,6 +350,9 @@
           township: township || null,
           approved: approved,
           role: 'Midwife',
+          provider_type: (window.RoleDisplay && RoleDisplay.normalizeProviderType)
+            ? RoleDisplay.normalizeProviderType(providerType)
+            : (providerType === 'hospital' ? 'hospital' : 'midwife'),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: firebase.auth().currentUser.uid
         };

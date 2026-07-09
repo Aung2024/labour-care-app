@@ -46,6 +46,7 @@
   <script src="js/user-cache.js"></script>
   <script src="js/page-performance.js"></script>
   <script src="js/rbac-manager.js"></script>
+  <script src="js/role-display.js"></script>
   <script src="js/consent-manager.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -972,10 +973,11 @@
           userRole = userData.role;
           
           document.getElementById("userEmail").textContent = currentUser.email;
-          // Display labels: Regional Officer → Regional Dashboard, TMO → Township Dashboard
-          const roleDisplay = userData.role === "TMO" ? "Township Dashboard"
-            : (userData.role && userData.role.toLowerCase().replace(/\s+/g, " ") === "regional officer") ? "Regional Dashboard"
-            : userData.role;
+          const roleDisplay = window.RoleDisplay
+            ? RoleDisplay.getRoleDisplayLabel(userData)
+            : (userData.role === "TMO" ? "Township Dashboard"
+              : (userData.role && userData.role.toLowerCase().replace(/\s+/g, " ") === "regional officer") ? "Regional Dashboard"
+              : userData.role);
           document.getElementById("userRole").textContent = roleDisplay;
           
           // Supervisory and admin accounts do not use midwife-only patient workflows.
@@ -990,6 +992,15 @@
             });
           }
 
+          if (isSupervisoryRole) {
+            ['hrtCard', 'kmcCard'].forEach(function (cardId) {
+              const card = document.getElementById(cardId);
+              if (card) card.style.display = 'none';
+            });
+            const midwifeReportBtn = document.getElementById('homeMidwifeReportBtn');
+            if (midwifeReportBtn) midwifeReportBtn.style.display = 'none';
+          }
+
           // Show admin tools if Super Admin
           const adminCard = document.getElementById("adminCard");
           const manageMidwivesCard = document.getElementById("manageMidwivesCard");
@@ -998,11 +1009,7 @@
             if (manageMidwivesCard) manageMidwivesCard.style.display = "block";
           }
           
-          // Show township tools if TMO
-          const townshipReportCard = document.getElementById("townshipReportCard");
-          if (userRole === "TMO" && townshipReportCard) {
-            townshipReportCard.style.display = "block";
-          }
+          // Visit edit approvals for TMO only (township report card hidden from home)
           const visitEditApprovalsCard = document.getElementById("visitEditApprovalsCard");
           if (userRole === "TMO" && visitEditApprovalsCard) {
             visitEditApprovalsCard.style.display = "block";
@@ -1115,6 +1122,8 @@
     }
 
     async function refreshHomeFollowUpBadges() {
+      const hrtCard = document.getElementById('hrtCard');
+      if (hrtCard && hrtCard.style.display === 'none') return;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         loadHrtCardNotifyCount();
         loadKmcCardNotifyCount();
@@ -1875,7 +1884,7 @@
         <a href="#" class="care-action dashboard" onclick="event.preventDefault(); navigateToCare('dashboard');">
           <i class="fas fa-chart-bar"></i><span class="lang-text" data-en="View Dashboard" data-mm="ဒက်ရှ်ဘုတ် ကြည့်ရှုရန်">View Dashboard</span>
         </a>
-        <a href="#" class="care-action dashboard" style="margin-top:0.55rem;" onclick="event.preventDefault(); navigateToCare('midwife-report');">
+        <a href="#" class="care-action dashboard" id="homeMidwifeReportBtn" style="margin-top:0.55rem;" onclick="event.preventDefault(); navigateToCare('midwife-report');">
           <i class="fas fa-file-medical"></i><span class="lang-text" data-en="Midwife Report" data-mm="သားဖွားဆရာမ အစီရင်ခံစာ">Midwife Report</span>
         </a>
       </div>
