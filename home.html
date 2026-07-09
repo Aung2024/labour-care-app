@@ -93,6 +93,37 @@
       font-size: 0.95rem;
     }
 
+    #homeInitBanner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: #fff7ed;
+      color: #9a3412;
+      border-bottom: 1px solid #fdba74;
+      font-size: 0.92rem;
+    }
+
+    #homeInitBanner.show {
+      display: flex;
+    }
+
+    #homeInitBanner .home-init-retry-btn {
+      min-height: 44px;
+      min-width: 44px;
+      padding: 0.45rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid #fdba74;
+      background: #fff;
+      color: #9a3412;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     .care-card-notify-badge {
       position: absolute;
       top: 12px;
@@ -720,18 +751,46 @@
     
     // Show loading state immediately to prevent interaction
     let pageInitialized = false;
+    let authWaitInterval = null;
+    let authStateUnsubscribe = null;
     const mainContainer = document.querySelector('.main-container');
-    const careCards = document.querySelectorAll('.care-card');
-    
-    if (mainContainer) {
-      mainContainer.style.opacity = '0.7';
-      mainContainer.style.pointerEvents = 'none';
+
+    function setHomeInteractionEnabled(enabled) {
+      if (mainContainer) {
+        mainContainer.style.opacity = enabled ? '1' : '0.7';
+        mainContainer.style.pointerEvents = enabled ? 'auto' : 'none';
+      }
+      document.querySelectorAll('.care-card').forEach(function (card) {
+        card.classList.toggle('loading', !enabled);
+      });
     }
-    
-    // Disable all cards until page is ready
-    careCards.forEach(card => {
-      card.classList.add('loading');
-    });
+
+    function hideHomeInitBanner() {
+      const banner = document.getElementById('homeInitBanner');
+      if (banner) banner.classList.remove('show');
+    }
+
+    function showHomeInitRetry(message) {
+      const banner = document.getElementById('homeInitBanner');
+      const textEl = document.getElementById('homeInitBannerText');
+      if (textEl && message) textEl.textContent = message;
+      if (banner) banner.classList.add('show');
+      setHomeInteractionEnabled(true);
+      document.body.classList.add('auth-verified');
+    }
+
+    function retryHomeInit() {
+      hideHomeInitBanner();
+      pageInitialized = false;
+      navigationInProgress = false;
+      setHomeInteractionEnabled(false);
+      waitForAuthAndLoad();
+    }
+
+    setHomeInteractionEnabled(false);
+
+    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     function getPilotCachedUser() {
       const uid = localStorage.getItem('uid');
@@ -746,80 +805,117 @@
     }
 
     // Wait for auth guard to verify authentication before loading data
-    // This prevents showing content to unauthenticated users
     function waitForAuthAndLoad() {
-      // Check if auth guard has verified user (max 5 seconds wait)
       let checkCount = 0;
-      const maxChecks = 50; // 5 seconds max
-      
-      const checkAuth = setInterval(() => {
+      const maxChecks = isIOSDevice ? 150 : 80;
+
+      if (authWaitInterval) {
+        clearInterval(authWaitInterval);
+        authWaitInterval = null;
+      }
+
+      function resolveAuthUser() {
+        const raw = firebase.auth && firebase.auth().currentUser;
+        const shimmed = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(raw) : raw;
+        return shimmed || getPilotCachedUser();
+      }
+
+      function attemptInitialize(user) {
+        if (!user || pageInitialized) return;
+        if (authWaitInterval) {
+          clearInterval(authWaitInterval);
+          authWaitInterval = null;
+        }
+        if (authStateUnsubscribe) {
+          authStateUnsubscribe();
+          authStateUnsubscribe = null;
+        }
+        initializePage(user);
+      }
+
+      authWaitInterval = setInterval(function () {
         checkCount++;
-        
-        // Check if user is authenticated
-        const user = firebase.auth().currentUser || getPilotCachedUser();
+        const user = resolveAuthUser();
         if (user) {
-          clearInterval(checkAuth);
-          initializePage(user);
-        } else if (checkCount >= maxChecks) {
-          clearInterval(checkAuth);
-          // Auth guard should have redirected by now, but if not, show error
-          console.error('❌ Authentication timeout - auth guard should have redirected');
-          if (mainContainer) {
-            mainContainer.innerHTML = '<div class="alert alert-warning">Please sign in online once with "Keep me logged in" checked before using offline mode.</div>';
-            mainContainer.style.opacity = '1';
-            mainContainer.style.pointerEvents = 'auto';
-          }
+          attemptInitialize(user);
+          return;
+        }
+        if (checkCount >= maxChecks) {
+          clearInterval(authWaitInterval);
+          authWaitInterval = null;
+          console.warn('Home auth wait timed out — showing retry');
+          showHomeInitRetry(
+            currentLanguage === 'mm'
+              ? 'ပင်မစာမျက်နှာ ဆက်မသင့် သေးပါ။ အင်တernet စစ်ပြီး ထပ်စမ်းကြည့်ပါ။'
+              : 'Home is still starting. Check your connection, then tap Retry.'
+          );
         }
       }, 100);
+
+      if (typeof firebase !== 'undefined' && firebase.auth && !authStateUnsubscribe) {
+        authStateUnsubscribe = firebase.auth().onAuthStateChanged(function (user) {
+          user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
+          if (user) attemptInitialize(user);
+        });
+      }
     }
 
     async function initializePage(user) {
       if (pageInitialized) return;
-      pageInitialized = true;
-      
+
       currentUser = user;
-      
-      // Ensure body is visible (auth verified)
       document.body.classList.add('auth-verified');
-      
-      // Check provider consent (non-blocking)
+      hideHomeInitBanner();
+
       try {
         if (window.ConsentManager) {
           const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
           const uncertainConsentState = !!(consentCheck && consentCheck.uncertain);
           if (!uncertainConsentState && (!consentCheck.hasConsent || consentCheck.needsReconsent)) {
-            window.location.href = "provider-consent.html";
+            window.location.href = 'provider-consent.html';
             return;
           }
         }
-      } catch (error) {
-        console.error('Error checking provider consent:', error);
-        // Continue to app if consent check fails (graceful degradation)
-      }
-      
-      // Load user data (non-blocking)
-      loadUserData();
-      
-      // Show page content
-      if (mainContainer) {
-        mainContainer.style.opacity = '1';
-        mainContainer.style.pointerEvents = 'auto';
-      }
-      
-      // Enable all cards
-      document.querySelectorAll('.care-card').forEach(card => {
-        card.classList.remove('loading');
-      });
 
-      applyHomeLanguage(currentLanguage);
+        pageInitialized = true;
+        loadUserData();
+        applyHomeLanguage(currentLanguage);
+      } catch (error) {
+        console.error('Error initializing home page:', error);
+        showHomeInitRetry(
+          currentLanguage === 'mm'
+            ? 'ပင်မစာမျက်နှာ ဖွင့်၍မရပါ။ ထပ်စမ်းကြည့်ပါ။'
+            : 'Could not finish loading Home. Tap Retry.'
+        );
+      } finally {
+        setHomeInteractionEnabled(true);
+      }
+    }
+
+    function recoverHomeFromCache() {
+      document.body.classList.add('auth-verified');
+      setHomeInteractionEnabled(true);
+      hideHomeInitBanner();
+      navigationInProgress = false;
+
+      const user = (window.resolvePilotAuthUser && firebase.auth)
+        ? window.resolvePilotAuthUser(firebase.auth().currentUser)
+        : (firebase.auth && firebase.auth().currentUser);
+      const resolved = user || getPilotCachedUser();
+
+      if (!pageInitialized && resolved) {
+        initializePage(resolved);
+      } else if (!pageInitialized) {
+        waitForAuthAndLoad();
+      } else if (resolved) {
+        loadPendingTransferCount();
+        refreshHomeFollowUpBadges();
+      }
     }
 
     // Start checking for auth after a short delay (let auth guard initialize first)
     setTimeout(waitForAuthAndLoad, 200);
 
-    // Get isIOS from firebase.js (already declared globally)
-    const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     let patientStatsLoadToken = 0;
 
     async function homeSmartQuery(queryOrDocRef, options = {}) {
@@ -1452,9 +1548,14 @@
     let navigationInProgress = false;
     
     function navigateToCare(careType) {
-      // Prevent navigation if page not initialized or already navigating
       if (!pageInitialized || navigationInProgress) {
-        console.log('⏳ Page not ready or navigation in progress');
+        if (!pageInitialized) {
+          showHomeInitRetry(
+            currentLanguage === 'mm'
+              ? 'ပင်မစာမျက်နှာ ဆက်မသင့် သေးပါ။ ခဏစောင့်ပြီး ထပ်နှိပ်ပါ (သို့) Retry ကို နှိပ်ပါ။'
+              : 'Home is still loading. Wait a moment, tap Retry, then try again.'
+          );
+        }
         return;
       }
       
@@ -1511,6 +1612,9 @@
             break;
           case 'kmc-tracking':
             window.location.href = 'kmc-tracking.html';
+            break;
+          default:
+            navigationInProgress = false;
             break;
         }
       }, 100);
@@ -1586,8 +1690,10 @@
           refreshHomeFollowUpBadges();
         }
       });
-      window.addEventListener('pageshow', function () {
-        if (currentUser) {
+      window.addEventListener('pageshow', function (event) {
+        if (event.persisted) {
+          recoverHomeFromCache();
+        } else if (currentUser) {
           refreshHomeFollowUpBadges();
         }
       });
@@ -1597,6 +1703,12 @@
 <body>
   <div id="labourCareOfflineBanner" role="status">
     <span class="labourCareOfflineBannerText">Working offline — showing saved data. Tap Sync when connected.</span>
+  </div>
+  <div id="homeInitBanner" role="alert" aria-live="polite">
+    <span id="homeInitBannerText">Home is still starting. Check your connection, then tap Retry.</span>
+    <button type="button" class="home-init-retry-btn" onclick="retryHomeInit()">
+      <span class="lang-text" data-en="Retry" data-mm="ထပ်စမ်းရန်">Retry</span>
+    </button>
   </div>
   <div class="main-container">
     <!-- Header Section -->
@@ -1736,7 +1848,7 @@
         <span class="care-card-notify-badge d-none" id="kmcActiveBadge" title="Kangaroo Mother Care babies needing follow-up">0</span>
         <div class="care-card-header">
           <div class="care-icon kmc"><i class="fas fa-baby"></i></div>
-          <h3 class="care-title"><span class="lang-text" data-en="Kangaroo Mother Care Tracker" data-mm="Kangaroo Mother Care">Kangaroo Mother Care Tracker</span></h3>
+          <h3 class="care-title"><span class="lang-text" data-en="Kangaroo Mother Care Tracker" data-mm="မိခင်ရင်ခွင်ကပ်စောင့်ရှောက်ခြင်း">Kangaroo Mother Care Tracker</span></h3>
         </div>
         <p class="care-description" style="margin: 0 0 0.65rem;">
           <span class="lang-text" data-en="Track Kangaroo Mother Care for low birth weight and preterm babies." data-mm="ပေါင်ချိန်မပြည့် နှင့် လမစေ့သော ကလေးများအတွက် မိခင်ရင်ခွင်ကပ်စောင့်ကြည့်ခြင်း">Track Kangaroo Mother Care for low birth weight and preterm babies.</span>

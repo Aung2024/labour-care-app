@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v189-moh';
+const CACHE_NAME = 'mch-care-v191-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -65,6 +65,7 @@ const FILES_TO_CACHE = [
   './js/vendor/html2canvas.min.js',
   './js/firebase.js',
   './js/auth-guard.js',
+  './js/nav-back.js',
   './js/user-cache.js',
   './js/consent-manager.js',
   './js/offline-store.js',
@@ -182,6 +183,8 @@ self.addEventListener('fetch', (event) => {
           console.error('[Service Worker] Document fetch failed:', error);
           const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
           if (cachedResponse) return cachedResponse;
+          const homeFallback = await caches.match('./home.html');
+          if (homeFallback) return homeFallback;
           return caches.match('./index.html');
         })
     );
