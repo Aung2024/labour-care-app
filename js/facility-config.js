@@ -62,8 +62,7 @@
     var html = '<option value="">' + placeholder + '</option>';
     PILOT_FACILITIES.forEach(function (facility) {
       var label = getFacilityLabel(facility, lang);
-      var suffix = facility.code ? (' (' + facility.code + ')') : '';
-      html += '<option value="' + facility.code + '">' + label + suffix + '</option>';
+      html += '<option value="' + facility.code + '">' + label + '</option>';
     });
     selectEl.innerHTML = html;
     if (options.selectedCode) selectEl.value = options.selectedCode;
