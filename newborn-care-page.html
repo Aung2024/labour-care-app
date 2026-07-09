@@ -1286,6 +1286,7 @@
     let patientId = null;
     let currentLanguage = document.documentElement.getAttribute('data-lang') || 'mm';
     let deliveryAnchorLocked = false;
+    let deliveryPrefilledLocks = {};
     let newbornCareVisits = [];
     let currentNewbornDocId = null;
     let currentKmcEvaluation = null;
@@ -1414,6 +1415,48 @@
       return null;
     }
 
+    function clearDeliveryPrefilledLocks() {
+      deliveryPrefilledLocks = {};
+    }
+
+    function markDeliveryPrefilledField(fieldId) {
+      if (fieldId) deliveryPrefilledLocks[fieldId] = true;
+    }
+
+    function isDeliveryPrefilledField(fieldId) {
+      return !!deliveryPrefilledLocks[fieldId];
+    }
+
+    function hasDeliveryPrefilledLocks() {
+      return Object.keys(deliveryPrefilledLocks).some(function (key) {
+        return deliveryPrefilledLocks[key];
+      });
+    }
+
+    function markSharedDeliveryPrefilledFromSource(source) {
+      source = source || {};
+      if (source.birthplace) markDeliveryPrefilledField('birthplace');
+      if (source.mode_of_delivery) markDeliveryPrefilledField('mode_of_delivery');
+      if (source.pregnancy_type) markDeliveryPrefilledField('pregnancy_type');
+    }
+
+    function refreshBabySpecificDeliveryPrefilledLocks() {
+      if (isEditMode || hasSavedFirstNewbornVisit()) return;
+      delete deliveryPrefilledLocks.gender;
+      delete deliveryPrefilledLocks.body_weight_gram;
+      delete deliveryPrefilledLocks.birth_time;
+      const baby = newbornBabyStates[activeBabyIndex - 1] || {};
+      const birthTimeEl = document.getElementById('birth_time');
+      const birthTimeVal = (birthTimeEl && birthTimeEl.value) || baby.birthTime || baby.birth_time || '';
+      if (birthTimeVal) markDeliveryPrefilledField('birth_time');
+      const genderVal = baby.gender || (document.getElementById('gender') && document.getElementById('gender').value) || '';
+      if (genderVal) markDeliveryPrefilledField('gender');
+      const weight = baby.birthWeightGram != null ? baby.birthWeightGram : baby.body_weight_gram;
+      const weightEl = document.getElementById('body_weight_gram');
+      const weightVal = weight != null && weight !== '' ? weight : (weightEl && weightEl.value);
+      if (weightVal != null && weightVal !== '') markDeliveryPrefilledField('body_weight_gram');
+    }
+
     async function applySharedDeliveryAnchor() {
       if (!patientId || !window.BirthDeliveryAnchor) return;
       const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(patientId);
@@ -1421,8 +1464,13 @@
       if (!input) return;
       if (anchor.datetimeLocal) {
         input.value = anchor.datetimeLocal;
+        if (anchor.source === 'delivery_notes') {
+          markDeliveryPrefilledField('birth_time');
+          deliveryAnchorLocked = true;
+        }
         if (anchor.locked || anchor.source === 'patient_record' || anchor.source === 'linked_baby') {
           deliveryAnchorLocked = true;
+          markDeliveryPrefilledField('birth_time');
         }
       }
       applyBirthTimeLock();
@@ -1628,6 +1676,8 @@
 
       function fieldLocked(id) {
         if (allLocked) return true;
+        if (isEditMode) return false;
+        if (isDeliveryPrefilledField(id)) return true;
         if (id === 'birth_time') {
           return deliveryAnchorLocked && !!document.getElementById('birth_time')?.value;
         }
@@ -1665,7 +1715,7 @@
       }
 
       const note = document.getElementById('identityLockNote');
-      if (note) note.classList.toggle('show', allLocked);
+      if (note) note.classList.toggle('show', allLocked || (!isEditMode && hasDeliveryPrefilledLocks()));
 
       updatePregnancyTypeRowVisibility();
       if (window.ChoiceControls) ChoiceControls.syncAll();
@@ -2035,6 +2085,8 @@
       renderBabyTabs();
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
       applyAutoBabyName();
+      refreshBabySpecificDeliveryPrefilledLocks();
+      applyIdentityFieldLock(false);
       evaluateKmcSection();
       updateKmcDecisionLabel();
       updateNewbornVisitSchedule();
@@ -2085,12 +2137,16 @@
       activeBabyIndex = 1;
       if (baby.birthTime) {
         deliveryAnchorLocked = true;
+        markDeliveryPrefilledField('birth_time');
         const birthTimeEl = document.getElementById('birth_time');
         if (birthTimeEl) birthTimeEl.value = baby.birthTime;
       }
+      if (baby.gender) markDeliveryPrefilledField('gender');
+      if (baby.birthWeightGram != null && baby.birthWeightGram !== '') {
+        markDeliveryPrefilledField('body_weight_gram');
+      }
       initBabyStatesFromBabies([baby], shouldLockNewbornIdentityFields());
       updateTwinTabBarVisibility();
-      applyBirthTimeLock();
       applyIdentityFieldLock(shouldLockNewbornIdentityFields());
     }
 
@@ -2492,6 +2548,9 @@
 
     async function preloadDeliveryNotesIntoNewbornForm() {
       if (!patientId || !window.DeliveryNotesUtils) return;
+      if (!isEditMode && !hasSavedFirstNewbornVisit()) {
+        clearDeliveryPrefilledLocks();
+      }
       if (isCurrentBabyPatient()) {
         applyBabyPatientIdentityFromRecord();
       }
@@ -2508,6 +2567,7 @@
         if (!isCurrentBabyPatient()) {
           initBabyStatesFromBabies(DeliveryNotesUtils.defaultBabies(1), false);
         }
+        refreshBabySpecificDeliveryPrefilledLocks();
         applyIdentityFieldLock(shouldLockNewbornIdentityFields());
         updateKmcDecisionLabel();
         if (window.ChoiceControls) ChoiceControls.syncAll();
@@ -2515,6 +2575,7 @@
       }
 
       applyDeliveryIdentityFromSource(source);
+      markSharedDeliveryPrefilledFromSource(source);
 
       if (!isCurrentBabyPatient()) {
         document.getElementById('pregnancy_type').value = source.pregnancy_type || (source.babies && source.babies.length > 1 ? 'twins' : 'single');
@@ -2522,6 +2583,8 @@
         if (source.birth_time) {
           const birthTimeEl = document.getElementById('birth_time');
           if (birthTimeEl && !birthTimeEl.value) birthTimeEl.value = source.birth_time;
+          markDeliveryPrefilledField('birth_time');
+          deliveryAnchorLocked = true;
         }
       } else {
         const birthOrder = parseInt(currentPatient.birth_order, 10) || 1;
@@ -2533,6 +2596,7 @@
           if (birthTimeEl && !birthTimeEl.value && matchedBaby.birthTime) {
             birthTimeEl.value = DeliveryNotesUtils.toDatetimeLocal(matchedBaby.birthTime);
             deliveryAnchorLocked = true;
+            markDeliveryPrefilledField('birth_time');
           }
           const weightEl = document.getElementById('body_weight_gram');
           if (weightEl && !weightEl.value && matchedBaby.birthWeightGram != null) {
@@ -2550,7 +2614,8 @@
         }
       }
 
-      applyBirthTimeLock();
+      refreshBabySpecificDeliveryPrefilledLocks();
+      applyIdentityFieldLock(shouldLockNewbornIdentityFields());
       updateKmcDecisionLabel();
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
