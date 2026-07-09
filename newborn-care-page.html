@@ -2064,9 +2064,7 @@
     }
 
     function shouldLockNewbornIdentityFields() {
-      const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
       if (hasSavedFirstNewbornVisit() && !isEditMode) return true;
-      if (deliveryAnchorLocked && visitNum === 1 && document.getElementById('birth_time')?.value) return true;
       return false;
     }
 
@@ -2430,32 +2428,90 @@
       initBabyStatesFromBabies(babies, false);
     }
 
+    function getDeliveryNotesPatientId() {
+      if (isCurrentBabyPatient() && currentPatient && currentPatient.mother_patient_id) {
+        return currentPatient.mother_patient_id;
+      }
+      return patientId;
+    }
+
+    function applyDeliveryIdentityFromSource(source) {
+      source = source || {};
+      if (!isCurrentBabyPatient() && source.pregnancy_type) {
+        document.getElementById('pregnancy_type').value = source.pregnancy_type;
+      }
+      if (source.birthplace) {
+        document.getElementById('birthplace').value = normalizeBirthplaceValue(source.birthplace);
+      }
+      if (source.mode_of_delivery) {
+        document.getElementById('mode_of_delivery').value = source.mode_of_delivery;
+      }
+    }
+
     async function preloadDeliveryNotesIntoNewbornForm() {
       if (!patientId || !window.DeliveryNotesUtils) return;
       if (isCurrentBabyPatient()) {
         applyBabyPatientIdentityFromRecord();
-        return;
       }
       if (hasSavedFirstNewbornVisit()) return;
+
+      const notesPatientId = getDeliveryNotesPatientId();
       let source = null;
-      const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+      const notes = await DeliveryNotesUtils.fetchDeliveryNotes(notesPatientId);
       if (notes) {
         source = DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
       }
+
       if (!source) {
-        initBabyStatesFromBabies(DeliveryNotesUtils.defaultBabies(1), false);
+        if (!isCurrentBabyPatient()) {
+          initBabyStatesFromBabies(DeliveryNotesUtils.defaultBabies(1), false);
+        }
+        applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+        updateKmcDecisionLabel();
+        if (window.ChoiceControls) ChoiceControls.syncAll();
         return;
       }
-      document.getElementById('pregnancy_type').value = source.pregnancy_type || (source.babies && source.babies.length > 1 ? 'twins' : 'single');
-      if (source.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(source.birthplace);
-      if (source.mode_of_delivery) document.getElementById('mode_of_delivery').value = source.mode_of_delivery;
-      initBabyStatesFromBabies(source.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(source).deliveryDetails.babies, false);
-      if (source.birth_time) {
-        const birthTimeEl = document.getElementById('birth_time');
-        if (birthTimeEl && !birthTimeEl.value) birthTimeEl.value = source.birth_time;
+
+      applyDeliveryIdentityFromSource(source);
+
+      if (!isCurrentBabyPatient()) {
+        document.getElementById('pregnancy_type').value = source.pregnancy_type || (source.babies && source.babies.length > 1 ? 'twins' : 'single');
+        initBabyStatesFromBabies(source.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(source).deliveryDetails.babies, false);
+        if (source.birth_time) {
+          const birthTimeEl = document.getElementById('birth_time');
+          if (birthTimeEl && !birthTimeEl.value) birthTimeEl.value = source.birth_time;
+        }
+      } else {
+        const birthOrder = parseInt(currentPatient.birth_order, 10) || 1;
+        const matchedBaby = (source.babies || []).find(function (baby, index) {
+          return (parseInt(baby.babyIndex, 10) || (index + 1)) === birthOrder;
+        });
+        if (matchedBaby) {
+          const birthTimeEl = document.getElementById('birth_time');
+          if (birthTimeEl && !birthTimeEl.value && matchedBaby.birthTime) {
+            birthTimeEl.value = DeliveryNotesUtils.toDatetimeLocal(matchedBaby.birthTime);
+            deliveryAnchorLocked = true;
+          }
+          const weightEl = document.getElementById('body_weight_gram');
+          if (weightEl && !weightEl.value && matchedBaby.birthWeightGram != null) {
+            weightEl.value = matchedBaby.birthWeightGram;
+          }
+          if (matchedBaby.gender) {
+            const genderEl = document.getElementById('gender');
+            if (genderEl && !genderEl.value) genderEl.value = matchedBaby.gender;
+          }
+          initBabyStatesFromBabies([Object.assign({}, matchedBaby, {
+            babyIndex: 1,
+            babyName: currentPatient.name || matchedBaby.babyName || '',
+            birthTime: birthTimeEl ? birthTimeEl.value : matchedBaby.birthTime
+          })], false);
+        }
       }
+
       applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+      applyBirthTimeLock();
       updateKmcDecisionLabel();
+      if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
     function applyIdentityFieldLock(locked) {
