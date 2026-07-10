@@ -669,7 +669,7 @@
       }
       if (window.RoleDisplay && RoleDisplay.populateProviderTypeSelect) {
         const regLang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
-        RoleDisplay.populateProviderTypeSelect(document.getElementById('providerType'), 'midwife', regLang);
+        RoleDisplay.populateProviderTypeSelect(document.getElementById('providerType'), 'midwife', regLang, 'Midwife');
       }
       const roleOptions = document.querySelectorAll('.role-option');
       
@@ -706,7 +706,18 @@
         });
 
         if (providerTypeGroup) {
-          providerTypeGroup.style.display = selectedRole === 'Midwife' ? '' : 'none';
+          const showProvider = selectedRole === 'Midwife' || selectedRole === 'TMO';
+          providerTypeGroup.style.display = showProvider ? '' : 'none';
+          if (showProvider && window.RoleDisplay && RoleDisplay.populateProviderTypeSelect) {
+            const regLang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+            const defaultType = selectedRole === 'TMO' ? 'township_administration' : 'midwife';
+            RoleDisplay.populateProviderTypeSelect(
+              document.getElementById('providerType'),
+              defaultType,
+              regLang,
+              selectedRole
+            );
+          }
         }
         
         if (selectedRole === 'Regional Officer') {
@@ -1192,8 +1203,14 @@
         };
         if (data.role === 'Midwife') {
           userData.provider_type = (window.RoleDisplay && RoleDisplay.normalizeProviderType)
-            ? RoleDisplay.normalizeProviderType(data.provider_type)
+            ? RoleDisplay.normalizeProviderType(data.provider_type, 'Midwife')
             : (data.provider_type === 'hospital' ? 'hospital' : 'midwife');
+        } else if (data.role === 'TMO') {
+          userData.provider_type = (window.RoleDisplay && RoleDisplay.normalizeProviderType)
+            ? RoleDisplay.normalizeProviderType(data.provider_type, 'TMO')
+            : (data.provider_type === 'district_administration' ? 'district_administration' : 'township_administration');
+        } else if (isRegionalOfficer) {
+          userData.provider_type = 'regional_administration';
         }
         
         console.log('Saving user data to Firestore:', userData);

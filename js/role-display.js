@@ -1,6 +1,6 @@
 /**
  * Role display labels — permissions stay on `role`; `provider_type` is label-only.
- * Midwife-level accounts share the same RBAC; provider_type controls EN/MM display only.
+ * Midwife, TMO, and Regional Officer accounts can have display labels (same RBAC per role).
  */
 (function (global) {
   'use strict';
@@ -12,8 +12,11 @@
   var PROVIDER_TYPE_MCH = 'mch';
   var PROVIDER_TYPE_STATION_HOSPITAL = 'station_hospital';
   var PROVIDER_TYPE_STATION_HEALTH_UNIT = 'station_health_unit';
+  var PROVIDER_TYPE_TOWNSHIP_ADMIN = 'township_administration';
+  var PROVIDER_TYPE_DISTRICT_ADMIN = 'district_administration';
+  var PROVIDER_TYPE_REGIONAL_ADMIN = 'regional_administration';
 
-  var PROVIDER_TYPES = [
+  var MIDWIFE_PROVIDER_TYPES = [
     { value: PROVIDER_TYPE_MIDWIFE, en: 'Midwife', mm: 'သားဖွားဆရာမ' },
     { value: PROVIDER_TYPE_HOSPITAL, en: 'Hospital', mm: 'ဆေးရုံ' },
     { value: PROVIDER_TYPE_STATION_HOSPITAL, en: 'Station Hospital', mm: 'တိုက်နယ်ဆေးရုံ' },
@@ -22,6 +25,18 @@
     { value: PROVIDER_TYPE_SRHC, en: 'SRHC', mm: 'ကျေးလက်ကျန်းမာရေးဌာနခွဲ' },
     { value: PROVIDER_TYPE_MCH, en: 'MCH', mm: 'မိခင်နှင့်ကလေး ကျန်းမာရေးဌာန' }
   ];
+
+  var TMO_PROVIDER_TYPES = [
+    { value: PROVIDER_TYPE_TOWNSHIP_ADMIN, en: 'Township Administration', mm: 'မြို့နယ် ကျန်းမာရေးဦးစီးဌာနမှူး' },
+    { value: PROVIDER_TYPE_DISTRICT_ADMIN, en: 'District Administration', mm: 'ခရိုင် ကျန်းမာရေးဦးစီးဌာနမှူး' }
+  ];
+
+  var REGIONAL_PROVIDER_TYPES = [
+    { value: PROVIDER_TYPE_REGIONAL_ADMIN, en: 'Regional Administration', mm: 'တိုင်း/ပြည်နယ် ပြည်သူ့ကျန်းမာရေးဦးစီးဌာန' }
+  ];
+
+  // Backward compatibility — all midwife-level types
+  var PROVIDER_TYPES = MIDWIFE_PROVIDER_TYPES;
 
   function getCurrentLang(lang) {
     if (lang) return lang === 'en' ? 'en' : 'mm';
@@ -39,49 +54,66 @@
     return key === 'midwife' || key === '';
   }
 
-  function normalizeProviderType(providerType) {
+  function isTMORole(role) {
+    return normalizeRoleKey(role) === 'tmo';
+  }
+
+  function isRegionalOfficerRole(role) {
+    return normalizeRoleKey(role) === 'regional officer';
+  }
+
+  function getProviderTypesForRole(role) {
+    if (isTMORole(role)) return TMO_PROVIDER_TYPES;
+    if (isRegionalOfficerRole(role)) return REGIONAL_PROVIDER_TYPES;
+    return MIDWIFE_PROVIDER_TYPES;
+  }
+
+  function normalizeProviderType(providerType, role) {
     var key = String(providerType || '').toLowerCase().trim();
-    for (var i = 0; i < PROVIDER_TYPES.length; i++) {
-      if (PROVIDER_TYPES[i].value === key) return key;
+    var list = getProviderTypesForRole(role);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].value === key) return key;
     }
-    return PROVIDER_TYPE_MIDWIFE;
+    return list[0].value;
   }
 
-  function getProviderTypeEntry(providerType) {
-    var normalized = normalizeProviderType(providerType);
-    for (var i = 0; i < PROVIDER_TYPES.length; i++) {
-      if (PROVIDER_TYPES[i].value === normalized) return PROVIDER_TYPES[i];
+  function getProviderTypeEntry(providerType, role) {
+    var list = getProviderTypesForRole(role);
+    var normalized = normalizeProviderType(providerType, role);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].value === normalized) return list[i];
     }
-    return PROVIDER_TYPES[0];
+    return list[0];
   }
 
-  function getProviderTypeLabel(providerType, lang) {
-    var entry = getProviderTypeEntry(providerType);
+  function getProviderTypeLabel(providerType, lang, role) {
+    var entry = getProviderTypeEntry(providerType, role);
     return getCurrentLang(lang) === 'en' ? entry.en : entry.mm;
   }
 
-  function getProviderTypeBilingualLabel(providerType) {
-    var entry = getProviderTypeEntry(providerType);
+  function getProviderTypeBilingualLabel(providerType, role) {
+    var entry = getProviderTypeEntry(providerType, role);
     return entry.en + ' / ' + entry.mm;
   }
 
   function isHospitalProvider(userOrType) {
     if (userOrType && typeof userOrType === 'object') {
       return isMidwifeRole(userOrType.role) &&
-        normalizeProviderType(userOrType.provider_type) === PROVIDER_TYPE_HOSPITAL;
+        normalizeProviderType(userOrType.provider_type, userOrType.role) === PROVIDER_TYPE_HOSPITAL;
     }
-    return normalizeProviderType(userOrType) === PROVIDER_TYPE_HOSPITAL;
+    return normalizeProviderType(userOrType, 'Midwife') === PROVIDER_TYPE_HOSPITAL;
   }
 
   function getMidwifeLevelDisplayLabel(providerType, lang) {
-    return getProviderTypeLabel(providerType, lang);
+    return getProviderTypeLabel(providerType, lang, 'Midwife');
   }
 
-  function populateProviderTypeSelect(selectEl, selectedValue, lang) {
+  function populateProviderTypeSelect(selectEl, selectedValue, lang, role) {
     if (!selectEl) return;
-    var selected = normalizeProviderType(selectedValue);
+    var list = getProviderTypesForRole(role);
+    var selected = normalizeProviderType(selectedValue, role);
     var useLang = getCurrentLang(lang);
-    selectEl.innerHTML = PROVIDER_TYPES.map(function (entry) {
+    selectEl.innerHTML = list.map(function (entry) {
       var label = useLang === 'en' ? entry.en : entry.mm;
       var sel = entry.value === selected ? ' selected' : '';
       return '<option value="' + entry.value + '"' + sel + '>' + label + '</option>';
@@ -109,14 +141,16 @@
       providerType = global.localStorage ? localStorage.getItem('providerType') : null;
     }
 
-    if (role === 'TMO') {
-      return useLang === 'en' ? 'Township Dashboard' : 'မြို့နယ် ဒက်ရှ်ဘုတ်';
+    if (isRegionalOfficerRole(role)) {
+      return getProviderTypeLabel(PROVIDER_TYPE_REGIONAL_ADMIN, useLang, role);
     }
-    if (normalizeRoleKey(role) === 'regional officer') {
-      return useLang === 'en' ? 'Regional Dashboard' : 'တိုင်းဒေသကြီး/ပြည်နယ် ဒက်ရှ်ဘုတ်';
+    if (isTMORole(role)) {
+      return getProviderTypeLabel(providerType, useLang, role);
     }
-    if (isMidwifeRole(role)) return getProviderTypeLabel(providerType, useLang);
-    return role || getProviderTypeLabel(PROVIDER_TYPE_MIDWIFE, useLang);
+    if (isMidwifeRole(role)) {
+      return getProviderTypeLabel(providerType, useLang, role);
+    }
+    return role || getProviderTypeLabel(PROVIDER_TYPE_MIDWIFE, useLang, 'Midwife');
   }
 
   global.RoleDisplay = {
@@ -127,10 +161,19 @@
     PROVIDER_TYPE_MCH: PROVIDER_TYPE_MCH,
     PROVIDER_TYPE_STATION_HOSPITAL: PROVIDER_TYPE_STATION_HOSPITAL,
     PROVIDER_TYPE_STATION_HEALTH_UNIT: PROVIDER_TYPE_STATION_HEALTH_UNIT,
+    PROVIDER_TYPE_TOWNSHIP_ADMIN: PROVIDER_TYPE_TOWNSHIP_ADMIN,
+    PROVIDER_TYPE_DISTRICT_ADMIN: PROVIDER_TYPE_DISTRICT_ADMIN,
+    PROVIDER_TYPE_REGIONAL_ADMIN: PROVIDER_TYPE_REGIONAL_ADMIN,
     PROVIDER_TYPES: PROVIDER_TYPES,
+    MIDWIFE_PROVIDER_TYPES: MIDWIFE_PROVIDER_TYPES,
+    TMO_PROVIDER_TYPES: TMO_PROVIDER_TYPES,
+    REGIONAL_PROVIDER_TYPES: REGIONAL_PROVIDER_TYPES,
     getCurrentLang: getCurrentLang,
     isMidwifeRole: isMidwifeRole,
+    isTMORole: isTMORole,
+    isRegionalOfficerRole: isRegionalOfficerRole,
     isHospitalProvider: isHospitalProvider,
+    getProviderTypesForRole: getProviderTypesForRole,
     normalizeProviderType: normalizeProviderType,
     getProviderTypeLabel: getProviderTypeLabel,
     getProviderTypeBilingualLabel: getProviderTypeBilingualLabel,
