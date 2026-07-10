@@ -741,6 +741,7 @@
   <script>
     let currentUser = null;
     let userRole = null;
+    let homeUserProfileData = null;
     let patientStats = {
       antenatal: 0,
       labour: 0,
@@ -947,6 +948,14 @@
       }
     }
     
+    function updateHomeUserRoleLabel() {
+      const el = document.getElementById('userRole');
+      if (!el || !homeUserProfileData) return;
+      el.textContent = window.RoleDisplay
+        ? RoleDisplay.getRoleDisplayLabel(homeUserProfileData, currentLanguage)
+        : (homeUserProfileData.role || '');
+    }
+
     async function loadUserData() {
       try {
         // OPTIMIZED: Use user cache to avoid redundant queries
@@ -983,13 +992,10 @@
             console.warn('Could not persist providerType', storageError);
           }
           
+          homeUserProfileData = userData;
+          
           document.getElementById("userEmail").textContent = currentUser.email;
-          const roleDisplay = window.RoleDisplay
-            ? RoleDisplay.getRoleDisplayLabel(userData)
-            : (userData.role === "TMO" ? "Township Dashboard"
-              : (userData.role && userData.role.toLowerCase().replace(/\s+/g, " ") === "regional officer") ? "Regional Dashboard"
-              : userData.role);
-          document.getElementById("userRole").textContent = roleDisplay;
+          updateHomeUserRoleLabel();
           
           // Supervisory and admin accounts do not use midwife-only patient workflows.
           const isSupervisoryRole = userRole === 'TMO' || (
@@ -1677,6 +1683,7 @@
       });
 
       if (pageInitialized) {
+        updateHomeUserRoleLabel();
         loadPendingTransferCount();
         refreshHomeFollowUpBadges();
       }
