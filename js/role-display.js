@@ -10,10 +10,14 @@
   var PROVIDER_TYPE_RHC = 'rhc';
   var PROVIDER_TYPE_SRHC = 'srhc';
   var PROVIDER_TYPE_MCH = 'mch';
+  var PROVIDER_TYPE_STATION_HOSPITAL = 'station_hospital';
+  var PROVIDER_TYPE_STATION_HEALTH_UNIT = 'station_health_unit';
 
   var PROVIDER_TYPES = [
     { value: PROVIDER_TYPE_MIDWIFE, en: 'Midwife', mm: 'သားဖွားဆရာမ' },
     { value: PROVIDER_TYPE_HOSPITAL, en: 'Hospital', mm: 'ဆေးရုံ' },
+    { value: PROVIDER_TYPE_STATION_HOSPITAL, en: 'Station Hospital', mm: 'တိုက်နယ်ဆေးရုံ' },
+    { value: PROVIDER_TYPE_STATION_HEALTH_UNIT, en: 'Station Health Unit', mm: 'တိုက်နယ် ကျန်းမာရေးဌာန' },
     { value: PROVIDER_TYPE_RHC, en: 'RHC', mm: 'ကျေးလက်ကျန်းမာရေးဌာန' },
     { value: PROVIDER_TYPE_SRHC, en: 'SRHC', mm: 'ကျေးလက်ကျန်းမာရေးဌာနခွဲ' },
     { value: PROVIDER_TYPE_MCH, en: 'MCH', mm: 'မိခင်နှင့်ကလေး ကျန်းမာရေးဌာန' }
@@ -121,6 +125,8 @@
     PROVIDER_TYPE_RHC: PROVIDER_TYPE_RHC,
     PROVIDER_TYPE_SRHC: PROVIDER_TYPE_SRHC,
     PROVIDER_TYPE_MCH: PROVIDER_TYPE_MCH,
+    PROVIDER_TYPE_STATION_HOSPITAL: PROVIDER_TYPE_STATION_HOSPITAL,
+    PROVIDER_TYPE_STATION_HEALTH_UNIT: PROVIDER_TYPE_STATION_HEALTH_UNIT,
     PROVIDER_TYPES: PROVIDER_TYPES,
     getCurrentLang: getCurrentLang,
     isMidwifeRole: isMidwifeRole,
