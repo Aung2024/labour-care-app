@@ -476,7 +476,6 @@
           <i class="fas fa-user-plus"></i>
         </div>
         <h1>Join Our Healthcare Team</h1>
-        <p>Create your professional account to access the system</p>
   </div>
 
       <!-- Registration Form -->
@@ -506,7 +505,6 @@
               <i class="fas fa-envelope"></i> Email Address
             </label>
             <input name="email" id="email" type="email" class="form-control" placeholder="Enter your email address">
-            <div class="form-text">Email is optional but recommended for account recovery</div>
           </div>
         </div>
 
@@ -545,9 +543,6 @@
               <i class="fas fa-id-badge"></i> <span class="lang-text" data-en="Register as" data-mm="အဖြစ်အမျိုးအစား မှတ်ပုံတင်ရန်">Register as</span>
             </label>
             <select name="provider_type" id="providerType" class="form-control"></select>
-            <div class="form-text">
-              <span class="lang-text" data-en="All options have the same system access. This only changes how your account is labeled." data-mm="ရွေးချယ်မှုအားလုံးတွင် စနစ်အသုံးပြုခွင့် တူညီပါသည်။ အကောင့်ပေါ်တွင် ပြသမည့် အမျိုးအစားသာ ကွဲပြားပါသည်။">All options have the same system access. This only changes how your account is labeled.</span>
-            </div>
           </div>
 
           <div class="form-group">
@@ -584,17 +579,15 @@
       <select name="township" id="townshipSelect" class="form-control" required disabled>
         <option value="">Please select a region first</option>
       </select>
-      <div class="form-text">Township options will appear after selecting a region</div>
     </div>
 
           <div class="form-group">
             <label for="facility" class="form-label">
               <i class="fas fa-hospital"></i> Facility
             </label>
-            <select name="facility" id="facility" class="form-control" required>
-              <option value="">Select Facility</option>
+            <select name="facility" id="facility" class="form-control" required disabled>
+              <option value="">Select township first</option>
             </select>
-            <div class="form-text">Please select your facility from the list</div>
           </div>
     </div>
 
@@ -609,7 +602,6 @@
               <i class="fas fa-lock"></i> <span class="lang-text" data-en="Password" data-mm="စကားဝှက်">Password</span>
             </label>
             <input name="password" id="password" type="password" class="form-control" placeholder="Create a strong password" required oninput="validatePasswordInput()">
-            <div id="passwordPolicyDescription"></div>
             <div id="passwordStrengthIndicator"></div>
             <div id="passwordValidationErrors" class="text-danger" style="font-size: 0.875rem; margin-top: 0.5rem;"></div>
           </div>
@@ -662,11 +654,36 @@
     </p>
   </footer>
   <script>
+    function updateFacilityOptions() {
+      const facilitySelect = document.getElementById('facility');
+      const townshipSelect = document.getElementById('townshipSelect');
+      const regionSelect = document.getElementById('regionSelect');
+      const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
+      const township = townshipSelect ? townshipSelect.value : '';
+      const region = regionSelect ? regionSelect.value : '';
+
+      if (!facilitySelect || !window.FacilityConfig) return;
+
+      if (selectedRole === 'Regional Officer') {
+        facilitySelect.disabled = false;
+        FacilityConfig.populateFacilitySelect(facilitySelect, { region: region, township: '' });
+        return;
+      }
+
+      if (!township) {
+        facilitySelect.innerHTML = '<option value="">Select township first</option>';
+        facilitySelect.disabled = true;
+        facilitySelect.value = '';
+        return;
+      }
+
+      facilitySelect.disabled = false;
+      FacilityConfig.populateFacilitySelect(facilitySelect, { township: township, region: region });
+    }
+
     // Role selection styling
     document.addEventListener('DOMContentLoaded', function() {
-      if (window.FacilityConfig && FacilityConfig.populateFacilitySelect) {
-        FacilityConfig.populateFacilitySelect(document.getElementById('facility'));
-      }
+      updateFacilityOptions();
       if (window.RoleDisplay && RoleDisplay.populateProviderTypeSelect) {
         const regLang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
         RoleDisplay.populateProviderTypeSelect(document.getElementById('providerType'), 'midwife', regLang, 'Midwife');
@@ -688,6 +705,11 @@
         // Handle radio button change
         radio.addEventListener('change', updateRoleSelection);
       });
+
+      const townshipSelectEl = document.getElementById('townshipSelect');
+      if (townshipSelectEl) {
+        townshipSelectEl.addEventListener('change', updateFacilityOptions);
+      }
       
       function updateRoleSelection() {
         const selectedRole = document.querySelector('input[name="role"]:checked')?.value;
@@ -725,10 +747,12 @@
           townshipSelect.disabled = true;
           townshipSelect.value = '';
           townshipSelect.innerHTML = '<option value="">All townships in region</option>';
+          updateFacilityOptions();
         } else {
           townshipSelect.required = true;
           townshipSelect.disabled = !regionSelect.value;
           if (regionSelect.value) updateTownships();
+          updateFacilityOptions();
         }
       }
     });
@@ -1082,6 +1106,7 @@
         townshipSelect.innerHTML = '<option value="">All townships in region</option>';
         townshipSelect.disabled = true;
         townshipSelect.required = false;
+        updateFacilityOptions();
         return;
       }
       
@@ -1098,6 +1123,7 @@
           townshipSelect.appendChild(option);
         });
       }
+      updateFacilityOptions();
     }
 
     const form = document.getElementById("registerForm");
@@ -1133,7 +1159,13 @@
       }
       
       // Validate facility field
-      if (!data.facility || !(window.FacilityConfig && FacilityConfig.isValidFacilityCode(data.facility))) {
+      const facilityTownship = isRegionalOfficer ? '' : (data.township || '');
+      const facilityValid = window.FacilityConfig && (
+        isRegionalOfficer
+          ? FacilityConfig.isValidFacilityForTownship(data.facility, '', data.region)
+          : FacilityConfig.isValidFacilityForTownship(data.facility, facilityTownship, data.region)
+      );
+      if (!data.facility || !facilityValid) {
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please select a valid facility.</div>';
@@ -1278,15 +1310,8 @@
     // Password validation functions
     function validatePasswordInput() {
       const password = document.getElementById('password').value;
-      const policyDesc = document.getElementById('passwordPolicyDescription');
       const strengthIndicator = document.getElementById('passwordStrengthIndicator');
       const errorDiv = document.getElementById('passwordValidationErrors');
-      
-      // Show password policy description on first focus
-      if (password.length === 0 && !policyDesc.innerHTML) {
-        const currentLang = localStorage.getItem('language') || 'mm';
-        policyDesc.innerHTML = PasswordPolicy.getDescription(currentLang);
-      }
       
       if (password.length === 0) {
         strengthIndicator.innerHTML = '';
