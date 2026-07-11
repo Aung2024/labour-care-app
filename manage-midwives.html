@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Manage Midwives</title>
+  <title>Manage Users</title>
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
   <style>
@@ -33,7 +33,7 @@
       gap: .75rem;
     }
     @media (min-width: 768px) {
-      .filters { grid-template-columns: 1.4fr 1fr 1fr auto; align-items: end; }
+      .filters { grid-template-columns: 1.2fr 1fr 1fr 1fr auto; align-items: end; }
     }
     .mw-row {
       border: 1px solid #e5e7eb;
@@ -44,9 +44,21 @@
     }
     .mw-row:hover { border-color: #9ca3af; background: #f9fafb; }
     .mw-meta { color: #6b7280; font-size: .85rem; }
+    .mw-serial {
+      min-width: 2rem;
+      height: 2rem;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-weight: 700;
+      font-size: .85rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
     .badge-approved { background: #d1fae5; color: #065f46; }
     .badge-pending { background: #fef3c7; color: #92400e; }
-    .table-wrap { overflow-x: auto; }
     .form-select, .form-control { min-height: 44px; }
   </style>
 </head>
@@ -54,8 +66,8 @@
   <div class="wrap">
     <div class="head d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <div>
-        <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-user-nurse me-2"></i>Manage Midwives</div>
-        <div style="opacity:.92;font-size:.9rem;">View and edit midwife accounts</div>
+        <div class="fw-bold" style="font-size:1.1rem;"><i class="fas fa-users-cog me-2"></i>Manage Users</div>
+        <div style="opacity:.92;font-size:.9rem;">Approve, edit labels, and manage midwife / TMO / regional accounts</div>
       </div>
       <a href="home.html" class="btn btn-light btn-sm"><i class="fas fa-home me-1"></i>Home</a>
     </div>
@@ -65,6 +77,15 @@
         <div>
           <label class="form-label mb-1">Search</label>
           <input type="search" id="searchInput" class="form-control" placeholder="Name or email..." />
+        </div>
+        <div>
+          <label class="form-label mb-1">Role</label>
+          <select id="roleFilter" class="form-select">
+            <option value="">All roles</option>
+            <option value="Midwife">Midwife-level</option>
+            <option value="TMO">TMO</option>
+            <option value="Regional Officer">Regional Officer</option>
+          </select>
         </div>
         <div>
           <label class="form-label mb-1">Region</label>
@@ -80,21 +101,24 @@
       </div>
     </div>
 
-    <div id="listWrap" class="cardx"><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>
+    <div id="listWrap" class="cardx"><i class="fas fa-spinner fa-spin me-2"></i>Loading users...</div>
   </div>
 
   <div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="fas fa-user-edit me-2"></i>Edit Midwife</h5>
+          <h5 class="modal-title"><i class="fas fa-user-edit me-2"></i>Edit User Account</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">Email</label>
             <input type="email" id="editEmail" class="form-control" readonly />
-            <div class="form-text">Email changes require Admin Dashboard → Update Email.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">System role</label>
+            <input type="text" id="editRole" class="form-control" readonly />
           </div>
           <div class="mb-3">
             <label class="form-label">Name</label>
@@ -112,10 +136,9 @@
             <label class="form-label">Township</label>
             <select id="editTownship" class="form-select"></select>
           </div>
-          <div class="mb-3">
+          <div class="mb-3" id="editProviderTypeGroup">
             <label class="form-label">Account label</label>
             <select id="editProviderType" class="form-select"></select>
-            <div class="form-text">Same system access — label only.</div>
           </div>
           <div class="mb-2">
             <label class="form-label">Account status</label>
@@ -127,7 +150,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveMidwife()"><i class="fas fa-save me-1"></i>Save</button>
+          <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveUser()"><i class="fas fa-save me-1"></i>Save</button>
         </div>
       </div>
     </div>
@@ -143,16 +166,42 @@
   <script src="js/ui-dialogs.js"></script>
   <script src="js/role-display.js"></script>
   <script>
-    let allMidwives = [];
+    let allUsers = [];
     let editingId = null;
+    let editingRole = null;
     let editModal = null;
+    let currentAdminUid = null;
 
     function escapeHtml(v) {
       return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    function normalizeRoleKey(role) {
+      return String(role || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    }
+
     function isMidwifeRole(role) {
-      return role === 'Midwife' || role === 'midwife';
+      return normalizeRoleKey(role) === 'midwife' || !role;
+    }
+
+    function isManageableRole(role) {
+      if (normalizeRoleKey(role) === 'super admin') return false;
+      return isMidwifeRole(role) || normalizeRoleKey(role) === 'tmo' || normalizeRoleKey(role) === 'regional officer';
+    }
+
+    function roleFilterMatches(userRole, filterValue) {
+      if (!filterValue) return true;
+      if (filterValue === 'Midwife') return isMidwifeRole(userRole);
+      if (filterValue === 'TMO') return normalizeRoleKey(userRole) === 'tmo';
+      if (filterValue === 'Regional Officer') return normalizeRoleKey(userRole) === 'regional officer';
+      return userRole === filterValue;
+    }
+
+    function getUserDisplayLabel(user) {
+      if (window.RoleDisplay) {
+        return RoleDisplay.getRoleDisplayLabel(user, 'en') + ' / ' + RoleDisplay.getRoleDisplayLabel(user, 'mm');
+      }
+      return user.role || 'User';
     }
 
     async function requireSuperAdmin(user) {
@@ -165,14 +214,15 @@
     firebase.auth().onAuthStateChanged(async function(user) {
       user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
       if (!user) { window.location.href = 'login.html'; return; }
+      currentAdminUid = user.uid;
       try {
         await requireSuperAdmin(user);
         editModal = new bootstrap.Modal(document.getElementById('editModal'));
         initRegionFilters();
         bindFilterEvents();
-        await loadMidwives();
+        await loadUsers();
       } catch (e) {
-        await AppDialog.alert(e.message || 'Access denied.', { title: 'Manage Midwives' });
+        await AppDialog.alert(e.message || 'Access denied.', { title: 'Manage Users' });
         window.location.href = 'home.html';
       }
     });
@@ -191,7 +241,7 @@
       if (region && window.MYANMAR_REGIONS && window.MYANMAR_REGIONS[region]) {
         townships = window.MYANMAR_REGIONS[region].slice().sort();
       } else {
-        townships = [...new Set(allMidwives.map(function(m) { return (m.township || '').trim(); }).filter(Boolean))].sort();
+        townships = [...new Set(allUsers.map(function(m) { return (m.township || '').trim(); }).filter(Boolean))].sort();
       }
       tSel.innerHTML = '<option value="">All Townships</option>' +
         townships.map(function(t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('');
@@ -199,6 +249,7 @@
 
     function bindFilterEvents() {
       document.getElementById('searchInput').addEventListener('input', renderList);
+      document.getElementById('roleFilter').addEventListener('change', renderList);
       document.getElementById('regionFilter').addEventListener('change', function() {
         fillTownshipFilter();
         renderList();
@@ -208,84 +259,129 @@
 
     function resetFilters() {
       document.getElementById('searchInput').value = '';
+      document.getElementById('roleFilter').value = '';
       document.getElementById('regionFilter').value = '';
       fillTownshipFilter();
       document.getElementById('townshipFilter').value = '';
       renderList();
     }
 
-    async function loadMidwives() {
+    async function loadUsers() {
       const wrap = document.getElementById('listWrap');
-      wrap.innerHTML = '<div><i class="fas fa-spinner fa-spin me-2"></i>Loading midwives...</div>';
+      wrap.innerHTML = '<div><i class="fas fa-spinner fa-spin me-2"></i>Loading users...</div>';
       try {
         const db = firebase.firestore();
-        let docs = [];
-        try {
-          const snap = await db.collection('users').where('role', 'in', ['Midwife', 'midwife']).get();
-          snap.forEach(function(d) { docs.push({ id: d.id, ...d.data() }); });
-        } catch (e) {
-          const snap = await db.collection('users').get();
-          snap.forEach(function(d) {
-            const data = d.data() || {};
-            if (isMidwifeRole(data.role)) docs.push({ id: d.id, ...data });
-          });
-        }
+        const snap = await db.collection('users').get();
+        const docs = [];
+        snap.forEach(function(d) {
+          const data = d.data() || {};
+          if (isManageableRole(data.role)) docs.push({ id: d.id, ...data });
+        });
 
-        allMidwives = docs.sort(function(a, b) {
+        allUsers = docs.sort(function(a, b) {
+          const roleOrder = function(role) {
+            if (normalizeRoleKey(role) === 'tmo') return 1;
+            if (normalizeRoleKey(role) === 'regional officer') return 2;
+            return 0;
+          };
+          const ra = roleOrder(a.role);
+          const rb = roleOrder(b.role);
+          if (ra !== rb) return ra - rb;
           return String(a.name || a.email || '').localeCompare(String(b.name || b.email || ''));
         });
         fillTownshipFilter();
         renderList();
       } catch (e) {
         console.error(e);
-        wrap.innerHTML = '<div class="text-danger">Failed to load midwives: ' + escapeHtml(e.message) + '</div>';
+        wrap.innerHTML = '<div class="text-danger">Failed to load users: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
-    function getFilteredMidwives() {
+    function getFilteredUsers() {
       const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
       const region = document.getElementById('regionFilter').value;
       const township = document.getElementById('townshipFilter').value;
-      return allMidwives.filter(function(m) {
+      const roleFilter = document.getElementById('roleFilter').value;
+      return allUsers.filter(function(m) {
+        if (!roleFilterMatches(m.role, roleFilter)) return false;
         if (region && (m.region || '') !== region) return false;
         if (township && (m.township || '') !== township) return false;
         if (!q) return true;
-        const hay = ((m.name || '') + ' ' + (m.email || '')).toLowerCase();
+        const hay = ((m.name || '') + ' ' + (m.email || '') + ' ' + (m.role || '')).toLowerCase();
         return hay.indexOf(q) !== -1;
       });
     }
 
+    async function countPatientsForUser(userId) {
+      const db = firebase.firestore();
+      const patientIds = new Set();
+      try {
+        const newQuery = await db.collection('patients').where('created_by', '==', userId).get();
+        newQuery.forEach(function(d) { patientIds.add(d.id); });
+      } catch (e) { console.warn(e); }
+      try {
+        const oldQuery = await db.collection('patients').where('createdBy', '==', userId).get();
+        oldQuery.forEach(function(d) { patientIds.add(d.id); });
+      } catch (e) { console.warn(e); }
+      return patientIds.size;
+    }
+
     function renderList() {
       const wrap = document.getElementById('listWrap');
-      const rows = getFilteredMidwives();
+      const rows = getFilteredUsers();
       if (!rows.length) {
-        wrap.innerHTML = '<div class="text-muted">No midwives match your filters.</div>';
+        wrap.innerHTML = '<div class="text-muted">No users match your filters.</div>';
         return;
       }
 
-      wrap.innerHTML = rows.map(function(m) {
+      wrap.innerHTML = rows.map(function(m, index) {
         const approved = m.approved !== false;
-        const typeLabel = window.RoleDisplay
-          ? RoleDisplay.getProviderTypeBilingualLabel(m.provider_type, m.role || 'Midwife')
-          : (m.provider_type === 'hospital' ? 'Hospital / ဆေးရုံ' : 'Midwife / သားဖွားဆရာမ');
+        const typeLabel = getUserDisplayLabel(m);
         const badge = approved
           ? '<span class="badge badge-approved">Approved</span>'
           : '<span class="badge badge-pending">Pending</span>';
+        const isSelf = m.id === currentAdminUid;
+        const deleteBtn = isSelf
+          ? ''
+          : '<button class="btn btn-outline-danger btn-sm" onclick="confirmDeleteUser(\'' + m.id + '\')"><i class="fas fa-trash-alt me-1"></i>Delete</button>';
+        const approveBtn = !approved
+          ? '<button class="btn btn-success btn-sm" onclick="quickApprove(\'' + m.id + '\')"><i class="fas fa-check me-1"></i>Approve</button>'
+          : '';
         return `
           <div class="mw-row d-flex justify-content-between align-items-start gap-2 flex-wrap">
-            <div>
-              <div class="fw-bold">${escapeHtml(m.name || 'Unnamed midwife')}</div>
-              <div class="mw-meta">${escapeHtml(typeLabel)} · ${escapeHtml(m.email || '-')}</div>
-              <div class="mw-meta">${escapeHtml(m.region || 'No region')} · ${escapeHtml(m.township || 'No township')}</div>
-              ${m.phone ? '<div class="mw-meta">' + escapeHtml(m.phone) + '</div>' : ''}
+            <div class="d-flex gap-3 align-items-start">
+              <span class="mw-serial">${index + 1}</span>
+              <div>
+                <div class="fw-bold">${escapeHtml(m.name || 'Unnamed user')}</div>
+                <div class="mw-meta">${escapeHtml(typeLabel)}</div>
+                <div class="mw-meta">${escapeHtml(m.email || '-')} · ${escapeHtml(m.role || '-')}</div>
+                <div class="mw-meta">${escapeHtml(m.region || 'No region')} · ${escapeHtml(m.township || 'No township')}</div>
+                ${m.phone ? '<div class="mw-meta">' + escapeHtml(m.phone) + '</div>' : ''}
+              </div>
             </div>
             <div class="d-flex flex-column align-items-end gap-2">
               ${badge}
-              <button class="btn btn-outline-primary btn-sm" onclick="openEdit('${m.id}')"><i class="fas fa-edit me-1"></i>Edit</button>
+              <div class="d-flex flex-wrap gap-2 justify-content-end">
+                ${approveBtn}
+                <button class="btn btn-outline-primary btn-sm" onclick="openEdit('${m.id}')"><i class="fas fa-edit me-1"></i>Edit</button>
+                ${deleteBtn}
+              </div>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    async function quickApprove(id) {
+      try {
+        await firebase.firestore().collection('users').doc(id).update({ approved: true });
+        const idx = allUsers.findIndex(function(x) { return x.id === id; });
+        if (idx !== -1) allUsers[idx].approved = true;
+        renderList();
+        await AppDialog.alert('User approved.', { title: 'Approved' });
+      } catch (e) {
+        await AppDialog.alert('Unable to approve: ' + e.message, { title: 'Error' });
+      }
     }
 
     function fillEditTownships(region, selected) {
@@ -299,24 +395,30 @@
         }).join('');
     }
 
+    function syncProviderTypeEditor(role, providerType) {
+      const group = document.getElementById('editProviderTypeGroup');
+      const select = document.getElementById('editProviderType');
+      if (normalizeRoleKey(role) === 'regional officer') {
+        group.style.display = 'none';
+        return;
+      }
+      group.style.display = '';
+      if (window.RoleDisplay && RoleDisplay.populateProviderTypeSelect) {
+        RoleDisplay.populateProviderTypeSelect(select, providerType, RoleDisplay.getCurrentLang(), role || 'Midwife');
+      }
+    }
+
     function openEdit(id) {
-      const m = allMidwives.find(function(x) { return x.id === id; });
+      const m = allUsers.find(function(x) { return x.id === id; });
       if (!m) return;
       editingId = id;
+      editingRole = m.role || 'Midwife';
       document.getElementById('editEmail').value = m.email || '';
+      document.getElementById('editRole').value = m.role || '';
       document.getElementById('editName').value = m.name || '';
       document.getElementById('editPhone').value = m.phone || '';
       document.getElementById('editApproved').value = m.approved === false ? 'false' : 'true';
-      if (window.RoleDisplay && RoleDisplay.populateProviderTypeSelect) {
-        RoleDisplay.populateProviderTypeSelect(
-          document.getElementById('editProviderType'),
-          m.provider_type,
-          RoleDisplay.getCurrentLang(),
-          m.role || 'Midwife'
-        );
-      } else {
-        document.getElementById('editProviderType').value = m.provider_type === 'hospital' ? 'hospital' : 'midwife';
-      }
+      syncProviderTypeEditor(editingRole, m.provider_type);
 
       const rSel = document.getElementById('editRegion');
       const regions = Object.keys(window.MYANMAR_REGIONS || {}).sort();
@@ -331,7 +433,7 @@
       editModal.show();
     }
 
-    async function saveMidwife() {
+    async function saveUser() {
       if (!editingId) return;
       const name = document.getElementById('editName').value.trim();
       const phone = document.getElementById('editPhone').value.trim();
@@ -339,8 +441,9 @@
       const township = document.getElementById('editTownship').value.trim();
       const approved = document.getElementById('editApproved').value === 'true';
       const providerType = document.getElementById('editProviderType').value;
+      const role = editingRole || 'Midwife';
       if (!name) {
-        await AppDialog.alert('Name is required.', { title: 'Edit Midwife' });
+        await AppDialog.alert('Name is required.', { title: 'Edit User' });
         return;
       }
 
@@ -351,30 +454,98 @@
           name: name,
           phone: phone || null,
           region: region || null,
-          township: township || null,
+          township: normalizeRoleKey(role) === 'regional officer' ? '' : (township || null),
           approved: approved,
-          role: 'Midwife',
-          provider_type: (window.RoleDisplay && RoleDisplay.normalizeProviderType)
-            ? RoleDisplay.normalizeProviderType(providerType, 'Midwife')
-            : (providerType === 'hospital' ? 'hospital' : 'midwife'),
+          role: role,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: firebase.auth().currentUser.uid
         };
+        if (normalizeRoleKey(role) === 'regional officer') {
+          payload.provider_type = 'regional_administration';
+        } else if (normalizeRoleKey(role) === 'tmo') {
+          payload.provider_type = (window.RoleDisplay && RoleDisplay.normalizeProviderType)
+            ? RoleDisplay.normalizeProviderType(providerType, 'TMO')
+            : providerType;
+        } else {
+          payload.provider_type = (window.RoleDisplay && RoleDisplay.normalizeProviderType)
+            ? RoleDisplay.normalizeProviderType(providerType, 'Midwife')
+            : providerType;
+        }
         if (!payload.region && payload.township && window.getRegionFromTownship) {
           payload.region = window.getRegionFromTownship(payload.township) || null;
         }
         await firebase.firestore().collection('users').doc(editingId).update(payload);
 
-        const idx = allMidwives.findIndex(function(x) { return x.id === editingId; });
-        if (idx !== -1) allMidwives[idx] = Object.assign({}, allMidwives[idx], payload);
+        const idx = allUsers.findIndex(function(x) { return x.id === editingId; });
+        if (idx !== -1) allUsers[idx] = Object.assign({}, allUsers[idx], payload);
         editModal.hide();
         renderList();
-        await AppDialog.alert('Midwife account updated.', { title: 'Saved' });
+        await AppDialog.alert('User account updated.', { title: 'Saved' });
       } catch (e) {
         console.error(e);
         await AppDialog.alert('Unable to save: ' + e.message, { title: 'Error' });
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    async function confirmDeleteUser(userId) {
+      const user = allUsers.find(function(x) { return x.id === userId; });
+      if (!user) return;
+      if (userId === currentAdminUid) {
+        await AppDialog.alert('You cannot delete your own account.', { title: 'Delete User' });
+        return;
+      }
+      const userName = user.name || user.email || 'User';
+      const patientCount = await countPatientsForUser(userId);
+      const ok = await AppDialog.confirm(
+        'Delete "' + userName + '" and ' + patientCount + ' patient record(s)? This cannot be undone.',
+        { title: 'Delete User' }
+      );
+      if (!ok) return;
+
+      const typed = prompt('Type DELETE to confirm permanent deletion:');
+      if (typed !== 'DELETE') {
+        await AppDialog.alert('Deletion cancelled.', { title: 'Delete User' });
+        return;
+      }
+
+      const wrap = document.getElementById('listWrap');
+      wrap.innerHTML = '<div><i class="fas fa-spinner fa-spin me-2"></i>Deleting user and patient records...</div>';
+      try {
+        const db = firebase.firestore();
+        const patientIds = new Set();
+        try {
+          const newQuery = await db.collection('patients').where('created_by', '==', userId).get();
+          newQuery.forEach(function(d) { patientIds.add(d.id); });
+        } catch (e) { console.warn(e); }
+        try {
+          const oldQuery = await db.collection('patients').where('createdBy', '==', userId).get();
+          oldQuery.forEach(function(d) { patientIds.add(d.id); });
+        } catch (e) { console.warn(e); }
+
+        const subcollections = ['antenatal_visits', 'testRecords', 'labour_care', 'postpartum_visits', 'baby_records', 'vaccinations', 'records', 'newborn_care', 'immediate_newborn_care'];
+        for (const patientId of patientIds) {
+          for (const subcollection of subcollections) {
+            try {
+              const subSnapshot = await db.collection('patients').doc(patientId).collection(subcollection).get();
+              if (!subSnapshot.empty) {
+                const batch = db.batch();
+                subSnapshot.docs.forEach(function(doc) { batch.delete(doc.ref); });
+                await batch.commit();
+              }
+            } catch (e) { console.warn(e); }
+          }
+          await db.collection('patients').doc(patientId).delete();
+        }
+        await db.collection('users').doc(userId).delete();
+        allUsers = allUsers.filter(function(x) { return x.id !== userId; });
+        renderList();
+        await AppDialog.alert('Deleted account "' + userName + '" and ' + patientIds.size + ' patient record(s).', { title: 'Deleted' });
+      } catch (e) {
+        console.error(e);
+        await AppDialog.alert('Unable to delete: ' + e.message, { title: 'Error' });
+        renderList();
       }
     }
   </script>
