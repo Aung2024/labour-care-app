@@ -30,6 +30,9 @@
       if (optText != null) el.textContent = optText;
     });
     applyClinicalRiskLanguage(lang === 'en');
+    if (global.OtherFacilityVisitsUi) {
+      global.OtherFacilityVisitsUi.applyLangToAllOtherVisitRows('#otherVisitsRows');
+    }
     if (typeof global.onAppLanguageChange === 'function') {
       global.onAppLanguageChange(lang);
     }

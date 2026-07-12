@@ -1004,6 +1004,7 @@
       }
     }
   </style>
+  <script src="js/other-facility-visits-ui.js"></script>
   <script src="js/lang-apply.js"></script>
 </head>
 <body class="anc-form-page">
@@ -1069,8 +1070,8 @@
           <div class="col-12">
             <label class="form-label lang-text" data-en="Other Visits" data-mm="အခြား ကျန်းမာရေးဌာနတွင် ပြသခဲ့သော Visit များ">Other Visits</label>
             <div class="d-flex flex-wrap gap-3 mb-2">
-              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="no" checked onchange="toggleOtherVisitsSection()"> No</label>
-              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="yes" onchange="toggleOtherVisitsSection()"> Yes</label>
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="no" checked onchange="toggleOtherVisitsSection()"> <span class="lang-text" data-en="No" data-mm="မရှိ">No</span></label>
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasOtherVisits" value="yes" onchange="toggleOtherVisitsSection()"> <span class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</span></label>
             </div>
             <div id="otherVisitsSection" class="border rounded-3 p-3 bg-light" style="display:none;">
               <div id="otherVisitsRows" class="d-grid gap-2"></div>
@@ -2185,37 +2186,16 @@
 
     function addOtherVisitRow(data) {
       const rows = document.getElementById('otherVisitsRows');
-      if (!rows) return;
+      if (!rows || !window.OtherFacilityVisitsUi) return;
       const row = document.createElement('div');
       row.className = 'other-visit-row row g-2 align-items-end';
-      row.innerHTML = `
-        <div class="col-6 col-md-2">
-          <label class="form-label small">Facility Visit #</label>
-          <input type="number" min="1" class="form-control other-visit-number" value="${data && data.visitNumber ? String(data.visitNumber).replace(/"/g, '&quot;') : ''}">
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small">Visit Date</label>
-          <input type="date" class="form-control other-visit-date" value="${data && data.visitDate ? normalizeVisitDateValue(data.visitDate) : ''}">
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small">Facility Type</label>
-          <select class="form-select other-visit-facility-type">
-            <option value="">Select</option>
-            <option value="Private">Private</option>
-            <option value="Public">Public</option>
-          </select>
-        </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label small">Facility Name</label>
-          <input type="text" class="form-control other-visit-facility-name" value="${data && data.facilityName ? String(data.facilityName).replace(/"/g, '&quot;') : ''}">
-        </div>
-        <div class="col-12 col-md-1">
-          <button type="button" class="btn btn-outline-danger w-100" style="min-height:44px;" onclick="this.closest('.other-visit-row').remove(); updateOtherVisitCountMirror();">
-            <i class="fas fa-trash"></i>
-          </button>
-        </div>`;
+      row.innerHTML = OtherFacilityVisitsUi.buildOtherVisitRowHtml(data, {
+        normalizeDate: normalizeVisitDateValue,
+        onRemove: "this.closest('.other-visit-row').remove(); updateOtherVisitCountMirror();"
+      });
       rows.appendChild(row);
       if (data && data.facilityType) row.querySelector('.other-visit-facility-type').value = data.facilityType;
+      OtherFacilityVisitsUi.applyLangToOtherVisitRow(row);
       row.querySelectorAll('input,select').forEach(function (el) {
         el.addEventListener('input', updateOtherVisitCountMirror);
         el.addEventListener('change', updateOtherVisitCountMirror);
@@ -2998,6 +2978,9 @@
       if (window.ChoiceControls) {
         ChoiceControls.refreshLabels();
         ChoiceControls.syncAll();
+      }
+      if (window.OtherFacilityVisitsUi) {
+        OtherFacilityVisitsUi.applyLangToAllOtherVisitRows('#otherVisitsRows');
       }
     }
 
