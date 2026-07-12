@@ -2721,7 +2721,7 @@
       });
       
       applyClinicalRiskLanguage();
-      populateBirthDateSelectors(true);
+      initBirthDatePicker();
     }
 
     function applyClinicalRiskLanguage() {
@@ -2838,25 +2838,15 @@
     }
 
     function getBirthDateFromParts() {
-      const day = parseInt(document.getElementById('birthDay')?.value, 10);
-      const month = parseInt(document.getElementById('birthMonth')?.value, 10);
-      const year = parseInt(document.getElementById('birthYear')?.value, 10);
-      if (!day || !month || !year) return null;
-      const candidate = new Date(year, month - 1, day);
-      if (
-        candidate.getFullYear() !== year ||
-        candidate.getMonth() !== month - 1 ||
-        candidate.getDate() !== day
-      ) {
-        return null;
-      }
+      const picker = document.getElementById('birthDatePicker');
+      const value = picker ? String(picker.value || '').trim() : '';
+      if (!value) return null;
+      const candidate = new Date(value + 'T12:00:00');
+      if (isNaN(candidate.getTime())) return null;
       const today = new Date();
       today.setHours(23, 59, 59, 999);
       if (candidate.getTime() > today.getTime()) return null;
-      const y = candidate.getFullYear();
-      const m = String(candidate.getMonth() + 1).padStart(2, '0');
-      const d = String(candidate.getDate()).padStart(2, '0');
-      return y + '-' + m + '-' + d;
+      return value;
     }
 
     function syncBirthDateFromParts() {
@@ -2865,9 +2855,8 @@
       if (hidden) hidden.value = dob || '';
       const hint = document.getElementById('birthDateHint');
       if (hint) {
-        const invalid = !!(document.getElementById('birthDay')?.value &&
-          document.getElementById('birthMonth')?.value &&
-          document.getElementById('birthYear')?.value && !dob);
+        const pickerVal = document.getElementById('birthDatePicker')?.value;
+        const invalid = !!(pickerVal && !dob);
         hint.style.display = invalid ? 'block' : 'none';
       }
       return dob;
@@ -2886,42 +2875,16 @@
       evaluateAgeRisk();
     }
 
-    function populateBirthDateSelectors(forceRefresh) {
-      const dayEl = document.getElementById('birthDay');
-      const monthEl = document.getElementById('birthMonth');
-      const yearEl = document.getElementById('birthYear');
-      if (!dayEl || !monthEl || !yearEl) return;
-
-      const savedDay = dayEl.value;
-      const savedMonth = monthEl.value;
-      const savedYear = yearEl.value;
-
-      if (forceRefresh || !dayEl.options.length || dayEl.options.length <= 1) {
-        dayEl.innerHTML = '<option value="">' + (currentLanguage === 'mm' ? 'ရက်' : 'Day') + '</option>';
-        for (var d = 1; d <= 31; d++) {
-          dayEl.innerHTML += '<option value="' + d + '">' + d + '</option>';
-        }
-      }
-      if (forceRefresh || !monthEl.options.length || monthEl.options.length <= 1) {
-        var monthLabelsMm = ['', '၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉', '၁၀', '၁၁', '၁၂'];
-        var monthLabelsEn = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        monthEl.innerHTML = '<option value="">' + (currentLanguage === 'mm' ? 'လ' : 'Month') + '</option>';
-        for (var m = 1; m <= 12; m++) {
-          var label = currentLanguage === 'mm' ? (monthLabelsMm[m] + ' လ') : monthLabelsEn[m];
-          monthEl.innerHTML += '<option value="' + m + '">' + label + '</option>';
-        }
-      }
-      if (forceRefresh || !yearEl.options.length || yearEl.options.length <= 1) {
-        var currentYear = new Date().getFullYear();
-        yearEl.innerHTML = '<option value="">' + (currentLanguage === 'mm' ? 'နှစ်' : 'Year') + '</option>';
-        for (var y = currentYear; y >= currentYear - 11; y--) {
-          yearEl.innerHTML += '<option value="' + y + '">' + y + '</option>';
-        }
-      }
-
-      if (savedDay) dayEl.value = savedDay;
-      if (savedMonth) monthEl.value = savedMonth;
-      if (savedYear) yearEl.value = savedYear;
+    function initBirthDatePicker() {
+      const picker = document.getElementById('birthDatePicker');
+      if (!picker) return;
+      const today = new Date();
+      const maxDate = today.getFullYear() + '-' +
+        String(today.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today.getDate()).padStart(2, '0');
+      picker.max = maxDate;
+      const minYear = today.getFullYear() - 11;
+      picker.min = minYear + '-01-01';
     }
 
     function onBirthDatePartChanged() {
@@ -2934,10 +2897,12 @@
       const babyMode = isBabyRegistration();
       const babyFields = document.getElementById('babyPatientFields');
       const prompt = document.getElementById('babyPatientPrompt');
+      const paritySection = document.getElementById('motherParitySection');
       if (babyFields) babyFields.style.display = babyMode ? '' : 'none';
       if (prompt) prompt.style.display = babyMode ? 'block' : 'none';
+      if (paritySection) paritySection.style.display = babyMode ? 'none' : '';
 
-      ['birthDay', 'birthMonth', 'birthYear', 'babySex', 'motherName'].forEach(function (id) {
+      ['birthDatePicker', 'babySex', 'motherName'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.required = babyMode;
       });
@@ -3063,11 +3028,9 @@
       
       // Set initial language
       switchLanguage(currentLanguage);
-      populateBirthDateSelectors();
-      ['birthDay', 'birthMonth', 'birthYear'].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener('change', onBirthDatePartChanged);
-      });
+      initBirthDatePicker();
+      var birthDatePicker = document.getElementById('birthDatePicker');
+      if (birthDatePicker) birthDatePicker.addEventListener('change', onBirthDatePartChanged);
       
       // Age risk detection and English number only validation
       const ageInput = document.getElementById('age');
@@ -3912,24 +3875,8 @@
                     <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
                   </label>
                   <input type="hidden" name="birthDate" id="birthDate">
-                  <div class="row g-2 birth-date-row">
-                    <div class="col-4">
-                      <select name="birthDay" id="birthDay" class="form-control" aria-label="Birth day">
-                        <option value="">Day</option>
-                      </select>
-                    </div>
-                    <div class="col-4">
-                      <select name="birthMonth" id="birthMonth" class="form-control" aria-label="Birth month">
-                        <option value="">Month</option>
-                      </select>
-                    </div>
-                    <div class="col-4">
-                      <select name="birthYear" id="birthYear" class="form-control" aria-label="Birth year">
-                        <option value="">Year</option>
-                      </select>
-                    </div>
-                  </div>
-                  <small class="text-muted lang-text" data-en="Enter day, month, and year. Age is calculated automatically for babies." data-mm="ရက်၊ လ၊ နှစ် ရွေးပါ။ ကလေးအသက်ကို အလိုအလျောက် တွက်ပေးပါသည်။">Enter day, month, and year. Age is calculated automatically for babies.</small>
+                  <input type="date" name="birthDatePicker" id="birthDatePicker" class="form-control" aria-label="Birth date">
+                  <small class="text-muted lang-text" data-en="Select the baby's date of birth. Age is calculated automatically." data-mm="ကလေး၏ မွေးဖွားရက်ကို ရွေးချယ်ပါ။ အသက်ကို အလိုအလျောက် တွက်ပေးပါသည်။">Select the baby's date of birth. Age is calculated automatically.</small>
                   <div id="birthDateHint" class="alert alert-warning hide mt-2 mb-0" style="display: none;">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     <span class="lang-text" data-en="Please choose a valid birth date that is not in the future." data-mm="မွေးဖွားရက် မှန်ကန်ပြီး အနာဂတ်ရက် မဖြစ်ရပါ။">Please choose a valid birth date that is not in the future.</span>
@@ -4044,11 +3991,11 @@
                 </div>
               </div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6" id="motherParitySection">
               <div class="form-group">
                 <label class="form-label">
                   <i class="fas fa-baby"></i><span class="lang-text" data-en="Parity & Gravida" data-mm="ကိုယ်ဝန်နှင့် မွေးဖွားမှု">Parity & Gravida</span>
-                  <span class="text-danger" aria-hidden="true">*</span>
+                  <span class="text-danger mother-parity-required" aria-hidden="true">*</span>
                 </label>
                 <div class="parity-selects">
                   <div class="select-block">
