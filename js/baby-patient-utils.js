@@ -138,11 +138,24 @@
     };
   }
 
-  function babyDisplayName(motherName, birthOrder, explicitName) {
+  function babyDisplayName(motherName, birthOrder, explicitName, babyCount) {
     if (explicitName) return explicitName;
     motherName = String(motherName || '').replace(/^Baby\s+/i, '').trim();
     var base = motherName ? ('Baby ' + motherName) : 'Baby';
-    return birthOrder ? (base + ' ' + birthOrder) : base;
+    var total = parseInt(babyCount, 10) || 1;
+    var order = parseInt(birthOrder, 10) || 1;
+    return total > 1 ? (base + ' ' + order) : base;
+  }
+
+  function uniqueIds(ids) {
+    var seen = {};
+    var out = [];
+    (ids || []).forEach(function (id) {
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      out.push(id);
+    });
+    return out;
   }
 
   function sanitizeCodeSegment(value, fallback) {
@@ -200,20 +213,31 @@
   }
 
   function birthGroupId(motherId, notes) {
+    var persisted = firstOf(notes && notes.birth_group_id, notes && notes.deliveryDetails && notes.deliveryDetails.birthGroupId);
+    if (persisted) return persisted;
     var details = notes && notes.deliveryDetails ? notes.deliveryDetails : {};
     var babies = details.babies || [];
     var firstBirth = babies[0] && babies[0].birthTime ? dateFromBirthTime(babies[0].birthTime) : '';
-    return firstOf(notes && notes.birth_group_id, details.birthGroupId, motherId + '_delivery_' + (firstBirth || 'unknown'));
+    if (firstBirth) return motherId + '_delivery_' + firstBirth;
+    return motherId + '_delivery';
   }
 
-  function babyPayload(motherId, mother, baby, birthOrder, groupId, ancContext, userId) {
+  function ensureBirthGroupId(motherId, notes, existingNotes) {
+    return firstOf(
+      existingNotes && existingNotes.birth_group_id,
+      notes && notes.birth_group_id,
+      birthGroupId(motherId, notes)
+    );
+  }
+
+  function babyPayload(motherId, mother, baby, birthOrder, groupId, ancContext, userId, babyCount) {
     mother = mother || {};
     baby = baby || {};
     var dob = dateFromBirthTime(baby.birthTime) || baby.date_of_birth || '';
     var years = ageInYears(dob);
     return {
       patient_type: PATIENT_TYPE_BABY,
-      name: babyDisplayName(mother.name || mother.patientName || '', birthOrder, baby.babyName || baby.baby_name),
+      name: babyDisplayName(mother.name || mother.patientName || '', birthOrder, baby.babyName || baby.baby_name, babyCount),
       mother_patient_id: motherId,
       mother_name: mother.name || mother.patientName || null,
       birth_order: birthOrder,
@@ -245,21 +269,91 @@
     };
   }
 
-  async function findExistingBaby(db, motherId, groupId, birthOrder) {
+  function babyMatchesOrder(data, birthOrder) {
+    return (parseInt(data.birth_order, 10) || 1) === birthOrder;
+  }
+
+  function babyCandidateScore(item) {
+    var d = (item && item.data) || {};
+    var score = 0;
+    if (d.linked_from_delivery_notes) score += 20;
+    if (d.patient_unique_id) score += 5;
+    if (d.birth_time || d.date_of_birth) score += 3;
+    if (d.created_at && d.created_at.toDate) score -= d.created_at.toDate().getTime() / 1e14;
+    else if (d.created_at && d.created_at.seconds) score -= d.created_at.seconds / 1e10;
+    return score;
+  }
+
+  async function fetchMotherBabyPatients(db, motherId) {
     var snap = await db.collection('patients')
       .where('mother_patient_id', '==', motherId)
-      .limit(20)
       .get();
-    var found = null;
+    var babies = [];
     snap.forEach(function (doc) {
-      if (found) return;
-      var d = doc.data() || {};
-      if (String(d.birth_group_id || '') === String(groupId || '') &&
-          (parseInt(d.birth_order, 10) || 1) === birthOrder) {
-        found = { id: doc.id, data: d };
+      var data = doc.data() || {};
+      if (!isBabyPatient(data)) return;
+      babies.push({ id: doc.id, data: data, ref: doc.ref });
+    });
+    return babies;
+  }
+
+  async function findExistingBaby(db, motherId, groupId, birthOrder, babyCount) {
+    var babies = await fetchMotherBabyPatients(db, motherId);
+    var exact = null;
+    var fallback = null;
+    babies.forEach(function (item) {
+      var d = item.data || {};
+      if (!babyMatchesOrder(d, birthOrder)) return;
+      if (String(d.birth_group_id || '') === String(groupId || '')) {
+        if (!exact || babyCandidateScore(item) > babyCandidateScore(exact)) exact = item;
+        return;
+      }
+      if (d.linked_from_delivery_notes || d.status === 'registered' || !d.status) {
+        if (!fallback || babyCandidateScore(item) > babyCandidateScore(fallback)) fallback = item;
       }
     });
-    return found;
+    if (exact) return { id: exact.id, data: exact.data };
+    var sameOrder = babies.filter(function (item) { return babyMatchesOrder(item.data || {}, birthOrder); });
+    if (sameOrder.length === 1) return { id: sameOrder[0].id, data: sameOrder[0].data };
+    if ((parseInt(babyCount, 10) || 1) === 1 && birthOrder === 1 && sameOrder.length > 0) {
+      sameOrder.sort(function (a, b) { return babyCandidateScore(b) - babyCandidateScore(a); });
+      return { id: sameOrder[0].id, data: sameOrder[0].data };
+    }
+    return fallback ? { id: fallback.id, data: fallback.data } : null;
+  }
+
+  async function countPatientSubcollections(db, patientId) {
+    var total = 0;
+    var names = ['newborn_care', 'vaccinations', 'kmc_actions', 'postpartum_visits'];
+    for (var i = 0; i < names.length; i++) {
+      try {
+        var snap = await db.collection('patients').doc(patientId).collection(names[i]).limit(1).get();
+        if (!snap.empty) total += 10;
+      } catch (e) { /* ignore */ }
+    }
+    return total;
+  }
+
+  async function mergeBabySubcollections(db, fromId, toId) {
+    var names = ['newborn_care', 'vaccinations', 'kmc_actions'];
+    for (var i = 0; i < names.length; i++) {
+      var snap = await db.collection('patients').doc(fromId).collection(names[i]).get();
+      for (var j = 0; j < snap.docs.length; j++) {
+        var doc = snap.docs[j];
+        var data = clonePlain(doc.data() || {});
+        data.merged_from_patient_id = fromId;
+        data.migrated_from_duplicate = true;
+        await db.collection('patients').doc(toId).collection(names[i]).doc(doc.id).set(data, { merge: true });
+      }
+    }
+  }
+
+  async function otherGroupBabyIds(db, motherId, groupId) {
+    var babies = await fetchMotherBabyPatients(db, motherId);
+    return babies.filter(function (item) {
+      var gid = item.data && item.data.birth_group_id;
+      return gid && String(gid) !== String(groupId || '');
+    }).map(function (item) { return item.id; });
   }
 
   async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId) {
@@ -276,13 +370,18 @@
       return String(baby.outcome || '').toLowerCase() !== 'stillbirth';
     });
     if (!babies.length) return [];
-    var groupId = birthGroupId(motherId, normalized);
+    var existingNotes = global.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes
+      ? await DeliveryNotesUtils.fetchDeliveryNotes(motherId)
+      : null;
+    var groupId = ensureBirthGroupId(motherId, normalized, existingNotes);
+    normalized.birth_group_id = groupId;
+    var babyCount = babies.length;
     var ancContext = await fetchLatestAncContext(db, motherId);
     var ids = [];
     for (var i = 0; i < babies.length; i++) {
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-      var existing = await findExistingBaby(db, motherId, groupId, birthOrder);
-      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, ancContext, userId);
+      var existing = await findExistingBaby(db, motherId, groupId, birthOrder, babyCount);
+      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, ancContext, userId, babyCount);
       var babyRef;
       if (existing) {
         babyRef = db.collection('patients').doc(existing.id);
@@ -297,12 +396,148 @@
       babies[i].babyPatientId = babyRef.id;
       babies[i].baby_patient_id = babyRef.id;
     }
+    var preservedIds = await otherGroupBabyIds(db, motherId, groupId);
     await motherRef.set({
       patient_type: PATIENT_TYPE_MOTHER,
-      baby_patient_ids: firebase.firestore.FieldValue.arrayUnion.apply(firebase.firestore.FieldValue, ids),
+      baby_patient_ids: uniqueIds(preservedIds.concat(ids)),
       updated_at: nowServer()
     }, { merge: true });
     return ids;
+  }
+
+  async function deduplicateBabyPatientsForMother(motherId, options) {
+    options = options || {};
+    if (!motherId || !global.firebase) return { motherId: motherId, merged: [], archived: [], dryRun: options.dryRun !== false };
+    var db = firebase.firestore();
+    var dryRun = options.dryRun !== false;
+    var result = { motherId: motherId, merged: [], archived: [], renamed: [], dryRun: dryRun, errors: [] };
+    var motherRef = db.collection('patients').doc(motherId);
+    var motherSnap = await motherRef.get();
+    if (!motherSnap.exists) return result;
+    var babies = await fetchMotherBabyPatients(db, motherId);
+    if (babies.length < 2) {
+      if (babies.length === 1 && !dryRun) {
+        var only = babies[0];
+        var onlyData = only.data || {};
+        var expectedName = babyDisplayName(onlyData.mother_name || motherSnap.data().name || '', 1, null, 1);
+        if (onlyData.name !== expectedName) {
+          await only.ref.set({ name: expectedName, updated_at: nowServer() }, { merge: true });
+          result.renamed.push({ id: only.id, name: expectedName });
+        }
+      }
+      return result;
+    }
+
+    var groups = {};
+    babies.forEach(function (item) {
+      var d = item.data || {};
+      var key = String(d.birth_group_id || 'legacy') + '::' + (parseInt(d.birth_order, 10) || 1);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
+    var expectedBabyCount = Object.keys(groups).length;
+
+    var canonicalIds = [];
+    for (var groupKey in groups) {
+      if (!Object.prototype.hasOwnProperty.call(groups, groupKey)) continue;
+      var group = groups[groupKey];
+      if (group.length === 1) {
+        canonicalIds.push(group[0].id);
+        continue;
+      }
+      var scored = [];
+      for (var i = 0; i < group.length; i++) {
+        var subScore = await countPatientSubcollections(db, group[i].id);
+        scored.push({
+          item: group[i],
+          score: babyCandidateScore(group[i]) + subScore
+        });
+      }
+      scored.sort(function (a, b) { return b.score - a.score; });
+      var winner = scored[0].item;
+      canonicalIds.push(winner.id);
+      var birthOrder = parseInt(winner.data.birth_order, 10) || 1;
+      var winnerName = babyDisplayName(
+        winner.data.mother_name || motherSnap.data().name || '',
+        birthOrder,
+        null,
+        expectedBabyCount
+      );
+      if (!dryRun && winner.data.name !== winnerName) {
+        await winner.ref.set({ name: winnerName, updated_at: nowServer() }, { merge: true });
+        result.renamed.push({ id: winner.id, name: winnerName });
+      }
+      for (var j = 1; j < scored.length; j++) {
+        var loser = scored[j].item;
+        result.merged.push({ keep: winner.id, remove: loser.id, groupKey: groupKey });
+        if (!dryRun) {
+          try {
+            await mergeBabySubcollections(db, loser.id, winner.id);
+            await loser.ref.set({
+              status: 'duplicate_archived',
+              merged_into_patient_id: winner.id,
+              archived_at: nowServer(),
+              updated_at: nowServer()
+            }, { merge: true });
+            result.archived.push(loser.id);
+          } catch (e) {
+            result.errors.push({ patientId: loser.id, message: e.message || String(e) });
+          }
+        }
+      }
+    }
+
+    if (!dryRun) {
+      await motherRef.set({
+        baby_patient_ids: uniqueIds(canonicalIds),
+        updated_at: nowServer()
+      }, { merge: true });
+    }
+    return result;
+  }
+
+  async function deduplicateBabyPatients(options) {
+    options = options || {};
+    if (!global.firebase) throw new Error('Firebase is required');
+    var db = firebase.firestore();
+    var dryRun = options.dryRun !== false;
+    var limit = parseInt(options.limit, 10) || 50;
+    var motherId = options.motherId || null;
+    var summary = { dryRun: dryRun, mothersScanned: 0, mothersWithDuplicates: 0, mergedGroups: 0, archived: 0, renamed: 0, details: [], errors: [] };
+
+    if (motherId) {
+      var one = await deduplicateBabyPatientsForMother(motherId, options);
+      summary.mothersScanned = 1;
+      summary.mergedGroups += one.merged.length;
+      summary.archived += one.archived.length;
+      summary.renamed += one.renamed.length;
+      if (one.merged.length) summary.mothersWithDuplicates = 1;
+      summary.details.push(one);
+      return summary;
+    }
+
+    var snap = await db.collection('patients').limit(limit).get();
+    for (var i = 0; i < snap.docs.length; i++) {
+      var doc = snap.docs[i];
+      var data = doc.data() || {};
+      if (isBabyPatient(data)) continue;
+      summary.mothersScanned += 1;
+      try {
+        var babies = await fetchMotherBabyPatients(db, doc.id);
+        if (babies.length < 2) continue;
+        var detail = await deduplicateBabyPatientsForMother(doc.id, options);
+        if (detail.merged.length) {
+          summary.mothersWithDuplicates += 1;
+          summary.mergedGroups += detail.merged.length;
+          summary.archived += detail.archived.length;
+          summary.renamed += detail.renamed.length;
+          summary.details.push(detail);
+        }
+      } catch (e) {
+        summary.errors.push({ patientId: doc.id, message: e.message || String(e) });
+      }
+    }
+    return summary;
   }
 
   function clonePlain(data) {
@@ -444,8 +679,11 @@
     babyDisplayName: babyDisplayName,
     generateBabyPatientUniqueId: generateBabyPatientUniqueId,
     createOrUpdateBabiesFromDeliveryNotes: createOrUpdateBabiesFromDeliveryNotes,
+    deduplicateBabyPatients: deduplicateBabyPatients,
+    deduplicateBabyPatientsForMother: deduplicateBabyPatientsForMother,
     copyLegacyBabyCareToBabyPatients: copyLegacyBabyCareToBabyPatients,
     backfillExistingBabyPatients: backfillExistingBabyPatients,
+    ensureBirthGroupId: ensureBirthGroupId,
     dateFromBirthTime: dateFromBirthTime,
     ageInYears: ageInYears,
     formatBabyAgeDisplay: formatBabyAgeDisplay,

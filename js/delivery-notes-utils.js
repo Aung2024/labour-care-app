@@ -129,6 +129,7 @@
         birthPlace: firstOf(details.birthPlace, details.birthplace),
         babies: babies
       },
+      birth_group_id: firstOf(data.birth_group_id, details.birthGroupId) || null,
       updatedAt: data.updatedAt || data.timestamp || null,
       updatedBy: data.updatedBy || null
     };
@@ -185,10 +186,15 @@
 
   async function saveDeliveryNotes(patientId, notes, userId) {
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
+    var existingNotes = await fetchDeliveryNotes(patientId);
     var normalized = normalizeDeliveryNotes(notes);
+    var birthGroupId = global.BabyPatientUtils && BabyPatientUtils.ensureBirthGroupId
+      ? BabyPatientUtils.ensureBirthGroupId(patientId, normalized, existingNotes)
+      : null;
     var payload = {
       thirdStage: normalized.thirdStage,
       deliveryDetails: normalized.deliveryDetails,
+      birth_group_id: birthGroupId,
       updatedAt: nowServer(),
       updatedBy: userId || null
     };

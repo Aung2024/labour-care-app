@@ -15,7 +15,7 @@
   <style>
     body { background: #f8fafc; color: #0f172a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .wrap { max-width: 860px; margin: 32px auto; padding: 20px; }
-    .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15, 23, 42, .08); }
+    .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15, 23, 42, .08); margin-bottom: 20px; }
     pre { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 16px; white-space: pre-wrap; }
   </style>
 </head>
@@ -39,9 +39,29 @@
           <button id="runBtn" class="btn btn-primary w-100" type="button" onclick="runBackfill()">Run backfill</button>
         </div>
       </div>
-      <hr>
-      <pre id="output">Waiting.</pre>
     </div>
+
+    <div class="panel">
+      <h2 class="h4 mb-3">Duplicate Baby Cleanup</h2>
+      <p class="text-muted">Use this after repeated Delivery Notes saves created duplicate baby patients. Dry-run first. For one mother, paste her patient ID. Leave blank to scan a batch of mothers.</p>
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-6">
+          <label for="motherId" class="form-label">Mother patient ID (optional)</label>
+          <input id="motherId" class="form-control" type="text" placeholder="Firestore patient document ID">
+        </div>
+        <div class="col-sm-3">
+          <div class="form-check">
+            <input id="dedupeDryRun" class="form-check-input" type="checkbox" checked>
+            <label for="dedupeDryRun" class="form-check-label">Dry run only</label>
+          </div>
+        </div>
+        <div class="col-sm-3">
+          <button id="dedupeBtn" class="btn btn-warning w-100" type="button" onclick="runDedupe()">Run dedupe</button>
+        </div>
+      </div>
+    </div>
+
+    <pre id="output">Waiting.</pre>
   </main>
 
   <script>
@@ -56,12 +76,32 @@
       const out = document.getElementById('output');
       const btn = document.getElementById('runBtn');
       btn.disabled = true;
-      out.textContent = 'Running...';
+      out.textContent = 'Running backfill...';
       try {
         const result = await BabyPatientUtils.backfillExistingBabyPatients({
           limit: parseInt(document.getElementById('limit').value, 10) || 50,
           dryRun: document.getElementById('dryRun').checked,
           userId: currentUser && currentUser.uid
+        });
+        out.textContent = JSON.stringify(result, null, 2);
+      } catch (e) {
+        out.textContent = 'Error: ' + (e.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function runDedupe() {
+      const out = document.getElementById('output');
+      const btn = document.getElementById('dedupeBtn');
+      btn.disabled = true;
+      out.textContent = 'Running duplicate cleanup...';
+      try {
+        const motherId = document.getElementById('motherId').value.trim();
+        const result = await BabyPatientUtils.deduplicateBabyPatients({
+          motherId: motherId || null,
+          limit: parseInt(document.getElementById('limit').value, 10) || 50,
+          dryRun: document.getElementById('dedupeDryRun').checked
         });
         out.textContent = JSON.stringify(result, null, 2);
       } catch (e) {
