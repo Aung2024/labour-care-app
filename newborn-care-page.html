@@ -1317,7 +1317,7 @@
     let isEditMode = !!editVisitId;
     const isNewKmcVisit = newbornUrlParams.get('kmcVisit') === 'next';
     const targetKmcBabyIndex = parseInt(newbornUrlParams.get('babyIndex'), 10) || null;
-    const isKmcTrackerVisit = isNewKmcVisit && !!targetKmcBabyIndex;
+    const isKmcTrackerVisit = isNewKmcVisit && (!!targetKmcBabyIndex || newbornUrlParams.get('from') === 'kmc');
 
     const BABY_SPECIFIC_FIELD_IDS = [
       'gender', 'birth_time', 'body_weight_gram', 'birth_length_cm', 'head_circumference_cm',
@@ -1738,6 +1738,7 @@
 
       updatePregnancyTypeRowVisibility();
       if (window.ChoiceControls) ChoiceControls.syncAll();
+      applyBirthMeasurementFieldLock();
     }
 
     const NEWBORN_DANGER_SIGN_IDS = [
@@ -1935,7 +1936,9 @@
         kmc_hours_per_day: baby.kmc_hours_per_day != null ? baby.kmc_hours_per_day : '',
         kmc_total_hours: baby.kmc_total_hours != null ? baby.kmc_total_hours : '',
         feeding_type: baby.feeding_type || '',
-        feeding_method: baby.feeding_method || ''
+        feeding_method: baby.feeding_method || '',
+        birth_length_cm: baby.birth_length_cm != null ? baby.birth_length_cm : '',
+        head_circumference_cm: baby.head_circumference_cm != null ? baby.head_circumference_cm : ''
       });
     }
 
@@ -1985,8 +1988,152 @@
       });
     }
 
+    function inheritVisitLevelKmcToStates(visitData) {
+      visitData = visitData || {};
+      const visitKmc = String(visitData.kmc_selected || '').toLowerCase();
+      if (!visitKmc) return;
+      newbornBabyStates = newbornBabyStates.map(function (baby, index) {
+        const idx = parseInt(baby.babyIndex, 10) || (index + 1);
+        if (baby.kmc_selected) return baby;
+        if (idx !== 1 && newbornBabyStates.length > 1) return baby;
+        return Object.assign({}, baby, {
+          kmc_selected: visitData.kmc_selected,
+          kmc_no_category: visitData.kmc_no_category || baby.kmc_no_category || '',
+          kmc_no_reason: visitData.kmc_no_reason || baby.kmc_no_reason || '',
+          discharge_date: visitData.discharge_date || baby.discharge_date || '',
+          kmc_hours_per_day: visitData.kmc_hours_per_day != null ? visitData.kmc_hours_per_day : baby.kmc_hours_per_day,
+          kmc_total_hours: visitData.kmc_total_hours != null ? visitData.kmc_total_hours : baby.kmc_total_hours,
+          feeding_type: visitData.feeding_type || baby.feeding_type || '',
+          feeding_method: visitData.feeding_method || baby.feeding_method || ''
+        });
+      });
+    }
+
+    function getVisit1Record() {
+      return sortedNewbornVisits().find(function (item) {
+        const data = getVisitData(item);
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+      }) || null;
+    }
+
+    function hasSavedBirthMeasurement(source, field) {
+      source = source || {};
+      const val = parseFloat(source[field]);
+      return !isNaN(val) && val > 0;
+    }
+
+    function getBestBirthMeasurement(field) {
+      const visit1 = getVisit1Data();
+      if (visit1 && hasSavedBirthMeasurement(visit1, field)) return visit1[field];
+      const visits = sortedNewbornVisits();
+      for (let i = 0; i < visits.length; i++) {
+        const data = getVisitData(visits[i]);
+        if (hasSavedBirthMeasurement(data, field)) return data[field];
+      }
+      return '';
+    }
+
+    function inheritVisitBirthMeasurementsToStates(visitData) {
+      visitData = visitData || {};
+      newbornBabyStates = newbornBabyStates.map(function (baby, index) {
+        const idx = parseInt(baby.babyIndex, 10) || (index + 1);
+        if (idx !== 1 && newbornBabyStates.length > 1) return baby;
+        return Object.assign({}, baby, {
+          birth_length_cm: baby.birth_length_cm || visitData.birth_length_cm || '',
+          head_circumference_cm: baby.head_circumference_cm || visitData.head_circumference_cm || ''
+        });
+      });
+    }
+
+    function applyBirthMeasurementsToForm(visitData) {
+      visitData = visitData || {};
+      const lengthVal = visitData.birth_length_cm != null && visitData.birth_length_cm !== ''
+        ? visitData.birth_length_cm
+        : getBestBirthMeasurement('birth_length_cm');
+      const headVal = visitData.head_circumference_cm != null && visitData.head_circumference_cm !== ''
+        ? visitData.head_circumference_cm
+        : getBestBirthMeasurement('head_circumference_cm');
+      const lengthEl = document.getElementById('birth_length_cm');
+      const headEl = document.getElementById('head_circumference_cm');
+      if (lengthEl) lengthEl.value = lengthVal !== '' && lengthVal != null ? lengthVal : '';
+      if (headEl) headEl.value = headVal !== '' && headVal != null ? headVal : '';
+    }
+
+    function getEditingVisitData() {
+      if (!isEditMode || !editVisitId) return null;
+      const item = (newbornCareVisits || []).find(function (visit) { return visit.id === editVisitId; });
+      return item ? getVisitData(item) : null;
+    }
+
+    function isEditingVisitNumber(num) {
+      const data = getEditingVisitData();
+      if (!data) return false;
+      return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === num;
+    }
+
+    function applyBirthMeasurementFieldLock() {
+      ['birth_length_cm', 'head_circumference_cm'].forEach(function (fieldId) {
+        const el = document.getElementById(fieldId);
+        if (!el) return;
+        const visit1 = getVisit1Data();
+        const savedOnVisit1 = visit1 && hasSavedBirthMeasurement(visit1, fieldId);
+        let editable = true;
+        if (savedOnVisit1) {
+          editable = isEditMode && isEditingVisitNumber(1);
+        }
+        el.readOnly = !editable;
+        el.classList.toggle('next-visit-readonly', !editable);
+        if (!editable) el.setAttribute('disabled', 'disabled');
+        else el.removeAttribute('disabled');
+      });
+    }
+
+    async function backfillVisit1BirthMeasurementsIfNeeded(formData) {
+      if (!formData) return;
+      const visitNum = parseInt(formData.visit_number, 10) || 1;
+      if (isEditMode) {
+        if (isEditingVisitNumber(1)) return;
+      } else if (visitNum <= 1) {
+        return;
+      }
+
+      const visit1Item = getVisit1Record();
+      if (!visit1Item || !visit1Item.id) return;
+      const visit1 = getVisitData(visit1Item);
+      const patch = {};
+      if (!hasSavedBirthMeasurement(visit1, 'birth_length_cm') && formData.birth_length_cm) {
+        patch.birth_length_cm = formData.birth_length_cm;
+      }
+      if (!hasSavedBirthMeasurement(visit1, 'head_circumference_cm') && formData.head_circumference_cm) {
+        patch.head_circumference_cm = formData.head_circumference_cm;
+      }
+      if (!Object.keys(patch).length) return;
+
+      const patientIds = [];
+      if (patientId) patientIds.push(patientId);
+      const storageId = getNewbornCareStoragePatientId();
+      if (storageId && patientIds.indexOf(storageId) === -1) patientIds.push(storageId);
+
+      for (let i = 0; i < patientIds.length; i++) {
+        const ref = firebase.firestore()
+          .collection('patients')
+          .doc(patientIds[i])
+          .collection('newborn_care')
+          .doc(visit1Item.id);
+        try {
+          const snap = await ref.get();
+          if (!snap.exists) continue;
+          await ref.set(patch, { merge: true });
+          visit1Item.data = Object.assign({}, visit1, patch);
+          return;
+        } catch (e) {
+          console.warn('Could not backfill visit 1 birth measurements:', e);
+        }
+      }
+    }
+
     function clearVisitSpecificFormFields() {
-      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'birth_length_cm', 'head_circumference_cm', 'cause_of_death', 'current_weight_gram'].forEach(function (id) {
+      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'cause_of_death', 'current_weight_gram'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -2025,7 +2172,10 @@
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
       initBabyStatesFromBabies(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, !!locked);
       mergeKmcBabiesIntoStates(data.kmc_babies);
+      inheritVisitLevelKmcToStates(data);
+      inheritVisitBirthMeasurementsToStates(data);
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
+      applyBirthMeasurementsToForm(data);
       applyIdentityFieldLock(!!locked);
       updateKmcDecisionLabel();
     }
@@ -2036,10 +2186,15 @@
       const visit1Data = getVisit1Data() || {};
       const visit1HadPotentialKmc = !!(visit1Data.potential_kmc ||
         (Array.isArray(visit1Data.kmc_eligible_reasons) && visit1Data.kmc_eligible_reasons.length));
-      newbornBabyStates = newbornBabyStates.map(function (baby) {
-        const priorKmc = String(baby.kmc_selected || '').toLowerCase();
+      newbornBabyStates = newbornBabyStates.map(function (baby, index) {
+        const idx = parseInt(baby.babyIndex, 10) || (index + 1);
+        let priorKmc = String(baby.kmc_selected || '').toLowerCase();
+        if (!priorKmc && idx === 1 && visit1Data.kmc_selected) {
+          priorKmc = String(visit1Data.kmc_selected).toLowerCase();
+        }
         const keepKmcYes = priorKmc === 'yes';
         const keepKmcNo = priorKmc === 'no' && visit1HadPotentialKmc;
+        const dischargeFromVisit = idx === 1 ? (visit1Data.discharge_date || '') : '';
         return Object.assign({}, baby, {
           current_weight_gram: '',
           temperature: '',
@@ -2055,20 +2210,23 @@
           eye_infection_findings: [],
           danger_signs: {},
           kmc_selected: keepKmcYes ? 'yes' : (keepKmcNo ? 'no' : null),
-          kmc_no_category: keepKmcNo ? (baby.kmc_no_category || '') : '',
-          kmc_no_reason: keepKmcNo ? (baby.kmc_no_reason || '') : '',
-          discharge_date: keepKmcYes ? (baby.discharge_date || '') : '',
+          kmc_no_category: keepKmcNo ? (baby.kmc_no_category || visit1Data.kmc_no_category || '') : '',
+          kmc_no_reason: keepKmcNo ? (baby.kmc_no_reason || visit1Data.kmc_no_reason || '') : '',
+          discharge_date: keepKmcYes ? (baby.discharge_date || dischargeFromVisit || '') : '',
           kmc_hours_per_day: '',
           kmc_total_hours: '',
-          feeding_type: baby.feeding_type || '',
-          feeding_method: baby.feeding_method || '',
+          feeding_type: baby.feeding_type || visit1Data.feeding_type || '',
+          feeding_method: baby.feeding_method || visit1Data.feeding_method || '',
           cause_of_death: ''
         });
       });
+      inheritVisitBirthMeasurementsToStates(visit1Data);
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
+      applyBirthMeasurementsToForm(visit1Data);
       applyAutoBabyName();
       updateCurrentWeightVisibility();
       applyKmcDecisionLockForVisit();
+      applyBirthMeasurementFieldLock();
     }
 
     function renderBabyTabs() {
@@ -2118,6 +2276,10 @@
     patientId = urlParams.get('patient');
 
     function goBackToNewbornHub() {
+      if (isKmcTrackerVisit || newbornUrlParams.get('from') === 'kmc') {
+        window.location.href = 'kmc-tracking.html';
+        return;
+      }
       if (patientId) {
         window.location.href = 'immediate-newborn-care.html?patient=' + encodeURIComponent(patientId);
       } else {
@@ -2290,8 +2452,9 @@
     }
 
     async function fetchLatestAncForKmc() {
-      if (!patientId || typeof firebase === 'undefined' || !firebase.firestore) return null;
-      const ref = firebase.firestore().collection('patients').doc(patientId).collection('antenatal_visits');
+      const ancPatientId = getNewbornCareStoragePatientId();
+      if (!ancPatientId || typeof firebase === 'undefined' || !firebase.firestore) return null;
+      const ref = firebase.firestore().collection('patients').doc(ancPatientId).collection('antenatal_visits');
       try {
         const snap = await ref.orderBy('visitDate', 'desc').limit(1).get();
         return snap.empty ? null : snap.docs[0].data();
@@ -2425,7 +2588,12 @@
           alertEl.textContent = '';
           alertEl.style.display = 'none';
         }
-        setRadioValue('kmc_selected', null);
+        const stateKmc = newbornBabyStates[activeBabyIndex - 1]?.kmc_selected;
+        if (!stateKmc && !hadPriorPotentialKmcDecision(priorDecision)) {
+          setRadioValue('kmc_selected', null);
+        } else if (stateKmc) {
+          setRadioValue('kmc_selected', stateKmc);
+        }
         document.getElementById('kmc_selected_yes').required = false;
         document.getElementById('kmc_selected_no').required = false;
         toggleKmcDecisionFields();
@@ -2452,8 +2620,39 @@
       }
       document.getElementById('kmc_selected_yes').required = true;
       document.getElementById('kmc_selected_no').required = true;
+      const activeStateKmc = newbornBabyStates[activeBabyIndex - 1]?.kmc_selected;
+      if (activeStateKmc && !getSelectedKmcValue()) {
+        setRadioValue('kmc_selected', activeStateKmc);
+      }
       toggleKmcDecisionFields();
       return currentKmcEvaluation;
+    }
+
+    function applyKmcTrackerVisitPrefill() {
+      if (!isKmcTrackerVisit) return;
+      const babyIdx = Math.max(1, targetKmcBabyIndex || activeBabyIndex || 1);
+      activeBabyIndex = Math.min(babyIdx, newbornBabyStates.length || 1);
+      const stateIndex = activeBabyIndex - 1;
+      if (!newbornBabyStates[stateIndex]) return;
+
+      const priorDecision = window.KmcUtils
+        ? KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits.map(getVisitData), activeBabyIndex)
+        : null;
+      const dischargeDate = (priorDecision && priorDecision.discharge_date) ||
+        newbornBabyStates[stateIndex].discharge_date ||
+        (window.KmcUtils ? KmcUtils.getLatestDischargeDateForBaby(newbornCareVisits.map(getVisitData), activeBabyIndex) : '');
+
+      newbornBabyStates[stateIndex] = Object.assign({}, newbornBabyStates[stateIndex], {
+        kmc_selected: 'yes',
+        discharge_date: dischargeDate || newbornBabyStates[stateIndex].discharge_date || ''
+      });
+
+      renderBabyTabs();
+      applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[stateIndex]));
+      applyAutoBabyName();
+      applyKmcDecisionLockForVisit();
+      toggleKmcDecisionFields();
+      updateNewbornVisitSchedule();
     }
 
     function renderWeightTrend() {
@@ -2554,6 +2753,10 @@
     }
 
     function getDeliveryNotesPatientId() {
+      return getNewbornCareStoragePatientId();
+    }
+
+    function getNewbornCareStoragePatientId() {
       if (isCurrentBabyPatient() && currentPatient && currentPatient.mother_patient_id) {
         return currentPatient.mother_patient_id;
       }
@@ -2788,8 +2991,7 @@
         deliveryAnchorLocked = true;
       }
       if (data.visit_number) document.getElementById('visit_number').value = data.visit_number;
-      if (data.birth_length_cm) document.getElementById('birth_length_cm').value = data.birth_length_cm;
-      if (data.head_circumference_cm) document.getElementById('head_circumference_cm').value = data.head_circumference_cm;
+      applyBirthMeasurementsToForm(data);
       if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
       if (data.body_weight_gram) document.getElementById('body_weight_gram').value = data.body_weight_gram;
@@ -2861,9 +3063,47 @@
       loadNewbornDangerSigns(data.danger_signs);
       initBabyStatesFromBabies(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, hasSavedFirstNewbornVisit() && !isEditMode);
       mergeKmcBabiesIntoStates(data.kmc_babies);
+      inheritVisitBirthMeasurementsToStates(data);
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
+      applyBirthMeasurementsToForm(data);
       applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+      applyBirthMeasurementFieldLock();
       updateKmcDecisionLabel();
+    }
+
+    async function fetchNewbornCareVisitsFromDoc(docId) {
+      const visits = [];
+      if (!docId) return visits;
+      try {
+        const collectionRef = firebase.firestore().collection('patients').doc(docId).collection('newborn_care');
+        let snap;
+        try {
+          snap = await collectionRef.orderBy('visit_number', 'asc').get();
+        } catch (e) {
+          snap = await collectionRef.get();
+        }
+        if (snap && !snap.empty) {
+          snap.forEach(function (doc) {
+            const data = doc.data() || {};
+            if (!data.visit_number) data.visit_number = 1;
+            visits.push({ id: doc.id, data: data });
+          });
+        }
+      } catch (e) {
+        console.warn('Could not load newborn care visits for', docId, e);
+      }
+      return visits;
+    }
+
+    function mergeNewbornCareVisitLists(primary, secondary) {
+      const merged = (primary || []).slice();
+      const seen = new Set(merged.map(function (item) { return item.id; }));
+      (secondary || []).forEach(function (item) {
+        if (!item || !item.id || seen.has(item.id)) return;
+        seen.add(item.id);
+        merged.push(item);
+      });
+      return merged;
     }
 
     async function fetchNewbornCareVisitsForPatient() {
@@ -2882,24 +3122,19 @@
           seenIds.add(r.localId);
         });
       }
-      try {
-        const collectionRef = firebase.firestore().collection('patients').doc(patientId).collection('newborn_care');
-        let snap;
-        try {
-          snap = await collectionRef.orderBy('visit_number', 'asc').get();
-        } catch (e) {
-          snap = await collectionRef.get();
-        }
-        if (snap && !snap.empty) {
-          snap.forEach(function (doc) {
-            if (seenIds.has(doc.id)) return;
-            const data = doc.data() || {};
-            if (!data.visit_number) data.visit_number = 1;
-            visits.push({ id: doc.id, data: data });
-          });
-        }
-      } catch (e) {
-        console.warn('Could not load newborn care visits:', e);
+
+      const storagePatientId = getNewbornCareStoragePatientId();
+      const docIds = [];
+      if (patientId) docIds.push(patientId);
+      if (storagePatientId && storagePatientId !== patientId) docIds.push(storagePatientId);
+
+      for (let i = 0; i < docIds.length; i++) {
+        const fetched = await fetchNewbornCareVisitsFromDoc(docIds[i]);
+        fetched.forEach(function (item) {
+          if (!item || !item.id || seenIds.has(item.id)) return;
+          seenIds.add(item.id);
+          visits.push(item);
+        });
       }
       return visits;
     }
@@ -2950,13 +3185,8 @@
           await preloadDeliveryNotesIntoNewbornForm();
         }
 
-        if (isKmcTrackerVisit && targetKmcBabyIndex) {
-          activeBabyIndex = Math.max(1, Math.min(targetKmcBabyIndex, newbornBabyStates.length || 1));
-          renderBabyTabs();
-          applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1] || {}));
-          applyAutoBabyName();
-          evaluateKmcSection();
-          updateKmcDecisionLabel();
+        if (isKmcTrackerVisit) {
+          applyKmcTrackerVisitPrefill();
           var babyTabBar = document.getElementById('mainBabyTabBar');
           if (babyTabBar && newbornBabyStates.length > 1) {
             requestAnimationFrame(function () { babyTabBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
@@ -2965,6 +3195,7 @@
 
         applyBirthTimeLock();
         applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+        applyBirthMeasurementFieldLock();
         updateCurrentWeightVisibility();
         updateNewbornVisitSchedule();
         checkTemperatureAlert();
@@ -3173,6 +3404,8 @@
               const created = await collectionRef.add(cloudData);
               cloudId = created.id;
             }
+
+            await backfillVisit1BirthMeasurementsIfNeeded(cloudData);
 
             if (window.StatusManager) {
               await StatusManager.checkAndUpdateToPostnatalCare(
