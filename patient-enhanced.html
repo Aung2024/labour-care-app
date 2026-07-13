@@ -1385,6 +1385,7 @@
   <script src="js/clinical-validator.js"></script>
   <script src="js/duplicate-detector.js"></script>
   <script src="js/baby-patient-utils.js"></script>
+  <script src="js/submit-guard.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script>
@@ -3290,6 +3291,7 @@
       form.addEventListener("submit", async (e) => {
       console.log('Form submit event triggered');
       e.preventDefault();
+      if (window.SubmitGuard && SubmitGuard.isLocked('patient-registration')) return;
       
       // Get button reference and show loading state
       let submitBtn = form.querySelector('button[type="submit"]');
@@ -3308,15 +3310,19 @@
       
       const messageDiv = document.getElementById('message');
       const originalText = submitBtn ? submitBtn.innerHTML : '';
-      
-      // Ensure parity hidden value is up to date before collecting data
-      updateParityField();
-      
-      // Show loading state
-      if (submitBtn) {
+      if (window.SubmitGuard && !SubmitGuard.tryBegin('patient-registration')) return;
+      if (window.SubmitGuard) {
+        SubmitGuard.lockButton(submitBtn, true, {
+          loadingHtml: '<div class="loading"></div> Registering Patient...'
+        });
+      } else if (submitBtn) {
         submitBtn.innerHTML = '<div class="loading"></div> Registering Patient...';
         submitBtn.disabled = true;
       }
+      
+      try {
+      // Ensure parity hidden value is up to date before collecting data
+      updateParityField();
       
       // Clear previous messages
       messageDiv.textContent = '';
@@ -3330,11 +3336,6 @@
       // Basic form validation
       if (!data.name || data.age === '' || data.age == null || !data.registration_date) {
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please fill in all required fields (Name, Age, Registration Date).</div>';
-        // Reset button state on validation error
-        if (submitBtn) {
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-        }
         return;
       }
 
@@ -3345,10 +3346,6 @@
           (currentLanguage === 'mm'
             ? 'ကလေးလူနာအတွက် မွေးဖွားရက် (ရက်/လ/နှစ်)、 ကျား/မ နှင့် မိခင်အမည် ဖြည့်ရန် လိုအပ်ပါသည်။'
             : 'Baby patients require birth date (day/month/year), sex, and mother name.') + '</div>';
-        if (submitBtn) {
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-        }
         return;
       }
 
@@ -3357,10 +3354,6 @@
           (currentLanguage === 'mm'
             ? 'ကိုယ်ဝန်ဆောင် အကြိမ် (Gravida) နှင့် မွေးဖွားအကြိမ် (Parity) ရွေးချယ်ပါ။'
             : 'Please select Gravida (G) and Parity (P).') + '</div>';
-        if (submitBtn) {
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-        }
         return;
       }
       
@@ -3369,10 +3362,6 @@
           (currentLanguage === 'mm'
             ? 'ဤဖုန်းနံပါတ်သည် အခြားလူနာတစ်ဦးအတွက် မှတ်ပုံတင်ထားပြီးဖြစ်သည်။'
             : 'This phone number is already registered to another patient.') + '</div>';
-        if (submitBtn) {
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-        }
         return;
       }
 
@@ -3395,10 +3384,6 @@
           liveDuplicateState.phoneBlocked = true;
           toggleInlineDuplicateAlert('phoneDuplicateAlert', true);
           messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-ban me-2"></i>This phone number already exists for another patient. Please check the patient list instead of registering a duplicate patient.</div>';
-          if (submitBtn) {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-          }
           return;
         }
 
@@ -3418,7 +3403,6 @@
         console.log('Offline mode: skipping duplicate check until sync.');
       }
       
-      try {
         const user = getCurrentOrCachedOfflineUser();
         console.log('Current user object:', user);
         console.log('Current user UID:', user?.uid);
@@ -3429,8 +3413,6 @@
             '<div class="alert alert-danger">❌ Error: You must be logged in to register patients.</div>';
           
           // Reset button state
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
           return;
         }
         
@@ -3450,16 +3432,12 @@
           document.getElementById("message").innerHTML = 
             '<div class="alert alert-warning">⚠️ Warning: Your township is not set. Please contact an administrator to set your township.</div>';
           
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
           return;
         }
         if (userRole === 'Regional Officer' && !userRegion) {
           console.error('Regional Officer missing region');
           document.getElementById("message").innerHTML = 
             '<div class="alert alert-warning">⚠️ Warning: Your region is not set. Please contact an administrator.</div>';
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
           return;
         }
         
@@ -3687,15 +3665,14 @@
         
       } catch (error) {
         console.error("Error adding document: ", error);
-        
-        // Reset button state on error
-        if (submitBtn) {
+        messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error creating patient record: ${error.message}</div>`;
+      } finally {
+        if (window.SubmitGuard) {
+          SubmitGuard.end('patient-registration', submitBtn, { restoreHtml: originalText });
+        } else if (submitBtn) {
           submitBtn.innerHTML = originalText;
           submitBtn.disabled = false;
         }
-        
-        // Show error message
-        messageDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error creating patient record: ${error.message}</div>`;
       }
       });
 

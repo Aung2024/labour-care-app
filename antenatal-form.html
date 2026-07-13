@@ -30,6 +30,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/choice-controls.js"></script>
+  <script src="js/submit-guard.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -3763,10 +3764,16 @@
 
     async function saveVisitData(event) {
       event.preventDefault();
-      
-      // Prevent double submission (button may be in anc-form-actions or inside form)
+      if (window.SubmitGuard && SubmitGuard.isLocked('anc-visit-save')) return;
+
       const submitButton = document.querySelector('.anc-form-actions .btn-save') || event.target.querySelector('button[type="submit"]');
-      if (submitButton) {
+      const restoreHtml = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+      if (window.SubmitGuard && !SubmitGuard.tryBegin('anc-visit-save')) return;
+      if (window.SubmitGuard) {
+        SubmitGuard.lockButton(submitButton, true, {
+          loadingHtml: '<i class="fas fa-spinner fa-spin me-2"></i>Saving...'
+        });
+      } else if (submitButton) {
         submitButton.disabled = true;
         submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
       }
@@ -3815,10 +3822,6 @@
             const dateCheck = window.ClinicalValidator.validateNotFuture(visitDate, 'Visit date');
             if (!dateCheck.isValid) {
               alert(dateCheck.error);
-              if (submitButton) {
-                submitButton.disabled = false;
-                submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
-              }
               return;
             }
           }
@@ -3835,10 +3838,6 @@
                   )
                 : false;
               if (!continueAnyway) {
-                if (submitButton) {
-                  submitButton.disabled = false;
-                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
-                }
                 return;
               }
             }
@@ -3856,10 +3855,6 @@
                   )
                 : false;
               if (!continueAnyway) {
-                if (submitButton) {
-                  submitButton.disabled = false;
-                  submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
-                }
                 return;
               }
             }
@@ -4164,11 +4159,12 @@
       } catch (error) {
         console.error('Error saving visit data:', error);
         alert(`Error saving visit data: ${error.message}`);
-        
-        // Reset button state on error
-        if (submitButton) {
+      } finally {
+        if (window.SubmitGuard) {
+          SubmitGuard.end('anc-visit-save', submitButton, { restoreHtml: restoreHtml });
+        } else if (submitButton) {
           submitButton.disabled = false;
-          submitButton.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
+          submitButton.innerHTML = restoreHtml;
         }
       }
     }

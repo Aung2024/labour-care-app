@@ -31,6 +31,7 @@
   <script src="js/delivery-notes-utils.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/choice-controls.js"></script>
+  <script src="js/submit-guard.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -3037,7 +3038,9 @@
         }
       }
       
-      try {
+      const submitButton = document.querySelector('button[form="newbornCareForm"]');
+      const restoreHtml = submitButton ? submitButton.innerHTML : '';
+      const saveData = async function () {
         const firstBaby = babyRows[0] || {};
         const kmcBabies = babyRows.map(function (baby) {
           const evaluation = (currentKmcBabyEvaluations || []).find(function (item) {
@@ -3229,11 +3232,38 @@
           alert(nbcMsg);
         }
         window.location.href = 'immediate-newborn-care.html';
+      };
+
+      if (window.SubmitGuard) {
+        const guard = await SubmitGuard.run('newborn-care-save', submitButton, async function () {
+          try {
+            await saveData();
+          } catch (error) {
+            console.error('Error saving newborn care data:', error);
+            alert('Could not save data. Please try again.');
+          }
+        }, {
+          loadingHtml: '<i class="fas fa-spinner fa-spin me-2"></i>Saving...',
+          restoreHtml: restoreHtml
+        });
+        if (guard.skipped) return;
         return;
-        
+      }
+
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+      }
+      try {
+        await saveData();
       } catch (error) {
         console.error('Error saving newborn care data:', error);
         alert('Could not save data. Please try again.');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = restoreHtml;
+        }
       }
     }
 

@@ -28,6 +28,7 @@
   <script src="js/ui-dialogs.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/choice-controls.js"></script>
+  <script src="js/submit-guard.js"></script>
   <style>
     :root {
       --primary-color: #7c3aed;
@@ -2194,7 +2195,9 @@
       
       if (!validatePncOutcomes()) return;
 
-      try {
+      const submitButton = document.querySelector('button[form="postpartumForm"]');
+      const restoreHtml = submitButton ? submitButton.innerHTML : '';
+      const saveVisit = async function () {
         // Get contraceptive methods
         const contraceptiveMethods = [];
         document.querySelectorAll('input[name="contraceptiveMethod"]:checked').forEach(cb => {
@@ -2342,10 +2345,38 @@
         window.location.href = currentPatient && currentPatient.id
           ? 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id)
           : 'postpartum-care.html';
-        
+      };
+
+      if (window.SubmitGuard) {
+        const guard = await SubmitGuard.run('pnc-visit-save', submitButton, async function () {
+          try {
+            await saveVisit();
+          } catch (error) {
+            console.error('Error saving postpartum visit:', error);
+            alert('Could not save postpartum visit. Please try again.');
+          }
+        }, {
+          loadingHtml: '<i class="fas fa-spinner fa-spin me-2"></i>Saving...',
+          restoreHtml: restoreHtml
+        });
+        if (guard.skipped) return;
+        return;
+      }
+
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+      }
+      try {
+        await saveVisit();
       } catch (error) {
         console.error('Error saving postpartum visit:', error);
         alert('Could not save postpartum visit. Please try again.');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = restoreHtml;
+        }
       }
     });
   </script>

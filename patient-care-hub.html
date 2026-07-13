@@ -950,6 +950,7 @@
   <script src="js/high-risk-utils.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/submit-guard.js"></script>
 
   <script>
     function showHubNotice(message, title) {
@@ -2081,10 +2082,8 @@
       renderDeliveryBabyRows(babies);
     }
 
-    let deliveryNotesSaveInFlight = false;
-
     async function saveThirdStageData() {
-      if (deliveryNotesSaveInFlight) return;
+      if (window.SubmitGuard && SubmitGuard.isLocked('delivery-notes-save')) return;
       if (!selectedPatient || !selectedPatient.id) {
         alert(currentLanguage === 'en' ? 'No patient selected' : 'လူနာ ရွေးချယ်ထားခြင်း မရှိပါ');
         return;
@@ -2095,14 +2094,9 @@
         return;
       }
 
-      deliveryNotesSaveInFlight = true;
       const saveBtn = document.querySelector('#thirdStageModal .btn-primary');
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.setAttribute('aria-busy', 'true');
-      }
-
-      try {
+      const restoreHtml = saveBtn ? saveBtn.innerHTML : '';
+      const runSave = async function () {
         const patientId = selectedPatient.id;
         const currentUser = (window.resolvePilotAuthUser && window.resolvePilotAuthUser(firebase.auth().currentUser)) || firebase.auth().currentUser;
         
@@ -2129,14 +2123,38 @@
 
         await DeliveryNotesUtils.saveDeliveryNotes(patientId, deliveryNotesData, currentUser.uid);
 
-        // Show success message
         const successMsg = currentLanguage === 'en' 
           ? 'Delivery notes saved successfully!' 
           : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ!';
         showHubNotice(successMsg, currentLanguage === 'mm' ? 'သိမ်းပြီး' : 'Saved');
-
-        // Close modal
         closeThirdStageModal();
+      };
+
+      if (window.SubmitGuard) {
+        const guard = await SubmitGuard.run('delivery-notes-save', saveBtn, async function () {
+          try {
+            await runSave();
+          } catch (error) {
+            console.error('Error saving delivery notes:', error);
+            const errorMsg = currentLanguage === 'en' 
+              ? 'Error saving data: ' + error.message 
+              : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + error.message;
+            showHubNotice(errorMsg, currentLanguage === 'mm' ? 'အမှား' : 'Error');
+          }
+        }, {
+          loadingHtml: '<i class="fas fa-spinner fa-spin me-2"></i>' + (currentLanguage === 'mm' ? 'သိမ်းနေသည်...' : 'Saving...'),
+          restoreHtml: restoreHtml
+        });
+        if (guard.skipped) return;
+        return;
+      }
+
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.setAttribute('aria-busy', 'true');
+      }
+      try {
+        await runSave();
       } catch (error) {
         console.error('Error saving delivery notes:', error);
         const errorMsg = currentLanguage === 'en' 
@@ -2144,8 +2162,6 @@
           : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + error.message;
         showHubNotice(errorMsg, currentLanguage === 'mm' ? 'အမှား' : 'Error');
       } finally {
-        deliveryNotesSaveInFlight = false;
-        const saveBtn = document.querySelector('#thirdStageModal .btn-primary');
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.removeAttribute('aria-busy');

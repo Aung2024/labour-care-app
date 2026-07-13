@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v210-moh';
+const CACHE_NAME = 'mch-care-v211-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -87,6 +87,7 @@ const FILES_TO_CACHE = [
   './js/anc-tracking-status.js',
   './js/kmc-utils.js',
   './js/baby-patient-utils.js',
+  './js/submit-guard.js',
   './js/facility-config.js',
   './js/birth-delivery-anchor.js',
   './js/delivery-notes-utils.js',
