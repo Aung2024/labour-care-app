@@ -10,8 +10,8 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
-  <script src="js/baby-patient-utils.js"></script>
-  <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/baby-patient-utils.js?v=210"></script>
+  <script src="js/delivery-notes-utils.js?v=210"></script>
   <style>
     body { background: #f8fafc; color: #0f172a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .wrap { max-width: 860px; margin: 32px auto; padding: 20px; }
@@ -70,11 +70,21 @@
     firebase.auth().onAuthStateChanged(function (user) {
       currentUser = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
       if (!currentUser) window.location.href = 'login.html';
+      const out = document.getElementById('output');
+      if (window.BabyPatientUtils && typeof BabyPatientUtils.deduplicateBabyPatients === 'function') {
+        out.textContent = 'Ready. Run backfill or duplicate cleanup (dry-run first).';
+      } else {
+        out.textContent = 'Waiting for latest scripts… hard refresh if duplicate cleanup stays unavailable.';
+      }
     });
 
     async function runBackfill() {
       const out = document.getElementById('output');
       const btn = document.getElementById('runBtn');
+      if (!window.BabyPatientUtils || typeof BabyPatientUtils.backfillExistingBabyPatients !== 'function') {
+        ensureDedupeReady();
+        return;
+      }
       btn.disabled = true;
       out.textContent = 'Running backfill...';
       try {
@@ -91,9 +101,23 @@
       }
     }
 
+    function ensureDedupeReady() {
+      if (window.BabyPatientUtils && typeof BabyPatientUtils.deduplicateBabyPatients === 'function') {
+        return true;
+      }
+      const out = document.getElementById('output');
+      out.textContent = [
+        'Duplicate cleanup script not loaded (cached old version).',
+        'Try: hard refresh this page (Ctrl+Shift+R / Cmd+Shift+R), or close and reopen the app.',
+        'If it still fails, open baby-patient-backfill.html with a fresh browser tab.'
+      ].join('\n');
+      return false;
+    }
+
     async function runDedupe() {
       const out = document.getElementById('output');
       const btn = document.getElementById('dedupeBtn');
+      if (!ensureDedupeReady()) return;
       btn.disabled = true;
       out.textContent = 'Running duplicate cleanup...';
       try {
