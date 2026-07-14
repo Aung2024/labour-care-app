@@ -190,8 +190,12 @@
     var motherId = global.BabyPatientUtils && BabyPatientUtils.resolveMotherPatientId
       ? await BabyPatientUtils.resolveMotherPatientId(db, patientId)
       : patientId;
-    if (userId && global.BabyPatientUtils && BabyPatientUtils.ensureCareTeamMidwife) {
-      await BabyPatientUtils.ensureCareTeamMidwife(db, motherId, userId);
+    var motherData = null;
+    try {
+      var motherSnap = await db.collection('patients').doc(motherId).get();
+      if (motherSnap.exists) motherData = motherSnap.data() || null;
+    } catch (e) {
+      console.warn('Could not preload mother patient for delivery notes:', e);
     }
     var existingNotes = null;
     try {
@@ -221,7 +225,11 @@
     var babyWarning = null;
     if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
       try {
-        var babyResult = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId);
+        var babyResult = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId, {
+          skipResolve: true,
+          motherData: motherData,
+          existingNotes: existingNotes
+        });
         if (babyResult && Array.isArray(babyResult.babyIds)) {
           babyIds = babyResult.babyIds;
           babyError = babyResult.error || null;
@@ -232,6 +240,9 @@
         payload.linkedBabyPatientIds = babyIds;
       } catch (e) {
         babyError = e.message || String(e);
+        babyWarning = global.BabyPatientUtils.formatBabyLinkError
+          ? BabyPatientUtils.formatBabyLinkError(babyError)
+          : babyError;
         console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
       }
     }

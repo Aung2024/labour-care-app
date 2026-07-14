@@ -428,6 +428,11 @@ function getFirebaseAuthErrorMessage(error, language) {
       ? 'သိမ်းဆည်းခွင့် မရှိပါ။ အကောင့်ထွက်ပြီး ပြန်ဝင်ရောက်ပါ (session သက်တမ်းကုန်နိုင်သည်)။'
       : 'Missing permission to save. Please log out and sign in again — your session may have expired.';
   }
+  if (code === 'resource-exhausted' || /429/.test(message) || /too many requests/i.test(message)) {
+    return language === 'mm'
+      ? 'Server မအားပါးပါ။ စက္ကန့် 몇 ခု စောင့်ပြီး Save ကို ထပ်နှိပ်ပါ။'
+      : 'Server was busy (too many requests). Wait a few seconds and tap Save again.';
+  }
   return message;
 }
 

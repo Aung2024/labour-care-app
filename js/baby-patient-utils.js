@@ -183,16 +183,53 @@
   async function ensureCareTeamMidwife(db, patientId, userId) {
     if (!patientId || !userId || !db || !global.firebase) return false;
     try {
-      await db.collection('patients').doc(patientId).set({
-        care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(userId),
-        updated_at: nowServer(),
-        updated_by: userId
-      }, { merge: true });
+      await retryFirestoreOp(function () {
+        return db.collection('patients').doc(patientId).set({
+          care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(userId),
+          updated_at: nowServer(),
+          updated_by: userId
+        }, { merge: true });
+      });
       return true;
     } catch (e) {
       console.warn('ensureCareTeamMidwife failed:', e);
       return false;
     }
+  }
+
+  function isRateLimitError(error) {
+    var code = error && error.code ? String(error.code) : '';
+    var message = error && error.message ? String(error.message) : String(error || '');
+    return code === 'resource-exhausted' ||
+      /429/.test(message) ||
+      /too many requests/i.test(message) ||
+      /quota exceeded/i.test(message);
+  }
+
+  function formatBabyLinkError(message) {
+    if (isRateLimitError({ message: message })) {
+      return 'Server was busy (too many requests). Delivery notes are saved — wait a few seconds and tap Save again to link the baby record.';
+    }
+    return 'Baby record(s) saved, but linking to the mother chart failed. Please save again or contact support.';
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  async function retryFirestoreOp(fn, maxAttempts) {
+    maxAttempts = maxAttempts || 5;
+    var lastError = null;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastError = e;
+        if (!isRateLimitError(e) || attempt >= maxAttempts - 1) throw e;
+        await delay(Math.min(8000, 400 * Math.pow(2, attempt)));
+      }
+    }
+    throw lastError;
   }
 
   function sanitizeCodeSegment(value, fallback) {
@@ -213,19 +250,21 @@
     var yearSuffix = new Date().getFullYear().toString().slice(-2);
     var counterId = tspCode.replace(/[^A-Za-z0-9]/g, '') + '_' + fac + '_B_' + yearSuffix;
     var counterRef = db.collection('patient_counters').doc(counterId);
-    var nextSerial = await db.runTransaction(async function (tx) {
-      var snap = await tx.get(counterRef);
-      var current = 0;
-      if (snap.exists && typeof snap.data().lastSerial === 'number') current = snap.data().lastSerial;
-      var next = current + 1;
-      tx.set(counterRef, {
-        lastSerial: next,
-        updatedAt: nowServer(),
-        patientType: PATIENT_TYPE_BABY
-      }, { merge: true });
-      return next;
+    return retryFirestoreOp(async function () {
+      var nextSerial = await db.runTransaction(async function (tx) {
+        var snap = await tx.get(counterRef);
+        var current = 0;
+        if (snap.exists && typeof snap.data().lastSerial === 'number') current = snap.data().lastSerial;
+        var next = current + 1;
+        tx.set(counterRef, {
+          lastSerial: next,
+          updatedAt: nowServer(),
+          patientType: PATIENT_TYPE_BABY
+        }, { merge: true });
+        return next;
+      });
+      return tspCode + '-' + fac + '-B' + yearSuffix + String(nextSerial).padStart(4, '0');
     });
-    return tspCode + '-' + fac + '-B' + yearSuffix + String(nextSerial).padStart(4, '0');
   }
 
   async function fetchLatestAncContext(db, motherId) {
@@ -334,8 +373,12 @@
     return babies;
   }
 
-  async function findExistingBaby(db, motherId, groupId, birthOrder, babyCount) {
-    var babies = await fetchMotherBabyPatients(db, motherId);
+  async function findExistingBaby(db, motherId, groupId, birthOrder, babyCount, cachedBabies) {
+    var babies = cachedBabies || await fetchMotherBabyPatients(db, motherId);
+    return findExistingBabyInList(babies, groupId, birthOrder, babyCount);
+  }
+
+  function findExistingBabyInList(babies, groupId, birthOrder, babyCount) {
     var exact = null;
     var fallback = null;
     babies.forEach(function (item) {
@@ -385,25 +428,34 @@
     }
   }
 
-  async function otherGroupBabyIds(db, motherId, groupId) {
-    var babies = await fetchMotherBabyPatients(db, motherId);
+  function otherGroupBabyIdsFromList(babies, groupId) {
     return babies.filter(function (item) {
       var gid = item.data && item.data.birth_group_id;
       return gid && String(gid) !== String(groupId || '');
     }).map(function (item) { return item.id; });
   }
 
-  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId) {
+  async function otherGroupBabyIds(db, motherId, groupId, cachedBabies) {
+    var babies = cachedBabies || await fetchMotherBabyPatients(db, motherId);
+    return otherGroupBabyIdsFromList(babies, groupId);
+  }
+
+  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId, options) {
+    options = options || {};
     if (!motherId || !global.firebase) return { babyIds: [], error: null, warning: null };
     var db = firebase.firestore();
-    motherId = await resolveMotherPatientId(db, motherId);
-    if (userId) await ensureCareTeamMidwife(db, motherId, userId);
-    var motherRef = db.collection('patients').doc(motherId);
-    var motherSnap = await motherRef.get();
-    if (!motherSnap.exists) {
-      return { babyIds: [], error: 'Mother patient record not found.', warning: null };
+    if (!options.skipResolve) {
+      motherId = await resolveMotherPatientId(db, motherId);
     }
-    var mother = motherSnap.data() || {};
+    var motherRef = db.collection('patients').doc(motherId);
+    var mother = options.motherData || null;
+    if (!mother) {
+      var motherSnap = await retryFirestoreOp(function () { return motherRef.get(); });
+      if (!motherSnap.exists) {
+        return { babyIds: [], error: 'Mother patient record not found.', warning: null };
+      }
+      mother = motherSnap.data() || {};
+    }
     if (isBabyPatient(mother)) {
       return { babyIds: [], error: 'Delivery notes must be saved on the mother patient, not a baby record.', warning: null };
     }
@@ -414,17 +466,27 @@
       return String(baby.outcome || '').toLowerCase() !== 'stillbirth';
     });
     if (!babies.length) return { babyIds: [], error: null, warning: null };
-    var existingNotes = global.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes
-      ? await DeliveryNotesUtils.fetchDeliveryNotes(motherId)
-      : null;
-    var groupId = ensureBirthGroupId(motherId, normalized, existingNotes);
+    var existingNotes = options.existingNotes || null;
+    if (!existingNotes && !firstOf(normalized.birth_group_id, notes && notes.birth_group_id) &&
+        global.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes) {
+      try {
+        existingNotes = await DeliveryNotesUtils.fetchDeliveryNotes(motherId);
+      } catch (e) {
+        console.warn('Could not load delivery notes for birth group:', e);
+      }
+    }
+    var groupId = firstOf(normalized.birth_group_id, notes && notes.birth_group_id) ||
+      ensureBirthGroupId(motherId, normalized, existingNotes);
     normalized.birth_group_id = groupId;
     var babyCount = babies.length;
-    var ancContext = await fetchLatestAncContext(db, motherId);
+    var ancContext = options.skipAnc ? {} : await fetchLatestAncContext(db, motherId);
+    var motherBabies = await retryFirestoreOp(function () {
+      return fetchMotherBabyPatients(db, motherId);
+    });
     var ids = [];
     for (var i = 0; i < babies.length; i++) {
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-      var existing = await findExistingBaby(db, motherId, groupId, birthOrder, babyCount);
+      var existing = findExistingBabyInList(motherBabies, groupId, birthOrder, babyCount);
       var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, ancContext, userId, babyCount);
       var babyRef;
       if (existing) {
@@ -432,18 +494,19 @@
         payload.care_team_midwife_ids = buildCareTeamIds(Object.assign({}, existing.data, mother), userId);
         delete payload.created_by;
         delete payload.createdBy;
-        await babyRef.set(payload, { merge: true });
+        await retryFirestoreOp(function () { return babyRef.set(payload, { merge: true }); });
       } else {
         babyRef = db.collection('patients').doc();
         payload.patient_unique_id = await generateBabyPatientUniqueId(db, payload);
         payload.created_at = nowServer();
-        await babyRef.set(payload, { merge: true });
+        await retryFirestoreOp(function () { return babyRef.set(payload, { merge: true }); });
+        motherBabies.push({ id: babyRef.id, data: payload, ref: babyRef });
       }
       ids.push(babyRef.id);
       babies[i].babyPatientId = babyRef.id;
       babies[i].baby_patient_id = babyRef.id;
     }
-    var preservedIds = await otherGroupBabyIds(db, motherId, groupId);
+    var preservedIds = otherGroupBabyIdsFromList(motherBabies, groupId);
     var motherUpdate = {
       patient_type: PATIENT_TYPE_MOTHER,
       baby_patient_ids: uniqueIds(preservedIds.concat(ids)),
@@ -455,7 +518,7 @@
     }
     var linkError = null;
     try {
-      await motherRef.set(motherUpdate, { merge: true });
+      await retryFirestoreOp(function () { return motherRef.set(motherUpdate, { merge: true }); });
     } catch (e) {
       linkError = e.message || String(e);
       console.warn('Baby records saved but mother link update failed:', e);
@@ -463,9 +526,7 @@
     return {
       babyIds: ids,
       error: linkError,
-      warning: linkError
-        ? 'Baby record(s) saved, but linking to the mother chart failed. Please save again or contact support.'
-        : null
+      warning: linkError ? formatBabyLinkError(linkError) : null
     };
   }
 
@@ -743,6 +804,8 @@
     isMotherPatient: isMotherPatient,
     babyDisplayName: babyDisplayName,
     generateBabyPatientUniqueId: generateBabyPatientUniqueId,
+    formatBabyLinkError: formatBabyLinkError,
+    retryFirestoreOp: retryFirestoreOp,
     resolveMotherPatientId: resolveMotherPatientId,
     ensureCareTeamMidwife: ensureCareTeamMidwife,
     buildCareTeamIds: buildCareTeamIds,
