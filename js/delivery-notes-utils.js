@@ -186,15 +186,25 @@
 
   async function saveDeliveryNotes(patientId, notes, userId) {
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
+    if (!global.BabyPatientUtils || !BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
+      throw new Error('Baby patient module failed to load. Please refresh the app and try again.');
+    }
     var db = firebase.firestore();
-    var motherId = global.BabyPatientUtils && BabyPatientUtils.resolveMotherPatientId
+    var motherId = BabyPatientUtils.resolveMotherPatientId
       ? await BabyPatientUtils.resolveMotherPatientId(db, patientId)
       : patientId;
+    var motherData = null;
+    try {
+      var motherSnap = await db.collection('patients').doc(motherId).get();
+      if (motherSnap.exists) motherData = motherSnap.data() || null;
+    } catch (e) {
+      console.warn('Could not preload mother patient for delivery notes:', e);
+    }
     var normalized = normalizeDeliveryNotes(notes);
     var payload = {
       thirdStage: normalized.thirdStage,
       deliveryDetails: normalized.deliveryDetails,
-      birth_group_id: global.BabyPatientUtils && BabyPatientUtils.birthGroupId
+      birth_group_id: BabyPatientUtils.birthGroupId
         ? BabyPatientUtils.birthGroupId(motherId, normalized)
         : null,
       updatedAt: nowServer(),
@@ -206,16 +216,22 @@
       .collection('records')
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
-    var babyIds = [];
-    if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
-      try {
-        babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId);
-        if (!Array.isArray(babyIds)) babyIds = (babyIds && babyIds.babyIds) || [];
-        payload.linkedBabyPatientIds = babyIds;
-      } catch (e) {
-        console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
-      }
+
+    var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId, {
+      skipResolve: true,
+      motherData: motherData
+    });
+    if (!Array.isArray(babyIds)) babyIds = [];
+    payload.linkedBabyPatientIds = babyIds;
+
+    var liveBabies = (normalized.deliveryDetails.babies || []).filter(function (baby) {
+      var outcome = String(baby.outcome || 'alive').toLowerCase();
+      return outcome !== 'stillbirth' && outcome !== 'still_birth';
+    });
+    if (liveBabies.length && !babyIds.length) {
+      throw new Error('Delivery notes saved, but the baby patient record could not be created. Please tap Save again.');
     }
+
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
       var legacy = legacyFieldsFromDelivery(normalized);
       if (legacy && legacy.birth_time) {
@@ -224,7 +240,7 @@
         });
       }
     }
-    return payload;
+    return { payload: payload, babyIds: babyIds, motherId: motherId };
   }
 
   async function syncFromNewbornIfMissing(patientId, newbornData, userId) {

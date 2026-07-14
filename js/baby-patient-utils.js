@@ -369,21 +369,41 @@
     return babies;
   }
 
-  async function findExistingBabyFast(db, motherId, groupId, birthOrder) {
-    var snap = await db.collection('patients')
-      .where('mother_patient_id', '==', motherId)
-      .limit(20)
-      .get();
-    var found = null;
-    snap.forEach(function (doc) {
-      if (found) return;
-      var d = doc.data() || {};
-      if (String(d.birth_group_id || '') === String(groupId || '') &&
-          (parseInt(d.birth_order, 10) || 1) === birthOrder) {
-        found = { id: doc.id, data: d };
-      }
-    });
-    return found;
+  async function findExistingBabyFast(db, motherId, groupId, birthOrder, mother) {
+    mother = mother || {};
+    var linked = Array.isArray(mother.baby_patient_ids) ? mother.baby_patient_ids : [];
+    for (var i = 0; i < linked.length; i++) {
+      if (!linked[i]) continue;
+      try {
+        var linkedSnap = await db.collection('patients').doc(linked[i]).get();
+        if (!linkedSnap.exists) continue;
+        var d = linkedSnap.data() || {};
+        if (!isBabyPatient(d)) continue;
+        if ((parseInt(d.birth_order, 10) || 1) === birthOrder &&
+            String(d.birth_group_id || '') === String(groupId || '')) {
+          return { id: linkedSnap.id, data: d };
+        }
+      } catch (e) { /* try next linked id */ }
+    }
+    try {
+      var snap = await db.collection('patients')
+        .where('mother_patient_id', '==', motherId)
+        .limit(20)
+        .get();
+      var found = null;
+      snap.forEach(function (doc) {
+        if (found) return;
+        var d = doc.data() || {};
+        if (String(d.birth_group_id || '') === String(groupId || '') &&
+            (parseInt(d.birth_order, 10) || 1) === birthOrder) {
+          found = { id: doc.id, data: d };
+        }
+      });
+      return found;
+    } catch (e) {
+      console.warn('Baby lookup query failed:', e);
+      return null;
+    }
   }
 
   async function countPatientSubcollections(db, patientId) {
@@ -424,31 +444,47 @@
     return otherGroupBabyIdsFromList(babies, groupId);
   }
 
-  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId) {
-    if (!motherId || !global.firebase) return [];
+  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId, options) {
+    options = options || {};
+    if (!motherId || !global.firebase) throw new Error('Baby patient service unavailable');
     var db = firebase.firestore();
-    motherId = await resolveMotherPatientId(db, motherId);
+    if (!options.skipResolve) {
+      motherId = await resolveMotherPatientId(db, motherId);
+    }
     var motherRef = db.collection('patients').doc(motherId);
-    var motherSnap = await motherRef.get();
-    if (!motherSnap.exists) return [];
-    var mother = motherSnap.data() || {};
-    if (isBabyPatient(mother)) return [];
-    var normalized = global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeDeliveryNotes
-      ? DeliveryNotesUtils.normalizeDeliveryNotes(notes)
-      : (notes || {});
-    var babies = ((normalized.deliveryDetails || {}).babies || []).filter(function (baby) {
-      return String(baby.outcome || '').toLowerCase() !== 'stillbirth';
+    var mother = options.motherData || null;
+    if (!mother) {
+      var motherSnap = await motherRef.get();
+      if (!motherSnap.exists) throw new Error('Mother patient record not found');
+      mother = motherSnap.data() || {};
+    }
+    if (isBabyPatient(mother)) throw new Error('Delivery notes must be saved on the mother patient');
+
+    var details = (notes && notes.deliveryDetails) || {};
+    var rawBabies = Array.isArray(details.babies) ? details.babies : [];
+    var babies = rawBabies.filter(function (baby) {
+      var outcome = String(baby.outcome || 'alive').toLowerCase();
+      return outcome !== 'stillbirth' && outcome !== 'still_birth';
+    }).map(function (baby, index) {
+      return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
+        ? DeliveryNotesUtils.normalizeBaby(baby, index)
+        : baby;
     });
     if (!babies.length) return [];
-    var groupId = birthGroupId(motherId, normalized);
+
+    var groupId = firstOf(notes && notes.birth_group_id, birthGroupId(motherId, {
+      birth_group_id: notes && notes.birth_group_id,
+      deliveryDetails: details
+    }));
     var babyCount = babies.length;
     var ids = [];
+
     for (var i = 0; i < babies.length; i++) {
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-      var existing = await findExistingBabyFast(db, motherId, groupId, birthOrder);
+      var existing = await findExistingBabyFast(db, motherId, groupId, birthOrder, mother);
       var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId, babyCount);
       var babyRef;
-      if (existing) {
+      if (existing && existing.id) {
         babyRef = db.collection('patients').doc(existing.id);
         delete payload.created_by;
         delete payload.createdBy;
@@ -461,16 +497,26 @@
       }
       ids.push(babyRef.id);
     }
-    var motherUpdate = {
-      patient_type: PATIENT_TYPE_MOTHER,
-      baby_patient_ids: firebase.firestore.FieldValue.arrayUnion.apply(firebase.firestore.FieldValue, ids),
-      updated_at: nowServer(),
-      updated_by: userId || null
-    };
-    if (userId) {
-      motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+
+    if (ids.length) {
+      var motherUpdate = {
+        patient_type: PATIENT_TYPE_MOTHER,
+        updated_at: nowServer(),
+        updated_by: userId || null
+      };
+      if (ids.length === 1) {
+        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion(ids[0]);
+      } else {
+        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion.apply(
+          firebase.firestore.FieldValue,
+          ids
+        );
+      }
+      if (userId) {
+        motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+      }
+      await motherRef.set(motherUpdate, { merge: true });
     }
-    await motherRef.set(motherUpdate, { merge: true });
     return ids;
   }
 
