@@ -138,11 +138,14 @@
     };
   }
 
-  function babyDisplayName(motherName, birthOrder, explicitName) {
+  function babyDisplayName(motherName, birthOrder, explicitName, totalBabies) {
     if (explicitName) return explicitName;
     motherName = String(motherName || '').replace(/^Baby\s+/i, '').trim();
     var base = motherName ? ('Baby ' + motherName) : 'Baby';
-    return birthOrder ? (base + ' ' + birthOrder) : base;
+    var order = parseInt(birthOrder, 10) || 1;
+    var total = parseInt(totalBabies, 10) || 1;
+    if (total > 1 || order > 1) return base + ' ' + order;
+    return base;
   }
 
   function sanitizeCodeSegment(value, fallback) {
@@ -206,14 +209,14 @@
     return firstOf(notes && notes.birth_group_id, details.birthGroupId, motherId + '_delivery_' + (firstBirth || 'unknown'));
   }
 
-  function babyPayload(motherId, mother, baby, birthOrder, groupId, ancContext, userId) {
+  function babyPayload(motherId, mother, baby, birthOrder, groupId, ancContext, userId, totalBabies) {
     mother = mother || {};
     baby = baby || {};
     var dob = dateFromBirthTime(baby.birthTime) || baby.date_of_birth || '';
     var years = ageInYears(dob);
     return {
       patient_type: PATIENT_TYPE_BABY,
-      name: babyDisplayName(mother.name || mother.patientName || '', birthOrder, baby.babyName || baby.baby_name),
+      name: babyDisplayName(mother.name || mother.patientName || '', birthOrder, baby.babyName || baby.baby_name, totalBabies),
       mother_patient_id: motherId,
       mother_name: mother.name || mother.patientName || null,
       birth_order: birthOrder,
@@ -281,6 +284,8 @@
     });
     if (!babies.length) return [];
 
+    var pregnancyType = String(details.pregnancyType || details.pregnancy_type || '').toLowerCase();
+    var totalBabies = babies.length > 1 || pregnancyType === 'twins' ? Math.max(babies.length, 2) : 1;
     var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
     var ids = [];
     var batch = db.batch();
@@ -289,7 +294,7 @@
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
       var babyId = babyDocId(motherId, birthOrder);
       var babyRef = db.collection('patients').doc(babyId);
-      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId);
+      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId, totalBabies);
       payload.patient_unique_id = babyUniqueIdFromMother(mother, birthOrder);
       batch.set(babyRef, payload, { merge: true });
       ids.push(babyId);
