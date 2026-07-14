@@ -183,7 +183,8 @@
     return null;
   }
 
-  async function saveDeliveryNotes(patientId, notes, userId) {
+  async function saveDeliveryNotes(patientId, notes, userId, options) {
+    options = options || {};
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
     if (!global.BabyPatientUtils || !BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
       throw new Error('Baby patient module not loaded. Please refresh the app.');
@@ -202,10 +203,14 @@
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
 
+    await new Promise(function (resolve) { setTimeout(resolve, 600); });
+
     var babyIds = [];
     var babyError = null;
     try {
-      babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId);
+      babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId, {
+        motherData: options.motherData || null
+      });
       if (!Array.isArray(babyIds)) babyIds = [];
       payload.linkedBabyPatientIds = babyIds;
     } catch (e) {
@@ -217,19 +222,19 @@
       var outcome = String(baby.outcome || 'alive').toLowerCase();
       return outcome !== 'stillbirth' && outcome !== 'still_birth';
     }).length;
-    if (liveCount > 0 && !babyIds.length) {
-      throw new Error(babyError || 'Delivery notes saved, but baby patient could not be created. Please tap Save again.');
-    }
 
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
       var legacy = legacyFieldsFromDelivery(normalized);
       if (legacy && legacy.birth_time) {
-        BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time).catch(function (e) {
-          console.warn('Delivery notes saved, but birth anchor sync failed:', e);
-        });
+        BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time).catch(function () {});
       }
     }
-    return { payload: payload, babyIds: babyIds, babyError: babyError };
+    return {
+      payload: payload,
+      babyIds: babyIds,
+      babyError: babyError,
+      babyPending: liveCount > 0 && !babyIds.length
+    };
   }
 
   async function syncFromNewbornIfMissing(patientId, newbornData, userId) {

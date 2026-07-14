@@ -245,113 +245,108 @@
     };
   }
 
-  function isArchivedBaby(data) {
-    data = data || {};
-    if (data.status === 'duplicate_archived' || data.status === 'archived') return true;
-    if (data.merged_into_patient_id) return true;
-    return false;
+  function isRateLimitError(error) {
+    var code = error && error.code ? String(error.code) : '';
+    var message = error && error.message ? String(error.message) : String(error || '');
+    return code === 'resource-exhausted' || /429/.test(message) || /too many requests/i.test(message);
   }
 
-  async function findExistingBaby(db, motherId, groupId, birthOrder, mother) {
-    mother = mother || {};
-    var linked = Array.isArray(mother.baby_patient_ids) ? mother.baby_patient_ids : [];
-    for (var i = 0; i < linked.length; i++) {
-      if (!linked[i]) continue;
-      try {
-        var linkedSnap = await db.collection('patients').doc(linked[i]).get();
-        if (!linkedSnap.exists) continue;
-        var linkedData = linkedSnap.data() || {};
-        if (!isBabyPatient(linkedData) || isArchivedBaby(linkedData)) continue;
-        if ((parseInt(linkedData.birth_order, 10) || 1) === birthOrder &&
-            String(linkedData.birth_group_id || '') === String(groupId || '')) {
-          return { id: linkedSnap.id, data: linkedData };
-        }
-      } catch (e) { /* try next */ }
-    }
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  async function runWithOneRetry(fn) {
     try {
-      var snap = await db.collection('patients')
-        .where('mother_patient_id', '==', motherId)
-        .limit(20)
-        .get();
-      var found = null;
-      snap.forEach(function (doc) {
-        if (found) return;
-        var d = doc.data() || {};
-        if (isArchivedBaby(d)) return;
-        if (String(d.birth_group_id || '') === String(groupId || '') &&
-            (parseInt(d.birth_order, 10) || 1) === birthOrder) {
-          found = { id: doc.id, data: d };
-        }
-      });
-      return found;
+      return await fn();
     } catch (e) {
-      console.warn('Baby lookup query failed:', e);
-      return null;
+      if (!isRateLimitError(e)) throw e;
+      await delay(2500);
+      return await fn();
     }
   }
 
-  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId) {
+  function linkedBabyIdByOrder(mother, birthOrder) {
+    var ids = mother && mother.baby_patient_ids;
+    if (!Array.isArray(ids) || !ids.length) return null;
+    var order = parseInt(birthOrder, 10) || 1;
+    if (ids[order - 1]) return ids[order - 1];
+    if (order === 1 && ids.length === 1) return ids[0];
+    return null;
+  }
+
+  async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId, options) {
+    options = options || {};
     if (!motherId || !global.firebase) throw new Error('Baby patient service unavailable');
-    var db = firebase.firestore();
-    var motherRef = db.collection('patients').doc(motherId);
-    var motherSnap = await motherRef.get();
-    if (!motherSnap.exists) throw new Error('Mother patient record not found');
-    var mother = motherSnap.data() || {};
-    if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient, not the baby chart');
 
-    var details = (notes && notes.deliveryDetails) || {};
-    var rawBabies = Array.isArray(details.babies) ? details.babies : [];
-    var babies = rawBabies.filter(function (baby) {
-      var outcome = String(baby.outcome || 'alive').toLowerCase();
-      return outcome !== 'stillbirth' && outcome !== 'still_birth';
-    }).map(function (baby, index) {
-      return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
-        ? DeliveryNotesUtils.normalizeBaby(baby, index)
-        : baby;
-    });
-    if (!babies.length) return [];
-
-    var normalized = { deliveryDetails: { babies: babies } };
-    var groupId = birthGroupId(motherId, normalized);
-    var ids = [];
-
-    for (var i = 0; i < babies.length; i++) {
-      var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-      var existing = await findExistingBaby(db, motherId, groupId, birthOrder, mother);
-      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId);
-      var babyRef;
-      if (existing && existing.id) {
-        babyRef = db.collection('patients').doc(existing.id);
-        delete payload.created_by;
-        delete payload.createdBy;
-        await babyRef.set(payload, { merge: true });
-      } else {
-        babyRef = db.collection('patients').doc();
-        payload.patient_unique_id = await generateBabyPatientUniqueId(db, payload);
-        payload.created_at = nowServer();
-        await babyRef.set(payload, { merge: true });
+    return runWithOneRetry(async function () {
+      var db = firebase.firestore();
+      var motherRef = db.collection('patients').doc(motherId);
+      var mother = options.motherData || null;
+      if (!mother) {
+        var motherSnap = await motherRef.get();
+        if (!motherSnap.exists) throw new Error('Mother patient record not found');
+        mother = motherSnap.data() || {};
       }
-      ids.push(babyRef.id);
-    }
+      if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient');
 
-    var motherUpdate = {
-      patient_type: PATIENT_TYPE_MOTHER,
-      updated_at: nowServer(),
-      updated_by: userId || null
-    };
-    if (ids.length === 1) {
-      motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion(ids[0]);
-    } else if (ids.length > 1) {
-      motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion.apply(
-        firebase.firestore.FieldValue,
-        ids
-      );
-    }
-    if (userId) {
-      motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
-    }
-    await motherRef.set(motherUpdate, { merge: true });
-    return ids;
+      var details = (notes && notes.deliveryDetails) || {};
+      var rawBabies = Array.isArray(details.babies) ? details.babies : [];
+      var babies = rawBabies.filter(function (baby) {
+        var outcome = String(baby.outcome || 'alive').toLowerCase();
+        return outcome !== 'stillbirth' && outcome !== 'still_birth';
+      }).map(function (baby, index) {
+        return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
+          ? DeliveryNotesUtils.normalizeBaby(baby, index)
+          : baby;
+      });
+      if (!babies.length) return [];
+
+      var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
+      var ids = [];
+      var batch = db.batch();
+      var needsBatch = false;
+
+      for (var i = 0; i < babies.length; i++) {
+        var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
+        var linkedId = linkedBabyIdByOrder(mother, birthOrder);
+        var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId);
+        var babyRef;
+        if (linkedId) {
+          babyRef = db.collection('patients').doc(linkedId);
+          delete payload.created_by;
+          delete payload.createdBy;
+        } else {
+          babyRef = db.collection('patients').doc();
+          payload.patient_unique_id = await generateBabyPatientUniqueId(db, payload);
+          payload.created_at = nowServer();
+        }
+        batch.set(babyRef, payload, { merge: true });
+        needsBatch = true;
+        ids.push(babyRef.id);
+      }
+
+      var motherUpdate = {
+        patient_type: PATIENT_TYPE_MOTHER,
+        updated_at: nowServer(),
+        updated_by: userId || null
+      };
+      if (ids.length === 1) {
+        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion(ids[0]);
+      } else if (ids.length > 1) {
+        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion.apply(
+          firebase.firestore.FieldValue,
+          ids
+        );
+      }
+      if (userId) {
+        motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+      }
+      if (needsBatch) {
+        batch.set(motherRef, motherUpdate, { merge: true });
+        await batch.commit();
+      }
+      return ids;
+    });
   }
 
   function clonePlain(data) {
