@@ -185,6 +185,9 @@
 
   async function saveDeliveryNotes(patientId, notes, userId) {
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
+    if (!global.BabyPatientUtils || !BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
+      throw new Error('Baby patient module not loaded. Please refresh the app.');
+    }
     var normalized = normalizeDeliveryNotes(notes);
     var payload = {
       thirdStage: normalized.thirdStage,
@@ -198,31 +201,42 @@
       .collection('records')
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
-    if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
-      try {
-        var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId);
-        payload.linkedBabyPatientIds = babyIds;
-      } catch (e) {
-        console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
-      }
+
+    var babyIds = [];
+    var babyError = null;
+    try {
+      babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId);
+      if (!Array.isArray(babyIds)) babyIds = [];
+      payload.linkedBabyPatientIds = babyIds;
+    } catch (e) {
+      babyError = e.message || String(e);
+      console.error('Baby patient creation failed:', e);
     }
+
+    var liveCount = (normalized.deliveryDetails.babies || []).filter(function (baby) {
+      var outcome = String(baby.outcome || 'alive').toLowerCase();
+      return outcome !== 'stillbirth' && outcome !== 'still_birth';
+    }).length;
+    if (liveCount > 0 && !babyIds.length) {
+      throw new Error(babyError || 'Delivery notes saved, but baby patient could not be created. Please tap Save again.');
+    }
+
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
-      try {
-        var legacy = legacyFieldsFromDelivery(normalized);
-        if (legacy && legacy.birth_time) {
-          await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time);
-        }
-      } catch (e) {
-        console.warn('Delivery notes saved, but birth anchor sync failed:', e);
+      var legacy = legacyFieldsFromDelivery(normalized);
+      if (legacy && legacy.birth_time) {
+        BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time).catch(function (e) {
+          console.warn('Delivery notes saved, but birth anchor sync failed:', e);
+        });
       }
     }
-    return payload;
+    return { payload: payload, babyIds: babyIds, babyError: babyError };
   }
 
   async function syncFromNewbornIfMissing(patientId, newbornData, userId) {
     var existing = await fetchDeliveryNotes(patientId);
     if (existing && existing.deliveryDetails && existing.deliveryDetails.babies && existing.deliveryDetails.babies.length) return existing;
-    return saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
+    await saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
+    return fetchDeliveryNotes(patientId);
   }
 
   global.DeliveryNotesUtils = {
