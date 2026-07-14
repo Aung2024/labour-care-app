@@ -190,27 +190,13 @@
     var motherId = global.BabyPatientUtils && BabyPatientUtils.resolveMotherPatientId
       ? await BabyPatientUtils.resolveMotherPatientId(db, patientId)
       : patientId;
-    var motherData = null;
-    try {
-      var motherSnap = await db.collection('patients').doc(motherId).get();
-      if (motherSnap.exists) motherData = motherSnap.data() || null;
-    } catch (e) {
-      console.warn('Could not preload mother patient for delivery notes:', e);
-    }
-    var existingNotes = null;
-    try {
-      existingNotes = await fetchDeliveryNotes(motherId);
-    } catch (e) {
-      console.warn('Could not load existing delivery notes; continuing with new save:', e);
-    }
     var normalized = normalizeDeliveryNotes(notes);
-    var birthGroupId = global.BabyPatientUtils && BabyPatientUtils.ensureBirthGroupId
-      ? BabyPatientUtils.ensureBirthGroupId(motherId, normalized, existingNotes)
-      : null;
     var payload = {
       thirdStage: normalized.thirdStage,
       deliveryDetails: normalized.deliveryDetails,
-      birth_group_id: birthGroupId,
+      birth_group_id: global.BabyPatientUtils && BabyPatientUtils.birthGroupId
+        ? BabyPatientUtils.birthGroupId(motherId, normalized)
+        : null,
       updatedAt: nowServer(),
       updatedBy: userId || null
     };
@@ -221,55 +207,31 @@
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
     var babyIds = [];
-    var babyError = null;
-    var babyWarning = null;
     if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
       try {
-        var babyResult = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId, {
-          skipResolve: true,
-          motherData: motherData,
-          existingNotes: existingNotes
-        });
-        if (babyResult && Array.isArray(babyResult.babyIds)) {
-          babyIds = babyResult.babyIds;
-          babyError = babyResult.error || null;
-          babyWarning = babyResult.warning || null;
-        } else if (Array.isArray(babyResult)) {
-          babyIds = babyResult;
-        }
+        babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId);
+        if (!Array.isArray(babyIds)) babyIds = (babyIds && babyIds.babyIds) || [];
         payload.linkedBabyPatientIds = babyIds;
       } catch (e) {
-        babyError = e.message || String(e);
-        babyWarning = global.BabyPatientUtils.formatBabyLinkError
-          ? BabyPatientUtils.formatBabyLinkError(babyError)
-          : babyError;
         console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
       }
     }
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
-      try {
-        var legacy = legacyFieldsFromDelivery(normalized);
-        if (legacy && legacy.birth_time) {
-          await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(motherId, legacy.birth_time);
-        }
-      } catch (e) {
-        console.warn('Delivery notes saved, but birth anchor sync failed:', e);
+      var legacy = legacyFieldsFromDelivery(normalized);
+      if (legacy && legacy.birth_time) {
+        BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(motherId, legacy.birth_time).catch(function (e) {
+          console.warn('Delivery notes saved, but birth anchor sync failed:', e);
+        });
       }
     }
-    return {
-      payload: payload,
-      motherId: motherId,
-      babyIds: babyIds,
-      babyError: babyError,
-      babyWarning: babyWarning
-    };
+    return payload;
   }
 
   async function syncFromNewbornIfMissing(patientId, newbornData, userId) {
     var existing = await fetchDeliveryNotes(patientId);
     if (existing && existing.deliveryDetails && existing.deliveryDetails.babies && existing.deliveryDetails.babies.length) return existing;
-    var saved = await saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
-    return normalizeDeliveryNotes(saved && saved.payload ? saved.payload : saved);
+    await saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
+    return fetchDeliveryNotes(patientId);
   }
 
   global.DeliveryNotesUtils = {
