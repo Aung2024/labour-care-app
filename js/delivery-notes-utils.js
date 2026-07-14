@@ -203,25 +203,11 @@
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
 
-    await new Promise(function (resolve) { setTimeout(resolve, 600); });
-
-    var babyIds = [];
-    var babyError = null;
-    try {
-      babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId, {
-        motherData: options.motherData || null
-      });
-      if (!Array.isArray(babyIds)) babyIds = [];
-      payload.linkedBabyPatientIds = babyIds;
-    } catch (e) {
-      babyError = e.message || String(e);
-      console.error('Baby patient creation failed:', e);
-    }
-
-    var liveCount = (normalized.deliveryDetails.babies || []).filter(function (baby) {
-      var outcome = String(baby.outcome || 'alive').toLowerCase();
-      return outcome !== 'stillbirth' && outcome !== 'still_birth';
-    }).length;
+    var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId, {
+      motherData: options.motherData || null
+    });
+    if (!Array.isArray(babyIds)) babyIds = [];
+    payload.linkedBabyPatientIds = babyIds;
 
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
       var legacy = legacyFieldsFromDelivery(normalized);
@@ -231,9 +217,7 @@
     }
     return {
       payload: payload,
-      babyIds: babyIds,
-      babyError: babyError,
-      babyPending: liveCount > 0 && !babyIds.length
+      babyIds: babyIds
     };
   }
 

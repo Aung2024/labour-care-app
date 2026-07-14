@@ -245,108 +245,68 @@
     };
   }
 
-  function isRateLimitError(error) {
-    var code = error && error.code ? String(error.code) : '';
-    var message = error && error.message ? String(error.message) : String(error || '');
-    return code === 'resource-exhausted' || /429/.test(message) || /too many requests/i.test(message);
+  function babyDocId(motherId, birthOrder) {
+    return String(motherId || '') + '_baby_' + (parseInt(birthOrder, 10) || 1);
   }
 
-  function delay(ms) {
-    return new Promise(function (resolve) { setTimeout(resolve, ms); });
-  }
-
-  async function runWithOneRetry(fn) {
-    try {
-      return await fn();
-    } catch (e) {
-      if (!isRateLimitError(e)) throw e;
-      await delay(2500);
-      return await fn();
-    }
-  }
-
-  function linkedBabyIdByOrder(mother, birthOrder) {
-    var ids = mother && mother.baby_patient_ids;
-    if (!Array.isArray(ids) || !ids.length) return null;
+  function babyUniqueIdFromMother(mother, birthOrder) {
+    mother = mother || {};
     var order = parseInt(birthOrder, 10) || 1;
-    if (ids[order - 1]) return ids[order - 1];
-    if (order === 1 && ids.length === 1) return ids[0];
-    return null;
+    var motherSerial = String(firstOf(mother.patient_unique_id, mother.patientUniqueId) || '').trim();
+    if (motherSerial) return motherSerial + '-B' + order;
+    var tspCode = sanitizeCodeSegment(firstOf(mother.tsp_code, mother.tspCode), 'UNK');
+    var fac = facilityCode(firstOf(mother.facility_code, mother.facilityCode));
+    var yearSuffix = new Date().getFullYear().toString().slice(-2);
+    return tspCode + '-' + fac + '-B' + yearSuffix + '-' + String(order).padStart(2, '0');
   }
 
   async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId, options) {
     options = options || {};
     if (!motherId || !global.firebase) throw new Error('Baby patient service unavailable');
+    var mother = options.motherData || null;
+    if (!mother) throw new Error('Patient data required to create baby record');
+    if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient');
 
-    return runWithOneRetry(async function () {
-      var db = firebase.firestore();
-      var motherRef = db.collection('patients').doc(motherId);
-      var mother = options.motherData || null;
-      if (!mother) {
-        var motherSnap = await motherRef.get();
-        if (!motherSnap.exists) throw new Error('Mother patient record not found');
-        mother = motherSnap.data() || {};
-      }
-      if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient');
-
-      var details = (notes && notes.deliveryDetails) || {};
-      var rawBabies = Array.isArray(details.babies) ? details.babies : [];
-      var babies = rawBabies.filter(function (baby) {
-        var outcome = String(baby.outcome || 'alive').toLowerCase();
-        return outcome !== 'stillbirth' && outcome !== 'still_birth';
-      }).map(function (baby, index) {
-        return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
-          ? DeliveryNotesUtils.normalizeBaby(baby, index)
-          : baby;
-      });
-      if (!babies.length) return [];
-
-      var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
-      var ids = [];
-      var batch = db.batch();
-      var needsBatch = false;
-
-      for (var i = 0; i < babies.length; i++) {
-        var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-        var linkedId = linkedBabyIdByOrder(mother, birthOrder);
-        var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId);
-        var babyRef;
-        if (linkedId) {
-          babyRef = db.collection('patients').doc(linkedId);
-          delete payload.created_by;
-          delete payload.createdBy;
-        } else {
-          babyRef = db.collection('patients').doc();
-          payload.patient_unique_id = await generateBabyPatientUniqueId(db, payload);
-          payload.created_at = nowServer();
-        }
-        batch.set(babyRef, payload, { merge: true });
-        needsBatch = true;
-        ids.push(babyRef.id);
-      }
-
-      var motherUpdate = {
-        patient_type: PATIENT_TYPE_MOTHER,
-        updated_at: nowServer(),
-        updated_by: userId || null
-      };
-      if (ids.length === 1) {
-        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion(ids[0]);
-      } else if (ids.length > 1) {
-        motherUpdate.baby_patient_ids = firebase.firestore.FieldValue.arrayUnion.apply(
-          firebase.firestore.FieldValue,
-          ids
-        );
-      }
-      if (userId) {
-        motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
-      }
-      if (needsBatch) {
-        batch.set(motherRef, motherUpdate, { merge: true });
-        await batch.commit();
-      }
-      return ids;
+    var db = firebase.firestore();
+    var motherRef = db.collection('patients').doc(motherId);
+    var details = (notes && notes.deliveryDetails) || {};
+    var rawBabies = Array.isArray(details.babies) ? details.babies : [];
+    var babies = rawBabies.filter(function (baby) {
+      var outcome = String(baby.outcome || 'alive').toLowerCase();
+      return outcome !== 'stillbirth' && outcome !== 'still_birth';
+    }).map(function (baby, index) {
+      return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
+        ? DeliveryNotesUtils.normalizeBaby(baby, index)
+        : baby;
     });
+    if (!babies.length) return [];
+
+    var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
+    var ids = [];
+    var batch = db.batch();
+
+    for (var i = 0; i < babies.length; i++) {
+      var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
+      var babyId = babyDocId(motherId, birthOrder);
+      var babyRef = db.collection('patients').doc(babyId);
+      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId);
+      payload.patient_unique_id = babyUniqueIdFromMother(mother, birthOrder);
+      batch.set(babyRef, payload, { merge: true });
+      ids.push(babyId);
+    }
+
+    var motherUpdate = {
+      patient_type: PATIENT_TYPE_MOTHER,
+      baby_patient_ids: ids,
+      updated_at: nowServer(),
+      updated_by: userId || null
+    };
+    if (userId) {
+      motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+    }
+    batch.set(motherRef, motherUpdate, { merge: true });
+    await batch.commit();
+    return ids;
   }
 
   function clonePlain(data) {
@@ -465,7 +425,9 @@
         if (!notes) continue;
         results.eligibleMothers += 1;
         if (!dryRun) {
-          var ids = await createOrUpdateBabiesFromDeliveryNotes(doc.id, notes, options.userId || null);
+          var ids = await createOrUpdateBabiesFromDeliveryNotes(doc.id, notes, options.userId || null, {
+            motherData: data
+          });
           results.createdOrUpdatedBabies += ids.length;
           var copied = await copyLegacyBabyCareToBabyPatients(doc.id, ids);
           results.copiedNewbornCare = (results.copiedNewbornCare || 0) + copied.newborn;
