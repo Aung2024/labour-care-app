@@ -1975,7 +1975,10 @@
       if (!selectedPatient || !selectedPatient.id) return;
 
       try {
-        const patientId = selectedPatient.id;
+        let patientId = selectedPatient.id;
+        if (window.BabyPatientUtils && BabyPatientUtils.resolveMotherPatientId && firebase.firestore) {
+          patientId = await BabyPatientUtils.resolveMotherPatientId(firebase.firestore(), patientId);
+        }
         const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
 
         if (notes) {
@@ -2098,10 +2101,12 @@
       const restoreHtml = saveBtn ? saveBtn.innerHTML : '';
       const runSave = async function () {
         const patientId = selectedPatient.id;
-        const currentUser = (window.resolvePilotAuthUser && window.resolvePilotAuthUser(firebase.auth().currentUser)) || firebase.auth().currentUser;
+        const currentUser = (window.requireFirebaseAuthUser && requireFirebaseAuthUser()) || firebase.auth().currentUser;
         
         if (!currentUser) {
-          alert(currentLanguage === 'en' ? 'Please log in to save data' : 'ဒေတာ သိမ်းဆည်းရန် ဝင်ရောက်ရန် လိုအပ်ပါသည်');
+          alert(currentLanguage === 'en'
+            ? 'Your session expired. Please log out and sign in again before saving delivery notes.'
+            : 'Session သက်တမ်းကုန်သွားပါပြီ။ မွေးဖွားခြင်းမှတ်တမ်း သိမ်းမီ အကောင့်ထွက်ပြီး ပြန်ဝင်ရောက်ပါ။');
           return;
         }
 
@@ -2121,11 +2126,22 @@
           }
         };
 
-        await DeliveryNotesUtils.saveDeliveryNotes(patientId, deliveryNotesData, currentUser.uid);
+        const saveResult = await DeliveryNotesUtils.saveDeliveryNotes(patientId, deliveryNotesData, currentUser.uid);
+        const babyIds = saveResult && saveResult.babyIds ? saveResult.babyIds : [];
+        const babyWarning = saveResult && (saveResult.babyWarning || saveResult.babyError) ? (saveResult.babyWarning || saveResult.babyError) : null;
 
-        const successMsg = currentLanguage === 'en' 
-          ? 'Delivery notes saved successfully!' 
+        let successMsg = currentLanguage === 'en'
+          ? 'Delivery notes saved successfully!'
           : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ!';
+        if (babyIds.length) {
+          successMsg += currentLanguage === 'en'
+            ? ' Baby patient record(s) linked.'
+            : ' ကလေး လူနာမှတ်တမ်း ချိတ်ဆက်ပြီးပါပြီ။';
+        } else if (babyWarning) {
+          successMsg += currentLanguage === 'en'
+            ? ' Warning: baby record could not be linked — ' + babyWarning
+            : ' သတိပေးချက် — ကလေး မှတ်တမ်း ချိတ်ဆက်၍ မရပါ — ' + babyWarning;
+        }
         showHubNotice(successMsg, currentLanguage === 'mm' ? 'သိမ်းပြီး' : 'Saved');
         closeThirdStageModal();
       };
@@ -2136,9 +2152,12 @@
             await runSave();
           } catch (error) {
             console.error('Error saving delivery notes:', error);
-            const errorMsg = currentLanguage === 'en' 
-              ? 'Error saving data: ' + error.message 
-              : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + error.message;
+            const detail = window.getFirebaseAuthErrorMessage
+              ? getFirebaseAuthErrorMessage(error, currentLanguage)
+              : error.message;
+            const errorMsg = currentLanguage === 'en'
+              ? 'Error saving data: ' + detail
+              : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + detail;
             showHubNotice(errorMsg, currentLanguage === 'mm' ? 'အမှား' : 'Error');
           }
         }, {
@@ -2157,9 +2176,12 @@
         await runSave();
       } catch (error) {
         console.error('Error saving delivery notes:', error);
-        const errorMsg = currentLanguage === 'en' 
-          ? 'Error saving data: ' + error.message 
-          : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + error.message;
+        const detail = window.getFirebaseAuthErrorMessage
+          ? getFirebaseAuthErrorMessage(error, currentLanguage)
+          : error.message;
+        const errorMsg = currentLanguage === 'en'
+          ? 'Error saving data: ' + detail
+          : 'ဒေတာ သိမ်းဆည်းရာတွင် အမှားအယွင်း: ' + detail;
         showHubNotice(errorMsg, currentLanguage === 'mm' ? 'အမှား' : 'Error');
       } finally {
         if (saveBtn) {

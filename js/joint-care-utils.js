@@ -100,6 +100,14 @@
       ...link,
       linkId
     }, { merge: true });
+    try {
+      await db.collection('patients').doc(patientId).set({
+        care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(user.uid),
+        updatedAt: nowServer()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[JointCare] could not add linked midwife to care team:', e);
+    }
     await logJointCareEvent('joint_care_link_created', user.uid, patientId, {
       patientUniqueId,
       ownerMidwifeId,

@@ -186,10 +186,22 @@
 
   async function saveDeliveryNotes(patientId, notes, userId) {
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
-    var existingNotes = await fetchDeliveryNotes(patientId);
+    var db = firebase.firestore();
+    var motherId = global.BabyPatientUtils && BabyPatientUtils.resolveMotherPatientId
+      ? await BabyPatientUtils.resolveMotherPatientId(db, patientId)
+      : patientId;
+    if (userId && global.BabyPatientUtils && BabyPatientUtils.ensureCareTeamMidwife) {
+      await BabyPatientUtils.ensureCareTeamMidwife(db, motherId, userId);
+    }
+    var existingNotes = null;
+    try {
+      existingNotes = await fetchDeliveryNotes(motherId);
+    } catch (e) {
+      console.warn('Could not load existing delivery notes; continuing with new save:', e);
+    }
     var normalized = normalizeDeliveryNotes(notes);
     var birthGroupId = global.BabyPatientUtils && BabyPatientUtils.ensureBirthGroupId
-      ? BabyPatientUtils.ensureBirthGroupId(patientId, normalized, existingNotes)
+      ? BabyPatientUtils.ensureBirthGroupId(motherId, normalized, existingNotes)
       : null;
     var payload = {
       thirdStage: normalized.thirdStage,
@@ -198,17 +210,28 @@
       updatedAt: nowServer(),
       updatedBy: userId || null
     };
-    await firebase.firestore()
+    await db
       .collection('patients')
-      .doc(patientId)
+      .doc(motherId)
       .collection('records')
       .doc(DELIVERY_DOC_ID)
       .set(payload, { merge: true });
+    var babyIds = [];
+    var babyError = null;
+    var babyWarning = null;
     if (global.BabyPatientUtils && BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes) {
       try {
-        var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId);
+        var babyResult = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(motherId, payload, userId);
+        if (babyResult && Array.isArray(babyResult.babyIds)) {
+          babyIds = babyResult.babyIds;
+          babyError = babyResult.error || null;
+          babyWarning = babyResult.warning || null;
+        } else if (Array.isArray(babyResult)) {
+          babyIds = babyResult;
+        }
         payload.linkedBabyPatientIds = babyIds;
       } catch (e) {
+        babyError = e.message || String(e);
         console.warn('Delivery notes saved, but linked baby patient creation failed:', e);
       }
     }
@@ -216,19 +239,26 @@
       try {
         var legacy = legacyFieldsFromDelivery(normalized);
         if (legacy && legacy.birth_time) {
-          await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(patientId, legacy.birth_time);
+          await BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty(motherId, legacy.birth_time);
         }
       } catch (e) {
         console.warn('Delivery notes saved, but birth anchor sync failed:', e);
       }
     }
-    return payload;
+    return {
+      payload: payload,
+      motherId: motherId,
+      babyIds: babyIds,
+      babyError: babyError,
+      babyWarning: babyWarning
+    };
   }
 
   async function syncFromNewbornIfMissing(patientId, newbornData, userId) {
     var existing = await fetchDeliveryNotes(patientId);
     if (existing && existing.deliveryDetails && existing.deliveryDetails.babies && existing.deliveryDetails.babies.length) return existing;
-    return saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
+    var saved = await saveDeliveryNotes(patientId, deliveryNotesFromNewborn(newbornData), userId);
+    return normalizeDeliveryNotes(saved && saved.payload ? saved.payload : saved);
   }
 
   global.DeliveryNotesUtils = {

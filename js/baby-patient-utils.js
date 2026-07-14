@@ -158,6 +158,43 @@
     return out;
   }
 
+  function buildCareTeamIds(mother, userId) {
+    return uniqueIds([].concat(
+      mother && mother.care_team_midwife_ids ? mother.care_team_midwife_ids : [],
+      mother && (mother.created_by || mother.createdBy) ? [mother.created_by || mother.createdBy] : [],
+      userId ? [userId] : []
+    ).filter(Boolean));
+  }
+
+  async function resolveMotherPatientId(db, patientId) {
+    if (!patientId || !db) return patientId;
+    try {
+      var snap = await db.collection('patients').doc(patientId).get();
+      if (!snap.exists) return patientId;
+      var data = snap.data() || {};
+      if (isBabyPatient(data) && data.mother_patient_id) return data.mother_patient_id;
+      return patientId;
+    } catch (e) {
+      console.warn('resolveMotherPatientId failed:', e);
+      return patientId;
+    }
+  }
+
+  async function ensureCareTeamMidwife(db, patientId, userId) {
+    if (!patientId || !userId || !db || !global.firebase) return false;
+    try {
+      await db.collection('patients').doc(patientId).set({
+        care_team_midwife_ids: firebase.firestore.FieldValue.arrayUnion(userId),
+        updated_at: nowServer(),
+        updated_by: userId
+      }, { merge: true });
+      return true;
+    } catch (e) {
+      console.warn('ensureCareTeamMidwife failed:', e);
+      return false;
+    }
+  }
+
   function sanitizeCodeSegment(value, fallback) {
     var raw = String(value || fallback || '').trim().toUpperCase();
     var cleaned = raw.replace(/[^A-Z0-9-]/g, '');
@@ -259,9 +296,9 @@
       region_short_code: mother.region_short_code || null,
       tsp_code: mother.tsp_code || null,
       facility_code: mother.facility_code || mother.facilityCode || '003',
-      created_by: mother.created_by || mother.createdBy || userId || null,
-      createdBy: mother.created_by || mother.createdBy || userId || null,
-      care_team_midwife_ids: mother.care_team_midwife_ids || [mother.created_by || mother.createdBy || userId].filter(Boolean),
+      created_by: userId || mother.created_by || mother.createdBy || null,
+      createdBy: userId || mother.created_by || mother.createdBy || null,
+      care_team_midwife_ids: buildCareTeamIds(mother, userId),
       status: 'registered',
       linked_from_delivery_notes: true,
       updated_at: nowServer(),
@@ -357,19 +394,26 @@
   }
 
   async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId) {
-    if (!motherId || !global.firebase) return [];
+    if (!motherId || !global.firebase) return { babyIds: [], error: null, warning: null };
     var db = firebase.firestore();
+    motherId = await resolveMotherPatientId(db, motherId);
+    if (userId) await ensureCareTeamMidwife(db, motherId, userId);
     var motherRef = db.collection('patients').doc(motherId);
     var motherSnap = await motherRef.get();
-    if (!motherSnap.exists) return [];
+    if (!motherSnap.exists) {
+      return { babyIds: [], error: 'Mother patient record not found.', warning: null };
+    }
     var mother = motherSnap.data() || {};
+    if (isBabyPatient(mother)) {
+      return { babyIds: [], error: 'Delivery notes must be saved on the mother patient, not a baby record.', warning: null };
+    }
     var normalized = global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeDeliveryNotes
       ? DeliveryNotesUtils.normalizeDeliveryNotes(notes)
       : (notes || {});
     var babies = ((normalized.deliveryDetails || {}).babies || []).filter(function (baby) {
       return String(baby.outcome || '').toLowerCase() !== 'stillbirth';
     });
-    if (!babies.length) return [];
+    if (!babies.length) return { babyIds: [], error: null, warning: null };
     var existingNotes = global.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes
       ? await DeliveryNotesUtils.fetchDeliveryNotes(motherId)
       : null;
@@ -385,6 +429,9 @@
       var babyRef;
       if (existing) {
         babyRef = db.collection('patients').doc(existing.id);
+        payload.care_team_midwife_ids = buildCareTeamIds(Object.assign({}, existing.data, mother), userId);
+        delete payload.created_by;
+        delete payload.createdBy;
         await babyRef.set(payload, { merge: true });
       } else {
         babyRef = db.collection('patients').doc();
@@ -397,12 +444,29 @@
       babies[i].baby_patient_id = babyRef.id;
     }
     var preservedIds = await otherGroupBabyIds(db, motherId, groupId);
-    await motherRef.set({
+    var motherUpdate = {
       patient_type: PATIENT_TYPE_MOTHER,
       baby_patient_ids: uniqueIds(preservedIds.concat(ids)),
-      updated_at: nowServer()
-    }, { merge: true });
-    return ids;
+      updated_at: nowServer(),
+      updated_by: userId || null
+    };
+    if (userId) {
+      motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+    }
+    var linkError = null;
+    try {
+      await motherRef.set(motherUpdate, { merge: true });
+    } catch (e) {
+      linkError = e.message || String(e);
+      console.warn('Baby records saved but mother link update failed:', e);
+    }
+    return {
+      babyIds: ids,
+      error: linkError,
+      warning: linkError
+        ? 'Baby record(s) saved, but linking to the mother chart failed. Please save again or contact support.'
+        : null
+    };
   }
 
   async function deduplicateBabyPatientsForMother(motherId, options) {
@@ -656,7 +720,8 @@
         if (!notes) continue;
         results.eligibleMothers += 1;
         if (!dryRun) {
-          var ids = await createOrUpdateBabiesFromDeliveryNotes(doc.id, notes, options.userId || null);
+          var babyResult = await createOrUpdateBabiesFromDeliveryNotes(doc.id, notes, options.userId || null);
+          var ids = babyResult && babyResult.babyIds ? babyResult.babyIds : [];
           results.createdOrUpdatedBabies += ids.length;
           var copied = await copyLegacyBabyCareToBabyPatients(doc.id, ids);
           results.copiedNewbornCare = (results.copiedNewbornCare || 0) + copied.newborn;
@@ -678,6 +743,9 @@
     isMotherPatient: isMotherPatient,
     babyDisplayName: babyDisplayName,
     generateBabyPatientUniqueId: generateBabyPatientUniqueId,
+    resolveMotherPatientId: resolveMotherPatientId,
+    ensureCareTeamMidwife: ensureCareTeamMidwife,
+    buildCareTeamIds: buildCareTeamIds,
     createOrUpdateBabiesFromDeliveryNotes: createOrUpdateBabiesFromDeliveryNotes,
     deduplicateBabyPatients: deduplicateBabyPatients,
     deduplicateBabyPatientsForMother: deduplicateBabyPatientsForMother,

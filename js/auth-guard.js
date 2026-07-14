@@ -415,6 +415,22 @@ function isAuthenticated() {
  * Require authentication - throws error if not authenticated
  * Use this in functions that require authentication
  */
+function requireFirebaseAuthUser() {
+  if (typeof firebase === 'undefined' || !firebase.auth) return null;
+  return firebase.auth().currentUser || null;
+}
+
+function getFirebaseAuthErrorMessage(error, language) {
+  const code = error && (error.code || '');
+  const message = error && error.message ? error.message : String(error || 'Unknown error');
+  if (code === 'permission-denied' || /permission/i.test(message)) {
+    return language === 'mm'
+      ? 'သိမ်းဆည်းခွင့် မရှိပါ။ အကောင့်ထွက်ပြီး ပြန်ဝင်ရောက်ပါ (session သက်တမ်းကုန်နိုင်သည်)။'
+      : 'Missing permission to save. Please log out and sign in again — your session may have expired.';
+  }
+  return message;
+}
+
 function requireAuth() {
   if (!isAuthenticated()) {
     throw new Error('Authentication required');
@@ -426,6 +442,8 @@ window.AuthGuard = {
   init: initAuthGuard,
   isAuthenticated: isAuthenticated,
   requireAuth: requireAuth,
+  requireFirebaseAuthUser: requireFirebaseAuthUser,
+  getFirebaseAuthErrorMessage: getFirebaseAuthErrorMessage,
   isPublicPage: isPublicPage,
   getCachedOfflineUser: getCachedOfflineUser,
   resolvePilotAuthUser: resolvePilotAuthUser,
@@ -437,6 +455,8 @@ window.AuthGuard = {
 
 window.getPilotCachedUser = getCachedOfflineUser;
 window.resolvePilotAuthUser = resolvePilotAuthUser;
+window.requireFirebaseAuthUser = requireFirebaseAuthUser;
+window.getFirebaseAuthErrorMessage = getFirebaseAuthErrorMessage;
 window.isPilotRememberedUser = isPilotRememberedUser;
 window.showOnlineOnlyMessage = showOnlineOnlyMessage;
 

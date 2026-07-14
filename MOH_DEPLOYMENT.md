@@ -28,3 +28,11 @@ This branch (`mnch-moh`) is prepared to run against a separate MOH Firebase proj
 
 You can keep the same Firestore rule model as pilot, but deploy it to the MOH Firebase project separately and test role access with MOH test accounts.
 
+After delivery-notes / baby-patient fixes, redeploy `firestore.rules` to MOH Firebase so authenticated midwives can:
+
+- write `patients/{id}/records/deliveryNotes`
+- create baby patients and update `baby_patient_ids` on the mother
+- increment `patient_counters` for baby IDs
+
+If MOH uses stricter ownership rules, ensure `care_team_midwife_ids` includes every midwife who saves delivery notes (joint care now adds the linked midwife automatically).
+
