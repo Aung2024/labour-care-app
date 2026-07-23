@@ -167,7 +167,9 @@
           </div>
           <div class="mb-3">
             <label class="form-label">Set new password</label>
-            <input type="password" id="editNewPassword" class="form-control" placeholder="Leave blank to keep current password" autocomplete="new-password" />
+            <input type="password" id="editNewPassword" class="form-control" placeholder="Example: Tatkon2026!" autocomplete="new-password" oninput="clearPasswordValidation()" />
+            <div id="editPasswordHelp" class="small text-muted mt-1">At least 8 characters with uppercase, lowercase, number, and special character (!@#$%).</div>
+            <div id="editPasswordError" class="small text-danger mt-1" style="display:none;"></div>
           </div>
           <div class="mb-2">
             <label class="form-label">Confirm new password</label>
@@ -512,25 +514,79 @@
       }
     }
 
-    async function callAdminFunction(name, payload) {
-      const user = firebase.auth().currentUser;
-      if (!user) throw new Error('Not signed in');
-      const token = await user.getIdToken();
-      const projectId = firebase.app().options.projectId;
-      const url = 'https://us-central1-' + projectId + '.cloudfunctions.net/' + name;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + token
-        },
-        body: JSON.stringify({ data: payload })
-      });
-      const json = await response.json();
-      if (json.error) {
-        throw new Error(json.error.message || 'Cloud function failed');
+    function clearPasswordValidation() {
+      const errorEl = document.getElementById('editPasswordError');
+      if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
       }
-      return json.result;
+    }
+
+    function showPasswordValidationError(message) {
+      const errorEl = document.getElementById('editPasswordError');
+      if (!errorEl) throw new Error(message);
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+      throw new Error(message);
+    }
+
+    function validateNewPasswordInput(newPassword, confirmPassword) {
+      clearPasswordValidation();
+      if (!newPassword && !confirmPassword) return false;
+      if (!newPassword || !confirmPassword) {
+        showPasswordValidationError('Enter and confirm the new password.');
+      }
+      if (newPassword !== confirmPassword) {
+        showPasswordValidationError('New password and confirmation do not match.');
+      }
+      if (window.PasswordPolicy) {
+        const validation = PasswordPolicy.validate(newPassword);
+        if (!validation.isValid) {
+          showPasswordValidationError(validation.errors.join(' '));
+        }
+      }
+      return true;
+    }
+
+    async function queuePasswordReset(userId, newPassword) {
+      const db = firebase.firestore();
+      const requestRef = db.collection('admin_password_resets').doc();
+      await requestRef.set({
+        userId: userId,
+        newPassword: newPassword,
+        requestedBy: firebase.auth().currentUser.uid,
+        status: 'pending',
+        requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      return new Promise(function(resolve, reject) {
+        const timeout = setTimeout(function() {
+          unsubscribe();
+          reject(new Error('Password update timed out after 45 seconds. Try again.'));
+        }, 90000);
+        const unsubscribe = requestRef.onSnapshot(function(snap) {
+          const data = snap.data();
+          if (!data) return;
+          if (data.status === 'completed') {
+            clearTimeout(timeout);
+            unsubscribe();
+            resolve(data);
+          } else if (data.status === 'failed') {
+            clearTimeout(timeout);
+            unsubscribe();
+            reject(new Error(data.error || 'Password update failed.'));
+          } else if (data.status === 'pending' || data.status === 'processing') {
+            const helpEl = document.getElementById('editPasswordHelp');
+            if (helpEl) {
+              helpEl.textContent = 'Updating password on server… this may take up to 1 minute.';
+            }
+          }
+        }, function(err) {
+          clearTimeout(timeout);
+          unsubscribe();
+          reject(err);
+        });
+      });
     }
 
     async function unlockUserAccount() {
@@ -551,27 +607,19 @@
     async function saveUserPassword(userId, email) {
       const newPassword = document.getElementById('editNewPassword').value;
       const confirmPassword = document.getElementById('editConfirmPassword').value;
-      if (!newPassword && !confirmPassword) return false;
-      if (!newPassword || newPassword !== confirmPassword) {
-        throw new Error('New password and confirmation do not match.');
-      }
-      if (window.PasswordPolicy) {
-        const validation = PasswordPolicy.validate(newPassword);
-        if (!validation.isValid) {
-          throw new Error(validation.errors.join(' '));
-        }
-      }
-      await callAdminFunction('adminSetUserPassword', {
-        userId: userId,
-        newPassword: newPassword
-      });
+      if (!validateNewPasswordInput(newPassword, confirmPassword)) return false;
+
+      await queuePasswordReset(userId, newPassword);
+
       const idx = allUsers.findIndex(function(x) { return x.id === userId; });
       if (idx !== -1) {
         allUsers[idx].admin_password_reference = newPassword;
       }
       document.getElementById('editCurrentPassword').value = newPassword;
+      document.getElementById('editCurrentPassword').placeholder = '';
       document.getElementById('editNewPassword').value = '';
       document.getElementById('editConfirmPassword').value = '';
+      clearPasswordValidation();
       if (email) await refreshLockoutStatus(String(email).trim().toLowerCase());
       return true;
     }
@@ -617,10 +665,11 @@
         if (!payload.region && payload.township && window.getRegionFromTownship) {
           payload.region = window.getRegionFromTownship(payload.township) || null;
         }
-        await firebase.firestore().collection('users').doc(editingId).update(payload);
 
         const m = allUsers.find(function(x) { return x.id === editingId; });
         const passwordChanged = await saveUserPassword(editingId, m && m.email ? m.email : '');
+
+        await firebase.firestore().collection('users').doc(editingId).update(payload);
 
         const idx = allUsers.findIndex(function(x) { return x.id === editingId; });
         if (idx !== -1) allUsers[idx] = Object.assign({}, allUsers[idx], payload);

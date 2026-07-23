@@ -235,5 +235,22 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow delete: if false;
     }
+
+    // Super Admin password reset queue (processed by Cloud Function trigger)
+    match /admin_password_resets/{requestId} {
+      allow create: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin"
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.userId is string
+        && request.resource.data.newPassword is string;
+      allow read: if
+        request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      allow update, delete: if false;
+    }
   }
 }

@@ -122,17 +122,42 @@ function assertSuperAdmin(context) {
 
 function validateAdminPassword(password) {
   if (!password || typeof password !== 'string' || password.length < 8) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Password must be at least 8 characters.'
-    );
+    throw new Error('Password must be at least 8 characters.');
   }
   if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Password must include uppercase, lowercase, and a number.'
-    );
+    throw new Error('Password must include uppercase, lowercase, and a number.');
   }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    throw new Error('Password must include at least one special character (!@#$%...).');
+  }
+}
+
+async function applyAdminPasswordReset(userId, newPassword, adminUid) {
+  validateAdminPassword(newPassword);
+  await admin.auth().updateUser(userId, { password: newPassword });
+
+  const userRef = admin.firestore().collection('users').doc(userId);
+  const userDoc = await userRef.get();
+  const userData = userDoc.exists ? userDoc.data() : {};
+  const email = String(userData.email || '').trim().toLowerCase();
+
+  await userRef.set({
+    admin_password_reference: newPassword,
+    admin_password_set_at: admin.firestore.FieldValue.serverTimestamp(),
+    admin_password_set_by: adminUid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedBy: adminUid
+  }, { merge: true });
+
+  if (email) {
+    await admin.firestore().collection('account_lockouts').doc(email).set({
+      attempts: 0,
+      lockoutUntil: null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
+  return { success: true, message: 'Password updated and account unlocked.' };
 }
 
 /**
@@ -152,36 +177,8 @@ exports.adminSetUserPassword = functions.https.onCall(async (data, context) => {
     );
   }
 
-  validateAdminPassword(newPassword);
-
   try {
-    await admin.auth().updateUser(userId, { password: newPassword });
-
-    const userRef = admin.firestore().collection('users').doc(userId);
-    const userDoc = await userRef.get();
-    const userData = userDoc.exists ? userDoc.data() : {};
-    const email = String(userData.email || '').trim().toLowerCase();
-
-    await userRef.set({
-      admin_password_reference: newPassword,
-      admin_password_set_at: admin.firestore.FieldValue.serverTimestamp(),
-      admin_password_set_by: context.auth.uid,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedBy: context.auth.uid
-    }, { merge: true });
-
-    if (email) {
-      await admin.firestore().collection('account_lockouts').doc(email).set({
-        attempts: 0,
-        lockoutUntil: null,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    }
-
-    return {
-      success: true,
-      message: 'Password updated and account unlocked.'
-    };
+    return await applyAdminPasswordReset(userId, newPassword, context.auth.uid);
   } catch (error) {
     console.error('Error setting user password:', error);
 
@@ -197,6 +194,9 @@ exports.adminSetUserPassword = functions.https.onCall(async (data, context) => {
         'Password is too weak. Choose a stronger password.'
       );
     }
+    if (error.message && error.message.indexOf('Password must') === 0) {
+      throw new functions.https.HttpsError('invalid-argument', error.message);
+    }
 
     throw new functions.https.HttpsError(
       'internal',
@@ -204,3 +204,71 @@ exports.adminSetUserPassword = functions.https.onCall(async (data, context) => {
     );
   }
 });
+
+async function processPasswordResetRequest(docSnap) {
+  const data = docSnap.data() || {};
+  const requestRef = docSnap.ref;
+  const userId = data.userId;
+  const newPassword = data.newPassword;
+  const requestedBy = data.requestedBy;
+
+  if (!userId || !newPassword || !requestedBy) {
+    await requestRef.set({
+      status: 'failed',
+      error: 'Missing userId, newPassword, or requestedBy.',
+      completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      newPassword: admin.firestore.FieldValue.delete()
+    }, { merge: true });
+    return;
+  }
+
+  const callerDoc = await admin.firestore().collection('users').doc(requestedBy).get();
+  if (!callerDoc.exists || callerDoc.data().role !== 'Super Admin') {
+    await requestRef.set({
+      status: 'failed',
+      error: 'Only Super Admin can reset passwords.',
+      completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      newPassword: admin.firestore.FieldValue.delete()
+    }, { merge: true });
+    return;
+  }
+
+  await applyAdminPasswordReset(userId, newPassword, requestedBy);
+  await requestRef.set({
+    status: 'completed',
+    completedAt: admin.firestore.FieldValue.serverTimestamp(),
+    newPassword: admin.firestore.FieldValue.delete()
+  }, { merge: true });
+}
+
+/**
+ * Poll pending Super Admin password resets from Firestore.
+ * Avoids direct HTTPS calls from networks that block cloudfunctions.net.
+ */
+exports.processPendingPasswordResets = functions
+  .region('us-central1')
+  .pubsub.schedule('every 1 minutes')
+  .onRun(async function () {
+    const snap = await admin.firestore()
+      .collection('admin_password_resets')
+      .where('status', '==', 'pending')
+      .limit(20)
+      .get();
+
+    for (var i = 0; i < snap.docs.length; i++) {
+      var docSnap = snap.docs[i];
+      try {
+        await docSnap.ref.set({ status: 'processing' }, { merge: true });
+        await processPasswordResetRequest(docSnap);
+      } catch (error) {
+        console.error('processPendingPasswordResets failed:', error);
+        await docSnap.ref.set({
+          status: 'failed',
+          error: error.message || 'Failed to update password.',
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          newPassword: admin.firestore.FieldValue.delete()
+        }, { merge: true });
+      }
+    }
+    return null;
+  });
