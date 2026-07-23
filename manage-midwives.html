@@ -147,6 +147,32 @@
               <option value="false">Pending approval</option>
             </select>
           </div>
+          <hr />
+          <div class="mb-3">
+            <label class="form-label">Login lockout</label>
+            <div id="editLockoutStatus" class="small text-muted">Checking...</div>
+            <button type="button" class="btn btn-outline-warning btn-sm mt-2" id="unlockAccountBtn" onclick="unlockUserAccount()">
+              <i class="fas fa-unlock me-1"></i>Unlock account now
+            </button>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Current password (admin reference)</label>
+            <div class="input-group">
+              <input type="password" id="editCurrentPassword" class="form-control" readonly />
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordVisibility()">
+                <i class="fas fa-eye" id="togglePasswordIcon"></i>
+              </button>
+            </div>
+            <small class="text-muted">Shows the last password set by Super Admin. User-changed passwords cannot be read from Firebase.</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Set new password</label>
+            <input type="password" id="editNewPassword" class="form-control" placeholder="Leave blank to keep current password" autocomplete="new-password" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Confirm new password</label>
+            <input type="password" id="editConfirmPassword" class="form-control" placeholder="Confirm new password" autocomplete="new-password" />
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -165,6 +191,7 @@
   <script src="js/township-region.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/role-display.js"></script>
+  <script src="js/password-policy.js"></script>
   <script>
     let allUsers = [];
     let editingId = null;
@@ -418,7 +445,18 @@
       document.getElementById('editName').value = m.name || '';
       document.getElementById('editPhone').value = m.phone || '';
       document.getElementById('editApproved').value = m.approved === false ? 'false' : 'true';
+      document.getElementById('editNewPassword').value = '';
+      document.getElementById('editConfirmPassword').value = '';
+      document.getElementById('editCurrentPassword').type = 'password';
+      document.getElementById('editCurrentPassword').value = m.admin_password_reference || '';
+      if (!m.admin_password_reference) {
+        document.getElementById('editCurrentPassword').placeholder = 'Not available — user set password at registration';
+      } else {
+        document.getElementById('editCurrentPassword').placeholder = '';
+      }
+      document.getElementById('togglePasswordIcon').className = 'fas fa-eye';
       syncProviderTypeEditor(editingRole, m.provider_type);
+      refreshLockoutStatus(m.email || '');
 
       const rSel = document.getElementById('editRegion');
       const regions = Object.keys(window.MYANMAR_REGIONS || {}).sort();
@@ -431,6 +469,111 @@
       fillEditTownships(currentRegion, m.township || '');
       rSel.onchange = function() { fillEditTownships(rSel.value, ''); };
       editModal.show();
+    }
+
+    async function refreshLockoutStatus(email) {
+      const statusEl = document.getElementById('editLockoutStatus');
+      const unlockBtn = document.getElementById('unlockAccountBtn');
+      if (!email || !window.PasswordPolicy) {
+        statusEl.textContent = 'Lockout status unavailable.';
+        unlockBtn.disabled = true;
+        return;
+      }
+      statusEl.textContent = 'Checking lockout status...';
+      try {
+        const status = await PasswordPolicy.checkLockout(String(email).trim().toLowerCase());
+        if (status.isLocked) {
+          statusEl.innerHTML = '<span class="text-danger fw-semibold">Locked</span> · ' +
+            (status.remainingTime || 0) + ' minute(s) remaining · ' +
+            (status.attempts || 0) + ' failed attempt(s)';
+          unlockBtn.disabled = false;
+        } else if (status.attempts) {
+          statusEl.textContent = 'Not locked · ' + status.attempts + ' failed attempt(s) on record';
+          unlockBtn.disabled = false;
+        } else {
+          statusEl.textContent = 'Not locked · no failed attempts on record';
+          unlockBtn.disabled = false;
+        }
+      } catch (e) {
+        statusEl.textContent = 'Could not read lockout status.';
+        unlockBtn.disabled = false;
+      }
+    }
+
+    function togglePasswordVisibility() {
+      const input = document.getElementById('editCurrentPassword');
+      const icon = document.getElementById('togglePasswordIcon');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+      } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+      }
+    }
+
+    async function callAdminFunction(name, payload) {
+      const user = firebase.auth().currentUser;
+      if (!user) throw new Error('Not signed in');
+      const token = await user.getIdToken();
+      const projectId = firebase.app().options.projectId;
+      const url = 'https://us-central1-' + projectId + '.cloudfunctions.net/' + name;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify({ data: payload })
+      });
+      const json = await response.json();
+      if (json.error) {
+        throw new Error(json.error.message || 'Cloud function failed');
+      }
+      return json.result;
+    }
+
+    async function unlockUserAccount() {
+      const m = allUsers.find(function(x) { return x.id === editingId; });
+      if (!m || !m.email) return;
+      const email = String(m.email).trim().toLowerCase();
+      try {
+        if (window.PasswordPolicy && PasswordPolicy.adminUnlockAccount) {
+          await PasswordPolicy.adminUnlockAccount(email);
+        }
+        await refreshLockoutStatus(email);
+        await AppDialog.alert('Account unlocked. Failed login counter reset.', { title: 'Unlocked' });
+      } catch (e) {
+        await AppDialog.alert('Unable to unlock account: ' + e.message, { title: 'Error' });
+      }
+    }
+
+    async function saveUserPassword(userId, email) {
+      const newPassword = document.getElementById('editNewPassword').value;
+      const confirmPassword = document.getElementById('editConfirmPassword').value;
+      if (!newPassword && !confirmPassword) return false;
+      if (!newPassword || newPassword !== confirmPassword) {
+        throw new Error('New password and confirmation do not match.');
+      }
+      if (window.PasswordPolicy) {
+        const validation = PasswordPolicy.validate(newPassword);
+        if (!validation.isValid) {
+          throw new Error(validation.errors.join(' '));
+        }
+      }
+      await callAdminFunction('adminSetUserPassword', {
+        userId: userId,
+        newPassword: newPassword
+      });
+      const idx = allUsers.findIndex(function(x) { return x.id === userId; });
+      if (idx !== -1) {
+        allUsers[idx].admin_password_reference = newPassword;
+      }
+      document.getElementById('editCurrentPassword').value = newPassword;
+      document.getElementById('editNewPassword').value = '';
+      document.getElementById('editConfirmPassword').value = '';
+      if (email) await refreshLockoutStatus(String(email).trim().toLowerCase());
+      return true;
     }
 
     async function saveUser() {
@@ -476,11 +619,17 @@
         }
         await firebase.firestore().collection('users').doc(editingId).update(payload);
 
+        const m = allUsers.find(function(x) { return x.id === editingId; });
+        const passwordChanged = await saveUserPassword(editingId, m && m.email ? m.email : '');
+
         const idx = allUsers.findIndex(function(x) { return x.id === editingId; });
         if (idx !== -1) allUsers[idx] = Object.assign({}, allUsers[idx], payload);
         editModal.hide();
         renderList();
-        await AppDialog.alert('User account updated.', { title: 'Saved' });
+        await AppDialog.alert(
+          passwordChanged ? 'User account and password updated.' : 'User account updated.',
+          { title: 'Saved' }
+        );
       } catch (e) {
         console.error(e);
         await AppDialog.alert('Unable to save: ' + e.message, { title: 'Error' });

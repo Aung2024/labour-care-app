@@ -147,16 +147,31 @@ function getPasswordStrengthIndicator(password) {
 }
 
 /**
+ * Reset lockout document after the lock period ends.
+ * Uses merge write (works before login) instead of delete (requires auth).
+ */
+async function resetLockoutRecord(userId) {
+  await firebase.firestore()
+    .collection('account_lockouts')
+    .doc(userId)
+    .set({
+      attempts: 0,
+      lockoutUntil: null,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+}
+
+/**
  * Check if account is locked
  * @param {string} userId - User ID or email
  * @returns {Promise<Object>} Lock status with isLocked and unlockTime
  */
 async function checkAccountLockout(userId) {
   try {
-    const lockoutDoc = await firebase.firestore()
+    const lockoutRef = firebase.firestore()
       .collection('account_lockouts')
-      .doc(userId)
-      .get();
+      .doc(userId);
+    const lockoutDoc = await lockoutRef.get();
     
     if (!lockoutDoc.exists) {
       return { isLocked: false, unlockTime: null, attempts: 0 };
@@ -167,21 +182,24 @@ async function checkAccountLockout(userId) {
     const lockoutUntil = lockoutData.lockoutUntil?.toMillis() || 0;
     
     // Check if lockout has expired
-    if (now > lockoutUntil) {
-      // Lockout expired, remove it
-      await firebase.firestore()
-        .collection('account_lockouts')
-        .doc(userId)
-        .delete();
-      
+    if (lockoutUntil && now >= lockoutUntil) {
+      await resetLockoutRecord(userId);
       return { isLocked: false, unlockTime: null, attempts: 0 };
+    }
+
+    if (lockoutUntil && now < lockoutUntil) {
+      return {
+        isLocked: true,
+        unlockTime: new Date(lockoutUntil),
+        attempts: lockoutData.attempts || 0,
+        remainingTime: Math.ceil((lockoutUntil - now) / 1000 / 60) // minutes
+      };
     }
     
     return {
-      isLocked: true,
-      unlockTime: new Date(lockoutUntil),
-      attempts: lockoutData.attempts || 0,
-      remainingTime: Math.ceil((lockoutUntil - now) / 1000 / 60) // minutes
+      isLocked: false,
+      unlockTime: null,
+      attempts: lockoutData.attempts || 0
     };
     
   } catch (error) {
@@ -197,98 +215,69 @@ async function checkAccountLockout(userId) {
  */
 async function recordFailedLoginAttempt(userId) {
   try {
-    console.log('🔒 recordFailedLoginAttempt called with userId:', userId);
     const lockoutRef = firebase.firestore()
       .collection('account_lockouts')
       .doc(userId);
-    
-    console.log('🔒 Checking existing lockout document...');
     const lockoutDoc = await lockoutRef.get();
-    console.log('🔒 Lockout document exists:', lockoutDoc.exists);
     const now = Date.now();
-    
     let attempts = 1;
+    let lockoutCount = 1;
     let lockoutUntil = null;
     let isLocked = false;
-    
+
     if (lockoutDoc.exists) {
       const data = lockoutDoc.data();
-      attempts = (data.attempts || 0) + 1;
-      
-      // Check if already locked
       const existingLockoutUntil = data.lockoutUntil?.toMillis() || 0;
-      if (now < existingLockoutUntil) {
-        // Still locked
+
+      if (existingLockoutUntil && now < existingLockoutUntil) {
         return {
           isLocked: true,
           unlockTime: new Date(existingLockoutUntil),
-          attempts: attempts,
+          attempts: data.attempts || LOCKOUT_CONFIG.maxAttempts,
           remainingTime: Math.ceil((existingLockoutUntil - now) / 1000 / 60)
         };
       }
+
+      lockoutCount = data.lockoutCount || 0;
+      if (existingLockoutUntil && now >= existingLockoutUntil) {
+        attempts = 1;
+      } else {
+        attempts = (data.attempts || 0) + 1;
+      }
     }
-    
-    // Check if should lock account
+
     if (attempts >= LOCKOUT_CONFIG.maxAttempts) {
-      // Calculate lockout duration (exponential backoff)
-      const lockoutCount = lockoutDoc.exists ? (lockoutDoc.data().lockoutCount || 0) + 1 : 1;
-      const lockoutDuration = LOCKOUT_CONFIG.exponentialBackoff
-        ? LOCKOUT_CONFIG.lockoutDuration * Math.pow(2, lockoutCount - 1)
-        : LOCKOUT_CONFIG.lockoutDuration;
-      
-      lockoutUntil = now + lockoutDuration;
+      lockoutCount += 1;
+      lockoutUntil = now + LOCKOUT_CONFIG.lockoutDuration;
       isLocked = true;
-      
-      // Log account lockout
+
       if (window.AuditLogger) {
         await AuditLogger.logSecurityEvent(
           'account_locked',
-          `Account locked after ${attempts} failed login attempts`,
-          { userId: userId, attempts: attempts, lockoutDuration: lockoutDuration }
+          'Account locked after ' + attempts + ' failed login attempts',
+          { userId: userId, attempts: attempts, lockoutDuration: LOCKOUT_CONFIG.lockoutDuration }
         );
       }
     }
-    
-    // Update lockout record
-    console.log('🔒 Saving lockout record to Firestore:', {
-      userId: userId,
+
+    await lockoutRef.set({
       attempts: attempts,
-      isLocked: isLocked,
-      lockoutUntil: lockoutUntil
-    });
-    
-    try {
-      await lockoutRef.set({
-        attempts: attempts,
-        lockoutUntil: lockoutUntil ? firebase.firestore.Timestamp.fromMillis(lockoutUntil) : null,
-        lockoutCount: lockoutDoc.exists ? (lockoutDoc.data().lockoutCount || 0) + 1 : 1,
-        lastAttempt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        email: userId // Store email for easier querying
-      }, { merge: true });
-      
-      console.log('✅ Lockout record saved successfully');
-    } catch (writeError) {
-      console.error('❌ Error writing lockout record:', writeError);
-      console.error('❌ Error code:', writeError.code);
-      console.error('❌ Error message:', writeError.message);
-      throw writeError; // Re-throw to be caught by outer catch
-    }
-    
+      lockoutUntil: lockoutUntil ? firebase.firestore.Timestamp.fromMillis(lockoutUntil) : null,
+      lockoutCount: lockoutCount,
+      lastAttempt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      email: userId
+    }, { merge: true });
+
     return {
       isLocked: isLocked,
       unlockTime: lockoutUntil ? new Date(lockoutUntil) : null,
       attempts: attempts,
       remainingTime: lockoutUntil ? Math.ceil((lockoutUntil - now) / 1000 / 60) : null
     };
-    
+
   } catch (error) {
-    console.error('❌ Error recording failed login attempt:', error);
-    console.error('❌ Error details:', {
-      code: error.code,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error('Error recording failed login attempt:', error);
     return { isLocked: false, unlockTime: null, attempts: 0 };
   }
 }
@@ -299,15 +288,18 @@ async function recordFailedLoginAttempt(userId) {
  */
 async function clearFailedLoginAttempts(userId) {
   try {
-    await firebase.firestore()
-      .collection('account_lockouts')
-      .doc(userId)
-      .delete();
-    
-    console.log('✅ Cleared failed login attempts for:', userId);
+    await resetLockoutRecord(userId);
+    console.log('Cleared failed login attempts for:', userId);
   } catch (error) {
     console.error('Error clearing failed login attempts:', error);
   }
+}
+
+/**
+ * Super Admin: clear lockout and failed-attempt counter for an email.
+ */
+async function adminUnlockAccount(userId) {
+  await resetLockoutRecord(userId);
 }
 
 /**
@@ -428,6 +420,7 @@ window.PasswordPolicy = {
   checkLockout: checkAccountLockout,
   recordFailedAttempt: recordFailedLoginAttempt,
   clearFailedAttempts: clearFailedLoginAttempts,
+  adminUnlockAccount: adminUnlockAccount,
   checkHistory: checkPasswordHistory,
   saveToHistory: savePasswordToHistory,
   getDescription: getPasswordPolicyDescription,
