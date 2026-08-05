@@ -799,7 +799,8 @@
         yes: 'Yes',
         no: 'No',
         weekShort: 'w',
-        dayShort: 'd'
+        dayShort: 'd',
+        lmpUnknown: 'LMP unknown'
       },
       mm: {
         title: 'ကိုယ်ဝန်ဆောင်မိခင် မှတ်ပုံတင် စာအုပ် / Midwife Report',
@@ -850,7 +851,8 @@
         yes: 'ဟုတ်',
         no: 'မဟုတ်',
         weekShort: 'ပတ်',
-        dayShort: 'ရက်'
+        dayShort: 'ရက်',
+        lmpUnknown: 'LMP မသိ'
       }
     };
 
@@ -939,6 +941,19 @@
     function displayDate(value) {
       var ymd = dateOnly(value);
       return ymd || dash(value);
+    }
+    function isLmpUnknownValue(value) {
+      var raw = String(value == null ? '' : value).trim().toLowerCase();
+      return !raw || raw === 'unknown' || raw === 'not recorded';
+    }
+    function formatLmp(patient, data) {
+      var status = String(firstOf(data.lmpStatus, patient.lmpStatus) || '').toLowerCase();
+      var lmpValue = firstOf(data.lmp, patient.lmp);
+      if (status === 'unknown' || isLmpUnknownValue(lmpValue)) {
+        var hasManualGa = firstOf(data.manualGestationalAge, data.manualEdd, patient.manualGestationalAge, patient.manualEdd);
+        if (status === 'unknown' || hasManualGa) return tr('lmpUnknown');
+      }
+      return displayDate(lmpValue);
     }
     function formatYmd(date) {
       return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
@@ -1264,7 +1279,7 @@
         addressOccupation: formatAddressOccupation(patient),
         gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
         parity: firstOf(data.parity, patient.parity),
-        lmp: displayDate(firstOf(data.lmp, patient.lmp)),
+        lmp: formatLmp(patient, data),
         edd: displayDate(firstOf(data.edd, data.manualEdd, patient.edd)),
         weight: firstOf(data.weight, data.body_weight_gram),
         height: firstOf(data.height, data.heightCm, patient.height),
