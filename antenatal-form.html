@@ -1187,10 +1187,10 @@
               <input type="number" id="weight" name="weight" class="form-control" step="0.1" min="0" max="200" oninput="calculateBMI()">
             </div>
             <div class="col-md-4 col-sm-6">
-              <label class="form-label lang-text" data-en="Height" data-mm="အရပ် အမြင့်">Height</label>
+              <label id="heightLabel" class="form-label lang-text" data-en="Height (required at Visit 1)" data-mm="အရပ် အမြင့် (ပထမအကြိမ်တွင် မဖြစ်မနေ ဖြည့်ရန်)">Height (required at Visit 1)</label>
               <div class="height-input-row">
                 <div class="height-unit-field">
-                  <input type="number" id="heightFeet" name="heightFeet" class="form-control" placeholder="Feet" min="0" max="10" oninput="calculateBMI()">
+                  <input type="number" id="heightFeet" name="heightFeet" class="form-control" placeholder="Feet" min="1" max="10" oninput="calculateBMI()">
                   <small class="form-hint lang-text" data-en="ft" data-mm="ပေ">ft</small>
                 </div>
                 <div class="height-unit-field">
@@ -2074,6 +2074,9 @@
         submitText.setAttribute('data-mm', 'Visit အချက်အလက် ပြင်ဆင်သိမ်းရန်');
         submitText.textContent = currentLanguage === 'mm' ? 'Visit အချက်အလက် ပြင်ဆင်သိမ်းရန်' : 'Update Visit Data';
       }
+      const editedVisitNumber = parseInt(document.getElementById('visitNumber')?.value, 10) || 1;
+      if (editedVisitNumber === 1) setHeightFieldsLocked(false);
+      updateHeightRequirement();
     }
 
     function applyAncVisitDataToForm(data) {
@@ -2098,6 +2101,11 @@
       setValue('weight', data.weight);
       setValue('heightFeet', data.heightFeet);
       setValue('heightInches', data.heightInches);
+      if ((data.heightFeet == null || data.heightFeet === '') &&
+          (data.heightInches == null || data.heightInches === '') &&
+          data.height) {
+        applyHeightFromVisitRecord(data.height);
+      }
       setValue('systolicBP', data.systolicBP);
       setValue('diastolicBP', data.diastolicBP);
       applyBloodPressureToForm(data);
@@ -2383,6 +2391,18 @@
         if (!el) return;
         el.readOnly = !!locked;
         el.classList.toggle('height-locked', !!locked);
+      });
+      updateHeightRequirement();
+    }
+
+    function updateHeightRequirement() {
+      const visitNumber = parseInt(document.getElementById('visitNumber')?.value, 10) || visitCount || 1;
+      const required = visitNumber === 1;
+      ['heightFeet', 'heightInches'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.required = required;
+        el.setAttribute('aria-required', required ? 'true' : 'false');
       });
     }
 
@@ -3793,6 +3813,21 @@
           return isNaN(num) ? null : num;
         };
 
+        const currentVisitNumber = parseInt(getValue('visitNumber'), 10) || visitCount || 1;
+        if (currentVisitNumber === 1) {
+          const heightFeet = getNumber('heightFeet');
+          const heightInches = getNumber('heightInches');
+          if (heightFeet === null || heightFeet <= 0 || heightInches === null || heightInches < 0 || heightInches > 11) {
+            alert('Height is required for ANC Visit 1. Please enter both feet and inches (enter 0 inches when applicable).');
+            const heightFeetInput = document.getElementById('heightFeet');
+            if (heightFeetInput) {
+              heightFeetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              heightFeetInput.focus();
+            }
+            return;
+          }
+        }
+
         // STEP 1: Clinical Data Validation (LMP, EDD, GA)
         if (window.ClinicalValidator) {
           const lmp = getValue('lmp');
@@ -3900,6 +3935,8 @@
             const inches = getValue('heightInches') || '0';
             return feet && inches ? `${feet}ft ${inches}in` : (feet || inches ? `${feet || '0'}ft ${inches || '0'}in` : '');
           })(),
+          heightFeet: getNumber('heightFeet'),
+          heightInches: getNumber('heightInches'),
           bloodPressure: buildBloodPressureString(),
           systolicBP: getInt('systolicBP'),
           diastolicBP: getInt('diastolicBP'),

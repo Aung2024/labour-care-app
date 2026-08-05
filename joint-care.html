@@ -16,6 +16,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
+  <script src="js/account-names.js"></script>
   <script src="js/joint-care-utils.js"></script>
   <style>
     :root {
@@ -273,6 +274,7 @@
           <div class="patient-meta">
             <div><span class="patient-id">${escapeHtml(patient.patient_unique_id || patient.patientUniqueId || '-')}</span></div>
             <div>${escapeHtml(metaLine)}</div>
+            <div><strong>Owner midwife:</strong> ${escapeHtml(patient._ownerMidwifeName || 'Unknown')}</div>
             <div>${escapeHtml(patient.township || '')}${patient.region ? ' · ' + escapeHtml(patient.region) : ''}</div>
           </div>
           <button class="btn-primary-care w-100" type="button"><i class="fas fa-notes-medical"></i> Open Care Hub</button>
@@ -298,7 +300,14 @@
           const link = doc.data() || {};
           try {
             const patientDoc = await db.collection('patients').doc(link.patientId).get();
-            if (patientDoc.exists) rows.push({ id: patientDoc.id, ...patientDoc.data(), _jointCareLinkId: doc.id });
+            if (patientDoc.exists) {
+              rows.push({
+                id: patientDoc.id,
+                ...patientDoc.data(),
+                _jointCareLinkId: doc.id,
+                _ownerMidwifeId: link.ownerMidwifeId || patientDoc.data().created_by || patientDoc.data().createdBy || null
+              });
+            }
           } catch (e) {
             rows.push({
               id: link.patientId,
@@ -307,10 +316,18 @@
               patient_unique_id: link.patientUniqueId,
               township: link.patientTownship,
               region: link.patientRegion,
+              _ownerMidwifeId: link.ownerMidwifeId || null,
               _jointCareLinkId: doc.id
             });
           }
         }
+
+        const ownerNames = await AccountNames.loadByIds(rows.map(function (patient) {
+          return patient._ownerMidwifeId;
+        }));
+        rows.forEach(function (patient) {
+          patient._ownerMidwifeName = ownerNames[patient._ownerMidwifeId] || '';
+        });
       } catch (error) {
         console.warn('Could not load Joint Care links:', error);
         setStatus('Could not load linked patients. You can still enter a Patient ID to link.', 'error');

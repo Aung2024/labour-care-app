@@ -12,6 +12,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/anc-tracking-status.js"></script>
+  <script src="js/account-names.js"></script>
   <style>
     @media print {
       body { margin: 0; background: #fff; }
@@ -1290,6 +1291,7 @@
     let patientId = null;
     let antenatalVisits = [];
     let labTests = [];
+    let accountNamesById = {};
     let reportDb;
     let reportLang = localStorage.getItem('appLanguage') || 'mm';
 
@@ -1485,6 +1487,13 @@
         });
 
         antenatalVisits.sort(compareVisits);
+
+        const visitAccountIds = antenatalVisits.map(function (visit) {
+          return visit.createdBy || visit.recordedBy || null;
+        });
+        const ownerAccountId = currentPatient.created_by || currentPatient.createdBy || null;
+        if (ownerAccountId) visitAccountIds.push(ownerAccountId);
+        accountNamesById = await AccountNames.loadByIds(visitAccountIds);
 
         await loadLabTests();
 
@@ -2389,8 +2398,14 @@
     function buildCombinedAncTimeline() {
       const combined = [];
       antenatalVisits.forEach(function (visit, index) {
+        const accountId = visit.createdBy || visit.recordedBy || currentPatient.created_by || currentPatient.createdBy || '';
+        const accountName = visit.createdByName ||
+          visit.recordedByName ||
+          accountNamesById[accountId] ||
+          visit.createdByEmail ||
+          'Unknown account';
         combined.push({
-          source: 'This facility',
+          source: accountName,
           facilityVisitNumber: visit.visitNumber || index + 1,
           date: visit.visitDate || visit.visit_date || visit.timestamp || visit.createdAt,
           facilityName: currentPatient.facility_name || currentPatient.facility || currentPatient.township || '-'
