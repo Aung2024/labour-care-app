@@ -142,6 +142,48 @@
       font-size: 0.9rem;
     }
 
+    .maternal-infection-alert {
+      display: none;
+      background: linear-gradient(135deg, #fef2f2, #fff7ed);
+      border: 2px solid #dc2626;
+      border-left: 6px solid #b91c1c;
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+      margin: 0 0 1rem;
+      color: #7f1d1d;
+      box-shadow: 0 8px 20px rgba(185, 28, 28, 0.12);
+    }
+
+    .maternal-infection-alert.show {
+      display: block;
+    }
+
+    .maternal-infection-alert .mia-title {
+      font-weight: 800;
+      font-size: 1rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      line-height: 1.35;
+    }
+
+    .maternal-infection-alert .mia-list {
+      margin: 0.35rem 0 0.5rem;
+      padding-left: 1.15rem;
+      font-weight: 700;
+    }
+
+    .maternal-infection-alert .mia-list li {
+      margin-bottom: 0.2rem;
+    }
+
+    .maternal-infection-alert .mia-actions {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 0;
+    }
+
     .btn-save {
       background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
       border: none;
@@ -638,6 +680,8 @@
         <span id="patientNameDisplay">Loading...</span>
       </h4>
     </div>
+
+    <div id="maternalInfectionAlert" class="maternal-infection-alert" role="alert" aria-live="polite"></div>
 
     <!-- Newborn Care Form -->
     <form id="newbornCareForm" onsubmit="saveNewbornCareData(event)">
@@ -1370,6 +1414,7 @@
       renderBabyTabs();
       updateBabyInfoTabLabel();
       updateNewbornVisitSchedule();
+      renderMaternalInfectionAlert();
       document.querySelectorAll('#otherVisitsRows .other-visit-row').forEach(applyLangToOtherVisitRow);
     };
 
@@ -2448,6 +2493,7 @@
           applyBabyPatientIdentityFromRecord();
           applyAutoBabyName();
           await loadExistingNewbornCareData();
+          await loadMaternalInfectionAlert();
           return;
         }
 
@@ -2469,10 +2515,129 @@
 
         // Load existing newborn care data if any
         await loadExistingNewbornCareData();
+        await loadMaternalInfectionAlert();
 
       } catch (error) {
         console.error('Error loading patient info:', error);
         alert('Could not load patient information. Please try again.');
+      }
+    }
+
+    function isMaternalLabReactive(result, includeIndeterminate) {
+      if (result == null || result === '') return false;
+      var value = String(result).trim().toLowerCase();
+      if (!value || value === 'no test yet' || value === '-' || value === 'n/a') return false;
+      if (value === 'reactive' || value === 'positive' || value === 'detected') return true;
+      if (includeIndeterminate && value === 'indeterminate') return true;
+      return false;
+    }
+
+    function collectMaternalInfectionFlags(tests) {
+      var flags = { hiv: false, hepatitisB: false, hepatitisC: false };
+      (tests || []).forEach(function (test) {
+        if (!test) return;
+        if (isMaternalLabReactive(test.hivResult, false)) flags.hiv = true;
+        if (isMaternalLabReactive(test.hepatitisBResult, false)) flags.hepatitisB = true;
+        if (isMaternalLabReactive(test.hepatitisCResult, false)) flags.hepatitisC = true;
+      });
+      return flags;
+    }
+
+    var maternalInfectionFlags = { hiv: false, hepatitisB: false, hepatitisC: false };
+
+    function renderMaternalInfectionAlert() {
+      var el = document.getElementById('maternalInfectionAlert');
+      if (!el) return;
+      var flags = maternalInfectionFlags || {};
+      var items = [];
+      if (flags.hiv) {
+        items.push({
+          en: 'HIV reactive — start/continue PMTCT and refer for facility management.',
+          mm: 'HIV Reactive — PMTCT စတင်/ဆက်လက်လုပ်ဆောင်ပြီး ကျန်းမာရေးဌာန/ဆေးရုံသို့ ရွှေ့ပြောင်းပါ။'
+        });
+      }
+      if (flags.hepatitisB) {
+        items.push({
+          en: 'Hepatitis B reactive — give Hep B vaccine and immunoglobulin to the newborn as per guideline.',
+          mm: 'Hepatitis B Reactive — ကလေးကို Hep B vaccine နှင့် immunoglobulin ပေးရန် စီစဉ်ပါ။'
+        });
+      }
+      if (flags.hepatitisC) {
+        items.push({
+          en: 'Hepatitis C reactive — arrange specialist follow-up for mother and newborn.',
+          mm: 'Hepatitis C Reactive — မိခင်နှင့် ကလေးအတွက် နောက်ဆက်တွဲ စစ်ဆေးမှု/ဆေးရုံသို့ ရွှေ့ပြောင်းပါ။'
+        });
+      }
+      if (!items.length) {
+        el.classList.remove('show');
+        el.innerHTML = '';
+        return;
+      }
+      var mm = currentLanguage === 'mm';
+      var title = mm
+        ? '⚠️ မိခင် lab ရလဒ် သတိပေးချက် (HIV / Hepatitis)'
+        : '⚠️ Maternal lab alert (HIV / Hepatitis)';
+      var intro = mm
+        ? 'မိခင်၏ antenatal lab စစ်ဆေးမှုတွင် အောက်ပါ ရလဒ်(များ) ရှိပါသည်။ မွေးကင်းစကလေး စောင့်ရှောက်မှုတွင် အထူးဂရုပြုပါ။'
+        : 'Mother has positive antenatal lab result(s). Take special care during newborn care.';
+      el.innerHTML =
+        '<div class="mia-title"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i><span>' + title + '</span></div>' +
+        '<p class="mia-actions mb-1">' + intro + '</p>' +
+        '<ul class="mia-list">' + items.map(function (item) {
+          return '<li>' + (mm ? item.mm : item.en) + '</li>';
+        }).join('') + '</ul>';
+      el.classList.add('show');
+    }
+
+    async function fetchMotherTestRecords(motherPatientId) {
+      var tests = [];
+      if (!motherPatientId) return tests;
+
+      if (window.OfflineManager) {
+        try {
+          var pending = await OfflineManager.getPendingRecords('pending_lab_tests');
+          (pending || []).forEach(function (row) {
+            var data = row && (row.data || row);
+            if (!data) return;
+            var pid = data.patientId || data.patient_id || row.patientId;
+            if (pid && pid !== motherPatientId) return;
+            tests.push(data);
+          });
+        } catch (e) { /* optional offline */ }
+      }
+
+      if (typeof firebase === 'undefined' || !firebase.firestore) return tests;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return tests;
+
+      try {
+        var ref = firebase.firestore().collection('patients').doc(motherPatientId).collection('testRecords');
+        var snap;
+        try {
+          snap = await ref.orderBy('testDate', 'desc').limit(20).get();
+        } catch (e1) {
+          snap = await ref.limit(20).get();
+        }
+        if (snap && !snap.empty) {
+          snap.forEach(function (doc) {
+            tests.push(doc.data() || {});
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load maternal lab tests for newborn alert:', err);
+      }
+      return tests;
+    }
+
+    async function loadMaternalInfectionAlert() {
+      try {
+        var motherId = typeof getDeliveryNotesPatientId === 'function'
+          ? getDeliveryNotesPatientId()
+          : (typeof getNewbornCareStoragePatientId === 'function' ? getNewbornCareStoragePatientId() : patientId);
+        var tests = await fetchMotherTestRecords(motherId);
+        maternalInfectionFlags = collectMaternalInfectionFlags(tests);
+        renderMaternalInfectionAlert();
+      } catch (err) {
+        console.warn('Maternal infection alert failed:', err);
       }
     }
 
