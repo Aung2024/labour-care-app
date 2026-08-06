@@ -750,21 +750,18 @@
             <label for="body_weight_gram" class="form-label">
               <span class="lang-text" data-en="Birth Weight (gram)" data-mm="မွေးချိန် ကိုယ်အလေးချိန် (ဂရမ်)">Birth Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
-            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend();" oninput="evaluateKmcSection(); renderWeightTrend();">
+            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();" oninput="evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();">
             <div class="weight-trend-panel" id="weightTrendPanel">
               <div class="weight-trend-summary" id="weightTrendSummary"></div>
               <svg class="weight-trend-chart" id="weightTrendChart" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </div>
           </div>
-        </div>
-
-        <div class="row g-3 mb-3" id="currentWeightRow" style="display:none;">
-          <div class="col-md-6">
+          <div class="col-md-6" id="currentWeightCol" style="display:none;">
             <label for="current_weight_gram" class="form-label">
-              <span class="lang-text" data-en="Current Visit Weight (gram)" data-mm="ယခုအကြိမ် ကိုယ်အလေးချိန် (ဂရမ်)">Current Visit Weight (gram)</span>
+              <span class="lang-text" data-en="Current Visit Weight (gram)" data-mm="ယခုအကြိမ် ကိုယ်အလေးချိန် (ဂရမ်)">Current Visit Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <input type="number" class="form-control" id="current_weight_gram" name="current_weight_gram" step="0.1" min="0" placeholder="" onchange="renderWeightTrend();" oninput="renderWeightTrend();">
-            <small class="form-hint lang-text" data-en="Use this for Visit 2 onward weight trend and KMC follow-up." data-mm="အကြိမ် ၂ မှစ၍ ကိုယ်အလေးချိန်တိုး/ကျနှင့် KMC follow-up အတွက် အသုံးပြုပါ။">Use this for Visit 2 onward weight trend and KMC follow-up.</small>
+            <small class="form-hint lang-text" data-en="Enter weight measured at this visit. Birth weight stays unchanged." data-mm="ဤအကြိမ် တိုင်းတာသော ကိုယ်အလေးချိန် ထည့်ပါ။ မွေးချိန်အလေးချိန် မပြောင်းပါ။">Enter weight measured at this visit. Birth weight stays unchanged.</small>
           </div>
         </div>
 
@@ -1423,10 +1420,33 @@
       updateCurrentWeightVisibility();
     }
 
-    function updateCurrentWeightVisibility() {
+    function isBirthWeightFieldLocked() {
+      const el = document.getElementById('body_weight_gram');
+      if (!el) return false;
+      if (el.readOnly || el.disabled) return true;
+      if (isDeliveryPrefilledField('body_weight_gram')) return true;
+      if (hasSavedFirstNewbornVisit() && !isEditMode) return true;
+      return false;
+    }
+
+    function shouldShowCurrentVisitWeight() {
       const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
-      const row = document.getElementById('currentWeightRow');
-      if (row) row.style.display = visitNum > 1 ? '' : 'none';
+      if (visitNum > 1) return true;
+      if (isBirthWeightFieldLocked()) return true;
+      // Edit mode for a visit that already stored a current weight
+      const currentEl = document.getElementById('current_weight_gram');
+      if (isEditMode && currentEl && currentEl.value) return true;
+      return false;
+    }
+
+    function updateCurrentWeightVisibility() {
+      const show = shouldShowCurrentVisitWeight();
+      const col = document.getElementById('currentWeightCol');
+      if (col) col.style.display = show ? '' : 'none';
+      const input = document.getElementById('current_weight_gram');
+      if (input) {
+        input.required = !!show;
+      }
     }
 
     function getRecommendedNewbornDateForVisit(birthDateStr, targetVisitNumber) {
@@ -1741,6 +1761,7 @@
       updatePregnancyTypeRowVisibility();
       if (window.ChoiceControls) ChoiceControls.syncAll();
       applyBirthMeasurementFieldLock();
+      updateCurrentWeightVisibility();
     }
 
     const NEWBORN_DANGER_SIGN_IDS = [
@@ -1926,6 +1947,7 @@
         gender: baby.gender || '',
         birth_time: baby.birthTime || baby.birth_time || '',
         body_weight_gram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.body_weight_gram || ''),
+        current_weight_gram: baby.current_weight_gram != null ? baby.current_weight_gram : '',
         baby_outcome: babyOutcome,
         outcome: babyOutcome === 'death' ? 'dead' : babyOutcome,
         difficult_breathing_signs: baby.difficult_breathing_signs || [],
@@ -2266,6 +2288,7 @@
       applyAutoBabyName();
       refreshBabySpecificDeliveryPrefilledLocks();
       applyIdentityFieldLock(false);
+      updateCurrentWeightVisibility();
       evaluateKmcSection();
       updateKmcDecisionLabel();
       updateNewbornVisitSchedule();
@@ -2657,21 +2680,39 @@
       updateNewbornVisitSchedule();
     }
 
+    function getVisitWeightGramFromForm() {
+      if (shouldShowCurrentVisitWeight()) {
+        const current = parseFloat(document.getElementById('current_weight_gram')?.value);
+        if (!isNaN(current) && current > 0) return current;
+      }
+      const birth = parseFloat(document.getElementById('body_weight_gram')?.value);
+      return !isNaN(birth) && birth > 0 ? birth : NaN;
+    }
+
+    function getVisitWeightGramFromRecord(data) {
+      data = data || {};
+      const visit = parseInt(data.visit_number || data.visitNumber, 10) || 1;
+      if (visit > 1 || data.current_weight_gram != null) {
+        const current = parseFloat(data.current_weight_gram || data.visit_weight_gram);
+        if (!isNaN(current) && current > 0) return current;
+      }
+      const birth = parseFloat(data.body_weight_gram);
+      return !isNaN(birth) && birth > 0 ? birth : NaN;
+    }
+
     function renderWeightTrend() {
       const panel = document.getElementById('weightTrendPanel');
       const summary = document.getElementById('weightTrendSummary');
       const svg = document.getElementById('weightTrendChart');
       if (!panel || !summary || !svg) return;
       const currentVisit = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
-      const currentWeight = currentVisit > 1
-        ? parseFloat(document.getElementById('current_weight_gram')?.value)
-        : parseFloat(document.getElementById('body_weight_gram')?.value);
+      const currentWeight = getVisitWeightGramFromForm();
       const points = sortedNewbornVisits().map(function (item) {
         const d = getVisitData(item);
         const visit = parseInt(d.visit_number || d.visitNumber, 10) || 1;
         return {
           visit: visit,
-          weight: parseFloat(visit > 1 ? (d.current_weight_gram || d.visit_weight_gram || d.body_weight_gram) : d.body_weight_gram)
+          weight: getVisitWeightGramFromRecord(d)
         };
       }).filter(function (p) {
         return !isNaN(p.weight) && p.weight > 0 && p.visit < currentVisit;
@@ -2801,6 +2842,7 @@
         }
         refreshBabySpecificDeliveryPrefilledLocks();
         applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+        updateCurrentWeightVisibility();
         updateKmcDecisionLabel();
         if (window.ChoiceControls) ChoiceControls.syncAll();
         return;
@@ -2848,6 +2890,7 @@
 
       refreshBabySpecificDeliveryPrefilledLocks();
       applyIdentityFieldLock(shouldLockNewbornIdentityFields());
+      updateCurrentWeightVisibility();
       updateKmcDecisionLabel();
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
@@ -2997,6 +3040,9 @@
       if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
       if (data.body_weight_gram) document.getElementById('body_weight_gram').value = data.body_weight_gram;
+      if (data.current_weight_gram != null && data.current_weight_gram !== '') {
+        document.getElementById('current_weight_gram').value = data.current_weight_gram;
+      }
       if (data.temperature) document.getElementById('temperature').value = data.temperature;
       if (data.temperature_unit) document.getElementById('temperature_unit').value = data.temperature_unit;
       if (data.heart_rate) document.getElementById('heart_rate').value = data.heart_rate;
@@ -3066,10 +3112,14 @@
       initBabyStatesFromBabies(data.babies || DeliveryNotesUtils.deliveryNotesFromNewborn(data).deliveryDetails.babies, hasSavedFirstNewbornVisit() && !isEditMode);
       mergeKmcBabiesIntoStates(data.kmc_babies);
       inheritVisitBirthMeasurementsToStates(data);
+      if (newbornBabyStates[0] && data.current_weight_gram != null && data.current_weight_gram !== '') {
+        newbornBabyStates[0].current_weight_gram = data.current_weight_gram;
+      }
       applyBabySpecificFormState(babyStateToFormState(newbornBabyStates[activeBabyIndex - 1]));
       applyBirthMeasurementsToForm(data);
       applyIdentityFieldLock(shouldLockNewbornIdentityFields());
       applyBirthMeasurementFieldLock();
+      updateCurrentWeightVisibility();
       updateKmcDecisionLabel();
     }
 
@@ -3244,6 +3294,19 @@
         return;
       }
 
+      updateCurrentWeightVisibility();
+      if (shouldShowCurrentVisitWeight()) {
+        const currentWeightEl = document.getElementById('current_weight_gram');
+        const currentWeightVal = currentWeightEl ? parseFloat(currentWeightEl.value) : NaN;
+        if (!currentWeightEl || isNaN(currentWeightVal) || currentWeightVal <= 0) {
+          alert(currentLanguage === 'mm'
+            ? 'ယခုအကြိမ် ကိုယ်အလေးချိန် ထည့်ပါ။'
+            : 'Please enter current visit weight.');
+          if (currentWeightEl) currentWeightEl.focus();
+          return;
+        }
+      }
+
       if (visitNum === 1) {
         for (let i = 0; i < babyRows.length; i++) {
           const baby = babyRows[i];
@@ -3334,7 +3397,9 @@
           birthplace: document.getElementById('birthplace').value || null,
           mode_of_delivery: document.getElementById('mode_of_delivery').value || null,
           body_weight_gram: firstBaby.birthWeightGram != null ? parseFloat(firstBaby.birthWeightGram) : (document.getElementById('body_weight_gram').value ? parseFloat(document.getElementById('body_weight_gram').value) : null),
-          current_weight_gram: visitNum > 1 && document.getElementById('current_weight_gram').value ? parseFloat(document.getElementById('current_weight_gram').value) : null,
+          current_weight_gram: (shouldShowCurrentVisitWeight() && document.getElementById('current_weight_gram').value)
+            ? parseFloat(document.getElementById('current_weight_gram').value)
+            : null,
           temperature: document.getElementById('temperature').value ? parseFloat(document.getElementById('temperature').value) : null,
           temperature_unit: document.getElementById('temperature_unit').value || 'C',
           heart_rate: document.getElementById('heart_rate').value ? parseInt(document.getElementById('heart_rate').value) : null,
