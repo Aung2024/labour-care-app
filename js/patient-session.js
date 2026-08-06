@@ -86,7 +86,163 @@ async function displayPatientBanner(containerId = 'patientBanner', options = {})
   if (opts.careType === 'pnc') {
     return displayPncPatientBanner(containerId, opts);
   }
+  if (opts.careType === 'newborn') {
+    return displayNewbornPatientBanner(containerId, opts);
+  }
   return displayAncPatientBanner(containerId);
+}
+
+function parseWeightGramValue(record) {
+  if (!record) return null;
+  var candidates = [
+    record.current_weight_gram,
+    record.visit_weight_gram,
+    record.body_weight_gram,
+    record.birth_weight_gram,
+    record.birthWeightGram
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    var gram = parseFloat(candidates[i]);
+    if (!isNaN(gram) && gram > 0) return gram;
+  }
+  var kg = parseFloat(record.birth_weight_kg || record.birthWeightKg);
+  if (!isNaN(kg) && kg > 0) return kg * 1000;
+  return null;
+}
+
+function formatNewbornBannerAge(birthDate, lang) {
+  if (!birthDate || isNaN(birthDate.getTime())) return '-';
+  var now = new Date();
+  var diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) diffDays = 0;
+  var months = Math.floor(diffDays / 30);
+  var years = Math.floor(months / 12);
+  var remainingMonths = months % 12;
+  if (lang === 'mm') {
+    if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
+    if (months > 0) return months + ' လ';
+    return diffDays + ' ရက်';
+  }
+  if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
+  if (months > 0) return months + 'm';
+  return diffDays + 'd';
+}
+
+async function displayNewbornPatientBanner(containerId) {
+  const patient = getSelectedPatient();
+  if (!patient) return;
+
+  const data = patient.data || {};
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const lang = localStorage.getItem('appLanguage') || 'mm';
+  const L = function (en, mm) { return lang === 'en' ? en : mm; };
+
+  let weightDisplay = '-';
+  let ageDisplay = '-';
+  let birthDate = null;
+
+  try {
+    if (window.BabyPatientUtils && typeof BabyPatientUtils.formatBabyAgeDisplay === 'function') {
+      ageDisplay = BabyPatientUtils.formatBabyAgeDisplay(data, lang) || '-';
+    }
+  } catch (e) { /* optional */ }
+
+  try {
+    const db = firebase.firestore();
+    const patientRef = db.collection('patients').doc(patient.id);
+    let visitsSnap;
+    try {
+      visitsSnap = await patientRef.collection('newborn_care').orderBy('visitDate', 'desc').limit(30).get();
+    } catch (e1) {
+      try {
+        visitsSnap = await patientRef.collection('newborn_care').orderBy('timestamp', 'desc').limit(30).get();
+      } catch (e2) {
+        visitsSnap = await patientRef.collection('newborn_care').limit(30).get();
+      }
+    }
+
+    const visits = (visitsSnap && !visitsSnap.empty)
+      ? visitsSnap.docs.map(function (d) { return d.data() || {}; })
+      : [];
+
+    // Prefer highest visit number's latest weight; fall back to most recent by date.
+    if (visits.length) {
+      visits.sort(function (a, b) {
+        var va = parseInt(a.visit_number || a.visitNumber, 10) || 0;
+        var vb = parseInt(b.visit_number || b.visitNumber, 10) || 0;
+        if (vb !== va) return vb - va;
+        return parseVisitDateMs(b) - parseVisitDateMs(a);
+      });
+
+      for (var i = 0; i < visits.length; i++) {
+        var visit = visits[i];
+        var visitNum = parseInt(visit.visit_number || visit.visitNumber, 10) || 1;
+        var gram = null;
+        if (visitNum > 1) {
+          gram = parseFloat(visit.current_weight_gram || visit.visit_weight_gram);
+          if (isNaN(gram) || gram <= 0) gram = null;
+        }
+        if (gram == null) gram = parseWeightGramValue(visit);
+        if (gram != null) {
+          weightDisplay = Math.round(gram) + ' g';
+          break;
+        }
+      }
+
+      if (!birthDate) {
+        for (var j = 0; j < visits.length; j++) {
+          var bt = visits[j].birth_time || visits[j].birthTime || visits[j].date_of_birth;
+          if (bt) {
+            birthDate = firestoreToDate(bt);
+            if (birthDate && !isNaN(birthDate.getTime())) break;
+            birthDate = null;
+          }
+        }
+      }
+    }
+
+    if (weightDisplay === '-') {
+      var profileGram = parseWeightGramValue(data);
+      if (profileGram != null) weightDisplay = Math.round(profileGram) + ' g';
+    }
+
+    if (!birthDate) {
+      birthDate = firestoreToDate(data.date_of_birth || data.birth_time || data.birthTime || data.deliveryDate);
+    }
+    if (ageDisplay === '-' || ageDisplay === '') {
+      ageDisplay = formatNewbornBannerAge(birthDate, lang);
+    }
+  } catch (err) {
+    console.warn('[PatientBanner] Newborn data load failed:', err);
+    if (ageDisplay === '-') {
+      ageDisplay = formatNewbornBannerAge(
+        firestoreToDate(data.date_of_birth || data.birth_time || data.birthTime),
+        lang
+      );
+    }
+    var fallbackGram = parseWeightGramValue(data);
+    if (weightDisplay === '-' && fallbackGram != null) {
+      weightDisplay = Math.round(fallbackGram) + ' g';
+    }
+  }
+
+  container.innerHTML =
+    '<div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem 1.25rem; border-radius: 12px; margin-bottom: 1rem;">' +
+      '<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem;">' +
+        '<div style="flex: 1; min-width: 0;">' +
+          '<div style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">' + escapeBannerHtml(data.name || L('Unknown Patient', 'မသိ')) + '</div>' +
+          '<div style="font-size: 0.88rem; opacity: 0.95; line-height: 1.55;">' +
+            L('Latest weight', 'နောက်ဆုံးအလေးချိန်') + ': ' + escapeBannerHtml(weightDisplay) +
+            ' &nbsp;|&nbsp; ' + L('Baby age', 'ကလေးအသက်') + ': ' + escapeBannerHtml(ageDisplay) +
+          '</div>' +
+        '</div>' +
+        '<button type="button" class="btn btn-light btn-sm" onclick="window.location.href=\'patient-care-hub.html\' + (sessionStorage.getItem(\'selectedPatientId\') ? \'?patient=\' + encodeURIComponent(sessionStorage.getItem(\'selectedPatientId\')) : \'\')" style="font-weight: 600; min-height: 44px; white-space: nowrap;">' +
+          '<i class="fas fa-arrow-left me-1"></i> ' + L('Back to Patient Hub', 'လူနာ Hub သို့') +
+        '</button>' +
+      '</div>' +
+    '</div>';
 }
 
 async function displayPncPatientBanner(containerId) {
