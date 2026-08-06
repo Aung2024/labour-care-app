@@ -46,10 +46,61 @@
   }
 
   function normalizeBirthPlaceForNewborn(value) {
-    var v = String(value || '').toLowerCase();
-    if (!v) return '';
-    if (v.indexOf('private') !== -1 || v.indexOf('home') !== -1 || v.indexOf('အိမ်') !== -1) return 'Private';
-    return 'Facility';
+    var raw = String(value || '').trim();
+    if (!raw) return '';
+    var v = raw.toLowerCase().replace(/[_\s-]+/g, ' ');
+
+    if (
+      v === 'public facility' ||
+      v === 'public_facility' ||
+      v === 'facility' ||
+      v.indexOf('public') !== -1 ||
+      v.indexOf('အစိုးရ') !== -1
+    ) {
+      return 'public_facility';
+    }
+
+    if (
+      v === 'private facility' ||
+      v === 'private_facility' ||
+      v.indexOf('private facility') !== -1 ||
+      v.indexOf('ပုဂ္ဂလိက') !== -1
+    ) {
+      return 'private_facility';
+    }
+
+    // Legacy "Private" alone was used before home/private facility split.
+    if (v === 'private') return 'private_facility';
+
+    if (
+      v === 'home' ||
+      v === 'home delivery' ||
+      v.indexOf('home') !== -1 ||
+      v.indexOf('အိမ်') !== -1
+    ) {
+      return 'home';
+    }
+
+    if (
+      v === 'other' ||
+      v === 'others' ||
+      v.indexOf('other') !== -1 ||
+      v.indexOf('အခြား') !== -1
+    ) {
+      return 'other';
+    }
+
+    return raw;
+  }
+
+  function birthPlaceLabel(value, language) {
+    var key = normalizeBirthPlaceForNewborn(value);
+    var mm = language === 'mm';
+    if (key === 'public_facility') return mm ? 'အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန' : 'Public Facility';
+    if (key === 'private_facility') return mm ? 'ပုဂ္ဂလိက' : 'Private Facility';
+    if (key === 'home') return mm ? 'အိမ်မွေး' : 'Home Delivery';
+    if (key === 'other') return mm ? 'အခြား' : 'Others';
+    return value || '';
   }
 
   function toDatetimeLocal(value, fallbackDate) {
@@ -297,6 +348,7 @@
     normalizeBaby: normalizeBaby,
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
+    birthPlaceLabel: birthPlaceLabel,
     toDatetimeLocal: toDatetimeLocal
   };
 })(typeof window !== 'undefined' ? window : this);
