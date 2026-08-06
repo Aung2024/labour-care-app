@@ -523,10 +523,11 @@
     .weight-trend-panel {
       display: none;
       margin-top: 0.75rem;
-      padding: 0.85rem;
+      padding: 0.85rem 0.9rem 0.7rem;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
       background: #fff;
+      grid-column: 1 / -1;
     }
 
     .weight-trend-summary {
@@ -535,12 +536,32 @@
       gap: 0.5rem;
       font-size: 0.9rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.55rem;
+      flex-wrap: wrap;
     }
 
     .weight-trend-summary.gain { color: #047857; }
     .weight-trend-summary.loss { color: #b91c1c; }
-    .weight-trend-chart { width: 100%; height: 72px; display: block; }
+    .weight-trend-chart {
+      width: 100%;
+      height: 150px;
+      display: block;
+      overflow: visible;
+    }
+
+    .weight-trend-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem 0.85rem;
+      margin-top: 0.45rem;
+      font-size: 0.78rem;
+      color: #475569;
+      font-weight: 600;
+    }
+
+    .weight-trend-legend span {
+      white-space: nowrap;
+    }
 
     .required-marker {
       color: #dc2626;
@@ -795,10 +816,6 @@
               <span class="lang-text" data-en="Birth Weight (gram)" data-mm="မွေးချိန် ကိုယ်အလေးချိန် (ဂရမ်)">Birth Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();" oninput="evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();">
-            <div class="weight-trend-panel" id="weightTrendPanel">
-              <div class="weight-trend-summary" id="weightTrendSummary"></div>
-              <svg class="weight-trend-chart" id="weightTrendChart" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
-            </div>
           </div>
           <div class="col-md-6" id="currentWeightCol" style="display:none;">
             <label for="current_weight_gram" class="form-label">
@@ -806,6 +823,13 @@
             </label>
             <input type="number" class="form-control" id="current_weight_gram" name="current_weight_gram" step="0.1" min="0" placeholder="" onchange="renderWeightTrend();" oninput="renderWeightTrend();">
             <small class="form-hint lang-text" data-en="Enter weight measured at this visit. Birth weight stays unchanged." data-mm="ဤအကြိမ် တိုင်းတာသော ကိုယ်အလေးချိန် ထည့်ပါ။ မွေးချိန်အလေးချိန် မပြောင်းပါ။">Enter weight measured at this visit. Birth weight stays unchanged.</small>
+          </div>
+          <div class="col-12">
+            <div class="weight-trend-panel" id="weightTrendPanel">
+              <div class="weight-trend-summary" id="weightTrendSummary"></div>
+              <svg class="weight-trend-chart" id="weightTrendChart" viewBox="0 0 360 150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weight trend"></svg>
+              <div class="weight-trend-legend" id="weightTrendLegend"></div>
+            </div>
           </div>
         </div>
 
@@ -2846,66 +2870,150 @@
     }
 
     function getVisitWeightGramFromForm() {
+      const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
       if (shouldShowCurrentVisitWeight()) {
         const current = parseFloat(document.getElementById('current_weight_gram')?.value);
+        // Never fall back to birth weight for follow-up visits — empty current weight
+        // was inventing a fake drop back to birth weight on the trend chart.
         if (!isNaN(current) && current > 0) return current;
+        return NaN;
       }
-      const birth = parseFloat(document.getElementById('body_weight_gram')?.value);
-      return !isNaN(birth) && birth > 0 ? birth : NaN;
+      if (visitNum <= 1) {
+        const birth = parseFloat(document.getElementById('body_weight_gram')?.value);
+        return !isNaN(birth) && birth > 0 ? birth : NaN;
+      }
+      return NaN;
     }
 
     function getVisitWeightGramFromRecord(data) {
       data = data || {};
       const visit = parseInt(data.visit_number || data.visitNumber, 10) || 1;
-      if (visit > 1 || data.current_weight_gram != null) {
-        const current = parseFloat(data.current_weight_gram || data.visit_weight_gram);
-        if (!isNaN(current) && current > 0) return current;
+      const current = parseFloat(data.current_weight_gram != null ? data.current_weight_gram : data.visit_weight_gram);
+      if (!isNaN(current) && current > 0) return current;
+      // Visit 1 without a separate current-weight field: birth weight is the visit weight.
+      if (visit <= 1) {
+        const birth = parseFloat(data.body_weight_gram);
+        return !isNaN(birth) && birth > 0 ? birth : NaN;
       }
-      const birth = parseFloat(data.body_weight_gram);
-      return !isNaN(birth) && birth > 0 ? birth : NaN;
+      // Visit 2+: do not reuse birth weight as this visit's measured weight.
+      return NaN;
+    }
+
+    function weightTrendVisitLabel(visitNum) {
+      const n = parseInt(visitNum, 10) || 1;
+      if (currentLanguage === 'mm') {
+        return n === 1 ? 'မွေးချိန်/V1' : ('V' + n);
+      }
+      return n === 1 ? 'Birth/V1' : ('V' + n);
     }
 
     function renderWeightTrend() {
       const panel = document.getElementById('weightTrendPanel');
       const summary = document.getElementById('weightTrendSummary');
       const svg = document.getElementById('weightTrendChart');
+      const legend = document.getElementById('weightTrendLegend');
       if (!panel || !summary || !svg) return;
+
       const currentVisit = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
-      const currentWeight = getVisitWeightGramFromForm();
-      const points = sortedNewbornVisits().map(function (item) {
+      const byVisit = {};
+
+      sortedNewbornVisits().forEach(function (item) {
         const d = getVisitData(item);
         const visit = parseInt(d.visit_number || d.visitNumber, 10) || 1;
-        return {
-          visit: visit,
-          weight: getVisitWeightGramFromRecord(d)
-        };
-      }).filter(function (p) {
-        return !isNaN(p.weight) && p.weight > 0 && p.visit < currentVisit;
+        if (visit >= currentVisit && !isEditMode) return;
+        if (isEditMode && visit === currentVisit) return;
+        const weight = getVisitWeightGramFromRecord(d);
+        if (isNaN(weight) || weight <= 0) return;
+        byVisit[visit] = { visit: visit, weight: weight, label: weightTrendVisitLabel(visit) };
       });
-      if (!isNaN(currentWeight) && currentWeight > 0) points.push({ visit: currentVisit, weight: currentWeight });
+
+      const currentWeight = getVisitWeightGramFromForm();
+      if (!isNaN(currentWeight) && currentWeight > 0) {
+        byVisit[currentVisit] = {
+          visit: currentVisit,
+          weight: currentWeight,
+          label: weightTrendVisitLabel(currentVisit)
+        };
+      }
+
+      const points = Object.keys(byVisit)
+        .map(function (k) { return byVisit[k]; })
+        .sort(function (a, b) { return a.visit - b.visit; });
+
       if (points.length < 2) {
         panel.style.display = 'none';
+        if (legend) legend.innerHTML = '';
+        svg.innerHTML = '';
         return;
       }
+
       panel.style.display = 'block';
-      const prev = points[points.length - 2].weight;
-      const latest = points[points.length - 1].weight;
-      const diff = Math.round((latest - prev) * 10) / 10;
+      const prev = points[points.length - 2];
+      const latest = points[points.length - 1];
+      const diff = Math.round((latest.weight - prev.weight) * 10) / 10;
       const gain = diff >= 0;
+      const stroke = gain ? '#10b981' : '#ef4444';
       summary.className = 'weight-trend-summary ' + (gain ? 'gain' : 'loss');
-      summary.innerHTML = '<i class="fas fa-arrow-' + (gain ? 'up' : 'down') + '"></i><span>' +
-        (gain ? '+' : '') + diff + ' g from last visit</span>';
+      summary.innerHTML = '<i class="fas fa-arrow-' + (gain ? 'up' : 'down') + '" aria-hidden="true"></i><span>' +
+        (gain ? '+' : '') + diff + ' g ' +
+        (currentLanguage === 'mm'
+          ? ('(' + prev.label + ' → ' + latest.label + ')')
+          : ('from ' + prev.label + ' to ' + latest.label)) +
+        '</span>';
+
       const min = Math.min.apply(null, points.map(function (p) { return p.weight; }));
       const max = Math.max.apply(null, points.map(function (p) { return p.weight; }));
-      const spread = Math.max(max - min, 1);
+      const spread = Math.max(max - min, 50);
+      const padL = 42;
+      const padR = 16;
+      const padT = 22;
+      const padB = 28;
+      const plotW = 360 - padL - padR;
+      const plotH = 150 - padT - padB;
+
       const coords = points.map(function (p, idx) {
-        const x = points.length === 1 ? 10 : 10 + (idx * 300 / (points.length - 1));
-        const y = 62 - ((p.weight - min) * 52 / spread);
-        return { x, y, weight: p.weight };
+        const x = points.length === 1
+          ? padL + plotW / 2
+          : padL + (idx * plotW / (points.length - 1));
+        const y = padT + plotH - ((p.weight - min) * plotH / spread);
+        return { x: x, y: y, weight: p.weight, label: p.label, visit: p.visit };
       });
-      const line = coords.map(function (p) { return p.x + ',' + p.y; }).join(' ');
-      svg.innerHTML = '<polyline points="' + line + '" fill="none" stroke="' + (gain ? '#10b981' : '#ef4444') + '" stroke-width="3" />' +
-        coords.map(function (p) { return '<circle cx="' + p.x + '" cy="' + p.y + '" r="4" fill="' + (gain ? '#10b981' : '#ef4444') + '" />'; }).join('');
+
+      const line = coords.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+      const yTicks = [min, Math.round((min + max) / 2), max].filter(function (v, i, arr) {
+        return arr.indexOf(v) === i;
+      });
+
+      let html = '';
+      yTicks.forEach(function (tick) {
+        const y = padT + plotH - ((tick - min) * plotH / spread);
+        html += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (360 - padR) + '" y2="' + y.toFixed(1) +
+          '" stroke="#e2e8f0" stroke-width="1" />';
+        html += '<text x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) +
+          '" text-anchor="end" font-size="9" fill="#64748b" font-family="system-ui,sans-serif">' +
+          Math.round(tick) + '</text>';
+      });
+
+      html += '<polyline points="' + line + '" fill="none" stroke="' + stroke + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />';
+
+      coords.forEach(function (p) {
+        html += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4.5" fill="' + stroke + '" stroke="#fff" stroke-width="1.5" />';
+        html += '<text x="' + p.x.toFixed(1) + '" y="' + (p.y - 8).toFixed(1) +
+          '" text-anchor="middle" font-size="10" font-weight="700" fill="#0f172a" font-family="system-ui,sans-serif">' +
+          Math.round(p.weight) + 'g</text>';
+        html += '<text x="' + p.x.toFixed(1) + '" y="' + (150 - 8) +
+          '" text-anchor="middle" font-size="10" font-weight="700" fill="#475569" font-family="system-ui,sans-serif">' +
+          p.label + '</text>';
+      });
+
+      svg.setAttribute('viewBox', '0 0 360 150');
+      svg.innerHTML = html;
+
+      if (legend) {
+        legend.innerHTML = points.map(function (p) {
+          return '<span>' + p.label + ': <strong>' + Math.round(p.weight) + ' g</strong></span>';
+        }).join('');
+      }
     }
 
     function normalizeNewbornOutcome(value) {
