@@ -226,18 +226,64 @@
       margin: 0;
     }
 
+    .date-long-field {
+      position: relative;
+      min-height: 46px;
+    }
+
+    .date-long-field .date-long-native {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      padding: 0;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .date-long-field.is-readonly .date-long-native {
+      pointer-events: none;
+      cursor: default;
+    }
+
     .date-long-display {
-      display: block;
-      margin-top: 0.35rem;
-      padding: 0.45rem 0.65rem;
-      border-radius: 8px;
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      color: #14532d;
-      font-size: 0.92rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-top: 0;
+      min-height: 46px;
+      padding: 0.55rem 0.75rem;
+      border-radius: 10px;
+      background: #ffffff;
+      border: 1px solid #d8e2ea;
+      color: #0f172a;
+      font-size: 0.95rem;
       font-weight: 700;
       line-height: 1.35;
-      min-height: 1.7rem;
+      box-shadow: none;
+    }
+
+    .date-long-display::after {
+      content: '\f073';
+      font-family: 'Font Awesome 5 Free';
+      font-weight: 900;
+      color: #059669;
+      flex-shrink: 0;
+    }
+
+    .date-long-field.is-readonly .date-long-display {
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    .date-long-field.is-readonly .date-long-display::after {
+      content: none;
     }
 
     .date-long-display.is-empty {
@@ -1137,13 +1183,17 @@
           </div>
           <div class="col-lg-4 col-md-6 history-known-only" id="lmpKnownGroup">
             <label for="lmp" class="form-label lang-text" data-en="Last Menstrual Period (LMP)" data-mm="နောက်ဆုံးရာသီပေါ်သည့် ရက်စွဲ (LMP)">Last Menstrual Period (LMP)</label>
-            <input type="date" id="lmp" name="lmp" class="form-control" onchange="onLmpOrVisitChanged()" oninput="refreshLmpEddLongDisplays()">
-            <span id="lmpLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
+            <div class="date-long-field">
+              <input type="date" id="lmp" name="lmp" class="date-long-native" onchange="onLmpOrVisitChanged()" oninput="refreshLmpEddLongDisplays()" aria-describedby="lmpLongDisplay">
+              <div id="lmpLongDisplay" class="date-long-display is-empty" aria-live="polite"></div>
+            </div>
             </div>
           <div class="col-lg-4 col-md-6 history-known-only" id="eddKnownGroup">
             <label for="edd" class="form-label lang-text" data-en="Expected Due Date (EDD)" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)">Expected Due Date (EDD)</label>
-            <input type="date" id="edd" name="edd" class="form-control" readonly>
-            <span id="eddLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
+            <div class="date-long-field is-readonly">
+              <input type="date" id="edd" name="edd" class="date-long-native" readonly tabindex="-1" aria-describedby="eddLongDisplay">
+              <div id="eddLongDisplay" class="date-long-display is-empty" aria-live="polite"></div>
+            </div>
             <small class="form-hint lang-text" data-en="Auto-calculated when LMP is known" data-mm="LMP သိပါက အလိုအလျောက် တွက်ချက်သည်">Auto-calculated when LMP is known</small>
           </div>
         </div>
@@ -1155,8 +1205,10 @@
           </div>
           <div class="col-md-6">
             <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)">Expected Due Date (EDD)</label>
-            <input type="date" id="manualEdd" name="manualEdd" class="form-control" onchange="refreshLmpEddLongDisplays()" oninput="refreshLmpEddLongDisplays()">
-            <span id="manualEddLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
+            <div class="date-long-field">
+              <input type="date" id="manualEdd" name="manualEdd" class="date-long-native" onchange="refreshLmpEddLongDisplays()" oninput="refreshLmpEddLongDisplays()" aria-describedby="manualEddLongDisplay">
+              <div id="manualEddLongDisplay" class="date-long-display is-empty" aria-live="polite"></div>
+            </div>
           </div>
         </div>
         
@@ -3121,11 +3173,11 @@
       });
     }
 
-    function setDateLongDisplay(displayId, isoValue) {
+    function setDateLongDisplay(displayId, isoValue, emptyText) {
       const el = document.getElementById(displayId);
       if (!el) return;
       if (!isoValue) {
-        el.textContent = currentLanguage === 'en' ? 'No date selected' : 'ရက်စွဲ မရွေးရသေးပါ';
+        el.textContent = emptyText || (currentLanguage === 'en' ? 'Tap to select date' : 'ရက်စွဲ ရွေးရန် နှိပ်ပါ');
         el.classList.add('is-empty');
         return;
       }
@@ -3134,9 +3186,21 @@
     }
 
     function refreshLmpEddLongDisplays() {
-      setDateLongDisplay('lmpLongDisplay', document.getElementById('lmp')?.value || '');
-      setDateLongDisplay('eddLongDisplay', document.getElementById('edd')?.value || '');
-      setDateLongDisplay('manualEddLongDisplay', document.getElementById('manualEdd')?.value || '');
+      setDateLongDisplay(
+        'lmpLongDisplay',
+        document.getElementById('lmp')?.value || '',
+        currentLanguage === 'en' ? 'Tap to select LMP date' : 'LMP ရက်စွဲ ရွေးရန် နှိပ်ပါ'
+      );
+      setDateLongDisplay(
+        'eddLongDisplay',
+        document.getElementById('edd')?.value || '',
+        currentLanguage === 'en' ? 'Auto-calculated from LMP' : 'LMP မှ အလိုအလျောက် တွက်ချက်မည်'
+      );
+      setDateLongDisplay(
+        'manualEddLongDisplay',
+        document.getElementById('manualEdd')?.value || '',
+        currentLanguage === 'en' ? 'Tap to select EDD' : 'EDD ရက်စွဲ ရွေးရန် နှိပ်ပါ'
+      );
     }
 
     function toggleNextVisitOverride() {
