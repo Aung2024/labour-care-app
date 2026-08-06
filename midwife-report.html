@@ -755,9 +755,9 @@
         subtitle: 'Daily service register for TMO reporting',
         home: 'Home',
         print: 'Print',
-        fromDate: 'From date',
-        toDate: 'To date',
-        dateFilter: 'Date filter',
+        fromDate: 'From service date',
+        toDate: 'To service date',
+        dateFilter: 'Service date filter',
         thisWeek: 'This week',
         thisMonth: 'This month',
         lastMonth: 'Last month',
@@ -807,9 +807,9 @@
         subtitle: 'ကိုယ်ဝန်ဆောင်မိခင် နေ့စဥ်မှတ်တမ်း',
         home: 'ပင်မ',
         print: 'ပရင့်',
-        fromDate: 'စတင်ရက်',
-        toDate: 'ပြီးဆုံးရက်',
-        dateFilter: 'ရက်အပိုင်းအခြား',
+        fromDate: 'ဝန်ဆောင်မှု စတင်ရက်',
+        toDate: 'ဝန်ဆောင်မှု ပြီးဆုံးရက်',
+        dateFilter: 'ဝန်ဆောင်မှု ရက်အပိုင်းအခြား',
         thisWeek: 'ယခုအပတ်',
         thisMonth: 'ယခုလ',
         lastMonth: 'ယခင်လ',
@@ -857,7 +857,7 @@
     };
 
     var COLUMN_LABELS = {
-      date: { en: 'Date', mm: 'နေ့စွဲ' },
+      date: { en: 'Service Date', mm: 'ဝန်ဆောင်မှု ရက်စွဲ' },
       no: { en: 'No', mm: 'စဉ်' },
       newClient: { en: 'New Client', mm: 'လူနာအသစ်' },
       oldClient: { en: 'Old Client', mm: 'လူနာဟောင်း' },
@@ -949,11 +949,23 @@
     function formatLmp(patient, data) {
       var status = String(firstOf(data.lmpStatus, patient.lmpStatus) || '').toLowerCase();
       var lmpValue = firstOf(data.lmp, patient.lmp);
-      if (status === 'unknown' || isLmpUnknownValue(lmpValue)) {
-        var hasManualGa = firstOf(data.manualGestationalAge, data.manualEdd, patient.manualGestationalAge, patient.manualEdd);
-        if (status === 'unknown' || hasManualGa) return tr('lmpUnknown');
-      }
-      return displayDate(lmpValue);
+      var hasKnownLmp = !isLmpUnknownValue(lmpValue) && status !== 'unknown';
+      if (hasKnownLmp) return displayDate(lmpValue);
+
+      // Manual-GA / unknown-LMP cases often sync only EDD onto the patient doc
+      // (registration rows have no visit payload), so treat EDD-without-LMP as unknown.
+      var hasManualGa = firstOf(
+        data.manualGestationalAge,
+        data.manualEdd,
+        data.gestationalAge,
+        patient.manualGestationalAge,
+        patient.manualEdd,
+        patient.manual_edd,
+        patient.gestational_age
+      );
+      var hasEdd = firstOf(data.edd, data.manualEdd, patient.edd, patient.manualEdd, patient.manual_edd);
+      if (status === 'unknown' || hasManualGa || hasEdd) return tr('lmpUnknown');
+      return '-';
     }
     function formatYmd(date) {
       return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
@@ -987,9 +999,22 @@
     function getPatientCreatedDate(patient) {
       return firstOf(patient.registrationDate, patient.createdAt, patient.created_at, patient.timestamp, patient.registeredAt, patient.lastUpdated);
     }
-    function isNewClientForEvent(patient, eventDate) {
-      var reg = dateOnly(getPatientCreatedDate(patient));
-      return !!(reg && reg === dateOnly(eventDate));
+    function eventSortKey(ev) {
+      var ymd = dateOnly(eventDate(ev)) || '9999-99-99';
+      return ymd + '|' + String(ev.type || '') + '|' + String(ev.id || '');
+    }
+    function isNewClientForEvent(ev, allEvents) {
+      if (!ev || !ev.patientId) return false;
+      var thisKey = eventSortKey(ev);
+      var earliestKey = null;
+      (allEvents || []).forEach(function (other) {
+        if (!other || other.patientId !== ev.patientId) return;
+        if (other.type === 'registration') return;
+        if (!dateOnly(eventDate(other))) return;
+        var key = eventSortKey(other);
+        if (!earliestKey || key < earliestKey) earliestKey = key;
+      });
+      return !!(earliestKey && thisKey === earliestKey);
     }
     function serviceLabel(type) {
       return {
@@ -1133,17 +1158,9 @@
     }
     async function fetchEvents(uid) {
       var result = await fetchMidwifePatientEvents(uid);
-      var events = result.events.slice();
-      result.patients.forEach(function (patient) {
-        if (isBabyPatientRecord(patient)) return;
-        if (patient.created_by === uid || patient.createdBy === uid) {
-          events.push({
-            id: 'registration-' + patient.id,
-            patientId: patient.id,
-            type: 'registration',
-            data: { visitDate: getPatientCreatedDate(patient), createdBy: uid, created_by: uid }
-          });
-        }
+      // Registration alone is not a clinical service — only ANC / PNC / Newborn / LCG rows.
+      var events = (result.events || []).filter(function (ev) {
+        return ev && ev.type && ev.type !== 'registration';
       });
 
       var deduped = new Map();
@@ -1153,11 +1170,25 @@
       });
       return Array.from(deduped.values());
     }
-    function eventDate(ev) {
+    function eventServiceDateRaw(ev) {
       var d = ev.data || {};
-      if (ev.type === 'newborn') return firstOf(d.visitDate, d.birth_time, d.createdAt, d.timestamp);
-      if (ev.type === 'labour') return firstOf(d.visitDate, d.labourDate, d.createdAt, d.timestamp, d.startTime, d.deliveryDate);
-      return firstOf(d.visitDate, d.visit_date, d.createdAt, d.timestamp);
+      if (ev.type === 'newborn') {
+        return firstOf(d.visitDate, d.visit_date, d.serviceDate, d.birth_time, d.birthDate, d.birth_date);
+      }
+      if (ev.type === 'labour') {
+        return firstOf(
+          d.visitDate, d.visit_date, d.serviceDate, d.labourDate, d.labour_date,
+          d.admissionDate, d.deliveryDate, d.delivery_date, d.deliveredDateTime
+        );
+      }
+      // ANC / PNC: clinical visit date only (not data-entry timestamp).
+      return firstOf(d.visitDate, d.visit_date, d.serviceDate, d.service_date);
+    }
+    function eventDate(ev) {
+      // Prefer the service/visit date so date filters work for retroactive entries.
+      // Fall back to entry timestamp only when no clinical service date was stored.
+      var d = ev.data || {};
+      return firstOf(eventServiceDateRaw(ev), d.createdAt, d.timestamp, d.created_at);
     }
     function eventVisitNumber(ev) {
       var d = ev.data || {};
@@ -1265,7 +1296,7 @@
       var evDate = eventDate(ev);
       var evMs = parseDate(evDate) ? parseDate(evDate).getTime() : Date.now();
       var visitYmd = dateOnly(evDate);
-      var isNew = ev.type === 'registration' || isNewClientForEvent(patient, evDate);
+      var isNew = isNewClientForEvent(ev, allEvents);
       var bp = formatBp(data);
       var transfer = await fetchTransferInfo(ev.patientId);
       var labTest = findLabTestForVisit(await fetchPatientTestRecords(ev.patientId), visitYmd, uid);
@@ -1280,7 +1311,7 @@
         gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
         parity: firstOf(data.parity, patient.parity),
         lmp: formatLmp(patient, data),
-        edd: displayDate(firstOf(data.edd, data.manualEdd, patient.edd)),
+        edd: displayDate(firstOf(data.edd, data.manualEdd, patient.edd, patient.manualEdd, patient.manual_edd)),
         weight: firstOf(data.weight, data.body_weight_gram),
         height: firstOf(data.height, data.heightCm, patient.height),
         ga: formatGa(patient, data),
@@ -1298,7 +1329,7 @@
         totalVisits: await totalVisitsUpTo(ev.patientId, evMs, allEvents),
         nextVisitDate: displayDate(firstOf(data.nextVisitDate, data.follow_up_appointment_date, data.next_visit_date)),
         transferReasonPlace: transfer || firstOf(data.transferReason, data.transferPlace),
-        remark: firstOf(data.remark, data.remarks, ev.type === 'registration' ? 'Registration' : ''),
+        remark: firstOf(data.remark, data.remarks, ''),
         _type: ev.type,
         _patientId: ev.patientId,
         _isNew: isNew,
@@ -1385,7 +1416,7 @@
           '<i class="fas fa-chevron-down event-card-chevron" aria-hidden="true"></i></button>' +
           '<div class="event-card-body" id="eventCardBody' + index + '" hidden>' +
           '<div class="event-grid">' +
-          fieldCard(tr('newOld'), r.newClient ? tr('newClient') : tr('oldClient')) +
+          fieldCard(tr('newOld'), r._isNew ? tr('newClient') : tr('oldClient')) +
           fieldCard(tr('gp'), 'G' + dash(r.gravida) + ' / P' + dash(r.parity)) +
           fieldCard(tr('bpWeight'), dash(r.bloodPressure) + ' · ' + dash(r.weight)) +
           fieldCard(tr('gaEdd'), dash(displayCell(r, 'ga')) + ' · ' + dash(r.edd)) +
