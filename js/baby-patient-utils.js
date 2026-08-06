@@ -59,23 +59,42 @@
     return isNaN(parsed.getTime()) ? null : parsed;
   }
 
+  /** Day of life starts at 1 on the birth calendar day (avoids "0 days"). */
+  function formatBabyAgeFromDiffDays(diffDays, language) {
+    var days = parseInt(diffDays, 10);
+    if (isNaN(days) || days < 0) days = 0;
+    var months = Math.floor(days / 30);
+    var years = Math.floor(months / 12);
+    var remainingMonths = months % 12;
+    var dayOfLife = days + 1;
+    var lang = language || 'en';
+    if (lang === 'mm') {
+      if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
+      if (months > 0) return months + ' လ';
+      return 'နေ့ ' + dayOfLife;
+    }
+    if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
+    if (months > 0) return months + 'm';
+    return 'Day ' + dayOfLife;
+  }
+
   function formatBabyAgeDisplay(patient, language) {
     var birthDate = babyBirthDateValue(patient);
     if (!birthDate) return '-';
     var now = new Date();
     var diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
-    var months = Math.floor(diffDays / 30);
-    var years = Math.floor(months / 12);
-    var remainingMonths = months % 12;
-    var lang = language || 'en';
-    if (lang === 'mm') {
-      if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
-      if (months > 0) return months + ' လ';
-      return Math.max(0, diffDays) + ' ရက်';
-    }
-    if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
-    if (months > 0) return months + 'm';
-    return Math.max(0, diffDays) + 'd';
+    return formatBabyAgeFromDiffDays(diffDays, language);
+  }
+
+  function formatBabyAgeFromBirthDate(birthDate, language) {
+    if (!birthDate) return '-';
+    var d = birthDate instanceof Date ? birthDate : new Date(birthDate);
+    if (isNaN(d.getTime())) return '-';
+    var dayOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var diffDays = Math.floor((today - dayOnly) / (1000 * 60 * 60 * 24));
+    return formatBabyAgeFromDiffDays(diffDays, language);
   }
 
   function motherCandidateScore(data) {
@@ -460,6 +479,8 @@
     dateFromBirthTime: dateFromBirthTime,
     ageInYears: ageInYears,
     formatBabyAgeDisplay: formatBabyAgeDisplay,
+    formatBabyAgeFromBirthDate: formatBabyAgeFromBirthDate,
+    formatBabyAgeFromDiffDays: formatBabyAgeFromDiffDays,
     findExistingMotherPatient: findExistingMotherPatient,
     normalizePersonName: normalizePersonName
   };

@@ -111,21 +111,27 @@ function parseWeightGramValue(record) {
 }
 
 function formatNewbornBannerAge(birthDate, lang) {
+  if (window.BabyPatientUtils && typeof BabyPatientUtils.formatBabyAgeFromBirthDate === 'function') {
+    return BabyPatientUtils.formatBabyAgeFromBirthDate(birthDate, lang) || '-';
+  }
   if (!birthDate || isNaN(birthDate.getTime())) return '-';
   var now = new Date();
-  var diffDays = Math.floor((now - birthDate) / (1000 * 60 * 60 * 24));
+  var birthDay = new Date(birthDate.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var diffDays = Math.floor((today - birthDay) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) diffDays = 0;
   var months = Math.floor(diffDays / 30);
   var years = Math.floor(months / 12);
   var remainingMonths = months % 12;
+  var dayOfLife = diffDays + 1;
   if (lang === 'mm') {
     if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
     if (months > 0) return months + ' လ';
-    return diffDays + ' ရက်';
+    return 'နေ့ ' + dayOfLife;
   }
   if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
   if (months > 0) return months + 'm';
-  return diffDays + 'd';
+  return 'Day ' + dayOfLife;
 }
 
 async function displayNewbornPatientBanner(containerId) {

@@ -144,7 +144,9 @@
       gap: 0.15rem;
       min-height: 88px;
     }
-    .kmc-stat-card-clickable { cursor: pointer; touch-action: manipulation; transition: transform 0.15s, box-shadow 0.15s; }
+.kmc-names-list .list-group-item {
+      border-color: #e2e8f0;
+    }
     .kmc-stat-card-clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,0.12); }
     .kmc-stat-card-clickable.selected { outline: 2px solid var(--kmc-accent); outline-offset: 2px; }
     .kmc-stat-card .stat-icon {
@@ -317,7 +319,7 @@
 
     <div id="dashboardState" class="d-none">
       <div class="kmc-dashboard">
-        <div class="kmc-stat-card danger">
+        <div class="kmc-stat-card kmc-stat-card-clickable danger" data-filter="potential" onclick="setKmcCardFilter('potential')" role="button" tabindex="0">
           <span class="stat-icon"><i class="fas fa-baby-carriage"></i></span>
           <span class="stat-value" id="statTotalPotentialKmc">0</span>
           <span class="stat-label" id="statTotalPotentialKmcLabel">Total LBW/Preterm</span>
@@ -417,6 +419,22 @@
     </div>
   </div>
 
+  <div class="modal fade" id="kmcNamesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="kmcNamesModalTitle">Babies</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-2" id="kmcNamesModalHint"></p>
+          <ul id="kmcNamesModalList" class="list-group list-group-flush"></ul>
+          <p id="kmcNamesModalEmpty" class="text-muted mb-0 d-none"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     var lang = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
     var CONCURRENCY = 12;
@@ -469,6 +487,10 @@
         nextDue: 'Next due',
         pendingDischargeDate: 'pending discharge date',
         visitStatusDetails: 'Visit status details',
+        babyNamesTitle: 'Babies in this group',
+        babyNamesHint: 'Tap a score card to see baby names. The list below is also filtered.',
+        babyNamesEmpty: 'No babies in this group.',
+        motherLabel: 'Mother',
         completeModalTitle: 'Mark KMC complete',
         completeOutcomeLabel: 'Outcome',
         completeOutcomeAlive: 'KMC complete & Alive',
@@ -526,6 +548,10 @@
         nextDue: 'လာမည့်ရက်ချိန်း',
         pendingDischargeDate: 'ဆေးရုံဆင်းရက် စောင့်ဆိုင်းနေသည်',
         visitStatusDetails: 'Visit အခြေအနေ အသေးစိတ်',
+        babyNamesTitle: 'ဤအုပ်စုရှိ ကလေးများ',
+        babyNamesHint: 'Score card ကိုနှိပ်၍ ကလေးအမည်များ ကြည့်နိုင်သည်။ အောက်ရှိ စာရင်းကိုလည်း filter လုပ်ထားသည်။',
+        babyNamesEmpty: 'ဤအုပ်စုတွင် ကလေး မရှိပါ။',
+        motherLabel: 'မိခင်',
         completeModalTitle: 'KMC ပြီးမြောက်ရန် မှတ်သားမည်',
         completeOutcomeLabel: 'ရလဒ်',
         completeOutcomeAlive: 'KMC ပြီးမြောက်ပြီး အသက်ရှင်',
@@ -917,6 +943,66 @@
         el.classList.toggle('selected', el.dataset.filter === _kmcCardFilter);
       });
       renderAll(getFilteredKmcRows());
+      showKmcCardBabyNames(_kmcCardFilter);
+    }
+
+    function getRowsForCardFilter(filter) {
+      var rows = window._kmcRows || [];
+      var statusFilter = filter || 'all';
+      return rows.filter(function (r) {
+        if (statusFilter === 'potential') return !!r.potentialKmc;
+        var isKmcYes = (r.kmcSelected || '').toLowerCase() === 'yes' || isCompleted(r);
+        if (!isKmcYes) return false;
+        if (statusFilter === 'all') return true;
+        var status = rowTrackingStatus(r);
+        if (statusFilter === 'complete') return status.key === 'complete' || isCompleted(r);
+        if (isCompleted(r)) return false;
+        return status.key === statusFilter;
+      });
+    }
+
+    function showKmcCardBabyNames(filter) {
+      var modalEl = document.getElementById('kmcNamesModal');
+      if (!modalEl || typeof bootstrap === 'undefined') return;
+      var rows = getRowsForCardFilter(filter);
+      var titleMap = {
+        potential: tr('statPotential'),
+        all: tr('statTotal'),
+        on_track: tr('statActive'),
+        overdue_followup: tr('statOverdue'),
+        lost_to_followup: tr('statDefaulted'),
+        complete: tr('statCompleted')
+      };
+      var titleEl = document.getElementById('kmcNamesModalTitle');
+      var hintEl = document.getElementById('kmcNamesModalHint');
+      var listEl = document.getElementById('kmcNamesModalList');
+      var emptyEl = document.getElementById('kmcNamesModalEmpty');
+      if (titleEl) titleEl.textContent = (titleMap[filter] || tr('babyNamesTitle')) + ' (' + rows.length + ')';
+      if (hintEl) hintEl.textContent = tr('babyNamesHint');
+      if (listEl) listEl.innerHTML = '';
+      if (!rows.length) {
+        if (emptyEl) {
+          emptyEl.textContent = tr('babyNamesEmpty');
+          emptyEl.classList.remove('d-none');
+        }
+      } else {
+        if (emptyEl) emptyEl.classList.add('d-none');
+        rows.forEach(function (r) {
+          var baby = r.babyName || '—';
+          var mother = getKmcClientName(r.patient) || '—';
+          var weight = r.birthWeightGram != null && r.birthWeightGram !== ''
+            ? (Math.round(r.birthWeightGram) + ' g')
+            : tr('noWeight');
+          var li = document.createElement('li');
+          li.className = 'list-group-item px-0';
+          li.innerHTML =
+            '<div style="font-weight:700;color:#0f172a;">' + escapeHtml(baby) + '</div>' +
+            '<div class="small text-muted">' + escapeHtml(tr('motherLabel')) + ': ' + escapeHtml(mother) +
+            ' · ' + escapeHtml(tr('weightCol')) + ': ' + escapeHtml(String(weight)) + '</div>';
+          if (listEl) listEl.appendChild(li);
+        });
+      }
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
     }
 
     function getFilteredKmcRows() {
@@ -929,11 +1015,16 @@
         var mother = (p.name || p.patientName || '').toLowerCase();
         var phone = String(p.phone || p.phoneNumber || '').toLowerCase();
         if (q && baby.indexOf(q) === -1 && mother.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
+
+        if (statusFilter === 'potential') {
+          return !!r.potentialKmc;
+        }
+
         if ((r.kmcSelected || '').toLowerCase() !== 'yes' && !isCompleted(r)) return false;
         if (statusFilter !== 'all') {
           var status = rowTrackingStatus(r);
           if (statusFilter === 'complete') {
-            if (status.key !== 'complete') return false;
+            if (status.key !== 'complete' && !isCompleted(r)) return false;
           } else if (status.key !== statusFilter) return false;
         } else if (isCompleted(r)) {
           return false;
@@ -1363,11 +1454,61 @@
       var latestAnc = fetchResults[2];
       var kmcActions = fetchResults[3] || [];
 
-      var babyEvaluations = KmcUtils.evaluateKmcEligibilityForBabies(p, newbornCare || latestNewbornCare || {}, birthAnchor, latestAnc);
+      var careForEval = Object.assign({}, newbornCare || latestNewbornCare || {});
+      var babiesByIndex = {};
+      newbornCareVisits.forEach(function (v) {
+        if (!Array.isArray(v.babies)) return;
+        v.babies.forEach(function (b, index) {
+          var idx = parseInt(b.babyIndex || b.baby_index, 10) || (index + 1);
+          if (!babiesByIndex[idx]) babiesByIndex[idx] = b;
+        });
+      });
+      var mergedBabies = Object.keys(babiesByIndex).map(Number).sort(function (a, b) { return a - b; }).map(function (k) {
+        return babiesByIndex[k];
+      });
+      if (mergedBabies.length) {
+        careForEval.babies = mergedBabies;
+        if (mergedBabies.length > 1) careForEval.pregnancy_type = careForEval.pregnancy_type || 'twins';
+      }
+
+      var babyEvaluations = KmcUtils.evaluateKmcEligibilityForBabies(p, careForEval, birthAnchor, latestAnc);
+      // Ensure any baby with KMC Yes on a later visit is evaluated even if missing from visit 1 identity.
+      var seenBabyIndexes = {};
+      babyEvaluations.forEach(function (ev) {
+        seenBabyIndexes[parseInt(ev.babyIndex, 10) || 1] = true;
+      });
+      newbornCareVisits.forEach(function (v) {
+        if (!Array.isArray(v.kmc_babies)) return;
+        v.kmc_babies.forEach(function (kb) {
+          var idx = parseInt(kb.babyIndex || kb.baby_index, 10) || 1;
+          if (seenBabyIndexes[idx]) return;
+          if (String(kb.kmc_selected || '').toLowerCase() !== 'yes' && !kb.potential_kmc) return;
+          seenBabyIndexes[idx] = true;
+          babyEvaluations.push(KmcUtils.evaluateKmcEligibilityForBaby(
+            p,
+            careForEval,
+            KmcUtils.normalizeBabyForKmc
+              ? KmcUtils.normalizeBabyForKmc(kb, idx - 1, careForEval, p)
+              : {
+                  babyIndex: idx,
+                  babyName: kb.babyName || kb.baby_name,
+                  birthWeightGram: kb.birthWeightGram || kb.birth_weight_gram,
+                  birthTime: kb.birthTime || kb.birth_time
+                },
+            birthAnchor,
+            latestAnc
+          ));
+        });
+      });
+
       return babyEvaluations.map(function (evalResult) {
         var babyIndex = parseInt(evalResult.babyIndex, 10) || 1;
-        var decision = KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex) || {};
-        var potentialKmc = !!(evalResult.eligible || (decision && decision.potential_kmc));
+        var decision = KmcUtils.getPreferredKmcDecisionForBaby(newbornCareVisits, babyIndex) ||
+          KmcUtils.getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex) ||
+          {};
+        var hasKmcYes = !!(KmcUtils.babyHasKmcYesInVisits(newbornCareVisits, babyIndex) ||
+          String(decision.kmc_selected || '').toLowerCase() === 'yes');
+        var potentialKmc = !!(evalResult.eligible || (decision && decision.potential_kmc) || hasKmcYes);
         if (!potentialKmc) return null;
 
         var reasonSet = new Set();
@@ -1385,7 +1526,8 @@
           }
         });
         var mergedReasons = Array.from(reasonSet);
-        var dischargeDate = KmcUtils.getLatestDischargeDateForBaby(newbornCareVisits, babyIndex);
+        var dischargeDate = (decision && decision.discharge_date) ||
+          KmcUtils.getLatestDischargeDateForBaby(newbornCareVisits, babyIndex);
         var completedCount = KmcUtils.getPostDischargeVisitCountForBaby(newbornCareVisits, dischargeDate, babyIndex);
         var newbornVisitCount = Math.max(getMaxNewbornVisitNumber(newbornCareVisits), completedCount);
         var nextDueDate = KmcUtils.formatDateInput(KmcUtils.getKmcDueDate(dischargeDate, completedCount));
@@ -1402,7 +1544,7 @@
           immediateNewbornCare: immediateNewbornCare,
           newbornCareVisits: newbornCareVisits,
           kmcActions: kmcActions,
-          kmcSelected: (decision.kmc_selected || '').toLowerCase(),
+          kmcSelected: hasKmcYes ? 'yes' : String(decision.kmc_selected || '').toLowerCase(),
           potentialKmc: potentialKmc,
           dischargeDate: dischargeDate,
           completedPostDischargeVisitCount: completedCount,

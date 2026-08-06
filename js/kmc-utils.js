@@ -249,7 +249,12 @@
   function getLatestKmcDecisionForBaby(newbornCareVisits, babyIndex) {
     babyIndex = parseInt(babyIndex, 10) || 1;
     var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
-      return (parseVisitDateMs(normalizeVisitData(b)) || 0) - (parseVisitDateMs(normalizeVisitData(a)) || 0);
+      var da = normalizeVisitData(a);
+      var db = normalizeVisitData(b);
+      var va = parseInt(da.visit_number || da.visitNumber, 10) || 0;
+      var vb = parseInt(db.visit_number || db.visitNumber, 10) || 0;
+      if (vb !== va) return vb - va;
+      return (parseVisitDateMs(db) || 0) - (parseVisitDateMs(da) || 0);
     });
     for (var i = 0; i < sorted.length; i++) {
       var d = normalizeVisitData(sorted[i]);
@@ -268,6 +273,59 @@
       }
     }
     return null;
+  }
+
+  function extractKmcDecisionForBabyFromVisit(visit, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    var d = normalizeVisitData(visit);
+    if (!d) return null;
+    if (Array.isArray(d.kmc_babies) && d.kmc_babies.length) {
+      for (var j = 0; j < d.kmc_babies.length; j++) {
+        var item = d.kmc_babies[j] || {};
+        if ((parseInt(item.babyIndex || item.baby_index, 10) || 1) === babyIndex && item.kmc_selected) {
+          var merged = {};
+          Object.keys(d).forEach(function (key) { merged[key] = d[key]; });
+          Object.keys(item).forEach(function (key) { merged[key] = item[key]; });
+          return merged;
+        }
+      }
+      return null;
+    }
+    if (babyIndex === 1 && d.kmc_selected) return d;
+    return null;
+  }
+
+  /** True if any newborn care visit recorded KMC Yes for this baby (visit 1, 2, 3, …). */
+  function babyHasKmcYesInVisits(newbornCareVisits, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    return (newbornCareVisits || []).some(function (visit) {
+      var decision = extractKmcDecisionForBabyFromVisit(visit, babyIndex);
+      return decision && String(decision.kmc_selected || '').toLowerCase() === 'yes';
+    });
+  }
+
+  /**
+   * Prefer the most recent visit where KMC Yes was recorded (any visit number).
+   * Falls back to the latest KMC Yes/No decision if no Yes exists.
+   */
+  function getPreferredKmcDecisionForBaby(newbornCareVisits, babyIndex) {
+    babyIndex = parseInt(babyIndex, 10) || 1;
+    var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
+      var da = normalizeVisitData(a);
+      var db = normalizeVisitData(b);
+      var va = parseInt(da.visit_number || da.visitNumber, 10) || 0;
+      var vb = parseInt(db.visit_number || db.visitNumber, 10) || 0;
+      if (vb !== va) return vb - va;
+      return (parseVisitDateMs(db) || 0) - (parseVisitDateMs(da) || 0);
+    });
+    var latestAny = null;
+    for (var i = 0; i < sorted.length; i++) {
+      var decision = extractKmcDecisionForBabyFromVisit(sorted[i], babyIndex);
+      if (!decision) continue;
+      if (!latestAny) latestAny = decision;
+      if (String(decision.kmc_selected || '').toLowerCase() === 'yes') return decision;
+    }
+    return latestAny;
   }
 
   function getLatestDischargeDate(newbornCareVisits) {
@@ -423,6 +481,7 @@
     evaluateKmcEligibility: evaluateKmcEligibility,
     evaluateKmcEligibilityForBaby: evaluateKmcEligibilityForBaby,
     evaluateKmcEligibilityForBabies: evaluateKmcEligibilityForBabies,
+    normalizeBabyForKmc: normalizeBabyForKmc,
     getBabiesFromNewbornCare: getBabiesFromNewbornCare,
     newbornCareForBaby: newbornCareForBaby,
     ageInDaysFromBirth: ageInDaysFromBirth,
@@ -430,6 +489,8 @@
     getCompletedKmcVisitsForBaby: getCompletedKmcVisitsForBaby,
     getLatestKmcDecision: getLatestKmcDecision,
     getLatestKmcDecisionForBaby: getLatestKmcDecisionForBaby,
+    babyHasKmcYesInVisits: babyHasKmcYesInVisits,
+    getPreferredKmcDecisionForBaby: getPreferredKmcDecisionForBaby,
     getLatestDischargeDate: getLatestDischargeDate,
     getLatestDischargeDateForBaby: getLatestDischargeDateForBaby,
     getKmcDueDate: getKmcDueDate,
