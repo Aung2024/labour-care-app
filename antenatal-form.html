@@ -1200,8 +1200,9 @@
         
         <div id="manualGAEDDSection" class="row g-3 mt-1" style="display: none;">
           <div class="col-md-6">
-            <label for="manualGestationalAge" class="form-label lang-text" data-en="Manual Gestational Age (if LMP unknown)" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်) ">Manual Gestational Age (if LMP unknown)</label>
-            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA(); calculateGestationalAgeAndEDD(); updateEarlyAncDisplay(); updateAncVisitSchedule();">
+            <label for="manualGestationalAge" class="form-label lang-text" data-en="Gestational Age (weeks) *" data-mm="ကိုယ်ဝန်ဆောင်ကာလ (ရက်သတ္တပတ်) *">Gestational Age (weeks) *</label>
+            <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" inputmode="decimal" onchange="calculateEDDFromGA(); calculateGestationalAgeAndEDD(); updateEarlyAncDisplay(); updateAncVisitSchedule();" oninput="calculateEDDFromGA(); updateEarlyAncDisplay(); updateAncVisitSchedule();">
+            <small class="form-hint lang-text" data-en="Required when LMP is unknown (from ultrasound)." data-mm="LMP မသိပါက မဖြစ်မနေ ထည့်ပါ (Ultrasound အခြေခံ)။">Required when LMP is unknown (from ultrasound).</small>
           </div>
           <div class="col-md-6">
             <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)">Expected Due Date (EDD)</label>
@@ -3661,8 +3662,12 @@
         autoGASection.style.display = 'flex';
         lmpKnownGroups.forEach(el => el.style.display = '');
         lmpInput.disabled = false;
-        manualGAInput.value = '';
-        manualEddInput.value = '';
+        if (manualGAInput) {
+          manualGAInput.value = '';
+          manualGAInput.required = false;
+          manualGAInput.removeAttribute('aria-required');
+        }
+        if (manualEddInput) manualEddInput.value = '';
         calculateGestationalAgeAndEDD();
       } else {
         manualSection.style.display = 'flex';
@@ -3671,7 +3676,12 @@
         lmpInput.disabled = true;
         lmpInput.value = '';
         eddInput.value = '';
+        if (manualGAInput) {
+          manualGAInput.required = true;
+          manualGAInput.setAttribute('aria-required', 'true');
+        }
         refreshLmpEddLongDisplays();
+        calculateEDDFromGA();
       }
       updateEarlyAncDisplay();
       updateAncVisitSchedule();
@@ -3932,12 +3942,17 @@
         };
 
         const currentVisitNumber = parseInt(getValue('visitNumber'), 10) || visitCount || 1;
-        if (currentVisitNumber === 1) {
-          const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked')?.value || 'known';
-          if (lmpStatus === 'known') {
+        const lmpStatusForSave = document.querySelector('input[name="lmpStatus"]:checked')?.value || 'known';
+        const langMm = (typeof currentLanguage !== 'undefined' ? currentLanguage : localStorage.getItem('appLanguage')) === 'mm';
+
+        // LMP known → date required; LMP unknown → GA required (so EDD can be calculated)
+        if (lmpStatusForSave === 'known') {
+          if (currentVisitNumber === 1) {
             const lmpValue = getValue('lmp');
             if (!lmpValue) {
-              alert('LMP is required for ANC Visit 1. Please enter the LMP date, or select LMP Unknown and enter Manual Gestational Age.');
+              alert(langMm
+                ? 'ANC အကြိမ် ၁ အတွက် LMP ရက်စွဲ ထည့်ပါ။ မသိပါက “နေ့ရက်ကို မသိပါ” ကိုရွေးပြီး ကိုယ်ဝန်ဆောင်ကာလ ထည့်ပါ။'
+                : 'LMP is required for ANC Visit 1. Please enter the LMP date, or select LMP Unknown and enter Gestational Age.');
               const lmpInput = document.getElementById('lmp');
               if (lmpInput) {
                 lmpInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3945,23 +3960,37 @@
               }
               return;
             }
-          } else {
-            const manualGA = getNumber('manualGestationalAge');
-            if (manualGA === null || manualGA <= 0) {
-              alert('Manual Gestational Age is required for ANC Visit 1 when LMP is unknown.');
-              const manualGaInput = document.getElementById('manualGestationalAge');
-              if (manualGaInput) {
-                manualGaInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                manualGaInput.focus();
-              }
-              return;
-            }
           }
+        } else {
+          const manualGA = getNumber('manualGestationalAge');
+          if (manualGA === null || manualGA <= 0) {
+            alert(langMm
+              ? 'LMP မသိပါက ကိုယ်ဝန်ဆောင်ကာလ (GA) မဖြစ်မနေ ထည့်ပါ။ ထို့မှ EDD တွက်ချက်မည်။'
+              : 'Gestational Age (GA) is required when LMP is unknown, so EDD can be calculated.');
+            const manualGaInput = document.getElementById('manualGestationalAge');
+            if (manualGaInput) {
+              manualGaInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              manualGaInput.focus();
+            }
+            return;
+          }
+          // Ensure EDD is filled from GA before save
+          calculateEDDFromGA();
+          if (!getValue('manualEdd')) {
+            alert(langMm
+              ? 'EDD တွက်ရန် ပြသရက် (Visit Date) နှင့် ကိုယ်ဝန်ဆောင်ကာလ ထည့်ပါ။'
+              : 'Please enter Visit Date and Gestational Age so EDD can be calculated.');
+            return;
+          }
+        }
 
+        if (currentVisitNumber === 1) {
           const heightFeet = getNumber('heightFeet');
           const heightInches = getNumber('heightInches');
           if (heightFeet === null || heightFeet <= 0 || heightInches === null || heightInches < 0 || heightInches > 11) {
-            alert('Height is required for ANC Visit 1. Please enter both feet and inches (enter 0 inches when applicable).');
+            alert(langMm
+              ? 'ANC အကြိမ် ၁ အတွက် အရပ်အမြင့် (ပေနှင့် လက်မ) ထည့်ပါ။'
+              : 'Height is required for ANC Visit 1. Please enter both feet and inches (enter 0 inches when applicable).');
             const heightFeetInput = document.getElementById('heightFeet');
             if (heightFeetInput) {
               heightFeetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4171,7 +4200,11 @@
           
           // ANC Information
           lmp: getValue('lmp') || null,
-          edd: getValue('edd') || null,
+          edd: (() => {
+            const lmpStatus = document.querySelector('input[name="lmpStatus"]:checked')?.value || 'known';
+            if (lmpStatus === 'unknown') return getValue('manualEdd') || getValue('edd') || null;
+            return getValue('edd') || getValue('manualEdd') || null;
+          })(),
           lmpStatus: (() => {
             const checked = document.querySelector('input[name="lmpStatus"]:checked');
             return checked ? checked.value : 'known';

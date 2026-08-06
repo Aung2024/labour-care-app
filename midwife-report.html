@@ -970,6 +970,25 @@
     function formatYmd(date) {
       return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     }
+    function deriveEddFromManualGa(patient, data) {
+      var ga = parseFloat(firstOf(data.manualGestationalAge, data.gestationalAge, patient.manualGestationalAge, patient.gestational_age));
+      if (!isFinite(ga) || ga <= 0) return '';
+      var visitYmd = dateOnly(firstOf(data.visitDate, data.visit_date, data.serviceDate, data.service_date));
+      if (!visitYmd) return '';
+      var parts = visitYmd.split('-');
+      if (parts.length < 3) return '';
+      var anchor = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (isNaN(anchor.getTime())) return '';
+      var weeksLeft = 40 - ga;
+      anchor.setDate(anchor.getDate() + Math.round(weeksLeft * 7));
+      return formatYmd(anchor);
+    }
+    function formatEdd(patient, data) {
+      var stored = firstOf(data.edd, data.manualEdd, patient.edd, patient.manualEdd, patient.manual_edd);
+      if (stored) return displayDate(stored);
+      var derived = deriveEddFromManualGa(patient, data);
+      return derived ? displayDate(derived) : '-';
+    }
     function inRange(value, fromDate, toDate) {
       var ymd = dateOnly(value);
       if (!ymd || !fromDate || !toDate) return false;
@@ -1311,7 +1330,7 @@
         gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
         parity: firstOf(data.parity, patient.parity),
         lmp: formatLmp(patient, data),
-        edd: displayDate(firstOf(data.edd, data.manualEdd, patient.edd, patient.manualEdd, patient.manual_edd)),
+        edd: formatEdd(patient, data),
         weight: firstOf(data.weight, data.body_weight_gram),
         height: firstOf(data.height, data.heightCm, patient.height),
         ga: formatGa(patient, data),
