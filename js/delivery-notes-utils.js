@@ -183,6 +183,51 @@
     return null;
   }
 
+  async function syncLegacyFieldsToNewbornIfEmpty(patientId, notes) {
+    if (!patientId || !global.firebase) return;
+    var legacy = legacyFieldsFromDelivery(notes);
+    if (!legacy) return;
+    var db = firebase.firestore();
+    var collectionRef = db.collection('patients').doc(patientId).collection('newborn_care');
+    var existing = await collectionRef.limit(1).get();
+    var current = existing.empty ? {} : (existing.docs[0].data() || {});
+    var patch = {};
+    if (!current.birth_time && legacy.birth_time) patch.birth_time = legacy.birth_time;
+    if (!current.birthplace && legacy.birthplace) patch.birthplace = legacy.birthplace;
+    if (!current.mode_of_delivery && legacy.mode_of_delivery) patch.mode_of_delivery = legacy.mode_of_delivery;
+    if (!current.pregnancy_type && legacy.pregnancy_type) patch.pregnancy_type = legacy.pregnancy_type;
+    if (!current.gender && legacy.gender) patch.gender = legacy.gender;
+    if ((current.body_weight_gram == null || current.body_weight_gram === '') && legacy.body_weight_gram != null) {
+      patch.body_weight_gram = legacy.body_weight_gram;
+    }
+    if (!current.outcome && legacy.outcome) patch.outcome = legacy.outcome;
+    if (!Object.keys(patch).length) return;
+    if (!existing.empty) {
+      await collectionRef.doc(existing.docs[0].id).set(patch, { merge: true });
+    } else {
+      patch.visit_number = 1;
+      patch.createdAt = nowServer();
+      await collectionRef.add(patch);
+    }
+  }
+
+  async function syncDeliverySummaryToPatient(patientId, notes) {
+    if (!patientId || !global.firebase) return;
+    var legacy = legacyFieldsFromDelivery(notes);
+    if (!legacy) return;
+    var updates = {
+      updatedAt: nowServer()
+    };
+    if (legacy.birth_time) {
+      updates.birth_time = legacy.birth_time;
+      updates.deliveredDateTime = legacy.birth_time;
+    }
+    if (legacy.birthplace) updates.birthplace = legacy.birthplace;
+    if (legacy.mode_of_delivery) updates.mode_of_delivery = legacy.mode_of_delivery;
+    if (legacy.pregnancy_type) updates.pregnancy_type = legacy.pregnancy_type;
+    await firebase.firestore().collection('patients').doc(patientId).set(updates, { merge: true });
+  }
+
   async function saveDeliveryNotes(patientId, notes, userId, options) {
     options = options || {};
     if (!patientId || !global.firebase) throw new Error('Patient ID is required');
@@ -209,6 +254,16 @@
     if (!Array.isArray(babyIds)) babyIds = [];
     payload.linkedBabyPatientIds = babyIds;
 
+    try {
+      await syncDeliverySummaryToPatient(patientId, normalized);
+    } catch (e) {
+      console.warn('[DeliveryNotes] could not sync summary to patient:', e);
+    }
+    try {
+      await syncLegacyFieldsToNewbornIfEmpty(patientId, normalized);
+    } catch (e) {
+      console.warn('[DeliveryNotes] could not sync identity fields to newborn care:', e);
+    }
     if (global.BirthDeliveryAnchor && BirthDeliveryAnchor.syncDatetimeToNewbornCareIfEmpty) {
       var legacy = legacyFieldsFromDelivery(normalized);
       if (legacy && legacy.birth_time) {
@@ -236,6 +291,8 @@
     fetchDeliveryNotes: fetchDeliveryNotes,
     saveDeliveryNotes: saveDeliveryNotes,
     syncFromNewbornIfMissing: syncFromNewbornIfMissing,
+    syncLegacyFieldsToNewbornIfEmpty: syncLegacyFieldsToNewbornIfEmpty,
+    syncDeliverySummaryToPatient: syncDeliverySummaryToPatient,
     defaultBabies: defaultBabies,
     normalizeBaby: normalizeBaby,
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,

@@ -226,6 +226,27 @@
       margin: 0;
     }
 
+    .date-long-display {
+      display: block;
+      margin-top: 0.35rem;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #14532d;
+      font-size: 0.92rem;
+      font-weight: 700;
+      line-height: 1.35;
+      min-height: 1.7rem;
+    }
+
+    .date-long-display.is-empty {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+      color: #64748b;
+      font-weight: 600;
+    }
+
     .form-control.height-locked {
       background: #f1f5f9;
       color: #475569;
@@ -1115,13 +1136,15 @@
             </div>
           </div>
           <div class="col-lg-4 col-md-6 history-known-only" id="lmpKnownGroup">
-            <label for="lmp" class="form-label lang-text" data-en="Last Menstrual Period (LMP)_mm/dd/yyyy" data-mm="နောက်ဆုံးရာသီပေါ်သည့် ရက်စွဲ">Last Menstrual Period (LMP)_mm/dd/yyyy</label>
-            <input type="date" id="lmp" name="lmp" class="form-control" onchange="onLmpOrVisitChanged()">
+            <label for="lmp" class="form-label lang-text" data-en="Last Menstrual Period (LMP)" data-mm="နောက်ဆုံးရာသီပေါ်သည့် ရက်စွဲ (LMP)">Last Menstrual Period (LMP)</label>
+            <input type="date" id="lmp" name="lmp" class="form-control" onchange="onLmpOrVisitChanged()" oninput="refreshLmpEddLongDisplays()">
+            <span id="lmpLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
             </div>
           <div class="col-lg-4 col-md-6 history-known-only" id="eddKnownGroup">
-            <label for="edd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
+            <label for="edd" class="form-label lang-text" data-en="Expected Due Date (EDD)" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)">Expected Due Date (EDD)</label>
             <input type="date" id="edd" name="edd" class="form-control" readonly>
-            <small class="form-hint lang-text" data-en="Auto-calculated when LMP is known" data-mm="">Auto-calculated when LMP is known</small>
+            <span id="eddLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
+            <small class="form-hint lang-text" data-en="Auto-calculated when LMP is known" data-mm="LMP သိပါက အလိုအလျောက် တွက်ချက်သည်">Auto-calculated when LMP is known</small>
           </div>
         </div>
         
@@ -1131,8 +1154,9 @@
             <input type="number" id="manualGestationalAge" name="manualGestationalAge" class="form-control" step="0.1" min="0" max="42" onchange="calculateEDDFromGA(); calculateGestationalAgeAndEDD(); updateEarlyAncDisplay(); updateAncVisitSchedule();">
           </div>
           <div class="col-md-6">
-            <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)_mm/dd/yyyy" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)_ရက်/လ/ခုနှစ်">Expected Due Date (EDD)_mm/dd/yyyy</label>
-            <input type="date" id="manualEdd" name="manualEdd" class="form-control">
+            <label for="manualEdd" class="form-label lang-text" data-en="Expected Due Date (EDD)" data-mm="ခန့်မှန်းမွေးဖွားရက် (EDD)">Expected Due Date (EDD)</label>
+            <input type="date" id="manualEdd" name="manualEdd" class="form-control" onchange="refreshLmpEddLongDisplays()" oninput="refreshLmpEddLongDisplays()">
+            <span id="manualEddLongDisplay" class="date-long-display is-empty" aria-live="polite"></span>
           </div>
         </div>
         
@@ -3002,6 +3026,7 @@
       evaluateVitalAlerts();
       updateAncVisitSchedule();
       updateMedicationDetailVisibility();
+      refreshLmpEddLongDisplays();
       if (window.ChoiceControls) {
         ChoiceControls.refreshLabels();
         ChoiceControls.syncAll();
@@ -3090,10 +3115,28 @@
 
     function formatDisplayDate(iso) {
       const d = parseDateOnlyLocal(iso);
-      if (!d) return iso;
+      if (!d) return iso || '';
       return d.toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'my-MM', {
-        day: '2-digit', month: 'short', year: 'numeric'
+        day: 'numeric', month: 'long', year: 'numeric'
       });
+    }
+
+    function setDateLongDisplay(displayId, isoValue) {
+      const el = document.getElementById(displayId);
+      if (!el) return;
+      if (!isoValue) {
+        el.textContent = currentLanguage === 'en' ? 'No date selected' : 'ရက်စွဲ မရွေးရသေးပါ';
+        el.classList.add('is-empty');
+        return;
+      }
+      el.textContent = formatDisplayDate(isoValue);
+      el.classList.remove('is-empty');
+    }
+
+    function refreshLmpEddLongDisplays() {
+      setDateLongDisplay('lmpLongDisplay', document.getElementById('lmp')?.value || '');
+      setDateLongDisplay('eddLongDisplay', document.getElementById('edd')?.value || '');
+      setDateLongDisplay('manualEddLongDisplay', document.getElementById('manualEdd')?.value || '');
     }
 
     function toggleNextVisitOverride() {
@@ -3478,6 +3521,7 @@
 
         calculateGestationalAgeFromLMP(lmpInput.value);
       }
+      refreshLmpEddLongDisplays();
     }
 
     function calculateGestationalAgeFromLMP(lmpValue) {
@@ -3534,6 +3578,7 @@
           eddInput.value = formatDateYMD(eddDate);
         }
       }
+      refreshLmpEddLongDisplays();
     }
 
     function toggleLMPFields() {
@@ -3561,6 +3606,7 @@
         lmpInput.disabled = true;
         lmpInput.value = '';
         eddInput.value = '';
+        refreshLmpEddLongDisplays();
       }
       updateEarlyAncDisplay();
       updateAncVisitSchedule();
@@ -3678,6 +3724,7 @@
     
     // Initialize high risk toggle on page load
     document.addEventListener('DOMContentLoaded', function() {
+      refreshLmpEddLongDisplays();
       // Add event listeners to high risk radios
       document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
         radio.addEventListener('change', toggleHighRiskDetails);

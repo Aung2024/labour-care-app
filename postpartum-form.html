@@ -26,6 +26,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/choice-controls.js"></script>
   <script src="js/submit-guard.js"></script>
@@ -705,6 +706,23 @@
               <small class="form-hint lang-text" data-en="Visit 1: enter here or on Newborn Care page. Locked once saved on either form." data-mm="အကြိမ် ၁ — newborn care (သို့) PNC ပထမအကြိမ်တွင် ထည့်ပါ။ သိမ်းပြီးပါက ပြင်ဆင်၍မရပါ။">Visit 1: enter here or on Newborn Care page. Locked once saved on either form.</small>
             </div>
             <div class="col-md-6 col-sm-6">
+              <label for="pncBirthPlace" class="form-label lang-text" data-en="Birth place" data-mm="မွေးဖွားရာနေရာ">Birth place</label>
+              <select class="form-control" id="pncBirthPlace" data-choice>
+                <option value="">-</option>
+                <option value="Facility" class="lang-text" data-en="Facility" data-mm="ဆေးရုံ/ဆေးခန်း">Facility</option>
+                <option value="Private" class="lang-text" data-en="Private" data-mm="ကိုယ်ပိုင်">Private</option>
+              </select>
+            </div>
+            <div class="col-md-6 col-sm-6">
+              <label for="pncModeOfDelivery" class="form-label lang-text" data-en="Mode of delivery" data-mm="မွေးဖွားနည်း">Mode of delivery</label>
+              <select class="form-control" id="pncModeOfDelivery" data-choice>
+                <option value="">-</option>
+                <option value="normal_vaginal">Normal vaginal delivery</option>
+                <option value="assisted_vaginal">Assisted delivery</option>
+                <option value="caesarean_section">C-section</option>
+              </select>
+            </div>
+            <div class="col-md-6 col-sm-6">
               <label class="form-label lang-text" data-en="Post-partum Period" data-mm="မွေးဖွားပြီးကာလ">Post-partum Period</label>
               <div class="form-control" style="background: #f8f9fa; padding: 0.75rem; min-height: 48px;">
                 <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
@@ -1350,6 +1368,52 @@
       const shouldLock = deliveryAnchorLocked && !!input.value;
       input.readOnly = shouldLock;
       input.classList.toggle('next-visit-readonly', shouldLock);
+      const placeEl = document.getElementById('pncBirthPlace');
+      const modeEl = document.getElementById('pncModeOfDelivery');
+      [placeEl, modeEl].forEach(function (el) {
+        if (!el) return;
+        // Keep delivery-note identity editable only when no locked delivery anchor exists yet.
+        el.disabled = shouldLock && !!el.value;
+        el.classList.toggle('next-visit-readonly', shouldLock && !!el.value);
+      });
+      if (window.ChoiceControls) ChoiceControls.syncAll();
+    }
+
+    function applyPncDeliveryIdentityFields(source) {
+      source = source || {};
+      const placeEl = document.getElementById('pncBirthPlace');
+      const modeEl = document.getElementById('pncModeOfDelivery');
+      if (placeEl && !placeEl.value && source.birthplace) {
+        placeEl.value = window.DeliveryNotesUtils
+          ? (DeliveryNotesUtils.normalizeBirthPlaceForNewborn(source.birthplace) || source.birthplace)
+          : source.birthplace;
+      }
+      if (modeEl && !modeEl.value && source.mode_of_delivery) {
+        modeEl.value = window.DeliveryNotesUtils
+          ? (DeliveryNotesUtils.normalizeDeliveryModeForNewborn(source.mode_of_delivery) || source.mode_of_delivery)
+          : source.mode_of_delivery;
+      }
+      if (window.ChoiceControls) ChoiceControls.syncAll();
+    }
+
+    async function loadDeliveryNotesIntoPncForm() {
+      if (!currentPatient || !currentPatient.id || !window.DeliveryNotesUtils) return null;
+      try {
+        const notes = await DeliveryNotesUtils.fetchDeliveryNotes(currentPatient.id);
+        if (!notes) {
+          applyPncDeliveryIdentityFields({
+            birthplace: currentPatient.birthplace,
+            mode_of_delivery: currentPatient.mode_of_delivery
+          });
+          return null;
+        }
+        const legacy = DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
+        applyPncDeliveryIdentityFields(legacy || {});
+        return legacy;
+      } catch (e) {
+        console.warn('Could not load delivery notes into PNC form:', e);
+        return null;
+      }
     }
 
     function updateBackToPncLink() {
@@ -1740,6 +1804,22 @@
       if (data.visitDate) document.getElementById('visitDate').value = normalizeDateInput(data.visitDate);
       if (data.visitNumber) document.getElementById('visitNumber').value = data.visitNumber;
       if (data.deliveredDateTime) document.getElementById('deliveredDateTime').value = data.deliveredDateTime;
+      if (data.birthplace || data.birthPlace) {
+        const placeEl = document.getElementById('pncBirthPlace');
+        if (placeEl) {
+          placeEl.value = window.DeliveryNotesUtils
+            ? (DeliveryNotesUtils.normalizeBirthPlaceForNewborn(data.birthplace || data.birthPlace) || '')
+            : (data.birthplace || data.birthPlace || '');
+        }
+      }
+      if (data.mode_of_delivery || data.modeOfDelivery) {
+        const modeEl = document.getElementById('pncModeOfDelivery');
+        if (modeEl) {
+          modeEl.value = window.DeliveryNotesUtils
+            ? (DeliveryNotesUtils.normalizeDeliveryModeForNewborn(data.mode_of_delivery || data.modeOfDelivery) || '')
+            : (data.mode_of_delivery || data.modeOfDelivery || '');
+        }
+      }
       applyPncVisitDataToForm(data);
       applyOtherVisitsToUi(data.otherVisits || []);
       calculatePostpartumPeriod();
@@ -2009,16 +2089,27 @@
           return;
         }
 
+        const deliveryLegacy = await loadDeliveryNotesIntoPncForm();
+
         if (window.BirthDeliveryAnchor && currentPatient && currentPatient.id) {
           const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(currentPatient.id);
           if (anchor.datetimeLocal) {
             deliveredDateTimeInput.value = anchor.datetimeLocal;
-            deliveryAnchorLocked = !!(anchor.locked || anchor.source === 'patient_record' || anchor.source === 'linked_baby' || anchor.source === 'newborn_care');
+            deliveryAnchorLocked = !!(anchor.locked || anchor.source === 'patient_record' || anchor.source === 'linked_baby' || anchor.source === 'newborn_care' || anchor.source === 'delivery_notes');
             applyDeliveryDateTimeLock();
             calculatePostpartumPeriod();
             updatePncVisitSchedule();
             return;
           }
+        }
+
+        if (deliveryLegacy && deliveryLegacy.birth_time && !deliveredDateTimeInput.value) {
+          deliveredDateTimeInput.value = deliveryLegacy.birth_time;
+          deliveryAnchorLocked = true;
+          applyDeliveryDateTimeLock();
+          calculatePostpartumPeriod();
+          updatePncVisitSchedule();
+          return;
         }
 
         const db = firebase.firestore();
@@ -2212,6 +2303,8 @@
           visitDate: document.getElementById('visitDate').value,
           visitNumber: resolvedVisitNumber,
           deliveredDateTime: document.getElementById('deliveredDateTime').value || null,
+          birthplace: document.getElementById('pncBirthPlace')?.value || null,
+          mode_of_delivery: document.getElementById('pncModeOfDelivery')?.value || null,
           postpartumDays: parseInt(document.getElementById('postpartumDays').textContent) || null,
           postpartumHours: parseInt(document.getElementById('postpartumHours').textContent) || null,
           temperature: document.getElementById('temperature').value || null,

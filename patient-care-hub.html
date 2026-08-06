@@ -2019,8 +2019,8 @@
             </div>
             <div class="delivery-grid">
               <div class="delivery-field">
-                <label class="lang-text" data-en="Outcome" data-mm="ကလေးအခြေအနေ">Outcome</label>
-                <select data-field="outcome">
+                <label class="lang-text" data-en="Outcome *" data-mm="ကလေးအခြေအနေ *">Outcome *</label>
+                <select data-field="outcome" required>
                   <option value="">-</option>
                   <option value="alive" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
                   <option value="death" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
@@ -2028,20 +2028,20 @@
                 </select>
               </div>
               <div class="delivery-field">
-                <label class="lang-text" data-en="Sex" data-mm="ကျား/မ">Sex</label>
-                <select data-field="gender">
+                <label class="lang-text" data-en="Sex *" data-mm="ကျား/မ *">Sex *</label>
+                <select data-field="gender" required>
                   <option value="">-</option>
                   <option value="male" ${baby.gender === 'male' ? 'selected' : ''}>M</option>
                   <option value="female" ${baby.gender === 'female' ? 'selected' : ''}>F</option>
                 </select>
               </div>
               <div class="delivery-field">
-                <label class="lang-text" data-en="Birth weight (grams)" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်)">Birth weight (grams)</label>
-                <input type="number" min="0" inputmode="numeric" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}">
+                <label class="lang-text" data-en="Birth weight (grams) *" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်) *">Birth weight (grams) *</label>
+                <input type="number" min="1" inputmode="numeric" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}" required>
               </div>
               <div class="delivery-field">
-                <label class="lang-text" data-en="Birth time" data-mm="မွေးချိန်">Birth time</label>
-                <input type="datetime-local" data-field="birthTime" value="${DeliveryNotesUtils.toDatetimeLocal(baby.birthTime) || ''}">
+                <label class="lang-text" data-en="Birth time *" data-mm="မွေးချိန် *">Birth time *</label>
+                <input type="datetime-local" data-field="birthTime" value="${DeliveryNotesUtils.toDatetimeLocal(baby.birthTime) || ''}" required>
               </div>
             </div>
           </div>
@@ -2063,11 +2063,88 @@
     function collectDeliveryBabies() {
       return Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]')).map((row, index) => ({
         babyIndex: index + 1,
-        outcome: row.querySelector('[data-field="outcome"]').value || 'alive',
-        gender: row.querySelector('[data-field="gender"]').value,
+        outcome: row.querySelector('[data-field="outcome"]').value || '',
+        gender: row.querySelector('[data-field="gender"]').value || '',
         birthWeightGram: row.querySelector('[data-field="birthWeightGram"]').value,
-        birthTime: row.querySelector('[data-field="birthTime"]').value
+        birthTime: row.querySelector('[data-field="birthTime"]').value || ''
       }));
+    }
+
+    function focusDeliveryField(el) {
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (typeof el.focus === 'function') el.focus();
+    }
+
+    function validateDeliveryNotesForm() {
+      const isMm = currentLanguage === 'mm';
+      const pregnancyType = document.getElementById('deliveryPregnancyType');
+      const modeEl = document.getElementById('deliveryMode');
+      const placeEl = document.getElementById('deliveryBirthPlace');
+
+      if (!pregnancyType || !pregnancyType.value) {
+        alert(isMm ? 'ကိုယ်ဝန်အမျိုးအစား ရွေးချယ်ပါ။' : 'Please select pregnancy type.');
+        focusDeliveryField(pregnancyType);
+        return false;
+      }
+      if (!modeEl || !modeEl.value) {
+        alert(isMm ? 'မွေးဖွားနည်း ရွေးချယ်ပါ။' : 'Please select mode of delivery.');
+        focusDeliveryField(modeEl);
+        return false;
+      }
+      if (!placeEl || !placeEl.value) {
+        alert(isMm ? 'မွေးဖွားရာနေရာ ရွေးချယ်ပါ။' : 'Please select birth place.');
+        focusDeliveryField(placeEl);
+        return false;
+      }
+
+      const babyRows = Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]'));
+      const minBabies = pregnancyType.value === 'twins' ? 2 : 1;
+      if (babyRows.length < minBabies) {
+        alert(isMm ? 'ကလေးအချက်အလက် ပြည့်စုံစွာ ဖြည့်ပါ။' : 'Please complete baby details.');
+        return false;
+      }
+
+      for (let i = 0; i < babyRows.length; i++) {
+        const row = babyRows[i];
+        const babyNo = i + 1;
+        const outcomeEl = row.querySelector('[data-field="outcome"]');
+        const genderEl = row.querySelector('[data-field="gender"]');
+        const weightEl = row.querySelector('[data-field="birthWeightGram"]');
+        const timeEl = row.querySelector('[data-field="birthTime"]');
+        const weight = weightEl ? parseFloat(weightEl.value) : NaN;
+
+        if (!outcomeEl || !outcomeEl.value) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် အခြေအနေ ရွေးချယ်ပါ။')
+            : ('Please select outcome for baby ' + babyNo + '.'));
+          focusDeliveryField(outcomeEl);
+          return false;
+        }
+        if (!genderEl || !genderEl.value) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် ကျား/မ ရွေးချယ်ပါ။')
+            : ('Please select sex for baby ' + babyNo + '.'));
+          focusDeliveryField(genderEl);
+          return false;
+        }
+        if (!weightEl || weightEl.value === '' || isNaN(weight) || weight <= 0) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်) ထည့်ပါ။')
+            : ('Please enter birth weight in grams for baby ' + babyNo + '.'));
+          focusDeliveryField(weightEl);
+          return false;
+        }
+        if (!timeEl || !timeEl.value) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် မွေးချိန် ထည့်ပါ။')
+            : ('Please enter birth time for baby ' + babyNo + '.'));
+          focusDeliveryField(timeEl);
+          return false;
+        }
+      }
+
+      return true;
     }
 
     function addDeliveryBabyRow() {
@@ -2097,6 +2174,8 @@
       const saveBtn = document.querySelector('#thirdStageModal .btn-primary');
       const restoreHtml = saveBtn ? saveBtn.innerHTML : '';
       const runSave = async function () {
+        if (!validateDeliveryNotesForm()) return;
+
         const patientId = selectedPatient.id;
         const currentUser = (window.requireFirebaseAuthUser && requireFirebaseAuthUser()) || firebase.auth().currentUser;
         
@@ -2233,15 +2312,15 @@
           <h5 class="delivery-section-title"><i class="fas fa-baby"></i><span class="lang-text" data-en="Labour Details" data-mm="မွေးဖွားခြင်းအသေးစိတ်">Labour Details</span></h5>
           <div class="delivery-grid">
             <div class="delivery-field">
-              <label for="deliveryPregnancyType" class="lang-text" data-en="Pregnancy type" data-mm="ကိုယ်ဝန်အမျိုးအစား">Pregnancy type</label>
-              <select id="deliveryPregnancyType" onchange="handleDeliveryPregnancyTypeChange()">
+              <label for="deliveryPregnancyType" class="lang-text" data-en="Pregnancy type *" data-mm="ကိုယ်ဝန်အမျိုးအစား *">Pregnancy type *</label>
+              <select id="deliveryPregnancyType" required onchange="handleDeliveryPregnancyTypeChange()">
                 <option value="single">Single</option>
                 <option value="twins">Twins</option>
               </select>
             </div>
             <div class="delivery-field">
-              <label for="deliveryMode" class="lang-text" data-en="Mode of delivery" data-mm="မွေးဖွားနည်း">Mode of delivery</label>
-              <select id="deliveryMode">
+              <label for="deliveryMode" class="lang-text" data-en="Mode of delivery *" data-mm="မွေးဖွားနည်း *">Mode of delivery *</label>
+              <select id="deliveryMode" required>
                 <option value="">-</option>
                 <option value="normal">Normal vaginal delivery</option>
                 <option value="assisted">Assisted delivery</option>
@@ -2249,8 +2328,8 @@
               </select>
             </div>
             <div class="delivery-field">
-              <label for="deliveryBirthPlace" class="lang-text" data-en="Birth place" data-mm="မွေးဖွားရာနေရာ">Birth place</label>
-              <select id="deliveryBirthPlace">
+              <label for="deliveryBirthPlace" class="lang-text" data-en="Birth place *" data-mm="မွေးဖွားရာနေရာ *">Birth place *</label>
+              <select id="deliveryBirthPlace" required>
                 <option value="">-</option>
                 <option value="Facility" class="lang-text" data-en="Facility" data-mm="ဆေးရုံ/ဆေးခန်း">Facility</option>
                 <option value="Private" class="lang-text" data-en="Private" data-mm="ကိုယ်ပိုင်">Private</option>
