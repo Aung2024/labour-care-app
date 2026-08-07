@@ -942,6 +942,22 @@
       var ymd = dateOnly(value);
       return ymd || dash(value);
     }
+    function displayDateLong(value) {
+      var d = parseDate(value);
+      if (!d || isNaN(d.getTime())) {
+        var ymd = dateOnly(value);
+        return ymd || dash(value);
+      }
+      try {
+        return d.toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'my-MM', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        });
+      } catch (e) {
+        return displayDate(value);
+      }
+    }
     function isLmpUnknownValue(value) {
       var raw = String(value == null ? '' : value).trim().toLowerCase();
       return !raw || raw === 'unknown' || raw === 'not recorded';
@@ -950,7 +966,7 @@
       var status = String(firstOf(data.lmpStatus, patient.lmpStatus) || '').toLowerCase();
       var lmpValue = firstOf(data.lmp, patient.lmp);
       var hasKnownLmp = !isLmpUnknownValue(lmpValue) && status !== 'unknown';
-      if (hasKnownLmp) return displayDate(lmpValue);
+      if (hasKnownLmp) return displayDateLong(lmpValue);
 
       // Manual-GA / unknown-LMP cases often sync only EDD onto the patient doc
       // (registration rows have no visit payload), so treat EDD-without-LMP as unknown.
@@ -985,9 +1001,9 @@
     }
     function formatEdd(patient, data) {
       var stored = firstOf(data.edd, data.manualEdd, patient.edd, patient.manualEdd, patient.manual_edd);
-      if (stored) return displayDate(stored);
+      if (stored) return displayDateLong(stored);
       var derived = deriveEddFromManualGa(patient, data);
-      return derived ? displayDate(derived) : '-';
+      return derived ? displayDateLong(derived) : '-';
     }
     function inRange(value, fromDate, toDate) {
       var ymd = dateOnly(value);
