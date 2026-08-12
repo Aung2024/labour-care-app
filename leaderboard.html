@@ -13,6 +13,7 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/role-display.js"></script>
   <!-- Load smartFirestoreQuery if available for optimized queries -->
   <script>
     // Ensure smartFirestoreQuery is available globally
@@ -113,9 +114,53 @@
       box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
     }
 
+    .leaderboard-filters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
+      gap: 0.85rem;
+      align-items: end;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      border: 1px solid #dbeafe;
+      border-radius: 14px;
+      background: #f8fafc;
+    }
+
+    .leaderboard-filter label {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: #334155;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .leaderboard-filter .form-control,
+    .leaderboard-filter .form-select,
+    .leaderboard-apply-btn {
+      min-height: 44px;
+    }
+
+    .provider-level-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 0.25rem;
+      padding: 0.18rem 0.5rem;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #047857;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
     .leaderboard-table {
       width: 100%;
+      min-width: 820px;
       border-collapse: collapse;
+    }
+
+    #leaderboardContent {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .leaderboard-table thead {
@@ -364,6 +409,10 @@
         padding: 1.5rem;
         max-width: 95%;
       }
+
+      .leaderboard-filters {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -390,13 +439,32 @@
     <!-- Leaderboard Card -->
     <div class="leaderboard-card">
       <div class="leaderboard-header">
-        <h2 class="leaderboard-title">
-          <i class="fas fa-medal"></i>
-          Midwife Rankings
-        </h2>
+        <div>
+          <h2 class="leaderboard-title">
+            <i class="fas fa-medal"></i>
+            Midwife Rankings
+          </h2>
+          <div id="leaderboardPeriodLabel" class="text-muted small"></div>
+        </div>
         <button class="score-info-btn" onclick="openScoreInfoModal()">
           <i class="fas fa-info-circle"></i>
           How Scores Work
+        </button>
+      </div>
+
+      <div class="leaderboard-filters" aria-label="Leaderboard filters">
+        <div class="leaderboard-filter">
+          <label for="leaderboardMonth"><i class="fas fa-calendar-alt me-1"></i>Month</label>
+          <input type="month" id="leaderboardMonth" class="form-control" required>
+        </div>
+        <div class="leaderboard-filter">
+          <label for="providerLevelFilter"><i class="fas fa-hospital-user me-1"></i>Provider level</label>
+          <select id="providerLevelFilter" class="form-select">
+            <option value="">All provider levels</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-primary leaderboard-apply-btn" onclick="applyLeaderboardFilters()">
+          <i class="fas fa-filter me-1"></i>Apply filters
         </button>
       </div>
 
@@ -425,8 +493,9 @@
             <tr>
               <th class="rank-cell">Rank</th>
               <th>Midwife</th>
+              <th class="text-center">Provider level</th>
               <th class="text-center">Township</th>
-              <th class="text-center">Patients</th>
+              <th class="text-center">Active patients</th>
               <th class="score-cell">Total Score</th>
             </tr>
           </thead>
@@ -475,6 +544,9 @@
         </button>
       </div>
       <div class="modal-body">
+        <div class="alert alert-info">
+          Scores use registrations and care activities recorded during the selected month only.
+        </div>
         <div class="score-rule">
           <div class="score-rule-title">
             <span class="score-rule-points">+1</span>
@@ -593,6 +665,97 @@
     let userRole = null;
     let userRegion = null;
     let allMidwives = [];
+    let leaderboardMonth = '';
+    let leaderboardProviderLevel = '';
+
+    const ACTIVITY_DATE_FIELDS = [
+      'visitDate', 'testDate', 'registration_date', 'referralTime',
+      'timestamp', 'created_at', 'createdAt', 'recordedAt', 'lastUpdated'
+    ];
+
+    function localMonthValue(date) {
+      const d = date instanceof Date ? date : new Date(date);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+
+    function initializeLeaderboardFilters() {
+      const monthInput = document.getElementById('leaderboardMonth');
+      if (monthInput) {
+        monthInput.max = localMonthValue(new Date());
+        if (!monthInput.value) monthInput.value = localMonthValue(new Date());
+      }
+      leaderboardMonth = monthInput ? monthInput.value : localMonthValue(new Date());
+
+      const providerSelect = document.getElementById('providerLevelFilter');
+      if (providerSelect && window.RoleDisplay) {
+        const options = RoleDisplay.MIDWIFE_PROVIDER_TYPES || RoleDisplay.PROVIDER_TYPES || [];
+        providerSelect.innerHTML = '<option value="">All provider levels</option>' + options.map(function (entry) {
+          return '<option value="' + entry.value + '">' + entry.en + '</option>';
+        }).join('');
+      }
+      leaderboardProviderLevel = providerSelect ? providerSelect.value : '';
+    }
+
+    async function applyLeaderboardFilters() {
+      const monthInput = document.getElementById('leaderboardMonth');
+      const providerSelect = document.getElementById('providerLevelFilter');
+      if (!monthInput || !monthInput.value || monthInput.value > localMonthValue(new Date())) {
+        if (monthInput) monthInput.focus();
+        return;
+      }
+      leaderboardMonth = monthInput.value;
+      leaderboardProviderLevel = providerSelect ? providerSelect.value : '';
+      await loadLeaderboard();
+    }
+
+    function selectedMonthLabel() {
+      if (!leaderboardMonth) return 'Selected month';
+      const parts = leaderboardMonth.split('-');
+      const date = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+
+    function activityDateMs(value) {
+      if (value == null || value === '') return null;
+      if (typeof value.toDate === 'function') return value.toDate().getTime();
+      if (value instanceof Date) return value.getTime();
+      if (typeof value === 'object' && typeof value.seconds === 'number') return value.seconds * 1000;
+      if (typeof value === 'number') return value;
+      const text = String(value).trim();
+      if (!text || /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return null;
+      const ms = new Date(text.length === 10 ? text + 'T00:00:00' : text).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    function isActivityInSelectedMonth(data, fields) {
+      if (!data || !leaderboardMonth) return false;
+      const keys = fields || ACTIVITY_DATE_FIELDS;
+      for (let i = 0; i < keys.length; i++) {
+        const ms = activityDateMs(data[keys[i]]);
+        if (ms != null && localMonthValue(new Date(ms)) === leaderboardMonth) return true;
+      }
+      return false;
+    }
+
+    function snapshotDataForMonth(snapshot, fields) {
+      if (!snapshot || !snapshot.docs) return [];
+      return snapshot.docs.map(function (doc) { return doc.data ? doc.data() : {}; })
+        .filter(function (data) { return isActivityInSelectedMonth(data, fields); });
+    }
+
+    function documentInSelectedMonth(doc, fields) {
+      return !!(doc && doc.exists && doc.data && isActivityInSelectedMonth(doc.data(), fields));
+    }
+
+    function providerTypeForUser(userData) {
+      if (window.RoleDisplay) return RoleDisplay.normalizeProviderType(userData && userData.provider_type, 'Midwife');
+      return (userData && userData.provider_type) || 'midwife';
+    }
+
+    function providerLevelLabel(providerType) {
+      if (window.RoleDisplay) return RoleDisplay.getProviderTypeLabel(providerType, 'en', 'Midwife');
+      return providerType || 'Midwife';
+    }
 
     function isAppleMobileOrTablet() {
       const ua = navigator.userAgent || '';
@@ -625,6 +788,7 @@
     firebase.auth().onAuthStateChanged(async function(user) {
       if (user) {
         currentUser = user;
+        initializeLeaderboardFilters();
         await loadUserData();
         await loadLeaderboard();
       } else {
@@ -651,6 +815,11 @@
         document.getElementById('loadingContainer').style.display = 'block';
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('leaderboardContent').style.display = 'none';
+        const providerFilterLabel = leaderboardProviderLevel
+          ? providerLevelLabel(leaderboardProviderLevel)
+          : 'All provider levels';
+        document.getElementById('leaderboardPeriodLabel').textContent =
+          selectedMonthLabel() + ' · ' + providerFilterLabel;
 
         console.log('Loading leaderboard...', { userRole, userRegion, isRegionalOfficer: isRegionalOfficer() });
 
@@ -690,7 +859,18 @@
         console.log(`Found ${allMidwifeDocs.size} midwives`);
 
         allMidwives = [];
-        const midwifeArray = Array.from(allMidwifeDocs.values());
+        const midwifeArray = Array.from(allMidwifeDocs.values()).filter(function (doc) {
+          if (!leaderboardProviderLevel) return true;
+          return providerTypeForUser(doc.data() || {}) === leaderboardProviderLevel;
+        });
+
+        if (midwifeArray.length === 0) {
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('emptyState').innerHTML =
+            '<i class="fas fa-filter"></i><p>No providers found for these filters.</p>';
+          return;
+        }
         
         // Update loading message with progress
         const updateLoadingMessage = (current, total) => {
@@ -730,6 +910,7 @@
                 id: midwifeId,
                 name: midwifeName,
                 township: midwifeData.township || 'Unknown',
+                providerType: providerTypeForUser(midwifeData),
                 score: scoreResult.score || 0,
                 patientCount: scoreResult.patientCount || 0
               };
@@ -740,6 +921,7 @@
                 id: midwifeId,
                 name: midwifeName,
                 township: midwifeData.township || 'Unknown',
+                providerType: providerTypeForUser(midwifeData),
                 score: 0,
                 patientCount: 0
               };
@@ -769,176 +951,16 @@
     }
 
     async function calculateMidwifeScore(midwifeId) {
-      let totalScore = 0;
-      let patientCount = 0;
-
       try {
-        console.log(`[${midwifeId}] Starting score calculation...`);
-        
-        // MOH database uses canonical created_by for new patients.
-        let newFormatSnap;
-        const db = firebase.firestore();
-        
-        try {
-          const newQuery = db.collection('patients').where('created_by', '==', midwifeId);
-          newFormatSnap = await leaderboardGet(newQuery, { timeout: 10000, retries: 1 });
-          console.log(`[${midwifeId}] created_by query: ${newFormatSnap.size || 0} patients`);
-        } catch (error) {
-          console.error(`[${midwifeId}] Error querying created_by:`, error);
-          newFormatSnap = { forEach: () => {}, docs: [], empty: true, size: 0 };
-        }
-
-        const patientIds = new Set();
-        const patientDocs = new Map();
-        
-        if (newFormatSnap && typeof newFormatSnap.forEach === 'function' && !newFormatSnap.empty) {
-          newFormatSnap.forEach(doc => {
-            patientIds.add(doc.id);
-            patientDocs.set(doc.id, doc);
-          });
-          console.log(`[${midwifeId}] Found ${newFormatSnap.size} patients with created_by field`);
-        }
-        
-        const patients = Array.from(patientIds);
-        patientCount = patients.length;
-        console.log(`[${midwifeId}] Total unique patients: ${patientCount}`);
-
-        if (patients.length === 0) {
-          console.log(`[${midwifeId}] No patients found, returning 0`);
-          return { score: 0, patientCount: 0 };
-        }
-
-        // Process patients in batches for better performance
-        const BATCH_SIZE = isAppleMobileOrTablet() ? 2 : 5;
-        for (let i = 0; i < patients.length; i += BATCH_SIZE) {
-          const batch = patients.slice(i, i + BATCH_SIZE);
-          
-          // Process batch in parallel
-          const batchScores = await Promise.all(batch.map(async (patientId) => {
-            let patientScore = 0;
-            try {
-              const patientDoc = patientDocs.get(patientId);
-              let patientData;
-              
-              if (patientDoc && patientDoc.data) {
-                patientData = patientDoc.data();
-              } else {
-                // Fallback: fetch patient document
-                const patientRef = firebase.firestore().collection('patients').doc(patientId);
-                const doc = await leaderboardGet(patientRef, { timeout: 3000, retries: 0 });
-                if (!doc.exists) return 0;
-                patientData = doc.data();
-              }
-              
-              // a) 1 point for each registered patient
-              patientScore += 1;
-              
-              // b) 2 points for complete patient registration
-              if (isPatientRegistrationComplete(patientData)) {
-                patientScore += 2;
-              }
-              
-              const patientRef = firebase.firestore().collection('patients').doc(patientId);
-              
-              // Batch all subcollection queries in parallel
-              const [
-                ancVisitsSnap,
-                pncVisitsSnap,
-                labTestsSnap,
-                immediateCareSnap,
-                newbornCareSnap,
-                summaryDoc,
-                startingTimeDoc,
-                secondStageDoc,
-                transferRecordDoc
-              ] = await Promise.all([
-                leaderboardGet(patientRef.collection('antenatal_visits').limit(8), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
-                leaderboardGet(patientRef.collection('postpartum_visits').limit(4), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
-                leaderboardGet(patientRef.collection('testRecords').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
-                leaderboardGet(patientRef.collection('immediate_newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
-                leaderboardGet(patientRef.collection('newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
-                leaderboardGet(patientRef.collection('records').doc('summary'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
-                leaderboardGet(patientRef.collection('records').doc('startingTime'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
-                leaderboardGet(patientRef.collection('records').doc('secondStage'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
-                leaderboardGet(patientRef.collection('records').doc('transferRecord'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false }))
-              ]);
-              
-              const ancVisits = ancVisitsSnap.docs ? ancVisitsSnap.docs.map(doc => doc.data()) : [];
-              
-              // c) ANC visit points
-              if (ancVisits.length >= 1) {
-                patientScore += 1; // At least 1 ANC visit
-                if (ancVisits.length >= 4) {
-                  patientScore += 1; // 4 or more visits
-                }
-                if (ancVisits.length >= 8) {
-                  patientScore += 1; // 8 or more visits
-                }
-              }
-              
-              // d) 2 points for complete ANC form
-              if (ancVisits.length >= 1 && isANCFormComplete(ancVisits)) {
-                patientScore += 2;
-              }
-              
-              // e) 1 point for LCG completed
-              if (isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
-                patientScore += 1;
-              }
-              
-              const pncVisits = pncVisitsSnap.docs ? pncVisitsSnap.docs.map(doc => doc.data()) : [];
-              
-              // f) 1 point for at least 1 PNC visit
-              if (pncVisits.length >= 1) {
-                patientScore += 1;
-              }
-              
-              // g) 1 point for complete PNC info
-              if (pncVisits.length >= 1 && isPNCFormComplete(pncVisits)) {
-                patientScore += 1;
-              }
-              
-              // h) 1 point for at least 1 lab test
-              if (labTestsSnap.size >= 1) {
-                patientScore += 1;
-              }
-              
-              // i) 1 point for immediate-newborn-care
-              if (immediateCareSnap.size >= 1) {
-                patientScore += 1;
-              }
-              
-              // j) 1 point for newborn care
-              if (newbornCareSnap.size >= 1) {
-                patientScore += 1;
-              }
-              
-              // k) 1 point for transfer record
-              if (transferRecordDoc.exists) {
-                patientScore += 1;
-              }
-              
-              return patientScore;
-            } catch (error) {
-              console.warn(`[${midwifeId}] Error processing patient ${patientId}:`, error);
-              // Return base score (1 point for registration) even if other checks fail
-              return 1;
-            }
-          }));
-          
-          // Sum up batch scores
-          const batchTotal = batchScores.reduce((sum, score) => sum + score, 0);
-          totalScore += batchTotal;
-        }
-
-        console.log(`[${midwifeId}] Score calculation complete: ${totalScore} points from ${patientCount} patients`);
+        const breakdown = await calculateDetailedScoreBreakdown(midwifeId);
+        return {
+          score: breakdown.totalScore || 0,
+          patientCount: breakdown.patientCount || 0
+        };
       } catch (error) {
         console.error(`[${midwifeId}] Error calculating score:`, error);
-        // Return at least the patient count as base score
-        return { score: patientCount, patientCount: patientCount };
+        return { score: 0, patientCount: 0 };
       }
-
-      return { score: totalScore, patientCount: patientCount };
     }
 
     function isPatientRegistrationComplete(patientData) {
@@ -1014,6 +1036,7 @@
         }
 
         const initials = midwife.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'MW';
+        const providerLabel = providerLevelLabel(midwife.providerType);
 
         row.innerHTML = `
           ${rankCell}
@@ -1025,6 +1048,7 @@
               </div>
             </div>
           </td>
+          <td class="text-center"><span class="provider-level-badge">${providerLabel}</span></td>
           <td class="text-center">${midwife.township}</td>
           <td class="text-center">${midwife.patientCount || 0}</td>
           <td class="score-cell">${midwife.score}</td>
@@ -1062,7 +1086,7 @@
       const loadingDiv = document.getElementById('midwifeScoreLoading');
       const contentDiv = document.getElementById('midwifeScoreContent');
       
-      modalTitle.textContent = `Score Breakdown: ${midwifeName}`;
+      modalTitle.textContent = `Score Breakdown: ${midwifeName} · ${selectedMonthLabel()}`;
       modal.style.display = 'block';
       loadingDiv.style.display = 'block';
       contentDiv.innerHTML = '';
@@ -1132,7 +1156,6 @@
           });
         }
         const patients = Array.from(patientIds);
-        breakdown.patientCount = patients.length;
 
         // Process patients in batches
         const BATCH_SIZE = isAppleMobileOrTablet() ? 2 : 5;
@@ -1190,28 +1213,34 @@
                 secondStageDoc,
                 transferRecordDoc
               ] = await Promise.all([
-                leaderboardGet(patientRef.collection('antenatal_visits').limit(8), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
-                leaderboardGet(patientRef.collection('postpartum_visits').limit(4), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
-                leaderboardGet(patientRef.collection('testRecords').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
-                leaderboardGet(patientRef.collection('immediate_newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
-                leaderboardGet(patientRef.collection('newborn_care').limit(1), { timeout: 5000, retries: 0 }).catch(() => ({ size: 0 })),
+                leaderboardGet(patientRef.collection('antenatal_visits'), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('postpartum_visits'), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('testRecords'), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('immediate_newborn_care'), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
+                leaderboardGet(patientRef.collection('newborn_care'), { timeout: 5000, retries: 0 }).catch(() => ({ docs: [], size: 0 })),
                 leaderboardGet(patientRef.collection('records').doc('summary'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
                 leaderboardGet(patientRef.collection('records').doc('startingTime'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
                 leaderboardGet(patientRef.collection('records').doc('secondStage'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false })),
                 leaderboardGet(patientRef.collection('records').doc('transferRecord'), { timeout: 5000, retries: 0 }).catch(() => ({ exists: false }))
               ]);
               
-              // a) 1 point for registration
-              patientBreakdown.details.registration = 1;
-              patientBreakdown.score += 1;
-              
-              // b) 2 points for complete registration
-              if (isPatientRegistrationComplete(patientData)) {
-                patientBreakdown.details.completeRegistration = 2;
-                patientBreakdown.score += 2;
+              const registeredInMonth = isActivityInSelectedMonth(
+                patientData,
+                ['registration_date', 'created_at', 'createdAt', 'timestamp']
+              );
+              if (registeredInMonth) {
+                patientBreakdown.details.registration = 1;
+                patientBreakdown.score += 1;
+                if (isPatientRegistrationComplete(patientData)) {
+                  patientBreakdown.details.completeRegistration = 2;
+                  patientBreakdown.score += 2;
+                }
               }
               
-              const ancVisits = ancVisitsSnap.docs ? ancVisitsSnap.docs.map(doc => doc.data()) : [];
+              const ancVisits = snapshotDataForMonth(
+                ancVisitsSnap,
+                ['visitDate', 'timestamp', 'createdAt']
+              );
               
               // c) ANC visit points
               if (ancVisits.length >= 1) {
@@ -1234,12 +1263,19 @@
               }
               
               // e) LCG completed
-              if (isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
+              const lcgRecordedInMonth =
+                documentInSelectedMonth(summaryDoc, ['timestamp', 'lastUpdated']) ||
+                documentInSelectedMonth(startingTimeDoc, ['timestamp']) ||
+                documentInSelectedMonth(secondStageDoc, ['timestamp']);
+              if (lcgRecordedInMonth && isLCGCompleted(summaryDoc, startingTimeDoc, secondStageDoc)) {
                 patientBreakdown.details.lcgCompleted = 1;
                 patientBreakdown.score += 1;
               }
               
-              const pncVisits = pncVisitsSnap.docs ? pncVisitsSnap.docs.map(doc => doc.data()) : [];
+              const pncVisits = snapshotDataForMonth(
+                pncVisitsSnap,
+                ['visitDate', 'createdAt', 'updatedAt']
+              );
               
               // f) PNC visits
               if (pncVisits.length >= 1) {
@@ -1254,25 +1290,25 @@
               }
               
               // h) Lab tests
-              if (labTestsSnap.size >= 1) {
+              if (snapshotDataForMonth(labTestsSnap, ['testDate', 'timestamp']).length >= 1) {
                 patientBreakdown.details.labTests = 1;
                 patientBreakdown.score += 1;
               }
               
               // i) Immediate newborn care
-              if (immediateCareSnap.size >= 1) {
+              if (snapshotDataForMonth(immediateCareSnap, ['timestamp']).length >= 1) {
                 patientBreakdown.details.immediateNewbornCare = 1;
                 patientBreakdown.score += 1;
               }
               
               // j) Newborn care
-              if (newbornCareSnap.size >= 1) {
+              if (snapshotDataForMonth(newbornCareSnap, ['visitDate', 'timestamp', 'createdAt']).length >= 1) {
                 patientBreakdown.details.newbornCare = 1;
                 patientBreakdown.score += 1;
               }
               
               // k) Transfer record
-              if (transferRecordDoc.exists) {
+              if (documentInSelectedMonth(transferRecordDoc, ['referralTime', 'timestamp'])) {
                 patientBreakdown.details.transferRecords = 1;
                 patientBreakdown.score += 1;
               }
@@ -1284,8 +1320,12 @@
             }
           }));
           
-          breakdown.patients.push(...batchResults);
+          breakdown.patients.push(...batchResults.filter(function (patient) {
+            return patient.score > 0;
+          }));
         }
+
+        breakdown.patientCount = breakdown.patients.length;
 
         // Calculate category totals
         breakdown.patients.forEach(patient => {
@@ -1332,7 +1372,7 @@
               <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
                 <div>
                   <div style="font-size: 1.5rem; font-weight: 600; color: #1f2937;">${breakdown.patientCount}</div>
-                  <div style="color: #6b7280; font-size: 0.875rem;">Total Patients</div>
+                  <div style="color: #6b7280; font-size: 0.875rem;">Patients with activity this month</div>
                 </div>
               </div>
             </div>
