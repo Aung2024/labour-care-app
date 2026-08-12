@@ -1,8 +1,9 @@
 /**
  * High-risk pregnancy helpers.
  *
- * High-risk status is determined only from the ANC visit form
- * "High Risk Pregnancy Assessment" (high_risk = 'yes' on the latest visit).
+ * High-risk status is determined from the ANC visit form
+ * "High Risk Pregnancy Assessment". A positive assessment on any visit
+ * (including Visit 2 onward) keeps the patient in high-risk tracking.
  */
 (function (global) {
   'use strict';
@@ -52,12 +53,39 @@
   }
 
   /**
-   * Patient is high risk when the latest ANC visit assessment is marked yes.
+   * Most recent ANC visit that was explicitly assessed as high risk.
+   * Visit number breaks ties when multiple records share the same date.
+   */
+  function getLatestHighRiskAncVisitData(patient) {
+    var visits = (patient && patient.antenatalVisits) || [];
+    var bestMs = null;
+    var bestVisitNumber = -1;
+    var bestData = null;
+    visits.forEach(function (v) {
+      var data = visitRawData(v);
+      if (!isVisitHighRiskData(data)) return;
+      var ms = parseVisitDateMs(data);
+      var visitNumber = parseInt(data.visitNumber || data.visit_number, 10);
+      if (isNaN(visitNumber)) visitNumber = 0;
+      if (
+        bestData == null ||
+        (ms != null && (bestMs == null || ms > bestMs)) ||
+        (ms === bestMs && visitNumber > bestVisitNumber)
+      ) {
+        bestMs = ms;
+        bestVisitNumber = visitNumber;
+        bestData = data;
+      }
+    });
+    return bestData;
+  }
+
+  /**
+   * Patient is high risk when any ANC visit assessment is marked yes.
    */
   function isPatientHighRisk(patient) {
     if (!patient) return false;
-    var latest = getLatestAncVisitData(patient);
-    return !!(latest && isVisitHighRiskData(latest));
+    return !!getLatestHighRiskAncVisitData(patient);
   }
 
   /**
@@ -66,8 +94,8 @@
   function getAutoDetectedRiskReasons(patient) {
     var reasons = [];
     if (!patient) return reasons;
-    var latest = getLatestAncVisitData(patient);
-    if (!latest || !isVisitHighRiskData(latest)) return reasons;
+    var latest = getLatestHighRiskAncVisitData(patient);
+    if (!latest) return reasons;
 
     reasons.push('ANC assessment: high risk pregnancy');
     if (latest.risk_factors && Array.isArray(latest.risk_factors)) {
@@ -82,8 +110,8 @@
   }
 
   function getPatientRiskFactorsFromANC(patient) {
-    var latest = getLatestAncVisitData(patient);
-    if (!latest || !isVisitHighRiskData(latest)) return [];
+    var latest = getLatestHighRiskAncVisitData(patient);
+    if (!latest) return [];
     if (latest.risk_factors && Array.isArray(latest.risk_factors)) {
       return latest.risk_factors.slice();
     }
@@ -96,6 +124,7 @@
     isPatientHighRisk: isPatientHighRisk,
     getAutoDetectedRiskReasons: getAutoDetectedRiskReasons,
     getPatientRiskFactorsFromANC: getPatientRiskFactorsFromANC,
+    getLatestHighRiskAncVisitData: getLatestHighRiskAncVisitData,
     parseVisitDateMs: parseVisitDateMs,
     getLatestAncVisitTimeMs: getLatestAncVisitTimeMs,
     getLatestAncVisitData: getLatestAncVisitData
