@@ -1543,7 +1543,7 @@
 
         <div id="highRiskDetails" class="row g-3 mt-2" style="display: none;">
           <div class="col-md-12">
-            <label class="form-label lang-text" data-en="High Risk Factors (Select all that apply):" data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော အချက်အလက်များ (ကိုက်ညီသောအကြောင်းအရာအားလုံးကို ရွေးချယ်နိုင်ပါသည်):">High Risk Factors (Select all that apply):</label>
+            <label class="form-label lang-text" data-en="High Risk Factors (select at least one; multiple allowed) *" data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေ အနည်းဆုံးတစ်ခု ရွေးပါ (တစ်ခုထက်ပို၍ ရွေးနိုင်ပါသည်) *">High Risk Factors (select at least one; multiple allowed) *</label>
             <div class="row">
               <div class="col-md-6">
                 <div class="form-check">
@@ -1579,6 +1579,10 @@
                   <input class="form-check-input" type="checkbox" name="riskFactors" id="riskFetalMalpresentation" value="Fetal Malpresentation">
                   <label class="form-check-label lang-text" for="riskFetalMalpresentation" data-en="Fetal Malpresentation" data-mm="သန္ဓေသား အနေအထား ပုံမမှန်ခြင်းများ">Fetal Malpresentation</label>
                 </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPreviousScar" value="Previous scar">
+                  <label class="form-check-label lang-text" for="riskPreviousScar" data-en="Previous scar" data-mm="ယခင် ဗိုက်ခွဲမွေးထားခြင်း">Previous scar</label>
+                </div>
               </div>
               <div class="col-md-6">
                 <div class="form-check">
@@ -1594,9 +1598,22 @@
                   <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOtherMedicalConditions" value="Other Medical Conditions">
                   <label class="form-check-label lang-text" data-en="Other Medical Conditions" data-mm="အခြားကျန်းမာရေးပြဿနာများ">Other Medical Conditions</label>
                 </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskShortStature" value="Short stature">
+                  <label class="form-check-label lang-text" for="riskShortStature" data-en="Short stature" data-mm="အရပ်ပုခြင်း">Short stature</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPrimigravida" value="Primigravida">
+                  <label class="form-check-label lang-text" for="riskPrimigravida" data-en="Primigravida" data-mm="သားဦးကိုယ်ဝန်">Primigravida</label>
+                </div>
  
             </div>
           </div>
+        </div>
+        <div id="highRiskFactorsError" class="alert alert-danger mt-2 py-2 d-none" role="alert">
+          <span class="lang-text"
+            data-en="Select at least one high-risk factor."
+            data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေ အနည်းဆုံးတစ်ခု ရွေးပါ။">Select at least one high-risk factor.</span>
         </div>
 
             <div class="alert alert-info mt-3">
@@ -1972,6 +1989,10 @@
     isEditMode = !!editVisitId;
 
     function goBackToAnc() {
+      if (urlParams.get('from') === 'hrt') {
+        window.location.href = 'high-risk-tracking.html';
+        return;
+      }
       if (patientId) {
         window.location.href = 'antenatal-care.html?patient=' + encodeURIComponent(patientId);
       } else {
@@ -3819,12 +3840,33 @@
     function toggleHighRiskDetails() {
       const highRisk = document.querySelector('input[name="highRisk"]:checked');
       const highRiskDetails = document.getElementById('highRiskDetails');
+      const error = document.getElementById('highRiskFactorsError');
       
       if (highRisk && highRisk.value === 'yes') {
         highRiskDetails.style.display = 'block';
       } else {
         highRiskDetails.style.display = 'none';
+        document.querySelectorAll('input[name="riskFactors"]').forEach(cb => {
+          cb.checked = false;
+          cb.removeAttribute('aria-invalid');
+        });
+        if (error) error.classList.add('d-none');
       }
+    }
+
+    function validateHighRiskFactors() {
+      const isHighRisk = document.querySelector('input[name="highRisk"]:checked')?.value === 'yes';
+      const factors = Array.from(document.querySelectorAll('input[name="riskFactors"]'));
+      const hasSelectedFactor = factors.some(cb => cb.checked);
+      const error = document.getElementById('highRiskFactorsError');
+      const valid = !isHighRisk || hasSelectedFactor;
+
+      factors.forEach(cb => {
+        if (valid) cb.removeAttribute('aria-invalid');
+        else cb.setAttribute('aria-invalid', 'true');
+      });
+      if (error) error.classList.toggle('d-none', valid);
+      return valid;
     }
 
     function toggleGBVDetails() {
@@ -3886,6 +3928,9 @@
       // Add event listeners to high risk radios
       document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
         radio.addEventListener('change', toggleHighRiskDetails);
+      });
+      document.querySelectorAll('input[name="riskFactors"]').forEach(checkbox => {
+        checkbox.addEventListener('change', validateHighRiskFactors);
       });
 
       document.querySelectorAll('input[name="pastHistoryStatus"]').forEach(radio => {
@@ -4027,6 +4072,15 @@
         const currentVisitNumber = parseInt(getValue('visitNumber'), 10) || visitCount || 1;
         const lmpStatusForSave = document.querySelector('input[name="lmpStatus"]:checked')?.value || 'known';
         const langMm = (typeof currentLanguage !== 'undefined' ? currentLanguage : localStorage.getItem('appLanguage')) === 'mm';
+
+        if (!validateHighRiskFactors()) {
+          alert(langMm
+            ? 'အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင်ဟု ရွေးထားပါက အန္တရာယ်ဖြစ်နိုင်ခြေ အနည်းဆုံးတစ်ခု ရွေးပါ။'
+            : 'Select at least one risk factor when High Risk Pregnancy is Yes.');
+          const riskDetails = document.getElementById('highRiskDetails');
+          if (riskDetails) riskDetails.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
 
         // LMP known → date required; LMP unknown → GA required (so EDD can be calculated)
         if (lmpStatusForSave === 'known') {
@@ -4312,7 +4366,9 @@
             const checked = document.querySelector('input[name="highRisk"]:checked');
             return checked ? checked.value : 'no';
           })(),
-          risk_factors: Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value),
+          risk_factors: document.querySelector('input[name="highRisk"]:checked')?.value === 'yes'
+            ? Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value)
+            : [],
           risk_notes: getValue('riskNotes') || null,
           
           // Additional fields

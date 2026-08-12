@@ -438,6 +438,33 @@
     
     // Language switching
     let currentLanguage = localStorage.getItem('appLanguage') || 'mm';
+    const requestedPatientId = new URLSearchParams(window.location.search).get('patient');
+
+    function getActivePatientId() {
+      return requestedPatientId || sessionStorage.getItem('selectedPatientId') || '';
+    }
+
+    async function syncPatientSessionFromUrl() {
+      if (!requestedPatientId) return;
+      const storedId = sessionStorage.getItem('selectedPatientId');
+      const storedData = sessionStorage.getItem('selectedPatientData');
+      if (storedId === requestedPatientId && storedData) return;
+
+      try {
+        const patientDoc = await firebase.firestore()
+          .collection('patients')
+          .doc(requestedPatientId)
+          .get();
+        if (!patientDoc.exists) return;
+        sessionStorage.setItem('selectedPatientId', requestedPatientId);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify({
+          ...(patientDoc.data() || {}),
+          id: requestedPatientId
+        }));
+      } catch (error) {
+        console.warn('Could not select patient from ANC URL:', error);
+      }
+    }
 
     // Language switching function
     function switchLanguage(lang) {
@@ -472,6 +499,7 @@
         window.location.href = "login.html";
       } else {
         currentUser = user;
+        await syncPatientSessionFromUrl();
         
         // Check patient session
         const patientSession = initializePatientSession(true);
@@ -503,8 +531,7 @@
     }
 
     function startNewAncVisit() {
-      // Get selected patient from session
-      const patientId = sessionStorage.getItem('selectedPatientId');
+      const patientId = getActivePatientId();
       
       if (!patientId) {
         alert('No patient selected. Please select a patient first.');
@@ -517,8 +544,7 @@
     }
 
     function generateAntenatalReport() {
-      // Get selected patient from session
-      const patientId = sessionStorage.getItem('selectedPatientId');
+      const patientId = getActivePatientId();
       
       if (!patientId) {
         alert('No patient selected. Please select a patient first.');
@@ -536,7 +562,7 @@
     }
 
     function editAncVisits() {
-      const patientId = sessionStorage.getItem('selectedPatientId');
+      const patientId = getActivePatientId();
       if (!patientId) {
         alert('Please select a patient first.');
         window.location.href = 'list.html';
