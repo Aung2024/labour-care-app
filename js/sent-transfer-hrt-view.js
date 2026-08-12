@@ -355,19 +355,19 @@
     return formatPregnancyCell(row.patient || {}, row.latestAnc);
   }
 
-  function reportLinksHtml(row) {
+  function overallReportPatientId(row) {
     var p = row.patient || {};
-    var patientId = p.id || '';
-    if (!patientId) return '';
-    if (!row.isBaby) return '';
-    var motherId = p.mother_patient_id || (row.mother && row.mother.id) || '';
+    if (!row.isBaby) return p.id || '';
+    return p.mother_patient_id || (row.mother && row.mother.id) || '';
+  }
+
+  function reportLinksHtml(row) {
+    var reportPatientId = overallReportPatientId(row);
+    if (!reportPatientId) return '';
+    var reportLabel = row.isBaby ? 'Mother overall report' : 'Overall report';
     var html = '<div class="hrt-report-actions" onclick="event.stopPropagation();">';
-    if (motherId) {
-      html += '<button type="button" class="hrt-report-btn" onclick="SentTransferHrtView.openMotherReport(\'' +
-        escapeHtml(motherId) + '\')"><i class="fas fa-user-injured"></i> Mother report</button>';
-    }
-    html += '<button type="button" class="hrt-report-btn hrt-report-btn-primary" onclick="SentTransferHrtView.openNewbornReport(\'' +
-      escapeHtml(patientId) + '\')"><i class="fas fa-baby"></i> Newborn report</button>';
+    html += '<button type="button" class="hrt-report-btn hrt-report-btn-primary" onclick="SentTransferHrtView.openOverallReport(\'' +
+      escapeHtml(reportPatientId) + '\')"><i class="fas fa-file-medical"></i> ' + reportLabel + '</button>';
     html += '</div>';
     return html;
   }
@@ -430,9 +430,12 @@
     global.location.href = 'overall-patient-report.html?patient=' + encodeURIComponent(patientId);
   }
 
-  function openReport(patientId, isBaby) {
-    if (isBaby) openNewbornReport(patientId);
-    else openAncReport(patientId);
+  function openOverallReport(patientId) {
+    global.location.href = 'overall-patient-report.html?patient=' + encodeURIComponent(patientId);
+  }
+
+  function openReport(patientId) {
+    openOverallReport(patientId);
   }
 
   var MAX_TRANSFER_ROWS = 40;
@@ -654,7 +657,6 @@
 
     rows.forEach(function (r) {
       var p = r.patient || {};
-      var patientId = p.id || '';
       var isBaby = !!r.isBaby;
       var patientName = escapeHtml(p.name || p.patientName || '\u2014');
       var ageText = escapeHtml(formatPatientAge(p));
@@ -666,10 +668,13 @@
       var detailsLabel = isBaby ? 'Baby' : 'Pregnancy';
       var visitsLabel = isBaby ? 'Newborn visits' : 'ANC visits';
       var reportsHtml = reportLinksHtml(r);
-      var openFn = "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "', " + (isBaby ? 'true' : 'false') + ")";
+      var reportPatientId = overallReportPatientId(r);
+      var openFn = reportPatientId
+        ? "SentTransferHrtView.openReport('" + escapeHtml(reportPatientId) + "')"
+        : '';
 
       var trEl = document.createElement('tr');
-      trEl.setAttribute('onclick', openFn);
+      if (openFn) trEl.setAttribute('onclick', openFn);
       trEl.innerHTML =
         '<td><div class="hrt-patient-main">' + patientName +
           (isBaby ? ' <span class="hrt-baby-tag">Baby</span>' : '') +
@@ -687,7 +692,7 @@
 
       var card = document.createElement('div');
       card.className = 'hrt-mobile-card';
-      card.setAttribute('onclick', openFn);
+      if (openFn) card.setAttribute('onclick', openFn);
       card.innerHTML =
         '<div class="hrt-mobile-top">' +
           '<div><div class="hrt-mobile-name">' + patientName +
@@ -774,6 +779,7 @@
   global.SentTransferHrtView = {
     loadAndRender: loadAndRender,
     openReport: openReport,
+    openOverallReport: openOverallReport,
     openAncReport: openAncReport,
     openNewbornReport: openNewbornReport,
     openMotherReport: openMotherReport
