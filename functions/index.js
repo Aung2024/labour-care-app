@@ -1,5 +1,6 @@
-const functions = require('firebase-functions');
+const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 
 admin.initializeApp();
 
@@ -143,9 +144,9 @@ async function applyAdminPasswordReset(userId, newPassword, adminUid) {
 
   await userRef.set({
     admin_password_reference: newPassword,
-    admin_password_set_at: admin.firestore.FieldValue.serverTimestamp(),
+    admin_password_set_at: FieldValue.serverTimestamp(),
     admin_password_set_by: adminUid,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
     updatedBy: adminUid
   }, { merge: true });
 
@@ -153,7 +154,7 @@ async function applyAdminPasswordReset(userId, newPassword, adminUid) {
     await admin.firestore().collection('account_lockouts').doc(email).set({
       attempts: 0,
       lockoutUntil: null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
   }
 
@@ -216,8 +217,8 @@ async function processPasswordResetRequest(docSnap) {
     await requestRef.set({
       status: 'failed',
       error: 'Missing userId, newPassword, or requestedBy.',
-      completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      newPassword: admin.firestore.FieldValue.delete()
+      completedAt: FieldValue.serverTimestamp(),
+      newPassword: FieldValue.delete()
     }, { merge: true });
     return;
   }
@@ -227,8 +228,8 @@ async function processPasswordResetRequest(docSnap) {
     await requestRef.set({
       status: 'failed',
       error: 'Only Super Admin can reset passwords.',
-      completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      newPassword: admin.firestore.FieldValue.delete()
+      completedAt: FieldValue.serverTimestamp(),
+      newPassword: FieldValue.delete()
     }, { merge: true });
     return;
   }
@@ -236,8 +237,8 @@ async function processPasswordResetRequest(docSnap) {
   await applyAdminPasswordReset(userId, newPassword, requestedBy);
   await requestRef.set({
     status: 'completed',
-    completedAt: admin.firestore.FieldValue.serverTimestamp(),
-    newPassword: admin.firestore.FieldValue.delete()
+    completedAt: FieldValue.serverTimestamp(),
+    newPassword: FieldValue.delete()
   }, { merge: true });
 }
 
@@ -265,10 +266,21 @@ exports.processPendingPasswordResets = functions
         await docSnap.ref.set({
           status: 'failed',
           error: error.message || 'Failed to update password.',
-          completedAt: admin.firestore.FieldValue.serverTimestamp(),
-          newPassword: admin.firestore.FieldValue.delete()
+          completedAt: FieldValue.serverTimestamp(),
+          newPassword: FieldValue.delete()
         }, { merge: true });
       }
     }
     return null;
   });
+
+// Version 2 leaderboard backend. Existing admin functions above remain unchanged.
+const leaderboardFunctions = require('./src/leaderboard/functions');
+exports.leaderboardPatientWritten = leaderboardFunctions.patientWritten;
+exports.leaderboardPatientActivityWritten = leaderboardFunctions.patientActivityWritten;
+exports.leaderboardProviderWritten = leaderboardFunctions.providerWritten;
+exports.startLeaderboardRebuild = leaderboardFunctions.startLeaderboardRebuild;
+exports.leaderboardNightlyReconciliation =
+  leaderboardFunctions.leaderboardNightlyReconciliation;
+exports.leaderboardReconciliationWorker =
+  leaderboardFunctions.leaderboardReconciliationWorker;

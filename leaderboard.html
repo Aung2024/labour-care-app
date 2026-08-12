@@ -445,6 +445,7 @@
             Midwife Rankings
           </h2>
           <div id="leaderboardPeriodLabel" class="text-muted small"></div>
+          <div id="leaderboardFreshness" class="text-muted small" aria-live="polite"></div>
         </div>
         <button class="score-info-btn" onclick="openScoreInfoModal()">
           <i class="fas fa-info-circle"></i>
@@ -466,6 +467,12 @@
         <button type="button" class="btn btn-primary leaderboard-apply-btn" onclick="applyLeaderboardFilters()">
           <i class="fas fa-filter me-1"></i>Apply filters
         </button>
+      </div>
+      <div id="leaderboardAdminTools" class="text-end mb-3" style="display: none;">
+        <button type="button" id="leaderboardRebuildBtn" class="btn btn-outline-secondary btn-sm" onclick="startLeaderboardV2Rebuild()">
+          <i class="fas fa-rotate me-1"></i>Build last 12 months
+        </button>
+        <div class="text-muted small mt-1">Super Admin only. The rebuild continues safely in background batches.</div>
       </div>
 
       <!-- Loading State -->
@@ -664,9 +671,34 @@
     let currentUser = null;
     let userRole = null;
     let userRegion = null;
+    let userTownship = null;
     let allMidwives = [];
     let leaderboardMonth = '';
     let leaderboardProviderLevel = '';
+    let unsubscribeLeaderboardV2 = null;
+
+    function isLeaderboardV2Enabled() {
+      if (typeof firebaseConfig !== 'undefined' &&
+          firebaseConfig.features &&
+          firebaseConfig.features.leaderboardV2 === false) {
+        return false;
+      }
+      return localStorage.getItem('leaderboardV2Mode') !== 'legacy';
+    }
+
+    function useLegacyLeaderboard() {
+      localStorage.setItem('leaderboardV2Mode', 'legacy');
+      window.location.reload();
+    }
+
+    function escapeLeaderboardHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
 
     const ACTIVITY_DATE_FIELDS = [
       'visitDate', 'testDate', 'registration_date', 'referralTime',
@@ -803,6 +835,9 @@
           const data = userDoc.data();
           userRole = data.role;
           userRegion = (data.region || '').trim() || null;
+          userTownship = (data.township || '').trim() || null;
+          const adminTools = document.getElementById('leaderboardAdminTools');
+          if (adminTools) adminTools.style.display = data.role === 'Super Admin' ? '' : 'none';
           console.log('Leaderboard user:', { role: userRole, region: userRegion, isRegionalOfficer: isRegionalOfficer() });
         }
       } catch (error) {
@@ -810,7 +845,196 @@
       }
     }
 
+    async function startLeaderboardV2Rebuild() {
+      if (userRole !== 'Super Admin' || !currentUser) return;
+      if (!window.confirm('Build leaderboard summaries for the current month and previous 11 months?')) return;
+      const button = document.getElementById('leaderboardRebuildBtn');
+      const original = button ? button.innerHTML : '';
+      if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Starting rebuild...';
+      }
+      try {
+        const token = await currentUser.getIdToken();
+        const response = await fetch(
+          'https://us-central1-mnch-1cbda.cloudfunctions.net/startLeaderboardRebuild',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ data: { months: 12 } })
+          }
+        );
+        const payload = await response.json();
+        if (!response.ok || payload.error) {
+          throw new Error(payload.error && payload.error.message || 'Could not start rebuild.');
+        }
+        window.alert('Leaderboard rebuild started. It will continue in background batches.');
+      } catch (error) {
+        window.alert('Could not start leaderboard rebuild: ' + (error.message || error));
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.innerHTML = original;
+        }
+      }
+    }
+
+    function leaderboardCacheKey() {
+      return [
+        'leaderboardV2',
+        currentUser && currentUser.uid || 'unknown',
+        leaderboardMonth,
+        leaderboardProviderLevel || 'all'
+      ].join(':');
+    }
+
+    function mapLeaderboardSummary(doc) {
+      const data = doc.data ? (doc.data() || {}) : (doc || {});
+      return {
+        id: data.providerId || doc.id || '',
+        name: data.providerName || 'Unknown',
+        township: data.township || 'Unknown',
+        region: data.region || '',
+        providerType: data.providerType || 'midwife',
+        score: Number(data.score || 0),
+        patientCount: Number(data.activePatientCount || 0),
+        categories: data.categories || {},
+        calculatedAt: data.calculatedAt || null,
+        reconciliationStatus: data.reconciliationStatus || 'live',
+        scoreVersion: data.scoreVersion || ''
+      };
+    }
+
+    function leaderboardTimestampMs(value) {
+      if (!value) return null;
+      if (typeof value.toDate === 'function') return value.toDate().getTime();
+      if (typeof value.seconds === 'number') return value.seconds * 1000;
+      const parsed = new Date(value).getTime();
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function renderLeaderboardFreshness(rows, source) {
+      const element = document.getElementById('leaderboardFreshness');
+      if (!element) return;
+      const newest = (rows || []).reduce(function (latest, row) {
+        return Math.max(latest, leaderboardTimestampMs(row.calculatedAt) || 0);
+      }, 0);
+      const sourceLabel = source === 'cache' ? 'Cached result' : 'Backend summary';
+      element.textContent = newest
+        ? sourceLabel + ' · Updated ' + new Date(newest).toLocaleString()
+        : sourceLabel + ' · Waiting for summary calculation';
+    }
+
+    function cacheLeaderboardRows(rows) {
+      try {
+        localStorage.setItem(leaderboardCacheKey(), JSON.stringify({
+          cachedAt: Date.now(),
+          rows: rows.map(function (row) {
+            return Object.assign({}, row, {
+              calculatedAt: leaderboardTimestampMs(row.calculatedAt)
+            });
+          })
+        }));
+      } catch (error) {
+        console.warn('Could not cache leaderboard summary:', error);
+      }
+    }
+
+    function renderCachedLeaderboard() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(leaderboardCacheKey()) || 'null');
+        if (!parsed || !Array.isArray(parsed.rows)) return false;
+        allMidwives = parsed.rows;
+        allMidwives.sort((a, b) => b.score - a.score);
+        displayLeaderboard();
+        renderLeaderboardFreshness(allMidwives, 'cache');
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function leaderboardSummaryQuery() {
+      let query = firebase.firestore()
+        .collection('leaderboard_v2_months')
+        .doc(leaderboardMonth)
+        .collection('providers');
+      const role = String(userRole || '').toLowerCase().trim();
+      if (role === 'regional officer') {
+        if (!userRegion) throw new Error('No region is set in your user profile.');
+        query = query.where('region', '==', userRegion);
+      } else if (role === 'tmo' || role === 'midwife') {
+        if (!userTownship) throw new Error('No township is set in your user profile.');
+        query = query.where('township', '==', userTownship);
+      }
+      if (leaderboardProviderLevel) {
+        query = query.where('providerType', '==', leaderboardProviderLevel);
+      }
+      return query;
+    }
+
+    async function loadLeaderboardV2() {
+      if (unsubscribeLeaderboardV2) {
+        unsubscribeLeaderboardV2();
+        unsubscribeLeaderboardV2 = null;
+      }
+      document.getElementById('loadingContainer').style.display = 'block';
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('leaderboardContent').style.display = 'none';
+      const providerFilterLabel = leaderboardProviderLevel
+        ? providerLevelLabel(leaderboardProviderLevel)
+        : 'All provider levels';
+      document.getElementById('leaderboardPeriodLabel').textContent =
+        selectedMonthLabel() + ' · ' + providerFilterLabel;
+      renderCachedLeaderboard();
+
+      try {
+        const query = leaderboardSummaryQuery();
+        unsubscribeLeaderboardV2 = query.onSnapshot(function (snapshot) {
+          allMidwives = snapshot.docs.map(mapLeaderboardSummary);
+          allMidwives.sort((a, b) => b.score - a.score);
+          cacheLeaderboardRows(allMidwives);
+          renderLeaderboardFreshness(allMidwives, 'backend');
+          if (!allMidwives.length) {
+            document.getElementById('loadingContainer').style.display = 'none';
+            document.getElementById('leaderboardContent').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('emptyState').innerHTML =
+              '<i class="fas fa-clock"></i><p>No calculated leaderboard summary is available for this month yet.</p>';
+            return;
+          }
+          document.getElementById('emptyState').style.display = 'none';
+          displayLeaderboard();
+        }, function (error) {
+          console.error('Leaderboard V2 subscription failed:', error);
+          document.getElementById('loadingContainer').style.display = 'none';
+          if (!allMidwives.length) {
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('emptyState').innerHTML =
+              '<i class="fas fa-exclamation-triangle"></i>' +
+              '<p>Backend leaderboard is unavailable.</p>' +
+              '<p class="text-muted small">' + escapeLeaderboardHtml(error.message || error) + '</p>' +
+              '<button type="button" class="btn btn-outline-secondary" onclick="useLegacyLeaderboard()">Use temporary legacy mode</button>';
+          }
+        });
+      } catch (error) {
+        document.getElementById('loadingContainer').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('emptyState').innerHTML =
+          '<i class="fas fa-exclamation-triangle"></i><p>' +
+          escapeLeaderboardHtml(error.message || error) + '</p>';
+      }
+    }
+
     async function loadLeaderboard() {
+      if (isLeaderboardV2Enabled()) return loadLeaderboardV2();
+      return loadLeaderboardLegacy();
+    }
+
+    async function loadLeaderboardLegacy() {
       try {
         document.getElementById('loadingContainer').style.display = 'block';
         document.getElementById('emptyState').style.display = 'none';
@@ -1037,22 +1261,30 @@
 
         const initials = midwife.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'MW';
         const providerLabel = providerLevelLabel(midwife.providerType);
+        const safeInitials = escapeLeaderboardHtml(initials);
+        const safeName = escapeLeaderboardHtml(midwife.name);
+        const safeProviderLabel = escapeLeaderboardHtml(providerLabel);
+        const safeTownship = escapeLeaderboardHtml(midwife.township);
 
         row.innerHTML = `
           ${rankCell}
           <td>
             <div class="midwife-info">
-              <div class="midwife-avatar">${initials}</div>
+              <div class="midwife-avatar">${safeInitials}</div>
               <div class="midwife-details">
-                <div class="midwife-name" onclick="showMidwifeScoreBreakdown('${midwife.id}', '${midwife.name.replace(/'/g, "\\'")}', '${midwife.township.replace(/'/g, "\\'")}')" title="Click to view score breakdown">${midwife.name}</div>
+                <button type="button" class="midwife-name btn btn-link p-0 text-start" title="Click to view score breakdown">${safeName}</button>
               </div>
             </div>
           </td>
-          <td class="text-center"><span class="provider-level-badge">${providerLabel}</span></td>
-          <td class="text-center">${midwife.township}</td>
+          <td class="text-center"><span class="provider-level-badge">${safeProviderLabel}</span></td>
+          <td class="text-center">${safeTownship}</td>
           <td class="text-center">${midwife.patientCount || 0}</td>
           <td class="score-cell">${midwife.score}</td>
         `;
+
+        row.querySelector('.midwife-name').addEventListener('click', function () {
+          showMidwifeScoreBreakdown(midwife.id, midwife.name, midwife.township);
+        });
 
         tbody.appendChild(row);
       });
@@ -1092,6 +1324,31 @@
       contentDiv.innerHTML = '';
       
       try {
+        if (isLeaderboardV2Enabled()) {
+          const summary = allMidwives.find(function (row) { return row.id === midwifeId; });
+          if (!summary) throw new Error('Provider summary is not available.');
+          displayScoreBreakdown({
+            totalScore: summary.score,
+            patientCount: summary.patientCount,
+            categoryTotals: Object.assign({
+              registration: 0,
+              completeRegistration: 0,
+              ancVisits: 0,
+              anc4Plus: 0,
+              anc8Plus: 0,
+              completeANC: 0,
+              lcgCompleted: 0,
+              pncVisits: 0,
+              completePNC: 0,
+              labTests: 0,
+              immediateNewbornCare: 0,
+              newbornCare: 0,
+              transferRecords: 0
+            }, summary.categories || {}),
+            patients: []
+          }, midwifeName, township);
+          return;
+        }
         const breakdown = await calculateDetailedScoreBreakdown(midwifeId);
         displayScoreBreakdown(breakdown, midwifeName, township);
       } catch (error) {
@@ -1354,14 +1611,16 @@
 
     function displayScoreBreakdown(breakdown, midwifeName, township) {
       const contentDiv = document.getElementById('midwifeScoreContent');
+      const safeMidwifeName = escapeLeaderboardHtml(midwifeName);
+      const safeTownship = escapeLeaderboardHtml(township);
       
       let html = `
         <div style="margin-bottom: 2rem;">
           <div style="background: linear-gradient(135deg, #f0fdf4, #e0f2fe); padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
               <div>
-                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">${midwifeName}</h4>
-                <p style="margin: 0; color: #6b7280;">Township: ${township}</p>
+                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">${safeMidwifeName}</h4>
+                <p style="margin: 0; color: #6b7280;">Township: ${safeTownship}</p>
               </div>
               <div style="text-align: right;">
                 <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary-color);">${breakdown.totalScore}</div>
@@ -1505,6 +1764,16 @@
             <tbody>
       `;
 
+      if (!breakdown.patients.length) {
+        html += `
+          <tr>
+            <td colspan="3" style="padding: 1rem; text-align: center; color: #6b7280;">
+              Patient-level identifiers are intentionally excluded from Version 2 summaries.
+            </td>
+          </tr>
+        `;
+      }
+
       breakdown.patients.forEach((patient, index) => {
         const details = [];
         if (patient.details.registration) details.push(`Registration (+${patient.details.registration})`);
@@ -1523,7 +1792,7 @@
         
         html += `
           <tr style="border-bottom: 1px solid #e5e7eb;">
-            <td style="padding: 0.75rem; color: #1f2937; font-weight: 500;">${patient.patientName || 'Unknown'}</td>
+            <td style="padding: 0.75rem; color: #1f2937; font-weight: 500;">${escapeLeaderboardHtml(patient.patientName || 'Unknown')}</td>
             <td style="padding: 0.75rem; text-align: center; font-weight: 600; color: var(--primary-color);">${patient.score}</td>
             <td style="padding: 0.75rem; color: #6b7280; font-size: 0.875rem;">${details.length > 0 ? details.join(', ') : 'No points'}</td>
           </tr>

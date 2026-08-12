@@ -1,6 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function canReadLeaderboardProvider(providerId) {
+      return currentUserExists()
+        && (
+          currentUserData().role == "Super Admin"
+          || request.auth.uid == providerId
+          || (
+            currentUserData().role == "Regional Officer"
+            && currentUserData().region == resource.data.region
+          )
+          || (
+            currentUserData().role in ["TMO", "Midwife", "midwife"]
+            && currentUserData().township == resource.data.township
+          )
+        );
+    }
+
     // Users collection
     match /users/{userId} {
       // Allow users to read/write their own data
@@ -251,6 +280,26 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
       allow update, delete: if false;
+    }
+
+    // Version 2 derived leaderboard summaries. Cloud Functions use Admin SDK
+    // and bypass these rules; browser clients can never write derived data.
+    match /leaderboard_v2_months/{month} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /providers/{providerId} {
+        allow read: if canReadLeaderboardProvider(providerId);
+        allow write: if false;
+      }
+    }
+
+    match /leaderboard_v2_contributions/{contributionId} {
+      allow read, write: if false;
+    }
+
+    match /leaderboard_v2_jobs/{jobId} {
+      allow read, write: if false;
     }
   }
 }
