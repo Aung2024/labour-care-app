@@ -1292,6 +1292,7 @@
     let antenatalVisits = [];
     let labTests = [];
     let accountNamesById = {};
+    let actualBirthDate = null;
     let reportDb;
     let reportLang = localStorage.getItem('appLanguage') || 'mm';
 
@@ -1341,7 +1342,12 @@
       eddNotCalc: { en: 'Not calculated', mm: 'မတွက်ရသေး' },
       eddManualNote: { en: '(Manual EDD — LMP not recorded)', mm: '(ခန့်မှန်း EDD — LMP မသိသေး)' },
       eddFromLmp: { en: '(From LMP)', mm: '(LMP မှ တွက်)' },
+      actualBirthLabel: { en: 'Actual birth', mm: 'အမှန်တကယ် မွေးဖွားရက်' },
+      bornEarly: { en: 'days before EDD', mm: 'ရက် စောမွေး' },
+      bornLate: { en: 'days after EDD', mm: 'ရက် နောက်ကျမွေး' },
+      bornOnEdd: { en: 'born on EDD', mm: 'EDD ရက်တွင် မွေးဖွား' },
       gaManualSuffix: { en: ' (manual GA)', mm: ' (ခန့်မှန်း ကိုယ်ဝန်ဆောင်ကာလ)' },
+      gaAtBirthSuffix: { en: ' (at birth)', mm: ' (မွေးဖွားချိန်)' },
       postTerm: { en: ' (Post-term)', mm: ' (ကိုယ်ဝန်ရင့်)' },
       postTermLong: {
         en: ' (Post-term - Woman may have already delivered)',
@@ -1459,6 +1465,7 @@
         }
         
         currentPatient = patientDoc.data();
+        actualBirthDate = await resolveActualBirthDate(currentPatient);
         
         // Load antenatal visits - try visitDate first, fallback to timestamp
         let visitsSnapshot;
@@ -1519,6 +1526,101 @@
         alert("Error loading report data: " + error.message);
         window.close();
       }
+    }
+
+    function parseClinicalDate(value) {
+      if (!value) return null;
+      if (value.toDate && typeof value.toDate === 'function') {
+        value = value.toDate();
+      } else if (typeof value.seconds === 'number') {
+        value = new Date(value.seconds * 1000);
+      }
+      if (value instanceof Date) {
+        if (isNaN(value.getTime())) return null;
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+      }
+      const raw = String(value).trim();
+      const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (ymd) {
+        return new Date(
+          parseInt(ymd[1], 10),
+          parseInt(ymd[2], 10) - 1,
+          parseInt(ymd[3], 10)
+        );
+      }
+      const parsed = new Date(raw);
+      if (isNaN(parsed.getTime())) return null;
+      return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    }
+
+    function birthDateFromRecord(data, allowDateOfBirth) {
+      data = data || {};
+      const direct = data.deliveredDateTime || data.deliveryDate || data.actualBirthDate ||
+        data.actual_birth_date || data.birth_time || data.birthTime ||
+        (allowDateOfBirth ? data.date_of_birth : null);
+      const directDate = parseClinicalDate(direct);
+      if (directDate) return directDate;
+
+      const details = data.deliveryDetails || data.labourDetails || data;
+      const babies = Array.isArray(details.babies) ? details.babies : [];
+      for (const baby of babies) {
+        const babyDate = parseClinicalDate(
+          baby && (baby.birthTime || baby.birth_time || baby.date_of_birth)
+        );
+        if (babyDate) return babyDate;
+      }
+      return null;
+    }
+
+    async function resolveActualBirthDate(patient) {
+      const patientDate = birthDateFromRecord(patient, false);
+      if (patientDate) return patientDate;
+
+      const patientRef = reportDb.collection('patients').doc(patientId);
+      const babyIds = Array.isArray(patient && patient.baby_patient_ids)
+        ? patient.baby_patient_ids.filter(Boolean).slice(0, 5)
+        : [];
+
+      try {
+        const results = await Promise.all([
+          Promise.all(babyIds.map(id =>
+            reportDb.collection('patients').doc(id).get().catch(() => null)
+          )),
+          patientRef.collection('records').doc('deliveryNotes').get().catch(() => null),
+          patientRef.collection('newborn_care').limit(4).get().catch(() => null),
+          patientRef.collection('postpartum_visits').limit(4).get().catch(() => null)
+        ]);
+
+        for (const babyDoc of results[0]) {
+          if (babyDoc && babyDoc.exists) {
+            const date = birthDateFromRecord(babyDoc.data(), true);
+            if (date) return date;
+          }
+        }
+
+        if (results[1] && results[1].exists) {
+          const date = birthDateFromRecord(results[1].data());
+          if (date) return date;
+        }
+
+        if (results[2]) {
+          for (const doc of results[2].docs) {
+            const date = birthDateFromRecord(doc.data(), true);
+            if (date) return date;
+          }
+        }
+
+        if (results[3]) {
+          for (const doc of results[3].docs) {
+            const date = birthDateFromRecord(doc.data(), false);
+            if (date) return date;
+          }
+        }
+      } catch (error) {
+        console.warn('Unable to resolve actual birth date for ANC report:', error);
+      }
+
+      return null;
     }
 
     function getVisitTimestamp(visit) {
@@ -1629,6 +1731,42 @@
       return false;
     }
 
+    function formatGestationalAge(totalDays, suffix) {
+      if (!Number.isFinite(totalDays) || totalDays < 0) return t('unknown');
+      const roundedDays = Math.round(totalDays);
+      const weeks = Math.floor(roundedDays / 7);
+      const days = roundedDays % 7;
+      return `${weeks}w ${days}d${suffix || ''}`;
+    }
+
+    function appendActualBirthToEdd(eddValue, eddSourceEl) {
+      if (!actualBirthDate) return;
+
+      let differenceText = '';
+      const eddDate = parseClinicalDate(eddValue);
+      if (eddDate) {
+        const differenceDays = Math.round(
+          (actualBirthDate.getTime() - eddDate.getTime()) / 86400000
+        );
+        if (differenceDays < 0) {
+          differenceText = `${Math.abs(differenceDays)} ${t('bornEarly')}`;
+        } else if (differenceDays > 0) {
+          differenceText = `${differenceDays} ${t('bornLate')}`;
+        } else {
+          differenceText = t('bornOnEdd');
+        }
+      }
+
+      const birthText = `${t('actualBirthLabel')}: ${formatReportDate(actualBirthDate)}` +
+        (differenceText ? ` · ${differenceText}` : '');
+      const existingSource = eddSourceEl ? eddSourceEl.textContent.trim() : '';
+      if (eddSourceEl) {
+        eddSourceEl.textContent = existingSource
+          ? `${existingSource} · ${birthText}`
+          : birthText;
+      }
+    }
+
     const EARLY_ANC_MAX_WEEKS = 14;
     const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
 
@@ -1692,12 +1830,14 @@
       const lmpStatus = latestVisit?.lmpStatus || currentPatient.lmpStatus || '';
       const lmpUnknown = isLMPUnknownForReport(lmpRaw, lmpStatus);
       const eddSourceEl = document.getElementById('patientEDDSource');
+      let reportEdd = null;
 
       if (lmpUnknown) {
         document.getElementById("patientLMP").textContent = t('lmpUnknown');
         const manualEDD = latestVisit?.manualEdd || currentPatient.manualEdd;
         const storedEdd = latestVisit?.edd || currentPatient.edd;
         const eddValue = manualEDD || storedEdd;
+        reportEdd = eddValue;
         if (eddValue) {
           document.getElementById("patientEDD").textContent = formatReportDate(eddValue);
           if (eddSourceEl) eddSourceEl.textContent = t('eddManualNote');
@@ -1707,16 +1847,34 @@
         }
         const manualGA = latestVisit?.manualGestationalAge ?? currentPatient.manualGestationalAge;
         if (manualGA != null && manualGA !== '') {
-          const weeks = Math.floor(parseFloat(manualGA));
-          const days = Math.round((parseFloat(manualGA) - weeks) * 7);
-          document.getElementById("currentGA").textContent = `${weeks}w ${days}d${t('gaManualSuffix')}`;
+          let gaDays = parseFloat(manualGA) * 7;
+          let gaSuffix = t('gaManualSuffix');
+          const latestVisitDate = latestVisit && parseClinicalDate(
+            latestVisit.visitDate || latestVisit.visit_date ||
+            latestVisit.timestamp || latestVisit.createdAt
+          );
+          if (actualBirthDate && latestVisitDate && actualBirthDate >= latestVisitDate) {
+            gaDays += Math.round(
+              (actualBirthDate.getTime() - latestVisitDate.getTime()) / 86400000
+            );
+            gaSuffix += t('gaAtBirthSuffix');
+          }
+          document.getElementById("currentGA").textContent =
+            formatGestationalAge(gaDays, gaSuffix);
         } else {
           document.getElementById("currentGA").textContent = t('unknown');
         }
       } else {
         let lmpDisplay = formatReportDate(lmpRaw) || lmpRaw;
         document.getElementById("patientLMP").textContent = lmpDisplay;
-        const eddFromLmp = latestVisit?.edd || currentPatient.edd;
+        const lmpDate = parseClinicalDate(lmpRaw);
+        let eddFromLmp = latestVisit?.edd || currentPatient.edd;
+        if (!eddFromLmp && lmpDate) {
+          const calculatedEdd = new Date(lmpDate.getTime());
+          calculatedEdd.setDate(calculatedEdd.getDate() + 280);
+          eddFromLmp = calculatedEdd;
+        }
+        reportEdd = eddFromLmp;
         if (eddFromLmp) {
           document.getElementById("patientEDD").textContent = formatReportDate(eddFromLmp);
           if (eddSourceEl) eddSourceEl.textContent = t('eddFromLmp');
@@ -1725,18 +1883,15 @@
           if (eddSourceEl) eddSourceEl.textContent = '';
         }
 
-        let lmpDate;
-        if (lmpRaw.toDate) lmpDate = lmpRaw.toDate();
-        else if (lmpRaw.seconds) lmpDate = new Date(lmpRaw.seconds * 1000);
-        else lmpDate = new Date(lmpRaw);
-
-        if (!isNaN(lmpDate.getTime())) {
-          const today = new Date();
-          const diffTime = today - lmpDate;
-          const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
-          const diffDays = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 7)) / (1000 * 60 * 60 * 24));
-          let currentGAText = `${diffWeeks}w ${diffDays}d`;
-          if (diffWeeks > 42) {
+        if (lmpDate) {
+          const gaEndDate = actualBirthDate || new Date();
+          const diffDays = Math.floor((gaEndDate - lmpDate) / 86400000);
+          const diffWeeks = Math.floor(diffDays / 7);
+          let currentGAText = formatGestationalAge(
+            diffDays,
+            actualBirthDate ? t('gaAtBirthSuffix') : ''
+          );
+          if (!actualBirthDate && diffWeeks > 42) {
             currentGAText += t('postTermLong');
           }
           document.getElementById("currentGA").textContent = currentGAText;
@@ -1745,6 +1900,7 @@
         }
       }
 
+      appendActualBirthToEdd(reportEdd, eddSourceEl);
       populateNextAncDate();
     }
 
