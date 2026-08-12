@@ -2065,15 +2065,7 @@
           document.getElementById('visitNumber').value = visitCount;
           clearFormFields();
           setToday('visitDate');
-          if (currentPatient.lmp) {
-            const lmpInput = document.getElementById('lmp');
-            if (lmpInput) {
-              let lmpDate = currentPatient.lmp;
-              if (lmpDate && typeof lmpDate === 'string') lmpDate = lmpDate.split('T')[0];
-              lmpInput.value = lmpDate || '';
-              calculateGestationalAgeAndEDD();
-            }
-          }
+          applyPatientPregnancyDating(currentPatient);
           updateAncVisitSchedule();
           return;
         }
@@ -2104,22 +2096,9 @@
         // Set visit date to today
         setToday('visitDate');
         
-        // Only load LMP from patient record if available (patient-level data, not visit-specific)
-        if (currentPatient.lmp) {
-          // Set LMP date if available from patient record
-          const lmpInput = document.getElementById('lmp');
-          if (lmpInput && currentPatient.lmp) {
-            // Convert Firestore timestamp to date string if needed
-            let lmpDate = currentPatient.lmp;
-            if (lmpDate && typeof lmpDate.toDate === 'function') {
-              lmpDate = lmpDate.toDate().toISOString().split('T')[0];
-            } else if (lmpDate && typeof lmpDate === 'string') {
-              lmpDate = lmpDate.split('T')[0];
-            }
-            lmpInput.value = lmpDate || '';
-            calculateGestationalAgeAndEDD();
-          }
-        }
+        // Load stable pregnancy dating from the patient record first.
+        // Visit history below fills any missing or older records.
+        applyPatientPregnancyDating(currentPatient);
 
         // Load historical ANC data and compute visit schedule
         await ensureHistoricalAncDataLoaded();
@@ -2417,43 +2396,147 @@
       }
     }
 
+    function isKnownLmpValue(value) {
+      if (!value) return false;
+      const normalized = String(value).trim().toLowerCase();
+      return normalized !== 'unknown' && normalized !== 'not recorded';
+    }
+
+    function visitDateForDating(visit) {
+      return normalizeVisitDateValue(
+        visit && (visit.visitDate || visit.visit_date || visit.timestamp || visit.createdAt)
+      );
+    }
+
+    function manualGaAtVisitFromEdd(eddValue, visitDateValue) {
+      const edd = parseDateOnlyLocal(eddValue);
+      const visit = parseDateOnlyLocal(visitDateValue);
+      if (!edd || !visit) return null;
+      const daysUntilEdd = Math.round((edd - visit) / 86400000);
+      const gestationalDays = 280 - daysUntilEdd;
+      if (gestationalDays < 0) return null;
+      return Math.min(42, Math.round((gestationalDays / 7) * 10) / 10);
+    }
+
+    function applyPatientPregnancyDating(patient) {
+      if (!patient) return;
+      const lmpInput = document.getElementById('lmp');
+      const visitDate = document.getElementById('visitDate')?.value || '';
+
+      if (isKnownLmpValue(patient.lmp)) {
+        const knownRadio = document.getElementById('lmpKnown');
+        if (knownRadio) knownRadio.checked = true;
+        toggleLMPFields();
+        if (lmpInput) lmpInput.value = normalizeVisitDateValue(patient.lmp) || '';
+        calculateGestationalAgeAndEDD();
+        return;
+      }
+
+      const stableEdd = patient.manualEdd || patient.manual_edd || patient.edd || '';
+      if (patient.lmpStatus === 'unknown' || stableEdd) {
+        const unknownRadio = document.getElementById('lmpUnknown');
+        if (unknownRadio) unknownRadio.checked = true;
+        toggleLMPFields();
+
+        const manualGa = manualGaAtVisitFromEdd(stableEdd, visitDate);
+        const manualGaInput = document.getElementById('manualGestationalAge');
+        const manualEddInput = document.getElementById('manualEdd');
+        if (manualGaInput && manualGa != null) manualGaInput.value = String(manualGa);
+        if (manualEddInput && stableEdd) {
+          manualEddInput.value = normalizeVisitDateValue(stableEdd) || '';
+        }
+        refreshLmpEddLongDisplays();
+      }
+    }
+
     async function loadLmpFromFirstVisitIfNeeded() {
       const lmpInput = document.getElementById('lmp');
       if (lmpInput?.value || !patientId || !navigator.onLine) return;
       try {
-        const firstVisitSnapshot = await firebase.firestore()
+        const visitsRef = firebase.firestore()
           .collection('patients')
           .doc(patientId)
-          .collection('antenatal_visits')
-          .orderBy('visitDate', 'asc')
-          .limit(1)
-          .get();
-        if (firstVisitSnapshot.empty) return;
-        const firstVisit = firstVisitSnapshot.docs[0].data();
-        if (firstVisit.lmp) {
-          let lmpDate = firstVisit.lmp;
+          .collection('antenatal_visits');
+        let visitsSnapshot;
+        try {
+          visitsSnapshot = await visitsRef.orderBy('visitDate', 'asc').limit(50).get();
+        } catch (orderError) {
+          visitsSnapshot = await visitsRef.limit(50).get();
+        }
+        if (visitsSnapshot.empty) return;
+
+        const visits = visitsSnapshot.docs.map(function (doc) {
+          return doc.data() || {};
+        }).sort(function (a, b) {
+          const aDate = parseDateOnlyLocal(visitDateForDating(a));
+          const bDate = parseDateOnlyLocal(visitDateForDating(b));
+          return (aDate ? aDate.getTime() : 0) - (bDate ? bDate.getTime() : 0);
+        });
+
+        // LMP is pregnancy-level dating data. Recover a real LMP from any
+        // earlier visit even if a later record accidentally omitted it.
+        const knownLmpVisit = visits.find(function (visit) {
+          return isKnownLmpValue(visit.lmp);
+        });
+
+        if (knownLmpVisit) {
+          const knownRadio = document.getElementById('lmpKnown');
+          if (knownRadio) knownRadio.checked = true;
+          toggleLMPFields();
+
+          let lmpDate = knownLmpVisit.lmp;
           if (lmpDate && typeof lmpDate.toDate === 'function') {
             lmpDate = lmpDate.toDate().toISOString().split('T')[0];
           } else if (typeof lmpDate === 'string') {
             lmpDate = lmpDate.split('T')[0];
           }
           lmpInput.value = lmpDate || '';
+          calculateGestationalAgeAndEDD();
+          return;
         }
-        if (firstVisit.lmpStatus) {
-          const lmpRadio = document.getElementById(firstVisit.lmpStatus === 'known' ? 'lmpKnown' : 'lmpUnknown');
-          if (lmpRadio) {
-            lmpRadio.checked = true;
-            toggleLMPFields();
+
+        // A genuinely unknown LMP must remain unknown. Carry the stable EDD
+        // forward and derive GA for this visit date so an old manual GA is not reused.
+        const datingVisit = visits.slice().reverse().find(function (visit) {
+          return visit.lmpStatus === 'unknown' || visit.manualEdd ||
+            visit.edd || visit.manualGestationalAge != null;
+        });
+        if (!datingVisit) return;
+
+        const unknownRadio = document.getElementById('lmpUnknown');
+        if (unknownRadio) unknownRadio.checked = true;
+        toggleLMPFields();
+
+        const stableEdd = datingVisit.manualEdd || datingVisit.edd ||
+          currentPatient?.manualEdd || currentPatient?.edd || '';
+        const currentVisitDate = document.getElementById('visitDate')?.value || '';
+        let currentManualGa = stableEdd
+          ? manualGaAtVisitFromEdd(stableEdd, currentVisitDate)
+          : null;
+
+        if (currentManualGa == null && datingVisit.manualGestationalAge != null) {
+          const sourceDate = parseDateOnlyLocal(visitDateForDating(datingVisit));
+          const targetDate = parseDateOnlyLocal(currentVisitDate);
+          const sourceGa = parseFloat(datingVisit.manualGestationalAge);
+          if (!isNaN(sourceGa) && sourceDate && targetDate) {
+            const elapsedDays = Math.max(0, Math.round((targetDate - sourceDate) / 86400000));
+            currentManualGa = Math.min(42, Math.round((sourceGa + elapsedDays / 7) * 10) / 10);
           }
         }
-        if (firstVisit.edd && !document.getElementById('edd')?.value) {
-          document.getElementById('edd').value = normalizeVisitDateValue(firstVisit.edd) || '';
+
+        const manualGaInput = document.getElementById('manualGestationalAge');
+        const manualEddInput = document.getElementById('manualEdd');
+        if (manualGaInput && currentManualGa != null) {
+          manualGaInput.value = String(currentManualGa);
         }
-        if (firstVisit.manualGestationalAge && !document.getElementById('manualGestationalAge')?.value) {
-          document.getElementById('manualGestationalAge').value = firstVisit.manualGestationalAge;
+        if (manualEddInput && stableEdd) {
+          manualEddInput.value = normalizeVisitDateValue(stableEdd) || '';
         }
+        refreshLmpEddLongDisplays();
+        updateEarlyAncDisplay();
+        updateAncVisitSchedule();
       } catch (e) {
-        console.warn('Could not load LMP from first visit:', e);
+        console.warn('Could not load pregnancy dating from previous visits:', e);
       }
     }
 
@@ -4281,7 +4364,10 @@
             high_risk: updateData.high_risk || 'no',
             high_risk_pregnancy: updateData.high_risk === 'yes' ? 'Yes' : 'No',
             risk_factors: updateData.risk_factors || [],
-            risk_notes: updateData.risk_notes || null
+            risk_notes: updateData.risk_notes || null,
+            lmpStatus: updateData.lmpStatus || 'known',
+            edd: updateData.edd || null,
+            manualEdd: updateData.manualEdd || null
           });
 
           if (editApprovalId && window.JointCareUtils) {
@@ -4325,7 +4411,10 @@
                 high_risk: cloudData.high_risk || 'no',
                 high_risk_pregnancy: cloudData.high_risk === 'yes' ? 'Yes' : 'No',
                 risk_factors: cloudData.risk_factors || [],
-                risk_notes: cloudData.risk_notes || null
+                risk_notes: cloudData.risk_notes || null,
+                lmpStatus: cloudData.lmpStatus || 'known',
+                edd: cloudData.edd || null,
+                manualEdd: cloudData.manualEdd || null
               });
 
             if (window.DataLinkage) {
