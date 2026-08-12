@@ -34,7 +34,22 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  var ANC_DOT_COUNT = 8;
+  var NEWBORN_DOT_COUNT = 4;
+
+  function isBabyPatient(patient) {
+    if (global.BabyPatientUtils && typeof BabyPatientUtils.isBabyPatient === 'function') {
+      return BabyPatientUtils.isBabyPatient(patient);
+    }
+    var t = String((patient && patient.patient_type) || '').toLowerCase();
+    return t === 'baby' || t === 'child' || t === 'newborn';
+  }
+
   function formatPatientAge(p) {
+    if (isBabyPatient(p) && global.BabyPatientUtils && typeof BabyPatientUtils.formatBabyAgeDisplay === 'function') {
+      var babyAge = BabyPatientUtils.formatBabyAgeDisplay(p, 'en');
+      if (babyAge && babyAge !== '-') return babyAge;
+    }
     if (p.age != null && p.age !== '') return String(p.age) + ' yrs';
     return '\u2014';
   }
@@ -53,6 +68,13 @@
     return tel ? 'tel:' + tel : '';
   }
 
+  function contactPatientForRow(row) {
+    var p = row.patient || {};
+    if (phoneHref(p)) return p;
+    if (row.mother && phoneHref(row.mother)) return row.mother;
+    return p;
+  }
+
   function countCompletedAncVisits(visits) {
     var maxNum = 0;
     (visits || []).forEach(function (v) {
@@ -60,8 +82,31 @@
       var n = parseInt(data.visitNumber, 10);
       if (!isNaN(n) && n > maxNum) maxNum = n;
     });
-    if (maxNum > 0) return Math.min(maxNum, 8);
-    return Math.min((visits || []).length, 8);
+    if (maxNum > 0) return Math.min(maxNum, ANC_DOT_COUNT);
+    return Math.min((visits || []).length, ANC_DOT_COUNT);
+  }
+
+  function countCompletedNewbornVisits(visits) {
+    var maxNum = 0;
+    (visits || []).forEach(function (v) {
+      var data = v.data || v;
+      var n = parseInt(data.visit_number != null ? data.visit_number : data.visitNumber, 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    });
+    if (maxNum > 0) return Math.min(maxNum, NEWBORN_DOT_COUNT);
+    return Math.min((visits || []).length, NEWBORN_DOT_COUNT);
+  }
+
+  function birthDateStrForPatient(patient) {
+    if (!patient) return null;
+    var raw = patient.date_of_birth || patient.birth_time || patient.birthTime || null;
+    if (!raw) return null;
+    if (raw && typeof raw.toDate === 'function') raw = raw.toDate();
+    if (raw instanceof Date) return formatDateYMD(raw);
+    var s = String(raw).trim();
+    if (s.indexOf('T') >= 0) s = s.split('T')[0];
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[0] : null;
   }
 
   function isKnownLmpValue(lmp) {
@@ -125,14 +170,44 @@
   }
 
   function getNextAncVisitNumber(row) {
-    return Math.min((row.ancVisitCount || 0) + 1, 8);
+    return Math.min((row.ancVisitCount || 0) + 1, ANC_DOT_COUNT);
   }
 
   function getFollowUpGraceDays(row) {
+    if (row.isBaby) return 7;
     return getNextAncVisitNumber(row) >= 5 ? 14 : 30;
   }
 
+  function getRecommendedNewbornDate(birthDateStr, targetVisitNumber) {
+    if (global.BirthDeliveryAnchor && typeof BirthDeliveryAnchor.getRecommendedCareDateForVisit === 'function') {
+      return BirthDeliveryAnchor.getRecommendedCareDateForVisit(birthDateStr, targetVisitNumber);
+    }
+    var birth = parseDateOnlyLocal(birthDateStr);
+    if (!birth || targetVisitNumber < 1 || targetVisitNumber > NEWBORN_DOT_COUNT) return null;
+    if (targetVisitNumber === 1) return null;
+    if (targetVisitNumber === 2) return formatDateYMD(addDaysLocal(birth, 3));
+    if (targetVisitNumber === 3) return formatDateYMD(addDaysLocal(birth, 14));
+    if (targetVisitNumber === 4) return formatDateYMD(addDaysLocal(birth, 42));
+    return null;
+  }
+
+  function getNextNewbornVisitDueDate(row) {
+    var latest = row.latestNewborn;
+    if (latest && (latest.nextVisitDate || latest.next_visit_date)) {
+      var parsed = parseDateOnlyLocal(latest.nextVisitDate || latest.next_visit_date);
+      if (parsed) return parsed;
+    }
+    var completed = row.newbornVisitCount || 0;
+    var nextVisitNum = completed + 1;
+    if (nextVisitNum > NEWBORN_DOT_COUNT) return null;
+    var birthStr = birthDateStrForPatient(row.patient || {});
+    if (!birthStr) return null;
+    var recommended = getRecommendedNewbornDate(birthStr, nextVisitNum);
+    return recommended ? parseDateOnlyLocal(recommended) : null;
+  }
+
   function getNextVisitDueDate(row) {
+    if (row.isBaby) return getNextNewbornVisitDueDate(row);
     var latest = row.latestAnc;
     if (latest && (latest.nextVisitDate || latest.next_visit_date)) {
       var parsed = parseDateOnlyLocal(latest.nextVisitDate || latest.next_visit_date);
@@ -140,7 +215,7 @@
     }
     var completed = row.ancVisitCount || 0;
     var nextVisitNum = completed + 1;
-    if (nextVisitNum > 8) return null;
+    if (nextVisitNum > ANC_DOT_COUNT) return null;
     var lmp = getEffectiveLmp(row);
     if (lmp) {
       var recommended = getRecommendedDateForVisitNumber(lmp, nextVisitNum);
@@ -185,6 +260,9 @@
     if (getCompleteAction(row)) {
       return { key: 'complete', label: 'Complete' };
     }
+    if (row.isBaby && (row.newbornVisitCount || 0) >= NEWBORN_DOT_COUNT) {
+      return { key: 'complete', label: 'Complete' };
+    }
     var daysLate = getDaysLateForNextVisit(row);
     if (daysLate == null || daysLate < 0) return { key: 'on_track', label: 'Active follow-up' };
     if (daysLate <= getFollowUpGraceDays(row)) return { key: 'overdue_followup', label: 'Overdue follow-up' };
@@ -211,21 +289,28 @@
       escapeHtml(outcome.label) + '</span>';
   }
 
-  function statusTrackHtml(completedCount, row) {
-    var nextVisit = Math.min((completedCount || 0) + 1, 8);
+  function statusTrackHtml(completedCount, row, options) {
+    options = options || {};
+    var maxDots = row.isBaby ? NEWBORN_DOT_COUNT : ANC_DOT_COUNT;
+    var nextVisit = Math.min((completedCount || 0) + 1, maxDots);
     var status = rowTrackingStatus(row);
     var outcome = rowPatientOutcome(row);
     var completedOutcomeClass = outcome ? outcome.key : '';
     var dots = [];
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= maxDots; i++) {
       var cls = '';
       if (i <= completedCount) cls = 'visited' + (completedOutcomeClass ? ' ' + completedOutcomeClass : '');
-      else if (i === nextVisit && completedCount < 8) {
+      else if (i === nextVisit && completedCount < maxDots) {
         cls = status.key === 'overdue_followup' || status.key === 'lost_to_followup' ? status.key : 'next';
       }
       dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
     }
-    return '<span class="hrt-status-track">' + dots.join('') + '</span>';
+    var track = '<span class="hrt-status-track">' + dots.join('') + '</span>';
+    if (options.hideLabel) return track;
+    var label = row.isBaby ? 'Newborn visits' : 'ANC visits';
+    return '<div class="hrt-visit-track-wrap">' +
+      '<div class="hrt-visit-track-label">' + escapeHtml(label) + '</div>' +
+      track + '</div>';
   }
 
   function currentGaFromLatestAnc(latestAnc) {
@@ -252,6 +337,41 @@
     };
   }
 
+  function formatBabyInfoCell(p, mother) {
+    var ageText = formatPatientAge(p);
+    var weight = p.birth_weight || p.birthWeight || p.weight_at_birth || '';
+    var motherName = (mother && (mother.name || mother.patientName)) ||
+      p.mother_name || p.motherName || '\u2014';
+    var line2 = 'Mother: ' + motherName;
+    if (weight !== '' && weight != null) line2 += ' \u00b7 BW: ' + weight + 'g';
+    return {
+      line1: 'Baby \u00b7 Age: ' + ageText,
+      line2: line2
+    };
+  }
+
+  function detailsCellForRow(row) {
+    if (row.isBaby) return formatBabyInfoCell(row.patient || {}, row.mother || null);
+    return formatPregnancyCell(row.patient || {}, row.latestAnc);
+  }
+
+  function reportLinksHtml(row) {
+    var p = row.patient || {};
+    var patientId = p.id || '';
+    if (!patientId) return '';
+    if (!row.isBaby) return '';
+    var motherId = p.mother_patient_id || (row.mother && row.mother.id) || '';
+    var html = '<div class="hrt-report-actions" onclick="event.stopPropagation();">';
+    if (motherId) {
+      html += '<button type="button" class="hrt-report-btn" onclick="SentTransferHrtView.openMotherReport(\'' +
+        escapeHtml(motherId) + '\')"><i class="fas fa-user-injured"></i> Mother report</button>';
+    }
+    html += '<button type="button" class="hrt-report-btn hrt-report-btn-primary" onclick="SentTransferHrtView.openNewbornReport(\'' +
+      escapeHtml(patientId) + '\')"><i class="fas fa-baby"></i> Newborn report</button>';
+    html += '</div>';
+    return html;
+  }
+
   function humanizeRiskLabel(s) {
     var t = String(s == null ? '' : s).trim();
     if (!t) return t;
@@ -273,8 +393,8 @@
   }
 
   function recommendationCellHtml(row) {
-    var latest = row && row.latestAnc;
-    var text = latest ? String(latest.clinicalNotes || latest.clinical_notes || '').trim() : '';
+    var latest = row && (row.isBaby ? row.latestNewborn : row.latestAnc);
+    var text = latest ? String(latest.clinicalNotes || latest.clinical_notes || latest.notes || '').trim() : '';
     if (!text) return '<span class="text-muted">No recommendation</span>';
     return '<div class="hrt-recommendation-text" title="' + escapeHtml(text) + '">' + escapeHtml(text) + '</div>';
   }
@@ -302,10 +422,24 @@
     global.location.href = 'antenatal-report.html?patient=' + encodeURIComponent(patientId);
   }
 
+  function openNewbornReport(patientId) {
+    global.location.href = 'newborn-report.html?patient=' + encodeURIComponent(patientId);
+  }
+
+  function openMotherReport(patientId) {
+    global.location.href = 'overall-patient-report.html?patient=' + encodeURIComponent(patientId);
+  }
+
+  function openReport(patientId, isBaby) {
+    if (isBaby) openNewbornReport(patientId);
+    else openAncReport(patientId);
+  }
+
   var MAX_TRANSFER_ROWS = 40;
   var ENRICH_CONCURRENCY = 8;
   var CACHE_TTL_MS = 180000;
   var ANC_VISIT_LIMIT = 10;
+  var NEWBORN_VISIT_LIMIT = 8;
 
   function getUtils() {
     return global.TransferLoadUtils || {};
@@ -318,7 +452,14 @@
   }
 
   function cacheKey(uid) {
-    return 'sentTransferHrt:' + uid;
+    return 'sentTransferHrt:v2:' + uid;
+  }
+
+  function snapToVisitList(snap) {
+    var visits = [];
+    if (snap && snap.docs) snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
+    else if (snap && typeof snap.forEach === 'function') snap.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
+    return visits;
   }
 
   async function fetchAncVisits(db, patientId) {
@@ -333,10 +474,39 @@
         snap = await smartQuery(Promise.resolve(ref.limit(ANC_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
       }
     }
-    var visits = [];
-    if (snap && snap.docs) snap.docs.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
-    else if (snap && typeof snap.forEach === 'function') snap.forEach(function (d) { visits.push({ id: d.id, data: d.data() || {} }); });
-    return visits;
+    return snapToVisitList(snap);
+  }
+
+  async function fetchNewbornVisits(db, patientId) {
+    var ref = db.collection('patients').doc(patientId).collection('newborn_care');
+    var snap;
+    try {
+      snap = await smartQuery(Promise.resolve(ref.orderBy('visitDate', 'desc').limit(NEWBORN_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+    } catch (e) {
+      try {
+        snap = await smartQuery(Promise.resolve(ref.orderBy('visit_number', 'desc').limit(NEWBORN_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+      } catch (e2) {
+        try {
+          snap = await smartQuery(Promise.resolve(ref.orderBy('timestamp', 'desc').limit(NEWBORN_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+        } catch (e3) {
+          snap = await smartQuery(Promise.resolve(ref.limit(NEWBORN_VISIT_LIMIT)), { timeout: 8000, retries: 1 });
+        }
+      }
+    }
+    return snapToVisitList(snap);
+  }
+
+  async function fetchPatientDoc(db, patientId) {
+    if (!patientId) return null;
+    try {
+      var snap = await smartQuery(Promise.resolve(db.collection('patients').doc(patientId)), { timeout: 8000, retries: 1 });
+      if (!snap || !snap.exists) return null;
+      var data = snap.data() || {};
+      data.id = snap.id || patientId;
+      return data;
+    } catch (e) {
+      return null;
+    }
   }
 
   async function fetchHrtActions(db, patientId) {
@@ -378,17 +548,52 @@
           name: transferReq.patientName || 'Unknown',
           patient_unique_id: transferReq.patientUniqueId || transferReq.patient_unique_id || ''
         },
+        isBaby: false,
+        mother: null,
         factorsUnique: [],
         ancVisitCount: 0,
+        newbornVisitCount: 0,
         latestAnc: null,
+        latestNewborn: null,
         visits: [],
         actions: []
       };
     }
 
-    var visits;
-    var actions;
+    var isBaby = isBabyPatient(patient);
+    var visits = [];
+    var actions = [];
+    var mother = null;
+
     try {
+      if (isBaby) {
+        var motherId = patient.mother_patient_id || '';
+        var babyPair = await Promise.all([
+          fetchNewbornVisits(db, patientId),
+          fetchHrtActions(db, patientId),
+          motherId ? fetchPatientDoc(db, motherId) : Promise.resolve(null)
+        ]);
+        visits = babyPair[0] || [];
+        actions = babyPair[1] || [];
+        mother = babyPair[2] || null;
+        if (mother && !mother.id) mother.id = motherId;
+
+        var latestNewborn = visits.length ? (visits[0].data || visits[0]) : null;
+        return {
+          transfer: transferReq,
+          patient: patient,
+          isBaby: true,
+          mother: mother,
+          factorsUnique: [],
+          ancVisitCount: 0,
+          newbornVisitCount: countCompletedNewbornVisits(visits),
+          latestAnc: null,
+          latestNewborn: latestNewborn,
+          visits: visits,
+          actions: actions
+        };
+      }
+
       var pair = await Promise.all([
         fetchAncVisits(db, patientId),
         fetchHrtActions(db, patientId)
@@ -410,9 +615,13 @@
     return {
       transfer: transferReq,
       patient: patient,
+      isBaby: false,
+      mother: null,
       factorsUnique: uniqueStrings(factors),
       ancVisitCount: countCompletedAncVisits(visits),
+      newbornVisitCount: 0,
       latestAnc: latestAnc || null,
+      latestNewborn: null,
       visits: visits,
       actions: actions
     };
@@ -428,11 +637,12 @@
       '<div class="hrt-register-wrap">' +
         '<div class="hrt-register-desktop"><table class="hrt-register-table"><thead><tr>' +
           '<th class="col-name">Name</th>' +
-          '<th class="col-pregnancy">Pregnancy</th>' +
+          '<th class="col-pregnancy">Details</th>' +
           '<th class="col-danger">Danger signs</th>' +
-          '<th class="col-anc-visits">ANC visits</th>' +
+          '<th class="col-anc-visits">Visits</th>' +
           '<th class="col-outcome">Outcome</th>' +
           '<th class="col-recommendation">Recommendation</th>' +
+          '<th class="col-reports">Reports</th>' +
           '<th class="col-sms">Communication</th>' +
           '<th class="col-transfer">Transfer status</th>' +
         '</tr></thead><tbody id="sentTransferDesktopBody"></tbody></table></div>' +
@@ -445,42 +655,56 @@
     rows.forEach(function (r) {
       var p = r.patient || {};
       var patientId = p.id || '';
+      var isBaby = !!r.isBaby;
       var patientName = escapeHtml(p.name || p.patientName || '\u2014');
       var ageText = escapeHtml(formatPatientAge(p));
-      var phone = phoneCellHtml(p);
-      var preg = formatPregnancyCell(p, r.latestAnc);
-      var completedVisits = r.ancVisitCount || 0;
+      var contact = contactPatientForRow(r);
+      var phone = phoneCellHtml(contact);
+      var details = detailsCellForRow(r);
+      var completedVisits = isBaby ? (r.newbornVisitCount || 0) : (r.ancVisitCount || 0);
       var transferStatus = (r.transfer && r.transfer.status) || 'pending';
+      var detailsLabel = isBaby ? 'Baby' : 'Pregnancy';
+      var visitsLabel = isBaby ? 'Newborn visits' : 'ANC visits';
+      var reportsHtml = reportLinksHtml(r);
+      var openFn = "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "', " + (isBaby ? 'true' : 'false') + ")";
 
       var trEl = document.createElement('tr');
-      trEl.setAttribute('onclick', "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "')");
+      trEl.setAttribute('onclick', openFn);
       trEl.innerHTML =
-        '<td><div class="hrt-patient-main">' + patientName + '</div><div class="hrt-patient-meta">' +
+        '<td><div class="hrt-patient-main">' + patientName +
+          (isBaby ? ' <span class="hrt-baby-tag">Baby</span>' : '') +
+          '</div><div class="hrt-patient-meta">' +
           'Age: ' + ageText + '<br>' + phone + '</div></td>' +
-        '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div></td>' +
+        '<td><div class="hrt-pregnancy-meta">' + escapeHtml(details.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(details.line2) + '</div></td>' +
         '<td>' + compactRiskListHtml(r.factorsUnique || []) + '</td>' +
         '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
         '<td>' + statusCellHtml(r) + '</td>' +
         '<td>' + recommendationCellHtml(r) + '</td>' +
-        '<td>' + smsContactHtml(p) + '</td>' +
+        '<td>' + (reportsHtml || '<span class="text-muted">\u2014</span>') + '</td>' +
+        '<td>' + smsContactHtml(contact) + '</td>' +
         '<td>' + transferStatusHtml(transferStatus) + '</td>';
       desktopBody.appendChild(trEl);
 
       var card = document.createElement('div');
       card.className = 'hrt-mobile-card';
-      card.setAttribute('onclick', "SentTransferHrtView.openReport('" + escapeHtml(patientId) + "')");
+      card.setAttribute('onclick', openFn);
       card.innerHTML =
         '<div class="hrt-mobile-top">' +
-          '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">Age: ' + ageText + '<br>' + phone + '</div></div>' +
+          '<div><div class="hrt-mobile-name">' + patientName +
+            (isBaby ? ' <span class="hrt-baby-tag">Baby</span>' : '') +
+            '</div><div class="hrt-mobile-id">Age: ' + ageText + '<br>' + phone + '</div></div>' +
           '<div>' + transferStatusHtml(transferStatus) + '</div>' +
         '</div>' +
         '<div class="hrt-mobile-grid">' +
-          '<div class="hrt-mobile-field"><span class="hrt-mobile-label">Pregnancy</span><div class="hrt-mobile-value">' + escapeHtml(preg.line1) + '<br>' + escapeHtml(preg.line2) + '</div></div>' +
-          '<div class="hrt-mobile-field"><span class="hrt-mobile-label">ANC visits</span><div class="hrt-mobile-value">' + statusTrackHtml(completedVisits, r) + '</div></div>' +
+          '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(detailsLabel) + '</span><div class="hrt-mobile-value">' + escapeHtml(details.line1) + '<br>' + escapeHtml(details.line2) + '</div></div>' +
+          '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(visitsLabel) + '</span><div class="hrt-mobile-value">' + statusTrackHtml(completedVisits, r, { hideLabel: true }) + '</div></div>' +
           '<div class="hrt-mobile-field"><span class="hrt-mobile-label">Outcome</span><div class="hrt-mobile-value">' + statusCellHtml(r) + '</div></div>' +
           '<div class="hrt-mobile-field"><span class="hrt-mobile-label">Recommendation</span><div class="hrt-mobile-value">' + recommendationCellHtml(r) + '</div></div>' +
           '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">Danger signs</span><div class="hrt-mobile-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-          '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">Communication</span><div class="hrt-mobile-value">' + smsContactHtml(p) + '</div></div>' +
+          (reportsHtml
+            ? '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">Reports</span><div class="hrt-mobile-value">' + reportsHtml + '</div></div>'
+            : '') +
+          '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">Communication</span><div class="hrt-mobile-value">' + smsContactHtml(contact) + '</div></div>' +
         '</div>';
       mobileBody.appendChild(card);
     });
@@ -549,6 +773,9 @@
 
   global.SentTransferHrtView = {
     loadAndRender: loadAndRender,
-    openReport: openAncReport
+    openReport: openReport,
+    openAncReport: openAncReport,
+    openNewbornReport: openNewbornReport,
+    openMotherReport: openMotherReport
   };
 })(typeof window !== 'undefined' ? window : this);
