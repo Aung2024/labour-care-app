@@ -613,6 +613,7 @@
     let currentUser = null;
     let currentPatient = null;
     let patientId = null;
+    let newbornPatientId = null;
     let reportDb;
     let iframesLoaded = {};
     let dataCounts = { anc: 0, labour: false, newborn: false, pnc: 0 };
@@ -711,12 +712,13 @@
         }
 
         currentPatient = patientDoc.data();
+        newbornPatientId = await resolveNewbornPatientId(currentPatient);
 
         // Load counts in parallel
         const [ancCount, labourExists, newbornExists, pncCount] = await Promise.all([
           countCollection('antenatal_visits'),
           checkCollection('records', 'summary'),
-          checkNewbornCareExists(),
+          checkNewbornCareExists(newbornPatientId),
           countCollection('postpartum_visits')
         ]);
 
@@ -753,19 +755,65 @@
       }
     }
 
-    async function checkSubcollectionExists(subcollection) {
+    async function checkSubcollectionExists(subcollection, targetPatientId) {
       try {
-        const snapshot = await reportDb.collection("patients").doc(patientId).collection(subcollection).limit(1).get();
+        const id = targetPatientId || patientId;
+        const snapshot = await reportDb.collection("patients").doc(id).collection(subcollection).limit(1).get();
         return !snapshot.empty;
       } catch (e) {
         return false;
       }
     }
 
-    async function checkNewbornCareExists() {
+    async function resolveNewbornPatientId(patient) {
+      if (String(patient && patient.patient_type || '').toLowerCase() === 'baby') {
+        return patientId;
+      }
+
+      let babyIds = Array.isArray(patient && patient.baby_patient_ids)
+        ? patient.baby_patient_ids.filter(Boolean)
+        : [];
+
+      if (!babyIds.length) {
+        try {
+          const linked = await reportDb.collection('patients')
+            .where('mother_patient_id', '==', patientId)
+            .limit(10)
+            .get();
+          babyIds = linked.docs.map(doc => doc.id);
+        } catch (e) {
+          console.warn('Unable to query linked baby records:', e);
+        }
+      }
+
+      if (!babyIds.length) {
+        try {
+          const deterministicBaby = await reportDb.collection('patients')
+            .doc(`${patientId}_baby_1`)
+            .get();
+          if (deterministicBaby.exists) babyIds.push(deterministicBaby.id);
+        } catch (e) {
+          // Keep legacy mother-level newborn report fallback.
+        }
+      }
+
+      if (!babyIds.length) return patientId;
+
+      for (const babyId of babyIds) {
+        const [immediateExists, careExists] = await Promise.all([
+          checkSubcollectionExists('immediate_newborn_care', babyId),
+          checkSubcollectionExists('newborn_care', babyId)
+        ]);
+        if (immediateExists || careExists) return babyId;
+      }
+
+      return babyIds[0];
+    }
+
+    async function checkNewbornCareExists(targetPatientId) {
       const [immediateExists, newbornCareExists] = await Promise.all([
-        checkSubcollectionExists('immediate_newborn_care'),
-        checkSubcollectionExists('newborn_care')
+        checkSubcollectionExists('immediate_newborn_care', targetPatientId),
+        checkSubcollectionExists('newborn_care', targetPatientId)
       ]);
       return immediateExists || newbornCareExists;
     }
@@ -891,7 +939,7 @@
       const reportUrls = {
         anc: `antenatal-report.html?patient=${patientId}`,
         labour: `summary-view.html?patient=${patientId}`,
-        newborn: `newborn-report.html?patient=${patientId}`,
+        newborn: `newborn-report.html?patient=${newbornPatientId || patientId}`,
         postpartum: `postpartum-report.html?patient=${patientId}`
       };
 
@@ -931,7 +979,7 @@
       const reports = [
         { name: T('ANC', 'ကိုယ်ဝန်ဆောင်'), url: `antenatal-report.html?patient=${patientId}` },
         { name: T('Labour', 'မွေးဖွားချိန်'), url: `summary-view.html?patient=${patientId}` },
-        { name: T('Newborn', 'မွေးကင်းစ'), url: `newborn-report.html?patient=${patientId}` },
+        { name: T('Newborn', 'မွေးကင်းစ'), url: `newborn-report.html?patient=${newbornPatientId || patientId}` },
         { name: T('Postpartum', 'မွေးပြီးမိခင်'), url: `postpartum-report.html?patient=${patientId}` }
       ];
 
