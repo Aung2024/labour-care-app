@@ -729,13 +729,20 @@
           </div>
         </div>
         <div class="row g-3 mb-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label for="visit_number" class="form-label">
               <span class="lang-text" data-en="Visit Number" data-mm="အကြိမ်အရေအတွက်">Visit Number</span>
             </label>
             <input type="number" class="form-control" id="visit_number" name="visit_number" min="1" readonly>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
+            <label for="visit_date" class="form-label">
+              <span class="lang-text" data-en="Visit Date" data-mm="ပြသသည့်ရက်">Visit Date</span><span class="required-marker" aria-hidden="true">*</span>
+            </label>
+            <input type="date" class="form-control" id="visit_date" name="visit_date" required>
+            <small class="form-hint lang-text" data-en="Date this newborn care visit was provided." data-mm="ဤ newborn care ပြုစုပေးသည့် ရက်စွဲကို ရွေးပါ။">Date this newborn care visit was provided.</small>
+          </div>
+          <div class="col-md-3">
             <label for="birthplace" class="form-label">
               <span class="lang-text" data-en="Birthplace" data-mm="မွေးဖွားသည့်နေရာ">Birthplace</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
@@ -747,7 +754,7 @@
               <option value="other" data-en="Others" data-mm="အခြား">Others</option>
             </select>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label for="mode_of_delivery" class="form-label">
               <span class="lang-text" data-en="Mode of Delivery" data-mm="မွေးဖွားသည့်နည်းလမ်း">Mode of Delivery</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
@@ -2226,7 +2233,7 @@
     }
 
     function clearVisitSpecificFormFields() {
-      ['temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'cause_of_death', 'current_weight_gram'].forEach(function (id) {
+      ['visit_date', 'temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'follow_up_appointment_date', 'cause_of_death', 'current_weight_gram'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -2254,6 +2261,7 @@
       toggleEyeInfectionFollowup();
       toggleOutcomeFollowup();
       toggleKmcDecisionFields();
+      initializeNewbornVisitDate();
     }
 
     function populateIdentityFromVisit(data, locked) {
@@ -2489,6 +2497,7 @@
           alert('Patient ID not found.');
           return;
         }
+        initializeNewbornVisitDate();
 
         // OFFLINE: Load from sessionStorage / IndexedDB
         const isOffline = (window.OfflineManager && window.OfflineManager.isOfflineMode()) ||
@@ -3309,6 +3318,9 @@
         deliveryAnchorLocked = true;
       }
       if (data.visit_number) document.getElementById('visit_number').value = data.visit_number;
+      if (data.visitDate || data.visit_date) {
+        document.getElementById('visit_date').value = String(data.visitDate || data.visit_date).split('T')[0];
+      }
       applyBirthMeasurementsToForm(data);
       if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
@@ -3549,11 +3561,32 @@
         if (modeEl) modeEl.focus();
         return;
       }
+      var visitDateEl = document.getElementById('visit_date');
+      var todayDate = formatLocalDateYmd(new Date());
+      if (!visitDateEl || !visitDateEl.value) {
+        alert(currentLanguage === 'mm' ? 'ပြသသည့်ရက် ရွေးချယ်ပါ။' : 'Please select the Visit Date.');
+        if (visitDateEl) visitDateEl.focus();
+        return;
+      }
+      if (visitDateEl.value > todayDate) {
+        alert(currentLanguage === 'mm' ? 'ပြသသည့်ရက်သည် အနာဂတ်ရက် မဖြစ်ရပါ။' : 'Visit Date cannot be in the future.');
+        visitDateEl.focus();
+        return;
+      }
 
       persistActiveBabyState();
       evaluateKmcSection();
       const babyRows = collectBabyIdentityRows();
       const visitNum = parseInt(document.getElementById('visit_number').value, 10) || 1;
+      const latestBirthDate = babyRows.reduce(function (latest, baby) {
+        const date = String((baby && baby.birthTime) || '').split('T')[0];
+        return date && date > latest ? date : latest;
+      }, String(document.getElementById('birth_time').value || '').split('T')[0]);
+      if (latestBirthDate && visitDateEl.value < latestBirthDate) {
+        alert(currentLanguage === 'mm' ? 'ပြသသည့်ရက်သည် မွေးဖွားသည့်ရက်ထက် မစောရပါ။' : 'Visit Date cannot be before the birth date.');
+        visitDateEl.focus();
+        return;
+      }
 
       const incompleteBaby = babyRows.find(function (baby) {
         return !baby.birthTime || !baby.birthWeightGram || !baby.outcome;
@@ -3691,7 +3724,7 @@
           danger_signs: collectNewbornDangerSigns(),
           outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || null),
           cause_of_death: firstBaby.causeOfDeath || firstBaby.cause_of_death || document.getElementById('cause_of_death').value || null,
-          visitDate: new Date().toISOString().split('T')[0],
+          visitDate: document.getElementById('visit_date').value,
           potential_kmc: potentialKmc,
           kmc_eligible_reasons: potentialKmc ? Array.from(kmcReasonSet) : null,
           kmc_babies: kmcBabies,
@@ -3917,8 +3950,24 @@
     }
 
     // Helper functions
+    function formatLocalDateYmd(date) {
+      const value = date instanceof Date ? date : new Date(date);
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function initializeNewbornVisitDate() {
+      const field = document.getElementById('visit_date');
+      if (!field) return;
+      const today = formatLocalDateYmd(new Date());
+      field.max = today;
+      if (!field.value) field.value = today;
+    }
+
     function setToday(fieldId) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = formatLocalDateYmd(new Date());
       document.getElementById(fieldId).value = today;
     }
 
