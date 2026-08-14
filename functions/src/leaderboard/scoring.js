@@ -2,6 +2,7 @@
 
 const SCORE_VERSION = 'leaderboard-v2-1';
 const LEADERBOARD_TIME_ZONE = 'Asia/Yangon';
+const ALL_TIME_PERIOD = 'all';
 
 const CATEGORY_KEYS = [
   'registration',
@@ -24,6 +25,14 @@ function emptyCategories() {
     result[key] = 0;
     return result;
   }, {});
+}
+
+function isAllTimePeriod(month) {
+  return month === ALL_TIME_PERIOD;
+}
+
+function isLeaderboardPeriod(month) {
+  return isAllTimePeriod(month) || /^\d{4}-\d{2}$/.test(month || '');
 }
 
 function monthKeyForDate(date) {
@@ -76,6 +85,16 @@ function recordsInMonth(records, month, fields) {
   return (records || []).filter((record) => recordIsInMonth(record, month, fields));
 }
 
+function recordIsInPeriod(data, month, fields) {
+  if (isAllTimePeriod(month)) return !!(data && typeof data === 'object');
+  return recordIsInMonth(data, month, fields);
+}
+
+function recordsInPeriod(records, month, fields) {
+  if (isAllTimePeriod(month)) return records || [];
+  return recordsInMonth(records, month, fields);
+}
+
 function isPatientRegistrationComplete(patientData) {
   const requiredFields = ['name', 'age', 'phone', 'address', 'township', 'village'];
   return requiredFields.every((field) => {
@@ -122,12 +141,21 @@ function calculatePatientContribution(patientData, activity, month) {
   const patient = patientData || {};
   const records = activity || {};
 
-  if (recordIsInMonth(patient, month, ['registration_date', 'created_at', 'createdAt', 'timestamp'])) {
+  const registeredInPeriod = isAllTimePeriod(month)
+    ? !!(patient.registration_date || patient.created_at || patient.createdAt ||
+      patient.timestamp || patient.name)
+    : recordIsInMonth(patient, month, [
+      'registration_date',
+      'created_at',
+      'createdAt',
+      'timestamp'
+    ]);
+  if (registeredInPeriod) {
     categories.registration = 1;
     if (isPatientRegistrationComplete(patient)) categories.completeRegistration = 2;
   }
 
-  const ancVisits = recordsInMonth(
+  const ancVisits = recordsInPeriod(
     records.ancVisits,
     month,
     ['visitDate', 'timestamp', 'createdAt']
@@ -137,7 +165,7 @@ function calculatePatientContribution(patientData, activity, month) {
   if (ancVisits.length >= 8) categories.anc8Plus = 1;
   if (ancVisits.length && isAncFormComplete(ancVisits)) categories.completeANC = 2;
 
-  const pncVisits = recordsInMonth(
+  const pncVisits = recordsInPeriod(
     records.pncVisits,
     month,
     ['visitDate', 'createdAt', 'updatedAt']
@@ -145,13 +173,13 @@ function calculatePatientContribution(patientData, activity, month) {
   if (pncVisits.length >= 1) categories.pncVisits = 1;
   if (pncVisits.length && isPncFormComplete(pncVisits)) categories.completePNC = 1;
 
-  if (recordsInMonth(records.labTests, month, ['testDate', 'timestamp']).length) {
+  if (recordsInPeriod(records.labTests, month, ['testDate', 'timestamp']).length) {
     categories.labTests = 1;
   }
-  if (recordsInMonth(records.immediateNewbornCare, month, ['timestamp']).length) {
+  if (recordsInPeriod(records.immediateNewbornCare, month, ['timestamp']).length) {
     categories.immediateNewbornCare = 1;
   }
-  if (recordsInMonth(
+  if (recordsInPeriod(
     records.newbornCare,
     month,
     ['visitDate', 'timestamp', 'createdAt']
@@ -159,12 +187,12 @@ function calculatePatientContribution(patientData, activity, month) {
     categories.newbornCare = 1;
   }
 
-  const labourRecordedInMonth = [
+  const labourRecordedInPeriod = isAllTimePeriod(month) || [
     records.summary,
     records.startingTime,
     records.secondStage
   ].some((record) => recordIsInMonth(record, month, ['timestamp', 'lastUpdated']));
-  if (labourRecordedInMonth && isLcgCompleted(
+  if (labourRecordedInPeriod && isLcgCompleted(
     records.summary,
     records.startingTime,
     records.secondStage
@@ -172,7 +200,7 @@ function calculatePatientContribution(patientData, activity, month) {
     categories.lcgCompleted = 1;
   }
 
-  if (recordIsInMonth(records.transferRecord, month, ['referralTime', 'timestamp'])) {
+  if (recordIsInPeriod(records.transferRecord, month, ['referralTime', 'timestamp'])) {
     categories.transferRecords = 1;
   }
 
@@ -225,8 +253,11 @@ function recentMonthKeys(count, now) {
 module.exports = {
   SCORE_VERSION,
   LEADERBOARD_TIME_ZONE,
+  ALL_TIME_PERIOD,
   CATEGORY_KEYS,
   emptyCategories,
+  isAllTimePeriod,
+  isLeaderboardPeriod,
   monthKeyForDate,
   timestampToDate,
   recordIsInMonth,

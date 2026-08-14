@@ -10,12 +10,12 @@ The clinical forms continue saving to the existing `mnch-1cbda` Firestore databa
 2. A Firestore-triggered Cloud Function detects that write.
 3. The Function recalculates only that patient’s contribution for the affected month.
 4. It updates a compact monthly provider total.
-5. `leaderboard.html` reads the compact totals instead of opening every patient and every clinical subcollection.
+5. `leaderboard.html` reads the compact totals instead of opening every patient and every clinical subcollection. The default view is **all time** and **all midwives**; users can still filter to a specific month or provider type.
 6. A nightly job checks the totals again. A resumable worker repairs them in small batches.
 
 The backend never modifies clinical records. It writes only to:
 
-- `leaderboard_v2_months`
+- `leaderboard_v2_months` (including an `all` document for all-time totals)
 - `leaderboard_v2_contributions`
 - `leaderboard_v2_jobs`
 
@@ -158,11 +158,11 @@ git push -u origin version-2-upgrade
 
 Use the Netlify branch preview for `version-2-upgrade`. Do not make it the production branch yet.
 
-## 9. Build the last 12 months
+## 9. Build all-time and the last 12 months
 
 1. Open the branch-preview Leaderboard.
 2. Sign in as Super Admin.
-3. Click **Build last 12 months**.
+3. Click **Build all-time and last 12 months**.
 4. Confirm the prompt once.
 5. The first batch starts immediately. The scheduled worker continues every 15 minutes.
 6. In Firestore Console, inspect `leaderboard_v2_jobs/leaderboard-v2-rebuild`.
@@ -177,14 +177,14 @@ Test each available role:
 ### Midwife
 
 - Only the permitted township leaderboard is visible.
-- Month and provider-level filters work.
+- Period defaults to All time. Month and provider filters work.
 - Score breakdown equals approved source records.
 - “Last updated” is visible.
 
 ### TMO
 
 - Only the permitted township is visible.
-- Provider filters and month filters work.
+- Provider filters and period filters work. The default is All time and All midwives.
 
 ### Regional Officer
 

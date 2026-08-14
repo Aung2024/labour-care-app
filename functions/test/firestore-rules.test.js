@@ -56,6 +56,17 @@ async function seed() {
         score: 8
       }
     );
+    await setDoc(
+      doc(database, 'leaderboard_v2_months', 'all', 'providers', 'midwife-a'),
+      {
+        providerId: 'midwife-a',
+        providerName: 'Provider A',
+        providerType: 'rhc',
+        township: 'Alpha',
+        region: 'North',
+        score: 12
+      }
+    );
   });
 }
 
@@ -98,6 +109,14 @@ test('midwife can read own and same-township summary only', async () => {
 test('TMO can read summaries in their township only', async () => {
   await assertSucceeds(getDoc(providerRef('tmo-a', 'midwife-a')));
   await assertFails(getDoc(providerRef('tmo-a', 'midwife-b')));
+});
+
+test('scoped all-time leaderboard list queries are authorized', async () => {
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  await assertSucceeds(getDocs(query(
+    collection(midwifeDb, 'leaderboard_v2_months', 'all', 'providers'),
+    where('township', '==', 'Alpha')
+  )));
 });
 
 test('scoped leaderboard list queries are authorized', async () => {

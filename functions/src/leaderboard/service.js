@@ -6,7 +6,8 @@ const {
   CATEGORY_KEYS,
   emptyCategories,
   calculatePatientContribution,
-  subtractCategories
+  subtractCategories,
+  isLeaderboardPeriod
 } = require('./scoring');
 const {
   loadPatientActivity,
@@ -126,8 +127,8 @@ async function savePatientContribution(db, patientId, month, providerId, calcula
 }
 
 async function recomputePatientMonth(db, patientId, month) {
-  if (!patientId || !/^\d{4}-\d{2}$/.test(month || '')) {
-    throw new Error('patientId and YYYY-MM month are required.');
+  if (!patientId || !isLeaderboardPeriod(month)) {
+    throw new Error('patientId and a valid leaderboard period are required.');
   }
   const loaded = await loadPatientActivity(db, patientId);
   const patient = loaded.patient;
@@ -139,9 +140,7 @@ async function recomputePatientMonth(db, patientId, month) {
 }
 
 async function recomputePatientMonths(db, patientId, months) {
-  const validMonths = Array.from(new Set((months || []).filter(
-    (month) => /^\d{4}-\d{2}$/.test(month || '')
-  )));
+  const validMonths = Array.from(new Set((months || []).filter(isLeaderboardPeriod)));
   if (!patientId || !validMonths.length) return [];
   const loaded = await loadPatientActivity(db, patientId);
   const patient = loaded.patient;

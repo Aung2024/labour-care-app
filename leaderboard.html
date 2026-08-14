@@ -33,8 +33,9 @@
     body {
       background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%);
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100dvh;
       min-height: 100vh;
-      padding: 2rem 0;
+      padding: max(1.25rem, env(safe-area-inset-top)) 0 max(1.25rem, env(safe-area-inset-bottom));
     }
 
     .header-section {
@@ -66,7 +67,7 @@
     .leaderboard-container {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 0 1rem;
+      padding: 0 max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left));
     }
 
     .leaderboard-card {
@@ -138,6 +139,8 @@
     .leaderboard-filter .form-select,
     .leaderboard-apply-btn {
       min-height: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .provider-level-badge {
@@ -455,13 +458,15 @@
 
       <div class="leaderboard-filters" aria-label="Leaderboard filters">
         <div class="leaderboard-filter">
-          <label for="leaderboardMonth"><i class="fas fa-calendar-alt me-1"></i>Month</label>
-          <input type="month" id="leaderboardMonth" class="form-control" required>
+          <label for="leaderboardPeriod"><i class="fas fa-calendar-alt me-1"></i>Period</label>
+          <select id="leaderboardPeriod" class="form-select">
+            <option value="all" selected>All time</option>
+          </select>
         </div>
         <div class="leaderboard-filter">
-          <label for="providerLevelFilter"><i class="fas fa-hospital-user me-1"></i>Provider level</label>
+          <label for="providerLevelFilter"><i class="fas fa-hospital-user me-1"></i>Provider</label>
           <select id="providerLevelFilter" class="form-select">
-            <option value="">All provider levels</option>
+            <option value="" selected>All midwives</option>
           </select>
         </div>
         <button type="button" class="btn btn-primary leaderboard-apply-btn" onclick="applyLeaderboardFilters()">
@@ -470,7 +475,7 @@
       </div>
       <div id="leaderboardAdminTools" class="text-end mb-3" style="display: none;">
         <button type="button" id="leaderboardRebuildBtn" class="btn btn-outline-secondary btn-sm" onclick="startLeaderboardV2Rebuild()">
-          <i class="fas fa-rotate me-1"></i>Build last 12 months
+          <i class="fas fa-rotate me-1"></i>Build all-time and last 12 months
         </button>
         <div class="text-muted small mt-1">Super Admin only. The rebuild continues safely in background batches.</div>
       </div>
@@ -673,7 +678,7 @@
     let userRegion = null;
     let userTownship = null;
     let allMidwives = [];
-    let leaderboardMonth = '';
+    let leaderboardMonth = 'all';
     let leaderboardProviderLevel = '';
     let unsubscribeLeaderboardV2 = null;
 
@@ -710,38 +715,52 @@
       return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     }
 
+    function isAllTimePeriod() {
+      return !leaderboardMonth || leaderboardMonth === 'all';
+    }
+
     function initializeLeaderboardFilters() {
-      const monthInput = document.getElementById('leaderboardMonth');
-      if (monthInput) {
-        monthInput.max = localMonthValue(new Date());
-        if (!monthInput.value) monthInput.value = localMonthValue(new Date());
+      const periodSelect = document.getElementById('leaderboardPeriod');
+      if (periodSelect) {
+        const now = new Date();
+        let options = '<option value="all">All time</option>';
+        for (let offset = 0; offset < 12; offset++) {
+          const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+          const value = localMonthValue(date);
+          const label = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+          options += '<option value="' + value + '">' + label + '</option>';
+        }
+        periodSelect.innerHTML = options;
+        periodSelect.value = 'all';
       }
-      leaderboardMonth = monthInput ? monthInput.value : localMonthValue(new Date());
+      leaderboardMonth = periodSelect ? periodSelect.value : 'all';
 
       const providerSelect = document.getElementById('providerLevelFilter');
       if (providerSelect && window.RoleDisplay) {
         const options = RoleDisplay.MIDWIFE_PROVIDER_TYPES || RoleDisplay.PROVIDER_TYPES || [];
-        providerSelect.innerHTML = '<option value="">All provider levels</option>' + options.map(function (entry) {
+        providerSelect.innerHTML = '<option value="">All midwives</option>' + options.map(function (entry) {
           return '<option value="' + entry.value + '">' + entry.en + '</option>';
         }).join('');
+        providerSelect.value = '';
       }
       leaderboardProviderLevel = providerSelect ? providerSelect.value : '';
     }
 
     async function applyLeaderboardFilters() {
-      const monthInput = document.getElementById('leaderboardMonth');
+      const periodSelect = document.getElementById('leaderboardPeriod');
       const providerSelect = document.getElementById('providerLevelFilter');
-      if (!monthInput || !monthInput.value || monthInput.value > localMonthValue(new Date())) {
-        if (monthInput) monthInput.focus();
+      const selectedPeriod = periodSelect ? periodSelect.value : 'all';
+      if (selectedPeriod && selectedPeriod !== 'all' && selectedPeriod > localMonthValue(new Date())) {
+        if (periodSelect) periodSelect.focus();
         return;
       }
-      leaderboardMonth = monthInput.value;
+      leaderboardMonth = selectedPeriod || 'all';
       leaderboardProviderLevel = providerSelect ? providerSelect.value : '';
       await loadLeaderboard();
     }
 
-    function selectedMonthLabel() {
-      if (!leaderboardMonth) return 'Selected month';
+    function selectedPeriodLabel() {
+      if (isAllTimePeriod()) return 'All time';
       const parts = leaderboardMonth.split('-');
       const date = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
       return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -760,7 +779,8 @@
     }
 
     function isActivityInSelectedMonth(data, fields) {
-      if (!data || !leaderboardMonth) return false;
+      if (!data) return false;
+      if (isAllTimePeriod()) return true;
       const keys = fields || ACTIVITY_DATE_FIELDS;
       for (let i = 0; i < keys.length; i++) {
         const ms = activityDateMs(data[keys[i]]);
@@ -847,7 +867,7 @@
 
     async function startLeaderboardV2Rebuild() {
       if (userRole !== 'Super Admin' || !currentUser) return;
-      if (!window.confirm('Build leaderboard summaries for the current month and previous 11 months?')) return;
+      if (!window.confirm('Build all-time leaderboard summaries and the current month plus previous 11 months?')) return;
       const button = document.getElementById('leaderboardRebuildBtn');
       const original = button ? button.innerHTML : '';
       if (button) {
@@ -986,9 +1006,9 @@
       document.getElementById('leaderboardContent').style.display = 'none';
       const providerFilterLabel = leaderboardProviderLevel
         ? providerLevelLabel(leaderboardProviderLevel)
-        : 'All provider levels';
+        : 'All midwives';
       document.getElementById('leaderboardPeriodLabel').textContent =
-        selectedMonthLabel() + ' · ' + providerFilterLabel;
+        selectedPeriodLabel() + ' · ' + providerFilterLabel;
       renderCachedLeaderboard();
 
       try {
@@ -1003,7 +1023,9 @@
             document.getElementById('leaderboardContent').style.display = 'none';
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('emptyState').innerHTML =
-              '<i class="fas fa-clock"></i><p>No calculated leaderboard summary is available for this month yet.</p>';
+              '<i class="fas fa-clock"></i><p>No calculated leaderboard summary is available for ' +
+              (isAllTimePeriod() ? 'all time' : 'this month') +
+              ' yet.</p>';
             return;
           }
           document.getElementById('emptyState').style.display = 'none';
@@ -1041,9 +1063,9 @@
         document.getElementById('leaderboardContent').style.display = 'none';
         const providerFilterLabel = leaderboardProviderLevel
           ? providerLevelLabel(leaderboardProviderLevel)
-          : 'All provider levels';
+          : 'All midwives';
         document.getElementById('leaderboardPeriodLabel').textContent =
-          selectedMonthLabel() + ' · ' + providerFilterLabel;
+          selectedPeriodLabel() + ' · ' + providerFilterLabel;
 
         console.log('Loading leaderboard...', { userRole, userRegion, isRegionalOfficer: isRegionalOfficer() });
 
@@ -1318,7 +1340,7 @@
       const loadingDiv = document.getElementById('midwifeScoreLoading');
       const contentDiv = document.getElementById('midwifeScoreContent');
       
-      modalTitle.textContent = `Score Breakdown: ${midwifeName} · ${selectedMonthLabel()}`;
+      modalTitle.textContent = `Score Breakdown: ${midwifeName} · ${selectedPeriodLabel()}`;
       modal.style.display = 'block';
       loadingDiv.style.display = 'block';
       contentDiv.innerHTML = '';
@@ -1631,7 +1653,7 @@
               <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
                 <div>
                   <div style="font-size: 1.5rem; font-weight: 600; color: #1f2937;">${breakdown.patientCount}</div>
-                  <div style="color: #6b7280; font-size: 0.875rem;">Patients with activity this month</div>
+                  <div style="color: #6b7280; font-size: 0.875rem;">${isAllTimePeriod() ? 'Patients with scored activity' : 'Patients with activity this month'}</div>
                 </div>
               </div>
             </div>

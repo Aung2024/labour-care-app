@@ -78,6 +78,50 @@ test('scores completed labour care only when recorded in selected month', () => 
   assert.equal(result.categories.lcgCompleted, 1);
 });
 
+test('all-time scores activity across months', () => {
+  const result = calculatePatientContribution({
+    name: 'Patient',
+    age: 28,
+    phone: '091234567',
+    address: 'Village',
+    township: 'Test Township',
+    village: 'Test Village',
+    registration_date: '2026-07-02'
+  }, {
+    ancVisits: [
+      { visitDate: '2026-07-05', lmp: '2026-01-01', visitNumber: 1 },
+      { visitDate: '2026-08-05', lmp: '2026-01-01', visitNumber: 2 },
+      { visitDate: '2026-09-05', lmp: '2026-01-01', visitNumber: 3 },
+      { visitDate: '2026-10-05', lmp: '2026-01-01', visitNumber: 4 }
+    ],
+    pncVisits: [],
+    labTests: [{ testDate: '2026-08-06' }],
+    immediateNewbornCare: [],
+    newbornCare: [],
+    summary: null,
+    startingTime: null,
+    secondStage: null,
+    transferRecord: null
+  }, 'all');
+
+  assert.equal(result.categories.registration, 1);
+  assert.equal(result.categories.completeRegistration, 2);
+  assert.equal(result.categories.ancVisits, 1);
+  assert.equal(result.categories.anc4Plus, 1);
+  assert.equal(result.categories.completeANC, 2);
+  assert.equal(result.categories.labTests, 1);
+  assert.equal(result.score, 8);
+});
+
+test('all-time scores completed labour care regardless of month', () => {
+  const result = calculatePatientContribution({}, {
+    summary: { startingTime: '09:00', timestamp: '2026-01-03T09:00:00Z' },
+    secondStage: { secondStageStartTime: '12:00', timestamp: '2026-01-03T12:00:00Z' }
+  }, 'all');
+
+  assert.equal(result.categories.lcgCompleted, 1);
+});
+
 test('returns current and previous month keys', () => {
   assert.deepEqual(
     recentMonthKeys(3, new Date('2026-01-15T00:00:00Z')),

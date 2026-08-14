@@ -7,12 +7,13 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const {
+  ALL_TIME_PERIOD,
+  isLeaderboardPeriod,
   monthKeyForDate,
   timestampToDate,
   recentMonthKeys
 } = require('./scoring');
 const {
-  recomputePatientMonth,
   recomputePatientMonths,
   rebuildProviderSummariesFromContributions
 } = require('./service');
@@ -76,6 +77,10 @@ function eventMonths(before, after) {
   return Array.from(months);
 }
 
+function periodsWithAllTime(months) {
+  return Array.from(new Set([...(months || []), ALL_TIME_PERIOD]));
+}
+
 async function requireSuperAdmin(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
   const user = await db().collection('users').doc(request.auth.uid).get();
@@ -85,9 +90,7 @@ async function requireSuperAdmin(request) {
 }
 
 async function startRebuildJob(months, requestedBy) {
-  const monthList = Array.from(new Set(months || [])).filter(
-    (month) => /^\d{4}-\d{2}$/.test(month)
-  );
+  const monthList = Array.from(new Set(months || [])).filter(isLeaderboardPeriod);
   if (!monthList.length) throw new Error('At least one valid month is required.');
   const jobRef = db().collection(JOB_COLLECTION).doc(JOB_ID);
   await jobRef.set({
@@ -159,7 +162,7 @@ const patientWritten = onDocumentWritten({
   const months = ownerChanged
     ? recentMonthKeys(12)
     : eventMonths(event.data && event.data.before, event.data && event.data.after);
-  await recomputePatientMonths(db(), event.params.patientId, months);
+  await recomputePatientMonths(db(), event.params.patientId, periodsWithAllTime(months));
 });
 
 const patientActivityWritten = onDocumentWritten({
@@ -172,9 +175,7 @@ const patientActivityWritten = onDocumentWritten({
   if (!SUPPORTED_SUBCOLLECTIONS.has(subcollection)) return;
   if (subcollection === 'records' && !SUPPORTED_RECORD_IDS.has(event.params.documentId)) return;
   const months = eventMonths(event.data && event.data.before, event.data && event.data.after);
-  for (const month of months) {
-    await recomputePatientMonth(db(), event.params.patientId, month);
-  }
+  await recomputePatientMonths(db(), event.params.patientId, periodsWithAllTime(months));
 });
 
 const providerWritten = onDocumentWritten({
@@ -189,7 +190,7 @@ const providerWritten = onDocumentWritten({
   if (role && role !== 'midwife') return;
   const metadata = await loadProvider(db(), event.params.providerId);
   const writer = db().bulkWriter();
-  recentMonthKeys(12).forEach((month) => {
+  periodsWithAllTime(recentMonthKeys(12)).forEach((month) => {
     writer.set(summaryRef(db(), month, event.params.providerId), {
       providerId: metadata.providerId,
       providerName: metadata.providerName,
@@ -211,7 +212,7 @@ const startLeaderboardRebuild = onCall({
   await requireSuperAdmin(request);
   const requestedCount = Number(request.data && request.data.months || 12);
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
-  const months = recentMonthKeys(count);
+  const months = periodsWithAllTime(recentMonthKeys(count));
   await startRebuildJob(months, request.auth.uid);
   const firstBatch = await processActiveRebuildBatch();
   return { success: true, months, firstBatch };
@@ -224,7 +225,7 @@ const leaderboardNightlyReconciliation = onSchedule({
   timeoutSeconds: 120,
   memory: '256MiB'
 }, async () => {
-  await startRebuildJob(recentMonthKeys(1), 'nightly-scheduler');
+  await startRebuildJob(periodsWithAllTime(recentMonthKeys(1)), 'nightly-scheduler');
   return processActiveRebuildBatch();
 });
 

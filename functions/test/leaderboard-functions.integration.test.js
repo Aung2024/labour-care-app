@@ -99,6 +99,15 @@ test('triggers update summaries without double-counting and handle deletes', asy
   );
   assert.equal(afterDelete.categories.ancVisits, 0);
   assert.equal(afterDelete.categories.completeANC, 0);
+
+  const allTime = await waitForSummary(
+    'all',
+    providerId,
+    (data) => data.score === 3
+  );
+  assert.equal(allTime.categories.registration, 1);
+  assert.equal(allTime.categories.completeRegistration, 2);
+  assert.equal(allTime.categories.ancVisits, 0);
 });
 
 test('rebuild worker resumes from a checkpoint and completes', async () => {
