@@ -1,5 +1,7 @@
 // --- Firebase init ---
-var firebaseConfig = {
+// Default and runtime config both point at the Project database (labourcare-2481a).
+// Do not copy firebase.runtime-config.json from the MOH/pilot folder.
+var defaultFirebaseConfig = {
   apiKey: "AIzaSyC8-y2xnLINlVTWOOaU8-w82RBzSo2djAQ",
   authDomain: "labourcare-2481a.firebaseapp.com",
   projectId: "labourcare-2481a",
@@ -7,6 +9,38 @@ var firebaseConfig = {
   messagingSenderId: "1033457212744",
   appId: "1:1033457212744:web:4d767eb4ef246b1090e77d"
 };
+
+function loadRuntimeFirebaseConfig() {
+  if (typeof window !== "undefined" && window.__LABOURCARE_FIREBASE_CONFIG__) {
+    return window.__LABOURCARE_FIREBASE_CONFIG__;
+  }
+
+  try {
+    var req = new XMLHttpRequest();
+    req.open("GET", "/firebase.runtime-config.json", false);
+    req.send(null);
+    if (req.status >= 200 && req.status < 300 && req.responseText) {
+      var parsed = JSON.parse(req.responseText);
+      if (parsed && parsed.projectId && parsed.apiKey && parsed.appId) {
+        return parsed;
+      }
+      console.warn("⚠️ Runtime Firebase config exists but is incomplete. Using embedded defaults.");
+    }
+  } catch (error) {
+    // Expected when runtime config is not present.
+  }
+
+  return null;
+}
+
+var runtimeFirebaseConfig = loadRuntimeFirebaseConfig();
+var firebaseConfig = runtimeFirebaseConfig || defaultFirebaseConfig;
+
+if (runtimeFirebaseConfig && runtimeFirebaseConfig.projectId) {
+  console.log("✅ Runtime Firebase config loaded for project:", runtimeFirebaseConfig.projectId);
+} else {
+  console.log("ℹ️ Using embedded Firebase project config:", defaultFirebaseConfig.projectId);
+}
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
