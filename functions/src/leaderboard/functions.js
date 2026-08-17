@@ -232,8 +232,11 @@ const startLeaderboardRebuild = onCall({
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
   const months = periodsWithAllTime(recentMonthKeys(count));
   await startRebuildJob(months, request.auth.uid);
-  const firstBatch = await processActiveRebuildBatch();
-  return { success: true, months, firstBatch };
+  // Return as soon as the job is queued. Processing a patient batch here can
+  // exceed the callable timeout because Firestore is in Bangkok while the
+  // nearest supported Functions runtime is in us-central1. The scheduled
+  // worker resumes the job safely in the background.
+  return { success: true, months, status: 'queued' };
 });
 
 const leaderboardNightlyReconciliation = onSchedule({
