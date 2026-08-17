@@ -3,9 +3,9 @@
 const admin = require('firebase-admin');
 const { FieldPath, FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
+const functionsV1 = require('firebase-functions/v1');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const {
   ALL_TIME_PERIOD,
   isLeaderboardPeriod,
@@ -20,9 +20,13 @@ const {
 const { loadProvider, summaryRef } = require('./repository');
 
 const REGION = 'us-central1';
+// Firestore is in asia-southeast3 (Bangkok). Eventarc 2nd-gen document
+// triggers do not support that region yet, so live patient/user triggers
+// use 1st-gen Firestore functions in us-central1, matching the existing
+// admin Functions.
 const JOB_ID = 'leaderboard-v2-rebuild';
 const JOB_COLLECTION = 'leaderboard_v2_jobs';
-const PATIENT_BATCH_SIZE = 20;
+const PATIENT_BATCH_SIZE = 40;
 const SUPPORTED_SUBCOLLECTIONS = new Set([
   'antenatal_visits',
   'postpartum_visits',
@@ -148,60 +152,74 @@ async function processActiveRebuildBatch() {
   return { status: 'running', processed, lastPatientId };
 }
 
-const patientWritten = onDocumentWritten({
-  document: 'patients/{patientId}',
-  region: REGION,
-  retry: true,
-  maxInstances: 20
-}, async (event) => {
-  const before = dataFromSnapshot(event.data && event.data.before);
-  const after = dataFromSnapshot(event.data && event.data.after);
-  const ownerChanged =
-    (before.created_by || before.createdBy || null) !==
-    (after.created_by || after.createdBy || null);
-  const months = ownerChanged
-    ? recentMonthKeys(12)
-    : eventMonths(event.data && event.data.before, event.data && event.data.after);
-  await recomputePatientMonths(db(), event.params.patientId, periodsWithAllTime(months));
-});
-
-const patientActivityWritten = onDocumentWritten({
-  document: 'patients/{patientId}/{subcollection}/{documentId}',
-  region: REGION,
-  retry: true,
-  maxInstances: 40
-}, async (event) => {
-  const subcollection = event.params.subcollection;
-  if (!SUPPORTED_SUBCOLLECTIONS.has(subcollection)) return;
-  if (subcollection === 'records' && !SUPPORTED_RECORD_IDS.has(event.params.documentId)) return;
-  const months = eventMonths(event.data && event.data.before, event.data && event.data.after);
-  await recomputePatientMonths(db(), event.params.patientId, periodsWithAllTime(months));
-});
-
-const providerWritten = onDocumentWritten({
-  document: 'users/{providerId}',
-  region: REGION,
-  retry: true,
-  maxInstances: 10
-}, async (event) => {
-  if (!event.data || !event.data.after || !event.data.after.exists) return;
-  const after = dataFromSnapshot(event.data && event.data.after);
-  const role = String(after.role || '').toLowerCase();
-  if (role && role !== 'midwife') return;
-  const metadata = await loadProvider(db(), event.params.providerId);
-  const writer = db().bulkWriter();
-  periodsWithAllTime(recentMonthKeys(12)).forEach((month) => {
-    writer.set(summaryRef(db(), month, event.params.providerId), {
-      providerId: metadata.providerId,
-      providerName: metadata.providerName,
-      providerType: metadata.providerType,
-      township: metadata.township,
-      region: metadata.region,
-      calculatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
+const patientWritten = functionsV1
+  .region(REGION)
+  .runWith({
+    failurePolicy: true,
+    memory: '256MB',
+    timeoutSeconds: 120,
+    maxInstances: 20
+  })
+  .firestore.document('patients/{patientId}')
+  .onWrite(async (change, context) => {
+    const before = dataFromSnapshot(change.before);
+    const after = dataFromSnapshot(change.after);
+    const ownerChanged =
+      (before.created_by || before.createdBy || null) !==
+      (after.created_by || after.createdBy || null);
+    const months = ownerChanged
+      ? recentMonthKeys(12)
+      : eventMonths(change.before, change.after);
+    await recomputePatientMonths(db(), context.params.patientId, periodsWithAllTime(months));
   });
-  await writer.close();
-});
+
+const patientActivityWritten = functionsV1
+  .region(REGION)
+  .runWith({
+    failurePolicy: true,
+    memory: '256MB',
+    timeoutSeconds: 120,
+    maxInstances: 40
+  })
+  .firestore.document('patients/{patientId}/{subcollection}/{documentId}')
+  .onWrite(async (change, context) => {
+    const subcollection = context.params.subcollection;
+    if (!SUPPORTED_SUBCOLLECTIONS.has(subcollection)) return;
+    if (subcollection === 'records' && !SUPPORTED_RECORD_IDS.has(context.params.documentId)) {
+      return;
+    }
+    const months = eventMonths(change.before, change.after);
+    await recomputePatientMonths(db(), context.params.patientId, periodsWithAllTime(months));
+  });
+
+const providerWritten = functionsV1
+  .region(REGION)
+  .runWith({
+    failurePolicy: true,
+    memory: '256MB',
+    timeoutSeconds: 120,
+    maxInstances: 10
+  })
+  .firestore.document('users/{providerId}')
+  .onWrite(async (change, context) => {
+    if (!change.after.exists) return;
+    const after = dataFromSnapshot(change.after);
+    const role = String(after.role || '').toLowerCase();
+    if (role && role !== 'midwife') return;
+    const metadata = await loadProvider(db(), context.params.providerId);
+    const writer = db().bulkWriter();
+    periodsWithAllTime(recentMonthKeys(12)).forEach((month) => {
+      writer.set(summaryRef(db(), month, context.params.providerId), {
+        providerId: metadata.providerId,
+        providerName: metadata.providerName,
+        providerType: metadata.providerType,
+        township: metadata.township,
+        region: metadata.region,
+        calculatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+    await writer.close();
+  });
 
 const startLeaderboardRebuild = onCall({
   region: REGION,
@@ -210,7 +228,7 @@ const startLeaderboardRebuild = onCall({
   enforceAppCheck: false
 }, async (request) => {
   await requireSuperAdmin(request);
-  const requestedCount = Number(request.data && request.data.months || 12);
+  const requestedCount = Number(request.data && request.data.months || 4);
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
   const months = periodsWithAllTime(recentMonthKeys(count));
   await startRebuildJob(months, request.auth.uid);
@@ -219,13 +237,18 @@ const startLeaderboardRebuild = onCall({
 });
 
 const leaderboardNightlyReconciliation = onSchedule({
-  schedule: '0 0 * * *',
+  schedule: 'every 6 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
   memory: '256MiB'
 }, async () => {
-  await startRebuildJob(periodsWithAllTime(recentMonthKeys(1)), 'nightly-scheduler');
+  const jobRef = db().collection(JOB_COLLECTION).doc(JOB_ID);
+  const jobSnapshot = await jobRef.get();
+  if (jobSnapshot.exists && jobSnapshot.data().status === 'running') {
+    return processActiveRebuildBatch();
+  }
+  await startRebuildJob(periodsWithAllTime(recentMonthKeys(1)), 'six-hour-scheduler');
   return processActiveRebuildBatch();
 });
 

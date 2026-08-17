@@ -36,7 +36,7 @@ Confirm these items in Firebase Console:
    
    The source also exports `updateUserEmail`, but it was not deployed in the live baseline. The named deployment below deliberately deploys only the six new leaderboard Functions.
 7. In Firestore Database → Rules, copy the currently deployed rules into a dated backup file before deploying rules.
-8. In Google Cloud Console → Billing → Budgets & alerts, create a small warning budget before starting the 12-month build.
+8. In Google Cloud Console → Billing → Budgets & alerts, create a small warning budget before starting the all-time and 4-month build.
 
 Do not continue if the selected project ID is different.
 
@@ -122,13 +122,20 @@ First perform a dry review:
 firebase deploy --dry-run --only functions:leaderboardPatientWritten,functions:leaderboardPatientActivityWritten,functions:leaderboardProviderWritten,functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
 ```
 
-Confirm that it lists only the six new leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`:
+Confirm that it lists only the six new leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
+
+**Bangkok limitation:** Firestore is in `asia-southeast3`. Google cannot attach document triggers in that region yet, so `leaderboardPatientWritten`, `leaderboardPatientActivityWritten`, and `leaderboardProviderWritten` will fail to create. That is expected. Deploy and keep these three, which do work:
 
 ```bash
-firebase deploy --only functions:leaderboardPatientWritten,functions:leaderboardPatientActivityWritten,functions:leaderboardProviderWritten,functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
+firebase deploy --only functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
 ```
 
-After deployment, open Firebase Console → Functions and verify that all six new Functions are healthy.
+After deployment, open Firebase Console → Functions and verify:
+
+- `adminSetUserPassword` and `processPendingPasswordResets` are still present;
+- `startLeaderboardRebuild`, `leaderboardNightlyReconciliation`, and `leaderboardReconciliationWorker` are healthy.
+
+The 15-minute worker continues Super Admin rebuilds. A separate 6-hour job starts all-time plus the current month only when no rebuild is already running, so scores still catch up without live document triggers.
 
 ## 7. Deploy indexes and additive rules
 
@@ -158,11 +165,11 @@ git push -u origin version-2-upgrade
 
 Use the Netlify branch preview for `version-2-upgrade`. Do not make it the production branch yet.
 
-## 9. Build all-time and the last 12 months
+## 9. Build all-time and the last 4 months
 
 1. Open the branch-preview Leaderboard.
 2. Sign in as Super Admin.
-3. Click **Build all-time and last 12 months**.
+3. Click **Build all-time and last 4 months**.
 4. Confirm the prompt once.
 5. The first batch starts immediately. The scheduled worker continues every 15 minutes.
 6. In Firestore Console, inspect `leaderboard_v2_jobs/leaderboard-v2-rebuild`.
@@ -207,7 +214,7 @@ During the first days, check:
 - `leaderboard_v2_jobs` for failed or stuck jobs;
 - the Leaderboard freshness label.
 
-The expensive 12-month build is a one-time operation. Normal page loads read only summary documents.
+The expensive all-time and 4-month build is a one-time operation. Normal page loads read only summary documents.
 
 ## 12. Rollback
 
