@@ -284,3 +284,12 @@ exports.leaderboardNightlyReconciliation =
   leaderboardFunctions.leaderboardNightlyReconciliation;
 exports.leaderboardReconciliationWorker =
   leaderboardFunctions.leaderboardReconciliationWorker;
+
+// Dashboard V2 backend. Deploy these named functions only after the active
+// leaderboard rebuild has completed.
+const analyticsFunctions = require('./src/analytics/functions');
+exports.startDashboardV2Rebuild = analyticsFunctions.startDashboardV2Rebuild;
+exports.dashboardV2ReconciliationWorker =
+  analyticsFunctions.dashboardV2ReconciliationWorker;
+exports.combinedAnalyticsReconciliation =
+  analyticsFunctions.combinedAnalyticsReconciliation;

@@ -26,7 +26,7 @@ const REGION = 'us-central1';
 // admin Functions.
 const JOB_ID = 'leaderboard-v2-rebuild';
 const JOB_COLLECTION = 'leaderboard_v2_jobs';
-const PATIENT_BATCH_SIZE = 40;
+const PATIENT_BATCH_SIZE = 10;
 const SUPPORTED_SUBCOLLECTIONS = new Set([
   'antenatal_visits',
   'postpartum_visits',
@@ -142,13 +142,15 @@ async function processActiveRebuildBatch() {
   for (const patient of patients.docs) {
     await recomputePatientMonths(database, patient.id, months);
     processed += 1;
+    // Persist every completed patient so a cross-region timeout retries only
+    // the current patient instead of repeating the whole batch.
+    await jobRef.set({
+      lastPatientId: patient.id,
+      processedPatients: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
   }
   const lastPatientId = patients.docs[patients.docs.length - 1].id;
-  await jobRef.set({
-    lastPatientId,
-    processedPatients: Number(job.processedPatients || 0) + processed,
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
   return { status: 'running', processed, lastPatientId };
 }
 
@@ -240,7 +242,7 @@ const startLeaderboardRebuild = onCall({
 });
 
 const leaderboardNightlyReconciliation = onSchedule({
-  schedule: 'every 6 hours',
+  schedule: 'every 72 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
@@ -251,8 +253,11 @@ const leaderboardNightlyReconciliation = onSchedule({
   if (jobSnapshot.exists && jobSnapshot.data().status === 'running') {
     return processActiveRebuildBatch();
   }
-  await startRebuildJob(periodsWithAllTime(recentMonthKeys(1)), 'six-hour-scheduler');
-  return processActiveRebuildBatch();
+  // Dashboard V2's combined reconciliation now loads every patient's
+  // clinical facts once and refreshes both analytics products. Keep this
+  // schedule only as a safe continuation path for an already-running legacy
+  // leaderboard job so the two 72-hour schedules never duplicate full scans.
+  return { status: 'idle', owner: 'combinedAnalyticsReconciliation' };
 });
 
 const leaderboardReconciliationWorker = onSchedule({
@@ -261,7 +266,8 @@ const leaderboardReconciliationWorker = onSchedule({
   region: REGION,
   timeoutSeconds: 540,
   memory: '512MiB',
-  maxInstances: 1
+  maxInstances: 1,
+  concurrency: 1
 }, async () => {
   try {
     return await processActiveRebuildBatch();

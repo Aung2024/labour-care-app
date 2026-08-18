@@ -30,6 +30,36 @@ service cloud.firestore {
         );
     }
 
+    function canReadAnalyticsScope() {
+      return currentUserExists()
+        && (
+          currentUserData().role in ["Super Admin", "Central", "admin"]
+          || (
+            currentUserData().role in ["Midwife", "midwife"]
+            && resource.data.scopeType == "provider"
+            && resource.data.providerId == request.auth.uid
+          )
+          || (
+            currentUserData().role == "TMO"
+            && (
+              (
+                resource.data.scopeType == "township"
+                && resource.data.township == currentUserData().township
+              )
+              || (
+                resource.data.scopeType == "provider"
+                && resource.data.township == currentUserData().township
+              )
+            )
+          )
+          || (
+            currentUserData().role == "Regional Officer"
+            && resource.data.region == currentUserData().region
+            && resource.data.scopeType in ["region", "township", "provider"]
+          )
+        );
+    }
+
     // Users collection
     match /users/{userId} {
       // Allow users to read/write their own data
@@ -299,6 +329,26 @@ service cloud.firestore {
     }
 
     match /leaderboard_v2_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    // Aggregate-only Dashboard V2 summaries. Patient contributions and job
+    // checkpoints remain server-only.
+    match /analytics_v2_periods/{period} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /scopes/{scopeId} {
+        allow read: if canReadAnalyticsScope();
+        allow write: if false;
+      }
+    }
+
+    match /analytics_v2_contributions/{contributionId} {
+      allow read, write: if false;
+    }
+
+    match /analytics_v2_jobs/{jobId} {
       allow read, write: if false;
     }
   }

@@ -2248,6 +2248,8 @@
 
     // ===================== LAZY TAB MANAGEMENT =====================
     var cachedMetrics = null;
+    var activeDashboardPreset = 'all';
+    var dashboardSummaryStatus = '';
     function renderTabIfNeeded(tabId) {
       if (tabsRendered[tabId] || !cachedMetrics) return;
       if (tabId === 'overview') renderOverviewCharts(cachedMetrics);
@@ -2268,7 +2270,12 @@
       var hasTmo = tmoEl && tmoEl.value && tmoEl.value !== 'all';
       var hasMidwife = midwifeEl && midwifeEl.value && midwifeEl.value !== 'all';
       var hasCentralRegion = userRole === 'Central' && regEl && regEl.value && regEl.value !== 'all';
-      if (el) el.style.display = (dateFilter.start || dateFilter.end || hasTmo || hasMidwife || hasCentralRegion) ? 'block' : 'none';
+      if (el) {
+        var customRange = activeDashboardPreset === 'custom';
+        el.textContent = dashboardSummaryStatus ||
+          (customRange ? 'Custom range may load slowly' : 'Filtered view active');
+        el.style.display = (dashboardSummaryStatus || dateFilter.start || dateFilter.end || hasTmo || hasMidwife || hasCentralRegion) ? 'block' : 'none';
+      }
     }
 
     function getSelectedTmoTownship() {
@@ -2281,10 +2288,85 @@
       return el && el.value ? el.value : 'all';
     }
 
+    function dashboardV2Enabled() {
+      return !!(runtimeFirebaseConfig && runtimeFirebaseConfig.features &&
+        runtimeFirebaseConfig.features.dashboardV2);
+    }
+
+    function dashboardV2PeriodKey(preset, now) {
+      now = now || new Date();
+      if (preset === 'month') return getMonthKey(now);
+      if (preset === 'quarter') {
+        var quarter = Math.floor(now.getMonth() / 3) + 1;
+        return now.getFullYear() + '-Q' + quarter;
+      }
+      if (preset === 'year') return String(now.getFullYear());
+      return 'all';
+    }
+
+    function dashboardV2Scope() {
+      var midwifeEl = document.getElementById('midwifeFilter');
+      var selectedMidwife = midwifeEl ? midwifeEl.value : 'all';
+      if (selectedMidwife && selectedMidwife !== 'all') return { type: 'provider', id: selectedMidwife };
+      var selectedTownship = getSelectedTmoTownship();
+      if (selectedTownship && selectedTownship !== 'all') return { type: 'township', id: selectedTownship };
+      var selectedRegion = getSelectedCentralRegion();
+      if (selectedRegion && selectedRegion !== 'all') return { type: 'region', id: selectedRegion };
+      if ((userRole || '').toLowerCase() === 'midwife') return { type: 'provider', id: currentUser.uid };
+      if (userRole === 'TMO') return { type: 'township', id: userTownship };
+      if (userRole === 'Regional Officer') return { type: 'region', id: userRegion };
+      return { type: 'national', id: 'all' };
+    }
+
+    async function fetchDashboardV2Metrics() {
+      var period = dashboardV2PeriodKey(activeDashboardPreset);
+      var scope = dashboardV2Scope();
+      var scopeId = scope.type + ':' + encodeURIComponent(String(scope.id || 'unknown'));
+      var snap = await dashboardSmartGet(
+        firebase.firestore().collection('analytics_v2_periods').doc(period)
+          .collection('scopes').doc(scopeId),
+        { timeout: 10000, retries: 1 }
+      );
+      if (!snap || !snap.exists) throw new Error('Dashboard summary is not available yet.');
+      var summary = snap.data() || {};
+      dashboardSummaryStatus = 'Fast summary · ' + period.replace(':', ' ');
+      if (summary.calculatedAt) {
+        var calculated = parseDateValue(summary.calculatedAt);
+        if (calculated) {
+          var ageHours = (Date.now() - calculated.getTime()) / 3600000;
+          dashboardSummaryStatus = (ageHours > 80 ? 'Summary may be stale' : dashboardSummaryStatus) +
+            ' · updated ' + calculated.toLocaleString();
+        }
+      }
+      updateFilterNotice();
+      return summary.metrics || {};
+    }
+
     async function refreshDashboard() {
       try {
         document.getElementById('loadingState').style.display = 'block';
         document.getElementById('dashboardContent').style.display = 'none';
+
+        if (dashboardV2Enabled() && activeDashboardPreset !== 'custom' && navigator.onLine) {
+          try {
+            cachedMetrics = await fetchDashboardV2Metrics();
+            analyticsData = { patients: [], allPatients: [], totalPatients: cachedMetrics.total || 0 };
+            Object.keys(tabsRendered).forEach(function(k) { tabsRendered[k] = false; });
+            Object.keys(chartInstances).forEach(destroyChart);
+            updateKPIAndStats(cachedMetrics);
+            var summaryActiveTab = document.querySelector('#dashboardTabs .nav-link.active');
+            var summaryTabId = summaryActiveTab ? summaryActiveTab.id.replace('tab-', '') : 'overview';
+            renderTabIfNeeded(summaryTabId);
+            return;
+          } catch (summaryError) {
+            console.warn('Dashboard V2 summary unavailable; using temporary legacy fallback.', summaryError);
+            dashboardSummaryStatus = 'Fast summary unavailable · temporary legacy calculation';
+            updateFilterNotice();
+          }
+        } else if (activeDashboardPreset === 'custom') {
+          dashboardSummaryStatus = 'Custom range may load slowly';
+          updateFilterNotice();
+        }
 
         analyticsData = await buildAnalyticsData();
         var dataset = analyticsData.patients || [];
@@ -2348,13 +2430,15 @@
     }
 
     async function applyPresetFilter(preset) {
+      activeDashboardPreset = preset || 'all';
+      dashboardSummaryStatus = '';
       var now = new Date();
       var startInput = document.getElementById('filterStartDate');
       var endInput = document.getElementById('filterEndDate');
       var startDate = null, endDate = normalizeEndOfDay(now);
 
       if (preset === 'month') startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else if (preset === 'quarter') startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      else if (preset === 'quarter') startDate = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
       else if (preset === 'year') startDate = new Date(now.getFullYear(), 0, 1);
       else { startDate = null; endDate = null; }
 
@@ -2370,6 +2454,8 @@
       var startVal = parseDateValue(document.getElementById('filterStartDate')?.value);
       var endVal = parseDateValue(document.getElementById('filterEndDate')?.value);
       if (startVal && endVal && startVal > endVal) { alert('Start date cannot be later than end date.'); return; }
+      activeDashboardPreset = 'custom';
+      dashboardSummaryStatus = 'Custom range may load slowly';
       dateFilter.start = startVal ? normalizeStartOfDay(startVal) : null;
       dateFilter.end = endVal ? normalizeEndOfDay(endVal) : null;
       updateFilterNotice();
@@ -2379,6 +2465,8 @@
     async function resetDateFilter() {
       var s = document.getElementById('filterStartDate'), e = document.getElementById('filterEndDate');
       if (s) s.value = ''; if (e) e.value = '';
+      activeDashboardPreset = 'all';
+      dashboardSummaryStatus = '';
       dateFilter = { start: null, end: null };
       var tmoEl = document.getElementById('tmoFilter');
       var midwifeEl = document.getElementById('midwifeFilter');
@@ -2411,6 +2499,23 @@
     }
 
     // ===================== SUPERVISORY FILTERS =====================
+    async function loadDashboardV2ScopeMetadata(scopeType, conditions) {
+      var query = firebase.firestore().collection('analytics_v2_periods').doc('all')
+        .collection('scopes').where('scopeType', '==', scopeType);
+      (conditions || []).forEach(function(condition) {
+        if (condition.value && condition.value !== 'all') {
+          query = query.where(condition.field, '==', condition.value);
+        }
+      });
+      return dashboardSmartGet(query, { timeout: 10000, retries: 1 });
+    }
+
+    function replaceFilterWithChangeHandler(el, handler) {
+      var fresh = el.cloneNode(true);
+      el.parentNode.replaceChild(fresh, el);
+      fresh.addEventListener('change', handler);
+    }
+
     async function loadTmoFilter() {
       try {
         var group = document.getElementById('tmoFilterGroup');
@@ -2418,6 +2523,28 @@
         if (!group || !el || userRole !== 'Regional Officer' || !userRegion) return;
         group.style.display = 'block';
         el.innerHTML = '<option value="all">All Townships</option>';
+
+        if (dashboardV2Enabled()) {
+          var scopeSnap = await loadDashboardV2ScopeMetadata('township', [
+            { field: 'region', value: userRegion }
+          ]);
+          var scopeTownships = [];
+          scopeSnap.forEach(function(doc) {
+            var value = (doc.data() || {}).township;
+            if (value) scopeTownships.push(value);
+          });
+          Array.from(new Set(scopeTownships)).sort().forEach(function(township) {
+            var option = document.createElement('option');
+            option.value = township;
+            option.textContent = township;
+            el.appendChild(option);
+          });
+          replaceFilterWithChangeHandler(el, async function() {
+            await loadMidwifeFilter();
+            await refreshDashboard();
+          });
+          return;
+        }
 
         var db = firebase.firestore();
         var byTownship = new Map();
@@ -2463,6 +2590,26 @@
         if (!group || !el || userRole !== 'Central') return;
         group.style.display = 'block';
         el.innerHTML = '<option value="all">All Regions</option>';
+        if (dashboardV2Enabled()) {
+          var scopeSnap = await loadDashboardV2ScopeMetadata('region');
+          var scopeRegions = [];
+          scopeSnap.forEach(function(doc) {
+            var value = (doc.data() || {}).region;
+            if (value) scopeRegions.push(value);
+          });
+          Array.from(new Set(scopeRegions)).sort().forEach(function(region) {
+            var option = document.createElement('option');
+            option.value = region;
+            option.textContent = region;
+            el.appendChild(option);
+          });
+          replaceFilterWithChangeHandler(el, async function() {
+            await loadCentralTmoFilter();
+            await loadMidwifeFilter();
+            await refreshDashboard();
+          });
+          return;
+        }
         var db = firebase.firestore();
         var regions = new Map();
         var snaps = await Promise.all([
@@ -2507,6 +2654,27 @@
         var selRegion = regEl && regEl.value ? regEl.value : 'all';
         var byTownship = new Map();
 
+        if (dashboardV2Enabled()) {
+          var scopeSnap = await loadDashboardV2ScopeMetadata('township', [
+            { field: 'region', value: selRegion }
+          ]);
+          scopeSnap.forEach(function(doc) {
+            var value = (doc.data() || {}).township;
+            if (value) byTownship.set(value, value);
+          });
+          Array.from(byTownship.keys()).sort().forEach(function(township) {
+            var option = document.createElement('option');
+            option.value = township;
+            option.textContent = township;
+            el.appendChild(option);
+          });
+          replaceFilterWithChangeHandler(el, async function() {
+            await loadMidwifeFilter();
+            await refreshDashboard();
+          });
+          return;
+        }
+
         function addFromSnap(snap) {
           if (!snap || typeof snap.forEach !== 'function') return;
           snap.forEach(function(doc) {
@@ -2550,7 +2718,43 @@
         var el = document.getElementById('midwifeFilter');
         var group = document.getElementById('midwifeFilterGroup');
         if (!el || !group) return;
+        if ((userRole || '').toLowerCase() === 'midwife') return;
         el.innerHTML = '<option value="all">All Midwives</option>';
+        if (dashboardV2Enabled()) {
+          var conditions = [];
+          var selectedTownship = getSelectedTmoTownship();
+          var selectedRegion = getSelectedCentralRegion();
+          if (selectedTownship && selectedTownship !== 'all') {
+            conditions.push({ field: 'township', value: selectedTownship });
+          } else if (userRole === 'TMO' && userTownship) {
+            conditions.push({ field: 'township', value: userTownship });
+          } else if (userRole === 'Regional Officer' && userRegion) {
+            conditions.push({ field: 'region', value: userRegion });
+          } else if (userRole === 'Central' && selectedRegion && selectedRegion !== 'all') {
+            conditions.push({ field: 'region', value: selectedRegion });
+          }
+          var scopeSnap = await loadDashboardV2ScopeMetadata('provider', conditions);
+          var scopeMidwives = [];
+          scopeSnap.forEach(function(doc) {
+            var data = doc.data() || {};
+            if (!data.providerId) return;
+            scopeMidwives.push({
+              id: data.providerId,
+              name: data.providerName || data.providerId,
+              township: data.township || ''
+            });
+          });
+          scopeMidwives.sort(function(a, b) { return a.name.localeCompare(b.name); });
+          scopeMidwives.forEach(function(midwife) {
+            var option = document.createElement('option');
+            option.value = midwife.id;
+            option.textContent = midwife.name + (midwife.township ? ' (' + midwife.township + ')' : '');
+            el.appendChild(option);
+          });
+          group.style.display = 'block';
+          replaceFilterWithChangeHandler(el, refreshDashboard);
+          return;
+        }
         var snap = null;
         var centralDocList = null;
         if (userRole === 'Super Admin' || userRole === 'admin') {

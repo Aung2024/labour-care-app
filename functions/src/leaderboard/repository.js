@@ -17,11 +17,22 @@ const PATIENT_ACTIVITY_COLLECTIONS = {
   pncVisits: 'postpartum_visits',
   labTests: 'testRecords',
   immediateNewbornCare: 'immediate_newborn_care',
-  newbornCare: 'newborn_care'
+  newbornCare: 'newborn_care',
+  hrtActions: 'hrt_actions'
 };
 
-async function collectionData(ref) {
-  const snapshot = await ref.get();
+async function collectionData(ref, options) {
+  const opts = options || {};
+  let query = ref;
+  if (opts.orderBy) query = query.orderBy(opts.orderBy, opts.direction || 'desc');
+  if (opts.limit) query = query.limit(opts.limit);
+  let snapshot;
+  try {
+    snapshot = await query.get();
+  } catch (error) {
+    // Legacy documents may not carry the sort field. Keep the read bounded.
+    snapshot = await (opts.limit ? ref.limit(opts.limit) : ref).get();
+  }
   return snapshot.docs.map((doc) => doc.data() || {});
 }
 
@@ -43,20 +54,44 @@ async function loadPatientActivity(db, patientId) {
     labTests,
     immediateNewbornCare,
     newbornCare,
+    hrtActions,
     summary,
     startingTime,
     secondStage,
-    transferRecord
+    thirdStage,
+    transferRecord,
+    birthRecord,
+    endTreatment,
+    outcomeRecord,
+    deliveryNotes
   ] = await Promise.all([
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.ancVisits)),
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.pncVisits)),
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.labTests)),
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.immediateNewbornCare)),
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.newbornCare)),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.ancVisits), {
+      orderBy: 'visitDate', limit: 20
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.pncVisits), {
+      orderBy: 'visitDate', limit: 10
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.labTests), {
+      orderBy: 'testDate', limit: 5
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.immediateNewbornCare), {
+      limit: 1
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.newbornCare), {
+      limit: 1
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.hrtActions), {
+      orderBy: 'recordedAt', limit: 20
+    }),
     documentData(patientRef.collection('records').doc('summary')),
     documentData(patientRef.collection('records').doc('startingTime')),
     documentData(patientRef.collection('records').doc('secondStage')),
-    documentData(patientRef.collection('records').doc('transferRecord'))
+    documentData(patientRef.collection('records').doc('thirdStage')),
+    documentData(patientRef.collection('records').doc('transferRecord')),
+    documentData(patientRef.collection('records').doc('birthRecord')),
+    documentData(patientRef.collection('records').doc('endTreatment')),
+    documentData(patientRef.collection('records').doc('outcomeRecord')),
+    documentData(patientRef.collection('records').doc('deliveryNotes'))
   ]);
 
   return {
@@ -67,10 +102,16 @@ async function loadPatientActivity(db, patientId) {
       labTests,
       immediateNewbornCare,
       newbornCare,
+      hrtActions,
       summary,
       startingTime,
       secondStage,
-      transferRecord
+      thirdStage,
+      transferRecord,
+      birthRecord,
+      endTreatment,
+      outcomeRecord,
+      deliveryNotes
     }
   };
 }

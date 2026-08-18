@@ -135,7 +135,7 @@ After deployment, open Firebase Console → Functions and verify:
 - `adminSetUserPassword` and `processPendingPasswordResets` are still present;
 - `startLeaderboardRebuild`, `leaderboardNightlyReconciliation`, and `leaderboardReconciliationWorker` are healthy.
 
-The 15-minute worker continues Super Admin rebuilds. A separate 6-hour job starts all-time plus the current month only when no rebuild is already running, so scores still catch up without live document triggers.
+The 15-minute worker continues Super Admin rebuilds. A separate 72-hour job starts all-time plus the current month only when no rebuild is already running, so scores still catch up without live document triggers while limiting Firestore reads.
 
 ## 7. Deploy indexes and additive rules
 
@@ -171,7 +171,7 @@ Use the Netlify branch preview for `version-2-upgrade`. Do not make it the produ
 2. Sign in as Super Admin.
 3. Click **Build all-time and last 4 months**.
 4. Confirm the prompt once.
-5. The first batch starts immediately. The scheduled worker continues every 15 minutes.
+5. The request queues the rebuild immediately. The scheduled worker continues every 15 minutes in 10-patient batches and checkpoints after each patient.
 6. In Firestore Console, inspect `leaderboard_v2_jobs/leaderboard-v2-rebuild`.
 7. Wait until `status` becomes `complete`.
 

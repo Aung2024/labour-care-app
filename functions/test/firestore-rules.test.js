@@ -29,6 +29,7 @@ async function seed() {
       ['midwife-b', { role: 'Midwife', township: 'Beta', region: 'North' }],
       ['tmo-a', { role: 'TMO', township: 'Alpha', region: 'North' }],
       ['regional', { role: 'Regional Officer', township: '', region: 'North' }],
+      ['central', { role: 'Central', township: '', region: '' }],
       ['super', { role: 'Super Admin', township: '', region: '' }]
     ];
     for (const [id, data] of users) {
@@ -67,6 +68,20 @@ async function seed() {
         score: 12
       }
     );
+    const analyticsScopes = [
+      ['national:all', { scopeType: 'national', scopeId: 'all', region: '', township: '', providerId: '' }],
+      ['region:North', { scopeType: 'region', scopeId: 'North', region: 'North', township: '', providerId: '' }],
+      ['township:Alpha', { scopeType: 'township', scopeId: 'Alpha', region: 'North', township: 'Alpha', providerId: '' }],
+      ['township:Beta', { scopeType: 'township', scopeId: 'Beta', region: 'North', township: 'Beta', providerId: '' }],
+      ['provider:midwife-a', { scopeType: 'provider', scopeId: 'midwife-a', region: 'North', township: 'Alpha', providerId: 'midwife-a' }],
+      ['provider:midwife-b', { scopeType: 'provider', scopeId: 'midwife-b', region: 'North', township: 'Beta', providerId: 'midwife-b' }]
+    ];
+    for (const [scopeId, scope] of analyticsScopes) {
+      await setDoc(
+        doc(database, 'analytics_v2_periods', 'all', 'scopes', scopeId),
+        Object.assign({ period: 'all', metrics: { total: 1 } }, scope)
+      );
+    }
   });
 }
 
@@ -174,6 +189,58 @@ test('browser clients cannot write summaries, contributions, or jobs', async () 
     doc(database, 'leaderboard_v2_jobs', 'job'),
     { status: 'running' }
   ));
+  await assertFails(setDoc(
+    doc(database, 'analytics_v2_periods', 'all', 'scopes', 'national:all'),
+    { metrics: { total: 999 } },
+    { merge: true }
+  ));
+  await assertFails(getDoc(doc(database, 'analytics_v2_contributions', 'all_patient')));
+  await assertFails(getDoc(doc(database, 'analytics_v2_jobs', 'dashboard-v2-rebuild')));
+});
+
+function analyticsScopeRef(uid, scopeId) {
+  return doc(
+    environment.authenticatedContext(uid).firestore(),
+    'analytics_v2_periods',
+    'all',
+    'scopes',
+    scopeId
+  );
+}
+
+test('Dashboard V2 scopes enforce each healthcare role boundary', async () => {
+  await assertSucceeds(getDoc(analyticsScopeRef('midwife-a', 'provider:midwife-a')));
+  await assertFails(getDoc(analyticsScopeRef('midwife-a', 'township:Alpha')));
+  await assertFails(getDoc(analyticsScopeRef('midwife-a', 'provider:midwife-b')));
+
+  await assertSucceeds(getDoc(analyticsScopeRef('tmo-a', 'township:Alpha')));
+  await assertSucceeds(getDoc(analyticsScopeRef('tmo-a', 'provider:midwife-a')));
+  await assertFails(getDoc(analyticsScopeRef('tmo-a', 'township:Beta')));
+
+  await assertSucceeds(getDoc(analyticsScopeRef('regional', 'region:North')));
+  await assertSucceeds(getDoc(analyticsScopeRef('regional', 'township:Beta')));
+  await assertSucceeds(getDoc(analyticsScopeRef('central', 'national:all')));
+  await assertSucceeds(getDoc(analyticsScopeRef('super', 'national:all')));
+});
+
+test('Dashboard V2 metadata queries must be constrained to the caller scope', async () => {
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  const regionalDb = environment.authenticatedContext('regional').firestore();
+  const scopesPath = ['analytics_v2_periods', 'all', 'scopes'];
+  await assertSucceeds(getDocs(query(
+    collection(tmoDb, ...scopesPath),
+    where('scopeType', '==', 'provider'),
+    where('township', '==', 'Alpha')
+  )));
+  await assertFails(getDocs(query(
+    collection(tmoDb, ...scopesPath),
+    where('scopeType', '==', 'provider')
+  )));
+  await assertSucceeds(getDocs(query(
+    collection(regionalDb, ...scopesPath),
+    where('scopeType', '==', 'township'),
+    where('region', '==', 'North')
+  )));
 });
 
 test('rules fixture is initialized', () => {

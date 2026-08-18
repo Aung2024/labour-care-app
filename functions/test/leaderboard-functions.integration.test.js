@@ -10,6 +10,9 @@ const database = admin.firestore();
 const {
   processActiveRebuildBatch
 } = require('../src/leaderboard/functions');
+const {
+  processActiveDashboardBatch
+} = require('../src/analytics/functions');
 
 function dateOnly(date) {
   return date.getUTCFullYear() + '-' +
@@ -128,4 +131,38 @@ test('rebuild worker resumes from a checkpoint and completes', async () => {
   const completed = await jobRef.get();
   assert.equal(completed.data().status, 'complete');
   assert.ok(completed.data().processedPatients >= 1);
+});
+
+test('dashboard rebuild is checkpointed, retry-safe, and writes scoped summaries', async () => {
+  const runId = 'integration-dashboard-run';
+  const jobRef = database.collection('analytics_v2_jobs').doc('dashboard-v2-rebuild');
+  await jobRef.set({
+    status: 'running',
+    runId,
+    periods: [{ key: 'all', type: 'all', start: null, end: null }],
+    lastPatientId: null,
+    processedPatients: 0
+  });
+
+  let result = await processActiveDashboardBatch();
+  assert.equal(result.status, 'running');
+  const checkpoint = await jobRef.get();
+  assert.ok(checkpoint.data().lastPatientId);
+  assert.ok(checkpoint.data().processedPatients >= 1);
+
+  result = await processActiveDashboardBatch();
+  assert.equal(result.status, 'complete');
+  const national = await database.collection('analytics_v2_periods')
+    .doc('all')
+    .collection('scopes')
+    .doc('national:all')
+    .get();
+  assert.equal(national.exists, true);
+  assert.ok(national.data().metrics.total >= 1);
+
+  const contributions = await database.collection('analytics_v2_contributions')
+    .where('period', '==', 'all')
+    .get();
+  assert.ok(contributions.size >= 1);
+  contributions.forEach((doc) => assert.equal(doc.data().runId, runId));
 });

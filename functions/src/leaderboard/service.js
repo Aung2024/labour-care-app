@@ -143,6 +143,12 @@ async function recomputePatientMonths(db, patientId, months) {
   const validMonths = Array.from(new Set((months || []).filter(isLeaderboardPeriod)));
   if (!patientId || !validMonths.length) return [];
   const loaded = await loadPatientActivity(db, patientId);
+  return recomputeLoadedPatientMonths(db, patientId, validMonths, loaded);
+}
+
+async function recomputeLoadedPatientMonths(db, patientId, months, loaded) {
+  const validMonths = Array.from(new Set((months || []).filter(isLeaderboardPeriod)));
+  if (!patientId || !validMonths.length) return [];
   const patient = loaded.patient;
   const providerId = patient && (patient.created_by || patient.createdBy) || null;
   const results = [];
@@ -223,6 +229,7 @@ async function rebuildProviderSummariesFromContributions(db, month) {
 module.exports = {
   recomputePatientMonth,
   recomputePatientMonths,
+  recomputeLoadedPatientMonths,
   rebuildProviderSummariesFromContributions,
   summaryWithDelta,
   zeroContribution
