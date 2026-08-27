@@ -5,6 +5,9 @@
 
 // Test Firebase connectivity
 async function testFirebaseConnectivity() {
+  const authDomain =
+    (typeof firebaseConfig !== 'undefined' && firebaseConfig.authDomain) ||
+    'labourcare-2481a.firebaseapp.com';
   const results = {
     timestamp: new Date().toISOString(),
     userAgent: navigator.userAgent,
@@ -22,7 +25,7 @@ async function testFirebaseConnectivity() {
   results.tests.dnsResolution = await testDNSResolution();
   
   // Test 2: Firebase Auth Domain
-  results.tests.firebaseAuthDomain = await testDomainConnectivity('labourcare-2481a.firebaseapp.com');
+  results.tests.firebaseAuthDomain = await testDomainConnectivity(authDomain);
   
   // Test 3: Firebase Firestore API
   results.tests.firestoreAPI = await testDomainConnectivity('firestore.googleapis.com');
@@ -46,8 +49,11 @@ async function testFirebaseConnectivity() {
 // Test DNS resolution
 async function testDNSResolution() {
   try {
+    const authDomain =
+      (typeof firebaseConfig !== 'undefined' && firebaseConfig.authDomain) ||
+      'labourcare-2481a.firebaseapp.com';
     const startTime = performance.now();
-    const response = await fetch('https://labourcare-2481a.firebaseapp.com/.well-known/security.txt', {
+    const response = await fetch(`https://${authDomain}/.well-known/security.txt`, {
       method: 'HEAD',
       mode: 'no-cors',
       cache: 'no-cache'

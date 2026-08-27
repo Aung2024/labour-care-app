@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Program Officer | Voucher Administration</title>
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/program-officer.css" />
+</head>
+<body>
+  <header class="po-header">
+    <div class="po-header__inner">
+      <div class="po-brand">
+        <div class="po-brand__icon" aria-hidden="true"><i class="fas fa-clipboard-check"></i></div>
+        <div>
+          <p class="po-eyebrow">m-MNCH Care</p>
+          <h1>Program Officer</h1>
+          <p>Voucher providers, services, allocations and reports</p>
+        </div>
+      </div>
+      <div class="po-header__actions">
+        <span id="signedInUser" class="po-user">Checking access…</span>
+        <button id="refreshAllBtn" type="button" class="btn btn-light btn-sm">
+          <i class="fas fa-sync-alt me-1"></i>Refresh
+        </button>
+        <a href="home.html" class="btn btn-outline-light btn-sm"><i class="fas fa-home me-1"></i>Home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="po-shell">
+    <div id="pageMessage" class="po-message" role="status" aria-live="polite" hidden></div>
+
+    <section class="po-console-note" aria-label="Account administration notice">
+      <i class="fas fa-info-circle" aria-hidden="true"></i>
+      <div>
+        <strong>Login accounts are managed in Firebase Console.</strong>
+        Create or delete Authentication users and change passwords there. This page changes Firestore profile labels,
+        descriptions and active state only; it never creates, deletes or resets a login account.
+      </div>
+    </section>
+
+    <section class="po-summary-grid" aria-label="Program summary">
+      <article class="po-stat">
+        <span class="po-stat__icon po-stat__icon--blue"><i class="fas fa-building"></i></span>
+        <div><span id="activeMaternityCount" class="po-stat__value">—</span><span class="po-stat__label">Active maternity homes</span></div>
+      </article>
+      <article class="po-stat">
+        <span class="po-stat__icon po-stat__icon--violet"><i class="fas fa-flask"></i></span>
+        <div><span id="activeLabCount" class="po-stat__value">—</span><span class="po-stat__label">Active labs</span></div>
+      </article>
+      <article class="po-stat">
+        <span class="po-stat__icon po-stat__icon--green"><i class="fas fa-ticket-alt"></i></span>
+        <div><span id="remainingQuotaTotal" class="po-stat__value">—</span><span class="po-stat__label">Vouchers remaining</span></div>
+      </article>
+      <article class="po-stat">
+        <span class="po-stat__icon po-stat__icon--amber"><i class="fas fa-chart-pie"></i></span>
+        <div><span id="usedQuotaTotal" class="po-stat__value">—</span><span class="po-stat__label">Vouchers used</span></div>
+      </article>
+    </section>
+
+    <nav class="po-tabs" aria-label="Program Officer sections">
+      <button type="button" class="po-tab is-active" data-panel="providersPanel"><i class="fas fa-users-cog"></i> Providers</button>
+      <button type="button" class="po-tab" data-panel="servicesPanel"><i class="fas fa-list-alt"></i> Service catalog</button>
+      <button type="button" class="po-tab" data-panel="pricesPanel"><i class="fas fa-tags"></i> Price overrides</button>
+      <button type="button" class="po-tab" data-panel="allocationsPanel"><i class="fas fa-wallet"></i> Allocations</button>
+      <button type="button" class="po-tab" data-panel="reportsPanel"><i class="fas fa-file-invoice"></i> Voucher reports</button>
+    </nav>
+
+    <section id="providersPanel" class="po-panel is-active">
+      <div class="po-panel__heading">
+        <div>
+          <p class="po-kicker">Firestore profiles</p>
+          <h2>Provider directory</h2>
+          <p>Edit public profile details without changing Firebase Authentication.</p>
+        </div>
+        <div class="po-inline-filters">
+          <label>
+            <span>Provider type</span>
+            <select id="providerTypeFilter" class="form-select">
+              <option value="">All provider types</option>
+              <option value="maternity">Midwife / Maternity Home</option>
+              <option value="lab">Lab</option>
+            </select>
+          </label>
+          <label>
+            <span>Search</span>
+            <input id="providerSearch" type="search" class="form-control" placeholder="Name or email" />
+          </label>
+        </div>
+      </div>
+      <div id="providersList" class="po-list po-list--cards"><div class="po-loading"><i class="fas fa-spinner fa-spin"></i> Loading profiles…</div></div>
+    </section>
+
+    <section id="servicesPanel" class="po-panel" hidden>
+      <div class="po-panel__heading">
+        <div>
+          <p class="po-kicker">Global configuration</p>
+          <h2>Service catalog</h2>
+          <p>Define the services and default prices available across the voucher program.</p>
+        </div>
+        <div class="d-flex gap-2">
+          <button id="seedCatalogBtn" type="button" class="btn btn-outline-primary"><i class="fas fa-magic me-1"></i>Load standard tests</button>
+          <button type="button" class="btn btn-primary" data-open-form="serviceFormCard"><i class="fas fa-plus me-1"></i>Add service</button>
+        </div>
+      </div>
+      <form id="serviceFormCard" class="po-editor" hidden>
+        <input id="serviceId" type="hidden" />
+        <div class="po-form-grid">
+          <label><span>Service name</span><input id="serviceName" class="form-control" required maxlength="120" /></label>
+          <label><span>Code</span><input id="serviceCode" class="form-control" required maxlength="40" /></label>
+          <label><span>Subsidized cost</span><input id="servicePrice" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Client cost share</span><input id="serviceClientShare" type="number" class="form-control" required min="0" step="0.01" value="0" /></label>
+          <label><span>Project cost share</span><input id="serviceProjectShare" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Currency</span><input id="serviceCurrency" class="form-control" value="MMK" maxlength="3" pattern="[A-Za-z]{3}" required /></label>
+          <label><span>Active</span><select id="serviceActive" class="form-select"><option value="true">Active</option><option value="false">Inactive</option></select></label>
+          <label class="po-form-grid__wide"><span>Description</span><textarea id="serviceDescription" class="form-control" rows="2" maxlength="500"></textarea></label>
+        </div>
+        <div class="po-form-actions">
+          <button type="button" class="btn btn-outline-secondary" data-close-form="serviceFormCard">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save service</button>
+        </div>
+      </form>
+      <div id="servicesList" class="po-table-wrap"><div class="po-loading"><i class="fas fa-spinner fa-spin"></i> Loading services…</div></div>
+    </section>
+
+    <section id="pricesPanel" class="po-panel" hidden>
+      <div class="po-panel__heading">
+        <div>
+          <p class="po-kicker">Maternity-home pricing</p>
+          <h2>Price overrides</h2>
+          <p>Override a global service price for one maternity home. Global prices remain unchanged.</p>
+        </div>
+        <button type="button" class="btn btn-primary" data-open-form="priceFormCard"><i class="fas fa-plus me-1"></i>Add override</button>
+      </div>
+      <form id="priceFormCard" class="po-editor" hidden>
+        <input id="priceOverrideId" type="hidden" />
+        <div class="po-form-grid">
+          <label><span>Maternity home</span><select id="priceMaternityHome" class="form-select" required></select></label>
+          <label><span>Service</span><select id="priceService" class="form-select" required></select></label>
+          <label><span>Subsidized cost</span><input id="overridePrice" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Client cost share</span><input id="overrideClientShare" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Project cost share</span><input id="overrideProjectShare" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Note</span><input id="priceNote" class="form-control" maxlength="240" placeholder="Reason for this price" /></label>
+        </div>
+        <div class="po-form-actions">
+          <button type="button" class="btn btn-outline-secondary" data-close-form="priceFormCard">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save override</button>
+        </div>
+      </form>
+      <div id="pricesList" class="po-table-wrap"><div class="po-loading"><i class="fas fa-spinner fa-spin"></i> Loading price overrides…</div></div>
+    </section>
+
+    <section id="allocationsPanel" class="po-panel" hidden>
+      <div class="po-panel__heading">
+        <div>
+          <p class="po-kicker">Program Officer controls</p>
+          <h2>Voucher and budget allocations</h2>
+          <p>Allocate voucher counts and PO-only budgets, and monitor remaining versus used quota.</p>
+        </div>
+        <button type="button" class="btn btn-primary" data-open-form="allocationFormCard"><i class="fas fa-plus me-1"></i>New allocation</button>
+      </div>
+      <form id="allocationFormCard" class="po-editor" hidden>
+        <div class="po-form-grid">
+          <label><span>Maternity home</span><select id="allocationMaternityHome" class="form-select" required></select></label>
+          <label><span>Pricing scope</span><select id="allocationService" class="form-select" disabled><option value="">Current price sheet (all services)</option></select></label>
+          <label><span>Voucher count</span><input id="allocationCount" type="number" class="form-control" required min="1" step="1" /></label>
+          <label><span>PO-only budget</span><input id="allocationBudget" type="number" class="form-control" required min="0" step="0.01" /></label>
+          <label><span>Budget label / currency</span><input id="allocationCurrency" class="form-control" value="MMK" maxlength="12" /></label>
+          <label class="po-form-grid__wide"><span>Note</span><textarea id="allocationNote" class="form-control" rows="2" maxlength="500"></textarea></label>
+        </div>
+        <div class="po-form-actions">
+          <button type="button" class="btn btn-outline-secondary" data-close-form="allocationFormCard">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-check me-1"></i>Allocate</button>
+        </div>
+      </form>
+      <div id="allocationsList" class="po-list"><div class="po-loading"><i class="fas fa-spinner fa-spin"></i> Loading allocations…</div></div>
+    </section>
+
+    <section id="reportsPanel" class="po-panel" hidden>
+      <div class="po-panel__heading">
+        <div>
+          <p class="po-kicker">Default range: last 3 months</p>
+          <h2>Voucher reports</h2>
+          <p>Filter issued and redeemed vouchers by date, status, maternity home and lab.</p>
+        </div>
+      </div>
+      <form id="reportFilters" class="po-report-filters">
+        <label><span>From</span><input id="reportFrom" type="date" class="form-control" required /></label>
+        <label><span>To</span><input id="reportTo" type="date" class="form-control" required /></label>
+        <label><span>Status</span><select id="reportStatus" class="form-select"><option value="">All statuses</option><option value="issued">Issued</option><option value="redeemed">Redeemed</option><option value="expired">Expired</option><option value="cancelled">Cancelled</option></select></label>
+        <label><span>Maternity home</span><select id="reportMaternityHome" class="form-select"></select></label>
+        <label><span>Lab</span><select id="reportLab" class="form-select"></select></label>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-filter me-1"></i>Run report</button>
+      </form>
+      <div id="reportSummary" class="po-report-summary" hidden></div>
+      <div id="reportsList" class="po-table-wrap"><div class="po-empty">Choose filters and run the report.</div></div>
+      <div class="text-center mt-3"><button id="loadMoreReports" type="button" class="btn btn-outline-primary" hidden>Load more</button></div>
+    </section>
+  </main>
+
+  <footer class="po-footer">
+    Program Officer administration only · Clinical care cards and patient workflows are intentionally not available here.
+  </footer>
+
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/voucher-service.js"></script>
+  <script src="js/program-officer.js"></script>
+</body>
+</html>

@@ -29,7 +29,12 @@ const firebaseAuth = FUNCTIONS_REQUIRE('firebase-tools/lib/auth.js');
 const firebaseApi = FUNCTIONS_REQUIRE('firebase-tools/lib/api.js');
 const { FacilityConfig } = require(path.join(ROOT, 'js', 'facility-config.js'));
 
-const PROJECT_ID = 'mnch-1cbda';
+const PROJECT_ID = 'labourcare-2481a';
+const BLOCKED_PROJECT_IDS = new Set(['mnch-1cbda']);
+
+if (BLOCKED_PROJECT_IDS.has(PROJECT_ID)) {
+  throw new Error(`Refusing to export from protected Firebase project: ${PROJECT_ID}`);
+}
 const DEFAULT_WORKBOOK = path.join(ROOT, 'docs', 'Application data by facility.xlsx');
 const EARLY_ANC_MAX_DAYS = 14 * 7;
 const LOW_BIRTH_WEIGHT_GRAM = 2000;

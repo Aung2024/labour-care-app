@@ -1,4 +1,7 @@
 // --- Firebase init ---
+// This branch is intentionally locked to the isolated Project database.
+// Never copy the MOH pilot runtime config into this branch.
+var EXPECTED_FIREBASE_PROJECT_ID = "labourcare-2481a";
 var defaultFirebaseConfig = {
   apiKey: "AIzaSyC8-y2xnLINlVTWOOaU8-w82RBzSo2djAQ",
   authDomain: "labourcare-2481a.firebaseapp.com",
@@ -35,6 +38,16 @@ function loadRuntimeFirebaseConfig() {
 
 var runtimeFirebaseConfig = loadRuntimeFirebaseConfig();
 var firebaseConfig = runtimeFirebaseConfig || defaultFirebaseConfig;
+
+if (firebaseConfig.projectId !== EXPECTED_FIREBASE_PROJECT_ID) {
+  throw new Error(
+    "Blocked Firebase initialization for unexpected project: " +
+      firebaseConfig.projectId +
+      ". Expected " +
+      EXPECTED_FIREBASE_PROJECT_ID +
+      "."
+  );
+}
 
 if (runtimeFirebaseConfig && runtimeFirebaseConfig.projectId) {
   console.log("✅ Runtime Firebase config loaded for project:", runtimeFirebaseConfig.projectId);

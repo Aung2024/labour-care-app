@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v257-moh';
+const CACHE_NAME = 'mch-care-v258-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -13,6 +13,9 @@ const FILES_TO_CACHE = [
   './transfer-patient.html',
   './transfer-requests.html',
   './manage-midwives.html',
+  './program-officer.html',
+  './promo-voucher.html',
+  './lab-vouchers.html',
   './admin.html',
   './patient-consent.html',
   './provider-consent.html',
@@ -63,7 +66,12 @@ const FILES_TO_CACHE = [
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
   './js/vendor/html2canvas.min.js',
+  './js/vendor/qrcode.min.js',
   './js/firebase.js',
+  './js/voucher-service.js',
+  './js/program-officer.js',
+  './js/promo-voucher.js',
+  './js/lab-vouchers.js',
   './js/auth-guard.js',
   './js/nav-back.js',
   './js/user-cache.js',
@@ -100,6 +108,8 @@ const FILES_TO_CACHE = [
   './js/transfer-load-utils.js',
   './js/user-cache.js',
   './css/style.css',
+  './css/program-officer.css',
+  './css/vouchers.css',
   './css/hrt-register.css',
   './css/choice-controls.css',
   './css/compact-app-bar.css',

@@ -2,7 +2,7 @@
  * IndexedDB mirror for Labour Care — documents, outbox, meta, analytics snapshot.
  */
 (function (global) {
-  const DB_NAME = "LabourCareOffline";
+  const DB_NAME = "LabourCareOffline_labourcare_2481a";
   const DB_VERSION = 1;
 
   function openDb() {

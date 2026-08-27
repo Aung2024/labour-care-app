@@ -1,16 +1,93 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users collection
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUser().active != false
+        && currentUser().approved != false
+        && currentUser().role == role;
+    }
+
+    function isSuperAdmin() {
+      return hasRole("Super Admin");
+    }
+
+    function isProgramOfficer() {
+      return hasRole("Program Officer");
+    }
+
+    function isVoucherAdministrator() {
+      return isProgramOfficer() || isSuperAdmin();
+    }
+
+    function isLab() {
+      return hasRole("Lab");
+    }
+
+    function isMidwife() {
+      return hasRole("Midwife") || hasRole("midwife");
+    }
+
+    function isClinicalUser() {
+      return isMidwife()
+        || hasRole("TMO")
+        || hasRole("Regional Officer")
+        || isSuperAdmin();
+    }
+
+    function isOpaqueVoucherId(value) {
+      return value is string
+        && value.size() == 22
+        && value.matches('^[A-Za-z0-9_-]{22}$');
+    }
+
+    function isCurrency(value) {
+      return value is string && value.matches('^[A-Z]{3}$');
+    }
+
+    function validServiceCode(value) {
+      return value is string
+        && value.size() >= 2
+        && value.size() <= 32
+        && value.matches('^[A-Z0-9][A-Z0-9_-]*$');
+    }
+
+    // Users collection. Role assignment remains a Super Admin operation;
+    // Program Officers may maintain display fields only.
     match /users/{userId} {
-      // Allow users to read/write their own data
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role in ["Midwife", "midwife"]
+        && request.resource.data.approved == false
+        && request.resource.data.active == false;
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "role", "approved", "active", "accountType"
+        ]);
+      allow update: if isProgramOfficer()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name", "displayName", "midwife_name", "midwifeName", "organization_name",
+          "facilityName", "maternityHomeName", "labName", "description", "active",
+          "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
       
       // Allow Super Admin to read/write all user data
-      allow read, write: if
-        request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
+      allow read, write: if isSuperAdmin();
         
       // Allow TMO to read users in their township (must check TMO role)
       allow read: if
@@ -19,8 +96,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "TMO"
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.township == resource.data.township;
       
-      // Allow all authenticated users to read basic user info for leaderboard
-      allow read: if request.auth != null;
+      // Authenticated reads are retained for existing leaderboard/name lookups.
+      allow read: if signedIn();
       
       // Explicit allow for Regional Officer to read users (leaderboard - midwives in their region)
       allow read: if
@@ -40,71 +117,66 @@ service cloud.firestore {
     // Midwives on the care team (care_team_midwife_ids) must be able to write
     // delivery notes and create baby patients for joint-care / transferred mothers.
     match /patients/{patientId} {
-      // Allow public read for share links (summary-view.html - clinicians share patient summary URLs)
-      allow read: if true;
-      // Allow authenticated users to read/write patient documents
-      allow read, write: if request.auth != null;
+      allow read, write: if isClinicalUser();
       
       // Allow access to plotData subcollection
       match /plotData/{plotId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to records subcollection (summary, startingTime, secondStage, birthRecord)
       match /records/{recordId} {
-        // Allow public read for share links (summary-view.html)
-        allow read: if true;
-        allow write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to medication subcollection
       match /medication/{medicationId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to antenatal_visits subcollection
       match /antenatal_visits/{visitId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to testRecords subcollection
       match /testRecords/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to test_records subcollection (alternative naming)
       match /test_records/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to immediate_newborn_care subcollection
       match /immediate_newborn_care/{careId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to newborn_care subcollection
       match /newborn_care/{careId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to postpartum_visits subcollection
       match /postpartum_visits/{visitId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to baby_records subcollection
       match /baby_records/{recordId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to labour_care subcollection
       match /labour_care/{recordId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to lab_tests subcollection
       match /lab_tests/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
       
       // Allow access to consents subcollection (patient consent records)
@@ -123,7 +195,7 @@ service cloud.firestore {
       
       // Catch-all for any other subcollections under patients
       match /{subcollection}/{document=**} {
-        allow read, write: if request.auth != null;
+        allow read, write: if isClinicalUser();
       }
     }
 
@@ -251,6 +323,385 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Super Admin";
       allow update, delete: if false;
+    }
+
+    // Global service definitions. Historical vouchers retain snapshots and do
+    // not depend on later catalog edits.
+    match /voucher_service_catalog/{serviceId} {
+      allow read: if signedIn();
+      allow create: if isVoucherAdministrator()
+        && request.resource.data.keys().hasOnly([
+          "serviceCode", "serviceName", "description", "defaultUnitPriceMinor",
+          "defaultSubsidizedCostMinor", "defaultClientCostShareMinor", "defaultProjectCostShareMinor",
+          "currency", "active", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ])
+        && validServiceCode(request.resource.data.serviceCode)
+        && request.resource.data.serviceName is string
+        && request.resource.data.serviceName.size() > 0
+        && request.resource.data.serviceName.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 500
+        && request.resource.data.defaultUnitPriceMinor is int
+        && request.resource.data.defaultUnitPriceMinor >= 0
+        && request.resource.data.defaultSubsidizedCostMinor is int
+        && request.resource.data.defaultClientCostShareMinor is int
+        && request.resource.data.defaultProjectCostShareMinor is int
+        && request.resource.data.defaultSubsidizedCostMinor ==
+          request.resource.data.defaultClientCostShareMinor + request.resource.data.defaultProjectCostShareMinor
+        && isCurrency(request.resource.data.currency)
+        && request.resource.data.active is bool
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isVoucherAdministrator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "serviceCode", "serviceName", "description", "defaultUnitPriceMinor",
+          "defaultSubsidizedCostMinor", "defaultClientCostShareMinor", "defaultProjectCostShareMinor",
+          "currency", "active", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy
+        && validServiceCode(request.resource.data.serviceCode)
+        && request.resource.data.serviceName is string
+        && request.resource.data.serviceName.size() > 0
+        && request.resource.data.serviceName.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 500
+        && request.resource.data.defaultUnitPriceMinor is int
+        && request.resource.data.defaultUnitPriceMinor >= 0
+        && request.resource.data.defaultSubsidizedCostMinor is int
+        && request.resource.data.defaultClientCostShareMinor is int
+        && request.resource.data.defaultProjectCostShareMinor is int
+        && request.resource.data.defaultSubsidizedCostMinor ==
+          request.resource.data.defaultClientCostShareMinor + request.resource.data.defaultProjectCostShareMinor
+        && isCurrency(request.resource.data.currency)
+        && request.resource.data.active is bool
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Published price documents are immutable. midwifeId == null is global;
+    // a UID creates an override applicable only to that midwife.
+    match /voucher_pricing_versions/{versionId} {
+      allow read: if signedIn();
+      allow create: if isVoucherAdministrator()
+        && isOpaqueVoucherId(versionId)
+        && request.resource.data.keys().hasOnly([
+          "serviceId", "serviceCodeSnapshot", "serviceNameSnapshot", "midwifeId",
+          "unitPriceMinor", "currency", "status", "publishedAt", "publishedBy", "note"
+        ])
+        && exists(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId))
+        && request.resource.data.serviceCodeSnapshot ==
+          get(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId)).data.serviceCode
+        && request.resource.data.serviceNameSnapshot ==
+          get(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId)).data.serviceName
+        && (
+          request.resource.data.midwifeId == null
+          || request.resource.data.midwifeId is string
+        )
+        && request.resource.data.unitPriceMinor is int
+        && request.resource.data.unitPriceMinor >= 0
+        && request.resource.data.currency ==
+          get(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId)).data.currency
+        && request.resource.data.status == "published"
+        && request.resource.data.publishedAt == request.time
+        && request.resource.data.publishedBy == request.auth.uid
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 240;
+      allow update, delete: if false;
+    }
+
+    // Fiscal budgets are intentionally hidden from Midwives and Labs.
+    match /voucher_budgets/{budgetId} {
+      allow read: if isVoucherAdministrator();
+      allow create: if isVoucherAdministrator()
+        && isOpaqueVoucherId(budgetId)
+        && request.resource.data.keys().hasOnly([
+          "programId", "serviceId", "currency", "totalMinor", "remainingMinor",
+          "status", "lastAllocationId", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.programId is string
+        && request.resource.data.programId.size() > 0
+        && request.resource.data.serviceId is string
+        && exists(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId))
+        && get(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId)).data.active == true
+        && isCurrency(request.resource.data.currency)
+        && request.resource.data.currency ==
+          get(/databases/$(database)/documents/voucher_service_catalog/$(request.resource.data.serviceId)).data.currency
+        && request.resource.data.totalMinor is int
+        && request.resource.data.totalMinor > 0
+        && request.resource.data.remainingMinor == request.resource.data.totalMinor
+        && request.resource.data.status == "active"
+        && request.resource.data.lastAllocationId == ""
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isVoucherAdministrator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "remainingMinor", "lastAllocationId", "updatedAt", "updatedBy"
+        ])
+        && isOpaqueVoucherId(request.resource.data.lastAllocationId)
+        && request.resource.data.remainingMinor >= 0
+        && request.resource.data.remainingMinor < resource.data.remainingMinor
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && !exists(/databases/$(database)/documents/voucher_quotas/$(request.resource.data.lastAllocationId))
+        && getAfter(/databases/$(database)/documents/voucher_quotas/$(request.resource.data.lastAllocationId)).data.budgetId == budgetId
+        && resource.data.remainingMinor - request.resource.data.remainingMinor ==
+          getAfter(/databases/$(database)/documents/voucher_quotas/$(request.resource.data.lastAllocationId)).data.allocatedUnits *
+          getAfter(/databases/$(database)/documents/voucher_quotas/$(request.resource.data.lastAllocationId)).data.unitPriceMinor;
+      allow update: if isVoucherAdministrator()
+        && resource.data.status == "active"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "totalMinor", "remainingMinor", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.totalMinor > resource.data.totalMinor
+        && request.resource.data.totalMinor - resource.data.totalMinor ==
+          request.resource.data.remainingMinor - resource.data.remainingMinor
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isVoucherAdministrator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.status in ["active", "closed"]
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Operational quotas expose units and frozen prices to their Midwife but
+    // never expose the corresponding budget balance.
+    match /voucher_quotas/{quotaId} {
+      allow read: if isVoucherAdministrator()
+        || (isMidwife() && resource.data.midwifeId == request.auth.uid);
+      allow create: if isVoucherAdministrator()
+        && isOpaqueVoucherId(quotaId)
+        && request.resource.data.keys().hasOnly([
+          "budgetId", "serviceId", "midwifeId", "pricingVersionId",
+          "serviceCodeSnapshot", "serviceNameSnapshot", "unitPriceMinor", "currency",
+          "allocatedUnits", "remainingUnits", "status", "lastVoucherId",
+          "allocatedAt", "allocatedBy", "updatedAt", "updatedBy"
+        ])
+        && isOpaqueVoucherId(request.resource.data.budgetId)
+        && isOpaqueVoucherId(request.resource.data.pricingVersionId)
+        && request.resource.data.midwifeId is string
+        && request.resource.data.allocatedUnits is int
+        && request.resource.data.allocatedUnits > 0
+        && request.resource.data.remainingUnits == request.resource.data.allocatedUnits
+        && request.resource.data.status == "active"
+        && request.resource.data.lastVoucherId == ""
+        && request.resource.data.allocatedAt == request.time
+        && request.resource.data.allocatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.status == "published"
+        && (
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.midwifeId == null
+          || get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.midwifeId == request.resource.data.midwifeId
+        )
+        && request.resource.data.serviceId ==
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.serviceId
+        && request.resource.data.serviceCodeSnapshot ==
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.serviceCodeSnapshot
+        && request.resource.data.serviceNameSnapshot ==
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.serviceNameSnapshot
+        && request.resource.data.unitPriceMinor ==
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.unitPriceMinor
+        && request.resource.data.currency ==
+          get(/databases/$(database)/documents/voucher_pricing_versions/$(request.resource.data.pricingVersionId)).data.currency
+        && getAfter(/databases/$(database)/documents/voucher_budgets/$(request.resource.data.budgetId)).data.lastAllocationId == quotaId
+        && getAfter(/databases/$(database)/documents/voucher_budgets/$(request.resource.data.budgetId)).data.status == "active"
+        && getAfter(/databases/$(database)/documents/voucher_budgets/$(request.resource.data.budgetId)).data.serviceId ==
+          request.resource.data.serviceId
+        && getAfter(/databases/$(database)/documents/voucher_budgets/$(request.resource.data.budgetId)).data.currency ==
+          request.resource.data.currency;
+      allow update: if isMidwife()
+        && resource.data.midwifeId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "remainingUnits", "lastVoucherId", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.remainingUnits == resource.data.remainingUnits - 1
+        && request.resource.data.remainingUnits >= 0
+        && isOpaqueVoucherId(request.resource.data.lastVoucherId)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && !exists(/databases/$(database)/documents/vouchers/$(request.resource.data.lastVoucherId))
+        && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.lastVoucherId)).data.quotaId == quotaId
+        && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.lastVoucherId)).data.issuedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Program Officers publish immutable, complete price sheets. Assignments
+    // point each maternity home (or "global") at its current version.
+    match /voucher_price_sheets/{sheetId} {
+      allow read: if signedIn();
+      allow create: if isVoucherAdministrator()
+        && isOpaqueVoucherId(sheetId)
+        && request.resource.data.keys().hasOnly([
+          "midwifeId", "currency", "status", "serviceIds", "services",
+          "publishedAt", "publishedBy"
+        ])
+        && request.resource.data.status == "published"
+        && isCurrency(request.resource.data.currency)
+        && request.resource.data.serviceIds is list
+        && request.resource.data.serviceIds.size() > 0
+        && request.resource.data.serviceIds.size() <= 30
+        && request.resource.data.services is list
+        && request.resource.data.services.size() == request.resource.data.serviceIds.size()
+        && request.resource.data.publishedAt == request.time
+        && request.resource.data.publishedBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /voucher_price_assignments/{assignmentId} {
+      allow read: if signedIn();
+      allow create, update: if isVoucherAdministrator()
+        && request.resource.data.keys().hasOnly([
+          "midwifeId", "priceSheetId", "updatedAt", "updatedBy"
+        ])
+        && isOpaqueVoucherId(request.resource.data.priceSheetId)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/voucher_price_sheets/$(request.resource.data.priceSheetId)).data.status == "published";
+      allow delete: if false;
+    }
+
+    match /voucher_price_overrides/{overrideId} {
+      allow read: if isVoucherAdministrator();
+      allow create, update: if isVoucherAdministrator()
+        && request.resource.data.keys().hasOnly([
+          "midwifeId", "serviceId", "subsidizedCostMinor", "clientCostShareMinor",
+          "projectCostShareMinor", "active", "note", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.midwifeId is string
+        && request.resource.data.serviceId is string
+        && request.resource.data.subsidizedCostMinor is int
+        && request.resource.data.clientCostShareMinor is int
+        && request.resource.data.projectCostShareMinor is int
+        && request.resource.data.subsidizedCostMinor >= 0
+        && request.resource.data.clientCostShareMinor >= 0
+        && request.resource.data.projectCostShareMinor >= 0
+        && request.resource.data.subsidizedCostMinor ==
+          request.resource.data.clientCostShareMinor + request.resource.data.projectCostShareMinor
+        && request.resource.data.active is bool
+        && request.resource.data.note is string
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Budget values are never readable by Midwives or Labs.
+    match /voucher_account_budgets/{midwifeId} {
+      allow read: if isVoucherAdministrator();
+      allow create, update: if isVoucherAdministrator()
+        && request.resource.data.keys().hasOnly([
+          "midwifeId", "totalMinor", "currency", "note", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.midwifeId == midwifeId
+        && request.resource.data.totalMinor is int
+        && request.resource.data.totalMinor >= 0
+        && isCurrency(request.resource.data.currency)
+        && request.resource.data.note is string
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /voucher_account_quotas/{midwifeId} {
+      allow read: if isVoucherAdministrator()
+        || (isMidwife() && request.auth.uid == midwifeId);
+      allow create, update: if isVoucherAdministrator()
+        && request.resource.data.keys().hasOnly([
+          "midwifeId", "allocatedUnits", "remainingUnits", "priceSheetId",
+          "status", "lastVoucherId", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.midwifeId == midwifeId
+        && request.resource.data.allocatedUnits is int
+        && request.resource.data.remainingUnits is int
+        && request.resource.data.allocatedUnits >= request.resource.data.remainingUnits
+        && request.resource.data.remainingUnits >= 0
+        && isOpaqueVoucherId(request.resource.data.priceSheetId)
+        && request.resource.data.status == "active"
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isMidwife()
+        && request.auth.uid == midwifeId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "remainingUnits", "lastVoucherId", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.remainingUnits == resource.data.remainingUnits - 1
+        && request.resource.data.remainingUnits >= 0
+        && isOpaqueVoucherId(request.resource.data.lastVoucherId)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && !exists(/databases/$(database)/documents/vouchers/$(request.resource.data.lastVoucherId))
+        && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.lastVoucherId)).data.midwifeId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // QR payload contains only the opaque voucher ID. The authenticated Lab
+    // may get a voucher by that unguessable code, but may list only its own
+    // completed submissions.
+    match /vouchers/{voucherId} {
+      allow get: if isVoucherAdministrator()
+        || isLab()
+        || (isMidwife() && resource.data.midwifeId == request.auth.uid);
+      allow list: if isVoucherAdministrator()
+        || (isMidwife() && resource.data.midwifeId == request.auth.uid)
+        || (isLab() && resource.data.redeemedBy == request.auth.uid);
+      allow create: if isMidwife()
+        && isOpaqueVoucherId(voucherId)
+        && request.resource.data.keys().hasOnly([
+          "code", "status", "patientId", "patientNameSnapshot", "patientAgeSnapshot",
+          "patientPhoneSnapshot", "patientNrcSnapshot", "ancVisitDate", "midwifeId",
+          "issuerNameSnapshot", "priceSheetId", "selectedServiceIds", "issuedAt", "expiresAt"
+        ])
+        && request.resource.data.code == voucherId
+        && request.resource.data.status == "issued"
+        && request.resource.data.midwifeId == request.auth.uid
+        && request.resource.data.patientId is string
+        && exists(/databases/$(database)/documents/patients/$(request.resource.data.patientId))
+        && (
+          get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.created_by == request.auth.uid
+          || get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.createdBy == request.auth.uid
+          || request.auth.uid in get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.care_team_midwife_ids
+        )
+        && request.resource.data.patientNameSnapshot ==
+          get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.name
+        && request.resource.data.priceSheetId ==
+          get(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.priceSheetId
+        && request.resource.data.selectedServiceIds is list
+        && request.resource.data.selectedServiceIds.size() > 0
+        && request.resource.data.selectedServiceIds.size() <= 30
+        && request.resource.data.selectedServiceIds.hasOnly(
+          get(/databases/$(database)/documents/voucher_price_sheets/$(request.resource.data.priceSheetId)).data.serviceIds
+        )
+        && request.resource.data.issuedAt == request.time
+        && request.resource.data.expiresAt > request.time
+        && getAfter(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.lastVoucherId == voucherId
+        && getAfter(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.remainingUnits ==
+          get(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.remainingUnits - 1;
+      allow update: if isLab()
+        && resource.data.status == "issued"
+        && resource.data.expiresAt > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "redeemedAt", "redeemedBy", "labDisplayNameSnapshot",
+          "submissionReference", "redemptionAudit"
+        ])
+        && request.resource.data.status == "redeemed"
+        && request.resource.data.redeemedAt == request.time
+        && request.resource.data.redeemedBy == request.auth.uid
+        && request.resource.data.labDisplayNameSnapshot is string
+        && request.resource.data.submissionReference is string
+        && request.resource.data.redemptionAudit.keys().hasOnly(["action", "actorId", "at"])
+        && request.resource.data.redemptionAudit.action == "redeemed"
+        && request.resource.data.redemptionAudit.actorId == request.auth.uid
+        && request.resource.data.redemptionAudit.at == request.time;
+      allow delete: if false;
     }
   }
 }

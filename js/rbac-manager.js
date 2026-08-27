@@ -181,7 +181,59 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: false,
     manageFacilities: false,
-    viewSystemStats: false
+    viewSystemStats: false,
+    issuePromoVoucher: true,
+    viewOwnVouchers: true
+  },
+
+  'Program Officer': {
+    viewAllPatients: false,
+    createPatient: false,
+    editAnyPatient: false,
+    deleteAnyPatient: false,
+    viewAllUsers: true,
+    editUserRoles: false,
+    deleteUsers: false,
+    viewAllReports: false,
+    exportData: true,
+    viewSettings: false,
+    editSettings: false,
+    viewAuditLogs: true,
+    createAnyCareRecord: false,
+    editAnyCareRecord: false,
+    deleteAnyCareRecord: false,
+    transferAnyPatient: false,
+    accessAdminPanel: false,
+    manageFacilities: true,
+    viewSystemStats: true,
+    manageVoucherAccounts: true,
+    manageVoucherCatalog: true,
+    manageVoucherAllocations: true,
+    viewAllVouchers: true
+  },
+
+  'Lab': {
+    viewAllPatients: false,
+    createPatient: false,
+    editAnyPatient: false,
+    deleteAnyPatient: false,
+    viewAllUsers: false,
+    editUserRoles: false,
+    deleteUsers: false,
+    viewAllReports: false,
+    exportData: true,
+    viewSettings: false,
+    editSettings: false,
+    viewAuditLogs: false,
+    createAnyCareRecord: false,
+    editAnyCareRecord: false,
+    deleteAnyCareRecord: false,
+    transferAnyPatient: false,
+    accessAdminPanel: false,
+    manageFacilities: false,
+    viewSystemStats: false,
+    redeemPromoVoucher: true,
+    viewOwnVoucherSubmissions: true
   }
 };
 
@@ -217,17 +269,17 @@ async function initRBAC() {
     }
     
     if (userData) {
-      currentUserRole = userData.role || 'Midwife';
+      currentUserRole = userData.role || 'Unauthorised';
       currentUserTownship = userData.township || null;
       currentUserRegion = userData.region || null;
       console.log('✅ RBAC initialized - Role:', currentUserRole, 'Township:', currentUserTownship, 'Region:', currentUserRegion);
     } else {
-      console.warn('⚠️ User data not found, defaulting to Midwife');
-      currentUserRole = 'Midwife';
+      console.warn('⚠️ User data not found; access remains denied');
+      currentUserRole = 'Unauthorised';
     }
   } catch (error) {
     console.error('❌ Error initializing RBAC:', error);
-    currentUserRole = 'Midwife'; // Default to most restrictive
+    currentUserRole = 'Unauthorised';
   }
 }
 
@@ -363,6 +415,14 @@ function isMidwife() {
   return currentUserRole === 'Midwife' || currentUserRole === 'midwife';
 }
 
+function isProgramOfficer() {
+  return currentUserRole === 'Program Officer';
+}
+
+function isLab() {
+  return currentUserRole === 'Lab';
+}
+
 /**
  * Show/hide UI elements based on permissions
  */
@@ -420,6 +480,8 @@ window.RBAC = {
   isRegionalOfficer: isRegionalOfficer,
   isTMO: isTMO,
   isMidwife: isMidwife,
+  isProgramOfficer: isProgramOfficer,
+  isLab: isLab,
   applyRBACToUI: applyRBACToUI,
   requirePermission: requirePermission
 };

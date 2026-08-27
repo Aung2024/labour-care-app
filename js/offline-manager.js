@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const DB_NAME = 'mch_offline_db';
+  const DB_NAME = 'mch_offline_db_labourcare_2481a';
   const DB_VERSION = 3;
   const OFFLINE_MODE_KEY = 'offlineMode';
 
