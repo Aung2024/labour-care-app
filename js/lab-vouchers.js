@@ -8,7 +8,8 @@
     stream: null,
     detector: null,
     scanFrame: null,
-    redeeming: false
+    redeeming: false,
+    loggingOut: false
   };
 
   function el(id) { return document.getElementById(id); }
@@ -314,6 +315,27 @@
     el('stopCamera').classList.add('d-none');
   }
 
+  async function logout() {
+    var button = el('logoutBtn');
+    state.loggingOut = true;
+    button.disabled = true;
+    button.textContent = 'Logging out…';
+    stopCamera();
+    try {
+      await firebase.auth().signOut();
+      sessionStorage.clear();
+      ['role', 'userEmail', 'userId', 'providerType', 'userTownship', 'userRegion'].forEach(function (key) {
+        localStorage.removeItem(key);
+      });
+      window.location.replace('login.html');
+    } catch (error) {
+      state.loggingOut = false;
+      button.disabled = false;
+      button.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Log out';
+      setStatus('Could not log out: ' + (error.message || 'Unknown error.'), 'error');
+    }
+  }
+
   async function initialize(user) {
     try {
       assertOnline();
@@ -348,6 +370,7 @@
   el('refreshHistory').addEventListener('click', loadHistory);
   el('startCamera').addEventListener('click', startCamera);
   el('stopCamera').addEventListener('click', stopCamera);
+  el('logoutBtn').addEventListener('click', logout);
   window.addEventListener('beforeunload', stopCamera);
   window.addEventListener('offline', function () {
     stopCamera();
@@ -359,7 +382,9 @@
 
   firebase.auth().onAuthStateChanged(function (user) {
     if (!user) {
-      window.location.replace('login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));
+      window.location.replace(state.loggingOut
+        ? 'login.html'
+        : 'login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));
       return;
     }
     initialize(user);

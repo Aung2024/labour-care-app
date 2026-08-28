@@ -877,6 +877,22 @@
     byId('reportTo').value = toDateInputValue(today);
   }
 
+  async function logout() {
+    var button = byId('logoutBtn');
+    setBusy(button, true, 'Logging out…');
+    try {
+      await firebase.auth().signOut();
+      sessionStorage.clear();
+      ['role', 'userEmail', 'userId', 'providerType', 'userTownship', 'userRegion'].forEach(function (key) {
+        localStorage.removeItem(key);
+      });
+      window.location.replace('login.html');
+    } catch (error) {
+      showMessage('Could not log out: ' + errorText(error), 'error', true);
+      setBusy(button, false);
+    }
+  }
+
   function bindEvents() {
     document.querySelectorAll('.po-tab').forEach(function (tab) {
       tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
@@ -908,6 +924,7 @@
     byId('loadMoreReports').addEventListener('click', function () { runReport(null, true); });
     byId('refreshAllBtn').addEventListener('click', refreshAll);
     byId('seedCatalogBtn').addEventListener('click', seedStandardCatalog);
+    byId('logoutBtn').addEventListener('click', logout);
   }
 
   async function initializeForUser(user) {
