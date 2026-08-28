@@ -34,7 +34,20 @@ service cloud.firestore {
     }
 
     function isMidwife() {
-      return hasRole("Midwife") || hasRole("midwife");
+      return hasRole("Midwife")
+        || hasRole("midwife")
+        // Legacy clinical accounts predate the role field. The existing app
+        // treats an absent/blank role as Midwife for backward compatibility.
+        || (
+          signedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && currentUser().active != false
+          && currentUser().approved != false
+          && (
+            !("role" in currentUser())
+            || currentUser().role == ""
+          )
+        );
     }
 
     function isClinicalUser() {

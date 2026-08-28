@@ -34,6 +34,7 @@ async function seed() {
     await Promise.all([
       setDoc(doc(db, 'users/po'), { role: 'Program Officer', active: true, approved: true, displayName: 'PO' }),
       setDoc(doc(db, 'users/mw'), { role: 'Midwife', active: true, approved: true, name: 'Maternity Home' }),
+      setDoc(doc(db, 'users/legacy-mw'), { active: true, approved: true, provider_type: 'midwife', name: 'Legacy Midwife' }),
       setDoc(doc(db, 'users/lab1'), { role: 'Lab', active: true, approved: true, displayName: 'Lab One' }),
       setDoc(doc(db, 'users/lab2'), { role: 'Lab', active: true, approved: true, displayName: 'Lab Two' }),
       setDoc(doc(db, 'patients/patient-1'), { name: 'Patient One', age: 28, phone: '091234', created_by: 'mw' }),
@@ -144,6 +145,19 @@ test('Midwife can read quota but cannot read hidden budget', async () => {
   const db = env.authenticatedContext('mw').firestore();
   await assertSucceeds(getDoc(doc(db, 'voucher_account_quotas/mw')));
   await assertFails(getDoc(doc(db, 'voucher_account_budgets/mw')));
+});
+
+test('legacy blank-role Midwife retains clinical workflow access', async () => {
+  const db = env.authenticatedContext('legacy-mw').firestore();
+  await assertSucceeds(setDoc(doc(db, 'patients/legacy-patient'), {
+    name: 'Legacy Patient',
+    created_by: 'legacy-mw'
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'patients/legacy-patient'), {
+    hasConsent: true,
+    consentStatus: 'consented',
+    consentDate: serverTimestamp()
+  }));
 });
 
 test('voucher issuance and quota decrement must be atomic', async () => {
