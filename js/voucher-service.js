@@ -20,6 +20,8 @@
     VOUCHERS: 'vouchers'
   });
   var OPAQUE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+  var SHORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var SHORT_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
   var CURRENCY_PATTERN = /^[A-Z]{3}$/;
   var SERVICE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{1,31}$/;
   var MAX_REPORTING_WINDOW_DAYS = 93;
@@ -66,13 +68,22 @@
   }
 
   function validateCostShares(subsidizedMinor, clientMinor, projectMinor) {
-    var subsidized = requireInteger(subsidizedMinor, 'Subsidized cost', 0);
-    var client = requireInteger(clientMinor, 'Client cost share', 0);
+    var subsidized = requireInteger(subsidizedMinor, 'Total cost', 0);
+    var client = requireInteger(clientMinor, 'Discount price', 0);
     var project = requireInteger(projectMinor, 'Project cost share', 0);
     if (client + project !== subsidized) {
-      throw new Error('Client and project cost shares must equal the subsidized cost.');
+      throw new Error('Discount price and project cost share must equal the total cost.');
     }
     return { subsidized: subsidized, client: client, project: project };
+  }
+
+  function normalizeVoucherCode(value) {
+    var raw = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (OPAQUE_ID_PATTERN.test(String(value || '').trim())) return String(value).trim();
+    if (raw.length === 8 && new RegExp('^[' + SHORT_CODE_ALPHABET + ']{8}$').test(raw)) {
+      return raw.slice(0, 4) + '-' + raw.slice(4);
+    }
+    return String(value || '').trim();
   }
 
   function validateOpaqueId(value, label) {
@@ -80,6 +91,14 @@
       throw new Error((label || 'Identifier') + ' must be a 22-character opaque identifier.');
     }
     return value;
+  }
+
+  function validateVoucherCode(value, label) {
+    var code = normalizeVoucherCode(value);
+    if (!SHORT_CODE_PATTERN.test(code) && !OPAQUE_ID_PATTERN.test(code)) {
+      throw new Error((label || 'Voucher code') + ' must be an 8-character lab code such as AB3K-9Q2M.');
+    }
+    return code;
   }
 
   function bytesToBase64Url(bytes) {
@@ -106,9 +125,22 @@
     return bytesToBase64Url(bytes);
   }
 
+  function generateVoucherCode(cryptoProvider) {
+    var provider = cryptoProvider || root.crypto;
+    if (!provider || typeof provider.getRandomValues !== 'function') {
+      throw new Error('Secure random number generation is unavailable.');
+    }
+    var bytes = new Uint8Array(8);
+    provider.getRandomValues(bytes);
+    var chars = '';
+    for (var index = 0; index < bytes.length; index += 1) {
+      chars += SHORT_CODE_ALPHABET.charAt(bytes[index] % SHORT_CODE_ALPHABET.length);
+    }
+    return chars.slice(0, 4) + '-' + chars.slice(4);
+  }
+
   function buildQrPayload(voucherCode) {
-    validateOpaqueId(voucherCode, 'Voucher code');
-    return JSON.stringify({ v: 1, c: voucherCode });
+    return JSON.stringify({ v: 1, c: validateVoucherCode(voucherCode, 'Voucher code') });
   }
 
   function parseQrPayload(payload) {
@@ -125,8 +157,7 @@
     if (keys.length !== 2 || keys[0] !== 'c' || keys[1] !== 'v' || parsed.v !== 1) {
       throw new Error('Unsupported voucher QR payload.');
     }
-    validateOpaqueId(parsed.c, 'Voucher code');
-    return parsed.c;
+    return validateVoucherCode(parsed.c, 'Voucher code');
   }
 
   function firebaseContext() {
@@ -171,10 +202,10 @@
         defaultUnitPriceMinor: requireInteger(data.defaultUnitPriceMinor, 'Default price', 0),
         defaultSubsidizedCostMinor: requireInteger(
           data.defaultSubsidizedCostMinor == null ? data.defaultUnitPriceMinor : data.defaultSubsidizedCostMinor,
-          'Subsidized cost',
+          'Total cost',
           0
         ),
-        defaultClientCostShareMinor: requireInteger(data.defaultClientCostShareMinor || 0, 'Client cost share', 0),
+        defaultClientCostShareMinor: requireInteger(data.defaultClientCostShareMinor || 0, 'Discount price', 0),
         defaultProjectCostShareMinor: requireInteger(
           data.defaultProjectCostShareMinor == null ? data.defaultUnitPriceMinor : data.defaultProjectCostShareMinor,
           'Project cost share',
@@ -361,8 +392,8 @@
   function normalizeSheetService(input) {
     var service = requireObject(input, 'Price-sheet service');
     var shares = validateCostShares(
-      requireInteger(service.subsidizedCostMinor, 'Subsidized cost', 0),
-      requireInteger(service.clientCostShareMinor, 'Client cost share', 0),
+      requireInteger(service.subsidizedCostMinor, 'Total cost', 0),
+      requireInteger(service.clientCostShareMinor, 'Discount price', 0),
       requireInteger(service.projectCostShareMinor, 'Project cost share', 0)
     );
     return {
@@ -378,7 +409,7 @@
   function publishPriceSheet(input) {
     var data = requireObject(input, 'Price sheet');
     var context = firebaseContext();
-    var midwifeId = data.midwifeId == null ? null : requireString(data.midwifeId, 'Midwife ID', 128);
+    var labId = data.labId == null ? null : requireString(data.labId, 'Lab ID', 128);
     var services = (data.services || []).map(normalizeSheetService);
     if (!services.length || services.length > 30) {
       throw new Error('A price sheet must contain between 1 and 30 services.');
@@ -388,12 +419,13 @@
       throw new Error('A price sheet cannot contain duplicate services.');
     }
     var sheetId = generateOpaqueId();
-    var assignmentId = midwifeId || 'global';
+    var assignmentId = labId || 'global';
     var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId);
     var assignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(assignmentId);
     var batch = context.db.batch();
     batch.set(sheetRef, {
-      midwifeId: midwifeId,
+      labId: labId,
+      midwifeId: null,
       currency: validateCurrency(data.currency || 'MMK'),
       status: 'published',
       serviceIds: serviceIds,
@@ -402,7 +434,8 @@
       publishedBy: context.user.uid
     });
     batch.set(assignmentRef, {
-      midwifeId: midwifeId,
+      labId: labId,
+      midwifeId: null,
       priceSheetId: sheetId,
       updatedAt: serverTimestamp(context),
       updatedBy: context.user.uid
@@ -420,16 +453,16 @@
   function savePriceOverride(input) {
     var data = requireObject(input, 'Price override');
     var context = firebaseContext();
-    var midwifeId = requireString(data.midwifeId || data.maternityHomeId, 'Midwife ID', 128);
+    var labId = requireString(data.labId || data.laboratoryId, 'Lab ID', 128);
     var serviceId = requireString(data.serviceId, 'Service ID', 64);
     var shares = validateCostShares(
-      requireInteger(data.subsidizedCostMinor, 'Subsidized cost', 0),
-      requireInteger(data.clientCostShareMinor, 'Client cost share', 0),
+      requireInteger(data.subsidizedCostMinor, 'Total cost', 0),
+      requireInteger(data.clientCostShareMinor, 'Discount price', 0),
       requireInteger(data.projectCostShareMinor, 'Project cost share', 0)
     );
-    var overrideId = midwifeId + '__' + serviceId;
+    var overrideId = labId + '__' + serviceId;
     return context.db.collection(COLLECTIONS.OVERRIDES).doc(overrideId).set({
-      midwifeId: midwifeId,
+      labId: labId,
       serviceId: serviceId,
       subsidizedCostMinor: shares.subsidized,
       clientCostShareMinor: shares.client,
@@ -448,11 +481,11 @@
     });
   }
 
-  function publishCurrentPriceSheet(midwifeId) {
+  function publishCurrentPriceSheet(labId) {
     var context = firebaseContext();
     var catalogPromise = context.db.collection(COLLECTIONS.CATALOG).where('active', '==', true).get();
-    var overridePromise = midwifeId ?
-      context.db.collection(COLLECTIONS.OVERRIDES).where('midwifeId', '==', midwifeId).get() :
+    var overridePromise = labId ?
+      context.db.collection(COLLECTIONS.OVERRIDES).where('labId', '==', labId).get() :
       Promise.resolve({ docs: [] });
     return Promise.all([catalogPromise, overridePromise]).then(function (snapshots) {
       var overrideByService = {};
@@ -475,16 +508,18 @@
             catalog.defaultProjectCostShareMinor : override.projectCostShareMinor
         };
       });
-      return publishPriceSheet({ midwifeId: midwifeId || null, currency: 'MMK', services: services });
+      return publishPriceSheet({ labId: labId || null, currency: 'MMK', services: services });
     });
   }
 
-  function getAssignedPriceSheet(midwifeId) {
+  function getAssignedPriceSheet(labId) {
     var context = firebaseContext();
-    var requestedMidwifeId = midwifeId || context.user.uid;
-    var specificRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(requestedMidwifeId);
-    var globalRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
-    return Promise.all([specificRef.get(), globalRef.get()]).then(function (snapshots) {
+    var requestedLabId = labId || null;
+    var specificRef = requestedLabId ?
+      context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(requestedLabId).get() :
+      Promise.resolve({ exists: false, data: function () { return null; } });
+    var globalRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global').get();
+    return Promise.all([specificRef, globalRef]).then(function (snapshots) {
       var assignment = snapshots[0].exists ? snapshots[0].data() :
         (snapshots[1].exists ? snapshots[1].data() : null);
       if (!assignment || !assignment.priceSheetId) throw new Error('No published price sheet is assigned.');
@@ -497,30 +532,53 @@
     });
   }
 
-  function getTestCatalog() {
+  function isLabProfile(profile) {
+    var role = String((profile && profile.role) || '').trim().toLowerCase();
+    return role === 'lab' || role === 'laboratory';
+  }
+
+  function listLabs() {
     var context = firebaseContext();
+    return context.db.collection('users').get().then(function (snapshot) {
+      return snapshot.docs.map(function (doc) {
+        return Object.assign({ id: doc.id }, doc.data());
+      }).filter(function (profile) {
+        return isLabProfile(profile) && profile.active !== false && profile.approved !== false;
+      }).map(function (profile) {
+        return {
+          id: profile.id,
+          name: profile.displayName || profile.name || profile.labName || profile.organization_name || profile.email || 'Lab'
+        };
+      });
+    });
+  }
+
+  function catalogFromSheet(sheet) {
+    return {
+      priceSheetId: sheet.id,
+      labId: sheet.labId || null,
+      tests: (sheet.services || []).map(function (service) {
+        return {
+          id: service.serviceId,
+          name: service.serviceName,
+          serviceCode: service.serviceCode,
+          subsidizedCost: service.subsidizedCostMinor / 100,
+          clientCostShare: service.clientCostShareMinor / 100,
+          projectCostShare: service.projectCostShareMinor / 100
+        };
+      })
+    };
+  }
+
+  function getTestCatalog(labId) {
+    var context = firebaseContext();
+    var selectedLabId = requireString(labId, 'Lab ID', 128);
     return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid).get().then(function (quotaSnapshot) {
-      if (!quotaSnapshot.exists || !quotaSnapshot.data().priceSheetId) {
+      if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
         throw new Error('No voucher allocation is available for this account.');
       }
-      return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(quotaSnapshot.data().priceSheetId).get();
-    }).then(function (sheetSnapshot) {
-      if (!sheetSnapshot.exists) throw new Error('The allocated price sheet was not found.');
-      var sheet = Object.assign({ id: sheetSnapshot.id }, sheetSnapshot.data());
-      return {
-        priceSheetId: sheet.id,
-        tests: sheet.services.map(function (service) {
-          return {
-            id: service.serviceId,
-            name: service.serviceName,
-            serviceCode: service.serviceCode,
-            subsidizedCost: service.subsidizedCostMinor / 100,
-            clientCostShare: service.clientCostShareMinor / 100,
-            projectCostShare: service.projectCostShareMinor / 100
-          };
-        })
-      };
-    });
+      return getAssignedPriceSheet(selectedLabId);
+    }).then(catalogFromSheet);
   }
 
   function allocateVouchers(input) {
@@ -531,19 +589,16 @@
     var budgetMinor = requireInteger(data.totalMinor, 'Budget total', 0);
     var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(midwifeId);
     var budgetRef = context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(midwifeId);
-    var assignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(midwifeId);
     var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
     return context.db.runTransaction(function (transaction) {
       return Promise.all([
         transaction.get(quotaRef),
-        transaction.get(assignmentRef),
         transaction.get(globalAssignmentRef)
       ]).then(function (snapshots) {
         var existing = snapshots[0].exists ? snapshots[0].data() : null;
-        var assignment = snapshots[1].exists ? snapshots[1].data() :
-          (snapshots[2].exists ? snapshots[2].data() : null);
+        var assignment = snapshots[1].exists ? snapshots[1].data() : null;
         if (!assignment || !assignment.priceSheetId) {
-          throw new Error('Publish a global or maternity-home price sheet before allocating vouchers.');
+          throw new Error('Publish the global service catalog before allocating vouchers.');
         }
         var allocatedUnits = (existing ? existing.allocatedUnits : 0) + units;
         var remainingUnits = (existing ? existing.remainingUnits : 0) + units;
@@ -585,31 +640,53 @@
     });
   }
 
-  function issueMultiServiceVoucher(input) {
+  function issueMultiServiceVoucher(input, attempt) {
     var data = requireObject(input, 'Voucher');
     var context = firebaseContext();
     var patientId = requireString(data.patientId, 'Patient ID', 160);
+    var labId = requireString(data.labId, 'Lab ID', 128);
     var selectedServiceIds = Array.from(new Set(data.selectedServiceIds || []));
     if (!selectedServiceIds.length || selectedServiceIds.length > 30) {
       throw new Error('Select between 1 and 30 services.');
     }
     selectedServiceIds.forEach(function (id) { requireString(id, 'Service ID', 64); });
-    var voucherId = generateOpaqueId();
+    var voucherId = generateVoucherCode();
     var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
     var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid);
     var patientRef = context.db.collection('patients').doc(patientId);
+    var labRef = context.db.collection('users').doc(labId);
+    var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
+    var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
 
     return context.db.runTransaction(function (transaction) {
-      return Promise.all([transaction.get(quotaRef), transaction.get(patientRef)]).then(function (snapshots) {
+      return Promise.all([
+        transaction.get(quotaRef),
+        transaction.get(patientRef),
+        transaction.get(labRef),
+        transaction.get(labAssignmentRef),
+        transaction.get(globalAssignmentRef),
+        transaction.get(voucherRef)
+      ]).then(function (snapshots) {
+        if (snapshots[5].exists) throw new Error('Voucher code collision.');
         var quotaSnapshot = snapshots[0];
         var patientSnapshot = snapshots[1];
+        var labSnapshot = snapshots[2];
         if (!quotaSnapshot.exists || !patientSnapshot.exists) throw new Error('Quota or patient was not found.');
+        if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
+          throw new Error('Select an active laboratory.');
+        }
         var quota = quotaSnapshot.data();
         var patient = patientSnapshot.data();
+        var lab = labSnapshot.data();
         if (quota.midwifeId !== context.user.uid || quota.status !== 'active' || quota.remainingUnits < 1) {
           throw new Error('No active voucher quota is available.');
         }
-        var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(quota.priceSheetId);
+        var assignment = snapshots[3].exists ? snapshots[3].data() :
+          (snapshots[4].exists ? snapshots[4].data() : null);
+        if (!assignment || !assignment.priceSheetId) {
+          throw new Error('No published price sheet is available for this laboratory.');
+        }
+        var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(assignment.priceSheetId);
         return transaction.get(sheetRef).then(function (sheetSnapshot) {
           if (!sheetSnapshot.exists || sheetSnapshot.data().status !== 'published') {
             throw new Error('The assigned price sheet is unavailable.');
@@ -619,6 +696,7 @@
             if (sheet.serviceIds.indexOf(serviceId) === -1) throw new Error('A selected service is not on the assigned price sheet.');
           });
           var now = serverTimestamp(context);
+          var labName = lab.displayName || lab.name || lab.labName || lab.organization_name || lab.email || 'Lab';
           transaction.update(quotaRef, {
             remainingUnits: quota.remainingUnits - 1,
             lastVoucherId: voucherId,
@@ -637,7 +715,9 @@
             ancVisitDate: requireString(data.ancVisitDate, 'ANC visit date', 10),
             midwifeId: context.user.uid,
             issuerNameSnapshot: requireString(data.issuerName, 'Issuer name', 160),
-            priceSheetId: quota.priceSheetId,
+            labId: labId,
+            labNameSnapshot: String(labName).slice(0, 160),
+            priceSheetId: assignment.priceSheetId,
             selectedServiceIds: selectedServiceIds,
             issuedAt: now,
             expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
@@ -645,12 +725,17 @@
           return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId) };
         });
       });
+    }).catch(function (error) {
+      if (String(error && error.message) === 'Voucher code collision' && (attempt || 0) < 5) {
+        return issueMultiServiceVoucher(input, (attempt || 0) + 1);
+      }
+      throw error;
     });
   }
 
   function lookupVoucher(voucherCode) {
     var context = firebaseContext();
-    var voucherId = validateOpaqueId(voucherCode, 'Voucher code');
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId).get().then(function (voucherSnapshot) {
       if (!voucherSnapshot.exists) throw new Error('Voucher was not found.');
       var voucher = Object.assign({ id: voucherSnapshot.id }, voucherSnapshot.data());
@@ -669,6 +754,7 @@
         });
         voucher.patientReference = voucher.patientId;
         voucher.generatedByName = voucher.issuerNameSnapshot;
+        voucher.labName = voucher.labNameSnapshot || '';
         return voucher;
       });
     });
@@ -679,7 +765,7 @@
     var context = firebaseContext();
     var quotaId = validateOpaqueId(data.quotaId, 'Quota ID');
     var beneficiaryRef = validateOpaqueId(data.beneficiaryRef, 'Beneficiary reference');
-    var voucherId = generateOpaqueId();
+    var voucherId = generateVoucherCode();
     var quotaRef = context.db.collection(COLLECTIONS.QUOTAS).doc(quotaId);
     var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
     var expiresAt = dateTimestamp(context, data.expiresAt, 'Expiry');
@@ -735,7 +821,7 @@
   function redeemVoucher(voucherCode, details) {
     var context = firebaseContext();
     var submission = details || {};
-    var voucherId = validateOpaqueId(voucherCode, 'Voucher code');
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
     var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
     return context.db.runTransaction(function (transaction) {
       return transaction.get(voucherRef).then(function (snapshot) {
@@ -743,6 +829,9 @@
         var voucher = snapshot.data();
         if (voucher.code !== voucherId || voucher.status !== 'issued') {
           throw new Error('Voucher is not active.');
+        }
+        if (voucher.labId && voucher.labId !== context.user.uid) {
+          throw new Error('This voucher is assigned to another laboratory.');
         }
         if (voucher.expiresAt && voucher.expiresAt.toMillis() <= Date.now()) {
           throw new Error('Voucher has expired.');
@@ -855,7 +944,10 @@
   root.VoucherService = Object.freeze({
     collections: COLLECTIONS,
     generateOpaqueId: generateOpaqueId,
+    generateVoucherCode: generateVoucherCode,
+    normalizeVoucherCode: normalizeVoucherCode,
     validateOpaqueId: validateOpaqueId,
+    validateVoucherCode: validateVoucherCode,
     validateCurrency: validateCurrency,
     validateServiceCode: validateServiceCode,
     validateCostShares: validateCostShares,
@@ -869,6 +961,7 @@
     savePriceOverride: savePriceOverride,
     getPriceOverrides: getPriceOverrides,
     getAssignedPriceSheet: getAssignedPriceSheet,
+    listLabs: listLabs,
     getTestCatalog: getTestCatalog,
     createBudget: createBudget,
     topUpBudget: topUpBudget,

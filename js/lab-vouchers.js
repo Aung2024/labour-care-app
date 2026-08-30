@@ -73,7 +73,12 @@
     } catch (error) {
       // A plain opaque code is expected for manual entry.
     }
-    return raw.trim();
+    raw = raw.trim();
+    var api = service();
+    if (api && typeof api.normalizeVoucherCode === 'function') {
+      try { return api.normalizeVoucherCode(raw); } catch (error) { return raw; }
+    }
+    return raw;
   }
 
   async function authenticatedLookup(code) {
@@ -105,6 +110,7 @@
     el('resultAncDate').textContent = valueOrDash(voucher.ancVisitDate || voucher.latestAncVisitDate);
     el('resultIssuer').textContent = valueOrDash(voucher.generatedByName || voucher.issuerName ||
       (voucher.issuer && voucher.issuer.displayName) || voucher.midwifeId || voucher.issuedBy);
+    el('resultLabName').textContent = valueOrDash(voucher.labNameSnapshot || voucher.labName);
     el('resultIssuedAt').textContent = dateValue(voucher.generatedAt || voucher.createdAt || voucher.issuedAt);
     el('resultTests').innerHTML = tests.length ? tests.map(function (test) {
       return '<tr><td>' + escapeHtml(test.name || test.testName || test.label || test.id) + '</td>' +
@@ -118,10 +124,15 @@
     badge.className = 'badge rounded-pill ' + (status === 'active' || status === 'issued' ? 'bg-primary' :
       status === 'redeemed' || status === 'submitted' ? 'badge-redeemed' : 'bg-secondary');
     var canRedeem = status === 'active' || status === 'issued' || status === 'pending';
+    if (canRedeem && voucher.labId && state.user && voucher.labId !== state.user.uid) {
+      canRedeem = false;
+      el('redeemWarning').textContent = 'This voucher is assigned to another laboratory and cannot be redeemed here.';
+    } else {
+      el('redeemWarning').textContent = canRedeem
+        ? 'Verify the patient and tests before submitting. Redemption is final and can happen only once.'
+        : 'This voucher cannot be redeemed because its current status is "' + status + '".';
+    }
     el('confirmRedeem').disabled = !canRedeem;
-    el('redeemWarning').textContent = canRedeem
-      ? 'Verify the patient and tests before submitting. Redemption is final and can happen only once.'
-      : 'This voucher cannot be redeemed because its current status is "' + status + '".';
     el('lookupResult').classList.remove('d-none');
     el('lookupResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }

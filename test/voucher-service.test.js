@@ -37,9 +37,24 @@ test('generates a 128-bit base64url opaque identifier', () => {
   assert.match(identifier, /^[A-Za-z0-9_-]{22}$/);
 });
 
+test('generates a short typeable voucher code', () => {
+  const service = loadService();
+  const provider = {
+    getRandomValues(bytes) {
+      for (let index = 0; index < bytes.length; index += 1) bytes[index] = index + 3;
+      return bytes;
+    }
+  };
+  const code = service.generateVoucherCode(provider);
+
+  assert.match(code, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+  assert.equal(code.length, 9);
+  assert.equal(service.normalizeVoucherCode(code.replace('-', '').toLowerCase()), code);
+});
+
 test('QR payload contains only protocol version and opaque code', () => {
   const service = loadService();
-  const code = 'AAECAwQFBgcICQoLDA0ODw';
+  const code = 'K7MP-3QWX';
   const payload = service.buildQrPayload(code);
 
   assert.deepEqual(Object.keys(JSON.parse(payload)).sort(), ['c', 'v']);
@@ -52,10 +67,17 @@ test('rejects QR payloads with extra data or non-opaque codes', () => {
   const service = loadService();
 
   assert.throws(
-    () => service.parseQrPayload('{"v":1,"c":"AAECAwQFBgcICQoLDA0ODw","name":"PHI"}'),
+    () => service.parseQrPayload('{"v":1,"c":"K7MP-3QWX","name":"PHI"}'),
     /Unsupported/
   );
-  assert.throws(() => service.buildQrPayload('VOUCHER-123'), /opaque identifier/);
+  assert.throws(() => service.buildQrPayload('VOUCHER-123'), /voucher code|8-character/i);
+});
+
+test('accepts legacy 22-character voucher codes', () => {
+  const service = loadService();
+  const legacy = 'AAECAwQFBgcICQoLDA0ODw';
+  assert.equal(service.validateVoucherCode(legacy), legacy);
+  assert.equal(service.parseQrPayload(service.buildQrPayload(legacy)), legacy);
 });
 
 test('validates service codes and currencies consistently', () => {
@@ -67,7 +89,7 @@ test('validates service codes and currencies consistently', () => {
   assert.throws(() => service.validateCurrency('kyats'), /at most 3|three-letter/);
 });
 
-test('requires client and project shares to equal subsidized cost', () => {
+test('requires discount price and project share to equal total cost', () => {
   const service = loadService();
 
   assert.deepEqual(

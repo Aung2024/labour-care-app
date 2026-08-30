@@ -112,9 +112,9 @@ Run the roles in this order because each stage creates data required by the next
 ### Program Officer
 
 - Sign-in redirects to `program-officer.html`; clinical home cards are not shown.
-- Load the standard tests, then review Subsidized, Client, and Project costs.
-- Confirm each row satisfies Subsidized Cost = Client Cost Share + Project Cost Share.
-- Add any maternity-home override and verify a new immutable price sheet is published.
+- Load the standard tests, then review Total cost, Discount price, and Project cost share.
+- Confirm each row satisfies Total cost = Discount price + Project cost share.
+- Add any laboratory override and verify a new immutable price sheet is published for that lab.
 - Allocate voucher count and budget to the test Midwife.
 - Edit a provider display name, description, and active state.
 - Confirm role, email, and password cannot be changed from the page.
@@ -126,19 +126,19 @@ Run the roles in this order because each stage creates data required by the next
 - Register or select a test patient with phone and optional NRC.
 - Open **Tests & Results → Use Voucher**.
 - Confirm patient phone uses the patient `phone` field, not emergency or community-health-worker phone.
-- Confirm prices are read-only and come from the Program Officer configuration.
-- Select multiple tests and issue one voucher.
+- Confirm discount prices are read-only and come from the selected laboratory’s Program Officer configuration.
+- Select the destination laboratory, then select tests and issue one voucher.
 - NRC is optional and patient phone prefill uses `phone`.
 - Voucher creation fails offline.
 - One issued voucher decrements remaining quota exactly once.
-- The QR payload contains only an opaque code/redeem URL.
-- A5 PNG shows the human-readable voucher details.
+- The QR payload contains only a short voucher code.
+- A5 PNG shows the human-readable voucher details, including Discount price and the selected lab.
 - Exhaust the test quota and confirm an additional voucher is rejected.
 
 ### Lab
 
 - Sign-in redirects to `lab-vouchers.html`; clinical home cards are not shown.
-- QR scan and manual code entry locate an issued voucher.
+- QR scan and manual code entry locate an issued voucher. Typed codes can omit the hyphen.
 - The Lab sees voucher details only after authentication.
 - Redeeming once submits it to Program Officers.
 - Reusing the QR or racing two Labs cannot redeem it twice.
@@ -182,9 +182,9 @@ After UAT, verify these collections in `labourcare-2481a`:
 
 For the test voucher, confirm:
 
-- The document ID is an opaque 22-character code.
+- The document ID is a short code such as `AB3K-9Q2M`, or a legacy 22-character code.
 - Status changed only from `issued` to `redeemed`.
-- `selectedServiceIds` and `priceSheetId` are present.
+- `selectedServiceIds`, `labId`, and `priceSheetId` are present.
 - `redeemedBy` and `redeemedAt` identify the Lab submission.
 - No budget value exists in the quota or voucher document.
 - The QR itself contains no patient name, phone, NRC, test names, or prices.

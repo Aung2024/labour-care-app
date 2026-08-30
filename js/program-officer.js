@@ -247,7 +247,7 @@
   }
 
   function syncProviderSelects() {
-    renderSelect(byId('priceMaternityHome'), state.maternityHomes, 'Select maternity home');
+    renderSelect(byId('priceLab'), state.labs, 'Select laboratory');
     renderSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
     renderSelect(byId('reportMaternityHome'), state.maternityHomes, 'All maternity homes');
     renderSelect(byId('reportLab'), state.labs, 'All labs');
@@ -376,13 +376,13 @@
         : displayedPrice - clientShare;
       return '<tr><td><strong>' + escapeHtml(service.name || service.serviceName || service.displayName || 'Unnamed service') + '</strong><br><small class="text-muted">' + escapeHtml(service.description || '') + '</small></td>' +
         '<td>' + escapeHtml(service.code || service.serviceCode || '—') + '</td>' +
-        '<td>' + formatMoney(displayedPrice, service.currency || 'MMK') + '<br><small>Client ' +
+        '<td>' + formatMoney(displayedPrice, service.currency || 'MMK') + '<br><small>Discount ' +
           formatMoney(clientShare, service.currency || 'MMK') + ' · Project ' +
           formatMoney(projectShare, service.currency || 'MMK') + '</small></td>' +
         '<td><span class="po-badge ' + (active ? 'po-badge--active' : 'po-badge--inactive') + '">' + (active ? 'Active' : 'Inactive') + '</span></td>' +
         '<td><button type="button" class="btn btn-outline-primary btn-sm" data-action="edit-service" data-index="' + index + '"><i class="fas fa-edit me-1"></i>Edit</button></td></tr>';
     }).join('');
-    container.innerHTML = '<table class="po-table"><thead><tr><th>Service</th><th>Code</th><th>Default price</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    container.innerHTML = '<table class="po-table"><thead><tr><th>Service</th><th>Code</th><th>Total cost</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function editService(index) {
@@ -413,7 +413,7 @@
     var clientShare = numberValue(byId('serviceClientShare').value);
     var projectShare = numberValue(byId('serviceProjectShare').value);
     if (Math.abs(price - clientShare - projectShare) > 0.001) {
-      showMessage('Client and project shares must equal the subsidized cost.', 'error');
+      showMessage('Discount price and project cost share must equal the total cost.', 'error');
       return;
     }
     var payload = {
@@ -508,11 +508,11 @@
   function renderPriceOverrides() {
     var container = byId('pricesList');
     if (!state.priceOverrides.length) {
-      container.innerHTML = '<div class="po-empty">No maternity-home price overrides.</div>';
+      container.innerHTML = '<div class="po-empty">No laboratory price overrides.</div>';
       return;
     }
     var rows = state.priceOverrides.map(function (item, index) {
-      var homeId = item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId;
+      var labId = item.labId || item.laboratoryId || item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId;
       var serviceId = item.serviceId || item.serviceCode;
       var active = item.active !== false && normalizeKey(item.status || 'published') === 'published';
       var displayedPrice = item.unitPriceMinor != null
@@ -523,21 +523,23 @@
       var projectShare = item.projectCostShareMinor != null
         ? numberValue(item.projectCostShareMinor) / 100
         : displayedPrice - clientShare;
-      return '<tr><td>' + escapeHtml(findName(state.maternityHomes, homeId)) + '</td><td>' + escapeHtml(findServiceName(serviceId)) + '</td>' +
-        '<td><strong>' + formatMoney(displayedPrice, item.currency || 'MMK') + '</strong><br><small>Client ' +
+      var labLabel = findName(state.labs, labId);
+      if (labLabel === (labId || '—')) labLabel = findName(state.maternityHomes, labId);
+      return '<tr><td>' + escapeHtml(labLabel) + '</td><td>' + escapeHtml(findServiceName(serviceId)) + '</td>' +
+        '<td><strong>' + formatMoney(displayedPrice, item.currency || 'MMK') + '</strong><br><small>Discount ' +
           formatMoney(clientShare, item.currency || 'MMK') + ' · Project ' +
           formatMoney(projectShare, item.currency || 'MMK') + '</small></td>' +
         '<td><span class="po-badge ' + (active ? 'po-badge--active' : 'po-badge--inactive') + '">' + escapeHtml(item.status || (active ? 'Active' : 'Inactive')) + '</span></td>' +
         '<td><button type="button" class="btn btn-outline-primary btn-sm" data-action="edit-price" data-index="' + index + '"><i class="fas fa-copy me-1"></i>New version</button></td></tr>';
     }).join('');
-    container.innerHTML = '<table class="po-table"><thead><tr><th>Maternity home</th><th>Service</th><th>Override price</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    container.innerHTML = '<table class="po-table"><thead><tr><th>Laboratory</th><th>Service</th><th>Override price</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function editPrice(index) {
     var item = state.priceOverrides[index];
     if (!item) return;
     byId('priceOverrideId').value = '';
-    byId('priceMaternityHome').value = item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId || '';
+    byId('priceLab').value = item.labId || item.laboratoryId || item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId || '';
     byId('priceService').value = item.serviceId || item.serviceCode || '';
     byId('overridePrice').value = item.unitPriceMinor != null
       ? numberValue(item.unitPriceMinor) / 100
@@ -561,13 +563,13 @@
     var overrideClient = numberValue(byId('overrideClientShare').value);
     var overrideProject = numberValue(byId('overrideProjectShare').value);
     if (Math.abs(overridePrice - overrideClient - overrideProject) > 0.001) {
-      showMessage('Client and project shares must equal the subsidized cost.', 'error');
+      showMessage('Discount price and project cost share must equal the total cost.', 'error');
       return;
     }
     var payload = {
       id: byId('priceOverrideId').value || undefined,
-      maternityHomeId: byId('priceMaternityHome').value,
-      midwifeId: byId('priceMaternityHome').value,
+      labId: byId('priceLab').value,
+      laboratoryId: byId('priceLab').value,
       serviceId: byId('priceService').value,
       overridePrice: overridePrice,
       unitPriceMinor: Math.round(overridePrice * 100),
@@ -583,11 +585,11 @@
     try {
       await callVoucherService(['savePriceOverride', 'upsertPriceOverride', 'setPriceOverride'], payload);
       if (serviceHasMethod('publishCurrentPriceSheet')) {
-        await getVoucherService().publishCurrentPriceSheet(payload.midwifeId);
+        await getVoucherService().publishCurrentPriceSheet(payload.labId);
       }
       closeForm('priceFormCard');
       await loadPriceOverrides();
-      showMessage('Maternity-home price override saved.', 'success');
+      showMessage('Laboratory price override saved.', 'success');
     } catch (error) {
       showMessage(errorText(error), 'error', true);
     } finally {

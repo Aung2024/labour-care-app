@@ -25,7 +25,7 @@ const {
 
 const PROJECT_ID = 'demo-labourcare-2481a-vouchers';
 const SHEET_ID = 'AAAAAAAAAAAAAAAAAAAAAA';
-const VOUCHER_ID = 'BBBBBBBBBBBBBBBBBBBBBB';
+const VOUCHER_ID = 'K7MP-3QWX';
 let env;
 
 async function seed() {
@@ -34,11 +34,13 @@ async function seed() {
     await Promise.all([
       setDoc(doc(db, 'users/po'), { role: 'Program Officer', active: true, approved: true, displayName: 'PO' }),
       setDoc(doc(db, 'users/mw'), { role: 'Midwife', active: true, approved: true, name: 'Maternity Home' }),
+      setDoc(doc(db, 'users/hla'), { role: 'Midwife', approved: true, name: 'Midwife Hla Hla' }),
       setDoc(doc(db, 'users/legacy-mw'), { active: true, approved: true, provider_type: 'midwife', name: 'Legacy Midwife' }),
       setDoc(doc(db, 'users/lab1'), { role: 'Lab', active: true, approved: true, displayName: 'Lab One' }),
       setDoc(doc(db, 'users/lab2'), { role: 'Lab', active: true, approved: true, displayName: 'Lab Two' }),
       setDoc(doc(db, 'patients/patient-1'), { name: 'Patient One', age: 28, phone: '091234', created_by: 'mw' }),
       setDoc(doc(db, `voucher_price_sheets/${SHEET_ID}`), {
+        labId: null,
         midwifeId: null,
         currency: 'MMK',
         status: 'published',
@@ -53,6 +55,13 @@ async function seed() {
         }],
         publishedAt: new Date(),
         publishedBy: 'po'
+      }),
+      setDoc(doc(db, 'voucher_price_assignments/global'), {
+        labId: null,
+        midwifeId: null,
+        priceSheetId: SHEET_ID,
+        updatedAt: new Date(),
+        updatedBy: 'po'
       }),
       setDoc(doc(db, 'voucher_account_quotas/mw'), {
         midwifeId: 'mw',
@@ -96,9 +105,11 @@ async function issueVoucher() {
       patientAgeSnapshot: 28,
       patientPhoneSnapshot: '091234',
       patientNrcSnapshot: '',
-      ancVisitDate: '2026-08-27',
+            ancVisitDate: '2026-08-27',
       midwifeId: 'mw',
       issuerNameSnapshot: 'Maternity Home',
+      labId: 'lab1',
+      labNameSnapshot: 'Lab One',
       priceSheetId: SHEET_ID,
       selectedServiceIds: ['urine-re'],
       issuedAt: serverTimestamp(),
@@ -160,6 +171,19 @@ test('legacy blank-role Midwife retains clinical workflow access', async () => {
   }));
 });
 
+test('legacy Midwife without active field retains clinical workflow access', async () => {
+  const db = env.authenticatedContext('hla').firestore();
+  await assertSucceeds(setDoc(doc(db, 'patients/hla-patient'), {
+    name: 'Hla Patient',
+    created_by: 'hla'
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'patients/hla-patient'), {
+    hasConsent: true,
+    consentStatus: 'consented',
+    consentDate: serverTimestamp()
+  }));
+});
+
 test('voucher issuance and quota decrement must be atomic', async () => {
   await assertSucceeds(issueVoucher());
   const adminDb = env.authenticatedContext('po').firestore();
@@ -173,7 +197,7 @@ test('voucher issuance and quota decrement must be atomic', async () => {
   }));
 });
 
-test('only one Lab can redeem the same voucher', async () => {
+test('only the selected Lab can redeem the voucher', async () => {
   await issueVoucher();
   const redeem = (uid) => {
     const db = env.authenticatedContext(uid).firestore();
@@ -191,9 +215,8 @@ test('only one Lab can redeem the same voucher', async () => {
       });
     });
   };
-  const results = await Promise.allSettled([redeem('lab1'), redeem('lab2')]);
-  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
+  await assertFails(redeem('lab2'));
+  await assertSucceeds(redeem('lab1'));
 });
 
 test('Lab can list only its own redeemed submissions', async () => {

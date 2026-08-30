@@ -12,8 +12,8 @@ service cloud.firestore {
     function hasRole(role) {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && currentUser().active != false
-        && currentUser().approved != false
+        && currentUser().get("active", true) == true
+        && currentUser().get("approved", true) == true
         && currentUser().role == role;
     }
 
@@ -41,8 +41,8 @@ service cloud.firestore {
         || (
           signedIn()
           && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && currentUser().active != false
-          && currentUser().approved != false
+          && currentUser().get("active", true) == true
+          && currentUser().get("approved", true) == true
           && (
             !("role" in currentUser())
             || currentUser().role == ""
@@ -58,9 +58,23 @@ service cloud.firestore {
     }
 
     function isOpaqueVoucherId(value) {
-      return value is string
-        && value.size() == 22
-        && value.matches('^[A-Za-z0-9_-]{22}$');
+      return value is string && (
+        (value.size() == 22 && value.matches('^[A-Za-z0-9_-]{22}$'))
+        || (value.size() == 9 && value.matches('^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$'))
+      );
+    }
+
+    function isLabUser(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.role in ["Lab", "lab"]
+        && get(/databases/$(database)/documents/users/$(userId)).data.get("active", true) == true
+        && get(/databases/$(database)/documents/users/$(userId)).data.get("approved", true) == true;
+    }
+
+    function assignedPriceSheetId(labId) {
+      return exists(/databases/$(database)/documents/voucher_price_assignments/$(labId))
+        ? get(/databases/$(database)/documents/voucher_price_assignments/$(labId)).data.priceSheetId
+        : get(/databases/$(database)/documents/voucher_price_assignments/global).data.priceSheetId;
     }
 
     function isCurrency(value) {
@@ -549,13 +563,13 @@ service cloud.firestore {
     }
 
     // Program Officers publish immutable, complete price sheets. Assignments
-    // point each maternity home (or "global") at its current version.
+    // point each laboratory (or "global") at its current version.
     match /voucher_price_sheets/{sheetId} {
       allow read: if signedIn();
       allow create: if isVoucherAdministrator()
         && isOpaqueVoucherId(sheetId)
         && request.resource.data.keys().hasOnly([
-          "midwifeId", "currency", "status", "serviceIds", "services",
+          "labId", "midwifeId", "currency", "status", "serviceIds", "services",
           "publishedAt", "publishedBy"
         ])
         && request.resource.data.status == "published"
@@ -574,7 +588,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if isVoucherAdministrator()
         && request.resource.data.keys().hasOnly([
-          "midwifeId", "priceSheetId", "updatedAt", "updatedBy"
+          "labId", "midwifeId", "priceSheetId", "updatedAt", "updatedBy"
         ])
         && isOpaqueVoucherId(request.resource.data.priceSheetId)
         && request.resource.data.updatedAt == request.time
@@ -587,10 +601,11 @@ service cloud.firestore {
       allow read: if isVoucherAdministrator();
       allow create, update: if isVoucherAdministrator()
         && request.resource.data.keys().hasOnly([
-          "midwifeId", "serviceId", "subsidizedCostMinor", "clientCostShareMinor",
+          "labId", "serviceId", "subsidizedCostMinor", "clientCostShareMinor",
           "projectCostShareMinor", "active", "note", "updatedAt", "updatedBy"
         ])
-        && request.resource.data.midwifeId is string
+        && request.resource.data.labId is string
+        && isLabUser(request.resource.data.labId)
         && request.resource.data.serviceId is string
         && request.resource.data.subsidizedCostMinor is int
         && request.resource.data.clientCostShareMinor is int
@@ -671,11 +686,15 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           "code", "status", "patientId", "patientNameSnapshot", "patientAgeSnapshot",
           "patientPhoneSnapshot", "patientNrcSnapshot", "ancVisitDate", "midwifeId",
-          "issuerNameSnapshot", "priceSheetId", "selectedServiceIds", "issuedAt", "expiresAt"
+          "issuerNameSnapshot", "labId", "labNameSnapshot", "priceSheetId",
+          "selectedServiceIds", "issuedAt", "expiresAt"
         ])
         && request.resource.data.code == voucherId
         && request.resource.data.status == "issued"
         && request.resource.data.midwifeId == request.auth.uid
+        && request.resource.data.labId is string
+        && isLabUser(request.resource.data.labId)
+        && request.resource.data.labNameSnapshot is string
         && request.resource.data.patientId is string
         && exists(/databases/$(database)/documents/patients/$(request.resource.data.patientId))
         && (
@@ -685,8 +704,7 @@ service cloud.firestore {
         )
         && request.resource.data.patientNameSnapshot ==
           get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.name
-        && request.resource.data.priceSheetId ==
-          get(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.priceSheetId
+        && request.resource.data.priceSheetId == assignedPriceSheetId(request.resource.data.labId)
         && request.resource.data.selectedServiceIds is list
         && request.resource.data.selectedServiceIds.size() > 0
         && request.resource.data.selectedServiceIds.size() <= 30
@@ -701,6 +719,7 @@ service cloud.firestore {
       allow update: if isLab()
         && resource.data.status == "issued"
         && resource.data.expiresAt > request.time
+        && (!('labId' in resource.data) || resource.data.labId == request.auth.uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "redeemedAt", "redeemedBy", "labDisplayNameSnapshot",
           "submissionReference", "redemptionAudit"
