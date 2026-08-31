@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v265-moh';
+const CACHE_NAME = 'mch-care-v266-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -217,7 +217,13 @@ self.addEventListener('fetch', (event) => {
         })
         .catch((error) => {
           console.error('[Service Worker] Asset fetch failed:', error);
-          return caches.match(event.request);
+          return caches.match(event.request).then((fallback) =>
+            fallback || new Response('Resource temporarily unavailable', {
+              status: 503,
+              statusText: 'Service Unavailable',
+              headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+            })
+          );
         });
     })
   );

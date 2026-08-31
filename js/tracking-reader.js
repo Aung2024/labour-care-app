@@ -103,12 +103,14 @@
     }).join('');
   }
 
-  function typeOptions(selected) {
+  function typeCheckboxes(selected) {
     var selectedSet = new Set(selected || []);
     var types = global.FacilityConfig ? FacilityConfig.getFacilityTypes() :
       Object.keys(FACILITY_TYPE_LABELS);
     return types.map(function (type) {
-      return option(type, FACILITY_TYPE_LABELS[type] || type, selectedSet.has(type));
+      return '<label class="tracking-type-chip"><input type="checkbox" name="facilityTypes" value="' +
+        type + '"' + (selectedSet.has(type) ? ' checked' : '') + '><span>' +
+        (FACILITY_TYPE_LABELS[type] || type) + '</span></label>';
     }).join('');
   }
 
@@ -117,14 +119,17 @@
     var style = document.createElement('style');
     style.id = 'trackingReaderStyles';
     style.textContent =
-      '.tracking-filters{position:sticky;top:68px;z-index:90;display:flex;flex-wrap:wrap;gap:.55rem;align-items:end;padding:.7rem;margin-bottom:.8rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.08)}' +
-      '.tracking-filter{display:flex;flex-direction:column;gap:.18rem;min-width:110px;flex:1 1 120px}.tracking-filter label{font-size:.64rem;font-weight:800;text-transform:uppercase;color:#64748b}' +
-      '.tracking-filter select,.tracking-filter input,.tracking-filter button{min-height:44px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:.4rem .55rem;font-size:.82rem}' +
-      '.tracking-filter select[multiple]{height:88px}.tracking-filter-actions{display:flex;gap:.4rem}.tracking-filter-actions button{font-weight:800;color:#1d4ed8;touch-action:manipulation}' +
+      '.tracking-filters{position:sticky;top:68px;z-index:90;display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:.65rem;align-items:end;padding:.85rem;margin-bottom:.8rem;background:rgba(255,255,255,.98);border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 6px 22px rgba(15,23,42,.09)}' +
+      '.tracking-filter{display:flex;flex-direction:column;gap:.28rem;min-width:0}.tracking-filter label,.tracking-filter-label{font-size:.66rem;font-weight:800;letter-spacing:.025em;text-transform:uppercase;color:#64748b}' +
+      '.tracking-filter select,.tracking-filter input{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:.48rem .65rem;font-size:.82rem;color:#172033;outline:none;transition:border-color .15s,box-shadow .15s}' +
+      '.tracking-filter select:focus,.tracking-filter input:focus{border-color:#7357a6;box-shadow:0 0 0 3px rgba(115,87,166,.14)}' +
+      '.tracking-filter-wide{grid-column:span 2}.tracking-type-picker{position:relative}.tracking-type-picker>summary{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:.48rem .7rem;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155;font-size:.82rem;cursor:pointer;list-style:none}.tracking-type-picker>summary::-webkit-details-marker{display:none}.tracking-type-picker>summary:after{content:"⌄";font-size:1rem;color:#64748b}.tracking-type-picker[open]>summary{border-color:#7357a6;box-shadow:0 0 0 3px rgba(115,87,166,.14)}' +
+      '.tracking-type-menu{position:absolute;z-index:110;top:calc(100% + 5px);left:0;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem;padding:.6rem;background:#fff;border:1px solid #dbe2ea;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.16)}.tracking-type-chip{display:flex!important;align-items:center;gap:.42rem;min-height:38px;padding:.35rem .45rem;border-radius:8px;text-transform:none!important;letter-spacing:0!important;font-size:.74rem!important;color:#334155!important;cursor:pointer}.tracking-type-chip:hover{background:#f1f5f9}.tracking-type-chip input{width:17px!important;min-height:17px!important;height:17px;margin:0;accent-color:#7357a6}' +
+      '.tracking-filter-actions{display:flex;gap:.45rem;align-items:center}.tracking-filter-actions button{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer;transition:transform .12s,box-shadow .12s,background .12s}.tracking-filter-actions button:active{transform:translateY(1px)}.tracking-apply{border:0;color:#fff;background:linear-gradient(135deg,#a51f1f,#6f3c98);box-shadow:0 4px 12px rgba(111,60,152,.22)}.tracking-reset{border:1px solid #cbd5e1;color:#475569;background:#fff}.tracking-repair{border:1px solid #d8c9e7;color:#64358e;background:#f8f4fb}.tracking-repair:disabled{opacity:.65;cursor:wait}.tracking-repair-status{grid-column:1/-1;font-size:.75rem;color:#475569}' +
       '.tracking-state{padding:.7rem 1rem;text-align:center;color:#475569}.tracking-state.error{color:#b91c1c}.tracking-load-more{min-height:44px;margin:.75rem;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:800;padding:.5rem 1rem}' +
       '.tracking-infections{display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.25rem}.tracking-infection{font-size:.62rem;font-weight:800;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:.15rem .4rem}' +
       '.tracking-source{display:block;margin-top:.2rem;font-size:.68rem;color:#64748b}.tracking-facility{font-size:.76rem;line-height:1.35}' +
-      '@media(max-width:768px){.tracking-filters{top:66px;padding:.5rem;gap:.4rem;max-height:45dvh;overflow:auto}.tracking-filter{min-width:95px}.tracking-filter-wide{flex-basis:100%}}';
+      '@media(max-width:768px){.tracking-filters{top:66px;grid-template-columns:repeat(2,minmax(0,1fr));padding:.65rem;gap:.5rem}.tracking-filter-wide,.tracking-filter-actions{grid-column:1/-1}.tracking-type-menu{position:fixed;left:12px;right:12px;top:auto;grid-template-columns:1fr 1fr;max-height:45dvh;overflow:auto}.tracking-filter-actions button{flex:1;padding:.45rem .65rem}}';
     document.head.appendChild(style);
   }
 
@@ -160,9 +165,17 @@
       (level !== 'provider' ? '<div class="tracking-filter"><label>Department</label><select name="department">' +
         option('', 'DOPH & DOMS', !values.department) + option('doph', 'DOPH', values.department === 'doph') +
         option('doms', 'DOMS', values.department === 'doms') + '</select></div>' +
-        '<div class="tracking-filter tracking-filter-wide"><label>Facility types (multiple)</label><select name="facilityTypes" multiple>' +
-        typeOptions(values.facilityTypes) + '</select></div>' : '') +
-      '<div class="tracking-filter-actions"><button type="submit">Apply</button><button type="button" data-reset>Reset</button></div>';
+        '<div class="tracking-filter tracking-filter-wide"><span class="tracking-filter-label">Facility types</span>' +
+        '<details class="tracking-type-picker"><summary>Choose facility types</summary><div class="tracking-type-menu">' +
+        typeCheckboxes(values.facilityTypes) + '</div></details></div>' : '') +
+      '<div class="tracking-filter-actions"><button class="tracking-apply" type="submit"><i class="fas fa-filter"></i> Apply</button>' +
+        '<button class="tracking-reset" type="button" data-reset>Reset</button>' +
+        (normalizeRole(config.role) === 'super admin'
+          ? '<button class="tracking-repair" type="button" data-repair><i class="fas fa-rotate"></i> Rebuild data</button>'
+          : '') + '</div>' +
+      (normalizeRole(config.role) === 'super admin'
+        ? '<div class="tracking-repair-status" data-repair-status aria-live="polite"></div>'
+        : '');
     var anchor = document.getElementById('dashboardState') || document.getElementById('loadingState');
     anchor.parentNode.insertBefore(host, anchor);
 
@@ -192,6 +205,24 @@
       host.remove();
       config.onReset();
     });
+    var repairButton = host.querySelector('[data-repair]');
+    if (repairButton) {
+      repairButton.addEventListener('click', async function () {
+        var status = host.querySelector('[data-repair-status]');
+        if (!global.confirm('Rebuild HRT and KMC tracking data for all patients? This runs safely in background batches.')) return;
+        repairButton.disabled = true;
+        status.textContent = 'Starting the background rebuild…';
+        try {
+          var result = await call('startTrackingProjectionRepair', {});
+          status.textContent = result.alreadyRunning
+            ? 'A tracking-data rebuild is already running.'
+            : 'Tracking-data rebuild started. You may leave this page.';
+        } catch (error) {
+          status.textContent = 'Could not start rebuild: ' + (error.message || error);
+          repairButton.disabled = false;
+        }
+      });
+    }
     return { element: host, filters: readFilters(host, level), level: level };
   }
 
@@ -205,8 +236,10 @@
       region: form.elements.region ? form.elements.region.value : '',
       township: form.elements.township ? form.elements.township.value : '',
       department: form.elements.department ? form.elements.department.value : '',
-      facilityTypes: form.elements.facilityTypes ?
-        Array.from(form.elements.facilityTypes.selectedOptions).map(function (item) { return item.value; }) : []
+      facilityTypes: form.querySelectorAll('input[name="facilityTypes"]:checked').length
+        ? Array.from(form.querySelectorAll('input[name="facilityTypes"]:checked'))
+          .map(function (item) { return item.value; })
+        : []
     };
     var dates = periodDates(values);
     return Object.assign(values, dates, { roleLevel: level });

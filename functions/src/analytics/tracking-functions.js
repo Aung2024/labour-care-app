@@ -77,7 +77,8 @@ function decodePageToken(value) {
   if (!value) return null;
   try {
     const token = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
-    if (!token || typeof token.activeFrom !== 'string' || typeof token.id !== 'string') {
+    if (!token || typeof token.activeFrom !== 'string' ||
+        typeof token.activeUntil !== 'string' || typeof token.id !== 'string') {
       throw new Error('invalid');
     }
     return token;
@@ -90,6 +91,7 @@ function encodePageToken(snapshot) {
   if (!snapshot) return null;
   return Buffer.from(JSON.stringify({
     activeFrom: snapshot.get('activeFrom'),
+    activeUntil: snapshot.get('activeUntil'),
     id: snapshot.id
   })).toString('base64url');
 }
@@ -161,10 +163,16 @@ async function queryProjectionRows(collectionName, request) {
   let query = applyRoleScope(db().collection(collectionName), user);
   if (filters.periodEnd) query = query.where('activeFrom', '<=', filters.periodEnd);
   if (filters.periodStart) query = query.where('activeUntil', '>=', filters.periodStart);
-  query = query.orderBy('activeFrom').orderBy(FieldPath.documentId());
+  // Firestore appends inequality fields that are missing from the explicit
+  // ordering. Keep the document key last so the generated order is valid.
+  query = query.orderBy('activeFrom')
+    .orderBy('activeUntil')
+    .orderBy(FieldPath.documentId());
   if (filters.pageToken) {
     query = query.startAfter(
-      filters.pageToken.activeFrom, filters.pageToken.id
+      filters.pageToken.activeFrom,
+      filters.pageToken.activeUntil,
+      filters.pageToken.id
     );
   }
   // Optional dimensions are filtered in this trusted service. Keeping them
