@@ -190,14 +190,25 @@ function sortedDatedRecords(records, fields) {
 
 function hasCompletedImmediateNewbornCare(record) {
   if (!record || typeof record !== 'object') return false;
-  return Boolean(
-    record.completed === true ||
-    record.status === 'complete' ||
-    record.timestamp || record.createdAt || record.recordedAt ||
-    Object.keys(record).some((key) => ![
-      'id', 'patientId', 'createdBy', 'recordedBy', 'timestamp', 'createdAt'
-    ].includes(key) && record[key] != null && record[key] !== '')
-  );
+  if (record.completed === true ||
+      String(record.status || '').toLowerCase() === 'complete') return true;
+  const assessedBreathing =
+    record.spontaneous_breathing === true ||
+    record.gasping_or_no_breathing === true;
+  const hasNumericValue = (value) =>
+    value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+  const hasApgar = hasNumericValue(record.apgar_1min) ||
+    hasNumericValue(record.apgar_5min);
+  const completedCareAction = [
+    'thorough_drying',
+    'skin_to_skin_contact',
+    'delayed_cord_clamping',
+    'support_early_exclusive_breastfeeding',
+    'eye_care_teo',
+    'cord_care_clean_dry',
+    'vitamin_k'
+  ].some((key) => record[key] === true);
+  return assessedBreathing || hasApgar || completedCareAction;
 }
 
 function hasCompletedDeliveryNote(record) {

@@ -2216,6 +2216,11 @@
         const isOffline = networkOff || legacyToggle || isOfflinePatient;
 
         if (isOffline) {
+          if (isEditMode) {
+            alert('Edited visits require an online authorization check.');
+            window.location.href = 'visit-edit.html?type=anc&patient=' + encodeURIComponent(patientId);
+            return;
+          }
           currentPatient = null;
           if (networkOff && window.LabourCareOffline && patientId && !isOfflinePatient) {
             const pl = await LabourCareOffline.getPatientPayload(patientId);
@@ -2301,18 +2306,20 @@
 
     async function loadVisitForEdit() {
       if (!editVisitId || !patientId) return;
-      const doc = await firebase.firestore()
-        .collection('patients')
-        .doc(patientId)
-        .collection('antenatal_visits')
-        .doc(editVisitId)
-        .get();
-      if (!doc.exists) {
-        alert('The selected ANC visit could not be found.');
+      try {
+        const authorization = await JointCareUtils.authorizeVisitEdit({
+          patientId,
+          visitType: 'anc',
+          visitId: editVisitId,
+          user: currentUser,
+          approvalId: editApprovalId
+        });
+        applyAncVisitDataToForm(authorization.visit);
+      } catch (error) {
+        alert(error.message || 'You are not authorized to edit this ANC visit.');
         window.location.href = 'visit-edit.html?type=anc&patient=' + encodeURIComponent(patientId);
         return;
       }
-      applyAncVisitDataToForm(doc.data() || {});
       const visitNumberInput = document.getElementById('visitNumber');
       if (visitNumberInput) {
         visitNumberInput.readOnly = true;
@@ -4911,12 +4918,13 @@
           updateData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
           updateData.updatedBy = currentUser?.uid || '';
 
-          await firebase.firestore()
-            .collection('patients')
-            .doc(patientId)
-            .collection('antenatal_visits')
-            .doc(editVisitId)
-            .set(updateData, { merge: true });
+          await JointCareUtils.commitAuthorizedVisitEdit({
+            patientId,
+            visitType: 'anc',
+            visitId: editVisitId,
+            user: currentUser,
+            approvalId: editApprovalId
+          }, updateData);
 
           await firebase.firestore().collection('patients').doc(patientId).update({
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4928,10 +4936,6 @@
             edd: updateData.edd || null,
             manualEdd: updateData.manualEdd || null
           });
-
-          if (editApprovalId && window.JointCareUtils) {
-            await JointCareUtils.markApprovalUsed(editApprovalId, currentUser?.uid || '');
-          }
 
           if (window.AppDialog && AppDialog.alert) {
             await AppDialog.alert('ANC visit updated.', { title: 'Updated' });

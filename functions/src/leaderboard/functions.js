@@ -76,12 +76,14 @@ function monthsFromData(data) {
   return months;
 }
 
-function eventMonths(before, after) {
+function eventMonths(before, after, options) {
   const months = new Set([
     ...monthsFromData(dataFromSnapshot(before)),
     ...monthsFromData(dataFromSnapshot(after))
   ]);
-  if (!months.size) months.add(monthKeyForDate(new Date()));
+  if (!months.size && (!options || options.fallbackToCurrent !== false)) {
+    months.add(monthKeyForDate(new Date()));
+  }
   return Array.from(months);
 }
 
@@ -91,6 +93,45 @@ function periodsWithAllTime(months) {
     if (/^\d{4}-\d{2}$/.test(month)) periods.add(month.slice(0, 4));
   });
   return Array.from(periods);
+}
+
+function aggregateDailyRows(rows, requested) {
+  const filters = requested || {};
+  const facilityTypes = Array.isArray(filters.facilityTypes)
+    ? filters.facilityTypes.map(String).slice(0, 10)
+    : [];
+  const totals = new Map();
+  (rows || []).forEach((row) => {
+    if (filters.region && row.region !== filters.region) return;
+    if (filters.township && row.township !== filters.township) return;
+    if (filters.department && row.department !== filters.department) return;
+    if (facilityTypes.length && !facilityTypes.includes(row.facilityType)) return;
+    const current = totals.get(row.providerId) || {
+      providerId: row.providerId,
+      providerName: row.providerName,
+      providerType: row.providerType,
+      township: row.township,
+      region: row.region,
+      facilityCode: row.facilityCode || '',
+      department: row.department || 'other',
+      facilityType: row.facilityType || 'other',
+      score: 0,
+      // A single daily summary has a true distinct count. Across multiple
+      // days these become patient-days and cannot be deduplicated.
+      activePatientCount: filters.start && filters.start === filters.end ? 0 : null,
+      categories: emptyCategories()
+    };
+    current.score += Number(row.score || 0);
+    if (current.activePatientCount != null) {
+      current.activePatientCount += Number(row.activePatientCount || 0);
+    }
+    CATEGORY_KEYS.forEach((key) => {
+      current.categories[key] += Number(row.categories && row.categories[key] || 0);
+    });
+    current.calculatedAt = new Date().toISOString();
+    totals.set(row.providerId, current);
+  });
+  return Array.from(totals.values()).sort((a, b) => b.score - a.score);
 }
 
 async function requireSuperAdmin(request) {
@@ -134,43 +175,12 @@ async function queryLeaderboardRange(request) {
   }
 
   const snapshot = await query.get();
-  const requested = request.data || {};
-  const facilityTypes = Array.isArray(requested.facilityTypes)
-    ? requested.facilityTypes.map(String).slice(0, 10)
-    : [];
-  const totals = new Map();
-  snapshot.forEach((doc) => {
-    const row = doc.data() || {};
-    if (requested.region && row.region !== requested.region) return;
-    if (requested.township && row.township !== requested.township) return;
-    if (requested.department && row.department !== requested.department) return;
-    if (facilityTypes.length && !facilityTypes.includes(row.facilityType)) return;
-    const current = totals.get(row.providerId) || {
-      providerId: row.providerId,
-      providerName: row.providerName,
-      providerType: row.providerType,
-      township: row.township,
-      region: row.region,
-      facilityCode: row.facilityCode || '',
-      department: row.department || 'other',
-      facilityType: row.facilityType || 'other',
-      score: 0,
-      activePatientCount: 0,
-      categories: emptyCategories()
-    };
-    current.score += Number(row.score || 0);
-    current.activePatientCount += Number(row.activePatientCount || 0);
-    CATEGORY_KEYS.forEach((key) => {
-      current.categories[key] += Number(row.categories && row.categories[key] || 0);
-    });
-    current.calculatedAt = new Date().toISOString();
-    totals.set(row.providerId, current);
-  });
+  const rows = snapshot.docs.map((doc) => doc.data() || {});
   return {
     scoreVersion: require('./scoring').SCORE_VERSION,
     start,
     end,
-    providers: Array.from(totals.values()).sort((a, b) => b.score - a.score)
+    providers: aggregateDailyRows(rows, request.data || {})
   };
 }
 
@@ -387,5 +397,7 @@ module.exports = {
   leaderboardNightlyReconciliation,
   leaderboardReconciliationWorker,
   processActiveRebuildBatch,
-  eventMonths
+  eventMonths,
+  periodsWithAllTime,
+  aggregateDailyRows
 };

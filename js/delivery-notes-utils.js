@@ -145,6 +145,11 @@
     return isNaN(n) ? null : n;
   }
 
+  function gramsToKilograms(value) {
+    var grams = toNumber(value);
+    return grams == null ? null : grams / 1000;
+  }
+
   function normalizeBaby(raw, index) {
     raw = raw || {};
     index = typeof index === 'number' ? index : 0;
@@ -283,7 +288,17 @@
     if (!current.birth_time && legacy.birth_time) patch.birth_time = legacy.birth_time;
     if (!current.birthplace && legacy.birthplace) patch.birthplace = legacy.birthplace;
     if (!current.mode_of_delivery && legacy.mode_of_delivery) patch.mode_of_delivery = legacy.mode_of_delivery;
-    if (!current.pregnancy_type && legacy.pregnancy_type) patch.pregnancy_type = legacy.pregnancy_type;
+    if (legacy.pregnancy_type) patch.pregnancy_type = legacy.pregnancy_type;
+    patch.baby_count = legacy.baby_count;
+    patch.babies = legacy.babies.map(function (baby, index) {
+      var merged = Object.assign({}, Array.isArray(current.babies) ? current.babies[index] : null);
+      Object.keys(baby).forEach(function (key) {
+        if (baby[key] !== undefined && baby[key] !== null && baby[key] !== '') {
+          merged[key] = baby[key];
+        }
+      });
+      return merged;
+    });
     if (!current.gender && legacy.gender) patch.gender = legacy.gender;
     if ((current.body_weight_gram == null || current.body_weight_gram === '') && legacy.body_weight_gram != null) {
       patch.body_weight_gram = legacy.body_weight_gram;
@@ -396,6 +411,7 @@
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
     birthPlaceLabel: birthPlaceLabel,
-    toDatetimeLocal: toDatetimeLocal
+    toDatetimeLocal: toDatetimeLocal,
+    gramsToKilograms: gramsToKilograms
   };
 })(typeof window !== 'undefined' ? window : this);

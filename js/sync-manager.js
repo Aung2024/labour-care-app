@@ -8,6 +8,12 @@
   let syncInProgress = false;
   const syncedAncPatientIds = new Set();
 
+  async function requestAnalyticsRefresh(patientId, reason) {
+    if (window.AnalyticsRefreshQueue) {
+      await window.AnalyticsRefreshQueue.requestSafely(patientId, reason);
+    }
+  }
+
   async function applyAntenatalStatusAfterAncSync(patientId) {
     if (!patientId || String(patientId).indexOf('OFFLINE-') === 0) return;
     if (window.StatusManager && typeof window.StatusManager.checkAndUpdateToAntenatalCare === 'function') {
@@ -149,6 +155,7 @@
           firestoreData.offline_local_id = tempId;
 
           const docRef = await firebase.firestore().collection('patients').add(firestoreData);
+          await requestAnalyticsRefresh(docRef.id, 'offline_patient_sync');
 
           tempIdToRealId[tempId] = docRef.id;
 
@@ -373,6 +380,7 @@
           const docRef = await subRef.add(visitData);
           cloudId = docRef.id;
         }
+        await requestAnalyticsRefresh(patientId, 'offline_' + storeName);
 
         await window.OfflineManager.markSynced(storeName, record.localId, cloudId);
         resultBucket.synced++;
@@ -464,6 +472,7 @@
           }
         }
 
+        await requestAnalyticsRefresh(patientId, 'offline_lcg_sync');
         await window.OfflineManager.markSynced('pending_lcg_records', record.localId, docName);
         resultBucket.synced++;
 

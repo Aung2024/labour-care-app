@@ -6,6 +6,7 @@ const {
   SCORE_VERSION,
   calculatePatientContribution,
   buildPatientAchievements,
+  hasCompletedImmediateNewbornCare,
   monthKeyForDate,
   recentMonthKeys
 } = require('../src/leaderboard/scoring');
@@ -180,4 +181,23 @@ test('supports year periods', () => {
     registration_date: '2026-06-01'
   }, {}, '2026');
   assert.equal(result.categories.registration, 1);
+});
+
+test('immediate newborn completion requires clinical content', () => {
+  assert.equal(hasCompletedImmediateNewbornCare({
+    patientId: 'patient-1',
+    recordedBy: 'provider-1',
+    timestamp: '2026-08-04T00:00:00Z',
+    thorough_drying: false,
+    spontaneous_breathing: false,
+    gasping_or_no_breathing: false
+  }), false);
+  assert.equal(hasCompletedImmediateNewbornCare({
+    timestamp: '2026-08-04T00:00:00Z',
+    spontaneous_breathing: true
+  }), true);
+  assert.equal(hasCompletedImmediateNewbornCare({
+    timestamp: '2026-08-04T00:00:00Z',
+    apgar_1min: 0
+  }), true);
 });

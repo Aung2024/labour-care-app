@@ -29,6 +29,7 @@
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/infection-alerts.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/choice-controls.js"></script>
   <script src="js/submit-guard.js"></script>
@@ -1581,8 +1582,9 @@
     }
 
     async function applySharedDeliveryAnchor() {
-      if (!patientId || !window.BirthDeliveryAnchor) return;
-      const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(patientId);
+      const storagePatientId = getNewbornCareStoragePatientId();
+      if (!storagePatientId || !window.BirthDeliveryAnchor) return;
+      const anchor = await BirthDeliveryAnchor.fetchSharedDeliveryAnchor(storagePatientId);
       const input = document.getElementById('birth_time');
       if (!input) return;
       if (anchor.datetimeLocal) {
@@ -2244,26 +2246,19 @@
       }
       if (!Object.keys(patch).length) return;
 
-      const patientIds = [];
-      if (patientId) patientIds.push(patientId);
-      const storageId = getNewbornCareStoragePatientId();
-      if (storageId && patientIds.indexOf(storageId) === -1) patientIds.push(storageId);
-
-      for (let i = 0; i < patientIds.length; i++) {
-        const ref = firebase.firestore()
-          .collection('patients')
-          .doc(patientIds[i])
-          .collection('newborn_care')
-          .doc(visit1Item.id);
-        try {
-          const snap = await ref.get();
-          if (!snap.exists) continue;
-          await ref.set(patch, { merge: true });
-          visit1Item.data = Object.assign({}, visit1, patch);
-          return;
-        } catch (e) {
-          console.warn('Could not backfill visit 1 birth measurements:', e);
-        }
+      const storagePatientId = getNewbornCareStoragePatientId();
+      const ref = firebase.firestore()
+        .collection('patients')
+        .doc(storagePatientId)
+        .collection('newborn_care')
+        .doc(visit1Item.id);
+      try {
+        const snap = await ref.get();
+        if (!snap.exists) return;
+        await ref.set(patch, { merge: true });
+        visit1Item.data = Object.assign({}, visit1, patch);
+      } catch (e) {
+        console.warn('Could not backfill visit 1 birth measurements:', e);
       }
     }
 
@@ -2540,6 +2535,11 @@
         const isOfflinePatient = patientId.startsWith('OFFLINE-');
 
         if (isOffline || isOfflinePatient) {
+          if (isEditMode) {
+            alert('Edited visits require an online authorization check.');
+            window.location.href = 'visit-edit.html?type=newborn&patient=' + encodeURIComponent(patientId);
+            return;
+          }
           const cachedData = sessionStorage.getItem('selectedPatientData');
           if (cachedData) {
             currentPatient = JSON.parse(cachedData);
@@ -2610,24 +2610,17 @@
       return false;
     }
 
-    function isMaternalLabReactive(result, includeIndeterminate) {
-      if (result == null || result === '') return false;
-      var value = String(result).trim().toLowerCase();
-      if (!value || value === 'no test yet' || value === '-' || value === 'n/a') return false;
-      if (value === 'reactive' || value === 'positive' || value === 'detected') return true;
-      if (includeIndeterminate && value === 'indeterminate') return true;
-      return false;
-    }
-
     function collectMaternalInfectionFlags(tests) {
+      if (window.InfectionAlerts && InfectionAlerts.collectFlags) {
+        var latest = InfectionAlerts.collectFlags(tests);
+        return {
+          hiv: !!latest.hiv,
+          hepatitisB: !!latest.hepatitisB,
+          hepatitisC: !!latest.hepatitisC,
+          vdrl: !!latest.vdrl
+        };
+      }
       var flags = { hiv: false, hepatitisB: false, hepatitisC: false, vdrl: false };
-      (tests || []).forEach(function (test) {
-        if (!test) return;
-        if (isMaternalLabReactive(test.hivResult, false)) flags.hiv = true;
-        if (isMaternalLabReactive(test.hepatitisBResult, false)) flags.hepatitisB = true;
-        if (isMaternalLabReactive(test.hepatitisCResult, false)) flags.hepatitisC = true;
-        if (isMaternalLabReactive(test.syphilisResult || test.vdrlResult, false)) flags.vdrl = true;
-      });
       return flags;
     }
 
@@ -3231,7 +3224,7 @@
           }
           const weightEl = document.getElementById('body_weight_gram');
           if (weightEl && !weightEl.value && matchedBaby.birthWeightGram != null) {
-            weightEl.value = matchedBaby.birthWeightGram;
+            weightEl.value = DeliveryNotesUtils.gramsToKilograms(matchedBaby.birthWeightGram);
           }
           if (matchedBaby.gender) {
             const genderEl = document.getElementById('gender');
@@ -3521,11 +3514,12 @@
     async function fetchNewbornCareVisitsForPatient() {
       const visits = [];
       const seenIds = new Set();
-      if (window.OfflineManager && patientId) {
+      const storagePatientId = getNewbornCareStoragePatientId();
+      if (window.OfflineManager && storagePatientId) {
         const pending = await OfflineManager.getPendingRecords('pending_newborn_records');
         pending.filter(function (r) {
           const d = r.data || r;
-          return d.patientId === patientId;
+          return d.patientId === storagePatientId;
         }).forEach(function (r) {
           const data = Object.assign({}, r.data || r);
           if (!data.visit_number && data.visitNumber) data.visit_number = data.visitNumber;
@@ -3535,24 +3529,27 @@
         });
       }
 
-      const storagePatientId = getNewbornCareStoragePatientId();
-      const docIds = [];
-      if (patientId) docIds.push(patientId);
-      if (storagePatientId && storagePatientId !== patientId) docIds.push(storagePatientId);
-
-      for (let i = 0; i < docIds.length; i++) {
-        const fetched = await fetchNewbornCareVisitsFromDoc(docIds[i]);
-        fetched.forEach(function (item) {
-          if (!item || !item.id || seenIds.has(item.id)) return;
-          seenIds.add(item.id);
-          visits.push(item);
-        });
-      }
+      const fetched = await fetchNewbornCareVisitsFromDoc(storagePatientId);
+      fetched.forEach(function (item) {
+        if (!item || !item.id || seenIds.has(item.id)) return;
+        seenIds.add(item.id);
+        visits.push(item);
+      });
       return visits;
     }
 
     async function loadExistingNewbornCareData() {
       try {
+        let editAuthorization = null;
+        if (isEditMode) {
+          editAuthorization = await JointCareUtils.authorizeVisitEdit({
+            patientId: getNewbornCareStoragePatientId(),
+            visitType: 'newborn',
+            visitId: editVisitId,
+            user: currentUser,
+            approvalId: editApprovalId
+          });
+        }
         latestAncForKmc = await fetchLatestAncForKmc();
         populateKmcCategoryOptions();
         newbornCareVisits = await fetchNewbornCareVisitsForPatient();
@@ -3569,11 +3566,8 @@
           }, 1);
 
           if (isEditMode) {
-            const selected = newbornCareVisits.find(function (item) { return item.id === editVisitId; });
-            if (selected) {
-              populateNewbornCareFields(getVisitData(selected));
-              currentNewbornDocId = selected.id;
-            }
+            populateNewbornCareFields(editAuthorization.visit);
+            currentNewbornDocId = editVisitId;
           } else if (isNewKmcVisit || isNewFollowUpVisit) {
             const identitySource = visit1Data || getVisitData(newbornCareVisits[newbornCareVisits.length - 1]);
             populateIdentityFromVisit(identitySource, true);
@@ -3587,7 +3581,7 @@
           applyNewbornVisitNumber(1);
           if (window.OfflineVisitNumber) {
             const nextVisit = await OfflineVisitNumber.resolveNextVisitNumber({
-              patientId: patientId,
+              patientId: getNewbornCareStoragePatientId(),
               collectionName: 'newborn_care',
               pendingStore: 'pending_newborn_records'
             });
@@ -3618,6 +3612,10 @@
         if (window.ChoiceControls) ChoiceControls.syncAll();
       } catch (error) {
         console.error('Error loading existing newborn care data:', error);
+        if (isEditMode) {
+          alert(error.message || 'You are not authorized to edit this newborn visit.');
+          window.location.href = 'visit-edit.html?type=newborn&patient=' + encodeURIComponent(patientId);
+        }
       }
     }
 
@@ -3825,7 +3823,7 @@
           feeding_method: document.getElementById('feeding_method')?.value || null,
           otherVisits: collectOtherVisitsFromUi(),
           hasOtherVisits: collectOtherVisitsFromUi().length > 0 ? 'yes' : 'no',
-          patientId: patientId,
+          patientId: getNewbornCareStoragePatientId(),
           recordedBy: currentUser.uid,
           createdBy: currentNewbornDocId ? undefined : currentUser.uid,
           createdAt: currentNewbornDocId ? undefined : firebase.firestore.FieldValue.serverTimestamp()
@@ -3841,18 +3839,17 @@
           syncState: 'pending'
         };
 
-        const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
-          'pending_newborn_records',
-          queuedPayload,
-          async function (payload) {
+        const writeNewbornCloudData = async function (payload) {
             const cloudData = { ...payload };
             delete cloudData._collection;
             delete cloudData.syncState;
-            cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+            if (!currentNewbornDocId) {
+              cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+            }
 
             const collectionRef = firebase.firestore()
               .collection('patients')
-              .doc(patientId)
+              .doc(getNewbornCareStoragePatientId())
               .collection('newborn_care');
 
             let cloudId = null;
@@ -3860,12 +3857,16 @@
               cloudId = currentNewbornDocId;
               cloudData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
               cloudData.updatedBy = currentUser.uid;
+              delete cloudData.timestamp;
               delete cloudData.createdAt;
               delete cloudData.createdBy;
-              await collectionRef.doc(cloudId).set(cloudData, { merge: true });
-              if (editApprovalId && window.JointCareUtils) {
-                await JointCareUtils.markApprovalUsed(editApprovalId, currentUser.uid);
-              }
+              await JointCareUtils.commitAuthorizedVisitEdit({
+                patientId: getNewbornCareStoragePatientId(),
+                visitType: 'newborn',
+                visitId: editVisitId,
+                user: currentUser,
+                approvalId: editApprovalId
+              }, cloudData);
             } else {
               const created = await collectionRef.add(cloudData);
               cloudId = created.id;
@@ -3875,7 +3876,7 @@
 
             if (window.StatusManager) {
               await StatusManager.checkAndUpdateToPostnatalCare(
-                patientId,
+                getNewbornCareStoragePatientId(),
                 'Newborn care data recorded'
               );
             }
@@ -3888,22 +3889,30 @@
               patientPatch.next_action_date = cloudData.follow_up_appointment_date;
               patientPatch.next_action_type = 'newborn_follow_up';
             }
-            await firebase.firestore().collection('patients').doc(patientId).update(patientPatch);
+            await firebase.firestore().collection('patients').doc(getNewbornCareStoragePatientId()).update(patientPatch);
 
             if (cloudData.birth_time && window.BirthDeliveryAnchor) {
-              await BirthDeliveryAnchor.syncDatetimeToNewbornCare(patientId, cloudData.birth_time);
+              await BirthDeliveryAnchor.syncDatetimeToNewbornCare(getNewbornCareStoragePatientId(), cloudData.birth_time);
             }
 
             return { cloudId };
-          }
-        );
+        };
+        const saveResult = isEditMode
+          ? await writeNewbornCloudData(queuedPayload).then(function (cloudMeta) {
+              return { local: false, cloud: true, queued: false, cloudMeta: cloudMeta };
+            })
+          : await window.OfflineManager.saveLocalFirstAndTryCloud(
+              'pending_newborn_records',
+              queuedPayload,
+              writeNewbornCloudData
+            );
 
         if (window.AnalyticsRefreshQueue) {
           await AnalyticsRefreshQueue.requestSafely(getNewbornCareStoragePatientId(), 'newborn_care');
         }
         if (window.StatusManager) {
           await StatusManager.checkAndUpdateToPostnatalCare(
-            patientId,
+            getNewbornCareStoragePatientId(),
             saveResult.cloud ? 'Newborn care data recorded' : 'Newborn care saved offline',
             {
               localOnly: !saveResult.cloud,

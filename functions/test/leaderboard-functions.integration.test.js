@@ -16,6 +16,9 @@ const {
 const {
   processLeaderboardRefreshQueue
 } = require('../src/analytics/refresh-queue-functions');
+const {
+  queryProjectionRows
+} = require('../src/analytics/tracking-functions');
 
 function dateOnly(date) {
   return date.getUTCFullYear() + '-' +
@@ -186,4 +189,44 @@ test('dashboard rebuild is checkpointed, retry-safe, and writes scoped summaries
     .get();
   assert.ok(contributions.size >= 1);
   contributions.forEach((doc) => assert.equal(doc.data().runId, runId));
+});
+
+test('tracking query includes owned and care-team patients with stable pagination', async () => {
+  const providerId = 'tracking-midwife';
+  await database.collection('users').doc(providerId).set({
+    role: 'Midwife',
+    township: 'Integration Township',
+    region: 'Integration Region'
+  });
+  await database.collection('tracking_v2_hrt').doc('tracking-owned').set({
+    providerId,
+    careTeamProviderIds: [],
+    activeFrom: '2026-01-01',
+    activeUntil: '2026-12-31',
+    status: 'on_track'
+  });
+  await database.collection('tracking_v2_hrt').doc('tracking-shared').set({
+    providerId: 'another-midwife',
+    careTeamProviderIds: [providerId],
+    activeFrom: '2026-02-01',
+    activeUntil: '2026-12-31',
+    status: 'on_track'
+  });
+  const request = {
+    auth: { uid: providerId },
+    data: {
+      pageSize: 1,
+      periodStart: '2026-01-01',
+      periodEnd: '2026-12-31'
+    }
+  };
+  const first = await queryProjectionRows('tracking_v2_hrt', request);
+  assert.deepEqual(first.rows.map((row) => row.id), ['tracking-owned']);
+  assert.ok(first.nextPageToken);
+
+  const second = await queryProjectionRows('tracking_v2_hrt', {
+    ...request,
+    data: { ...request.data, pageToken: first.nextPageToken }
+  });
+  assert.deepEqual(second.rows.map((row) => row.id), ['tracking-shared']);
 });

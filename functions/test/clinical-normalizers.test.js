@@ -49,15 +49,31 @@ test('normalizes clinical outcomes and infection results', () => {
   assert.equal(normalizeInfectionResult('Non-reactive'), 'negative');
 });
 
-test('returns only latest positive infection flags', () => {
+test('latest result per analyte determines infection flags', () => {
   const flags = infectionFlags([
     { data: { testDate: '2026-01-01', hivResult: 'Negative' } },
     { data: { testDate: '2026-02-01', hivResult: 'Reactive', syphilisResult: 'Positive' } },
-    { data: { testDate: '2026-03-01', hivResult: 'Negative' } }
+    { data: { testDate: '2026-03-01', hivResult: 'Negative', hepatitisBResult: 'Negative' } },
+    { data: { testDate: '2026-04-01', hepatitisBResult: 'Detected' } }
   ]);
-  assert.equal(flags.hiv.result, 'positive');
+  assert.equal(flags.hiv, undefined);
   assert.equal(flags.vdrl.result, 'positive');
-  assert.equal(flags.hepatitisB, undefined);
+  assert.equal(flags.hepatitisB.result, 'positive');
+});
+
+test('browser infection alerts also clear an older positive after a newer negative', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../../js/infection-alerts.js'),
+    'utf8'
+  );
+  const context = { window: {} };
+  vm.runInNewContext(source, context);
+  const flags = context.window.InfectionAlerts.collectFlags([
+    { testDate: '2026-02-01', hivResult: 'Reactive', syphilisResult: 'Negative' },
+    { testDate: '2026-03-01', hivResult: 'Negative', syphilisResult: 'Positive' }
+  ]);
+  assert.equal(flags.hiv, undefined);
+  assert.equal(flags.vdrl.result, 'positive');
 });
 
 test('birth anchor prioritizes delivery notes and reports conflicts', () => {

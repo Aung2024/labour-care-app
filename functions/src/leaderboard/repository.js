@@ -69,7 +69,9 @@ async function loadPatientActivity(db, patientId) {
     deliveryNotes
   ] = await Promise.all([
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.ancVisits), {
-      orderBy: 'visitDate', limit: 20
+      // ANC milestones are lifetime ordinals (1st/4th/8th). Read the complete
+      // history so legacy duplicate visits cannot hide early milestones.
+      orderBy: 'visitDate'
     }),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.pncVisits), {
       orderBy: 'visitDate', limit: 10
@@ -77,9 +79,9 @@ async function loadPatientActivity(db, patientId) {
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.labTests), {
       orderBy: 'testDate', limit: 20
     }),
-    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.immediateNewbornCare), {
-      limit: 5
-    }),
+    // This collection is normally tiny. Read it completely so a legacy,
+    // unordered limit cannot hide the clinically completed record.
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.immediateNewbornCare)),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.newbornCare), {
       orderBy: 'visitDate', limit: 20
     }),

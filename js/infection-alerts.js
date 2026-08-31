@@ -48,7 +48,6 @@
           testedAt: dateMs(record),
           raw: record[field]
         };
-        if (candidate.result !== 'positive') return;
         if (!latest[infection] || candidate.testedAt >= latest[infection].testedAt) {
           latest[infection] = candidate;
         }

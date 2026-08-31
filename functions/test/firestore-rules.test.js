@@ -16,6 +16,7 @@ const {
   getDocs,
   query,
   setDoc,
+  updateDoc,
   where
 } = require('firebase/firestore');
 
@@ -28,8 +29,10 @@ async function seed() {
       ['midwife-a', { role: 'Midwife', township: 'Alpha', region: 'North' }],
       ['midwife-b', { role: 'Midwife', township: 'Beta', region: 'North' }],
       ['tmo-a', { role: 'TMO', township: 'Alpha', region: 'North' }],
+      ['tmo-b', { role: 'TMO', township: 'Beta', region: 'North' }],
       ['regional', { role: 'Regional Officer', township: '', region: 'North' }],
       ['central', { role: 'Central', township: '', region: '' }],
+      ['admin', { role: 'admin', township: '', region: '' }],
       ['super', { role: 'Super Admin', township: '', region: '' }]
     ];
     for (const [id, data] of users) {
@@ -174,6 +177,13 @@ test('Super Admin can read all provider summaries', async () => {
   await assertSucceeds(getDoc(providerRef('super', 'midwife-b')));
 });
 
+test('Central and admin can read national provider summaries', async () => {
+  await assertSucceeds(getDoc(providerRef('central', 'midwife-a')));
+  await assertSucceeds(getDoc(providerRef('central', 'midwife-b')));
+  await assertSucceeds(getDoc(providerRef('admin', 'midwife-a')));
+  await assertSucceeds(getDoc(providerRef('admin', 'midwife-b')));
+});
+
 test('unauthenticated users cannot read summaries', async () => {
   const database = environment.unauthenticatedContext().firestore();
   await assertFails(getDoc(doc(
@@ -294,4 +304,105 @@ test('authenticated clients can enqueue only their own refresh requests', async 
     doc(database, 'tracking_v2_refresh_queue', 'patient-b'),
     { ...payload, patientId: 'patient-b', requestedBy: 'someone-else' }
   ));
+});
+
+test('visit edit requests cannot be self-approved or reviewed out of scope', async () => {
+  const requestPath = ['visit_edit_requests', 'patient-a__anc__visit-a__midwife-a'];
+  const requesterDb = environment.authenticatedContext('midwife-a').firestore();
+  await assertSucceeds(setDoc(doc(requesterDb, ...requestPath), {
+    patientId: 'patient-a',
+    visitType: 'anc',
+    visitId: 'visit-a',
+    requesterId: 'midwife-a',
+    township: 'Alpha',
+    status: 'pending',
+    used: false
+  }));
+  await assertFails(updateDoc(doc(requesterDb, ...requestPath), {
+    status: 'approved',
+    reviewedBy: 'midwife-a',
+    reviewerRole: 'TMO'
+  }));
+
+  const wrongTmoDb = environment.authenticatedContext('tmo-b').firestore();
+  await assertFails(updateDoc(doc(wrongTmoDb, ...requestPath), {
+    status: 'approved',
+    reviewedBy: 'tmo-b',
+    reviewedAt: new Date(),
+    reviewerRole: 'TMO',
+    rejectionReason: null
+  }));
+});
+
+test('scoped supervisor approval can be consumed once by its requester', async () => {
+  const requestPath = ['visit_edit_requests', 'patient-a__anc__visit-a__midwife-a'];
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), ...requestPath), {
+      patientId: 'patient-a',
+      visitType: 'anc',
+      visitId: 'visit-a',
+      requesterId: 'midwife-a',
+      township: 'Alpha',
+      status: 'pending',
+      used: false
+    });
+  });
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  await assertSucceeds(updateDoc(doc(tmoDb, ...requestPath), {
+    status: 'approved',
+    reviewedBy: 'tmo-a',
+    reviewedAt: new Date(),
+    reviewerRole: 'TMO',
+    rejectionReason: null
+  }));
+
+  const requesterDb = environment.authenticatedContext('midwife-a').firestore();
+  await assertSucceeds(updateDoc(doc(requesterDb, ...requestPath), {
+    status: 'used',
+    used: true,
+    usedBy: 'midwife-a',
+    usedAt: new Date()
+  }));
+  await assertFails(updateDoc(doc(requesterDb, ...requestPath), {
+    status: 'used',
+    used: true,
+    usedBy: 'midwife-a',
+    usedAt: new Date()
+  }));
+});
+
+test('visit edit approval reads are limited to requester and scoped supervisors', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'visit_edit_requests', 'request-a'), {
+      requesterId: 'midwife-a',
+      township: 'Alpha',
+      status: 'pending',
+      used: false
+    });
+  });
+  await assertSucceeds(getDoc(doc(
+    environment.authenticatedContext('midwife-a').firestore(),
+    'visit_edit_requests',
+    'request-a'
+  )));
+  await assertSucceeds(getDoc(doc(
+    environment.authenticatedContext('tmo-a').firestore(),
+    'visit_edit_requests',
+    'request-a'
+  )));
+  await assertFails(getDoc(doc(
+    environment.authenticatedContext('midwife-b').firestore(),
+    'visit_edit_requests',
+    'request-a'
+  )));
+});
+
+test('ordinary authenticated clinical visit creates and updates remain allowed', async () => {
+  const database = environment.authenticatedContext('midwife-a').firestore();
+  const ancRef = doc(database, 'patients', 'patient-a', 'antenatal_visits', 'visit-new');
+  const newbornRef = doc(database, 'patients', 'patient-a', 'newborn_care', 'visit-new');
+  await assertSucceeds(setDoc(ancRef, { createdBy: 'midwife-a', visitNumber: 1 }));
+  await assertSucceeds(updateDoc(ancRef, { notes: 'updated' }));
+  await assertSucceeds(setDoc(newbornRef, { createdBy: 'midwife-a', visit_number: 1 }));
+  await assertSucceeds(updateDoc(newbornRef, { clinical_notes: 'updated' }));
 });

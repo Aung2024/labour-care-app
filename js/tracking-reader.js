@@ -2,7 +2,7 @@
   'use strict';
 
   var PAGE_SIZE = 25;
-  var TIMEOUT_MS = 20000;
+  var TIMEOUT_MS = 50000;
   var FACILITY_TYPE_LABELS = {
     district_hospital: 'District hospital',
     maternity_home: 'Maternity home',
@@ -164,7 +164,8 @@
       (level === 'central' || level === 'regional' ? '<div class="tracking-filter"><label>Township</label><select name="township">' + townshipOptions(values.region, values.township, level === 'regional' ? fixedRegion : '') + '</select></div>' : '') +
       (level !== 'provider' ? '<div class="tracking-filter"><label>Department</label><select name="department">' +
         option('', 'DOPH & DOMS', !values.department) + option('doph', 'DOPH', values.department === 'doph') +
-        option('doms', 'DOMS', values.department === 'doms') + '</select></div>' +
+        option('doms', 'DOMS', values.department === 'doms') +
+        option('other', 'Other / unclassified', values.department === 'other') + '</select></div>' +
         '<div class="tracking-filter tracking-filter-wide"><span class="tracking-filter-label">Facility types</span>' +
         '<details class="tracking-type-picker"><summary>Choose facility types</summary><div class="tracking-type-menu">' +
         typeCheckboxes(values.facilityTypes) + '</div></details></div>' : '') +
@@ -181,14 +182,27 @@
 
     function updateVisibility() {
       var period = host.elements.period.value;
+      var custom = period === 'custom';
       host.querySelector('.tracking-year').style.display = period === 'custom' ? 'none' : '';
       host.querySelector('.tracking-month').style.display = period === 'month' ? '' : 'none';
       host.querySelectorAll('.tracking-custom').forEach(function (el) {
-        el.style.display = period === 'custom' ? '' : 'none';
+        el.style.display = custom ? '' : 'none';
+        var input = el.querySelector('input');
+        if (input) input.required = custom;
       });
     }
+    function updateFacilitySummary() {
+      var summary = host.querySelector('.tracking-type-picker summary');
+      if (!summary) return;
+      var count = host.querySelectorAll('input[name="facilityTypes"]:checked').length;
+      summary.textContent = count ? count + ' facility type' + (count === 1 ? '' : 's') + ' selected' : 'All facility types';
+    }
     updateVisibility();
+    updateFacilitySummary();
     host.elements.period.addEventListener('change', updateVisibility);
+    host.querySelectorAll('input[name="facilityTypes"]').forEach(function (input) {
+      input.addEventListener('change', updateFacilitySummary);
+    });
     if (host.elements.region) {
       host.elements.region.addEventListener('change', function () {
         host.elements.township.innerHTML = townshipOptions(host.elements.region.value, '', '');
@@ -196,6 +210,10 @@
     }
     host.addEventListener('submit', function (event) {
       event.preventDefault();
+      if (!host.checkValidity()) {
+        host.reportValidity();
+        return;
+      }
       config.onApply(readFilters(host, level));
     });
     host.querySelector('[data-reset]').addEventListener('click', function () {
@@ -295,7 +313,7 @@
 
   function payload(filters, pageToken) {
     var result = { pageSize: PAGE_SIZE };
-    ['periodStart', 'periodEnd', 'region', 'township', 'department'].forEach(function (key) {
+    ['periodStart', 'periodEnd', 'region', 'township', 'department', 'status'].forEach(function (key) {
       if (filters[key]) result[key] = filters[key];
     });
     if (filters.facilityTypes && filters.facilityTypes.length) result.facilityTypes = filters.facilityTypes;

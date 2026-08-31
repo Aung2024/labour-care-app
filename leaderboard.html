@@ -775,6 +775,13 @@
         .replace(/'/g, '&#039;');
     }
 
+    function callableUrl(functionName) {
+      const appOptions = firebase.app().options || {};
+      if (!appOptions.projectId) throw new Error('Firebase project configuration is unavailable.');
+      return 'https://us-central1-' + encodeURIComponent(appOptions.projectId) +
+        '.cloudfunctions.net/' + encodeURIComponent(functionName);
+    }
+
     const ACTIVITY_DATE_FIELDS = [
       'visitDate', 'testDate', 'registration_date', 'referralTime',
       'timestamp', 'created_at', 'createdAt', 'recordedAt', 'lastUpdated'
@@ -1036,7 +1043,7 @@
       try {
         const token = await currentUser.getIdToken();
         const response = await fetch(
-          'https://us-central1-mnch-1cbda.cloudfunctions.net/startLeaderboardRebuild',
+          callableUrl('startLeaderboardRebuild'),
           {
             method: 'POST',
             headers: {
@@ -1088,7 +1095,9 @@
         department: data.department || 'other',
         facilityType: data.facilityType || 'other',
         score: Number(data.score || 0),
-        patientCount: Number(data.activePatientCount || 0),
+        patientCount: data.activePatientCount == null
+          ? null
+          : Number(data.activePatientCount || 0),
         categories: data.categories || {},
         calculatedAt: data.calculatedAt || null,
         reconciliationStatus: data.reconciliationStatus || 'live',
@@ -1099,7 +1108,7 @@
     async function loadLeaderboardCustomRange() {
       const token = await currentUser.getIdToken();
       const response = await fetch(
-        'https://us-central1-mnch-1cbda.cloudfunctions.net/getLeaderboardCustomRange',
+        callableUrl('getLeaderboardCustomRange'),
         {
           method: 'POST',
           headers: {
@@ -1134,6 +1143,9 @@
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('leaderboardContent').style.display = 'none';
         document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('emptyState').innerHTML =
+          '<i class="fas fa-clock"></i><p>No calculated leaderboard summary is available for ' +
+          escapeLeaderboardHtml(selectedPeriodLabel()) + ' yet.</p>';
         return;
       }
       document.getElementById('emptyState').style.display = 'none';
@@ -1251,7 +1263,7 @@
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('emptyState').innerHTML =
               '<i class="fas fa-clock"></i><p>No calculated leaderboard summary is available for ' +
-              (isAllTimePeriod() ? 'all time' : 'this month') +
+              escapeLeaderboardHtml(selectedPeriodLabel()) +
               ' yet.</p>';
             return;
           }
@@ -1527,7 +1539,7 @@
           </td>
           <td class="text-center"><span class="provider-level-badge">${safeProviderLabel}</span></td>
           <td class="text-center">${safeTownship}</td>
-          <td class="text-center">${midwife.patientCount || 0}</td>
+          <td class="text-center">${midwife.patientCount == null ? '—' : midwife.patientCount}</td>
           <td class="score-cell">${midwife.score}</td>
         `;
 
@@ -1590,7 +1602,9 @@
               pncVisits: 0,
               completePNC: 0,
               labTests: 0,
+              deliveryNotes: 0,
               immediateNewbornCare: 0,
+              kmcYes: 0,
               newbornCare: 0,
               transferRecords: 0
             }, summary.categories || {}),
@@ -1632,7 +1646,9 @@
           pncVisits: 0,
           completePNC: 0,
           labTests: 0,
+          deliveryNotes: 0,
           immediateNewbornCare: 0,
+          kmcYes: 0,
           newbornCare: 0,
           transferRecords: 0
         },
@@ -1879,8 +1895,8 @@
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
               <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
                 <div>
-                  <div style="font-size: 1.5rem; font-weight: 600; color: #1f2937;">${breakdown.patientCount}</div>
-                  <div style="color: #6b7280; font-size: 0.875rem;">${isAllTimePeriod() ? 'Patients with scored activity' : 'Patients with activity this month'}</div>
+                  <div style="font-size: 1.5rem; font-weight: 600; color: #1f2937;">${breakdown.patientCount == null ? '—' : breakdown.patientCount}</div>
+                  <div style="color: #6b7280; font-size: 0.875rem;">${breakdown.patientCount == null ? 'Distinct patient count unavailable for custom ranges' : (isAllTimePeriod() ? 'Patients with scored activity' : 'Patients with activity in ' + escapeLeaderboardHtml(selectedPeriodLabel()))}</div>
                 </div>
               </div>
             </div>
@@ -1971,6 +1987,14 @@
             </div>
             <div class="score-rule-description">${breakdown.categoryTotals.labTests} patients × 1 point</div>
           </div>
+
+          <div class="score-rule">
+            <div class="score-rule-title">
+              <span class="score-rule-points">${breakdown.categoryTotals.deliveryNotes}</span>
+              Completed Delivery Note
+            </div>
+            <div class="score-rule-description">${breakdown.categoryTotals.deliveryNotes} patients × 1 point</div>
+          </div>
           
           <div class="score-rule">
             <div class="score-rule-title">
@@ -1978,6 +2002,14 @@
               Immediate Newborn Care
             </div>
             <div class="score-rule-description">${breakdown.categoryTotals.immediateNewbornCare} patients × 1 point</div>
+          </div>
+
+          <div class="score-rule">
+            <div class="score-rule-title">
+              <span class="score-rule-points">${breakdown.categoryTotals.kmcYes}</span>
+              KMC Enrolment
+            </div>
+            <div class="score-rule-description">${breakdown.categoryTotals.kmcYes} patients × 1 point</div>
           </div>
           
           <div class="score-rule">

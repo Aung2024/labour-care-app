@@ -70,18 +70,18 @@ function infectionFlags(testRecords) {
   const flags = {};
   for (const [infection, fields] of Object.entries(definitions)) {
     let latest = null;
-    for (const entry of testRecords || []) {
+    for (const [index, entry] of (testRecords || []).entries()) {
       const data = unwrap(entry) || {};
       const value = fields.find((field) => data[field] != null && data[field] !== '');
       if (!value) continue;
       const result = normalizeInfectionResult(data[value]);
-      if (result !== 'positive') continue;
       const date = firstDate(data, ['testDate', 'visitDate', 'recordedAt', 'createdAt', 'timestamp']);
-      if (!latest || (date && (!latest.date || date > latest.date))) {
-        latest = { result, date, sourceField: value };
+      const time = date ? date.getTime() : 0;
+      if (!latest || time > latest.time || (time === latest.time && index > latest.index)) {
+        latest = { result, date, time, index, sourceField: value };
       }
     }
-    if (latest) {
+    if (latest && latest.result === 'positive') {
       flags[infection] = {
         result: latest.result,
         testedAt: latest.date ? latest.date.toISOString() : null,

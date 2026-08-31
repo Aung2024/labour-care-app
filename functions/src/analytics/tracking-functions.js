@@ -1,8 +1,7 @@
 'use strict';
 
 const admin = require('firebase-admin');
-const { FieldPath, FieldValue } = require('firebase-admin/firestore');
-const functionsV1 = require('firebase-functions/v1');
+const { FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { facilityTypes } = require('../shared/facility-taxonomy');
@@ -15,20 +14,9 @@ const { recomputePatientProjections } = require('./tracking-repository');
 const REGION = 'us-central1';
 const JOB_COLLECTION = 'tracking_v2_jobs';
 const JOB_ID = 'tracking-projection-repair';
-const BATCH_SIZE = 10;
+const DAILY_RECONCILIATION_ID = 'tracking-daily-reconciliation';
+const BATCH_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
-const TRACKING_SUBCOLLECTIONS = new Set([
-  'antenatal_visits',
-  'postpartum_visits',
-  'newborn_care',
-  'immediate_newborn_care',
-  'hrt_actions',
-  'kmc_actions',
-  'records'
-]);
-const TRACKING_RECORD_IDS = new Set([
-  'birthRecord', 'deliveryNotes', 'outcomeRecord', 'endTreatment', 'summary'
-]);
 const ALLOWED_STATUSES = new Set([
   'on_track', 'overdue_followup', 'lost_to_followup', 'complete'
 ]);
@@ -115,7 +103,10 @@ function applyRoleScope(query, user) {
     if (!user.township) throw new HttpsError('permission-denied', 'Township is not configured.');
     return query.where('township', '==', user.township);
   }
-  return query.where('providerId', '==', user.uid);
+  return query.where(Filter.or(
+    Filter.where('providerId', '==', user.uid),
+    Filter.where('careTeamProviderIds', 'array-contains', user.uid)
+  ));
 }
 
 function validateFilters(input) {
@@ -156,6 +147,12 @@ function validateFilters(input) {
 async function queryProjectionRows(collectionName, request) {
   const user = await authorizedUser(request);
   const filters = validateFilters(request.data);
+  if (!!filters.periodStart !== !!filters.periodEnd) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Select both the start and end date for a custom period.'
+    );
+  }
   if (filters.periodStart && filters.periodEnd &&
       filters.periodStart > filters.periodEnd) {
     throw new HttpsError('invalid-argument', 'periodStart must not follow periodEnd.');
@@ -168,33 +165,56 @@ async function queryProjectionRows(collectionName, request) {
   query = query.orderBy('activeFrom')
     .orderBy('activeUntil')
     .orderBy(FieldPath.documentId());
-  if (filters.pageToken) {
-    query = query.startAfter(
-      filters.pageToken.activeFrom,
-      filters.pageToken.activeUntil,
-      filters.pageToken.id
-    );
-  }
+  let scanCursor = filters.pageToken;
   // Optional dimensions are filtered in this trusted service. Keeping them
   // out of the Firestore query avoids an unsafe combinatorial index matrix.
   // The scan cursor still advances over non-matching rows.
   const scanLimit = Math.min(500, Math.max(filters.pageSize + 1, filters.pageSize * 10));
-  const snapshot = await query.limit(scanLimit).get();
-  const matches = snapshot.docs.filter((item) => {
-    const row = item.data();
-    return (!filters.region || row.region === filters.region) &&
-      (!filters.township || row.township === filters.township) &&
-      (!filters.department || row.department === filters.department) &&
-      (!filters.facilityTypes.length ||
-        filters.facilityTypes.includes(row.facilityType)) &&
-      (!filters.status || row.status === filters.status);
-  });
+  const maxScanned = 2000;
+  const matches = [];
+  let scanned = 0;
+  let collectionExhausted = false;
+  let lastScanned = null;
+  while (matches.length <= filters.pageSize && scanned < maxScanned) {
+    let pageQuery = query;
+    if (scanCursor) {
+      pageQuery = pageQuery.startAfter(
+        scanCursor.activeFrom, scanCursor.activeUntil, scanCursor.id
+      );
+    }
+    const snapshot = await pageQuery.limit(scanLimit).get();
+    if (snapshot.empty) {
+      collectionExhausted = true;
+      break;
+    }
+    scanned += snapshot.size;
+    lastScanned = snapshot.docs[snapshot.docs.length - 1];
+    snapshot.docs.forEach((item) => {
+      const row = item.data();
+      if ((!filters.region || row.region === filters.region) &&
+          (!filters.township || row.township === filters.township) &&
+          (!filters.department || row.department === filters.department) &&
+          (!filters.facilityTypes.length ||
+            filters.facilityTypes.includes(row.facilityType)) &&
+          (!filters.status || row.status === filters.status)) {
+        matches.push(item);
+      }
+    });
+    if (snapshot.size < scanLimit) {
+      collectionExhausted = true;
+      break;
+    }
+    scanCursor = {
+      activeFrom: lastScanned.get('activeFrom'),
+      activeUntil: lastScanned.get('activeUntil'),
+      id: lastScanned.id
+    };
+  }
   const page = matches.slice(0, filters.pageSize);
   const moreMatches = matches.length > filters.pageSize;
-  const scanContinues = snapshot.docs.length === scanLimit;
   const cursorSnapshot = moreMatches
     ? page[page.length - 1]
-    : (scanContinues ? snapshot.docs[snapshot.docs.length - 1] : null);
+    : (!collectionExhausted ? lastScanned : null);
   return {
     schemaVersion: collectionName === HRT_COLLECTION
       ? 'tracking-hrt-v1' : 'tracking-kmc-v1',
@@ -202,33 +222,6 @@ async function queryProjectionRows(collectionName, request) {
     nextPageToken: cursorSnapshot ? encodePageToken(cursorSnapshot) : null
   };
 }
-
-async function runProjectionTrigger(patientId) {
-  return recomputePatientProjections(db(), patientId);
-}
-
-const trackingPatientWritten = functionsV1.region(REGION).runWith({
-  failurePolicy: true,
-  memory: '256MB',
-  timeoutSeconds: 120,
-  maxInstances: 20
-}).firestore.document('patients/{patientId}').onWrite((_change, context) =>
-  runProjectionTrigger(context.params.patientId));
-
-const trackingPatientActivityWritten = functionsV1.region(REGION).runWith({
-  failurePolicy: true,
-  memory: '256MB',
-  timeoutSeconds: 120,
-  maxInstances: 40
-}).firestore.document(
-  'patients/{patientId}/{subcollection}/{documentId}'
-).onWrite((_change, context) => {
-  const subcollection = context.params.subcollection;
-  if (!TRACKING_SUBCOLLECTIONS.has(subcollection)) return null;
-  if (subcollection === 'records' &&
-      !TRACKING_RECORD_IDS.has(context.params.documentId)) return null;
-  return runProjectionTrigger(context.params.patientId);
-});
 
 const queryHrtTracking = onCall({
   region: REGION, timeoutSeconds: 60, memory: '256MiB', enforceAppCheck: false
@@ -253,7 +246,7 @@ async function startTrackingRepair(user) {
     startedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     error: FieldValue.delete()
-  });
+  }, { merge: true });
   return { status: 'running', alreadyRunning: false };
 }
 
@@ -277,18 +270,36 @@ async function processTrackingRepairBatch() {
     }, { merge: true });
     return { status: 'complete' };
   }
-  for (const patient of patients.docs) {
-    await recomputePatientProjections(database, patient.id);
-    await ref.set({
-      lastPatientId: patient.id,
-      processedPatients: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
+  for (let offset = 0; offset < patients.docs.length; offset += 5) {
+    await Promise.all(patients.docs.slice(offset, offset + 5).map((patient) =>
+      recomputePatientProjections(database, patient.id)
+    ));
   }
+  await ref.set({
+    lastPatientId: patients.docs[patients.docs.length - 1].id,
+    processedPatients: FieldValue.increment(patients.size),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
   return {
     status: 'running',
     processed: patients.size,
     lastPatientId: patients.docs[patients.docs.length - 1].id
+  };
+}
+
+async function processTrackingRepairUntilDeadline(maxRuntimeMs = 480000) {
+  const startedAt = Date.now();
+  let processed = 0;
+  let result = { status: 'idle' };
+  while (Date.now() - startedAt < maxRuntimeMs) {
+    result = await processTrackingRepairBatch();
+    processed += Number(result.processed || 0);
+    if (result.status !== 'running') break;
+  }
+  return {
+    ...result,
+    processedThisRun: processed,
+    deadlineReached: result.status === 'running'
   };
 }
 
@@ -301,37 +312,109 @@ const startTrackingProjectionRepair = onCall({
 });
 
 const trackingProjectionRepairWorker = onSchedule({
-  schedule: 'every 15 minutes',
+  schedule: 'every 5 minutes',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 540,
   memory: '512MiB',
   maxInstances: 1,
   concurrency: 1
-}, processTrackingRepairBatch);
+}, () => processTrackingRepairUntilDeadline());
 
-// Re-evaluates time-derived status, postpartum age, and automatic completion
-// even when no clinical document is written on the boundary date.
+async function processActiveTrackingReconciliation(
+  maxRuntimeMs = 480000,
+  asOf = new Date()
+) {
+  const database = db();
+  const ref = database.collection(JOB_COLLECTION).doc(DAILY_RECONCILIATION_ID);
+  const day = asOf.toISOString().slice(0, 10);
+  const current = await ref.get();
+  let state = current.exists && current.data().day === day
+    ? current.data()
+    : {
+        day,
+        status: 'running',
+        hrtCursor: null,
+        kmcCursor: null,
+        hrtComplete: false,
+        kmcComplete: false,
+        processedPatients: 0
+      };
+  if (state.status === 'complete') {
+    return { status: 'complete', alreadyComplete: true };
+  }
+  await ref.set({
+    ...state,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  const startedAt = Date.now();
+  let processed = 0;
+  const targets = [
+    { key: 'hrt', collection: HRT_COLLECTION },
+    { key: 'kmc', collection: KMC_COLLECTION }
+  ];
+  while (Date.now() - startedAt < maxRuntimeMs &&
+      (!state.hrtComplete || !state.kmcComplete)) {
+    for (const target of targets) {
+      const completeKey = `${target.key}Complete`;
+      const cursorKey = `${target.key}Cursor`;
+      if (state[completeKey]) continue;
+      let query = database.collection(target.collection)
+        .orderBy(FieldPath.documentId()).limit(100);
+      if (state[cursorKey]) query = query.startAfter(state[cursorKey]);
+      const snapshot = await query.get();
+      if (snapshot.empty) {
+        state[completeKey] = true;
+      } else {
+        const patientIds = Array.from(new Set(snapshot.docs
+          .filter((row) => row.get('status') !== 'complete')
+          .map((row) => row.get('patientId') || row.id)));
+        for (let offset = 0; offset < patientIds.length; offset += 5) {
+          await Promise.all(patientIds.slice(offset, offset + 5).map((patientId) =>
+            recomputePatientProjections(database, patientId, { asOf })
+          ));
+        }
+        processed += patientIds.length;
+        state[cursorKey] = snapshot.docs[snapshot.docs.length - 1].id;
+        if (snapshot.size < 100) state[completeKey] = true;
+      }
+      await ref.set({
+        day,
+        status: state.hrtComplete && state.kmcComplete ? 'complete' : 'running',
+        [cursorKey]: state[cursorKey] || null,
+        [completeKey]: state[completeKey],
+        processedPatients: FieldValue.increment(processed),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      processed = 0;
+      if (Date.now() - startedAt >= maxRuntimeMs) break;
+    }
+  }
+  const complete = state.hrtComplete && state.kmcComplete;
+  if (complete) {
+    await ref.set({
+      status: 'complete',
+      completedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  return { status: complete ? 'complete' : 'running' };
+}
+
+// Retains the deployed function name for compatibility, but runs daily so
+// due/overdue/automatic-completion fields do not wait for a clinical write.
 const trackingWeeklyReconciliation = onSchedule({
-  schedule: 'every 168 hours',
+  schedule: 'every 24 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 540,
   memory: '512MiB',
   maxInstances: 1,
   concurrency: 1
-}, async () => {
-  const ref = db().collection(JOB_COLLECTION).doc(JOB_ID);
-  const snapshot = await ref.get();
-  if (!snapshot.exists || snapshot.data().status !== 'running') {
-    await startTrackingRepair({ uid: 'daily-scheduler' });
-  }
-  return processTrackingRepairBatch();
-});
+}, () => processActiveTrackingReconciliation());
 
 module.exports = {
-  trackingPatientWritten,
-  trackingPatientActivityWritten,
   queryHrtTracking,
   queryKmcTracking,
   startTrackingProjectionRepair,
@@ -340,5 +423,7 @@ module.exports = {
   queryProjectionRows,
   startTrackingRepair,
   processTrackingRepairBatch,
+  processTrackingRepairUntilDeadline,
+  processActiveTrackingReconciliation,
   validateFilters
 };

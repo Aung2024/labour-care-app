@@ -164,8 +164,26 @@
     return ((nowMs || Date.now()) - created.getTime()) <= 7 * 24 * 60 * 60 * 1000;
   }
 
-  function canUserEditVisitNow(visit, uid) {
-    return !!uid && visitCreatorId(visit) === uid && isWithinEditWindow(visit);
+  function canUserEditVisitNow(visit, uid, nowMs) {
+    return !!uid && visitCreatorId(visit) === uid && isWithinEditWindow(visit, nowMs);
+  }
+
+  function isSupervisorRole(role) {
+    const key = String(role || '').toLowerCase().replace(/\s+/g, ' ');
+    return key === 'tmo' || key === 'super admin' || key === 'admin';
+  }
+
+  function approvalMatchesEdit(data, patientId, visitType, visitId, uid) {
+    return !!data &&
+      data.status === 'approved' &&
+      data.used !== true &&
+      data.patientId === patientId &&
+      data.visitType === visitType &&
+      data.visitId === visitId &&
+      data.requesterId === uid &&
+      !!data.reviewedBy &&
+      data.reviewedBy !== uid &&
+      isSupervisorRole(data.reviewerRole);
   }
 
   function buildEditRequestId(patientId, visitType, visitId, uid) {
@@ -186,6 +204,136 @@
       console.warn('[JointCare] approval lookup failed:', error);
       return null;
     }
+  }
+
+  async function validateApprovalDoc(doc, patient, visitType, visitId, uid) {
+    if (!doc || !doc.exists) return null;
+    const data = doc.data() || {};
+    if (!approvalMatchesEdit(data, patient.id, visitType, visitId, uid)) return null;
+    const reviewerDoc = await firebase.firestore().collection('users').doc(data.reviewedBy).get();
+    if (!reviewerDoc.exists) return null;
+    const reviewer = reviewerDoc.data() || {};
+    if (!isSupervisorRole(reviewer.role)) return null;
+    if (String(reviewer.role || '').toLowerCase() === 'tmo' &&
+        (!reviewer.township || reviewer.township !== patient.township)) return null;
+    return { id: doc.id, ...data };
+  }
+
+  async function authorizeVisitEdit(options) {
+    const patientId = options && options.patientId;
+    const visitType = options && options.visitType;
+    const visitId = options && options.visitId;
+    const user = options && options.user;
+    const approvalId = options && options.approvalId;
+    const config = getVisitTypeConfig(visitType);
+    if (!patientId || !visitId || !user || !config || config.fixedDocId) {
+      throw new Error('This visit edit request is invalid.');
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('Edited visits require an online authorization check.');
+    }
+
+    const db = firebase.firestore();
+    const patientRef = db.collection('patients').doc(patientId);
+    const visitRef = patientRef.collection(config.collection).doc(visitId);
+    const results = await Promise.all([
+      patientRef.get(),
+      visitRef.get(),
+      db.collection('users').doc(user.uid).get()
+    ]);
+    if (!results[0].exists) throw new Error('Patient not found.');
+    if (!results[1].exists) throw new Error('The selected visit could not be found.');
+    const patient = { id: results[0].id, ...(results[0].data() || {}) };
+    const visit = results[1].data() || {};
+    const profile = results[2].exists ? results[2].data() : null;
+    if (!(await canAccessPatient(patientId, patient, user, profile))) {
+      throw new Error('You no longer have access to this patient.');
+    }
+    if (visitCreatorId(visit) !== user.uid) {
+      throw new Error('Only the visit creator can edit this record.');
+    }
+
+    let approval = null;
+    if (!canUserEditVisitNow(visit, user.uid)) {
+      const canonicalId = buildEditRequestId(patientId, visitType, visitId, user.uid);
+      if (!approvalId || approvalId !== canonicalId) {
+        throw new Error('This visit is outside the 7-day edit window and needs approval.');
+      }
+      const approvalDoc = await db.collection(EDIT_REQUEST_COLLECTION).doc(approvalId).get();
+      approval = await validateApprovalDoc(approvalDoc, patient, visitType, visitId, user.uid);
+      if (!approval) throw new Error('The supervised edit approval is invalid or has already been used.');
+    }
+    return { patient, visit, visitRef, approval };
+  }
+
+  async function commitAuthorizedVisitEdit(options, updateData) {
+    const patientId = options && options.patientId;
+    const visitType = options && options.visitType;
+    const visitId = options && options.visitId;
+    const user = options && options.user;
+    const approvalId = options && options.approvalId;
+    const config = getVisitTypeConfig(visitType);
+    if (!patientId || !visitId || !user || !config || config.fixedDocId) {
+      throw new Error('This visit edit request is invalid.');
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('Edited visits cannot be saved offline.');
+    }
+
+    const db = firebase.firestore();
+    const patientRef = db.collection('patients').doc(patientId);
+    const visitRef = patientRef.collection(config.collection).doc(visitId);
+    const userRef = db.collection('users').doc(user.uid);
+    return db.runTransaction(async function (transaction) {
+      const patientDoc = await transaction.get(patientRef);
+      const visitDoc = await transaction.get(visitRef);
+      const profileDoc = await transaction.get(userRef);
+      if (!patientDoc.exists || !visitDoc.exists) throw new Error('Patient or visit no longer exists.');
+      const patient = { id: patientDoc.id, ...(patientDoc.data() || {}) };
+      const visit = visitDoc.data() || {};
+      const profile = profileDoc.exists ? profileDoc.data() : null;
+
+      let hasAccess = canRoleAccessPatient(patient, profile) || isPatientOwner(patient, user.uid);
+      if (!hasAccess) {
+        const linkRef = db.collection(LINK_COLLECTION).doc(user.uid).collection('patients').doc(patientId);
+        const linkDoc = await transaction.get(linkRef);
+        hasAccess = linkDoc.exists && (linkDoc.data() || {}).status === 'active';
+      }
+      if (!hasAccess) throw new Error('You no longer have access to this patient.');
+      if (visitCreatorId(visit) !== user.uid) throw new Error('Only the visit creator can edit this record.');
+
+      let approvalRef = null;
+      if (!canUserEditVisitNow(visit, user.uid)) {
+        const canonicalId = buildEditRequestId(patientId, visitType, visitId, user.uid);
+        if (!approvalId || approvalId !== canonicalId) {
+          throw new Error('This visit is outside the 7-day edit window and needs approval.');
+        }
+        approvalRef = db.collection(EDIT_REQUEST_COLLECTION).doc(approvalId);
+        const approvalDoc = await transaction.get(approvalRef);
+        const approvalData = approvalDoc.exists ? approvalDoc.data() || {} : null;
+        if (!approvalMatchesEdit(approvalData, patientId, visitType, visitId, user.uid)) {
+          throw new Error('The supervised edit approval is invalid or has already been used.');
+        }
+        const reviewerDoc = await transaction.get(db.collection('users').doc(approvalData.reviewedBy));
+        const reviewer = reviewerDoc.exists ? reviewerDoc.data() || {} : null;
+        if (!reviewer || !isSupervisorRole(reviewer.role) ||
+            (String(reviewer.role || '').toLowerCase() === 'tmo' &&
+             (!reviewer.township || reviewer.township !== patient.township))) {
+          throw new Error('The supervised edit approval is no longer valid.');
+        }
+      }
+
+      transaction.set(visitRef, updateData, { merge: true });
+      if (approvalRef) {
+        transaction.update(approvalRef, {
+          used: true,
+          usedBy: user.uid,
+          usedAt: nowServer(),
+          status: 'used'
+        });
+      }
+      return { usedApproval: !!approvalRef };
+    });
   }
 
   async function requestVisitEdit(patient, visitType, visitId, visit, user, reason) {
@@ -241,7 +389,11 @@
     visitCreatedDate,
     isWithinEditWindow,
     canUserEditVisitNow,
+    isSupervisorRole,
+    approvalMatchesEdit,
     findUnusedApproval,
+    authorizeVisitEdit,
+    commitAuthorizedVisitEdit,
     requestVisitEdit,
     markApprovalUsed,
     buildEditRequestId
