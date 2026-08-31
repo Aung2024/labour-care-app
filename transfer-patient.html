@@ -22,6 +22,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/choice-controls.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <style>
     :root {
       --primary-color: #f59e0b;
@@ -472,11 +473,11 @@
                 <div class="d-flex flex-wrap gap-3">
                   <div class="form-check">
                     <input class="form-check-input" type="radio" name="transferDestination" id="transferDestinationInternal" value="internal" checked onchange="onTransferDestinationChange()">
-                    <label class="form-check-label lang-text" for="transferDestinationInternal" data-en="Internal (To midwife)" data-mm="သားဖွားဆရာမဆီသို့ လွှဲပြောင်းရန်">Internal (app midwife)</label>
+                    <label class="form-check-label lang-text" for="transferDestinationInternal" data-en="Application-using facility (internal transfer)" data-mm="Application အသုံးပြုသော ကျန်းမာရေးဌာန (အတွင်းပိုင်း လွှဲပြောင်းမှု)">Application-using facility (internal transfer)</label>
                   </div>
                   <div class="form-check">
                     <input class="form-check-input" type="radio" name="transferDestination" id="transferDestinationExternal" value="external" onchange="onTransferDestinationChange()">
-                    <label class="form-check-label lang-text" for="transferDestinationExternal" data-en="External (hospital/facility not on app)" data-mm="ဆေးရုံ/ကျန်းမာရေးဌာနဆီသို့ လွှဲပြောင်းရန်">External (hospital/facility not on app)</label>
+                    <label class="form-check-label lang-text" for="transferDestinationExternal" data-en="Non-application facility (external referral)" data-mm="Application မသုံးသော ကျန်းမာရေးဌာန (ပြင်ပ ညွှန်းပို့မှု)">Non-application facility (external referral)</label>
                   </div>
                 </div>
               </div>
@@ -1363,6 +1364,9 @@
       btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> ' + escapeHtml(t('sending'));
       try {
         await saveReferralRecords(patientId, referralData);
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(patientId, 'transfer');
+        }
 
         if (!external) {
           await firebase.firestore().collection('patient_transfer_requests').add({

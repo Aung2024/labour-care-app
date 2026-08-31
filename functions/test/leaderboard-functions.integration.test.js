@@ -13,6 +13,9 @@ const {
 const {
   processActiveDashboardBatch
 } = require('../src/analytics/functions');
+const {
+  processLeaderboardRefreshQueue
+} = require('../src/analytics/refresh-queue-functions');
 
 function dateOnly(date) {
   return date.getUTCFullYear() + '-' +
@@ -38,7 +41,7 @@ async function waitForSummary(month, providerId, predicate, timeoutMs) {
   throw new Error('Timed out waiting for leaderboard summary.');
 }
 
-test('triggers update summaries without double-counting and handle deletes', async () => {
+test('refresh queue updates summaries without double-counting and handles deletes', async () => {
   const now = new Date();
   const month = monthOnly(now);
   const today = dateOnly(now);
@@ -70,6 +73,12 @@ test('triggers update summaries without double-counting and handle deletes', asy
     lmp: '2026-01-01',
     visitNumber: 1
   });
+  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
+    patientId,
+    requestedBy: providerId,
+    reason: 'integration'
+  });
+  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
 
   const initial = await waitForSummary(
     month,
@@ -87,6 +96,12 @@ test('triggers update summaries without double-counting and handle deletes', asy
     lmp: '2026-01-01',
     visitNumber: 1
   }, { merge: true });
+  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
+    patientId,
+    requestedBy: providerId,
+    reason: 'integration-retry'
+  });
+  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
   const retried = await waitForSummary(
     month,
     providerId,
@@ -95,6 +110,12 @@ test('triggers update summaries without double-counting and handle deletes', asy
   assert.equal(retried.score, 6);
 
   await ancRef.delete();
+  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
+    patientId,
+    requestedBy: providerId,
+    reason: 'integration-delete'
+  });
+  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
   const afterDelete = await waitForSummary(
     month,
     providerId,

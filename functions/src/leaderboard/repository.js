@@ -1,6 +1,7 @@
 'use strict';
 
 const { FieldValue } = require('firebase-admin/firestore');
+const { facilityTaxonomy } = require('../shared/facility-taxonomy');
 
 const MIDWIFE_PROVIDER_TYPES = new Set([
   'midwife',
@@ -18,7 +19,8 @@ const PATIENT_ACTIVITY_COLLECTIONS = {
   labTests: 'testRecords',
   immediateNewbornCare: 'immediate_newborn_care',
   newbornCare: 'newborn_care',
-  hrtActions: 'hrt_actions'
+  hrtActions: 'hrt_actions',
+  kmcActions: 'kmc_actions'
 };
 
 async function collectionData(ref, options) {
@@ -55,6 +57,7 @@ async function loadPatientActivity(db, patientId) {
     immediateNewbornCare,
     newbornCare,
     hrtActions,
+    kmcActions,
     summary,
     startingTime,
     secondStage,
@@ -72,16 +75,19 @@ async function loadPatientActivity(db, patientId) {
       orderBy: 'visitDate', limit: 10
     }),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.labTests), {
-      orderBy: 'testDate', limit: 5
+      orderBy: 'testDate', limit: 20
     }),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.immediateNewbornCare), {
-      limit: 1
+      limit: 5
     }),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.newbornCare), {
-      limit: 1
+      orderBy: 'visitDate', limit: 20
     }),
     collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.hrtActions), {
       orderBy: 'recordedAt', limit: 20
+    }),
+    collectionData(patientRef.collection(PATIENT_ACTIVITY_COLLECTIONS.kmcActions), {
+      orderBy: 'recordedAt', limit: 40
     }),
     documentData(patientRef.collection('records').doc('summary')),
     documentData(patientRef.collection('records').doc('startingTime')),
@@ -103,6 +109,7 @@ async function loadPatientActivity(db, patientId) {
       immediateNewbornCare,
       newbornCare,
       hrtActions,
+      kmcActions,
       summary,
       startingTime,
       secondStage,
@@ -125,11 +132,16 @@ async function loadProvider(db, providerId) {
       providerName: 'Unknown',
       providerType: 'midwife',
       township: '',
-      region: ''
+      region: '',
+      phone: '',
+      facilityCode: '',
+      department: 'other',
+      facilityType: 'other'
     };
   }
   const data = snapshot.data() || {};
   const providerTypeKey = String(data.provider_type || '').toLowerCase().trim();
+  const taxonomy = facilityTaxonomy(data.facility_code);
   return {
     providerId,
     providerName: data.name || data.email || 'Unknown',
@@ -137,7 +149,11 @@ async function loadProvider(db, providerId) {
       ? providerTypeKey
       : 'midwife',
     township: data.township || '',
-    region: data.region || ''
+    region: data.region || '',
+    phone: data.phone || '',
+    facilityCode: taxonomy.facilityCode,
+    department: taxonomy.department,
+    facilityType: taxonomy.facilityType
   };
 }
 
@@ -156,6 +172,11 @@ function summaryRef(db, month, providerId) {
     .doc(providerId);
 }
 
+function dailySummaryRef(db, day, providerId) {
+  return db.collection('leaderboard_v3_daily')
+    .doc(day + '_' + providerId);
+}
+
 function serverTimestamp() {
   return FieldValue.serverTimestamp();
 }
@@ -167,5 +188,6 @@ module.exports = {
   contributionId,
   contributionRef,
   summaryRef,
+  dailySummaryRef,
   serverTimestamp
 };

@@ -53,6 +53,58 @@
     { code: '043', name_en: 'Than Pu Yar Kone SRHC', name_mm: 'သံပုရာကုန်း ကျေးလက်ကျန်းမာရေးဌာနခွဲ', township: 'Tatkon' }
   ];
 
+  // Clinical service taxonomy. `role` remains the authorization source; these
+  // values describe the physical facility for filtering and reporting.
+  var FACILITY_TAXONOMY_BY_CODE = {
+    '001': { department: 'doms', facilityType: 'district_hospital' },
+    '002': { department: 'other', facilityType: 'other' },
+    '003': { department: 'other', facilityType: 'other' },
+    '004': { department: 'other', facilityType: 'maternity_home' },
+    '005': { department: 'doph', facilityType: 'regional_public_health_department' },
+    '006': { department: 'doph', facilityType: 'township_public_health_department' },
+    '007': { department: 'doms', facilityType: 'township_hospital' },
+    '008': { department: 'doph', facilityType: 'mch' },
+    '009': { department: 'doph', facilityType: 'srhc' },
+    '010': { department: 'doph', facilityType: 'srhc' },
+    '011': { department: 'doph', facilityType: 'srhc' },
+    '012': { department: 'doph', facilityType: 'srhc' },
+    '013': { department: 'doph', facilityType: 'rhc' },
+    '014': { department: 'doph', facilityType: 'srhc' },
+    '015': { department: 'doph', facilityType: 'srhc' },
+    '016': { department: 'doph', facilityType: 'srhc' },
+    '017': { department: 'doph', facilityType: 'srhc' },
+    '018': { department: 'doph', facilityType: 'rhc' },
+    '019': { department: 'doph', facilityType: 'srhc' },
+    '020': { department: 'doph', facilityType: 'srhc' },
+    '021': { department: 'doph', facilityType: 'srhc' },
+    '022': { department: 'doph', facilityType: 'srhc' },
+    '023': { department: 'doms', facilityType: 'township_hospital' },
+    '024': { department: 'doms', facilityType: 'station_hospital' },
+    '025': { department: 'doph', facilityType: 'station_health_unit' },
+    '026': { department: 'doph', facilityType: 'srhc' },
+    '027': { department: 'doph', facilityType: 'srhc' },
+    '028': { department: 'doph', facilityType: 'srhc' },
+    '029': { department: 'doph', facilityType: 'srhc' },
+    '030': { department: 'doph', facilityType: 'srhc' },
+    '031': { department: 'doph', facilityType: 'srhc' },
+    '032': { department: 'doph', facilityType: 'mch' },
+    '033': { department: 'doph', facilityType: 'rhc' },
+    '034': { department: 'doph', facilityType: 'srhc' },
+    '035': { department: 'doph', facilityType: 'srhc' },
+    '036': { department: 'doph', facilityType: 'srhc' },
+    '037': { department: 'doph', facilityType: 'srhc' },
+    '038': { department: 'doph', facilityType: 'srhc' },
+    '039': { department: 'doph', facilityType: 'rhc' },
+    '040': { department: 'doph', facilityType: 'srhc' },
+    '041': { department: 'doph', facilityType: 'srhc' },
+    '042': { department: 'doph', facilityType: 'srhc' },
+    '043': { department: 'doph', facilityType: 'srhc' }
+  };
+
+  PILOT_FACILITIES = PILOT_FACILITIES.map(function (facility) {
+    return Object.assign({}, facility, FACILITY_TAXONOMY_BY_CODE[facility.code]);
+  });
+
   var OTHER_FACILITY_CODE = '003';
 
   function getFacilities() {
@@ -65,6 +117,31 @@
 
   function getFacilityByCode(code) {
     return PILOT_FACILITIES.find(function (f) { return f.code === String(code || ''); }) || null;
+  }
+
+  function getFacilityTaxonomy(code) {
+    var facility = getFacilityByCode(code);
+    return facility ? {
+      facilityCode: facility.code,
+      department: facility.department,
+      facilityType: facility.facilityType,
+      township: facility.township || '',
+      region: facility.region || ''
+    } : {
+      facilityCode: String(code || ''),
+      department: 'other',
+      facilityType: 'other',
+      township: '',
+      region: ''
+    };
+  }
+
+  function getFacilityTypes(department) {
+    return PILOT_FACILITIES.reduce(function (types, facility) {
+      if (department && facility.department !== department) return types;
+      if (types.indexOf(facility.facilityType) === -1) types.push(facility.facilityType);
+      return types;
+    }, []).sort();
   }
 
   function isValidFacilityCode(code) {
@@ -137,6 +214,8 @@
     getFacilitiesForTownship: getFacilitiesForTownship,
     getFacilityCodes: getFacilityCodes,
     getFacilityByCode: getFacilityByCode,
+    getFacilityTaxonomy: getFacilityTaxonomy,
+    getFacilityTypes: getFacilityTypes,
     isValidFacilityCode: isValidFacilityCode,
     isValidFacilityForTownship: isValidFacilityForTownship,
     getFacilityLabel: getFacilityLabel,

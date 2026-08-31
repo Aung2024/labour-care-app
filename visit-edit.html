@@ -213,7 +213,8 @@
     }
     function editUrl(visitId, approvalId) {
       const base = visitConfig.form + '?patient=' + encodeURIComponent(currentPatient.id) + '&editVisitId=' + encodeURIComponent(visitId) + '&editVisitType=' + encodeURIComponent(visitType);
-      return approvalId ? base + '&editApprovalId=' + encodeURIComponent(approvalId) : base;
+      const withMode = visitConfig.editParam ? base + '&' + visitConfig.editParam : base;
+      return approvalId ? withMode + '&editApprovalId=' + encodeURIComponent(approvalId) : withMode;
     }
     function requestApproval(visitId, visit) {
       pendingApprovalVisitId = visitId;
@@ -251,10 +252,13 @@
       const empty = document.getElementById('emptyState');
       container.innerHTML = '';
       empty.style.display = 'none';
-      const snap = await firebase.firestore().collection('patients').doc(currentPatient.id)
-        .collection(visitConfig.collection)
-        .get();
-      const rows = snap.docs.map(function (doc, index) {
+      const collectionRef = firebase.firestore().collection('patients').doc(currentPatient.id)
+        .collection(visitConfig.collection);
+      const snap = visitConfig.fixedDocId
+        ? await collectionRef.doc(visitConfig.fixedDocId).get()
+        : await collectionRef.get();
+      const docs = visitConfig.fixedDocId ? (snap.exists ? [snap] : []) : snap.docs;
+      const rows = docs.map(function (doc, index) {
         return { id: doc.id, index: index, data: doc.data() || {} };
       }).sort(function (a, b) {
         const av = a.data.visitNumber || a.data.visit_number || 999;
@@ -270,8 +274,9 @@
       for (const row of rows) {
         const visit = row.data;
         const creator = JointCareUtils.visitCreatorId(visit);
-        const ownRecord = creator === currentUser.uid;
-        const withinWindow = JointCareUtils.canUserEditVisitNow(visit, currentUser.uid);
+        const ownRecord = creator === currentUser.uid ||
+          (visitType === 'delivery' && !creator && JointCareUtils.isPatientOwner(currentPatient, currentUser.uid));
+        const withinWindow = visitType !== 'delivery' && JointCareUtils.canUserEditVisitNow(visit, currentUser.uid);
         const approval = ownRecord && !withinWindow
           ? await JointCareUtils.findUnusedApproval(currentPatient.id, visitType, row.id, currentUser.uid)
           : null;

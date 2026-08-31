@@ -7,13 +7,16 @@ const {
   emptyCategories,
   calculatePatientContribution,
   subtractCategories,
-  isLeaderboardPeriod
+  isLeaderboardPeriod,
+  ALL_TIME_PERIOD,
+  dayKeyForDate
 } = require('./scoring');
 const {
   loadPatientActivity,
   loadProvider,
   contributionRef,
   summaryRef,
+  dailySummaryRef,
   serverTimestamp
 } = require('./repository');
 
@@ -44,6 +47,10 @@ function summaryWithDelta(current, delta, metadata, month) {
     providerType: metadata.providerType,
     township: metadata.township,
     region: metadata.region,
+    phone: metadata.phone || '',
+    facilityCode: metadata.facilityCode || '',
+    department: metadata.department || 'other',
+    facilityType: metadata.facilityType || 'other',
     scoreVersion: SCORE_VERSION,
     score: Math.max(0, numeric(currentData.score) + numeric(delta.score)),
     activePatientCount: Math.max(
@@ -69,25 +76,126 @@ function zeroContribution(patientId, month) {
   };
 }
 
+function dailyBreakdown(achievements, fallbackProviderId) {
+  const result = {};
+  (achievements || []).forEach((item) => {
+    const day = dayKeyForDate(item.achievedAt);
+    const providerId = item.providerId || fallbackProviderId || '';
+    if (!day || !providerId || !CATEGORY_KEYS.includes(item.key)) return;
+    const key = day + '|' + providerId;
+    if (!result[key]) {
+      result[key] = {
+        day,
+        providerId,
+        score: 0,
+        activePatientCount: 1,
+        categories: emptyCategories()
+      };
+    }
+    const points = numeric(item.points);
+    result[key].score += points;
+    result[key].categories[item.key] += points;
+  });
+  return result;
+}
+
+async function applyDailyAchievementDelta(db, previous, next) {
+  const previousValues = dailyBreakdown(
+    previous && previous.achievements,
+    previous && previous.providerId
+  );
+  const nextValues = dailyBreakdown(next.achievements, next.providerId);
+  const keys = Array.from(new Set([
+    ...Object.keys(previousValues),
+    ...Object.keys(nextValues)
+  ]));
+  if (!keys.length) return;
+
+  const metadataByProvider = new Map();
+  for (const key of keys) {
+    const providerId = (nextValues[key] || previousValues[key]).providerId;
+    if (!metadataByProvider.has(providerId)) {
+      metadataByProvider.set(providerId, await loadProvider(db, providerId));
+    }
+  }
+
+  const writer = db.bulkWriter();
+  keys.forEach((key) => {
+    const oldValue = previousValues[key] || {
+      score: 0, activePatientCount: 0, categories: emptyCategories()
+    };
+    const newValue = nextValues[key] || {
+      score: 0, activePatientCount: 0, categories: emptyCategories()
+    };
+    const base = nextValues[key] || previousValues[key];
+    const metadata = metadataByProvider.get(base.providerId);
+    const categoryDeltas = {};
+    CATEGORY_KEYS.forEach((category) => {
+      categoryDeltas[category] = FieldValue.increment(
+        numeric(newValue.categories[category]) - numeric(oldValue.categories[category])
+      );
+    });
+    writer.set(dailySummaryRef(db, base.day, base.providerId), {
+      day: base.day,
+      providerId: base.providerId,
+      providerName: metadata.providerName,
+      providerType: metadata.providerType,
+      township: metadata.township,
+      region: metadata.region,
+      facilityCode: metadata.facilityCode || '',
+      department: metadata.department || 'other',
+      facilityType: metadata.facilityType || 'other',
+      score: FieldValue.increment(numeric(newValue.score) - numeric(oldValue.score)),
+      activePatientCount: FieldValue.increment(
+        numeric(newValue.activePatientCount) - numeric(oldValue.activePatientCount)
+      ),
+      categories: categoryDeltas,
+      scoreVersion: SCORE_VERSION,
+      calculatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+  await writer.close();
+}
+
 async function savePatientContribution(db, patientId, month, providerId, calculated) {
+  const providerBreakdown = calculated.providerBreakdown &&
+    Object.keys(calculated.providerBreakdown).length
+    ? calculated.providerBreakdown
+    : (providerId && calculated.score > 0 ? {
+        [providerId]: {
+          score: calculated.score,
+          activePatientCount: calculated.activePatientCount,
+          categories: calculated.categories
+        }
+      } : {});
   const nextContribution = Object.assign({}, calculated, {
     patientId,
-    providerId,
+    providerId: providerId || null,
+    providerBreakdown,
     updatedAt: serverTimestamp()
   });
 
   const contributionDocument = contributionRef(db, patientId, month);
-  const providerMetadata = providerId ? await loadProvider(db, providerId) : null;
 
-  await db.runTransaction(async (transaction) => {
+  const previousContribution = await db.runTransaction(async (transaction) => {
     const contributionSnapshot = await transaction.get(contributionDocument);
     const previous = contributionSnapshot.exists
       ? contributionSnapshot.data()
       : zeroContribution(patientId, month);
-    const previousProviderId = previous.providerId || null;
-    const providerIds = Array.from(new Set(
-      [previousProviderId, providerId].filter(Boolean)
-    ));
+    const previousBreakdown = previous.providerBreakdown &&
+      Object.keys(previous.providerBreakdown).length
+      ? previous.providerBreakdown
+      : (previous.providerId ? {
+          [previous.providerId]: {
+            score: previous.score,
+            activePatientCount: previous.activePatientCount,
+            categories: previous.categories
+          }
+        } : {});
+    const providerIds = Array.from(new Set([
+      ...Object.keys(previousBreakdown),
+      ...Object.keys(providerBreakdown)
+    ]));
     const summaryReferences = providerIds.map((id) => summaryRef(db, month, id));
     const summarySnapshots = summaryReferences.length
       ? await transaction.getAll.apply(transaction, summaryReferences)
@@ -98,17 +206,15 @@ async function savePatientContribution(db, patientId, month, providerId, calcula
     });
 
     for (const id of providerIds) {
-      const oldValue = id === previousProviderId ? previous : zeroContribution(patientId, month);
-      const newValue = id === providerId ? nextContribution : zeroContribution(patientId, month);
+      const oldValue = previousBreakdown[id] || zeroContribution(patientId, month);
+      const newValue = providerBreakdown[id] || zeroContribution(patientId, month);
       const delta = {
         score: numeric(newValue.score) - numeric(oldValue.score),
         activePatientCount:
           numeric(newValue.activePatientCount) - numeric(oldValue.activePatientCount),
         categories: subtractCategories(newValue.categories, oldValue.categories)
       };
-      const metadata = id === providerId && providerMetadata
-        ? providerMetadata
-        : await loadProvider(db, id);
+      const metadata = await loadProvider(db, id);
       transaction.set(
         summaryRef(db, month, id),
         summaryWithDelta(summaryByProvider.get(id), delta, metadata, month),
@@ -116,13 +222,17 @@ async function savePatientContribution(db, patientId, month, providerId, calcula
       );
     }
 
-    if (providerId && nextContribution.score > 0) {
+    if (Object.keys(providerBreakdown).length && nextContribution.score > 0) {
       transaction.set(contributionDocument, nextContribution, { merge: true });
     } else {
       transaction.delete(contributionDocument);
     }
+    return previous;
   });
 
+  if (month === ALL_TIME_PERIOD) {
+    await applyDailyAchievementDelta(db, previousContribution, nextContribution);
+  }
   return nextContribution;
 }
 
@@ -174,19 +284,24 @@ async function rebuildProviderSummariesFromContributions(db, month) {
   const totals = new Map();
   snapshot.forEach((doc) => {
     const contribution = doc.data() || {};
-    const providerId = contribution.providerId;
-    if (!providerId || !contribution.score) return;
-    const current = totals.get(providerId) || {
-      score: 0,
-      activePatientCount: 0,
-      categories: emptyCategories()
-    };
-    current.score += numeric(contribution.score);
-    current.activePatientCount += numeric(contribution.activePatientCount);
-    CATEGORY_KEYS.forEach((key) => {
-      current.categories[key] += numeric(contribution.categories && contribution.categories[key]);
+    const breakdown = contribution.providerBreakdown &&
+      Object.keys(contribution.providerBreakdown).length
+      ? contribution.providerBreakdown
+      : (contribution.providerId ? { [contribution.providerId]: contribution } : {});
+    Object.entries(breakdown).forEach(([providerId, providerValue]) => {
+      if (!providerId || !numeric(providerValue.score)) return;
+      const current = totals.get(providerId) || {
+        score: 0,
+        activePatientCount: 0,
+        categories: emptyCategories()
+      };
+      current.score += numeric(providerValue.score);
+      current.activePatientCount += numeric(providerValue.activePatientCount);
+      CATEGORY_KEYS.forEach((key) => {
+        current.categories[key] += numeric(providerValue.categories && providerValue.categories[key]);
+      });
+      totals.set(providerId, current);
     });
-    totals.set(providerId, current);
   });
 
   const providerCollection = db.collection('leaderboard_v2_months')
@@ -206,6 +321,10 @@ async function rebuildProviderSummariesFromContributions(db, month) {
       providerType: metadata.providerType,
       township: metadata.township,
       region: metadata.region,
+      phone: metadata.phone || '',
+      facilityCode: metadata.facilityCode || '',
+      department: metadata.department || 'other',
+      facilityType: metadata.facilityType || 'other',
       scoreVersion: SCORE_VERSION,
       score: total.score,
       activePatientCount: total.activePatientCount,

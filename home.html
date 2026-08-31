@@ -756,6 +756,105 @@
     let authWaitInterval = null;
     let authStateUnsubscribe = null;
     const mainContainer = document.querySelector('.main-container');
+    const HOME_ROLE_CARD_IDS = [
+      'homeCardPatientRegistration',
+      'homeCardSelectPatient',
+      'homeCardJointCare',
+      'homeCardPatientTransfers',
+      'hrtCard',
+      'kmcCard',
+      'dashboardCard',
+      'townshipReportCard',
+      'visitEditApprovalsCard',
+      'manageMidwivesCard',
+      'leaderboardCard',
+      'cmeCard'
+    ];
+    const HOME_CARD_MATRIX = {
+      provider: [
+        'homeCardPatientRegistration', 'homeCardSelectPatient', 'homeCardJointCare',
+        'homeCardPatientTransfers', 'hrtCard', 'kmcCard', 'dashboardCard', 'cmeCard'
+      ],
+      hospital: [
+        'homeCardPatientRegistration', 'homeCardSelectPatient', 'homeCardJointCare',
+        'homeCardPatientTransfers', 'hrtCard', 'kmcCard', 'dashboardCard', 'cmeCard'
+      ],
+      tmo: [
+        'visitEditApprovalsCard', 'hrtCard', 'kmcCard', 'dashboardCard',
+        'leaderboardCard', 'cmeCard'
+      ],
+      regional: ['hrtCard', 'kmcCard', 'dashboardCard', 'leaderboardCard', 'cmeCard'],
+      super_admin: [
+        'hrtCard', 'kmcCard', 'dashboardCard', 'leaderboardCard', 'cmeCard',
+        'manageMidwivesCard'
+      ]
+    };
+
+    function normalizeHomeRole(role) {
+      return String(role || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    }
+
+    function homeAccountLevel(userData) {
+      const roleKey = normalizeHomeRole(userData && userData.role);
+      if (roleKey === 'super admin' || roleKey === 'admin') return 'super_admin';
+      if (roleKey === 'regional officer') return 'regional';
+      if (roleKey === 'tmo') return 'tmo';
+      if (roleKey !== 'midwife') return null;
+
+      const providerType = window.RoleDisplay
+        ? RoleDisplay.normalizeProviderType(userData.provider_type, userData.role)
+        : String(userData.provider_type || 'midwife').toLowerCase();
+      return providerType === 'hospital' || providerType === 'station_hospital'
+        ? 'hospital'
+        : 'provider';
+    }
+
+    function updateDashboardScopeLabel(accountLevel) {
+      const title = document.getElementById('homeDashboardTitle');
+      if (!title) return;
+      const labels = {
+        provider: {
+          en: 'Analytics Dashboard (Own Data)',
+          mm: 'ဒက်ရှ်ဘုတ် (မိမိ၏ အချက်အလက်)'
+        },
+        hospital: {
+          en: 'Analytics Dashboard (Own Data)',
+          mm: 'ဒက်ရှ်ဘုတ် (မိမိ၏ အချက်အလက်)'
+        },
+        tmo: {
+          en: 'Analytics Dashboard (Township Data)',
+          mm: 'ဒက်ရှ်ဘုတ် (မြို့နယ် အချက်အလက်)'
+        },
+        regional: {
+          en: 'Analytics Dashboard (Region Data)',
+          mm: 'ဒက်ရှ်ဘုတ် (တိုင်း/ပြည်နယ် အချက်အလက်)'
+        },
+        super_admin: {
+          en: 'Analytics Dashboard (Central Data)',
+          mm: 'ဒက်ရှ်ဘုတ် (ဗဟို အချက်အလက်)'
+        }
+      };
+      const label = labels[accountLevel] || labels.provider;
+      title.setAttribute('data-en', label.en);
+      title.setAttribute('data-mm', label.mm);
+      title.textContent = currentLanguage === 'en' ? label.en : label.mm;
+    }
+
+    function applyHomeCardVisibility(userData) {
+      const accountLevel = homeAccountLevel(userData);
+      const visibleCards = new Set(HOME_CARD_MATRIX[accountLevel] || []);
+      HOME_ROLE_CARD_IDS.forEach(function (cardId) {
+        const card = document.getElementById(cardId);
+        if (card) card.style.display = visibleCards.has(cardId) ? '' : 'none';
+      });
+      const midwifeReportBtn = document.getElementById('homeMidwifeReportBtn');
+      if (midwifeReportBtn) {
+        midwifeReportBtn.style.display =
+          accountLevel === 'provider' || accountLevel === 'hospital' ? '' : 'none';
+      }
+      updateDashboardScopeLabel(accountLevel);
+      return accountLevel;
+    }
 
     function setHomeInteractionEnabled(enabled) {
       if (mainContainer) {
@@ -996,45 +1095,7 @@
           
           document.getElementById("userEmail").textContent = currentUser.email;
           updateHomeUserRoleLabel();
-          
-          // Super Admin accounts do not use frontline patient workflow cards on Home.
-          const isSupervisoryRole = userRole === 'TMO' || (
-            userRole && userRole.toLowerCase().replace(/\s+/g, ' ') === 'regional officer'
-          );
-          const hideMidwifeWorkflowCards = userRole === 'Super Admin' || userRole === 'admin';
-          if (hideMidwifeWorkflowCards) {
-            ['homeCardPatientRegistration', 'homeCardSelectPatient', 'homeCardJointCare', 'homeCardPatientTransfers'].forEach(function (cardId) {
-              const card = document.getElementById(cardId);
-              if (card) card.style.display = 'none';
-            });
-          }
-
-          if (isSupervisoryRole) {
-            const midwifeReportBtn = document.getElementById('homeMidwifeReportBtn');
-            if (midwifeReportBtn) midwifeReportBtn.style.display = 'none';
-          }
-
-          // Show admin tools if Super Admin
-          const manageMidwivesCard = document.getElementById("manageMidwivesCard");
-          if (userRole === "Super Admin") {
-            if (manageMidwivesCard) manageMidwivesCard.style.display = "block";
-          }
-          
-          // Visit edit approvals for TMO only (township report card hidden from home)
-          const visitEditApprovalsCard = document.getElementById("visitEditApprovalsCard");
-          if (userRole === "TMO" && visitEditApprovalsCard) {
-            visitEditApprovalsCard.style.display = "block";
-          }
-          
-          // Show CME card if Midwife or Regional Officer (case-insensitive for role)
-          const cmeCard = document.getElementById("cmeCard");
-          const isCmeEligible = userRole && (
-            userRole === "Midwife" || userRole === "midwife" ||
-            (typeof userRole === "string" && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer")
-          );
-          if (isCmeEligible && cmeCard) {
-            cmeCard.style.display = "block";
-          }
+          const accountLevel = applyHomeCardVisibility(userData);
           
           // Show settings button for Midwife and TMO only
           const settingsButton = document.getElementById("settingsButton");
@@ -1044,7 +1105,7 @@
           
           // Load patient stats after user role is loaded (deferred for performance)
           setTimeout(() => {
-            if (userRole === 'Super Admin') {
+            if (accountLevel === 'super_admin') {
               loadMidwifeCountForHome();
             } else {
               loadPatientStats();
@@ -1159,7 +1220,7 @@
       const card = document.getElementById('homeCardPatientTransfers');
       const badge = document.getElementById('transferPendingBadge');
       const hint = document.getElementById('transferPendingHint');
-      if (!card || !badge) return;
+      if (!card || !badge || card.style.display === 'none') return;
 
       try {
         const db = firebase.firestore();
@@ -1780,7 +1841,7 @@
     <!-- Care Modules Grid -->
     <div class="care-modules">
       <!-- Patient Registration -->
-      <div class="care-card registration" id="homeCardPatientRegistration" onclick="navigateToCare('registration')">
+      <div class="care-card registration" id="homeCardPatientRegistration" style="display: none;" onclick="navigateToCare('registration')">
         <div class="care-card-header">
           <div class="care-icon registration"><i class="fas fa-user-plus"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="Patient Registration" data-mm="လူနာမှတ်ပုံတင်ခြင်း">Patient Registration</span></h3>
@@ -1799,7 +1860,7 @@
       </div>
 
       <!-- Select Patient for Care -->
-      <div class="care-card primary" id="homeCardSelectPatient" onclick="navigateToCare('select-patient')">
+      <div class="care-card primary" id="homeCardSelectPatient" style="display: none;" onclick="navigateToCare('select-patient')">
         <div class="care-card-header">
           <div class="care-icon primary"><i class="fas fa-user-check"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="Select Patient for Care" data-mm="လူနာရွေးချယ်ရန်">Select Patient for Care</span></h3>
@@ -1818,7 +1879,7 @@
       </div>
 
       <!-- Joint Care -->
-      <div class="care-card primary" id="homeCardJointCare" onclick="navigateToCare('joint-care')">
+      <div class="care-card primary" id="homeCardJointCare" style="display: none;" onclick="navigateToCare('joint-care')">
         <div class="care-card-header">
           <div class="care-icon primary"><i class="fas fa-user-friends"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="Joint Care" data-mm="ပူးပေါင်း စောင့်ရှောက်မှု">Joint Care</span></h3>
@@ -1834,7 +1895,7 @@
       </div>
 
       <!-- Patient Transfers -->
-      <div class="care-card primary" id="homeCardPatientTransfers" onclick="navigateToCare('patient-transfers')">
+      <div class="care-card primary" id="homeCardPatientTransfers" style="display: none;" onclick="navigateToCare('patient-transfers')">
         <span class="care-card-notify-badge d-none" id="transferPendingBadge" title="Incoming transfer requests">0</span>
         <div class="care-card-header">
           <div class="care-icon primary"><i class="fas fa-exchange-alt"></i></div>
@@ -1852,7 +1913,7 @@
       </div>
 
       <!-- High Risk Tracking -->
-      <div class="care-card hrt" id="hrtCard" onclick="navigateToCare('high-risk-tracking')">
+      <div class="care-card hrt" id="hrtCard" style="display: none;" onclick="navigateToCare('high-risk-tracking')">
         <span class="care-card-notify-badge d-none" id="hrtActiveBadge" title="High-risk patients needing follow-up">0</span>
         <div class="care-card-header">
           <div class="care-icon hrt"><i class="fas fa-ambulance"></i></div>
@@ -1864,7 +1925,7 @@
       </div>
 
       <!-- Kangaroo Mother Care Tracker -->
-      <div class="care-card kmc" id="kmcCard" onclick="navigateToCare('kmc-tracking')">
+      <div class="care-card kmc" id="kmcCard" style="display: none;" onclick="navigateToCare('kmc-tracking')">
         <span class="care-card-notify-badge d-none" id="kmcActiveBadge" title="Kangaroo Mother Care babies needing follow-up">0</span>
         <div class="care-card-header">
           <div class="care-icon kmc"><i class="fas fa-baby"></i></div>
@@ -1879,10 +1940,10 @@
       </div>
 
       <!-- Dashboard -->
-      <div class="care-card dashboard" onclick="navigateToCare('dashboard')">
+      <div class="care-card dashboard" id="dashboardCard" style="display: none;" onclick="navigateToCare('dashboard')">
         <div class="care-card-header">
           <div class="care-icon dashboard"><i class="fas fa-chart-line"></i></div>
-          <h3 class="care-title"><span class="lang-text" data-en="Analytics Dashboard" data-mm="ဒက်ရှ်ဘုတ်">Analytics Dashboard</span></h3>
+          <h3 class="care-title"><span class="lang-text" id="homeDashboardTitle" data-en="Analytics Dashboard (Own Data)" data-mm="ဒက်ရှ်ဘုတ် (မိမိ၏ အချက်အလက်)">Analytics Dashboard (Own Data)</span></h3>
         </div>
         <div class="care-card-body">
           <div class="care-stats">
@@ -1961,7 +2022,7 @@
       </div>
 
       <!-- Scoreboard (All Roles) -->
-      <div class="care-card scoreboard" onclick="navigateToCare('scoreboard')">
+      <div class="care-card scoreboard" id="leaderboardCard" style="display: none;" onclick="navigateToCare('scoreboard')">
         <div class="care-card-header">
           <div class="care-icon scoreboard"><i class="fas fa-trophy"></i></div>
           <h3 class="care-title"><span class="lang-text" data-en="Scoreboard" data-mm="အမှတ်ပေးဇယား">Scoreboard</span></h3>

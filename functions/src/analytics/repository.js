@@ -1,6 +1,11 @@
 'use strict';
 
 const { loadPatientActivity } = require('../leaderboard/repository');
+const { facilityTaxonomy } = require('../shared/facility-taxonomy');
+const {
+  infectionFlags,
+  resolveBirthAnchor
+} = require('../shared/clinical-normalizers');
 
 function entryRecord(data, id) {
   return data && Object.keys(data).length ? { id: id || '', data } : null;
@@ -30,7 +35,8 @@ async function loadClinicalFacts(db, patientId) {
 function normalizeClinicalFacts(patientId, loaded) {
   if (!loaded.patient) return null;
   const activity = loaded.activity || {};
-  return {
+  const taxonomy = facilityTaxonomy(loaded.patient.facility_code);
+  const facts = {
     id: patientId,
     profile: loaded.patient,
     registration: loaded.patient,
@@ -46,17 +52,21 @@ function normalizeClinicalFacts(patientId, loaded) {
     endTreatment: entryRecord(activity.endTreatment, 'endTreatment'),
     outcomeRecord: entryRecord(activity.outcomeRecord, 'outcomeRecord'),
     deliveryNotes: entryRecord(activity.deliveryNotes, 'deliveryNotes'),
+    newbornVisits: collectionEntries(activity.newbornCare),
     newbornCare: latestEntry(activity.newbornCare),
     immediateNewbornCare: latestEntry(activity.immediateNewbornCare),
     hrtActions: collectionEntries(activity.hrtActions),
-    // Reserved common facts for later HRT/KMC projections.
+    kmcActions: collectionEntries(activity.kmcActions),
     scope: {
       providerId: loaded.patient.created_by || loaded.patient.createdBy || '',
       providerName: loaded.patient.midwife_name || loaded.patient.midwifeName ||
         loaded.patient.created_by_name || loaded.patient.providerName || '',
       careTeamProviderIds: loaded.patient.care_team_midwife_ids || [],
       township: loaded.patient.township || '',
-      region: loaded.patient.region || ''
+      region: loaded.patient.region || '',
+      facilityCode: taxonomy.facilityCode,
+      department: taxonomy.department,
+      facilityType: taxonomy.facilityType
     },
     newbornFacts: {
       patientType: loaded.patient.patient_type || '',
@@ -68,6 +78,9 @@ function normalizeClinicalFacts(patientId, loaded) {
       outcome: loaded.patient.birth_outcome || null
     }
   };
+  facts.infectionFlags = infectionFlags(facts.testRecords);
+  facts.birthAnchor = resolveBirthAnchor(facts);
+  return facts;
 }
 
 module.exports = {

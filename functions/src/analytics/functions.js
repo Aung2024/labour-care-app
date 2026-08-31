@@ -107,6 +107,10 @@ async function processActiveDashboardBatch() {
     }
     await rebuildProviderSummariesFromContributions(database, ALL_TIME_PERIOD);
     await rebuildProviderSummariesFromContributions(database, monthKeyForDate(new Date()));
+    await rebuildProviderSummariesFromContributions(
+      database,
+      monthKeyForDate(new Date()).slice(0, 4)
+    );
     await jobRef.set({
       status: 'complete',
       completedAt: FieldValue.serverTimestamp(),
@@ -124,7 +128,8 @@ async function processActiveDashboardBatch() {
       await saveAnalyticsContributions(database, facts, periods, job.runId);
       await recomputeLoadedPatientMonths(database, patient.id, [
         ALL_TIME_PERIOD,
-        monthKeyForDate(new Date())
+        monthKeyForDate(new Date()),
+        monthKeyForDate(new Date()).slice(0, 4)
       ], loaded);
     }
     processed += 1;

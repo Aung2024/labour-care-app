@@ -276,10 +276,8 @@ exports.processPendingPasswordResets = functions
 
 // Version 2 leaderboard backend. Existing admin functions above remain unchanged.
 const leaderboardFunctions = require('./src/leaderboard/functions');
-exports.leaderboardPatientWritten = leaderboardFunctions.patientWritten;
-exports.leaderboardPatientActivityWritten = leaderboardFunctions.patientActivityWritten;
-exports.leaderboardProviderWritten = leaderboardFunctions.providerWritten;
 exports.startLeaderboardRebuild = leaderboardFunctions.startLeaderboardRebuild;
+exports.getLeaderboardCustomRange = leaderboardFunctions.getLeaderboardCustomRange;
 exports.leaderboardNightlyReconciliation =
   leaderboardFunctions.leaderboardNightlyReconciliation;
 exports.leaderboardReconciliationWorker =
@@ -293,3 +291,22 @@ exports.dashboardV2ReconciliationWorker =
   analyticsFunctions.dashboardV2ReconciliationWorker;
 exports.combinedAnalyticsReconciliation =
   analyticsFunctions.combinedAnalyticsReconciliation;
+
+// HRT/KMC server projections. These exports are independent of Dashboard V2.
+const trackingFunctions = require('./src/analytics/tracking-functions');
+exports.queryHrtTracking = trackingFunctions.queryHrtTracking;
+exports.queryKmcTracking = trackingFunctions.queryKmcTracking;
+exports.startTrackingProjectionRepair =
+  trackingFunctions.startTrackingProjectionRepair;
+exports.trackingProjectionRepairWorker =
+  trackingFunctions.trackingProjectionRepairWorker;
+exports.trackingWeeklyReconciliation =
+  trackingFunctions.trackingWeeklyReconciliation;
+
+// Incremental queues used because asia-southeast3 cannot host Firestore
+// document triggers. Clinical clients enqueue only patient IDs.
+const refreshQueueFunctions = require('./src/analytics/refresh-queue-functions');
+exports.trackingRefreshQueueWorker =
+  refreshQueueFunctions.trackingRefreshQueueWorker;
+exports.leaderboardDailyRefreshWorker =
+  refreshQueueFunctions.leaderboardDailyRefreshWorker;

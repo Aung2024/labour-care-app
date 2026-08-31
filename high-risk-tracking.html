@@ -12,6 +12,10 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/township-region.js"></script>
+  <script src="js/facility-config.js"></script>
+  <script src="js/tracking-reader.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/edd-display.js"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/auth-guard.js"></script>
@@ -1194,12 +1198,32 @@
         </div>
         <div class="modal-body">
           <p class="text-muted small mb-3" id="completeModalHint"></p>
-          <div class="mb-3" id="outcomeSelectGroup">
-            <label class="form-label fw-semibold action-label-outcome"></label>
-            <select class="form-select" id="outcomeSelect" style="border-radius:10px;">
-              <option value="alive" class="opt-alive"></option>
-              <option value="transfer" class="opt-transfer-outcome"></option>
-              <option value="death" class="opt-death-outcome"></option>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="completionReasonSelect">Completion reason</label>
+            <select class="form-select" id="completionReasonSelect" style="border-radius:10px;" onchange="updateHrtCompletionFields()">
+              <option value="delivered_safely">Delivered</option>
+              <option value="transferred">Transferred</option>
+              <option value="risk_resolved">Risk resolved</option>
+              <option value="loss_of_contact">Loss of contact</option>
+              <option value="abortion">Abortion/pregnancy loss</option>
+              <option value="death">Maternal death</option>
+            </select>
+          </div>
+          <div class="mb-3" id="maternalOutcomeGroup">
+            <label class="form-label fw-semibold" for="maternalOutcomeSelect">Maternal outcome</label>
+            <select class="form-select" id="maternalOutcomeSelect" style="border-radius:10px;">
+              <option value="alive">Alive</option>
+              <option value="death">Dead</option>
+              <option value="transfer">Transferred</option>
+            </select>
+          </div>
+          <div class="mb-3" id="newbornOutcomeGroup">
+            <label class="form-label fw-semibold" for="newbornOutcomeSelect">Newborn outcome</label>
+            <select class="form-select" id="newbornOutcomeSelect" style="border-radius:10px;">
+              <option value="alive">Alive</option>
+              <option value="stillbirth">Stillbirth</option>
+              <option value="neonatal_death">Neonatal death</option>
+              <option value="not_applicable">Not applicable</option>
             </select>
           </div>
           <div class="mb-3">
@@ -1248,6 +1272,11 @@
     var _currentActionPatientId = null;
     var _currentUser = null;
     var _currentUserName = '';
+    var _hrtRoleLevel = 'provider';
+    var _hrtFilters = null;
+    var _hrtNextPageToken = null;
+    var _hrtLoadingPage = false;
+    var _hrtPageError = '';
 
     var T = {
       en: {
@@ -1820,6 +1849,7 @@
     }
 
     function getNextVisitDueDate(row) {
+      if (row && row._projection) return parseDateOnlyLocal(row.dueDate);
       var latest = row.latestAnc;
       if (latest && (latest.nextVisitDate || latest.next_visit_date)) {
         var parsed = parseDateOnlyLocal(latest.nextVisitDate || latest.next_visit_date);
@@ -1838,6 +1868,7 @@
 
     function getDaysLateForNextVisit(row) {
       if (isCompleted(row)) return 0;
+      if (row && row._projection) return row.daysLate;
       var due = getNextVisitDueDate(row);
       if (!due) return null;
       var today = new Date();
@@ -1865,10 +1896,20 @@
     }
 
     function isCompleted(row) {
+      if (row && row._projection) return row.status === 'complete';
       return !!getCompleteAction(row);
     }
 
     function rowTrackingStatus(row) {
+      if (row && row._projection) {
+        var projectionLabels = {
+          on_track: 'statusOnTrack',
+          overdue_followup: 'statusOverdueFollowup',
+          lost_to_followup: 'statusLostToFollowup',
+          complete: 'statusComplete'
+        };
+        return { key: row.status || 'on_track', label: tr(projectionLabels[row.status] || 'statusOnTrack') };
+      }
       var completeAction = getCompleteAction(row);
       if (completeAction) {
         return { key: 'complete', label: tr('statusComplete') };
@@ -1880,6 +1921,11 @@
     }
 
     function rowPatientOutcome(row) {
+      if (row && row._projection && row.outcome) {
+        if (row.outcome === 'death') return { key: 'death', label: tr('outcomeDead') };
+        if (row.outcome === 'transfer') return { key: 'transfer', label: tr('outcomeTransfer') };
+        return { key: 'alive', label: tr('outcomeAlive') };
+      }
       var completeAction = getCompleteAction(row);
       if (!completeAction) return null;
       var outcome = completeAction.outcome || completeAction.resolvedReason;
@@ -1991,6 +2037,19 @@
     }
 
     function formatPregnancyCell(p, latestAnc) {
+      if (p._trackingProjection && p._trackingProjection.birthAnchorDate) {
+        return {
+          line1: 'Postpartum period',
+          line2: String(p._trackingProjection.postpartumAgeDays || 0) + ' days postpartum · Birth ' +
+            formatDateVal(p._trackingProjection.birthAnchorDate)
+        };
+      }
+      if (p._trackingProjection && p._trackingProjection.edd) {
+        return {
+          line1: 'EDD-derived estimate',
+          line2: 'Estimated EDD: ' + formatDateVal(p._trackingProjection.edd)
+        };
+      }
       var gravida = p.gravida || p.gravida_value;
       var parity = p.parity != null && p.parity !== '' ? p.parity : '\u2014';
       var gp = 'G' + (gravida != null && gravida !== '' ? gravida : '\u2014') + ' P' + parity;
@@ -2031,6 +2090,13 @@
     }
 
     function hrtToolsHtml(patientId, row) {
+      if (_hrtRoleLevel !== 'provider') {
+        return '<div class="tracking-facility"><strong>' +
+          escapeHtml(TrackingReader.facilityName(row.facilityCode)) + '</strong><br>' +
+          escapeHtml(row.township || '—') + '<br>' +
+          escapeHtml(row.facilityCode || '—') + ' · ' +
+          escapeHtml(String(row.facilityType || '—').replace(/_/g, ' ')) + '</div>';
+      }
       var html = '<span class="hrt-register-actions">' +
         '<a class="hrt-status-btn hrt-new-anc-btn" href="antenatal-form.html?patient=' + encodeURIComponent(patientId) + '&from=hrt" onclick="event.stopPropagation(); selectHrtPatient(\'' + escapeHtml(patientId) + '\');">' +
           '<i class="fas fa-plus"></i><span>' + escapeHtml(tr('newAnc')) + '</span></a>';
@@ -2077,6 +2143,12 @@
     }
 
     function communicationContactHtml(patient) {
+      if (_hrtRoleLevel !== 'provider' && patient._trackingProjection) {
+        var provider = patient._trackingProjection;
+        return '<div class="tracking-facility"><strong>' +
+          escapeHtml(provider.providerName || '—') + '</strong><br>' +
+          phoneCellHtml({ phone: provider.providerPhone || '' }) + '</div>';
+      }
       return '<div class="hrt-sms-contact">' +
         contactActionRowHtml('contactPatient', patientPhoneValue(patient), 'callPatient', 'hrt-contact-patient', 'fa-phone') +
         contactActionRowHtml('contactEmergency', emergencyPhoneValue(patient), 'callEmergency', 'hrt-contact-emergency', 'fa-phone-alt') +
@@ -2174,7 +2246,7 @@
         '<th class="col-outcome">' + escapeHtml(tr('outcomeCol')) + '</th>' +
         '<th class="col-recommendation">' + escapeHtml(tr('recommendationCol')) + '</th>' +
         '<th class="col-sms">' + escapeHtml(tr('smsCol')) + '</th>' +
-        '<th class="col-action">' + escapeHtml(tr('actionCol')) + '</th>' +
+        '<th class="col-action">' + escapeHtml(_hrtRoleLevel === 'provider' ? tr('actionCol') : 'Facility Info') + '</th>' +
         '</tr></thead><tbody id="hrtDesktopBody"></tbody></table></div>' +
         '<div class="hrt-mobile-register" id="hrtMobileBody"></div>';
       var desktopBody = document.getElementById('hrtDesktopBody');
@@ -2184,14 +2256,15 @@
         var patientId = p.id || '';
         var patientName = escapeHtml(p.name || p.patientName || '\u2014');
         var ageText = escapeHtml(formatPatientAge(p));
-        var phone = phoneCellHtml(p);
+        var phone = _hrtRoleLevel === 'provider' ? phoneCellHtml(p) : '';
+        var infections = window.TrackingReader ? TrackingReader.infectionHtml(r.infectionFlags || p.infectionFlags) : '';
         var preg = formatPregnancyCell(p, r.latestAnc);
         var completedVisits = r.ancVisitCount || 0;
         var trEl = document.createElement('tr');
         trEl.setAttribute('onclick', "openHrtAncReport('" + escapeHtml(patientId) + "')");
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + patientName + '</div><div class="hrt-patient-meta">' +
-            escapeHtml(tr('ageLabel')) + ': ' + ageText + '<br>' + phone + '</div></td>' +
+            escapeHtml(tr('ageLabel')) + ': ' + ageText + (phone ? '<br>' + phone : '') + infections + '</div></td>' +
           '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div></td>' +
           '<td>' + compactRiskListHtml(r.factorsUnique || []) + '</td>' +
           '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
@@ -2207,7 +2280,7 @@
           '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openHrtAncReport(\'' + escapeHtml(patientId) + '\')">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + patientName + '</div><div class="hrt-mobile-id">' +
-                escapeHtml(tr('ageLabel')) + ': ' + ageText + '<br>' + phone + '</div></div>' +
+                escapeHtml(tr('ageLabel')) + ': ' + ageText + (phone ? '<br>' + phone : '') + infections + '</div></div>' +
               '<div>' + statusCellHtml(r) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
@@ -2221,14 +2294,41 @@
           '</div>';
         mobileBody.appendChild(card);
       });
+      if (_hrtNextPageToken) {
+        var more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'tracking-load-more';
+        more.textContent = _hrtLoadingPage ? 'Loading…' : 'Load more';
+        more.disabled = _hrtLoadingPage;
+        more.onclick = function () { loadHrtProjectionPage(true); };
+        container.appendChild(more);
+      }
+      if (_hrtPageError) {
+        var pageError = document.createElement('div');
+        pageError.className = 'tracking-state error';
+        pageError.textContent = _hrtPageError;
+        container.appendChild(pageError);
+      }
     }
 
     function openCompleteModal(patientId) {
       _currentActionPatientId = patientId;
       document.getElementById('actionNote').value = '';
-      document.getElementById('outcomeSelect').value = 'alive';
+      document.getElementById('completionReasonSelect').value = 'delivered_safely';
+      document.getElementById('maternalOutcomeSelect').value = 'alive';
+      document.getElementById('newbornOutcomeSelect').value = 'alive';
+      updateHrtCompletionFields();
       var modal = new bootstrap.Modal(document.getElementById('actionModal'));
       modal.show();
+    }
+
+    function updateHrtCompletionFields() {
+      var reason = document.getElementById('completionReasonSelect').value;
+      var clinicalOutcome = reason === 'delivered_safely' || reason === 'death' || reason === 'abortion';
+      document.getElementById('maternalOutcomeGroup').classList.toggle('d-none', !clinicalOutcome);
+      document.getElementById('newbornOutcomeGroup').classList.toggle('d-none', !clinicalOutcome);
+      if (reason === 'death') document.getElementById('maternalOutcomeSelect').value = 'death';
+      if (reason === 'abortion') document.getElementById('newbornOutcomeSelect').value = 'not_applicable';
     }
 
     async function saveAction() {
@@ -2237,24 +2337,49 @@
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
 
-      var outcome = document.getElementById('outcomeSelect').value;
+      var completionReason = document.getElementById('completionReasonSelect').value;
+      var includeClinicalOutcomes = completionReason === 'delivered_safely' ||
+        completionReason === 'death' || completionReason === 'abortion';
+      var outcome = completionReason === 'transferred' ? 'transfer' :
+        (completionReason === 'death' ? 'death' : 'alive');
       var db = firebase.firestore();
       var data = {
         type: 'resolved',
+        completionReason: completionReason,
+        // Keep legacy readers working while structured completion rolls out.
         resolvedReason: 'completed',
         outcome: outcome,
         recordedBy: _currentUser.uid,
         recordedByName: _currentUserName,
         recordedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
+      if (includeClinicalOutcomes) {
+        data.maternalOutcome = document.getElementById('maternalOutcomeSelect').value;
+        data.newbornOutcome = document.getElementById('newbornOutcomeSelect').value;
+      }
       var note = document.getElementById('actionNote').value.trim();
       if (note) data.note = note;
 
       try {
         await db.collection('patients').doc(_currentActionPatientId).collection('hrt_actions').add(data);
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(_currentActionPatientId, 'hrt_action');
+        }
         var modal = bootstrap.Modal.getInstance(document.getElementById('actionModal'));
         if (modal) modal.hide();
-        await refreshActions(_currentActionPatientId);
+        var projectionRow = (window._hrtRows || []).find(function (row) {
+          return row._projection && row.patientId === _currentActionPatientId;
+        });
+        if (projectionRow) {
+          projectionRow.status = 'complete';
+          projectionRow.explicitCompletion = true;
+          projectionRow.completionSource = 'clinical_action';
+          projectionRow.completionReason = completionReason;
+          projectionRow.outcome = outcome;
+          projectionRow.actions = [data];
+        } else {
+          await refreshActions(_currentActionPatientId);
+        }
         renderAll(getFilteredHrtRows());
       } catch (err) {
         console.error('Save action failed', err);
@@ -2396,6 +2521,95 @@
       return out;
     }
 
+    function projectionHrtRow(row) {
+      var patient = {
+        id: row.patientId,
+        name: row.patientName,
+        patientName: row.patientName,
+        patient_id: row.patientCode,
+        phone: row.patientPhone,
+        infectionFlags: row.infectionFlags || {},
+        _trackingProjection: row
+      };
+      return Object.assign({}, row, {
+        _projection: true,
+        patient: patient,
+        factorsUnique: row.riskFactors || [],
+        ancVisitCount: row.visitCount || 0,
+        daysSince: row.daysLate,
+        latestAnc: null,
+        actions: row.status === 'complete' ? [{
+          type: 'resolved',
+          resolvedReason: row.completionReason || 'completed',
+          outcome: row.outcome
+        }] : []
+      });
+    }
+
+    function setHrtPageState(state, message) {
+      document.getElementById('loadingState').classList.toggle('d-none', state !== 'loading');
+      document.getElementById('emptyState').classList.toggle('d-none', state !== 'empty' && state !== 'error');
+      document.getElementById('dashboardState').classList.toggle('d-none', state === 'loading' || state === 'error');
+      document.getElementById('tableState').classList.toggle('d-none', state === 'loading' || state === 'error' || state === 'empty');
+      if (message) document.querySelector('.hrt-empty').textContent = message;
+    }
+
+    async function loadHrtProjectionPage(append) {
+      if (_hrtLoadingPage) return;
+      _hrtLoadingPage = true;
+      _hrtPageError = '';
+      if (!append) setHrtPageState('loading');
+      else renderAll(getFilteredHrtRows());
+      try {
+        var result = await TrackingReader.call(
+          'queryHrtTracking',
+          TrackingReader.payload(_hrtFilters, append ? _hrtNextPageToken : null)
+        );
+        if (result.schemaVersion !== 'tracking-hrt-v1' || !Array.isArray(result.rows)) {
+          throw new Error('Unexpected HRT tracking response.');
+        }
+        var mapped = result.rows.map(projectionHrtRow);
+        window._hrtRows = append ? (window._hrtRows || []).concat(mapped) : mapped;
+        _hrtNextPageToken = result.nextPageToken || null;
+        _hrtCardFilter = 'all';
+        window._hrtStatusFilter = 'all';
+        setHrtPageState(window._hrtRows.length ? 'ready' : 'empty');
+        renderAll(getFilteredHrtRows());
+      } catch (error) {
+        var message = (error && error.message) || 'Unable to load tracking data.';
+        if (!append) setHrtPageState('error', message);
+        else _hrtPageError = message;
+        if (append) return;
+        throw error;
+      } finally {
+        _hrtLoadingPage = false;
+        if (window._hrtRows && window._hrtRows.length) renderAll(getFilteredHrtRows());
+      }
+    }
+
+    async function initializeHrtProjection(userData) {
+      if (!window.TrackingReader || !TrackingReader.enabled()) return false;
+      var controls = TrackingReader.createControls({
+        kind: 'hrt',
+        role: userData && userData.role,
+        userData: userData || {},
+        onApply: async function (filters) {
+          _hrtFilters = filters;
+          TrackingReader.restoreUrl(filters);
+          try { await loadHrtProjectionPage(false); }
+          catch (error) { console.error('HRT projection reload', error); }
+        },
+        onReset: function () { location.href = location.pathname; }
+      });
+      _hrtRoleLevel = controls.level;
+      _hrtFilters = controls.filters;
+      TrackingReader.restoreUrl(_hrtFilters);
+      window._hrtRows = [];
+      window._hrtFilterQuery = '';
+      await loadHrtProjectionPage(false);
+      return true;
+    }
+
     /* Main load */
     firebase.auth().onAuthStateChanged(async function (user) {
       if (!user) { window.location.href = 'login.html'; return; }
@@ -2413,8 +2627,9 @@
 
       var db = firebase.firestore();
       var userRole = 'Midwife';
+      var userData = null;
       try {
-        var userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
+        userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
         if (!userData) {
           var uq = await smartFirestoreQuery(
             Promise.resolve(db.collection('users').doc(user.uid)),
@@ -2430,6 +2645,14 @@
       }
 
       try {
+        try {
+          if (await initializeHrtProjection(userData || { role: userRole })) return;
+        } catch (projectionError) {
+          if (!TrackingReader.shouldFallback(projectionError)) throw projectionError;
+          console.warn('HRT projection unavailable; using temporary legacy reader.', projectionError);
+          var filterForm = document.getElementById('hrtTrackingFilters');
+          if (filterForm) filterForm.remove();
+        }
         var patients = await fetchPatientsForRole(db, user, userRole);
 
         var enriched = await mapWithConcurrency(patients, CONCURRENCY, async function (p) {

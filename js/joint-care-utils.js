@@ -134,7 +134,8 @@
     anc: { collection: 'antenatal_visits', label: 'ANC', form: 'antenatal-form.html' },
     pnc: { collection: 'postpartum_visits', label: 'PNC', form: 'postpartum-form.html' },
     newborn: { collection: 'newborn_care', label: 'Newborn', form: 'newborn-care-page.html' },
-    immediate_newborn: { collection: 'immediate_newborn_care', label: 'Immediate Newborn', form: 'immediate-newborn-care-form.html' }
+    immediate_newborn: { collection: 'immediate_newborn_care', label: 'Immediate Newborn', form: 'immediate-newborn-care-form.html' },
+    delivery: { collection: 'records', fixedDocId: 'deliveryNotes', label: 'Delivery Notes', form: 'patient-care-hub.html', editParam: 'editDelivery=1' }
   };
 
   function getVisitTypeConfig(type) {

@@ -332,6 +332,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /leaderboard_v3_daily/{summaryId} {
+      allow read, write: if false;
+    }
+
     // Aggregate-only Dashboard V2 summaries. Patient contributions and job
     // checkpoints remain server-only.
     match /analytics_v2_periods/{period} {
@@ -349,6 +353,42 @@ service cloud.firestore {
     }
 
     match /analytics_v2_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    // Offline-safe refresh queues. They contain patient IDs and refresh
+    // metadata only; scheduled Functions process and delete entries.
+    match /tracking_v2_refresh_queue/{patientId} {
+      allow create, update: if signedIn()
+        && request.resource.data.patientId == patientId
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'patientId', 'requestedBy', 'reason', 'updatedAt'
+        ]);
+      allow read, delete: if false;
+    }
+
+    match /leaderboard_v3_refresh_queue/{patientId} {
+      allow create, update: if signedIn()
+        && request.resource.data.patientId == patientId
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'patientId', 'requestedBy', 'reason', 'updatedAt'
+        ]);
+      allow read, delete: if false;
+    }
+
+    // Patient-level tracking projections are available only through callable
+    // APIs, which enforce role scope and pagination server-side.
+    match /tracking_v2_hrt/{rowId} {
+      allow read, write: if false;
+    }
+
+    match /tracking_v2_kmc/{rowId} {
+      allow read, write: if false;
+    }
+
+    match /tracking_v2_jobs/{jobId} {
       allow read, write: if false;
     }
   }

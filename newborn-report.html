@@ -452,7 +452,7 @@
                   <th class="lang-text" data-en="Date" data-mm="ရက်စွဲ">Date</th>
                   <th class="lang-text" data-en="Length (cm)" data-mm="အရပ်အမြင့် (စ.m)">Length (cm)</th>
                   <th class="lang-text" data-en="Head circ. (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စ.m)">Head circ. (cm)</th>
-                  <th class="lang-text" data-en="Weight (g)" data-mm="အလေးချိန် (ဂရမ်)">Weight (g)</th>
+                  <th class="lang-text" data-en="Weight (kg)" data-mm="အလေးချိန် (ကီလိုဂရမ်)">Weight (kg)</th>
                 </tr>
               </thead>
               <tbody id="newbornMeasurementsTableBody"></tbody>
@@ -466,7 +466,7 @@
               <tr>
                 <th class="lang-text" data-en="No" data-mm="အကြိမ်">No</th>
                 <th class="lang-text" data-en="Date" data-mm="ရက်စွဲ">Date</th>
-                <th class="lang-text" data-en="Weight (g)" data-mm="အလေးချိန် (ဂရမ်)">Weight (g)</th>
+                <th class="lang-text" data-en="Weight (kg)" data-mm="အလေးချိန် (ကီလိုဂရမ်)">Weight (kg)</th>
                 <th class="lang-text" data-en="Length (cm)" data-mm="အရပ်အမြင့် (စ.m)">Length (cm)</th>
                 <th class="lang-text" data-en="Head circ. (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စ.m)">Head circ. (cm)</th>
                 <th class="lang-text" data-en="Temp" data-mm="အပူချိန်">Temp</th>
@@ -589,7 +589,9 @@
     const DELIVERY_MODE_I18N = {
       normal_vaginal: { en: 'Normal Vaginal Delivery', mm: 'ပုံမှန်မွေးဖွားခြင်း' },
       assisted_vaginal: { en: 'Assisted Vaginal Delivery (Forceps/Vacuum)', mm: 'အကူအညီဖြင့်မွေးဖွားခြင်း (ညှပ်စွဲ့/လေစုပ်)' },
-      caesarean_section: { en: 'Caesarean Section', mm: 'ခွဲစိတ်မွေးဖွားခြင်း' }
+      caesarean_section: { en: 'Caesarean Section (legacy)', mm: 'ခွဲစိတ်မွေးဖွားခြင်း (ယခင်မှတ်တမ်း)' },
+      elective_caesarean_section: { en: 'Elective Caesarean Section', mm: 'ကြိုတင်စီစဉ် ခွဲစိတ်မွေးဖွားခြင်း' },
+      emergency_caesarean_section: { en: 'Emergency Caesarean Section', mm: 'အရေးပေါ် ခွဲစိတ်မွေးဖွားခြင်း' }
     };
 
     const EYE_CARE_I18N = {
@@ -779,9 +781,11 @@
     }
 
     function getVisitOneData() {
-      return newbornCareVisits.find(function (v) {
+      return newbornCareVisits.filter(function (v) {
+        return !isAnchorOnlyNewbornVisit(v);
+      }).find(function (v) {
         return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
-      }) || newbornCareData || {};
+      }) || {};
     }
 
     async function fetchNewbornCareVisitsForReport(targetPatientId, patient) {
@@ -855,7 +859,7 @@
       document.getElementById('babyDetailGender').textContent = gender === 'male' ? t('male') : (gender === 'female' ? t('female') : t('notRecorded'));
 
       const birthWeightGram = getBestBirthWeightGram();
-      document.getElementById('birthWeight').textContent = birthWeightGram != null ? Math.round(birthWeightGram) + ' g' : t('notRecorded');
+      document.getElementById('birthWeight').textContent = formatWeightKg(birthWeightGram);
       document.getElementById('birthLength').textContent = formatMeasurementCm(getMeasurementFromVisits('birth_length_cm'));
       document.getElementById('headCircumference').textContent = formatMeasurementCm(getMeasurementFromVisits('head_circumference_cm'));
       document.getElementById('birthPlaceDetail').textContent = (window.DeliveryNotesUtils && visit1.birthplace)
@@ -931,8 +935,16 @@
       return null;
     }
 
+    function formatWeightKg(grams) {
+      const value = parseFloat(grams);
+      if (isNaN(value) || value <= 0) return t('notRecorded');
+      return (value / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + ' kg';
+    }
+
     function getBestBirthWeightGram() {
-      const visitOne = newbornCareVisits.find(function (v) {
+      const visitOne = newbornCareVisits.filter(function (v) {
+        return !isAnchorOnlyNewbornVisit(v);
+      }).find(function (v) {
         return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
       });
       return parseWeightGramFromRecord(visitOne) ||
@@ -967,9 +979,9 @@
     function isAnchorOnlyNewbornVisit(visit) {
       if (!visit) return true;
       var substantiveFields = [
-        'body_weight_gram', 'current_weight_gram', 'birth_length_cm', 'head_circumference_cm',
-        'temperature', 'heart_rate', 'respiration_rate', 'clinical_notes', 'gender', 'mode_of_delivery',
-        'birthplace', 'difficult_breathing', 'feeding_type', 'feeding_method',
+        'visitDate', 'visit_date', 'current_weight_gram', 'birth_length_cm', 'head_circumference_cm',
+        'temperature', 'heart_rate', 'respiration_rate', 'clinical_notes',
+        'difficult_breathing', 'feeding_type', 'feeding_method', 'danger_signs',
         'exclusive_breastfeeding_on_demand', 'kmc_hours_per_day', 'eye_care_status'
       ];
       return !substantiveFields.some(function (key) {
@@ -1092,8 +1104,8 @@
         return '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
       }
       const weight = visit.current_weight_gram != null
-        ? visit.current_weight_gram + ' g'
-        : (visit.body_weight_gram != null ? visit.body_weight_gram + ' g' : t('notRecorded'));
+        ? formatWeightKg(visit.current_weight_gram)
+        : formatWeightKg(visit.body_weight_gram);
       const tempUnit = visit.temperature_unit === 'F' ? '°F' : '°C';
       let html = '<div class="treatment-content">';
       html += '<p><strong>' + t('bodyWeight') + '</strong> ' + escapeHtml(weight) + '</p>';
@@ -1178,7 +1190,7 @@
           '<td>' + escapeHtml(visitDate) + '</td>' +
           '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'birth_length_cm'))) + '</td>' +
           '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'head_circumference_cm'))) + '</td>' +
-          '<td>' + escapeHtml(weight !== '' ? String(weight) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(weight !== '' ? formatWeightKg(weight) : t('notRecorded')) + '</td>' +
           '</tr>';
       }).join('');
     }
@@ -1206,7 +1218,7 @@
         return '<tr>' +
           '<td class="visit-number">' + n + '</td>' +
           '<td>' + escapeHtml(visitDate) + '</td>' +
-          '<td>' + escapeHtml(weight !== '' ? String(weight) : t('notRecorded')) + '</td>' +
+          '<td>' + escapeHtml(weight !== '' ? formatWeightKg(weight) : t('notRecorded')) + '</td>' +
           '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'birth_length_cm'))) + '</td>' +
           '<td>' + escapeHtml(formatMeasurementCm(parseMeasurementCm(visit, 'head_circumference_cm'))) + '</td>' +
           '<td>' + escapeHtml(temp) + '</td>' +

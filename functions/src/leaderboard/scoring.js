@@ -1,6 +1,8 @@
 'use strict';
 
-const SCORE_VERSION = 'leaderboard-v2-1';
+const { resolveServiceProvider } = require('../shared/clinical-normalizers');
+
+const SCORE_VERSION = 'leaderboard-v3-1';
 const LEADERBOARD_TIME_ZONE = 'Asia/Yangon';
 const ALL_TIME_PERIOD = 'all';
 
@@ -15,7 +17,9 @@ const CATEGORY_KEYS = [
   'pncVisits',
   'completePNC',
   'labTests',
+  'deliveryNotes',
   'immediateNewbornCare',
+  'kmcYes',
   'newbornCare',
   'transferRecords'
 ];
@@ -32,7 +36,9 @@ function isAllTimePeriod(month) {
 }
 
 function isLeaderboardPeriod(month) {
-  return isAllTimePeriod(month) || /^\d{4}-\d{2}$/.test(month || '');
+  return isAllTimePeriod(month) ||
+    /^\d{4}-\d{2}$/.test(month || '') ||
+    /^\d{4}$/.test(month || '');
 }
 
 function monthKeyForDate(date) {
@@ -46,6 +52,19 @@ function monthKeyForDate(date) {
   const year = parts.find((part) => part.type === 'year').value;
   const month = parts.find((part) => part.type === 'month').value;
   return year + '-' + month;
+}
+
+function dayKeyForDate(date) {
+  const value = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(value.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LEADERBOARD_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(value);
+  const valueFor = (type) => parts.find((part) => part.type === type).value;
+  return valueFor('year') + '-' + valueFor('month') + '-' + valueFor('day');
 }
 
 function timestampToDate(value) {
@@ -87,6 +106,15 @@ function recordsInMonth(records, month, fields) {
 
 function recordIsInPeriod(data, month, fields) {
   if (isAllTimePeriod(month)) return !!(data && typeof data === 'object');
+  if (/^\d{4}$/.test(month || '')) {
+    return (fields || []).some((field) => {
+      const date = timestampToDate(data && data[field]);
+      return date && String(new Intl.DateTimeFormat('en-US', {
+        timeZone: LEADERBOARD_TIME_ZONE,
+        year: 'numeric'
+      }).format(date)) === month;
+    });
+  }
   return recordIsInMonth(data, month, fields);
 }
 
@@ -105,14 +133,21 @@ function isPatientRegistrationComplete(patientData) {
 
 function isAncFormComplete(ancVisits) {
   return (ancVisits || []).some((visit) => {
+    if (Number(visit.completionPercentage || visit.completion_percentage) >= 100) return true;
+    const hasDating = visit.lmp ||
+      (String(visit.lmpStatus || '').toLowerCase() === 'unknown' &&
+        Number(visit.manualGestationalAge || visit.gestationalAge) >= 0);
     return visit.visitDate &&
-      visit.lmp !== undefined &&
+      hasDating &&
       (visit.visitNumber !== undefined || visit.visit_number !== undefined);
   });
 }
 
 function isPncFormComplete(pncVisits) {
-  return (pncVisits || []).some((visit) => visit.visitDate && visit.deliveredDateTime);
+  return (pncVisits || []).some((visit) =>
+    Number(visit.completionPercentage || visit.completion_percentage) >= 100 ||
+    (visit.visitDate && visit.deliveredDateTime)
+  );
 }
 
 function isValidTime(value) {
@@ -136,81 +171,185 @@ function isLcgCompleted(summary, startingTime, secondStage) {
   return firstStage && secondStageComplete;
 }
 
-function calculatePatientContribution(patientData, activity, month) {
-  const categories = emptyCategories();
+function dateFromRecord(record, fields) {
+  const data = record || {};
+  for (const field of fields || []) {
+    const date = timestampToDate(data[field]);
+    if (date) return date;
+  }
+  return null;
+}
+
+function sortedDatedRecords(records, fields) {
+  return (records || []).map((record) => ({
+    record,
+    date: dateFromRecord(record, fields)
+  })).filter((entry) => entry.date)
+    .sort((left, right) => left.date - right.date);
+}
+
+function hasCompletedImmediateNewbornCare(record) {
+  if (!record || typeof record !== 'object') return false;
+  return Boolean(
+    record.completed === true ||
+    record.status === 'complete' ||
+    record.timestamp || record.createdAt || record.recordedAt ||
+    Object.keys(record).some((key) => ![
+      'id', 'patientId', 'createdBy', 'recordedBy', 'timestamp', 'createdAt'
+    ].includes(key) && record[key] != null && record[key] !== '')
+  );
+}
+
+function hasCompletedDeliveryNote(record) {
+  if (!record || typeof record !== 'object') return false;
+  const details = record.deliveryDetails || {};
+  const babies = Array.isArray(details.babies) ? details.babies : [];
+  return Boolean(
+    record.completed === true ||
+    babies.some((baby) => baby && (
+      baby.birthTime || baby.birth_time || baby.outcome || baby.birthWeightGram
+    )) ||
+    details.modeOfDelivery || record.birth_time || record.deliveredDateTime
+  );
+}
+
+function firstKmcYes(newbornCare) {
+  return sortedDatedRecords(newbornCare, [
+    'visitDate', 'timestamp', 'createdAt', 'recordedAt'
+  ]).find(({ record }) => {
+    if (record.kmc_selected === 'yes' || record.kmcSelected === 'yes') return true;
+    return (record.kmc_babies || []).some((baby) =>
+      baby && (baby.kmc_selected === 'yes' || baby.kmcSelected === 'yes')
+    );
+  }) || null;
+}
+
+function achievement(key, points, record, patient, dateFields) {
+  const date = dateFromRecord(record, dateFields);
+  if (!date) return null;
+  const provider = resolveServiceProvider(record, patient);
+  return {
+    key,
+    points,
+    achievedAt: date,
+    providerId: provider.providerId,
+    attributionSource: provider.attributionSource
+  };
+}
+
+function buildPatientAchievements(patientData, activity) {
   const patient = patientData || {};
   const records = activity || {};
-
-  const registeredInPeriod = isAllTimePeriod(month)
-    ? !!(patient.registration_date || patient.created_at || patient.createdAt ||
-      patient.timestamp || patient.name)
-    : recordIsInMonth(patient, month, [
-      'registration_date',
-      'created_at',
-      'createdAt',
-      'timestamp'
-    ]);
-  if (registeredInPeriod) {
-    categories.registration = 1;
-    if (isPatientRegistrationComplete(patient)) categories.completeRegistration = 2;
+  const achievements = [];
+  const add = (value) => { if (value) achievements.push(value); };
+  const registrationFields = ['registration_date', 'created_at', 'createdAt', 'timestamp'];
+  const registrationDate = dateFromRecord(patient, registrationFields);
+  if (registrationDate) {
+    add(achievement('registration', 1, patient, patient, registrationFields));
+    if (isPatientRegistrationComplete(patient)) {
+      add(achievement('completeRegistration', 2, patient, patient, registrationFields));
+    }
   }
 
-  const ancVisits = recordsInPeriod(
-    records.ancVisits,
-    month,
-    ['visitDate', 'timestamp', 'createdAt']
-  );
-  if (ancVisits.length >= 1) categories.ancVisits = 1;
-  if (ancVisits.length >= 4) categories.anc4Plus = 1;
-  if (ancVisits.length >= 8) categories.anc8Plus = 1;
-  if (ancVisits.length && isAncFormComplete(ancVisits)) categories.completeANC = 2;
+  const anc = sortedDatedRecords(records.ancVisits, ['visitDate', 'timestamp', 'createdAt']);
+  if (anc[0]) add(achievement('ancVisits', 1, anc[0].record, patient, ['visitDate', 'timestamp', 'createdAt']));
+  if (anc[3]) add(achievement('anc4Plus', 1, anc[3].record, patient, ['visitDate', 'timestamp', 'createdAt']));
+  if (anc[7]) add(achievement('anc8Plus', 1, anc[7].record, patient, ['visitDate', 'timestamp', 'createdAt']));
+  const completeAnc = anc.find(({ record }) => isAncFormComplete([record]));
+  if (completeAnc) add(achievement('completeANC', 2, completeAnc.record, patient, ['visitDate', 'timestamp', 'createdAt']));
 
-  const pncVisits = recordsInPeriod(
-    records.pncVisits,
-    month,
-    ['visitDate', 'createdAt', 'updatedAt']
-  );
-  if (pncVisits.length >= 1) categories.pncVisits = 1;
-  if (pncVisits.length && isPncFormComplete(pncVisits)) categories.completePNC = 1;
+  const pnc = sortedDatedRecords(records.pncVisits, ['visitDate', 'createdAt', 'updatedAt']);
+  if (pnc[0]) add(achievement('pncVisits', 1, pnc[0].record, patient, ['visitDate', 'createdAt', 'updatedAt']));
+  const completePnc = pnc.find(({ record }) => isPncFormComplete([record]));
+  if (completePnc) add(achievement('completePNC', 1, completePnc.record, patient, ['visitDate', 'createdAt', 'updatedAt']));
 
-  if (recordsInPeriod(records.labTests, month, ['testDate', 'timestamp']).length) {
-    categories.labTests = 1;
-  }
-  if (recordsInPeriod(records.immediateNewbornCare, month, ['timestamp']).length) {
-    categories.immediateNewbornCare = 1;
-  }
-  if (recordsInPeriod(
-    records.newbornCare,
-    month,
-    ['visitDate', 'timestamp', 'createdAt']
-  ).length) {
-    categories.newbornCare = 1;
+  const tests = sortedDatedRecords(records.labTests, ['testDate', 'timestamp', 'createdAt']);
+  if (tests[0]) add(achievement('labTests', 1, tests[0].record, patient, ['testDate', 'timestamp', 'createdAt']));
+
+  if (hasCompletedDeliveryNote(records.deliveryNotes)) {
+    add(achievement('deliveryNotes', 1, records.deliveryNotes, patient, [
+      'updatedAt', 'createdAt', 'timestamp', 'deliveryDate', 'birth_time'
+    ]));
   }
 
-  const labourRecordedInPeriod = isAllTimePeriod(month) || [
-    records.summary,
-    records.startingTime,
-    records.secondStage
-  ].some((record) => recordIsInMonth(record, month, ['timestamp', 'lastUpdated']));
-  if (labourRecordedInPeriod && isLcgCompleted(
-    records.summary,
-    records.startingTime,
-    records.secondStage
-  )) {
-    categories.lcgCompleted = 1;
-  }
+  const immediate = sortedDatedRecords(records.immediateNewbornCare, [
+    'recordedAt', 'timestamp', 'createdAt', 'visitDate'
+  ]).find(({ record }) => hasCompletedImmediateNewbornCare(record));
+  if (immediate) add(achievement('immediateNewbornCare', 1, immediate.record, patient, [
+    'recordedAt', 'timestamp', 'createdAt', 'visitDate'
+  ]));
 
-  if (recordIsInPeriod(records.transferRecord, month, ['referralTime', 'timestamp'])) {
-    categories.transferRecords = 1;
-  }
+  const kmc = firstKmcYes(records.newbornCare);
+  if (kmc) add(achievement('kmcYes', 1, kmc.record, patient, [
+    'visitDate', 'timestamp', 'createdAt', 'recordedAt'
+  ]));
 
+  const newborn = sortedDatedRecords(records.newbornCare, [
+    'visitDate', 'timestamp', 'createdAt'
+  ]);
+  if (newborn[0]) add(achievement('newbornCare', 1, newborn[0].record, patient, [
+    'visitDate', 'timestamp', 'createdAt'
+  ]));
+
+  if (isLcgCompleted(records.summary, records.startingTime, records.secondStage)) {
+    const labourRecord = records.secondStage || records.summary || records.startingTime;
+    add(achievement('lcgCompleted', 1, labourRecord, patient, ['timestamp', 'lastUpdated', 'updatedAt']));
+  }
+  if (records.transferRecord) {
+    add(achievement('transferRecords', 1, records.transferRecord, patient, [
+      'referralTime', 'timestamp', 'createdAt'
+    ]));
+  }
+  return achievements;
+}
+
+function achievementIsInPeriod(item, period) {
+  if (isAllTimePeriod(period)) return true;
+  if (/^\d{4}$/.test(period || '')) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: LEADERBOARD_TIME_ZONE,
+      year: 'numeric'
+    }).format(item.achievedAt) === period;
+  }
+  return monthKeyForDate(item.achievedAt) === period;
+}
+
+function contributionsByProvider(patientData, activity, period) {
+  const grouped = {};
+  buildPatientAchievements(patientData, activity)
+    .filter((item) => achievementIsInPeriod(item, period))
+    .forEach((item) => {
+      const providerId = item.providerId || patientData.created_by || patientData.createdBy || '';
+      if (!providerId) return;
+      if (!grouped[providerId]) {
+        grouped[providerId] = { score: 0, activePatientCount: 1, categories: emptyCategories() };
+      }
+      grouped[providerId].score += item.points;
+      grouped[providerId].categories[item.key] += item.points;
+    });
+  return grouped;
+}
+
+function calculatePatientContribution(patientData, activity, month) {
+  const categories = emptyCategories();
+  const achievements = buildPatientAchievements(patientData || {}, activity || {})
+    .filter((item) => achievementIsInPeriod(item, month));
+  achievements.forEach((item) => { categories[item.key] += item.points; });
   const score = CATEGORY_KEYS.reduce((sum, key) => sum + categories[key], 0);
   return {
     scoreVersion: SCORE_VERSION,
     month,
     score,
     activePatientCount: score > 0 ? 1 : 0,
-    categories
+    categories,
+    achievements: achievements.map((item) => ({
+      key: item.key,
+      points: item.points,
+      achievedAt: item.achievedAt.toISOString(),
+      providerId: item.providerId,
+      attributionSource: item.attributionSource
+    })),
+    providerBreakdown: contributionsByProvider(patientData || {}, activity || {}, month)
   };
 }
 
@@ -259,9 +398,14 @@ module.exports = {
   isAllTimePeriod,
   isLeaderboardPeriod,
   monthKeyForDate,
+  dayKeyForDate,
   timestampToDate,
   recordIsInMonth,
   recordsInMonth,
+  buildPatientAchievements,
+  contributionsByProvider,
+  hasCompletedDeliveryNote,
+  hasCompletedImmediateNewbornCare,
   calculatePatientContribution,
   addCategories,
   subtractCategories,

@@ -369,6 +369,7 @@
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
 
   <script>
     if (window.AppDialog && typeof window.AppDialog.alert === 'function') {
@@ -725,6 +726,9 @@
           });
           sessionStorage.setItem('selectedPatientId', patientId);
           sessionStorage.setItem('selectedPatientData', JSON.stringify(sessionPayload));
+          if (window.AnalyticsRefreshQueue) {
+            await AnalyticsRefreshQueue.requestSafely(patientId, 'patient_registration');
+          }
 
           if (syncResult.cloudOk) {
             alert('Saved successfully on local and cloud.');
@@ -860,6 +864,9 @@
           consentRefusedAt: new Date().toISOString()
         });
         await LabourCareOffline.saveNewPatientWithSync(newPid, plainMirrorRef, firestorePayloadRef);
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(newPid, 'patient_registration');
+        }
 
         // Save refusal consent record
         const consentData = {

@@ -32,6 +32,7 @@
   <script src="js/kmc-utils.js"></script>
   <script src="js/choice-controls.js"></script>
   <script src="js/submit-guard.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -748,7 +749,9 @@
             </label>
             <select class="form-control" id="birthplace" name="birthplace" required data-choice>
               <option value="" data-en="Select birthplace" data-mm="မွေးဖွားသည့်နေရာ ရွေးချယ်ရန်">Select birthplace</option>
-              <option value="public_facility" data-en="Public Facility" data-mm="အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန">Public Facility</option>
+              <option value="government_hospital" data-en="Government Hospital" data-mm="အစိုးရဆေးရုံ">Government Hospital</option>
+              <option value="health_facility_subfacility" data-en="Health Facility / Subfacility" data-mm="ကျန်းမာရေးဌာန / လက်အောက်ခံဌာန">Health Facility / Subfacility</option>
+              <option value="public_facility" data-en="Public Facility (legacy)" data-mm="အစိုးရကျန်းမာရေးဌာန (ယခင်မှတ်တမ်း)">Public Facility (legacy)</option>
               <option value="private_facility" data-en="Private Facility" data-mm="ပုဂ္ဂလိက">Private Facility</option>
               <option value="home" data-en="Home Delivery" data-mm="အိမ်မွေး">Home Delivery</option>
               <option value="other" data-en="Others" data-mm="အခြား">Others</option>
@@ -762,7 +765,9 @@
               <option value="" data-en="Select mode" data-mm="နည်းလမ်း ရွေးချယ်ရန်">Select mode</option>
               <option value="normal_vaginal" data-en="Normal Vaginal Delivery" data-mm="ပုံမှန်မွေးဖွားခြင်း">Normal Vaginal Delivery</option>
               <option value="assisted_vaginal" data-en="Assisted Vaginal Delivery (Forceps/Vacuum)" data-mm="အကူအညီဖြင့်မွေးဖွားခြင်း (ညှပ်စွဲ့/လေစုပ်)">Assisted Vaginal Delivery (Forceps/Vacuum)</option>
-              <option value="caesarean_section" data-en="Caesarean Section" data-mm="ခွဲစိတ်မွေးဖွားခြင်း">Caesarean Section</option>
+              <option value="elective_caesarean_section" data-en="Elective Caesarean Section" data-mm="ကြိုတင်စီစဉ် ခွဲစိတ်မွေးဖွားခြင်း">Elective Caesarean Section</option>
+              <option value="emergency_caesarean_section" data-en="Emergency Caesarean Section" data-mm="အရေးပေါ် ခွဲစိတ်မွေးဖွားခြင်း">Emergency Caesarean Section</option>
+              <option value="caesarean_section" data-en="Caesarean Section (legacy)" data-mm="ခွဲစိတ်မွေးဖွားခြင်း (ယခင်မှတ်တမ်း)">Caesarean Section (legacy)</option>
             </select>
           </div>
         </div>
@@ -820,15 +825,15 @@
           </div>
           <div class="col-md-6">
             <label for="body_weight_gram" class="form-label">
-              <span class="lang-text" data-en="Birth Weight (gram)" data-mm="မွေးချိန် ကိုယ်အလေးချိန် (ဂရမ်)">Birth Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
+              <span class="lang-text" data-en="Birth Weight (kg)" data-mm="မွေးချိန် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)">Birth Weight (kg)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
-            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_gram" step="0.1" min="0" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();" oninput="evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();">
+            <input type="number" class="form-control" id="body_weight_gram" name="body_weight_kg" step="0.001" min="0.3" max="7" inputmode="decimal" placeholder="" onchange="checkWeightAlert(); evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();" oninput="evaluateKmcSection(); renderWeightTrend(); updateCurrentWeightVisibility();">
           </div>
           <div class="col-md-6" id="currentWeightCol" style="display:none;">
             <label for="current_weight_gram" class="form-label">
-              <span class="lang-text" data-en="Current Visit Weight (gram)" data-mm="ယခုအကြိမ် ကိုယ်အလေးချိန် (ဂရမ်)">Current Visit Weight (gram)</span><span class="required-marker" aria-hidden="true">*</span>
+              <span class="lang-text" data-en="Current Visit Weight (kg)" data-mm="ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)">Current Visit Weight (kg)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
-            <input type="number" class="form-control" id="current_weight_gram" name="current_weight_gram" step="0.1" min="0" placeholder="" onchange="renderWeightTrend();" oninput="renderWeightTrend();">
+            <input type="number" class="form-control" id="current_weight_gram" name="current_weight_kg" step="0.001" min="0.3" max="10" inputmode="decimal" placeholder="" onchange="renderWeightTrend();" oninput="renderWeightTrend();">
             <small class="form-hint lang-text" data-en="Enter weight measured at this visit. Birth weight stays unchanged." data-mm="ဤအကြိမ် တိုင်းတာသော ကိုယ်အလေးချိန် ထည့်ပါ။ မွေးချိန်အလေးချိန် မပြောင်းပါ။">Enter weight measured at this visit. Birth weight stays unchanged.</small>
           </div>
           <div class="col-12">
@@ -1099,6 +1104,7 @@
               <span class="lang-text" data-en="KMC for this baby" data-mm="ဤကလေးအတွက် KMC">KMC for this baby</span>
               <span id="kmcDecisionBabyLabel" class="text-muted"></span>
             </label>
+            <div id="kmcInheritedState" class="alert alert-success py-2" style="display:none;"></div>
             <div class="form-check form-check-inline">
               <input class="form-check-input" type="radio" name="kmc_selected" id="kmc_selected_yes" value="yes" onchange="persistActiveBabyState(); toggleKmcDecisionFields(); updateNewbornVisitSchedule();">
               <label class="form-check-label" for="kmc_selected_yes">Yes</label>
@@ -1884,6 +1890,8 @@
         const el = document.getElementById(id);
         if (el) state[id] = el.value;
       });
+      if (state.body_weight_gram !== '') state.body_weight_gram = Math.round(parseFloat(state.body_weight_gram) * 1000);
+      if (state.current_weight_gram !== '') state.current_weight_gram = Math.round(parseFloat(state.current_weight_gram) * 1000);
       state.baby_outcome = document.getElementById('baby_outcome')?.value || '';
       state.outcome = state.baby_outcome === 'death' ? 'dead' : state.baby_outcome;
       state.difficult_breathing = getRadioValue('difficult_breathing');
@@ -1902,7 +1910,12 @@
       state = state || {};
       BABY_SPECIFIC_FIELD_IDS.forEach(function (id) {
         const el = document.getElementById(id);
-        if (el) el.value = state[id] || '';
+        if (!el) return;
+        if ((id === 'body_weight_gram' || id === 'current_weight_gram') && state[id] != null && state[id] !== '') {
+          el.value = (parseFloat(state[id]) / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+        } else {
+          el.value = state[id] || '';
+        }
       });
       const outcomeVal = state.baby_outcome || (state.outcome === 'dead' ? 'death' : (state.outcome || ''));
       const outcomeEl = document.getElementById('baby_outcome');
@@ -1944,7 +1957,8 @@
     }
 
     function isTwinMode() {
-      return false;
+      return newbornBabyStates.length > 1 ||
+        (document.getElementById('pregnancy_type') && document.getElementById('pregnancy_type').value === 'twins');
     }
 
     function updateTwinTabBarVisibility() {
@@ -1972,7 +1986,8 @@
     }
 
     function initBabyStatesFromBabies(babies, locked) {
-      const pregnancyType = 'single';
+      const pregnancyType = Array.isArray(babies) && babies.length > 1 ? 'twins' :
+        ((document.getElementById('pregnancy_type') && document.getElementById('pregnancy_type').value) || 'single');
       const minRows = pregnancyType === 'twins' ? 2 : 1;
       const rows = (Array.isArray(babies) && babies.length ? babies.slice() : DeliveryNotesUtils.defaultBabies(minRows)).map(function (baby, index) {
         return Object.assign({}, babyStateToFormState(baby), baby, {
@@ -1982,6 +1997,8 @@
       });
       while (rows.length < minRows) rows.push(DeliveryNotesUtils.normalizeBaby({}, rows.length));
       newbornBabyStates = rows;
+      const pregnancyTypeEl = document.getElementById('pregnancy_type');
+      if (pregnancyTypeEl) pregnancyTypeEl.value = rows.length > 1 ? 'twins' : pregnancyType;
       if (!activeBabyIndex || activeBabyIndex > newbornBabyStates.length) activeBabyIndex = 1;
       locked = getIdentityPanelLocked(locked);
       updateTwinTabBarVisibility();
@@ -2062,10 +2079,27 @@
       return value;
     }
 
+    function isCompletedNewbornAssessment(data) {
+      data = data || {};
+      const assessmentFields = [
+        'visitDate', 'visit_date', 'temperature', 'heart_rate', 'respiration_rate',
+        'difficult_breathing', 'eye_infection_status', 'cord_care', 'danger_signs',
+        'feeding_type', 'feeding_method', 'clinical_notes', 'outcome', 'kmc_selected',
+        'current_weight_gram', 'birth_length_cm', 'head_circumference_cm'
+      ];
+      return assessmentFields.some(function (key) {
+        const value = data[key];
+        if (Array.isArray(value)) return value.length > 0;
+        if (value && typeof value === 'object') return Object.keys(value).length > 0;
+        return value !== undefined && value !== null && value !== '';
+      });
+    }
+
     function getVisit1Data() {
       const item = sortedNewbornVisits().find(function (v) {
         const data = getVisitData(v);
-        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1 &&
+          isCompletedNewbornAssessment(data);
       });
       return item ? getVisitData(item) : null;
     }
@@ -2112,7 +2146,8 @@
     function getVisit1Record() {
       return sortedNewbornVisits().find(function (item) {
         const data = getVisitData(item);
-        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1 &&
+          isCompletedNewbornAssessment(data);
       }) || null;
     }
 
@@ -2547,6 +2582,7 @@
         applyAutoBabyName();
 
         // Load existing newborn care data if any
+        if (!(await canStartNewbornCareVisit())) return;
         await loadExistingNewbornCareData();
         await loadMaternalInfectionAlert();
 
@@ -2554,6 +2590,24 @@
         console.error('Error loading patient info:', error);
         alert('Could not load patient information. Please try again.');
       }
+    }
+
+    async function canStartNewbornCareVisit() {
+      const storagePatientId = getNewbornCareStoragePatientId();
+      const patientRef = firebase.firestore().collection('patients').doc(storagePatientId);
+      const results = await Promise.all([
+        patientRef.collection('records').doc(DeliveryNotesUtils.DELIVERY_DOC_ID).get(),
+        patientRef.collection('newborn_care').limit(1).get()
+      ]);
+      if (results[0].exists || !results[1].empty) return true;
+      await showInlineNotice(
+        currentLanguage === 'mm'
+          ? 'Newborn Care အကြိမ်အသစ် မစတင်မီ Delivery Notes ကို အရင်သိမ်းပါ။'
+          : 'Save Delivery Notes before starting the first Newborn Care visit.',
+        currentLanguage === 'mm' ? 'Delivery Notes လိုအပ်သည်' : 'Delivery Notes required'
+      );
+      window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(storagePatientId);
+      return false;
     }
 
     function isMaternalLabReactive(result, includeIndeterminate) {
@@ -2566,17 +2620,18 @@
     }
 
     function collectMaternalInfectionFlags(tests) {
-      var flags = { hiv: false, hepatitisB: false, hepatitisC: false };
+      var flags = { hiv: false, hepatitisB: false, hepatitisC: false, vdrl: false };
       (tests || []).forEach(function (test) {
         if (!test) return;
         if (isMaternalLabReactive(test.hivResult, false)) flags.hiv = true;
         if (isMaternalLabReactive(test.hepatitisBResult, false)) flags.hepatitisB = true;
         if (isMaternalLabReactive(test.hepatitisCResult, false)) flags.hepatitisC = true;
+        if (isMaternalLabReactive(test.syphilisResult || test.vdrlResult, false)) flags.vdrl = true;
       });
       return flags;
     }
 
-    var maternalInfectionFlags = { hiv: false, hepatitisB: false, hepatitisC: false };
+    var maternalInfectionFlags = { hiv: false, hepatitisB: false, hepatitisC: false, vdrl: false };
 
     function renderMaternalInfectionAlert() {
       var el = document.getElementById('maternalInfectionAlert');
@@ -2601,6 +2656,12 @@
           mm: 'Hepatitis C Reactive — မိခင်နှင့် ကလေးအတွက် နောက်ဆက်တွဲ စစ်ဆေးမှု/ဆေးရုံသို့ ရွှေ့ပြောင်းပါ။'
         });
       }
+      if (flags.vdrl) {
+        items.push({
+          en: 'VDRL / Syphilis reactive — confirm maternal treatment and arrange newborn assessment.',
+          mm: 'VDRL / Syphilis Reactive — မိခင်ကုသမှုကို အတည်ပြုပြီး မွေးကင်းစကလေး စစ်ဆေးမှု စီစဉ်ပါ။'
+        });
+      }
       if (!items.length) {
         el.classList.remove('show');
         el.innerHTML = '';
@@ -2608,8 +2669,8 @@
       }
       var mm = currentLanguage === 'mm';
       var title = mm
-        ? '⚠️ မိခင် lab ရလဒ် သတိပေးချက် (HIV / Hepatitis)'
-        : '⚠️ Maternal lab alert (HIV / Hepatitis)';
+        ? '⚠️ မိခင် lab ရလဒ် သတိပေးချက် (HIV / Hepatitis / VDRL)'
+        : '⚠️ Maternal lab alert (HIV / Hepatitis / VDRL)';
       var intro = mm
         ? 'မိခင်၏ antenatal lab စစ်ဆေးမှုတွင် အောက်ပါ ရလဒ်(များ) ရှိပါသည်။ မွေးကင်းစကလေး စောင့်ရှောက်မှုတွင် အထူးဂရုပြုပါ။'
         : 'Mother has positive antenatal lab result(s). Take special care during newborn care.';
@@ -2759,10 +2820,22 @@
 
     function applyKmcDecisionLockForVisit() {
       const visitNum = parseInt(document.getElementById('visit_number')?.value, 10) || 1;
-      const lockKmcYes = visitNum > 1 && getSelectedKmcValue() === 'yes' && hasSavedFirstNewbornVisit();
+      const inheritedKmcYes = visitNum > 1 && window.KmcUtils &&
+        KmcUtils.babyHasKmcYesInVisits(newbornCareVisits.map(getVisitData), activeBabyIndex);
+      const lockKmcYes = inheritedKmcYes || (visitNum > 1 && getSelectedKmcValue() === 'yes' && hasSavedFirstNewbornVisit());
       document.querySelectorAll('input[name="kmc_selected"]').forEach(function (el) {
         el.disabled = lockKmcYes;
+        const choice = el.closest('.form-check');
+        if (choice) choice.style.display = inheritedKmcYes ? 'none' : '';
       });
+      if (inheritedKmcYes) setRadioValue('kmc_selected', 'yes');
+      const inherited = document.getElementById('kmcInheritedState');
+      if (inherited) {
+        inherited.style.display = inheritedKmcYes ? '' : 'none';
+        inherited.textContent = inheritedKmcYes
+          ? (currentLanguage === 'mm' ? 'ယခင်အကြိမ်မှ KMC စာရင်းဝင်ပြီးဖြစ်သည်။' : 'KMC enrolled on a prior newborn visit.')
+          : '';
+      }
       const discharge = document.getElementById('discharge_date');
       if (discharge) {
         discharge.readOnly = lockKmcYes;
@@ -2775,7 +2848,8 @@
     function evaluateKmcSection() {
       if (!window.KmcUtils || !currentPatient) return null;
       const birthTime = document.getElementById('birth_time')?.value || null;
-      const weight = document.getElementById('body_weight_gram')?.value || null;
+      const weightKg = parseFloat(document.getElementById('body_weight_gram')?.value);
+      const weight = !isNaN(weightKg) ? Math.round(weightKg * 1000) : null;
       const babyRows = collectBabyIdentityRows();
       const babyCare = {
         baby_name: document.getElementById('baby_name')?.value,
@@ -2884,12 +2958,12 @@
         const current = parseFloat(document.getElementById('current_weight_gram')?.value);
         // Never fall back to birth weight for follow-up visits — empty current weight
         // was inventing a fake drop back to birth weight on the trend chart.
-        if (!isNaN(current) && current > 0) return current;
+        if (!isNaN(current) && current > 0) return Math.round(current * 1000);
         return NaN;
       }
       if (visitNum <= 1) {
         const birth = parseFloat(document.getElementById('body_weight_gram')?.value);
-        return !isNaN(birth) && birth > 0 ? birth : NaN;
+        return !isNaN(birth) && birth > 0 ? Math.round(birth * 1000) : NaN;
       }
       return NaN;
     }
@@ -3037,7 +3111,8 @@
     function hasSavedFirstNewbornVisit() {
       return (newbornCareVisits || []).some(function (item) {
         const data = getVisitData(item);
-        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1;
+        return (parseInt(data.visit_number || data.visitNumber, 10) || 1) === 1 &&
+          isCompletedNewbornAssessment(data);
       });
     }
 
@@ -3324,9 +3399,9 @@
       applyBirthMeasurementsToForm(data);
       if (data.birthplace) document.getElementById('birthplace').value = normalizeBirthplaceValue(data.birthplace);
       if (data.mode_of_delivery) document.getElementById('mode_of_delivery').value = data.mode_of_delivery;
-      if (data.body_weight_gram) document.getElementById('body_weight_gram').value = data.body_weight_gram;
+      if (data.body_weight_gram) document.getElementById('body_weight_gram').value = (parseFloat(data.body_weight_gram) / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
       if (data.current_weight_gram != null && data.current_weight_gram !== '') {
-        document.getElementById('current_weight_gram').value = data.current_weight_gram;
+        document.getElementById('current_weight_gram').value = (parseFloat(data.current_weight_gram) / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
       }
       if (data.temperature) document.getElementById('temperature').value = data.temperature;
       if (data.temperature_unit) document.getElementById('temperature_unit').value = data.temperature_unit;
@@ -3599,15 +3674,27 @@
         alert(babyLabel + (currentLanguage === 'mm' ? ' အတွက် မွေးချိန်၊ ကိုယ်အလေးချိန်နှင့် ရလဒ် ဖြည့်ပါ။' : ': please enter birth time, birth weight, and outcome.'));
         return;
       }
+      const implausibleBirthWeight = babyRows.find(function (baby) {
+        const grams = parseFloat(baby.birthWeightGram);
+        return isNaN(grams) || grams < 300 || grams > 7000;
+      });
+      if (implausibleBirthWeight) {
+        await switchBabyTab(implausibleBirthWeight.babyIndex || 1);
+        alert(currentLanguage === 'mm'
+          ? 'မွေးချိန် ကိုယ်အလေးချိန်ကို 0.3 မှ 7 kg အတွင်း ထည့်ပါ။'
+          : 'Enter a plausible birth weight from 0.3 to 7 kg.');
+        document.getElementById('body_weight_gram').focus();
+        return;
+      }
 
       updateCurrentWeightVisibility();
       if (shouldShowCurrentVisitWeight()) {
         const currentWeightEl = document.getElementById('current_weight_gram');
         const currentWeightVal = currentWeightEl ? parseFloat(currentWeightEl.value) : NaN;
-        if (!currentWeightEl || isNaN(currentWeightVal) || currentWeightVal <= 0) {
+        if (!currentWeightEl || isNaN(currentWeightVal) || currentWeightVal < 0.3 || currentWeightVal > 10) {
           alert(currentLanguage === 'mm'
-            ? 'ယခုအကြိမ် ကိုယ်အလေးချိန် ထည့်ပါ။'
-            : 'Please enter current visit weight.');
+            ? 'ယခုအကြိမ် ကိုယ်အလေးချိန်ကို 0.3 မှ 10 kg အတွင်း ထည့်ပါ။'
+            : 'Enter a plausible current visit weight from 0.3 to 10 kg.');
           if (currentWeightEl) currentWeightEl.focus();
           return;
         }
@@ -3702,9 +3789,9 @@
           head_circumference_cm: document.getElementById('head_circumference_cm').value ? parseFloat(document.getElementById('head_circumference_cm').value) : null,
           birthplace: document.getElementById('birthplace').value || null,
           mode_of_delivery: document.getElementById('mode_of_delivery').value || null,
-          body_weight_gram: firstBaby.birthWeightGram != null ? parseFloat(firstBaby.birthWeightGram) : (document.getElementById('body_weight_gram').value ? parseFloat(document.getElementById('body_weight_gram').value) : null),
+          body_weight_gram: firstBaby.birthWeightGram != null ? parseFloat(firstBaby.birthWeightGram) : (document.getElementById('body_weight_gram').value ? Math.round(parseFloat(document.getElementById('body_weight_gram').value) * 1000) : null),
           current_weight_gram: (shouldShowCurrentVisitWeight() && document.getElementById('current_weight_gram').value)
-            ? parseFloat(document.getElementById('current_weight_gram').value)
+            ? Math.round(parseFloat(document.getElementById('current_weight_gram').value) * 1000)
             : null,
           temperature: document.getElementById('temperature').value ? parseFloat(document.getElementById('temperature').value) : null,
           temperature_unit: document.getElementById('temperature_unit').value || 'C',
@@ -3807,19 +3894,13 @@
               await BirthDeliveryAnchor.syncDatetimeToNewbornCare(patientId, cloudData.birth_time);
             }
 
-            if (!isCurrentBabyPatient() && (parseInt(cloudData.visit_number, 10) || 1) === 1 && window.DeliveryNotesUtils) {
-              await DeliveryNotesUtils.saveDeliveryNotes(
-                patientId,
-                DeliveryNotesUtils.deliveryNotesFromNewborn(cloudData),
-                currentUser.uid,
-                { motherData: currentPatient }
-              );
-            }
-
             return { cloudId };
           }
         );
 
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(getNewbornCareStoragePatientId(), 'newborn_care');
+        }
         if (window.StatusManager) {
           await StatusManager.checkAndUpdateToPostnatalCare(
             patientId,

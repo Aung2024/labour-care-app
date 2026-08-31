@@ -8,6 +8,8 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const {
   ALL_TIME_PERIOD,
+  CATEGORY_KEYS,
+  emptyCategories,
   isLeaderboardPeriod,
   monthKeyForDate,
   timestampToDate,
@@ -39,7 +41,9 @@ const SUPPORTED_RECORD_IDS = new Set([
   'summary',
   'startingTime',
   'secondStage',
-  'transferRecord'
+  'transferRecord',
+  'deliveryNotes',
+  'thirdStage'
 ]);
 const EVENT_DATE_FIELDS = [
   'visitDate',
@@ -82,7 +86,11 @@ function eventMonths(before, after) {
 }
 
 function periodsWithAllTime(months) {
-  return Array.from(new Set([...(months || []), ALL_TIME_PERIOD]));
+  const periods = new Set([...(months || []), ALL_TIME_PERIOD]);
+  (months || []).forEach((month) => {
+    if (/^\d{4}-\d{2}$/.test(month)) periods.add(month.slice(0, 4));
+  });
+  return Array.from(periods);
 }
 
 async function requireSuperAdmin(request) {
@@ -91,6 +99,79 @@ async function requireSuperAdmin(request) {
   if (!user.exists || user.data().role !== 'Super Admin') {
     throw new HttpsError('permission-denied', 'Only Super Admin can rebuild summaries.');
   }
+}
+
+function normalizeDateKey(value) {
+  const text = String(value || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+async function queryLeaderboardRange(request) {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
+  const userSnapshot = await db().collection('users').doc(request.auth.uid).get();
+  if (!userSnapshot.exists) throw new HttpsError('permission-denied', 'User profile is required.');
+  const user = userSnapshot.data() || {};
+  const start = normalizeDateKey(request.data && request.data.start);
+  const end = normalizeDateKey(request.data && request.data.end);
+  if (!start || !end || start > end) {
+    throw new HttpsError('invalid-argument', 'A valid start and end date are required.');
+  }
+  const dayCount = Math.floor((new Date(end + 'T00:00:00Z') -
+    new Date(start + 'T00:00:00Z')) / 86400000) + 1;
+  if (dayCount > 366) {
+    throw new HttpsError('invalid-argument', 'Custom ranges are limited to 366 days.');
+  }
+
+  let query = db().collection('leaderboard_v3_daily')
+    .where('day', '>=', start)
+    .where('day', '<=', end);
+  const role = String(user.role || '').toLowerCase();
+  if (role === 'regional officer') query = query.where('region', '==', user.region || '');
+  if (role === 'tmo') query = query.where('township', '==', user.township || '');
+  if (role === 'midwife') query = query.where('providerId', '==', request.auth.uid);
+  if (!['super admin', 'admin', 'central', 'regional officer', 'tmo', 'midwife'].includes(role)) {
+    throw new HttpsError('permission-denied', 'This account cannot query leaderboard data.');
+  }
+
+  const snapshot = await query.get();
+  const requested = request.data || {};
+  const facilityTypes = Array.isArray(requested.facilityTypes)
+    ? requested.facilityTypes.map(String).slice(0, 10)
+    : [];
+  const totals = new Map();
+  snapshot.forEach((doc) => {
+    const row = doc.data() || {};
+    if (requested.region && row.region !== requested.region) return;
+    if (requested.township && row.township !== requested.township) return;
+    if (requested.department && row.department !== requested.department) return;
+    if (facilityTypes.length && !facilityTypes.includes(row.facilityType)) return;
+    const current = totals.get(row.providerId) || {
+      providerId: row.providerId,
+      providerName: row.providerName,
+      providerType: row.providerType,
+      township: row.township,
+      region: row.region,
+      facilityCode: row.facilityCode || '',
+      department: row.department || 'other',
+      facilityType: row.facilityType || 'other',
+      score: 0,
+      activePatientCount: 0,
+      categories: emptyCategories()
+    };
+    current.score += Number(row.score || 0);
+    current.activePatientCount += Number(row.activePatientCount || 0);
+    CATEGORY_KEYS.forEach((key) => {
+      current.categories[key] += Number(row.categories && row.categories[key] || 0);
+    });
+    current.calculatedAt = new Date().toISOString();
+    totals.set(row.providerId, current);
+  });
+  return {
+    scoreVersion: require('./scoring').SCORE_VERSION,
+    start,
+    end,
+    providers: Array.from(totals.values()).sort((a, b) => b.score - a.score)
+  };
 }
 
 async function startRebuildJob(months, requestedBy) {
@@ -217,6 +298,10 @@ const providerWritten = functionsV1
         providerType: metadata.providerType,
         township: metadata.township,
         region: metadata.region,
+        phone: metadata.phone || '',
+        facilityCode: metadata.facilityCode || '',
+        department: metadata.department || 'other',
+        facilityType: metadata.facilityType || 'other',
         calculatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
     });
@@ -232,7 +317,12 @@ const startLeaderboardRebuild = onCall({
   await requireSuperAdmin(request);
   const requestedCount = Number(request.data && request.data.months || 4);
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
-  const months = periodsWithAllTime(recentMonthKeys(count));
+  const currentYear = Number(monthKeyForDate(new Date()).slice(0, 4));
+  const years = Array.from({ length: 5 }, (_, offset) => String(currentYear - offset));
+  const months = Array.from(new Set([
+    ...periodsWithAllTime(recentMonthKeys(count)),
+    ...years
+  ]));
   await startRebuildJob(months, request.auth.uid);
   // Return as soon as the job is queued. Processing a patient batch here can
   // exceed the callable timeout because Firestore is in Bangkok while the
@@ -240,6 +330,13 @@ const startLeaderboardRebuild = onCall({
   // worker resumes the job safely in the background.
   return { success: true, months, status: 'queued' };
 });
+
+const getLeaderboardCustomRange = onCall({
+  region: REGION,
+  timeoutSeconds: 120,
+  memory: '256MiB',
+  enforceAppCheck: false
+}, queryLeaderboardRange);
 
 const leaderboardNightlyReconciliation = onSchedule({
   schedule: 'every 72 hours',
@@ -286,6 +383,7 @@ module.exports = {
   patientActivityWritten,
   providerWritten,
   startLeaderboardRebuild,
+  getLeaderboardCustomRange,
   leaderboardNightlyReconciliation,
   leaderboardReconciliationWorker,
   processActiveRebuildBatch,

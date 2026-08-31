@@ -27,6 +27,8 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-visit-number.js"></script>
+  <script src="js/anc-workflow-utils.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/choice-controls.js"></script>
@@ -86,6 +88,95 @@
       border-left: 4px solid var(--primary-color);
       position: relative;
       break-inside: avoid;
+    }
+
+    .section-title {
+      margin: -1.35rem -1.5rem 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+    }
+
+    .section-toggle {
+      width: 100%;
+      min-height: 56px;
+      padding: 0.75rem 1rem;
+      border: 0;
+      border-radius: 12px 12px 0 0;
+      background: transparent;
+      color: var(--primary-color);
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      font: inherit;
+      font-weight: 800;
+      text-align: left;
+      touch-action: manipulation;
+    }
+
+    .section-toggle:focus-visible {
+      outline: 3px solid rgba(16, 185, 129, 0.35);
+      outline-offset: -3px;
+    }
+
+    .section-progress {
+      margin-left: auto;
+      color: #475569;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .section-chevron {
+      transition: transform 0.2s ease;
+    }
+
+    .section-toggle[aria-expanded="true"] .section-chevron {
+      transform: rotate(180deg);
+    }
+
+    .section-body {
+      padding-top: 1rem;
+    }
+
+    .section-body[hidden] {
+      display: none !important;
+    }
+
+    .form-section.has-errors {
+      border-left-color: #dc2626;
+    }
+
+    .form-section.has-errors .section-progress,
+    .field-risk-red {
+      color: #991b1b !important;
+    }
+
+    .field-risk-red {
+      border-color: #dc2626 !important;
+      background: #fef2f2 !important;
+      font-weight: 700;
+    }
+
+    .form-validation-summary {
+      display: none;
+      margin-bottom: 1rem;
+      padding: 0.8rem 1rem;
+      border: 1px solid #fca5a5;
+      border-radius: 12px;
+      background: #fef2f2;
+      color: #991b1b;
+      font-weight: 700;
+    }
+
+    .previous-obstetric-row {
+      padding: 0.75rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+
+    button, .btn, .form-check-label {
+      min-height: 44px;
+      touch-action: manipulation;
     }
 
     .anc-form {
@@ -301,8 +392,12 @@
 
     @media (max-width: 768px) {
       .form-section {
-        padding: 1.25rem 1.25rem;
+        padding: 1rem;
         border-radius: 10px;
+      }
+
+      .section-title {
+        margin: -1rem -1rem 0 !important;
       }
     }
 
@@ -1122,6 +1217,7 @@
 
     <!-- ANC Visit Form -->
     <form id="ancForm" onsubmit="saveVisitData(event)" class="anc-form">
+      <div id="formValidationSummary" class="form-validation-summary" role="alert" aria-live="assertive"></div>
       <div class="wizard-step wizard-step-active" data-en-title="Visit & pregnancy history" data-mm-title="ကိုယ်ဝန် ရာဇဝင်">
       <!-- Visit Information -->
       <div class="form-section">
@@ -1230,6 +1326,37 @@
           <div id="earlyAncBadge" class="early-anc-badge unknown">
             <i class="fas fa-info-circle"></i>
             <span id="earlyAncStatusText" class="lang-text" data-en="Enter LMP and visit date to calculate" data-mm="LMP နှင့် ပြသရက်ထည့်ပါ">Enter LMP and visit date to calculate</span>
+          </div>
+        </div>
+
+        <div class="card-subtitle"><i class="fas fa-baby-carriage me-2"></i><span class="lang-text" data-en="Current and Previous Pregnancy History" data-mm="ယခုနှင့် ယခင်ကိုယ်ဝန် ရာဇဝင်">Current and Previous Pregnancy History</span></div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="goiterStatus" class="form-label lang-text" data-en="Goiter" data-mm="လည်ပင်းကြီးရောဂါ ရှိ/မရှိ">Goiter</label>
+            <select id="goiterStatus" name="goiterStatus" class="form-control" required>
+              <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option><option value="Unknown">Unknown</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label for="lastPregnancyOutcome" class="form-label lang-text" data-en="Last pregnancy outcome" data-mm="နောက်ဆုံးကိုယ်ဝန် ရလဒ်">Last pregnancy outcome</label>
+            <select id="lastPregnancyOutcome" name="lastPregnancyOutcome" class="form-control" required>
+              <option value="">Select</option><option value="Live birth">Live birth</option><option value="Stillbirth">Stillbirth</option><option value="Abortion">Abortion</option><option value="Ectopic/Molar">Ectopic/Molar</option><option value="Not applicable">Not applicable</option><option value="Unknown">Unknown</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label for="lastPregnancyDate" class="form-label lang-text" data-en="Last pregnancy outcome date" data-mm="နောက်ဆုံးကိုယ်ဝန် ရလဒ်ရက်စွဲ">Last pregnancy outcome date</label>
+            <input type="date" id="lastPregnancyDate" name="lastPregnancyDate" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label for="cleanDeliveryKitDate" class="form-label lang-text" data-en="Clean delivery kit distribution date (optional)" data-mm="သန့်ရှင်းသော မွေးဖွားရေးပစ္စည်း ဖြန့်ဝေသည့်ရက် (မဖြစ်မနေမဟုတ်)">Clean delivery kit distribution date (optional)</label>
+            <input type="date" id="cleanDeliveryKitDate" name="cleanDeliveryKitDate" class="form-control">
+          </div>
+          <div class="col-12">
+            <label class="form-label lang-text" data-en="Previous obstetric history" data-mm="ယခင်သားဖွား ရာဇဝင်">Previous obstetric history</label>
+            <div id="previousObstetricRows" class="d-grid gap-2"></div>
+            <button type="button" class="btn btn-outline-primary mt-2" onclick="addPreviousObstetricRow()">
+              <i class="fas fa-plus me-1"></i><span class="lang-text" data-en="Add previous pregnancy" data-mm="ယခင်ကိုယ်ဝန် ထည့်ရန်">Add previous pregnancy</span>
+            </button>
           </div>
         </div>
         
@@ -1358,6 +1485,7 @@
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
+              <option value="Not assessed">Not assessed</option>
             </select>
             <div id="anemiaAlert" class="clinical-risk-alert hide">
               <span class="risk-mm">
@@ -1380,6 +1508,7 @@
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
+              <option value="Not assessed">Not assessed</option>
             </select>
             <div id="pittingEdemaAlert" class="clinical-risk-alert danger hide">
               <span class="risk-mm">
@@ -1414,6 +1543,7 @@
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
+              <option value="Not assessed">Not assessed</option>
             </select>
           </div>
           <div class="col-12 col-lg-6 form-field" id="coinfectionNotesGroup" style="display: none;">
@@ -1494,6 +1624,7 @@
               <option value="Occiput Anterior (OA)" class="lang-text" data-en="Occiput Anterior (OA)" data-mm="Occiput Anterior (OA)">Occiput Anterior (OA)</option>
               <option value="Occiput Posterior (OP)" class="lang-text" data-en="Occiput Posterior (OP)" data-mm="Occiput Posterior (OP)">Occiput Posterior (OP)</option>
               <option value="Transverse Lie" class="lang-text" data-en="Transverse Lie" data-mm="Transverse Lie">Transverse Lie</option>
+              <option value="Not assessed">Not assessed</option>
             </select>
           </div>
           <div class="col-12 col-fetal-full form-field">
@@ -1504,8 +1635,26 @@
               <option value="Breech" class="lang-text" data-en="Breech" data-mm="တင်ပါးဆုံ">Breech</option>
              
               <option value="Shoulder" class="lang-text" data-en="Shoulder" data-mm="ပုခုံး">Shoulder</option>
+              <option value="Not assessed">Not assessed</option>
               </select>
             </div>
+          <div class="col-12 col-fetal-full form-field" id="secondFetusFields" style="display:none;">
+            <div class="card-subtitle"><i class="fas fa-baby me-2"></i><span class="lang-text" data-en="Second fetus (twins)" data-mm="ဒုတိယသန္ဓေသား (အမွှာ)">Second fetus (twins)</span></div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="secondFetalLie" class="form-label lang-text" data-en="Second fetal position (+36 weeks)" data-mm="ဒုတိယသန္ဓေသား အနေအထား (၃၆ ပတ်နှင့်အထက်)">Second fetal position</label>
+                <select id="secondFetalLie" name="secondFetalLie" class="form-control">
+                  <option value="">Select</option><option value="Occiput Anterior (OA)">Occiput Anterior (OA)</option><option value="Occiput Posterior (OP)">Occiput Posterior (OP)</option><option value="Transverse Lie">Transverse Lie</option><option value="Not assessed">Not assessed</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label for="secondFetalPresentation" class="form-label lang-text" data-en="Second fetal presentation (+36 weeks)" data-mm="ဒုတိယသန္ဓေသား ဦးတိုက်မှု (၃၆ ပတ်နှင့်အထက်)">Second fetal presentation</label>
+                <select id="secondFetalPresentation" name="secondFetalPresentation" class="form-control">
+                  <option value="">Select</option><option value="Cephalic">Cephalic</option><option value="Breech">Breech</option><option value="Shoulder">Shoulder</option><option value="Not assessed">Not assessed</option>
+                </select>
+              </div>
+            </div>
+          </div>
           <div class="col-md-6 form-field">
             <label class="form-label lang-text" data-en="Fetal Movement (>20 Weeks)" data-mm="သန္ဓေသားလှုပ်ရှားမှု ရှိ/မရှိ (ကိုယ်ဝန် ၂၀ ပတ် အထက်တွင် စမ်းသပ်ရန်)">Fetal Movement (>20 Weeks)</label>
             <div class="d-flex flex-wrap gap-3">
@@ -1595,16 +1744,20 @@
                   <label class="form-check-label lang-text" data-en="Placenta previa/Abruption" data-mm="အချင်းရှေ့ရောက်ခြင်း/ အချိန်မတိုင်မီ အချင်းကွာခြင်း">Placenta previa/Abruption</label>
                 </div>
                 <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOtherMedicalConditions" value="Other Medical Conditions">
-                  <label class="form-check-label lang-text" data-en="Other Medical Conditions" data-mm="အခြားကျန်းမာရေးပြဿနာများ">Other Medical Conditions</label>
-                </div>
-                <div class="form-check">
                   <input class="form-check-input" type="checkbox" name="riskFactors" id="riskShortStature" value="Short stature">
                   <label class="form-check-label lang-text" for="riskShortStature" data-en="Short stature" data-mm="အရပ်ပုခြင်း">Short stature</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" name="riskFactors" id="riskPrimigravida" value="Primigravida">
                   <label class="form-check-label lang-text" for="riskPrimigravida" data-en="Primigravida" data-mm="သားဦးကိုယ်ဝန်">Primigravida</label>
+                </div>
+                <div class="mt-2" id="otherMedicalConditionNameGroup" style="display:none;">
+                  <label for="otherMedicalConditionName" class="form-label lang-text" data-en="Other medical condition name *" data-mm="အခြားရောဂါအမည် *">Other medical condition name *</label>
+                  <input type="text" id="otherMedicalConditionName" name="otherMedicalConditionName" class="form-control">
+                </div>
+                <div class="form-check mt-2">
+                  <input class="form-check-input" type="checkbox" name="riskFactors" id="riskOtherMedicalConditions" value="Other Medical Conditions" onchange="toggleOtherMedicalConditionName()">
+                  <label class="form-check-label lang-text" for="riskOtherMedicalConditions" data-en="Other Medical Conditions" data-mm="အခြားကျန်းမာရေးပြဿနာများ">Other Medical Conditions</label>
                 </div>
  
             </div>
@@ -1760,8 +1913,9 @@
           <div class="col-12 form-field">
             <select id="ironFolicAcid" name="ironFolicAcid" class="form-control" data-choice onchange="updateMedicationDetailVisibility()">
               <option value="">Select</option>
-              <option value="Given">Given</option>
-              <option value="Not Given">Not Given</option>
+              <option value="Prescribed">Prescribed</option>
+              <option value="Not Prescribed">Not Prescribed</option>
+              <option value="Already Prescribed">Already Prescribed</option>
             </select>
           </div>
         </div>
@@ -1795,8 +1949,9 @@
           <div class="col-12 form-field">
             <select id="micronutrientsTablet" name="micronutrientsTablet" class="form-control" data-choice onchange="updateMedicationDetailVisibility()">
               <option value="">Select</option>
-              <option value="Given">Given</option>
-              <option value="Not Given">Not Given</option>
+              <option value="Prescribed">Prescribed</option>
+              <option value="Not Prescribed">Not Prescribed</option>
+              <option value="Already Prescribed">Already Prescribed</option>
             </select>
           </div>
         </div>
@@ -1830,8 +1985,9 @@
           <div class="col-12 form-field">
             <select id="vitaminB1" name="vitaminB1" class="form-control" data-choice onchange="updateMedicationDetailVisibility()">
               <option value="">Select</option>
-              <option value="Given">Given</option>
-              <option value="Not Given">Not Given</option>
+              <option value="Prescribed">Prescribed</option>
+              <option value="Not Prescribed">Not Prescribed</option>
+              <option value="Already Prescribed">Already Prescribed</option>
             </select>
           </div>
         </div>
@@ -1865,8 +2021,9 @@
           <div class="col-md-6 form-field">
             <select id="deworming" name="deworming" class="form-control" data-choice>
               <option value="">Select</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
+              <option value="Prescribed">Prescribed</option>
+              <option value="Not Prescribed">Not Prescribed</option>
+              <option value="Already Prescribed">Already Prescribed</option>
             </select>
           </div>
         </div>
@@ -1879,7 +2036,9 @@
               <option value="TD1">TD1</option>
               <option value="TD2">TD2</option>
               <option value="Completed" class="lang-text" data-en="Completed" data-mm="ပြီးမြောက်ပြီ">Completed</option>
-              <option value="Not Given">Not Given</option>
+              <option value="Prescribed">Prescribed</option>
+              <option value="Not Prescribed">Not Prescribed</option>
+              <option value="Already Prescribed">Already Prescribed</option>
               </select>
             </div>
           </div>
@@ -1900,13 +2059,9 @@
         
         <div class="row g-3">
           <div class="col-12 col-md-6">
-            <label for="nextVisitDate" class="form-label lang-text" data-en="Next ANC visit date (auto-calculated)" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက်">Next ANC visit date (auto-calculated)</label>
-            <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control next-visit-readonly" readonly>
-            <div class="form-check mt-2">
-              <input class="form-check-input" type="checkbox" id="nextVisitManualOverride" onchange="toggleNextVisitOverride()">
-              <label class="form-check-label lang-text" for="nextVisitManualOverride" data-en="Adjust next visit date manually" data-mm=" ANC  ပြန်ပြရက်ကို စိတ်ကြိုက်ပြန်လည်ပြင်ဆင်မည်။ ">Adjust next visit date manually</label>
-            </div>
-            <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Based on LMP." data-mm="LMP ပေါ်မှုတည် တွက်ချက်ထားသည်။">Based on LMP.</small>
+            <label for="nextVisitDate" class="form-label lang-text" data-en="Next ANC visit date *" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက် *">Next ANC visit date *</label>
+            <input type="date" id="nextVisitDate" name="nextVisitDate" class="form-control" required>
+            <small id="nextVisitScheduleHint" class="form-hint d-block mt-1 lang-text" data-en="Enter the agreed date manually. This date is authoritative." data-mm="သဘောတူထားသော ပြန်ပြရက်ကို ကိုယ်တိုင်ထည့်ပါ။ ဤရက်ကို အတည်ပြုရက်အဖြစ် အသုံးပြုမည်။">Enter the agreed date manually. This date is authoritative.</small>
           </div>
         </div>
 
@@ -1934,6 +2089,16 @@
         </div>
 
         <div class="row g-3 mt-1">
+          <div class="col-12">
+            <label for="provisionalDiagnosisType" class="form-label lang-text" data-en="Provisional Diagnosis *" data-mm="ယာယီရောဂါသတ်မှတ်ချက် *">Provisional Diagnosis *</label>
+            <select id="provisionalDiagnosisType" name="provisionalDiagnosisType" class="form-control" required onchange="toggleProvisionalDiagnosisOther()">
+              <option value="">Select</option><option value="Routine ANC">Routine ANC</option><option value="Abortion">Abortion</option><option value="Other">Other</option>
+            </select>
+            <div id="provisionalDiagnosisOtherGroup" class="mt-2" style="display:none;">
+              <label for="provisionalDiagnosisOther" class="form-label lang-text" data-en="Specify other diagnosis *" data-mm="အခြားရောဂါသတ်မှတ်ချက် ဖော်ပြပါ *">Specify other diagnosis *</label>
+              <input type="text" id="provisionalDiagnosisOther" name="provisionalDiagnosisOther" class="form-control">
+            </div>
+          </div>
           <div class="col-12 col-md-4 col-sm-6">
             <label for="initial" class="form-label lang-text" data-en="Initial" data-mm="အမည်အတိုကောက်">Initial</label>
             <input type="text" id="initial" name="initial" class="form-control" placeholder="Initials">
@@ -2087,6 +2252,7 @@
           clearFormFields();
           setToday('visitDate');
           applyPatientPregnancyDating(currentPatient);
+          await loadCarryForwardFromOfflineQueue();
           updateAncVisitSchedule();
           return;
         }
@@ -2178,6 +2344,10 @@
       setValue('visitNumber', data.visitNumber);
       setValue('visitDate', data.visitDate);
       setValue('chiefComplaint', data.chiefComplaint);
+      setValue('goiterStatus', data.goiterStatus);
+      setValue('lastPregnancyOutcome', data.lastPregnancyOutcome);
+      setValue('lastPregnancyDate', data.lastPregnancyDate);
+      setValue('cleanDeliveryKitDate', data.cleanDeliveryKitDate);
       setValue('lmp', data.lmp);
       setValue('edd', data.edd);
       setValue('manualGestationalAge', data.manualGestationalAge);
@@ -2206,16 +2376,18 @@
       setValue('fundalHeight', data.fundalHeight);
       setValue('fetalLie', normalizeFetalPositionValue(data.fetalLie));
       setValue('fetalPresentation', normalizeFetalPresentationValue(data.fetalPresentation));
+      setValue('secondFetalLie', normalizeFetalPositionValue(data.secondFetalLie));
+      setValue('secondFetalPresentation', normalizeFetalPresentationValue(data.secondFetalPresentation));
       setValue('fetalHeartRate', data.fetalHeartRate);
-      setValue('deworming', data.deworming);
-      setValue('ironFolicAcid', data.ironFolicAcid);
+      setValue('deworming', normalizeMedicationStatus(data.deworming));
+      setValue('ironFolicAcid', normalizeMedicationStatus(data.ironFolicAcid));
       setValue('ironFolicAcidFrequency', data.ironFolicAcidFrequency);
       setValue('ironFolicAcidTotalTablets', data.ironFolicAcidTotalTablets);
-      setValue('tetanusToxoid', data.tetanusToxoid);
-      setValue('vitaminB1', data.vitaminB1);
+      setValue('tetanusToxoid', normalizeMedicationStatus(data.tetanusToxoid));
+      setValue('vitaminB1', normalizeMedicationStatus(data.vitaminB1));
       setValue('vitaminB1Frequency', data.vitaminB1Frequency);
       setValue('vitaminB1TotalTablets', data.vitaminB1TotalTablets);
-      setValue('micronutrientsTablet', data.micronutrientsTablet);
+      setValue('micronutrientsTablet', normalizeMedicationStatus(data.micronutrientsTablet));
       setValue('micronutrientsFrequency', data.micronutrientsFrequency);
       setValue('micronutrientsTotalTablets', data.micronutrientsTotalTablets);
       setValue('nextVisitDate', data.nextVisitDate);
@@ -2224,6 +2396,10 @@
       setValue('riskNotes', data.risk_notes);
       setValue('otherMedications', data.otherMedications);
       setValue('initial', data.initial);
+      setValue('provisionalDiagnosisType', data.provisionalDiagnosisType || data.provisionalDiagnosis);
+      setValue('provisionalDiagnosisOther', data.provisionalDiagnosisOther);
+      setValue('otherMedicalConditionName', data.otherMedicalConditionName);
+      applyPreviousObstetricHistory(data.previousObstetricHistory || []);
       applyOtherVisitsToUi(data.otherVisits || []);
 
       if (data.lmpStatus) {
@@ -2260,6 +2436,11 @@
       toggleHighRiskDetails();
       toggleGBVDetails();
       toggleCoinfectionNotes();
+      toggleOtherMedicalConditionName();
+      toggleProvisionalDiagnosisOther();
+      updateTwinFields();
+      updateFetalRiskStyles();
+      updateSectionCompletion();
       calculateBMI();
       calculateGestationalAgeAndEDD();
       updateMedicationDetailVisibility();
@@ -2371,6 +2552,51 @@
       updateAncVisitSchedule();
     }
 
+    async function loadCarryForwardFromOfflineQueue() {
+      if (!window.OfflineManager || !OfflineManager.getPendingRecords || !patientId) return;
+      try {
+        const records = await OfflineManager.getPendingRecords('pending_anc_visits');
+        const visits = (records || []).map(function (record) {
+          return record && record.data !== undefined ? record.data : record;
+        }).filter(function (visit) {
+          return visit && (visit.patientId || visit.patient_id) === patientId;
+        }).sort(function (a, b) {
+          return (parseInt(a.visitNumber || a.visit_number, 10) || 0) -
+            (parseInt(b.visitNumber || b.visit_number, 10) || 0);
+        });
+        if (!visits.length) return;
+        const previousVisit = visits[visits.length - 1];
+        const setValue = function (id, value) {
+          const el = document.getElementById(id);
+          if (el && value !== undefined && value !== null) el.value = value;
+        };
+        ['goiterStatus', 'lastPregnancyOutcome', 'lastPregnancyDate', 'cleanDeliveryKitDate',
+         'pastHistoryNotes', 'otherMedicalConditionName', 'otherMedications'].forEach(function (id) {
+          setValue(id, previousVisit[id]);
+        });
+        applyPreviousObstetricHistory(previousVisit.previousObstetricHistory || []);
+        ['ironFolicAcid', 'micronutrientsTablet', 'vitaminB1', 'deworming'].forEach(function (id) {
+          setValue(id, normalizeMedicationStatus(previousVisit[id]));
+        });
+        setValue('tetanusToxoid', normalizeMedicationStatus(previousVisit.tetanusToxoid || previousVisit.td));
+        setValue('ironFolicAcidFrequency', previousVisit.ironFolicAcidFrequency);
+        setValue('ironFolicAcidTotalTablets', previousVisit.ironFolicAcidTotalTablets);
+        setValue('micronutrientsFrequency', previousVisit.micronutrientsFrequency);
+        setValue('micronutrientsTotalTablets', previousVisit.micronutrientsTotalTablets);
+        setValue('vitaminB1Frequency', previousVisit.vitaminB1Frequency);
+        setValue('vitaminB1TotalTablets', previousVisit.vitaminB1TotalTablets);
+        if (previousVisit.pastHistoryStatus) {
+          const radio = document.querySelector('input[name="pastHistoryStatus"][value="' + previousVisit.pastHistoryStatus + '"]');
+          if (radio) radio.checked = true;
+        }
+        togglePastHistoryNotes();
+        updateMedicationDetailVisibility();
+        updateSectionCompletion();
+      } catch (error) {
+        console.warn('Could not carry ANC history from offline queue:', error);
+      }
+    }
+
     function applyHighRiskAssessmentFromVisit(visitData) {
       if (!visitData) return;
 
@@ -2395,6 +2621,10 @@
       if (riskNotesEl) {
         riskNotesEl.value = visitData.risk_notes || '';
       }
+      const otherName = document.getElementById('otherMedicalConditionName');
+      if (otherName) otherName.value = visitData.otherMedicalConditionName || '';
+      toggleOtherMedicalConditionName();
+      updateTwinFields();
     }
 
     async function loadHighRiskFromPreviousVisit() {
@@ -2637,7 +2867,12 @@
         console.log('Found visits:', visitsSnapshot.size);
         console.log('Visit documents:', visitsSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
         
-        visitCount = visitsSnapshot.size + 1;
+        const persisted = visitsSnapshot.docs.map(function (doc) { return doc.data() || {}; });
+        visitCount = window.AncWorkflowUtils
+          ? AncWorkflowUtils.nextVisitNumber(persisted)
+          : (Math.max(0, ...persisted.map(function (visit) {
+              return parseInt(visit.visitNumber || visit.visit_number, 10) || 0;
+            })) + 1);
         console.log('Calculated visit count:', visitCount);
       } catch (error) {
         console.error('Error loading visit count:', error);
@@ -2882,12 +3117,32 @@
         if (previousVisit.pastHistoryNotes) {
           setValue('pastHistoryNotes', previousVisit.pastHistoryNotes);
         }
+        ['goiterStatus', 'lastPregnancyOutcome', 'lastPregnancyDate', 'cleanDeliveryKitDate',
+         'otherMedicalConditionName', 'otherMedications'].forEach(function (id) {
+          if (previousVisit[id] !== undefined) setValue(id, previousVisit[id]);
+        });
+        applyPreviousObstetricHistory(previousVisit.previousObstetricHistory || []);
+        ['ironFolicAcid', 'micronutrientsTablet', 'vitaminB1', 'deworming'].forEach(function (id) {
+          if (previousVisit[id]) setValue(id, normalizeMedicationStatus(previousVisit[id]));
+        });
+        if (previousVisit.tetanusToxoid || previousVisit.td) {
+          setValue('tetanusToxoid', normalizeMedicationStatus(previousVisit.tetanusToxoid || previousVisit.td));
+        }
+        setValue('ironFolicAcidFrequency', previousVisit.ironFolicAcidFrequency);
+        setValue('ironFolicAcidTotalTablets', previousVisit.ironFolicAcidTotalTablets);
+        setValue('micronutrientsFrequency', previousVisit.micronutrientsFrequency);
+        setValue('micronutrientsTotalTablets', previousVisit.micronutrientsTotalTablets);
+        setValue('vitaminB1Frequency', previousVisit.vitaminB1Frequency);
+        setValue('vitaminB1TotalTablets', previousVisit.vitaminB1TotalTablets);
         if (!isEditMode && Array.isArray(previousVisit.otherVisits)) {
           applyOtherVisitsToUi(previousVisit.otherVisits);
         }
         
         console.log('History Taking fields loaded from previous visit');
         calculateGestationalAgeAndEDD();
+        updateMedicationDetailVisibility();
+        toggleOtherMedicalConditionName();
+        updateSectionCompletion();
         
       } catch (error) {
         console.error('Error loading History Taking from previous visit:', error);
@@ -2920,7 +3175,7 @@
         if (tdValue) {
           const tdSelect = document.getElementById('tetanusToxoid');
           if (tdSelect) {
-            tdSelect.value = tdValue;
+            tdSelect.value = normalizeMedicationStatus(tdValue);
             console.log('TD loaded from previous visit:', tdValue);
           }
         }
@@ -2980,11 +3235,11 @@
           }
           setValue('fundalHeight', latestVisit.fundalHeight);
           setValue('fetalHeartRate', latestVisit.fetalHeartRate);
-          setValue('deworming', latestVisit.deworming);
-          setValue('ironFolicAcid', latestVisit.ironFolicAcid);
-          setValue('tetanusToxoid', latestVisit.tetanusToxoid);
-          setValue('vitaminB1', latestVisit.vitaminB1);
-          setValue('micronutrientsTablet', latestVisit.micronutrientsTablet);
+          setValue('deworming', normalizeMedicationStatus(latestVisit.deworming));
+          setValue('ironFolicAcid', normalizeMedicationStatus(latestVisit.ironFolicAcid));
+          setValue('tetanusToxoid', normalizeMedicationStatus(latestVisit.tetanusToxoid));
+          setValue('vitaminB1', normalizeMedicationStatus(latestVisit.vitaminB1));
+          setValue('micronutrientsTablet', normalizeMedicationStatus(latestVisit.micronutrientsTablet));
           setValue('ironFolicAcidFrequency', latestVisit.ironFolicAcidFrequency);
           setValue('ironFolicAcidTotalTablets', latestVisit.ironFolicAcidTotalTablets);
           setValue('micronutrientsFrequency', latestVisit.micronutrientsFrequency);
@@ -3311,16 +3566,9 @@
 
     function toggleNextVisitOverride() {
       const input = document.getElementById('nextVisitDate');
-      const override = document.getElementById('nextVisitManualOverride');
-      if (!input || !override) return;
-      if (override.checked) {
-        input.removeAttribute('readonly');
-        input.classList.remove('next-visit-readonly');
-      } else {
-        input.setAttribute('readonly', 'readonly');
-        input.classList.add('next-visit-readonly');
-        updateAncVisitSchedule();
-      }
+      if (!input) return;
+      input.removeAttribute('readonly');
+      input.classList.remove('next-visit-readonly');
     }
 
     function updateAncVisitSchedule() {
@@ -3328,7 +3576,6 @@
       const body = document.getElementById('ancScheduleBody');
       const nextInput = document.getElementById('nextVisitDate');
       const hint = document.getElementById('nextVisitScheduleHint');
-      const manualOverride = document.getElementById('nextVisitManualOverride');
       if (!panel || !body || !nextInput) return;
 
       const lmpStr = getEffectiveLmpForSchedule();
@@ -3337,7 +3584,6 @@
 
       if (!lmpStr) {
         panel.style.display = 'none';
-        if (!manualOverride?.checked) nextInput.value = '';
         if (hint) {
           hint.textContent = currentLanguage === 'en'
             ? 'Enter LMP (or gestational age if LMP unknown) to calculate the 8-visit schedule.'
@@ -3357,10 +3603,6 @@
       }).join('');
 
       const recommendedNext = nextVisitNum <= 8 ? getRecommendedDateForVisitNumber(lmpStr, nextVisitNum) : null;
-      if (!manualOverride?.checked) {
-        nextInput.value = recommendedNext || '';
-      }
-
       if (hint) {
         if (currentVisit >= 8) {
           hint.textContent = currentLanguage === 'en'
@@ -3368,8 +3610,8 @@
             : 'အကြံပြု ANC ၈-ကြိမ် ပြည့်ပါပြီ။ EDD / မွေးဖွားရေး အစီအစဉ် လုပ်ဆောင်ပါ။';
         } else if (recommendedNext) {
           hint.textContent = currentLanguage === 'en'
-            ? ('Visit ' + nextVisitNum + ' recommended on ' + formatDisplayDate(recommendedNext) + '.')
-            : (nextVisitNum + ' အကြိမ် ANC — ' + formatDisplayDate(recommendedNext) + ' တွင် အကြံပြုထားသည်။');
+            ? ('Recommended: ' + formatDisplayDate(recommendedNext) + '. Enter the agreed date manually; your entry is authoritative.')
+            : ('အကြံပြုရက်: ' + formatDisplayDate(recommendedNext) + '။ သဘောတူထားသောရက်ကို ကိုယ်တိုင်ထည့်ပါ။');
         }
       }
     }
@@ -3685,9 +3927,10 @@
         const lmpDate = parseDateOnlyLocal(lmpInput.value);
         if (!lmpDate || isNaN(lmpDate.getTime())) return;
 
-        // EDD: LMP + 280 days (Naegel)
-        const eddDate = new Date(lmpDate.getTime() + 280 * 86400000);
-        eddInput.value = formatDateYMD(eddDate);
+        // Naegele: LMP + 7 days + 9 calendar months.
+        eddInput.value = window.AncWorkflowUtils
+          ? AncWorkflowUtils.calculateNaegeleEdd(lmpInput.value)
+          : formatDateYMD(addCalendarMonthsLocal(addDaysLocal(lmpDate, 7), 9));
 
         calculateGestationalAgeFromLMP(lmpInput.value);
       }
@@ -3836,6 +4079,107 @@
       return value || '';
     }
 
+    function normalizeMedicationStatus(value) {
+      return window.AncWorkflowUtils ? AncWorkflowUtils.normalizeMedicationStatus(value) : value;
+    }
+
+    function addPreviousObstetricRow(data) {
+      const rows = document.getElementById('previousObstetricRows');
+      if (!rows) return;
+      const item = data || {};
+      const row = document.createElement('div');
+      row.className = 'previous-obstetric-row';
+      row.innerHTML =
+        '<div class="row g-2">' +
+          '<div class="col-md-3"><label class="form-label">Year</label><input type="number" class="form-control obstetric-year" min="1900" max="2100" value="' + escapeAttribute(item.year) + '"></div>' +
+          '<div class="col-md-4"><label class="form-label">Outcome</label><select class="form-control obstetric-outcome"><option value="">Select</option><option>Live birth</option><option>Stillbirth</option><option>Abortion</option><option>Other</option><option>Unknown</option></select></div>' +
+          '<div class="col-md-4"><label class="form-label">Complications / notes</label><input type="text" class="form-control obstetric-notes" value="' + escapeAttribute(item.notes) + '"></div>' +
+          '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-outline-danger w-100" aria-label="Remove previous pregnancy"><i class="fas fa-trash"></i></button></div>' +
+        '</div>';
+      rows.appendChild(row);
+      row.querySelector('.obstetric-outcome').value = item.outcome || '';
+      row.querySelector('button').addEventListener('click', function () {
+        row.remove();
+        updateSectionCompletion();
+      });
+      row.querySelectorAll('input,select').forEach(function (el) {
+        el.addEventListener('input', updateSectionCompletion);
+        el.addEventListener('change', updateSectionCompletion);
+      });
+    }
+
+    function escapeAttribute(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    function collectPreviousObstetricHistory() {
+      return Array.from(document.querySelectorAll('.previous-obstetric-row')).map(function (row) {
+        return {
+          year: row.querySelector('.obstetric-year')?.value || '',
+          outcome: row.querySelector('.obstetric-outcome')?.value || '',
+          notes: row.querySelector('.obstetric-notes')?.value.trim() || ''
+        };
+      }).filter(function (item) { return item.year || item.outcome || item.notes; });
+    }
+
+    function applyPreviousObstetricHistory(items) {
+      const rows = document.getElementById('previousObstetricRows');
+      if (!rows) return;
+      rows.innerHTML = '';
+      (Array.isArray(items) ? items : []).forEach(addPreviousObstetricRow);
+    }
+
+    function toggleOtherMedicalConditionName() {
+      const checked = !!document.getElementById('riskOtherMedicalConditions')?.checked;
+      const group = document.getElementById('otherMedicalConditionNameGroup');
+      const input = document.getElementById('otherMedicalConditionName');
+      if (group) group.style.display = checked ? '' : 'none';
+      if (input) {
+        input.required = checked;
+        input.setAttribute('aria-required', checked ? 'true' : 'false');
+        if (!checked) input.value = '';
+      }
+      updateSectionCompletion();
+    }
+
+    function toggleProvisionalDiagnosisOther() {
+      const isOther = document.getElementById('provisionalDiagnosisType')?.value === 'Other';
+      const group = document.getElementById('provisionalDiagnosisOtherGroup');
+      const input = document.getElementById('provisionalDiagnosisOther');
+      if (group) group.style.display = isOther ? '' : 'none';
+      if (input) {
+        input.required = isOther;
+        input.setAttribute('aria-required', isOther ? 'true' : 'false');
+        if (!isOther) input.value = '';
+      }
+      updateSectionCompletion();
+    }
+
+    function updateTwinFields() {
+      const twins = !!document.getElementById('riskTwinsPregnancy')?.checked;
+      const group = document.getElementById('secondFetusFields');
+      if (group) group.style.display = twins ? '' : 'none';
+      ['secondFetalLie', 'secondFetalPresentation'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.required = twins;
+          el.setAttribute('aria-required', twins ? 'true' : 'false');
+          if (!twins) el.value = '';
+        }
+      });
+      updateFetalRiskStyles();
+      updateSectionCompletion();
+    }
+
+    function updateFetalRiskStyles() {
+      ['fetalLie', 'secondFetalLie', 'fetalPresentation', 'secondFetalPresentation'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('field-risk-red', /Posterior|Transverse|Breech|Shoulder/.test(el.value || ''));
+      });
+    }
+
     // Toggle high risk details
     function toggleHighRiskDetails() {
       const highRisk = document.querySelector('input[name="highRisk"]:checked');
@@ -3903,16 +4247,135 @@
 
     function updateMedicationDetailVisibility() {
       const rules = [
-        { selectId: 'ironFolicAcid', detailsId: 'ironFolicAcidDetails', showWhen: 'Given' },
-        { selectId: 'micronutrientsTablet', detailsId: 'micronutrientsTabletDetails', showWhen: 'Given' },
-        { selectId: 'vitaminB1', detailsId: 'vitaminB1Details', showWhen: 'Given' }
+        { selectId: 'ironFolicAcid', detailsId: 'ironFolicAcidDetails' },
+        { selectId: 'micronutrientsTablet', detailsId: 'micronutrientsTabletDetails' },
+        { selectId: 'vitaminB1', detailsId: 'vitaminB1Details' }
       ];
       rules.forEach(function (rule) {
         const select = document.getElementById(rule.selectId);
         const details = document.getElementById(rule.detailsId);
         if (!select || !details) return;
-        details.style.display = select.value === rule.showWhen ? '' : 'none';
+        const prescribed = window.AncWorkflowUtils
+          ? AncWorkflowUtils.isMedicationPrescribed(select.value)
+          : (select.value === 'Prescribed' || select.value === 'Given');
+        details.style.display = prescribed ? '' : 'none';
       });
+      updateSectionCompletion();
+    }
+
+    function currentGestationalWeeks() {
+      const manual = parseFloat(document.getElementById('manualGestationalAge')?.value);
+      if (!isNaN(manual)) return manual;
+      const lmp = document.getElementById('lmp')?.value;
+      const visit = document.getElementById('visitDate')?.value;
+      return lmp && visit ? gestationalAgeDecimalFromLMPAndVisit(lmp, visit) : null;
+    }
+
+    function applyApplicableRequirements() {
+      ['weight', 'systolicBP', 'diastolicBP', 'pulseRate', 'temperature',
+       'anemiaStatus', 'pittingEdema', 'tbSymptoms', 'ironFolicAcid',
+       'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid',
+       'provisionalDiagnosisType', 'nextVisitDate'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.required = true;
+      });
+      const weeks = currentGestationalWeeks();
+      const fetal20 = weeks != null && weeks >= 20;
+      const fetal36 = weeks != null && weeks >= 36;
+      ['fundalHeight', 'fetalHeartRate'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.required = fetal20;
+      });
+      ['fetalLie', 'fetalPresentation'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.required = fetal36;
+      });
+      document.querySelectorAll('input[name="fetalMovement"]').forEach(function (el) {
+        el.required = fetal20;
+      });
+      updateTwinFields();
+      toggleOtherMedicalConditionName();
+      toggleProvisionalDiagnosisOther();
+    }
+
+    function initializeSectionAccordions() {
+      document.querySelectorAll('.form-section').forEach(function (section, index) {
+        const heading = section.querySelector(':scope > .section-title');
+        if (!heading || heading.dataset.accordionReady) return;
+        heading.dataset.accordionReady = 'true';
+        const body = document.createElement('div');
+        const bodyId = 'ancSectionBody' + index;
+        body.id = bodyId;
+        body.className = 'section-body';
+        while (heading.nextSibling) body.appendChild(heading.nextSibling);
+        section.appendChild(body);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'section-toggle';
+        button.setAttribute('aria-controls', bodyId);
+        button.setAttribute('aria-expanded', index === 0 ? 'true' : 'false');
+        while (heading.firstChild) button.appendChild(heading.firstChild);
+        const progress = document.createElement('span');
+        progress.className = 'section-progress';
+        progress.textContent = '0%';
+        const chevron = document.createElement('i');
+        chevron.className = 'fas fa-chevron-down section-chevron';
+        chevron.setAttribute('aria-hidden', 'true');
+        button.appendChild(progress);
+        button.appendChild(chevron);
+        heading.appendChild(button);
+        body.hidden = index !== 0;
+        button.addEventListener('click', function () {
+          const expanded = button.getAttribute('aria-expanded') === 'true';
+          button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+          body.hidden = expanded;
+        });
+      });
+    }
+
+    function updateSectionCompletion() {
+      applyApplicableRequirements._active = true;
+      document.querySelectorAll('.form-section').forEach(function (section) {
+        const fields = Array.from(section.querySelectorAll('input:required,select:required,textarea:required'))
+          .filter(function (el) { return !el.disabled && el.type !== 'hidden'; });
+        const uniqueRadioNames = new Set();
+        let total = 0;
+        let complete = 0;
+        fields.forEach(function (el) {
+          if (el.type === 'radio') {
+            if (uniqueRadioNames.has(el.name)) return;
+            uniqueRadioNames.add(el.name);
+            total++;
+            if (section.querySelector('input[name="' + el.name + '"]:checked')) complete++;
+          } else {
+            total++;
+            if (String(el.value || '').trim() && el.checkValidity()) complete++;
+          }
+        });
+        const percent = total ? Math.round((complete / total) * 100) : 100;
+        const label = section.querySelector('.section-progress');
+        if (label) label.textContent = percent + '%';
+        section.classList.toggle('has-errors', total > complete);
+      });
+    }
+
+    function showValidationSummary(firstInvalid) {
+      const summary = document.getElementById('formValidationSummary');
+      if (!summary) return;
+      summary.style.display = 'block';
+      summary.textContent = currentLanguage === 'mm'
+        ? 'မဖြစ်မနေဖြည့်ရမည့် အချက်များကို ပြည့်စုံစွာ ဖြည့်ပါ။'
+        : 'Complete all applicable required fields before saving.';
+      const section = firstInvalid?.closest('.form-section');
+      if (section) {
+        const button = section.querySelector('.section-toggle');
+        const body = section.querySelector('.section-body');
+        if (button && body) {
+          button.setAttribute('aria-expanded', 'true');
+          body.hidden = false;
+        }
+      }
     }
 
     function toggleInfo(infoId) {
@@ -3924,6 +4387,21 @@
     
     // Initialize high risk toggle on page load
     document.addEventListener('DOMContentLoaded', function() {
+      initializeSectionAccordions();
+      applyApplicableRequirements();
+      document.getElementById('ancForm')?.addEventListener('input', updateSectionCompletion);
+      document.getElementById('ancForm')?.addEventListener('change', function () {
+        applyApplicableRequirements();
+        updateFetalRiskStyles();
+        updateSectionCompletion();
+      });
+      document.getElementById('ancForm')?.addEventListener('invalid', function (event) {
+        showValidationSummary(event.target);
+      }, true);
+      document.getElementById('riskTwinsPregnancy')?.addEventListener('change', updateTwinFields);
+      ['fetalLie', 'fetalPresentation', 'secondFetalLie', 'secondFetalPresentation'].forEach(function (id) {
+        document.getElementById(id)?.addEventListener('change', updateFetalRiskStyles);
+      });
       refreshLmpEddLongDisplays();
       // Add event listeners to high risk radios
       document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
@@ -3969,6 +4447,11 @@
       toggleCoinfectionNotes();
       toggleDangerSignsDetails();
       toggleGBVDetails();
+      toggleOtherMedicalConditionName();
+      toggleProvisionalDiagnosisOther();
+      updateTwinFields();
+      updateFetalRiskStyles();
+      updateSectionCompletion();
 
       // Initialize alert texts with red highlights
       const currentLang = localStorage.getItem('appLanguage') || 'mm';
@@ -4072,6 +4555,16 @@
         const currentVisitNumber = parseInt(getValue('visitNumber'), 10) || visitCount || 1;
         const lmpStatusForSave = document.querySelector('input[name="lmpStatus"]:checked')?.value || 'known';
         const langMm = (typeof currentLanguage !== 'undefined' ? currentLanguage : localStorage.getItem('appLanguage')) === 'mm';
+        applyApplicableRequirements();
+        if (!event.currentTarget.checkValidity()) {
+          const firstInvalid = event.currentTarget.querySelector(':invalid');
+          showValidationSummary(firstInvalid);
+          if (firstInvalid) {
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalid.focus();
+          }
+          return;
+        }
 
         if (!validateHighRiskFactors()) {
           alert(langMm
@@ -4275,6 +4768,8 @@
           })(),
           fundalHeight: getNumber('fundalHeight'),
           fetalPresentation: getValue('fetalPresentation'),
+          secondFetalLie: getValue('secondFetalLie') || null,
+          secondFetalPresentation: getValue('secondFetalPresentation') || null,
           fetalHeartRate: getInt('fetalHeartRate'),
           deworming: getValue('deworming'),
           tbSymptoms: getValue('tbSymptoms'),
@@ -4286,15 +4781,15 @@
           
           // Second table data
           ironFolicAcid: getValue('ironFolicAcid'),
-          ironFolicAcidFrequency: getValue('ironFolicAcid') === 'Given' ? (getValue('ironFolicAcidFrequency') || null) : null,
-          ironFolicAcidTotalTablets: getValue('ironFolicAcid') === 'Given' ? getMedicationTotalTablets('ironFolicAcidTotalTablets') : null,
+          ironFolicAcidFrequency: AncWorkflowUtils.isMedicationPrescribed(getValue('ironFolicAcid')) ? (getValue('ironFolicAcidFrequency') || null) : null,
+          ironFolicAcidTotalTablets: AncWorkflowUtils.isMedicationPrescribed(getValue('ironFolicAcid')) ? getMedicationTotalTablets('ironFolicAcidTotalTablets') : null,
           tetanusToxoid: getValue('tetanusToxoid'),
           vitaminB1: getValue('vitaminB1'),
-          vitaminB1Frequency: getValue('vitaminB1') === 'Given' ? (getValue('vitaminB1Frequency') || null) : null,
-          vitaminB1TotalTablets: getValue('vitaminB1') === 'Given' ? getMedicationTotalTablets('vitaminB1TotalTablets') : null,
+          vitaminB1Frequency: AncWorkflowUtils.isMedicationPrescribed(getValue('vitaminB1')) ? (getValue('vitaminB1Frequency') || null) : null,
+          vitaminB1TotalTablets: AncWorkflowUtils.isMedicationPrescribed(getValue('vitaminB1')) ? getMedicationTotalTablets('vitaminB1TotalTablets') : null,
           micronutrientsTablet: getValue('micronutrientsTablet'),
-          micronutrientsFrequency: getValue('micronutrientsTablet') === 'Given' ? (getValue('micronutrientsFrequency') || null) : null,
-          micronutrientsTotalTablets: getValue('micronutrientsTablet') === 'Given' ? getMedicationTotalTablets('micronutrientsTotalTablets') : null,
+          micronutrientsFrequency: AncWorkflowUtils.isMedicationPrescribed(getValue('micronutrientsTablet')) ? (getValue('micronutrientsFrequency') || null) : null,
+          micronutrientsTotalTablets: AncWorkflowUtils.isMedicationPrescribed(getValue('micronutrientsTablet')) ? getMedicationTotalTablets('micronutrientsTotalTablets') : null,
           nextVisitDate: getValue('nextVisitDate') || null,
           
           // Danger signs - determine if any are present
@@ -4360,6 +4855,11 @@
             return checked ? checked.value : 'nad';
           })(),
           pastHistoryNotes: getValue('pastHistoryNotes'),
+          goiterStatus: getValue('goiterStatus'),
+          lastPregnancyOutcome: getValue('lastPregnancyOutcome'),
+          lastPregnancyDate: getValue('lastPregnancyDate') || null,
+          previousObstetricHistory: collectPreviousObstetricHistory(),
+          cleanDeliveryKitDate: getValue('cleanDeliveryKitDate') || null,
           
           // High risk pregnancy assessment
           high_risk: (() => {
@@ -4370,6 +4870,7 @@
             ? Array.from(document.querySelectorAll('input[name="riskFactors"]:checked')).map(cb => cb.value)
             : [],
           risk_notes: getValue('riskNotes') || null,
+          otherMedicalConditionName: getValue('otherMedicalConditionName') || null,
           
           // Additional fields
           temperature: getValue('temperature'),
@@ -4389,6 +4890,8 @@
             return checked ? checked.value : '';
           })(),
           otherMedications: getValue('otherMedications'),
+          provisionalDiagnosisType: getValue('provisionalDiagnosisType'),
+          provisionalDiagnosisOther: getValue('provisionalDiagnosisOther') || null,
           
           patientId: patientId,
           recordedBy: currentUser?.uid || '',
@@ -4435,6 +4938,7 @@
           } else {
             alert('ANC visit updated.');
           }
+          if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(patientId, 'anc_edit');
           window.location.href = 'antenatal-care.html';
           return;
         }
@@ -4512,6 +5016,7 @@
         if (patientId) {
           sessionStorage.setItem('selectedPatientId', patientId);
         }
+        if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(patientId, 'anc_visit');
         window.location.href = 'antenatal-care.html';
 
       } catch (error) {
@@ -4548,6 +5053,10 @@
       // Clear all input fields (visitNumber will be updated with new count after clearing)
       clearField('otherVisitCount');
       clearField('chiefComplaint');
+      clearField('goiterStatus');
+      clearField('lastPregnancyOutcome');
+      clearField('lastPregnancyDate');
+      clearField('cleanDeliveryKitDate');
       clearField('lmp');
       clearField('edd');
       clearField('manualGestationalAge');
@@ -4570,6 +5079,8 @@
       clearField('fundalHeight');
       clearField('fetalLie');
       clearField('fetalPresentation');
+      clearField('secondFetalLie');
+      clearField('secondFetalPresentation');
       clearField('fetalHeartRate');
       clearField('ironFolicAcid');
       clearField('ironFolicAcidFrequency');
@@ -4589,8 +5100,12 @@
       clearField('pastHistoryNotes');
       clearField('riskNotes');
       clearField('otherMedications');
+      clearField('otherMedicalConditionName');
+      clearField('provisionalDiagnosisType');
+      clearField('provisionalDiagnosisOther');
       clearField('initial');
       applyOtherVisitsToUi([]);
+      applyPreviousObstetricHistory([]);
 
       // Reset select dropdowns to default (first option)
       const selects = document.querySelectorAll('select');
@@ -4649,10 +5164,12 @@
       updateEarlyAncDisplay();
       updateClinicalAlerts();
       evaluateVitalAlerts();
-      const override = document.getElementById('nextVisitManualOverride');
-      if (override) override.checked = false;
       toggleNextVisitOverride();
       updateAncVisitSchedule();
+      toggleOtherMedicalConditionName();
+      toggleProvisionalDiagnosisOther();
+      updateTwinFields();
+      updateSectionCompletion();
 
       console.log('Form fields cleared successfully');
     }

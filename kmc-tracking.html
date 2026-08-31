@@ -14,6 +14,10 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/township-region.js"></script>
+  <script src="js/facility-config.js"></script>
+  <script src="js/tracking-reader.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/kmc-utils.js"></script>
@@ -446,6 +450,11 @@
     var _kmcPracticed = '';
     var _completePatientId = null;
     var _completeRow = null;
+    var _kmcRoleLevel = 'provider';
+    var _kmcFilters = null;
+    var _kmcNextPageToken = null;
+    var _kmcLoadingPage = false;
+    var _kmcPageError = '';
 
     var I18N = {
       en: {
@@ -645,10 +654,21 @@
     }
 
     function isCompleted(row) {
+      if (row && row._projection) return row.status === 'complete';
       return window.KmcUtils && KmcUtils.rowIsCompleted(row);
     }
 
     function rowTrackingStatus(row) {
+      if (row && row._projection) {
+        var labels = {
+          on_track: ['Active KMC', 'ရက်ချိန်းမှန်သော KMC'],
+          overdue_followup: ['Overdue', 'ရက်ချိန်းလွန်သော KMC'],
+          lost_to_followup: ['Defaulted/Lost', 'အဆက်အသွယ်မရသော KMC'],
+          complete: ['Complete', 'ပြီးမြောက်']
+        };
+        var value = labels[row.status] || labels.on_track;
+        return { key: row.status || 'on_track', labelEn: value[0], labelMm: value[1] };
+      }
       return KmcUtils.rowTrackingStatus(row);
     }
 
@@ -656,6 +676,15 @@
       var label = lang === 'mm' ? status.labelMm : status.labelEn;
       return '<span class="hrt-outcome-badge hrt-outcome-' + status.key + '"><i class="fas fa-circle"></i>' +
         escapeHtml(label) + '</span>';
+    }
+
+    function completionSourceHtml(row) {
+      if (!row || !isCompleted(row)) return '';
+      var source = row.derivedCompletion
+        ? 'Automatically completed: 2 calendar months after birth'
+        : (row.completionSource === 'clinical_action' ? 'Completed from clinical action' : 'Completed');
+      return '<span class="tracking-source">' + escapeHtml(source) +
+        (row.outcome ? ' · ' + escapeHtml(String(row.outcome).replace(/_/g, ' ')) : '') + '</span>';
     }
 
     function rowKey(row) {
@@ -916,7 +945,9 @@
       var row = (window._kmcRows || []).find(function (r) { return rowKey(r) === key; });
       if (!row) return;
       var status = rowTrackingStatus(row);
-      var daysLate = KmcUtils.getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
+      var daysLate = row._projection
+        ? row.daysLate
+        : KmcUtils.getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
       var overdueText = lang === 'mm' ? 'ရက်ချိန်းမလွန်သေးပါ' : 'Not overdue';
       if (daysLate != null && daysLate >= 0) {
         overdueText = daysLate > 14
@@ -1149,6 +1180,8 @@
         var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex, isTwins));
         var motherName = escapeHtml(getKmcClientName(p));
         var phone = phoneCellHtml(p);
+        var facility = window.TrackingReader ? TrackingReader.facilityName(r.facilityCode) : (r.facilityCode || '—');
+        var infections = window.TrackingReader ? TrackingReader.infectionHtml(r.infectionFlags || p.infectionFlags) : '';
         var ageDays = r.ageDays != null ? r.ageDays : null;
         var ageHtml = ageDays != null
           ? '<span class="kmc-age-pill">' + ageDays + escapeHtml(tr('days')) + '</span>'
@@ -1157,12 +1190,13 @@
         var trEl = document.createElement('tr');
         trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "'," + (parseInt(r.babyIndex, 10) || 1) + ")");
         trEl.innerHTML =
-          '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + motherName + (motherName ? ' · ' : '') + phone + '</div></td>' +
+          '<td><div class="hrt-patient-main">' + babyName + '</div><div class="hrt-patient-meta">' + motherName + (motherName ? ' · ' : '') + phone +
+            '<br>' + escapeHtml(facility) + infections + '</div></td>' +
           '<td>' + weightCellHtml(r) + '</td>' +
           '<td>' + ageHtml + '</td>' +
           '<td>' + reasonPillsHtml(r.reasons) + '</td>' +
           '<td>' + statusTrackHtml(r.completedVisitCount || 0, r) + '</td>' +
-          '<td>' + statusBadgeHtml(rowTrackingStatus(r)) + '</td>' +
+          '<td>' + statusBadgeHtml(rowTrackingStatus(r)) + completionSourceHtml(r) + '</td>' +
           '<td>' + contactHtml(p) + '</td>' +
           '<td>' + kmcToolsHtml(patientId, r) + '</td>';
         desktopBody.appendChild(trEl);
@@ -1173,8 +1207,8 @@
           '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\',' + (parseInt(r.babyIndex, 10) || 1) + ')">' +
             '<div class="hrt-mobile-top">' +
               '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
-              '<div class="hrt-mobile-id">' + motherName + (motherName ? ' · ' : '') + phone + '</div></div>' +
-              '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
+              '<div class="hrt-mobile-id">' + motherName + (motherName ? ' · ' : '') + phone + '<br>' + escapeHtml(facility) + infections + '</div></div>' +
+              '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + completionSourceHtml(r) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
@@ -1191,6 +1225,21 @@
           '</div>';
         mobileBody.appendChild(card);
       });
+      if (_kmcNextPageToken) {
+        var more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'tracking-load-more';
+        more.textContent = _kmcLoadingPage ? 'Loading…' : 'Load more';
+        more.disabled = _kmcLoadingPage;
+        more.onclick = function () { loadKmcProjectionPage(true); };
+        container.appendChild(more);
+      }
+      if (_kmcPageError) {
+        var pageError = document.createElement('div');
+        pageError.className = 'tracking-state error';
+        pageError.textContent = _kmcPageError;
+        container.appendChild(pageError);
+      }
     }
 
     function openCompleteModal(patientId, babyIndex) {
@@ -1224,6 +1273,9 @@
           actionDate: new Date().toISOString().split('T')[0]
         };
         await firebase.firestore().collection('patients').doc(_completePatientId).collection('kmc_actions').add(action);
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(_completePatientId, 'kmc_action');
+        }
         if (_completeRow) {
           _completeRow.kmcActions = (_completeRow.kmcActions || []).concat([{
             type: 'kmc_resolved',
@@ -1232,6 +1284,12 @@
             actionDate: action.actionDate
           }]);
           _completeRow.completed = true;
+          if (_completeRow._projection) {
+            _completeRow.status = 'complete';
+            _completeRow.explicitCompletion = true;
+            _completeRow.completionSource = 'clinical_action';
+            _completeRow.outcome = outcome;
+          }
         }
         bootstrap.Modal.getInstance(document.getElementById('completeModal')).hide();
         renderAll(getFilteredKmcRows());
@@ -1555,6 +1613,102 @@
       }).filter(Boolean);
     }
 
+    function projectionKmcRow(row) {
+      var patient = {
+        id: row.patientId,
+        name: row.patientName,
+        patientName: row.patientName,
+        patient_id: row.patientCode,
+        phone: row.patientPhone,
+        infectionFlags: row.infectionFlags || {}
+      };
+      var completionAction = row.status === 'complete' ? [{
+        type: 'kmc_resolved',
+        babyIndex: row.babyIndex || 1,
+        outcome: row.outcome || 'alive',
+        actionDate: row.completionDate
+      }] : [];
+      return Object.assign({}, row, {
+        _projection: true,
+        patient: patient,
+        reasons: row.eligibilityReasons || [],
+        kmcSelected: row.enrolled ? 'yes' : '',
+        potentialKmc: !!row.eligible || !row.enrolled,
+        ageDays: row.postpartumAgeDays,
+        completedVisitCount: row.visitCount || 0,
+        completedPostDischargeVisitCount: row.visitCount || 0,
+        nextDueDate: row.dueDate,
+        newbornCareVisits: [],
+        newbornCare: null,
+        immediateNewbornCare: null,
+        kmcActions: completionAction,
+        completed: row.status === 'complete'
+      });
+    }
+
+    function setKmcPageState(state, message) {
+      document.getElementById('loadingState').classList.toggle('d-none', state !== 'loading');
+      document.getElementById('emptyState').classList.toggle('d-none', state !== 'empty' && state !== 'error');
+      document.getElementById('dashboardState').classList.toggle('d-none', state === 'loading' || state === 'error');
+      document.getElementById('tableState').classList.toggle('d-none', state === 'loading' || state === 'error' || state === 'empty');
+      if (message) document.getElementById('emptyText').textContent = message;
+    }
+
+    async function loadKmcProjectionPage(append) {
+      if (_kmcLoadingPage) return;
+      _kmcLoadingPage = true;
+      _kmcPageError = '';
+      if (!append) setKmcPageState('loading');
+      else renderAll(getFilteredKmcRows());
+      try {
+        var result = await TrackingReader.call(
+          'queryKmcTracking',
+          TrackingReader.payload(_kmcFilters, append ? _kmcNextPageToken : null)
+        );
+        if (result.schemaVersion !== 'tracking-kmc-v1' || !Array.isArray(result.rows)) {
+          throw new Error('Unexpected KMC tracking response.');
+        }
+        var mapped = result.rows.map(projectionKmcRow);
+        window._kmcRows = append ? (window._kmcRows || []).concat(mapped) : mapped;
+        _kmcNextPageToken = result.nextPageToken || null;
+        _kmcCardFilter = 'all';
+        setKmcPageState(window._kmcRows.length ? 'ready' : 'empty');
+        renderAll(getFilteredKmcRows());
+      } catch (error) {
+        var message = (error && error.message) || 'Unable to load tracking data.';
+        if (!append) setKmcPageState('error', message);
+        else _kmcPageError = message;
+        if (append) return;
+        throw error;
+      } finally {
+        _kmcLoadingPage = false;
+        if (window._kmcRows && window._kmcRows.length) renderAll(getFilteredKmcRows());
+      }
+    }
+
+    async function initializeKmcProjection(userData) {
+      if (!window.TrackingReader || !TrackingReader.enabled()) return false;
+      var controls = TrackingReader.createControls({
+        kind: 'kmc',
+        role: userData && userData.role,
+        userData: userData || {},
+        onApply: async function (filters) {
+          _kmcFilters = filters;
+          TrackingReader.restoreUrl(filters);
+          try { await loadKmcProjectionPage(false); }
+          catch (error) { console.error('KMC projection reload', error); }
+        },
+        onReset: function () { location.href = location.pathname; }
+      });
+      _kmcRoleLevel = controls.level;
+      _kmcFilters = controls.filters;
+      TrackingReader.restoreUrl(_kmcFilters);
+      window._kmcRows = [];
+      window._kmcFilterQuery = '';
+      await loadKmcProjectionPage(false);
+      return true;
+    }
+
     firebase.auth().onAuthStateChanged(async function (user) {
       if (!user) { window.location.href = 'login.html'; return; }
       _currentUser = user;
@@ -1570,8 +1724,9 @@
 
       var db = firebase.firestore();
       var userRole = 'Midwife';
+      var userData = null;
       try {
-        var userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
+        userData = window.UserCache ? await window.UserCache.get(user.uid) : null;
         if (!userData) {
           var uq = await smartFirestoreQuery(
             Promise.resolve(db.collection('users').doc(user.uid)),
@@ -1587,6 +1742,14 @@
       }
 
       try {
+        try {
+          if (await initializeKmcProjection(userData || { role: userRole })) return;
+        } catch (projectionError) {
+          if (!TrackingReader.shouldFallback(projectionError)) throw projectionError;
+          console.warn('KMC projection unavailable; using temporary legacy reader.', projectionError);
+          var filterForm = document.getElementById('kmcTrackingFilters');
+          if (filterForm) filterForm.remove();
+        }
         var patients = await fetchPatientsForRole(db, user, userRole);
         var candidates = patients.filter(function (p) {
           if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(p)) return true;

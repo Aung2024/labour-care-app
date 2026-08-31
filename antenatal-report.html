@@ -2077,6 +2077,8 @@
         fundalHeight: visit.fundalHeight || '-',
         fetalLie: formatFetalPosition(visit.fetalLie),
         fetalPresentation: formatFetalPresentation(visit.fetalPresentation),
+        secondFetalLie: formatFetalPosition(visit.secondFetalLie),
+        secondFetalPresentation: formatFetalPresentation(visit.secondFetalPresentation),
         fetalHeartRate: visit.fetalHeartRate || '-',
         fetalMovement: visit.fetalMovement || '-',
         deworming: formatMedicationVisitCell(visit.deworming, visit.dewormingFrequency, visit.dewormingTotalTablets),
@@ -2084,6 +2086,10 @@
         vitaminB1: formatMedicationVisitCell(visit.vitaminB1, visit.vitaminB1Frequency, visit.vitaminB1TotalTablets),
         micronutrients: formatMedicationVisitCell(visit.micronutrientsTablet, visit.micronutrientsFrequency, visit.micronutrientsTotalTablets),
         td: visit.tetanusToxoid || visit.td || '-',
+        provisionalDiagnosis: visit.provisionalDiagnosisType
+          ? (visit.provisionalDiagnosisType + (visit.provisionalDiagnosisOther ? ': ' + visit.provisionalDiagnosisOther : ''))
+          : '-',
+        nextVisitDate: visit.nextVisitDate ? formatReportDate(visit.nextVisitDate) : '-',
         initial: visit.initial || '-',
         hasData: true
       };
@@ -2203,6 +2209,9 @@
             <dt class="lang-text" data-en="Fundal Height (cm)" data-mm="သားအိမ်အမြင့် (cm)">FH</dt><dd>${escapeHtml(d.fundalHeight)}</dd>
             <dt class="lang-text" data-en="Fetal Position" data-mm="သန္ဓေသား အနေအထား">Lie</dt><dd>${escapeHtml(d.fetalLie)}</dd>
             <dt class="lang-text" data-en="Fetal Presentation" data-mm="သန္ဓေသား ဦးတိုက်မှု">Pres</dt><dd>${escapeHtml(d.fetalPresentation)}</dd>
+            ${visit.secondFetalLie || visit.secondFetalPresentation ? `
+              <dt class="lang-text" data-en="Second fetal position" data-mm="ဒုတိယသန္ဓေသား အနေအထား">Second lie</dt><dd>${escapeHtml(d.secondFetalLie)}</dd>
+              <dt class="lang-text" data-en="Second fetal presentation" data-mm="ဒုတိယသန္ဓေသား ဦးတိုက်မှု">Second pres</dt><dd>${escapeHtml(d.secondFetalPresentation)}</dd>` : ''}
             <dt class="lang-text" data-en="Fetal Heart Rate (bpm)" data-mm="သန္ဓေသားနှလုံးခုန်နှုန်း">FHR</dt><dd>${escapeHtml(d.fetalHeartRate)}</dd>
             <dt class="lang-text" data-en="Fetal Movement" data-mm="သန္ဓေသားလှုပ်ရှားမှု">Movement</dt><dd>${escapeHtml(d.fetalMovement)}</dd>
           </dl>
@@ -2215,6 +2224,8 @@
             <dt class="lang-text" data-en="Vitamin B1" data-mm="ဗီတာမင်ဘီဝမ်း">Vit B1</dt><dd>${escapeHtml(d.vitaminB1)}</dd>
             <dt class="lang-text" data-en="Micronutrients" data-mm="အဏုအာဟာရဆေးပြား">Micronut</dt><dd>${escapeHtml(d.micronutrients)}</dd>
             <dt class="lang-text" data-en="Tetanus Diphtheria (TD)" data-mm="မေးခိုင်၊ ဆုံဆို့နာ">TD</dt><dd>${escapeHtml(d.td)}</dd>
+            <dt class="lang-text" data-en="Provisional Diagnosis" data-mm="ယာယီရောဂါသတ်မှတ်ချက်">Diagnosis</dt><dd>${escapeHtml(d.provisionalDiagnosis)}</dd>
+            <dt class="lang-text" data-en="Next ANC visit" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက်">Next visit</dt><dd>${escapeHtml(d.nextVisitDate)}</dd>
             <dt class="lang-text" data-en="Initial" data-mm="လက်မှတ်">Initial</dt><dd>${escapeHtml(d.initial)}</dd>
           </dl>
         </div>
@@ -2757,8 +2768,10 @@
         const hasRiskNotes = visit.risk_notes && visit.risk_notes.trim() !== '';
         const hasPastHistory = visit.pastHistoryStatus && visit.pastHistoryStatus !== 'nad';
         const hasPastHistoryNotes = visit.pastHistoryNotes && visit.pastHistoryNotes.trim() !== '';
+        const hasPregnancyHistory = visit.goiterStatus || visit.lastPregnancyOutcome ||
+          (Array.isArray(visit.previousObstetricHistory) && visit.previousObstetricHistory.length);
         
-        if (isHighRisk || hasRiskFactors || hasRiskNotes || hasPastHistory || hasPastHistoryNotes) {
+        if (isHighRisk || hasRiskFactors || hasRiskNotes || hasPastHistory || hasPastHistoryNotes || hasPregnancyHistory) {
           const riskFactorLabels = {
             'maternal_age_18_or_35': 'Maternal age <18 or >35 years',
             'parity_5': 'Parity ≥ 5',
@@ -2795,6 +2808,13 @@
                 ${hasRiskNotes ? `<p><strong>Risk Notes:</strong> ${visit.risk_notes}</p>` : ''}
                 ${hasPastHistory ? `<p><strong>Past History Status:</strong> ${visit.pastHistoryStatus}</p>` : ''}
                 ${hasPastHistoryNotes ? `<p><strong>Past History Notes:</strong> ${visit.pastHistoryNotes}</p>` : ''}
+                ${visit.goiterStatus ? `<p><strong>Goiter:</strong> ${escapeHtml(visit.goiterStatus)}</p>` : ''}
+                ${visit.lastPregnancyOutcome ? `<p><strong>Last pregnancy:</strong> ${escapeHtml(visit.lastPregnancyOutcome)}${visit.lastPregnancyDate ? ' — ' + escapeHtml(formatReportDate(visit.lastPregnancyDate)) : ''}</p>` : ''}
+                ${Array.isArray(visit.previousObstetricHistory) && visit.previousObstetricHistory.length
+                  ? `<p><strong>Previous obstetric history:</strong> ${visit.previousObstetricHistory.map(function (item) {
+                      return escapeHtml([item.year, item.outcome, item.notes].filter(Boolean).join(' — '));
+                    }).join('<br>')}</p>` : ''}
+                ${visit.cleanDeliveryKitDate ? `<p><strong>Clean delivery kit:</strong> ${escapeHtml(formatReportDate(visit.cleanDeliveryKitDate))}</p>` : ''}
               </div>
             </div>
           `;
@@ -2875,6 +2895,10 @@
               ${labChipHtml('Hb (g/dl)', 'Hb (g/dl)', test.hemoglobinResult || '-', null)}
               ${labChipHtml('Blood group', 'သွေးအုပ်စု', test.bloodGroup || '-', null)}
               ${labChipHtml('Rh', 'Rh', rhFactor, 'rh')}
+              ${test.tbScreeningStatus ? `<div class="lab-chip lab-chip-wide${test.tbResult === 'Positive' ? ' alert' : ''}">
+                <span class="lab-chip-label lang-text" data-en="Tuberculosis (TB)" data-mm="တီဘီရောဂါ (TB)">TB</span>
+                <span class="lab-chip-value">${escapeHtml([test.tbScreeningStatus, test.tbSymptomsPresent, test.tbTestType, test.tbResult, test.tbAction].filter(Boolean).join(' · '))}</span>
+              </div>` : ''}
               ${test.ultrasoundServices === 'Yes' ? `<div class="lab-chip lab-chip-wide">
                 <span class="lab-chip-label lang-text" data-en="Ultrasound" data-mm="Ultrasound">Ultrasound</span>
                 <span class="lab-chip-value">${escapeHtml(test.ultrasoundDetails || test.ultrasoundServices)}</span>
@@ -2902,6 +2926,7 @@
           <td>${escapeHtml(test.hemoglobinResult || '-')}</td>
           <td>${escapeHtml(test.bloodGroup || '-')}</td>
           <td${rowClass(rhFactor, 'rh')}>${escapeHtml(rhFactor)}</td>
+          <td${test.tbResult === 'Positive' ? ' class="alert-positive"' : ''}>${escapeHtml([test.tbScreeningStatus, test.tbResult].filter(Boolean).join(' / ') || '-')}</td>
           <td>${escapeHtml(test.ultrasoundServices === 'Yes' ? (test.ultrasoundDetails || 'Yes') : (test.ultrasoundServices || '-'))}</td>
           <td>${escapeHtml(test.treatmentGiven || '-')}</td>
         </tr>`;
@@ -2910,7 +2935,7 @@
       cardsHtml += '</div>';
       cardsHtml += `<table class="lab-print-table"><thead><tr>
         <th>No</th><th>Date</th><th>GA</th><th>Lab</th><th>HIV</th><th>Malaria</th><th>Syphilis</th>
-        <th>Hep B</th><th>Hep C</th><th>Hb</th><th>Blood Grp</th><th>Rh</th><th>Ultrasound</th><th>Treatment</th>
+        <th>Hep B</th><th>Hep C</th><th>Hb</th><th>Blood Grp</th><th>Rh</th><th>TB</th><th>Ultrasound</th><th>Treatment</th>
       </tr></thead><tbody>${printRows}</tbody></table>`;
 
       container.innerHTML = cardsHtml;

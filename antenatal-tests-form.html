@@ -19,6 +19,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/register-sw.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <style>
     :root {
       --primary-color: #10b981;
@@ -679,6 +680,38 @@
             </div>
           </div>
 
+        <div class="card-subtitle lang-text" data-en="Tuberculosis (TB)" data-mm="တီဘီရောဂါ (TB)">Tuberculosis (TB)</div>
+          <div class="row g-3 two-col">
+            <div class="col-md-6">
+              <label for="tbScreeningStatus" class="form-label lang-text" data-en="TB screening status" data-mm="TB စစ်ဆေးမေးမြန်းမှု အခြေအနေ">TB screening status</label>
+              <select class="form-select" id="tbScreeningStatus" required onchange="toggleTbDetails()">
+                <option value="">Select</option><option value="Screened">Screened</option><option value="Not screened">Not screened</option><option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="tbSymptomsGroup" style="display:none;">
+              <label for="tbSymptomsPresent" class="form-label lang-text" data-en="TB symptoms present" data-mm="TB လက္ခဏာ ရှိ/မရှိ">TB symptoms present</label>
+              <select class="form-select" id="tbSymptomsPresent" onchange="toggleTbDetails()">
+                <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option><option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="tbTestTypeGroup" style="display:none;">
+              <label for="tbTestType" class="form-label lang-text" data-en="TB test type" data-mm="TB စစ်ဆေးမှု အမျိုးအစား">TB test type</label>
+              <select class="form-select" id="tbTestType">
+                <option value="">Select</option><option value="Sputum microscopy">Sputum microscopy</option><option value="GeneXpert">GeneXpert</option><option value="Chest X-ray">Chest X-ray</option><option value="Clinical assessment">Clinical assessment</option><option value="Not assessed">Not assessed</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="tbResultGroup" style="display:none;">
+              <label for="tbResult" class="form-label lang-text" data-en="TB result" data-mm="TB ရလဒ်">TB result</label>
+              <select class="form-select" id="tbResult">
+                <option value="">Select</option><option value="Positive">Positive</option><option value="Negative">Negative</option><option value="Pending">Pending</option><option value="Not assessed">Not assessed</option>
+              </select>
+            </div>
+            <div class="col-12" id="tbActionGroup" style="display:none;">
+              <label for="tbAction" class="form-label lang-text" data-en="TB treatment / referral action" data-mm="TB ကုသမှု / လွှဲပြောင်းမှု">TB treatment / referral action</label>
+              <textarea class="form-control" id="tbAction" rows="2"></textarea>
+            </div>
+          </div>
+
         <div class="card-subtitle lang-text" data-en="Additional Lab Test" data-mm="အခြား စစ်ဆေးမှု">Additional Lab Test</div>
           <div class="row">
             <div class="col-md-12 mb-3">
@@ -809,6 +842,27 @@
       if (wrap) wrap.style.display = val === 'Yes' ? '' : 'none';
     }
 
+    function toggleTbDetails() {
+      var screened = document.getElementById('tbScreeningStatus')?.value === 'Screened';
+      var symptoms = document.getElementById('tbSymptomsPresent')?.value === 'Yes';
+      var rules = [
+        ['tbSymptomsGroup', 'tbSymptomsPresent', screened],
+        ['tbTestTypeGroup', 'tbTestType', screened && symptoms],
+        ['tbResultGroup', 'tbResult', screened && symptoms],
+        ['tbActionGroup', 'tbAction', screened && symptoms]
+      ];
+      rules.forEach(function (rule) {
+        var group = document.getElementById(rule[0]);
+        var input = document.getElementById(rule[1]);
+        if (group) group.style.display = rule[2] ? '' : 'none';
+        if (input) {
+          input.required = rule[2];
+          input.setAttribute('aria-required', rule[2] ? 'true' : 'false');
+          if (!rule[2]) input.value = '';
+        }
+      });
+    }
+
     function updateLabClinicalAlerts() {
       var hbValue = parseFloat(document.getElementById('hemoglobinResult')?.value);
       var hasHb = hbValue && !isNaN(hbValue);
@@ -854,6 +908,8 @@
         updateLabClinicalAlerts();
       });
       document.getElementById('testForm').addEventListener('submit', saveTestResults);
+      document.getElementById('tbScreeningStatus')?.addEventListener('change', toggleTbDetails);
+      document.getElementById('tbSymptomsPresent')?.addEventListener('change', toggleTbDetails);
 
       ['hivResult', 'malariaResult', 'syphilisResult', 'hepatitisBResult', 'hepatitisCResult'].forEach(function (id) {
         var select = document.getElementById(id);
@@ -878,6 +934,7 @@
       switchLanguage(currentLanguage);
       updateLabClinicalAlerts();
       updateSelectHighlights();
+      toggleTbDetails();
     });
 
     function goBackToAntenatalTests() {
@@ -1259,6 +1316,12 @@
 
         document.getElementById('additionalLabTestName').value = testData.additionalLabTestName || '';
         document.getElementById('additionalLabTestFindings').value = testData.additionalLabTestFindings || '';
+        document.getElementById('tbScreeningStatus').value = testData.tbScreeningStatus || '';
+        document.getElementById('tbSymptomsPresent').value = testData.tbSymptomsPresent || '';
+        document.getElementById('tbTestType').value = testData.tbTestType || '';
+        document.getElementById('tbResult').value = testData.tbResult || '';
+        document.getElementById('tbAction').value = testData.tbAction || '';
+        toggleTbDetails();
         
         // Calculate hemoglobin diagnosis if value exists
         if (testData.hemoglobinResult) {
@@ -1318,6 +1381,11 @@
 
           additionalLabTestName: (document.getElementById('additionalLabTestName').value || '').trim(),
           additionalLabTestFindings: (document.getElementById('additionalLabTestFindings').value || '').trim(),
+          tbScreeningStatus: document.getElementById('tbScreeningStatus').value,
+          tbSymptomsPresent: document.getElementById('tbSymptomsPresent').value || null,
+          tbTestType: document.getElementById('tbTestType').value || null,
+          tbResult: document.getElementById('tbResult').value || null,
+          tbAction: (document.getElementById('tbAction').value || '').trim() || null,
           
           // Metadata
           patientId: currentPatient.id,
@@ -1333,6 +1401,7 @@
             throw new Error('Offline save tools are not loaded. Please reload once online, then try again.');
           }
           await OfflineManager.saveOfflineRecord('pending_lab_tests', testData);
+          if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(testData.patientId, 'lab_test');
           alert('Lab test saved locally. Please sync when online.');
           window.location.href = 'antenatal-tests.html';
           return;
@@ -1359,6 +1428,7 @@
             currentLanguage === 'mm' ? 'ဓာတ်ခွဲစစ်ဆေးရလဒ်များ ပြင်ဆင်ပြီးပါပြီ။' : 'Test results updated successfully!',
             { title: currentLanguage === 'mm' ? 'သိမ်းဆည်းပြီး' : 'Saved' }
           );
+          if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(testData.patientId, 'lab_test');
         } else {
           // Create new test record
           console.log('Creating new test record for patient:', currentPatient.id);

@@ -845,6 +845,7 @@
         <span class="pcs-change-label lang-text" data-en="Change" data-mm="ပြောင်း">Change</span>
       </button>
     </div>
+    <div id="patientInfectionAlert" style="display:none;"></div>
 
     <!-- Care Cards -->
     <div id="careCardsContainer" class="care-cards-grid" style="display: none;">
@@ -943,6 +944,7 @@
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/user-cache.js"></script>
+  <script src="js/joint-care-utils.js"></script>
   <script src="js/page-performance.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
@@ -950,6 +952,8 @@
   <script src="js/high-risk-utils.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/infection-alerts.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/submit-guard.js"></script>
 
   <script>
@@ -1093,6 +1097,10 @@
 
     let currentUser = null;
     let selectedPatient = null;
+    let loadedDeliveryNotes = null;
+    const deliveryEditParams = new URLSearchParams(window.location.search);
+    const isDeliveryEditMode = deliveryEditParams.get('editDelivery') === '1';
+    const deliveryEditApprovalId = deliveryEditParams.get('editApprovalId') || '';
 
     function getPilotCachedUser() {
       const uid = localStorage.getItem('uid');
@@ -1119,7 +1127,8 @@
     // Load patient data from session storage
     async function loadPatientData() {
       try {
-        const patientId = sessionStorage.getItem('selectedPatientId');
+        const patientId = deliveryEditParams.get('patient') || sessionStorage.getItem('selectedPatientId');
+        if (patientId) sessionStorage.setItem('selectedPatientId', patientId);
         
         if (!patientId) {
           // No patient selected
@@ -1185,6 +1194,7 @@
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('patientInfoBar').style.display = 'flex';
         document.getElementById('careCardsContainer').style.display = 'grid';
+        if (isDeliveryEditMode) openThirdStageModal();
 
       } catch (error) {
         console.error('Error loading patient data:', error);
@@ -1306,6 +1316,13 @@
         metaEl.innerHTML = metaParts.map(function (text, i) {
           return (i > 0 ? '<span class="pcs-sep">·</span>' : '') + '<span>' + escapeHtmlHub(String(text)) + '</span>';
         }).join('');
+      }
+      if (window.InfectionAlerts && p.id) {
+        InfectionAlerts.loadAndRender(p.id, document.getElementById('patientInfectionAlert'), {
+          language: currentLanguage
+        }).catch(function (error) {
+          console.warn('Could not load infection alerts:', error);
+        });
       }
     }
 
@@ -1950,6 +1967,15 @@
       if (modal) {
         modal.style.display = 'block';
         document.body.style.overflow = 'hidden'; // Prevent background scrolling
+        if (window.InfectionAlerts) {
+          InfectionAlerts.loadAndRender(
+            selectedPatient.id,
+            document.getElementById('deliveryInfectionAlert'),
+            { language: currentLanguage }
+          ).catch(function (error) {
+            console.warn('Could not load Delivery Note infection alert:', error);
+          });
+        }
       }
     }
 
@@ -1983,18 +2009,27 @@
       try {
         const patientId = selectedPatient.id;
         const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+        loadedDeliveryNotes = notes;
 
         if (notes) {
           document.getElementById('thirdStageOxytocin').checked = notes.thirdStage.oxytocinGiven === true;
           document.getElementById('thirdStageCCT').checked = notes.thirdStage.controlledCordTraction === true;
           document.getElementById('deliveryPregnancyType').value = notes.deliveryDetails.pregnancyType || 'single';
+          document.getElementById('deliveryGestationalWeek').value = notes.deliveryDetails.gestationalWeek || '';
+          document.getElementById('deliveryBirthProvider').value = notes.deliveryDetails.birthProvider || '';
           document.getElementById('deliveryMode').value = notes.deliveryDetails.modeOfDelivery || '';
           document.getElementById('deliveryBirthPlace').value = DeliveryNotesUtils.normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || '';
           renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
+          const correctionBtn = document.getElementById('deliveryCorrectionBtn');
+          if (correctionBtn) correctionBtn.style.display = isDeliveryEditMode ? 'none' : '';
         } else {
+          const correctionBtn = document.getElementById('deliveryCorrectionBtn');
+          if (correctionBtn) correctionBtn.style.display = 'none';
           document.getElementById('thirdStageOxytocin').checked = false;
           document.getElementById('thirdStageCCT').checked = false;
           document.getElementById('deliveryPregnancyType').value = 'single';
+          document.getElementById('deliveryGestationalWeek').value = await loadLatestDeliveryGestationalWeek(patientId) || '';
+          document.getElementById('deliveryBirthProvider').value = '';
           document.getElementById('deliveryMode').value = '';
           document.getElementById('deliveryBirthPlace').value = '';
           renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
@@ -2006,6 +2041,26 @@
         document.getElementById('deliveryPregnancyType').value = 'single';
         renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
       }
+    }
+
+    async function loadLatestDeliveryGestationalWeek(patientId) {
+      const ref = firebase.firestore().collection('patients').doc(patientId).collection('antenatal_visits');
+      let snap;
+      try {
+        snap = await ref.orderBy('visitDate', 'desc').limit(1).get();
+      } catch (error) {
+        snap = await ref.get();
+      }
+      if (!snap || snap.empty) return null;
+      const rows = snap.docs.map(function (doc) { return doc.data() || {}; });
+      rows.sort(function (a, b) {
+        return String(b.visitDate || b.timestamp || '').localeCompare(String(a.visitDate || a.timestamp || ''));
+      });
+      const latest = rows[0] || {};
+      const value = latest.gestationalAge != null ? latest.gestationalAge :
+        (latest.manualGestationalAge != null ? latest.manualGestationalAge : latest.gestational_age);
+      const week = parseFloat(value);
+      return !isNaN(week) && week >= 20 && week <= 45 ? Math.round(week * 10) / 10 : null;
     }
 
     function renderDeliveryBabyRows(babies) {
@@ -2042,8 +2097,16 @@
                 </select>
               </div>
               <div class="delivery-field">
-                <label class="lang-text" data-en="Birth weight (grams) *" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်) *">Birth weight (grams) *</label>
-                <input type="number" min="1" inputmode="numeric" data-field="birthWeightGram" value="${baby.birthWeightGram || ''}" required>
+                <label class="lang-text" data-en="Anus present *" data-mm="စအိုပေါက် ရှိ/မရှိ *">Anus present *</label>
+                <select data-field="anusPresent" required>
+                  <option value="">-</option>
+                  <option value="yes" ${baby.anusPresent === 'yes' ? 'selected' : ''}>Yes</option>
+                  <option value="no" ${baby.anusPresent === 'no' ? 'selected' : ''}>No</option>
+                </select>
+              </div>
+              <div class="delivery-field">
+                <label class="lang-text" data-en="Birth weight (kg) *" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန် (ကီလိုဂရမ်) *">Birth weight (kg) *</label>
+                <input type="number" min="0.3" max="7" step="0.001" inputmode="decimal" data-field="birthWeightKg" value="${baby.birthWeightGram ? (baby.birthWeightGram / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') : ''}" required>
               </div>
               <div class="delivery-field">
                 <label class="lang-text" data-en="Birth time *" data-mm="မွေးချိန် *">Birth time *</label>
@@ -2071,7 +2134,10 @@
         babyIndex: index + 1,
         outcome: row.querySelector('[data-field="outcome"]').value || '',
         gender: row.querySelector('[data-field="gender"]').value || '',
-        birthWeightGram: row.querySelector('[data-field="birthWeightGram"]').value,
+        anusPresent: row.querySelector('[data-field="anusPresent"]').value || '',
+        birthWeightGram: row.querySelector('[data-field="birthWeightKg"]').value
+          ? Math.round(parseFloat(row.querySelector('[data-field="birthWeightKg"]').value) * 1000)
+          : null,
         birthTime: row.querySelector('[data-field="birthTime"]').value || ''
       }));
     }
@@ -2085,12 +2151,25 @@
     function validateDeliveryNotesForm() {
       const isMm = currentLanguage === 'mm';
       const pregnancyType = document.getElementById('deliveryPregnancyType');
+      const gestationalWeekEl = document.getElementById('deliveryGestationalWeek');
+      const providerEl = document.getElementById('deliveryBirthProvider');
       const modeEl = document.getElementById('deliveryMode');
       const placeEl = document.getElementById('deliveryBirthPlace');
 
       if (!pregnancyType || !pregnancyType.value) {
         alert(isMm ? 'ကိုယ်ဝန်အမျိုးအစား ရွေးချယ်ပါ။' : 'Please select pregnancy type.');
         focusDeliveryField(pregnancyType);
+        return false;
+      }
+      const gestationalWeek = gestationalWeekEl ? parseFloat(gestationalWeekEl.value) : NaN;
+      if (isNaN(gestationalWeek) || gestationalWeek < 20 || gestationalWeek > 45) {
+        alert(isMm ? 'ကိုယ်ဝန်ပတ် ၂၀ မှ ၄၅ အတွင်း ထည့်ပါ။' : 'Enter a gestational week from 20 to 45.');
+        focusDeliveryField(gestationalWeekEl);
+        return false;
+      }
+      if (!providerEl || !providerEl.value) {
+        alert(isMm ? 'မွေးဖွားပေးသူ အချက်အလက် ရွေးချယ်ပါ။' : 'Select the birth provider.');
+        focusDeliveryField(providerEl);
         return false;
       }
       if (!modeEl || !modeEl.value) {
@@ -2116,7 +2195,8 @@
         const babyNo = i + 1;
         const outcomeEl = row.querySelector('[data-field="outcome"]');
         const genderEl = row.querySelector('[data-field="gender"]');
-        const weightEl = row.querySelector('[data-field="birthWeightGram"]');
+        const anusEl = row.querySelector('[data-field="anusPresent"]');
+        const weightEl = row.querySelector('[data-field="birthWeightKg"]');
         const timeEl = row.querySelector('[data-field="birthTime"]');
         const weight = weightEl ? parseFloat(weightEl.value) : NaN;
 
@@ -2134,10 +2214,17 @@
           focusDeliveryField(genderEl);
           return false;
         }
-        if (!weightEl || weightEl.value === '' || isNaN(weight) || weight <= 0) {
+        if (!anusEl || !anusEl.value) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် စအိုပေါက် ရှိ/မရှိ ရွေးချယ်ပါ။')
+            : ('Select whether the anus is present for baby ' + babyNo + '.'));
+          focusDeliveryField(anusEl);
+          return false;
+        }
+        if (!weightEl || weightEl.value === '' || isNaN(weight) || weight < 0.3 || weight > 7) {
           alert(isMm
             ? ('ကလေး ' + babyNo + ' အတွက် မွေးကင်းစ ကိုယ်အလေးချိန် (ဂရမ်) ထည့်ပါ။')
-            : ('Please enter birth weight in grams for baby ' + babyNo + '.'));
+            : ('Please enter a plausible birth weight (0.3–7 kg) for baby ' + babyNo + '.'));
           focusDeliveryField(weightEl);
           return false;
         }
@@ -2157,6 +2244,11 @@
       const babies = collectDeliveryBabies();
       babies.push(DeliveryNotesUtils.normalizeBaby({}, babies.length));
       renderDeliveryBabyRows(babies);
+    }
+
+    function openDeliveryCorrectionWorkflow() {
+      if (!selectedPatient || !selectedPatient.id) return;
+      window.location.href = 'visit-edit.html?type=delivery&patient=' + encodeURIComponent(selectedPatient.id);
     }
 
     function removeDeliveryBabyRow(index) {
@@ -2194,6 +2286,21 @@
 
         const oxytocinGiven = document.getElementById('thirdStageOxytocin').checked;
         const controlledCordTraction = document.getElementById('thirdStageCCT').checked;
+        let correctionApproval = null;
+        if (isDeliveryEditMode) {
+          if (!deliveryEditApprovalId || !window.JointCareUtils) {
+            throw new Error('An approved supervised edit request is required for Delivery Notes corrections.');
+          }
+          correctionApproval = await JointCareUtils.findUnusedApproval(
+            patientId,
+            'delivery',
+            DeliveryNotesUtils.DELIVERY_DOC_ID,
+            currentUser.uid
+          );
+          if (!correctionApproval || correctionApproval.id !== deliveryEditApprovalId) {
+            throw new Error('This Delivery Notes edit approval is invalid, expired, or already used.');
+          }
+        }
 
         const deliveryNotesData = {
           thirdStage: {
@@ -2202,6 +2309,9 @@
           },
           deliveryDetails: {
             pregnancyType: document.getElementById('deliveryPregnancyType').value || 'single',
+            gestationalWeek: parseFloat(document.getElementById('deliveryGestationalWeek').value),
+            anusPresent: (collectDeliveryBabies()[0] || {}).anusPresent || '',
+            birthProvider: document.getElementById('deliveryBirthProvider').value,
             modeOfDelivery: document.getElementById('deliveryMode').value,
             birthPlace: document.getElementById('deliveryBirthPlace').value,
             babies: collectDeliveryBabies()
@@ -2212,8 +2322,23 @@
           patientId,
           deliveryNotesData,
           currentUser.uid,
-          { motherData: selectedPatient }
+          {
+            motherData: selectedPatient,
+            allowUpdate: !!correctionApproval,
+            approvalId: correctionApproval ? correctionApproval.id : null
+          }
         );
+        if (correctionApproval) {
+          await JointCareUtils.markApprovalUsed(correctionApproval.id, currentUser.uid);
+          await JointCareUtils.logJointCareEvent('delivery_notes_corrected', currentUser.uid, patientId, {
+            approvalId: correctionApproval.id,
+            before: loadedDeliveryNotes,
+            after: deliveryNotesData
+          });
+        }
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(patientId, 'delivery_notes');
+        }
         const babyIds = saveResult && saveResult.babyIds ? saveResult.babyIds : [];
         if (babyIds.length && selectedPatient) {
           selectedPatient.baby_patient_ids = babyIds;
@@ -2294,6 +2419,7 @@
         </button>
       </div>
       <div class="modal-body">
+        <div id="deliveryInfectionAlert" style="display:none;"></div>
         <section class="delivery-section">
           <h5 class="delivery-section-title"><i class="fas fa-clipboard-check"></i><span class="lang-text" data-en="Management of Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Management of Labour Third Stage</span></h5>
           <div class="form-check mb-3">
@@ -2325,19 +2451,38 @@
               </select>
             </div>
             <div class="delivery-field">
+              <label for="deliveryGestationalWeek" class="lang-text" data-en="Gestational week *" data-mm="ကိုယ်ဝန်ပတ် *">Gestational week *</label>
+              <input id="deliveryGestationalWeek" type="number" min="20" max="45" step="0.1" inputmode="decimal" required>
+              <small class="lang-text" data-en="Loaded from the latest ANC visit; enter manually if unavailable." data-mm="နောက်ဆုံး ANC မှ ဖြည့်ပေးထားသည်။ မရှိပါက ကိုယ်တိုင်ထည့်ပါ။">Loaded from latest ANC; enter manually if unavailable.</small>
+            </div>
+            <div class="delivery-field">
+              <label for="deliveryBirthProvider" class="lang-text" data-en="Birth provider *" data-mm="မွေးဖွားပေးသူ *">Birth provider *</label>
+              <select id="deliveryBirthProvider" required>
+                <option value="">-</option>
+                <option value="self">Self</option>
+                <option value="skilled_birth_attendant">Skilled Birth Attendant</option>
+                <option value="amw">AMW</option>
+                <option value="tba_other">TBA / Other</option>
+              </select>
+            </div>
+            <div class="delivery-field">
               <label for="deliveryMode" class="lang-text" data-en="Mode of delivery *" data-mm="မွေးဖွားနည်း *">Mode of delivery *</label>
               <select id="deliveryMode" required>
                 <option value="">-</option>
                 <option value="normal">Normal vaginal delivery</option>
                 <option value="assisted">Assisted delivery</option>
-                <option value="c_section">C-section</option>
+                <option value="elective_c_section">Elective C-section</option>
+                <option value="emergency_c_section">Emergency C-section</option>
+                <option value="c_section">C-section (legacy; subtype not recorded)</option>
               </select>
             </div>
             <div class="delivery-field">
               <label for="deliveryBirthPlace" class="lang-text" data-en="Birth place *" data-mm="မွေးဖွားရာနေရာ *">Birth place *</label>
               <select id="deliveryBirthPlace" required>
                 <option value="">-</option>
-                <option value="public_facility" class="lang-text" data-en="Public Facility" data-mm="အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန">Public Facility</option>
+                <option value="government_hospital" class="lang-text" data-en="Government Hospital" data-mm="အစိုးရဆေးရုံ">Government Hospital</option>
+                <option value="health_facility_subfacility" class="lang-text" data-en="Health Facility / Subfacility" data-mm="ကျန်းမာရေးဌာန / လက်အောက်ခံဌာန">Health Facility / Subfacility</option>
+                <option value="public_facility" class="lang-text" data-en="Public Facility (legacy)" data-mm="အစိုးရကျန်းမာရေးဌာန (ယခင်မှတ်တမ်း)">Public Facility (legacy)</option>
                 <option value="private_facility" class="lang-text" data-en="Private Facility" data-mm="ပုဂ္ဂလိက">Private Facility</option>
                 <option value="home" class="lang-text" data-en="Home Delivery" data-mm="အိမ်မွေး">Home Delivery</option>
                 <option value="other" class="lang-text" data-en="Others" data-mm="အခြား">Others</option>
@@ -2351,6 +2496,9 @@
         </section>
       </div>
       <div class="modal-footer">
+        <button type="button" id="deliveryCorrectionBtn" class="btn btn-warning" style="display:none;" onclick="openDeliveryCorrectionWorkflow()">
+          <i class="fas fa-user-shield me-2"></i><span class="lang-text" data-en="Request supervised correction" data-mm="ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းရန်">Request supervised correction</span>
+        </button>
         <button type="button" class="btn btn-secondary" onclick="closeThirdStageModal()">
           <span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
         </button>

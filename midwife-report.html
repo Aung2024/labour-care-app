@@ -15,6 +15,7 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/baby-patient-utils.js"></script>
+  <script src="js/infection-alerts.js"></script>
   <script src="js/register-sw.js"></script>
   <style>
     :root {
@@ -863,6 +864,7 @@
       oldClient: { en: 'Old Client', mm: 'လူနာဟောင်း' },
       clientType: { en: 'Old/New', mm: 'ဟောင်း/အသစ်' },
       patientName: { en: 'Patient Name', mm: 'လူနာအမည်' },
+      infectionAlert: { en: 'Infection Alert', mm: 'ကူးစက်ရောဂါ သတိပေးချက်' },
       addressOccupation: { en: 'Address / Occupation', mm: 'လိပ်စာ / အလုပ်အကိုင်' },
       gravida: { en: 'Gravida', mm: 'Gravida' },
       parity: { en: 'Parity', mm: 'Parity' },
@@ -890,7 +892,7 @@
     };
 
     var COLUMNS = [
-      'date', 'no', 'clientType', 'patientName', 'addressOccupation',
+      'date', 'no', 'clientType', 'patientName', 'infectionAlert', 'addressOccupation',
       'gravida', 'parity', 'lmp', 'edd', 'weight', 'height', 'ga', 'urineGlucose',
       'urineProtein', 'hb', 'syphilis', 'pmct', 'tb', 'bloodPressure', 'fundalHeight',
       'fetalHeartRate', 'fetalPresentation', 'symptomsTreatment', 'totalVisits',
@@ -1334,14 +1336,22 @@
       var isNew = isNewClientForEvent(ev, allEvents);
       var bp = formatBp(data);
       var transfer = await fetchTransferInfo(ev.patientId);
-      var labTest = findLabTestForVisit(await fetchPatientTestRecords(ev.patientId), visitYmd, uid);
+      var patientTests = await fetchPatientTestRecords(ev.patientId);
+      var labTest = findLabTestForVisit(patientTests, visitYmd, uid);
       var lab = labFieldsFromTest(labTest);
+      var infectionFlags = window.InfectionAlerts
+        ? InfectionAlerts.collectFlags(patientTests)
+        : {};
       return {
         date: displayDate(evDate),
         no: index + 1,
         service: serviceLabel(ev.type),
         clientType: isNew ? tr('clientNewShort') : tr('clientOldShort'),
         patientName: firstOf(patient.name, patient.patientName, data.patientName),
+        infectionAlert: Object.keys(infectionFlags).map(function (key) {
+          return ({ hiv: 'HIV', hepatitisB: 'Hep B', hepatitisC: 'Hep C', vdrl: 'VDRL' }[key] || key) +
+            ' Positive';
+        }).join('; '),
         addressOccupation: formatAddressOccupation(patient),
         gravida: firstOf(data.gravida, patient.gravida, patient.gravida_value),
         parity: firstOf(data.parity, patient.parity),
@@ -1513,7 +1523,7 @@
     function renderScreenTables(rows) {
       renderTable('clientTable', [
         'no', 'date', 'service', 'clientType',
-        'patientName', 'addressOccupation', 'gravida', 'parity', 'lmp', 'edd'
+        'patientName', 'infectionAlert', 'addressOccupation', 'gravida', 'parity', 'lmp', 'edd'
       ], rows);
       renderTable('examTable', [
         'no', 'weight', 'height', 'ga', 'urineGlucose',

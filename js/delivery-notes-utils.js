@@ -41,6 +41,8 @@
     if (!v) return '';
     if (v === 'normal' || v === 'normal_vaginal' || v.indexOf('normal') !== -1) return 'normal_vaginal';
     if (v === 'assisted' || v === 'assisted_vaginal' || v.indexOf('assisted') !== -1 || v.indexOf('forceps') !== -1 || v.indexOf('vacuum') !== -1) return 'assisted_vaginal';
+    if (v === 'elective_c_section' || v === 'elective_caesarean_section') return 'elective_caesarean_section';
+    if (v === 'emergency_c_section' || v === 'emergency_caesarean_section') return 'emergency_caesarean_section';
     if (v === 'c_section' || v === 'caesarean_section' || v === 'cesarean_section' || v.indexOf('section') !== -1) return 'caesarean_section';
     return value;
   }
@@ -49,6 +51,22 @@
     var raw = String(value || '').trim();
     if (!raw) return '';
     var v = raw.toLowerCase().replace(/[_\s-]+/g, ' ');
+
+    if (
+      v === 'government hospital' ||
+      v === 'government_hospital'
+    ) {
+      return 'government_hospital';
+    }
+
+    if (
+      v === 'health facility' ||
+      v === 'health facility subfacility' ||
+      v === 'health_facility_subfacility' ||
+      v === 'subfacility'
+    ) {
+      return 'health_facility_subfacility';
+    }
 
     if (
       v === 'public facility' ||
@@ -96,7 +114,9 @@
   function birthPlaceLabel(value, language) {
     var key = normalizeBirthPlaceForNewborn(value);
     var mm = language === 'mm';
-    if (key === 'public_facility') return mm ? 'အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန' : 'Public Facility';
+    if (key === 'government_hospital') return mm ? 'အစိုးရဆေးရုံ' : 'Government Hospital';
+    if (key === 'health_facility_subfacility') return mm ? 'ကျန်းမာရေးဌာန / လက်အောက်ခံဌာန' : 'Health Facility / Subfacility';
+    if (key === 'public_facility') return mm ? 'အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန' : 'Public Facility (legacy)';
     if (key === 'private_facility') return mm ? 'ပုဂ္ဂလိက' : 'Private Facility';
     if (key === 'home') return mm ? 'အိမ်မွေး' : 'Home Delivery';
     if (key === 'other') return mm ? 'အခြား' : 'Others';
@@ -133,6 +153,7 @@
       babyName: firstOf(raw.babyName, raw.baby_name, raw.name),
       outcome: normalizeOutcome(raw.outcome),
       gender: normalizeGender(firstOf(raw.gender, raw.sex)),
+      anusPresent: firstOf(raw.anusPresent, raw.anus_present),
       birthWeightGram: toNumber(firstOf(raw.birthWeightGram, raw.birth_weight_gram, raw.body_weight_gram)),
       birthTime: firstOf(raw.birthTime, raw.birth_time),
       causeOfDeath: firstOf(raw.causeOfDeath, raw.cause_of_death)
@@ -176,6 +197,9 @@
       },
       deliveryDetails: {
         pregnancyType: pregnancyType,
+        gestationalWeek: toNumber(firstOf(details.gestationalWeek, details.gestational_week, data.gestationalWeek)),
+        anusPresent: firstOf(details.anusPresent, details.anus_present, data.anusPresent),
+        birthProvider: firstOf(details.birthProvider, details.birth_provider, data.birthProvider),
         modeOfDelivery: firstOf(details.modeOfDelivery, details.mode_of_delivery),
         birthPlace: firstOf(details.birthPlace, details.birthplace),
         babies: babies
@@ -203,7 +227,10 @@
       outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || null),
       cause_of_death: firstBaby.causeOfDeath || null,
       mode_of_delivery: normalizeDeliveryModeForNewborn(notes.deliveryDetails.modeOfDelivery) || null,
-      birthplace: normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || null
+      birthplace: normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || null,
+      gestational_week: notes.deliveryDetails.gestationalWeek,
+      anus_present: firstBaby.anusPresent || notes.deliveryDetails.anusPresent || null,
+      birth_provider: notes.deliveryDetails.birthProvider || null
     };
   }
 
@@ -240,8 +267,18 @@
     if (!legacy) return;
     var db = firebase.firestore();
     var collectionRef = db.collection('patients').doc(patientId).collection('newborn_care');
-    var existing = await collectionRef.limit(1).get();
-    var current = existing.empty ? {} : (existing.docs[0].data() || {});
+    var existing;
+    try {
+      existing = await collectionRef.orderBy('visit_number', 'asc').limit(1).get();
+    } catch (error) {
+      existing = await collectionRef.get();
+    }
+    var firstDoc = existing.empty ? null : existing.docs.slice().sort(function (a, b) {
+      var av = parseInt((a.data() || {}).visit_number, 10) || 999;
+      var bv = parseInt((b.data() || {}).visit_number, 10) || 999;
+      return av - bv;
+    })[0];
+    var current = firstDoc ? (firstDoc.data() || {}) : {};
     var patch = {};
     if (!current.birth_time && legacy.birth_time) patch.birth_time = legacy.birth_time;
     if (!current.birthplace && legacy.birthplace) patch.birthplace = legacy.birthplace;
@@ -253,12 +290,8 @@
     }
     if (!current.outcome && legacy.outcome) patch.outcome = legacy.outcome;
     if (!Object.keys(patch).length) return;
-    if (!existing.empty) {
-      await collectionRef.doc(existing.docs[0].id).set(patch, { merge: true });
-    } else {
-      patch.visit_number = 1;
-      patch.createdAt = nowServer();
-      await collectionRef.add(patch);
+    if (firstDoc) {
+      await collectionRef.doc(firstDoc.id).set(patch, { merge: true });
     }
   }
 
@@ -292,12 +325,26 @@
       updatedAt: nowServer(),
       updatedBy: userId || null
     };
-    await firebase.firestore()
+    var ref = firebase.firestore()
       .collection('patients')
       .doc(patientId)
       .collection('records')
-      .doc(DELIVERY_DOC_ID)
-      .set(payload, { merge: true });
+      .doc(DELIVERY_DOC_ID);
+    await firebase.firestore().runTransaction(async function (transaction) {
+      var existing = await transaction.get(ref);
+      if (existing.exists && !options.allowUpdate) {
+        var error = new Error('Delivery Notes already exist. Use the supervised edit approval workflow to make a correction.');
+        error.code = 'delivery-notes/already-exists';
+        throw error;
+      }
+      if (!existing.exists) {
+        payload.createdAt = nowServer();
+        payload.createdBy = userId || null;
+      } else {
+        payload.correctionApprovalId = options.approvalId || null;
+      }
+      transaction.set(ref, payload, { merge: !!existing.exists });
+    });
 
     var babyIds = await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(patientId, payload, userId, {
       motherData: options.motherData || null

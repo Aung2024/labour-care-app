@@ -136,6 +136,11 @@
             <label class="form-label">Township</label>
             <select id="editTownship" class="form-select"></select>
           </div>
+          <div class="mb-3">
+            <label class="form-label">Facility</label>
+            <select id="editFacilityCode" class="form-select"></select>
+            <div id="editFacilityTaxonomy" class="small text-muted mt-1"></div>
+          </div>
           <div class="mb-3" id="editProviderTypeGroup">
             <label class="form-label">Account label</label>
             <select id="editProviderType" class="form-select"></select>
@@ -193,6 +198,7 @@
   <script src="js/township-region.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/role-display.js"></script>
+  <script src="js/facility-config.js"></script>
   <script src="js/password-policy.js"></script>
   <script>
     let allUsers = [];
@@ -424,6 +430,28 @@
         }).join('');
     }
 
+    function fillEditFacilities(selected) {
+      const select = document.getElementById('editFacilityCode');
+      if (!select || !window.FacilityConfig) return;
+      FacilityConfig.populateFacilitySelect(select, {
+        township: document.getElementById('editTownship').value,
+        region: document.getElementById('editRegion').value,
+        selectedCode: selected || select.value,
+        all: normalizeRoleKey(editingRole) === 'regional officer'
+      });
+      updateEditFacilityTaxonomy();
+    }
+
+    function updateEditFacilityTaxonomy() {
+      const code = document.getElementById('editFacilityCode').value;
+      const output = document.getElementById('editFacilityTaxonomy');
+      if (!output || !window.FacilityConfig) return;
+      const taxonomy = FacilityConfig.getFacilityTaxonomy(code);
+      output.textContent = code
+        ? taxonomy.department.toUpperCase() + ' · ' + taxonomy.facilityType.replace(/_/g, ' ')
+        : 'Facility determines DOPH/DOMS and facility filters.';
+    }
+
     function syncProviderTypeEditor(role, providerType) {
       const group = document.getElementById('editProviderTypeGroup');
       const select = document.getElementById('editProviderType');
@@ -469,7 +497,15 @@
           return '<option value="' + escapeHtml(r) + '"' + sel + '>' + escapeHtml(r) + '</option>';
         }).join('');
       fillEditTownships(currentRegion, m.township || '');
-      rSel.onchange = function() { fillEditTownships(rSel.value, ''); };
+      fillEditFacilities(m.facility_code || '');
+      rSel.onchange = function() {
+        fillEditTownships(rSel.value, '');
+        fillEditFacilities('');
+      };
+      document.getElementById('editTownship').onchange = function () {
+        fillEditFacilities('');
+      };
+      document.getElementById('editFacilityCode').onchange = updateEditFacilityTaxonomy;
       editModal.show();
     }
 
@@ -630,6 +666,7 @@
       const phone = document.getElementById('editPhone').value.trim();
       const region = document.getElementById('editRegion').value.trim();
       const township = document.getElementById('editTownship').value.trim();
+      const facilityCode = document.getElementById('editFacilityCode').value.trim();
       const approved = document.getElementById('editApproved').value === 'true';
       const providerType = document.getElementById('editProviderType').value;
       const role = editingRole || 'Midwife';
@@ -651,6 +688,12 @@
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: firebase.auth().currentUser.uid
         };
+        if (window.FacilityConfig) {
+          const taxonomy = FacilityConfig.getFacilityTaxonomy(facilityCode);
+          payload.facility_code = facilityCode || null;
+          payload.department = taxonomy.department;
+          payload.facility_type = taxonomy.facilityType;
+        }
         if (normalizeRoleKey(role) === 'regional officer') {
           payload.provider_type = 'regional_administration';
         } else if (normalizeRoleKey(role) === 'tmo') {

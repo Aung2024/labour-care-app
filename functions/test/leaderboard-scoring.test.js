@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   SCORE_VERSION,
   calculatePatientContribution,
+  buildPatientAchievements,
   monthKeyForDate,
   recentMonthKeys
 } = require('../src/leaderboard/scoring');
@@ -36,10 +37,11 @@ test('scores only activity from the selected month', () => {
   assert.equal(result.scoreVersion, SCORE_VERSION);
   assert.equal(result.categories.registration, 1);
   assert.equal(result.categories.completeRegistration, 2);
-  assert.equal(result.categories.ancVisits, 1);
-  assert.equal(result.categories.completeANC, 2);
+  // First-ANC is a lifetime achievement and was earned in July.
+  assert.equal(result.categories.ancVisits, 0);
+  assert.equal(result.categories.completeANC, 0);
   assert.equal(result.categories.labTests, 1);
-  assert.equal(result.score, 7);
+  assert.equal(result.score, 4);
   assert.equal(result.activePatientCount, 1);
 });
 
@@ -131,4 +133,51 @@ test('returns current and previous month keys', () => {
 
 test('uses the Asia/Yangon month at UTC month boundaries', () => {
   assert.equal(monthKeyForDate(new Date('2026-07-31T18:30:00Z')), '2026-08');
+});
+
+test('awards delivery, immediate newborn, and KMC milestones once per patient', () => {
+  const result = calculatePatientContribution({ created_by: 'owner' }, {
+    deliveryNotes: {
+      updatedAt: '2026-08-04',
+      deliveryDetails: { babies: [{ birthTime: '2026-08-04', outcome: 'alive' }] },
+      recordedBy: 'delivery-provider'
+    },
+    immediateNewbornCare: [
+      { createdAt: '2026-08-04', completed: true, recordedBy: 'newborn-provider' },
+      { createdAt: '2026-08-05', completed: true, recordedBy: 'newborn-provider' }
+    ],
+    newbornCare: [
+      { visitDate: '2026-08-05', kmc_selected: 'yes', recordedBy: 'newborn-provider' },
+      { visitDate: '2026-08-06', kmc_selected: 'yes', recordedBy: 'newborn-provider' }
+    ]
+  }, '2026-08');
+
+  assert.equal(result.categories.deliveryNotes, 1);
+  assert.equal(result.categories.immediateNewbornCare, 1);
+  assert.equal(result.categories.kmcYes, 1);
+  assert.equal(result.providerBreakdown['delivery-provider'].score, 1);
+  assert.equal(result.providerBreakdown['newborn-provider'].score, 3);
+});
+
+test('achievement milestones do not repeat in later monthly periods', () => {
+  const patient = { created_by: 'provider', registration_date: '2026-06-01' };
+  const activity = {
+    ancVisits: [
+      { visitDate: '2026-06-02', visitNumber: 1, lmp: '2026-01-01' },
+      { visitDate: '2026-07-02', visitNumber: 2, lmp: '2026-01-01' }
+    ]
+  };
+  assert.equal(
+    buildPatientAchievements(patient, activity).filter((item) => item.key === 'ancVisits').length,
+    1
+  );
+  assert.equal(calculatePatientContribution(patient, activity, '2026-07').categories.ancVisits, 0);
+});
+
+test('supports year periods', () => {
+  const result = calculatePatientContribution({
+    created_by: 'provider',
+    registration_date: '2026-06-01'
+  }, {}, '2026');
+  assert.equal(result.categories.registration, 1);
 });
