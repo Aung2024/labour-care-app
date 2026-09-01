@@ -1,7 +1,7 @@
 (function (global) {
   'use strict';
 
-  var PAGE_SIZE = 25;
+  var PAGE_SIZE = 100;
   var TIMEOUT_MS = 50000;
   var FACILITY_TYPE_LABELS = {
     district_hospital: 'District hospital',
@@ -35,45 +35,50 @@
     return localStorage.getItem('trackingV2Enabled') !== 'false';
   }
 
-  function ymd(date) {
-    return date.toISOString().slice(0, 10);
+  var MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  function ymdUtc(year, month, day) {
+    return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
   }
 
-  function defaultPeriod() {
-    var now = new Date();
-    return {
-      year: String(now.getFullYear()),
-      month: String(now.getMonth() + 1).padStart(2, '0')
-    };
+  function lastDayOfMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  }
+
+  function currentYearValue() {
+    return new Date().getFullYear();
   }
 
   function periodDates(values) {
     var year = parseInt(values.year, 10);
-    var month = parseInt(values.month, 10);
-    if (values.period === 'custom') {
-      return { periodStart: values.start || null, periodEnd: values.end || null };
+    if (!year || year > currentYearValue()) {
+      return { periodStart: '2000-01-01', periodEnd: '9999-12-31' };
     }
-    if (values.period === 'year' && year) {
+    var month = parseInt(values.month, 10);
+    if (!month) {
       return { periodStart: year + '-01-01', periodEnd: year + '-12-31' };
     }
-    if (year && month) {
-      return {
-        periodStart: year + '-' + String(month).padStart(2, '0') + '-01',
-        periodEnd: ymd(new Date(Date.UTC(year, month, 0)))
-      };
-    }
-    return {};
+    return {
+      periodStart: ymdUtc(year, month, 1),
+      periodEnd: ymdUtc(year, month, lastDayOfMonth(year, month))
+    };
   }
 
   function paramValues() {
     var params = new URLSearchParams(location.search);
-    var defaults = defaultPeriod();
+    var year = params.get('year') || '';
+    var month = params.get('month') || '';
+    if (parseInt(year, 10) > currentYearValue()) {
+      year = '';
+      month = '';
+    }
+    if (!year) month = '';
     return {
-      period: params.get('period') || 'month',
-      year: params.get('year') || defaults.year,
-      month: params.get('month') || defaults.month,
-      start: params.get('start') || '',
-      end: params.get('end') || '',
+      year: year,
+      month: month,
       region: params.get('region') || '',
       township: params.get('township') || '',
       department: params.get('department') || '',
@@ -108,9 +113,9 @@
     var types = global.FacilityConfig ? FacilityConfig.getFacilityTypes() :
       Object.keys(FACILITY_TYPE_LABELS);
     return types.map(function (type) {
-      return '<label class="tracking-type-chip"><input type="checkbox" name="facilityTypes" value="' +
-        type + '"' + (selectedSet.has(type) ? ' checked' : '') + '><span>' +
-        (FACILITY_TYPE_LABELS[type] || type) + '</span></label>';
+      return '<label><input type="checkbox" name="facilityTypes" value="' +
+        type + '"' + (selectedSet.has(type) ? ' checked' : '') + '> ' +
+        (FACILITY_TYPE_LABELS[type] || type) + '</label>';
     }).join('');
   }
 
@@ -119,18 +124,58 @@
     var style = document.createElement('style');
     style.id = 'trackingReaderStyles';
     style.textContent =
-      '.tracking-filters{position:sticky;top:68px;z-index:90;display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:.65rem;align-items:end;padding:.85rem;margin-bottom:.8rem;background:rgba(255,255,255,.98);border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 6px 22px rgba(15,23,42,.09)}' +
-      '.tracking-filter{display:flex;flex-direction:column;gap:.28rem;min-width:0}.tracking-filter label,.tracking-filter-label{font-size:.66rem;font-weight:800;letter-spacing:.025em;text-transform:uppercase;color:#64748b}' +
-      '.tracking-filter select,.tracking-filter input{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:.48rem .65rem;font-size:.82rem;color:#172033;outline:none;transition:border-color .15s,box-shadow .15s}' +
-      '.tracking-filter select:focus,.tracking-filter input:focus{border-color:#7357a6;box-shadow:0 0 0 3px rgba(115,87,166,.14)}' +
-      '.tracking-filter-wide{grid-column:span 2}.tracking-type-picker{position:relative}.tracking-type-picker>summary{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:.48rem .7rem;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155;font-size:.82rem;cursor:pointer;list-style:none}.tracking-type-picker>summary::-webkit-details-marker{display:none}.tracking-type-picker>summary:after{content:"⌄";font-size:1rem;color:#64748b}.tracking-type-picker[open]>summary{border-color:#7357a6;box-shadow:0 0 0 3px rgba(115,87,166,.14)}' +
-      '.tracking-type-menu{position:absolute;z-index:110;top:calc(100% + 5px);left:0;right:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem;padding:.6rem;background:#fff;border:1px solid #dbe2ea;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.16)}.tracking-type-chip{display:flex!important;align-items:center;gap:.42rem;min-height:38px;padding:.35rem .45rem;border-radius:8px;text-transform:none!important;letter-spacing:0!important;font-size:.74rem!important;color:#334155!important;cursor:pointer}.tracking-type-chip:hover{background:#f1f5f9}.tracking-type-chip input{width:17px!important;min-height:17px!important;height:17px;margin:0;accent-color:#7357a6}' +
-      '.tracking-filter-actions{display:flex;gap:.45rem;align-items:center}.tracking-filter-actions button{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer;transition:transform .12s,box-shadow .12s,background .12s}.tracking-filter-actions button:active{transform:translateY(1px)}.tracking-apply{border:0;color:#fff;background:linear-gradient(135deg,#a51f1f,#6f3c98);box-shadow:0 4px 12px rgba(111,60,152,.22)}.tracking-reset{border:1px solid #cbd5e1;color:#475569;background:#fff}.tracking-repair{border:1px solid #d8c9e7;color:#64358e;background:#f8f4fb}.tracking-repair:disabled{opacity:.65;cursor:wait}.tracking-repair-status{grid-column:1/-1;font-size:.75rem;color:#475569}' +
-      '.tracking-state{padding:.7rem 1rem;text-align:center;color:#475569}.tracking-state.error{color:#b91c1c}.tracking-load-more{min-height:44px;margin:.75rem;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:800;padding:.5rem 1rem}' +
+      '.tracking-filters-wrap{margin:0 0 .85rem;border:1px solid #e2e8f0;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.05)}' +
+      '.tracking-filters-toggle{width:100%;display:flex;align-items:center;gap:.7rem;min-height:44px;padding:.55rem .85rem;border:0;background:transparent;text-align:left;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}' +
+      '.tracking-filters-toggle-title{font-size:.82rem;font-weight:800;color:#0f172a;white-space:nowrap}' +
+      '.tracking-filters-toggle-summary{flex:1;min-width:0;color:#64748b;font-size:.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.tracking-filters-toggle i{margin-left:auto;color:#64748b}' +
+      '.tracking-filters-wrap.is-open .tracking-filters-toggle i{transform:rotate(180deg)}' +
+      '.tracking-filters{display:none;flex-direction:column;gap:.75rem;padding:0 .85rem .9rem;border-top:1px solid #eef2f7}' +
+      '.tracking-filters-wrap.is-open .tracking-filters{display:flex}' +
+      '.tracking-filter-row{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;align-items:end}' +
+      '.tracking-filter{display:flex;flex-direction:column;gap:.28rem;min-width:0}' +
+      '.tracking-filter label,.tracking-types-label{margin:0;font-size:.75rem;font-weight:700;color:#334155}' +
+      '.tracking-filter select{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:.48rem .65rem;font-size:.82rem;color:#172033}' +
+      '.tracking-apply-wrap{grid-column:1/-1}' +
+      '.tracking-apply,.tracking-reset,.tracking-repair{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer}' +
+      '.tracking-apply{width:100%;border:0;color:#fff;background:#059669}' +
+      '.tracking-filters-wrap[data-theme="hrt"] .tracking-apply{background:linear-gradient(135deg,#a51f1f,#6f3c98)}' +
+      '.tracking-filter-actions{display:flex;flex-wrap:wrap;gap:.45rem}' +
+      '.tracking-reset{border:1px solid #cbd5e1;color:#475569;background:#fff}' +
+      '.tracking-repair{border:1px solid #d8c9e7;color:#64358e;background:#f8f4fb}' +
+      '.tracking-repair:disabled{opacity:.65;cursor:wait}' +
+      '.tracking-repair-status{font-size:.75rem;color:#475569}' +
+      '.tracking-type-chips{display:flex;flex-wrap:wrap;gap:.4rem}' +
+      '.tracking-type-chips label{display:inline-flex;align-items:center;gap:.4rem;min-height:44px;padding:.3rem .7rem;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#334155;font-size:.78rem;font-weight:600;cursor:pointer}' +
+      '.tracking-type-chips input{width:16px;height:16px;margin:0;accent-color:#059669}' +
+      '.tracking-filters-wrap[data-theme="hrt"] .tracking-type-chips input{accent-color:#a51f1f}' +
+      '.tracking-state{padding:.7rem 1rem;text-align:center;color:#475569}.tracking-state.error{color:#b91c1c}' +
+      '.tracking-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.55rem;padding:.65rem .85rem;margin:0 0 .65rem;border:1px solid #e2e8f0;border-radius:12px;background:#fff}' +
+      '.tracking-pager-meta{font-size:.78rem;color:#475569}' +
+      '.tracking-load-more{min-height:44px;border:0;border-radius:10px;background:#0f172a;color:#fff;font-weight:800;padding:.5rem 1rem}' +
       '.tracking-infections{display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.25rem}.tracking-infection{font-size:.62rem;font-weight:800;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:.15rem .4rem}' +
-      '.tracking-source{display:block;margin-top:.2rem;font-size:.68rem;color:#64748b}.tracking-facility{font-size:.76rem;line-height:1.35}' +
-      '@media(max-width:768px){.tracking-filters{top:66px;grid-template-columns:repeat(2,minmax(0,1fr));padding:.65rem;gap:.5rem}.tracking-filter-wide,.tracking-filter-actions{grid-column:1/-1}.tracking-type-menu{position:fixed;left:12px;right:12px;top:auto;grid-template-columns:1fr 1fr;max-height:45dvh;overflow:auto}.tracking-filter-actions button{flex:1;padding:.45rem .65rem}}';
+      '.tracking-facility{font-size:.76rem;line-height:1.35}' +
+      '@media(min-width:768px){.tracking-filter-row{grid-template-columns:minmax(140px,180px) minmax(140px,180px) auto}.tracking-apply-wrap{grid-column:auto}.tracking-apply{min-width:140px}.tracking-scope-row{grid-template-columns:repeat(3,minmax(0,1fr))}}';
     document.head.appendChild(style);
+  }
+
+  function filterSummary(form, level) {
+    var parts = [];
+    var year = form.elements.year.value;
+    var month = form.elements.month.value;
+    if (!year) parts.push('All time');
+    else if (!month) parts.push(year);
+    else parts.push(MONTH_NAMES[parseInt(month, 10) - 1] + ' ' + year);
+    if (level === 'central') parts.push(form.elements.region && form.elements.region.value || 'All regions');
+    if ((level === 'central' || level === 'regional') && form.elements.township) {
+      parts.push(form.elements.township.value || 'All townships');
+    }
+    if (level !== 'provider') parts.push('All facilities');
+    var types = form.querySelectorAll('input[name="facilityTypes"]:checked');
+    if (types.length) {
+      parts[parts.length - 1] = types.length + ' facility type' + (types.length === 1 ? '' : 's');
+    }
+    return parts.join(' · ');
   }
 
   function createControls(config) {
@@ -138,89 +183,116 @@
     var values = paramValues();
     var level = roleLevel(config.role);
     var fixedRegion = config.userData && config.userData.region || '';
-    var host = document.createElement('form');
-    host.className = 'tracking-filters';
-    host.id = config.kind + 'TrackingFilters';
-    var years = '';
-    var currentYear = new Date().getFullYear();
-    for (var year = currentYear + 1; year >= currentYear - 10; year--) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tracking-filters-wrap';
+    wrap.id = config.kind + 'TrackingFilters';
+    wrap.setAttribute('data-theme', config.kind || '');
+    var years = option('', 'All time', !values.year);
+    var currentYear = currentYearValue();
+    for (var year = currentYear; year >= currentYear - 5; year--) {
       years += option(String(year), String(year), String(year) === values.year);
     }
-    var months = '';
+    var months = option('', 'All months', !values.month);
     for (var month = 1; month <= 12; month++) {
       var monthValue = String(month).padStart(2, '0');
-      months += option(monthValue, new Date(2020, month - 1, 1).toLocaleString(undefined, { month: 'short' }), monthValue === values.month);
+      months += option(monthValue, MONTH_NAMES[month - 1], monthValue === values.month);
     }
-    host.innerHTML =
-      '<div class="tracking-filter"><label>Period</label><select name="period">' +
-        option('month', 'Month', values.period === 'month') +
-        option('year', 'Year', values.period === 'year') +
-        option('custom', 'Custom dates', values.period === 'custom') + '</select></div>' +
-      '<div class="tracking-filter tracking-year"><label>Year</label><select name="year">' + years + '</select></div>' +
-      '<div class="tracking-filter tracking-month"><label>Month</label><select name="month">' + months + '</select></div>' +
-      '<div class="tracking-filter tracking-custom"><label>From</label><input type="date" name="start" value="' + values.start + '"></div>' +
-      '<div class="tracking-filter tracking-custom"><label>To</label><input type="date" name="end" value="' + values.end + '"></div>' +
-      (level === 'central' ? '<div class="tracking-filter"><label>Region</label><select name="region">' + regionOptions(values.region) + '</select></div>' : '') +
-      (level === 'central' || level === 'regional' ? '<div class="tracking-filter"><label>Township</label><select name="township">' + townshipOptions(values.region, values.township, level === 'regional' ? fixedRegion : '') + '</select></div>' : '') +
-      (level !== 'provider' ? '<div class="tracking-filter"><label>Department</label><select name="department">' +
-        option('', 'DOPH & DOMS', !values.department) + option('doph', 'DOPH', values.department === 'doph') +
+    var scopeHtml = '';
+    if (level === 'central') {
+      scopeHtml += '<div class="tracking-filter"><label>Region</label><select name="region">' +
+        regionOptions(values.region) + '</select></div>';
+    }
+    if (level === 'central' || level === 'regional') {
+      scopeHtml += '<div class="tracking-filter"><label>Township</label><select name="township">' +
+        townshipOptions(values.region, values.township, level === 'regional' ? fixedRegion : '') +
+        '</select></div>';
+    }
+    if (level !== 'provider') {
+      scopeHtml += '<div class="tracking-filter"><label>Department</label><select name="department">' +
+        option('', 'All departments', !values.department) +
+        option('doph', 'DOPH', values.department === 'doph') +
         option('doms', 'DOMS', values.department === 'doms') +
-        option('other', 'Other / unclassified', values.department === 'other') + '</select></div>' +
-        '<div class="tracking-filter tracking-filter-wide"><span class="tracking-filter-label">Facility types</span>' +
-        '<details class="tracking-type-picker"><summary>Choose facility types</summary><div class="tracking-type-menu">' +
-        typeCheckboxes(values.facilityTypes) + '</div></details></div>' : '') +
-      '<div class="tracking-filter-actions"><button class="tracking-apply" type="submit"><i class="fas fa-filter"></i> Apply</button>' +
-        '<button class="tracking-reset" type="button" data-reset>Reset</button>' +
+        option('other', 'Other / unclassified', values.department === 'other') +
+        '</select></div>';
+    }
+    wrap.innerHTML =
+      '<button type="button" class="tracking-filters-toggle" aria-expanded="false">' +
+        '<span class="tracking-filters-toggle-title">Filters</span>' +
+        '<span class="tracking-filters-toggle-summary"></span>' +
+        '<i class="fas fa-chevron-down" aria-hidden="true"></i>' +
+      '</button>' +
+      '<form class="tracking-filters">' +
+        '<div class="tracking-filter-row">' +
+          '<div class="tracking-filter"><label>Year</label><select name="year">' + years + '</select></div>' +
+          '<div class="tracking-filter"><label>Month</label><select name="month"' +
+            (values.year ? '' : ' disabled') + '>' + months + '</select></div>' +
+          '<div class="tracking-apply-wrap"><button class="tracking-apply" type="submit">Apply</button></div>' +
+        '</div>' +
+        (scopeHtml ? '<div class="tracking-filter-row tracking-scope-row">' + scopeHtml + '</div>' : '') +
+        (level !== 'provider'
+          ? '<div><p class="tracking-types-label">Facility types</p><div class="tracking-type-chips">' +
+            typeCheckboxes(values.facilityTypes) + '</div></div>'
+          : '') +
+        '<div class="tracking-filter-actions">' +
+          '<button class="tracking-reset" type="button" data-reset>Reset</button>' +
+          (normalizeRole(config.role) === 'super admin'
+            ? '<button class="tracking-repair" type="button" data-repair><i class="fas fa-rotate"></i> Rebuild data</button>'
+            : '') +
+        '</div>' +
         (normalizeRole(config.role) === 'super admin'
-          ? '<button class="tracking-repair" type="button" data-repair><i class="fas fa-rotate"></i> Rebuild data</button>'
-          : '') + '</div>' +
-      (normalizeRole(config.role) === 'super admin'
-        ? '<div class="tracking-repair-status" data-repair-status aria-live="polite"></div>'
-        : '');
+          ? '<div class="tracking-repair-status" data-repair-status aria-live="polite"></div>'
+          : '') +
+      '</form>';
+    var host = wrap.querySelector('form');
+    var toggle = wrap.querySelector('.tracking-filters-toggle');
+    var summary = wrap.querySelector('.tracking-filters-toggle-summary');
     var anchor = document.getElementById('dashboardState') || document.getElementById('loadingState');
-    anchor.parentNode.insertBefore(host, anchor);
+    anchor.parentNode.insertBefore(wrap, anchor);
 
-    function updateVisibility() {
-      var period = host.elements.period.value;
-      var custom = period === 'custom';
-      host.querySelector('.tracking-year').style.display = period === 'custom' ? 'none' : '';
-      host.querySelector('.tracking-month').style.display = period === 'month' ? '' : 'none';
-      host.querySelectorAll('.tracking-custom').forEach(function (el) {
-        el.style.display = custom ? '' : 'none';
-        var input = el.querySelector('input');
-        if (input) input.required = custom;
-      });
+    function syncMonthState() {
+      var hasYear = !!host.elements.year.value;
+      host.elements.month.disabled = !hasYear;
+      if (!hasYear) host.elements.month.value = '';
     }
-    function updateFacilitySummary() {
-      var summary = host.querySelector('.tracking-type-picker summary');
-      if (!summary) return;
-      var count = host.querySelectorAll('input[name="facilityTypes"]:checked').length;
-      summary.textContent = count ? count + ' facility type' + (count === 1 ? '' : 's') + ' selected' : 'All facility types';
+    function refreshSummary() {
+      summary.textContent = filterSummary(host, level);
     }
-    updateVisibility();
-    updateFacilitySummary();
-    host.elements.period.addEventListener('change', updateVisibility);
-    host.querySelectorAll('input[name="facilityTypes"]').forEach(function (input) {
-      input.addEventListener('change', updateFacilitySummary);
+    function setOpen(open) {
+      wrap.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    syncMonthState();
+    refreshSummary();
+    toggle.addEventListener('click', function () {
+      setOpen(!wrap.classList.contains('is-open'));
     });
+    host.elements.year.addEventListener('change', function () {
+      syncMonthState();
+      refreshSummary();
+    });
+    host.elements.month.addEventListener('change', refreshSummary);
     if (host.elements.region) {
       host.elements.region.addEventListener('change', function () {
         host.elements.township.innerHTML = townshipOptions(host.elements.region.value, '', '');
+        refreshSummary();
       });
     }
+    if (host.elements.township) host.elements.township.addEventListener('change', refreshSummary);
+    if (host.elements.department) host.elements.department.addEventListener('change', refreshSummary);
+    host.querySelectorAll('input[name="facilityTypes"]').forEach(function (input) {
+      input.addEventListener('change', refreshSummary);
+    });
     host.addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!host.checkValidity()) {
-        host.reportValidity();
-        return;
-      }
+      refreshSummary();
+      setOpen(false);
       config.onApply(readFilters(host, level));
     });
     host.querySelector('[data-reset]').addEventListener('click', function () {
       var url = new URL(location.href);
       url.search = '';
       history.replaceState({}, '', url);
-      host.remove();
+      wrap.remove();
       config.onReset();
     });
     var repairButton = host.querySelector('[data-repair]');
@@ -241,16 +313,13 @@
         }
       });
     }
-    return { element: host, filters: readFilters(host, level), level: level };
+    return { element: wrap, filters: readFilters(host, level), level: level };
   }
 
   function readFilters(form, level) {
     var values = {
-      period: form.elements.period.value,
       year: form.elements.year.value,
-      month: form.elements.month.value,
-      start: form.elements.start.value,
-      end: form.elements.end.value,
+      month: form.elements.month.disabled ? '' : form.elements.month.value,
       region: form.elements.region ? form.elements.region.value : '',
       township: form.elements.township ? form.elements.township.value : '',
       department: form.elements.department ? form.elements.department.value : '',
@@ -265,11 +334,12 @@
 
   function restoreUrl(filters) {
     var params = new URLSearchParams();
-    ['period', 'year', 'month', 'start', 'end', 'region', 'township', 'department'].forEach(function (key) {
+    ['year', 'month', 'region', 'township', 'department'].forEach(function (key) {
       if (filters[key]) params.set(key, filters[key]);
     });
     (filters.facilityTypes || []).forEach(function (type) { params.append('facilityType', type); });
-    history.replaceState({}, '', location.pathname + '?' + params.toString());
+    var query = params.toString();
+    history.replaceState({}, '', location.pathname + (query ? '?' + query : ''));
   }
 
   function callableUrl(name) {

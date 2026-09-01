@@ -122,6 +122,7 @@ function patientFields(facts) {
     patientName: profile.name || profile.patientName || '',
     patientCode: profile.patient_id || profile.patientId || facts.id || '',
     patientPhone: profile.phone || profile.phoneNumber || '',
+    patientAge: profile.age != null && profile.age !== '' ? profile.age : null,
     infectionFlags: facts.infectionFlags || {}
   };
 }

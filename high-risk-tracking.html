@@ -476,11 +476,23 @@
       margin-bottom: 0.35rem;
       flex-wrap: wrap;
     }
+    .hrt-next-due {
+      margin-top: 0.25rem;
+      color: #64748b;
+      font-size: 0.68rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
     .kmc-status-track-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.15rem;
       border: 0;
       background: transparent;
       padding: 0;
       cursor: pointer;
+      min-height: 44px;
     }
     .hrt-track-dot {
       width: 17px;
@@ -1277,6 +1289,7 @@
     var _hrtNextPageToken = null;
     var _hrtLoadingPage = false;
     var _hrtPageError = '';
+    var _hrtLoadId = 0;
 
     var T = {
       en: {
@@ -1301,8 +1314,8 @@
         outcomeColLabel: 'Outcome',
         statusOnTrack: 'Active follow-up',
         statusOverdueFollowup: 'Overdue follow-up',
-        statusLostToFollowup: 'Defaulter/lost to follow-up',
-        statusComplete: 'ပြီးမြောက်',
+        statusLostToFollowup: 'Defaulted',
+        statusComplete: 'Completed',
         outcomeAlive: 'Alive',
         outcomeTransfer: 'Transfer',
         outcomeDead: 'Dead',
@@ -1375,7 +1388,11 @@
         visitStatusOverdueBy: 'Overdue by {days} day(s)',
         visitStatusDefaultedBy: 'Defaulted/Lost by {days} day(s) beyond threshold',
         notAvailable: 'Not available',
-        ok: 'OK'
+        ok: 'OK',
+        postpartumPeriod: 'Postpartum Period',
+        deliveryDate: 'Delivery Date',
+        loadingRemaining: 'Loading remaining patients…',
+        nextVisitDue: 'Next visit'
       },
       mm: {
         title: 'အန္တရာယ်ဖြစ်နိုင်ချေမြင့်မားသော ကိုယ်ဝန်ဆောင်များအား စောင့်ကြည့်ခြင်း',
@@ -1398,10 +1415,10 @@
         registerLabel: 'မှတ်ပုံတင်',
         statusCol: 'အခြေအနေ',
         outcomeColLabel: 'ရလဒ်',
-        statusOnTrack: 'Active follow-up',
-        statusOverdueFollowup: 'Overdue follow-up',
-        statusLostToFollowup: 'Defaulter/lost to follow-up',
-        statusComplete: 'Complete',
+        statusOnTrack: 'ရက်ချိန်းမှန်သော ကိုယ်ဝန်ဆောင်များ',
+        statusOverdueFollowup: 'ရက်ချိန်းလွန်သော ကိုယ်ဝန်ဆောင်များ',
+        statusLostToFollowup: 'အဆက်အသွယ်မရသော ကိုယ်ဝန်ဆောင်များ',
+        statusComplete: 'စောင့်ရှောက်မှု ပြီးမြောက်',
         outcomeAlive: 'အရှင်',
         outcomeTransfer: 'လွှဲပြောင်း',
         outcomeDead: 'အသေ',
@@ -1478,7 +1495,11 @@
         visitStatusOverdueBy: 'ရက် {days} ရက် လွန်ပြီး',
         visitStatusDefaultedBy: 'ကျော်လွန်ကန့်သတ်ချက် {days} ရက် ကျော်လွန်ပြီး ဆက်သွယ်မရ',
         notAvailable: 'မရှိ',
-        ok: 'OK'
+        ok: 'OK',
+        postpartumPeriod: 'မီးဖွားပြီးကာလ',
+        deliveryDate: 'မီးဖွားသည့်ရက်',
+        loadingRemaining: 'ကျန်ရှိသော လူနာများကို ဖတ်နေသည်…',
+        nextVisitDue: 'နောက်တစ်ကြိမ် ပြန်ပြရက်'
       }
     };
 
@@ -1558,7 +1579,11 @@
       if (v == null) return '\u2014';
       var d = v && typeof v.toDate === 'function' ? v.toDate() : new Date(v);
       if (isNaN(d.getTime())) return '\u2014';
-      return d.toLocaleDateString(lang === 'mm' ? 'my-MM' : undefined);
+      return d.toLocaleDateString(lang === 'mm' ? 'my-MM' : 'en-US', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
     }
 
     function relativeTime(ms) {
@@ -1960,8 +1985,14 @@
         dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
       }
       var pid = row && row.patient ? (row.patient.id || '') : '';
+      var due = getNextVisitDueDate(row);
+      var dueLine = due && !isCompleted(row)
+        ? '<div class="hrt-next-due">' + escapeHtml(tr('nextVisitDue')) + ': ' +
+          escapeHtml(formatDateVal(due)) + '</div>'
+        : '';
       return '<button type="button" class="kmc-status-track-btn" onclick="event.stopPropagation(); showHrtVisitStatusDetails(\'' + escapeHtml(pid) + '\')">' +
         '<span class="hrt-status-track">' + dots.join('') + '</span>' +
+        dueLine +
         '</button>';
     }
 
@@ -2021,7 +2052,9 @@
     }
 
     function formatPatientAge(p) {
-      if (p.age != null && p.age !== '') return String(p.age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
+      var age = p.age != null && p.age !== '' ? p.age
+        : (p._trackingProjection && p._trackingProjection.patientAge);
+      if (age != null && age !== '') return String(age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
       return '\u2014';
     }
 
@@ -2037,17 +2070,18 @@
     }
 
     function formatPregnancyCell(p, latestAnc) {
-      if (p._trackingProjection && p._trackingProjection.birthAnchorDate) {
+      var projection = p._trackingProjection || {};
+      if (projection.birthAnchorDate) {
         return {
-          line1: 'Postpartum period',
-          line2: String(p._trackingProjection.postpartumAgeDays || 0) + ' days postpartum · Birth ' +
-            formatDateVal(p._trackingProjection.birthAnchorDate)
+          line1: tr('postpartumPeriod') + ' = ' + String(projection.postpartumAgeDays || 0) +
+            (lang === 'mm' ? ' ရက်' : ' days'),
+          line2: tr('deliveryDate') + ' = ' + formatDateVal(projection.birthAnchorDate)
         };
       }
-      if (p._trackingProjection && p._trackingProjection.edd) {
+      if (projection.edd || p.edd) {
         return {
-          line1: 'EDD-derived estimate',
-          line2: 'Estimated EDD: ' + formatDateVal(p._trackingProjection.edd)
+          line1: 'EDD = ' + formatDateVal(projection.edd || p.edd),
+          line2: ''
         };
       }
       var gravida = p.gravida || p.gravida_value;
@@ -2055,10 +2089,9 @@
       var gp = 'G' + (gravida != null && gravida !== '' ? gravida : '\u2014') + ' P' + parity;
       var currentGa = currentGaFromLatestAnc(latestAnc);
       var ga = currentGa != null ? String(currentGa) + 'w' : (p.gestational_age != null ? String(p.gestational_age) + 'w' : '\u2014');
-      var edd = formatDateVal(p.edd);
       return {
         line1: tr('gpLabel') + ': ' + gp,
-        line2: tr('gaLabel') + ': ' + ga + ' \u00b7 ' + tr('eddLabel') + ': ' + edd
+        line2: tr('gaLabel') + ': ' + ga
       };
     }
 
@@ -2090,13 +2123,7 @@
     }
 
     function hrtToolsHtml(patientId, row) {
-      if (_hrtRoleLevel !== 'provider') {
-        return '<div class="tracking-facility"><strong>' +
-          escapeHtml(TrackingReader.facilityName(row.facilityCode)) + '</strong><br>' +
-          escapeHtml(row.township || '—') + '<br>' +
-          escapeHtml(row.facilityCode || '—') + ' · ' +
-          escapeHtml(String(row.facilityType || '—').replace(/_/g, ' ')) + '</div>';
-      }
+      if (_hrtRoleLevel !== 'provider') return '';
       var html = '<span class="hrt-register-actions">' +
         '<a class="hrt-status-btn hrt-new-anc-btn" href="antenatal-form.html?patient=' + encodeURIComponent(patientId) + '&from=hrt" onclick="event.stopPropagation(); selectHrtPatient(\'' + escapeHtml(patientId) + '\');">' +
           '<i class="fas fa-plus"></i><span>' + escapeHtml(tr('newAnc')) + '</span></a>';
@@ -2246,7 +2273,7 @@
         '<th class="col-outcome">' + escapeHtml(tr('outcomeCol')) + '</th>' +
         '<th class="col-recommendation">' + escapeHtml(tr('recommendationCol')) + '</th>' +
         '<th class="col-sms">' + escapeHtml(tr('smsCol')) + '</th>' +
-        '<th class="col-action">' + escapeHtml(_hrtRoleLevel === 'provider' ? tr('actionCol') : 'Facility Info') + '</th>' +
+        (_hrtRoleLevel === 'provider' ? '<th class="col-action">' + escapeHtml(tr('actionCol')) + '</th>' : '') +
         '</tr></thead><tbody id="hrtDesktopBody"></tbody></table></div>' +
         '<div class="hrt-mobile-register" id="hrtMobileBody"></div>';
       var desktopBody = document.getElementById('hrtDesktopBody');
@@ -2260,18 +2287,20 @@
         var infections = window.TrackingReader ? TrackingReader.infectionHtml(r.infectionFlags || p.infectionFlags) : '';
         var preg = formatPregnancyCell(p, r.latestAnc);
         var completedVisits = r.ancVisitCount || 0;
+        var actionCol = _hrtRoleLevel === 'provider';
         var trEl = document.createElement('tr');
         trEl.setAttribute('onclick', "openHrtAncReport('" + escapeHtml(patientId) + "')");
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + patientName + '</div><div class="hrt-patient-meta">' +
             escapeHtml(tr('ageLabel')) + ': ' + ageText + (phone ? '<br>' + phone : '') + infections + '</div></td>' +
-          '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div></td>' +
+          '<td><div class="hrt-pregnancy-meta">' + escapeHtml(preg.line1) + '</div>' +
+            (preg.line2 ? '<div class="hrt-pregnancy-meta">' + escapeHtml(preg.line2) + '</div>' : '') + '</td>' +
           '<td>' + compactRiskListHtml(r.factorsUnique || []) + '</td>' +
           '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
           '<td>' + statusCellHtml(r) + '</td>' +
           '<td>' + recommendationCellHtml(r) + '</td>' +
           '<td>' + communicationContactHtml(p) + '</td>' +
-          '<td>' + hrtToolsHtml(patientId, r) + '</td>';
+          (actionCol ? '<td>' + hrtToolsHtml(patientId, r) + '</td>' : '');
         desktopBody.appendChild(trEl);
 
         var card = document.createElement('div');
@@ -2284,24 +2313,21 @@
               '<div>' + statusCellHtml(r) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
-              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('pregnancyCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(preg.line1) + '<br>' + escapeHtml(preg.line2) + '</div></div>' +
+              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('pregnancyCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(preg.line1) + (preg.line2 ? '<br>' + escapeHtml(preg.line2) : '') + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('ancVisitsCol')) + '</span><div class="hrt-mobile-value">' + statusTrackHtml(completedVisits, r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('recommendationCol')) + '</span><div class="hrt-mobile-value">' + recommendationCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('outcomeCol')) + '</span><div class="hrt-mobile-value">' + statusCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('danger')) + '</span><div class="hrt-mobile-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('smsCol')) + ' / ' + escapeHtml(tr('actionCol')) + '</span><div class="hrt-mobile-value">' + communicationContactHtml(p) + ' ' + hrtToolsHtml(patientId, r) + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(_hrtRoleLevel === 'provider' ? tr('smsCol') + ' / ' + tr('actionCol') : tr('smsCol')) + '</span><div class="hrt-mobile-value">' + communicationContactHtml(p) + (_hrtRoleLevel === 'provider' ? ' ' + hrtToolsHtml(patientId, r) : '') + '</div></div>' +
             '</div>' +
           '</div>';
         mobileBody.appendChild(card);
       });
-      if (_hrtNextPageToken) {
-        var more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'tracking-load-more';
-        more.textContent = _hrtLoadingPage ? 'Loading…' : 'Load more';
-        more.disabled = _hrtLoadingPage;
-        more.onclick = function () { loadHrtProjectionPage(true); };
-        container.appendChild(more);
+      if (_hrtNextPageToken || _hrtLoadingPage) {
+        var filling = document.createElement('div');
+        filling.className = 'tracking-pager';
+        filling.textContent = tr('loadingRemaining');
+        container.appendChild(filling);
       }
       if (_hrtPageError) {
         var pageError = document.createElement('div');
@@ -2528,6 +2554,7 @@
         patientName: row.patientName,
         patient_id: row.patientCode,
         phone: row.patientPhone,
+        age: row.patientAge,
         infectionFlags: row.infectionFlags || {},
         _trackingProjection: row
       };
@@ -2555,7 +2582,7 @@
     }
 
     async function loadHrtProjectionPage(append) {
-      if (_hrtLoadingPage) return;
+      if (_hrtLoadingPage && append) return;
       _hrtLoadingPage = true;
       _hrtPageError = '';
       if (!append) setHrtPageState('loading');
@@ -2571,8 +2598,10 @@
         var mapped = result.rows.map(projectionHrtRow);
         window._hrtRows = append ? (window._hrtRows || []).concat(mapped) : mapped;
         _hrtNextPageToken = result.nextPageToken || null;
-        _hrtCardFilter = 'all';
-        window._hrtStatusFilter = 'all';
+        if (!append) {
+          _hrtCardFilter = 'all';
+          window._hrtStatusFilter = 'all';
+        }
         setHrtPageState(window._hrtRows.length ? 'ready' : 'empty');
         renderAll(getFilteredHrtRows());
       } catch (error) {
@@ -2587,6 +2616,14 @@
       }
     }
 
+    async function loadAllHrtProjections() {
+      var loadId = ++_hrtLoadId;
+      await loadHrtProjectionPage(false);
+      while (_hrtNextPageToken && !_hrtPageError && loadId === _hrtLoadId) {
+        await loadHrtProjectionPage(true);
+      }
+    }
+
     async function initializeHrtProjection(userData) {
       if (!window.TrackingReader || !TrackingReader.enabled()) return false;
       var controls = TrackingReader.createControls({
@@ -2596,7 +2633,7 @@
         onApply: async function (filters) {
           _hrtFilters = filters;
           TrackingReader.restoreUrl(filters);
-          try { await loadHrtProjectionPage(false); }
+          try { await loadAllHrtProjections(); }
           catch (error) { console.error('HRT projection reload', error); }
         },
         onReset: function () { location.href = location.pathname; }
@@ -2606,7 +2643,7 @@
       TrackingReader.restoreUrl(_hrtFilters);
       window._hrtRows = [];
       window._hrtFilterQuery = '';
-      await loadHrtProjectionPage(false);
+      await loadAllHrtProjections();
       return true;
     }
 

@@ -101,15 +101,68 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    .lb-filters {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
+    .lb-filters-wrap {
       margin-bottom: 1rem;
-      padding: 0.85rem;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
       background: #f8fafc;
+    }
+
+    .lb-filters-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      min-height: 44px;
+      padding: 0.55rem 0.85rem;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .lb-filters-toggle-title {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #0f172a;
+      white-space: nowrap;
+    }
+
+    .lb-filters-toggle-summary {
+      flex: 1;
+      min-width: 0;
+      color: #64748b;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .lb-filters-toggle i {
+      margin-left: auto;
+      color: #64748b;
+    }
+
+    .lb-filters-wrap.is-open .lb-filters-toggle i {
+      transform: rotate(180deg);
+    }
+
+    .lb-filters {
+      display: none;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 0;
+      padding: 0 0.85rem 0.9rem;
+      border: 0;
+      border-top: 1px solid #e2e8f0;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .lb-filters-wrap.is-open .lb-filters {
+      display: flex;
     }
 
     .lb-filter-row {
@@ -573,6 +626,12 @@
         </button>
       </div>
 
+      <div class="lb-filters-wrap" id="leaderboardFiltersWrap">
+        <button type="button" class="lb-filters-toggle" id="leaderboardFilterToggle" aria-expanded="false">
+          <span class="lb-filters-toggle-title">Filters</span>
+          <span class="lb-filters-toggle-summary" id="leaderboardFilterSummary">All time · All regions · All facilities</span>
+          <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
       <form class="lb-filters" aria-label="Leaderboard filters" onsubmit="event.preventDefault(); applyLeaderboardFilters();">
         <div class="lb-filter-row">
           <div class="lb-filter">
@@ -616,6 +675,7 @@
           <div id="leaderboardFacilityTypes" class="lb-type-chips"></div>
         </div>
       </form>
+      </div>
 
       <!-- Loading State -->
       <div id="loadingContainer" class="loading-container">
@@ -932,6 +992,15 @@
       }
       syncMonthFilterState();
       leaderboardMonth = 'all';
+      const toggle = document.getElementById('leaderboardFilterToggle');
+      if (toggle && !toggle.dataset.bound) {
+        toggle.dataset.bound = '1';
+        toggle.addEventListener('click', function () {
+          const wrap = document.getElementById('leaderboardFiltersWrap');
+          setLeaderboardFiltersOpen(!(wrap && wrap.classList.contains('is-open')));
+        });
+      }
+      updateLeaderboardFilterChrome();
     }
 
     function facilityTypeLabel(value) {
@@ -1010,6 +1079,7 @@
       leaderboardFacilityTypes = Array.from(
         document.querySelectorAll('#leaderboardFacilityTypes input:checked')
       ).map(function (input) { return input.value; });
+      setLeaderboardFiltersOpen(false);
       await loadLeaderboard();
     }
 
@@ -1039,6 +1109,22 @@
         parts.push('All facilities');
       }
       return parts.join(' · ');
+    }
+
+    function updateLeaderboardFilterChrome() {
+      const summary = document.getElementById('leaderboardFilterSummary');
+      const periodLabel = document.getElementById('leaderboardPeriodLabel');
+      const text = selectedScopeLabel();
+      if (summary) summary.textContent = text;
+      if (periodLabel) periodLabel.textContent = text;
+    }
+
+    function setLeaderboardFiltersOpen(open) {
+      const wrap = document.getElementById('leaderboardFiltersWrap');
+      const toggle = document.getElementById('leaderboardFilterToggle');
+      if (!wrap || !toggle) return;
+      wrap.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     function activityDateMs(value) {
@@ -1190,10 +1276,9 @@
       const newest = (rows || []).reduce(function (latest, row) {
         return Math.max(latest, leaderboardTimestampMs(row.calculatedAt) || 0);
       }, 0);
-      const sourceLabel = source === 'cache' ? 'Cached result' : 'Backend summary';
       element.textContent = newest
-        ? sourceLabel + ' · Updated ' + new Date(newest).toLocaleString()
-        : sourceLabel + ' · Waiting for summary calculation';
+        ? 'Updated ' + new Date(newest).toLocaleString()
+        : (source === 'cache' ? '' : 'Waiting for latest scores');
     }
 
     function cacheLeaderboardRows(rows) {
@@ -1255,7 +1340,7 @@
       document.getElementById('loadingContainer').style.display = 'block';
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('leaderboardContent').style.display = 'none';
-      document.getElementById('leaderboardPeriodLabel').textContent = selectedScopeLabel();
+      updateLeaderboardFilterChrome();
       renderCachedLeaderboard();
 
       try {
@@ -1313,7 +1398,7 @@
         document.getElementById('loadingContainer').style.display = 'block';
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('leaderboardContent').style.display = 'none';
-        document.getElementById('leaderboardPeriodLabel').textContent = selectedScopeLabel();
+        updateLeaderboardFilterChrome();
 
         console.log('Loading leaderboard...', { userRole, userRegion, isRegionalOfficer: isRegionalOfficer() });
 

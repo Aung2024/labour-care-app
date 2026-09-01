@@ -15,6 +15,7 @@ function facts(overrides) {
     profile: {
       name: 'Mother One',
       patient_id: 'P-1',
+      age: 28,
       lmp: '2026-01-01',
       edd: '2026-10-08'
     },
@@ -58,6 +59,7 @@ test('HRT row includes scope and manual next visit is authoritative', () => {
   }), { asOf: '2026-05-10' });
   assert.equal(row.dueDate, '2026-05-20');
   assert.equal(row.dueDateSource, 'manual_next_visit');
+  assert.equal(row.patientAge, 28);
   assert.equal(row.providerId, 'midwife-1');
   assert.equal(row.department, 'doph');
   assert.equal(row.facilityType, 'rhc');
