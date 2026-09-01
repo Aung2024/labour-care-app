@@ -238,8 +238,9 @@ async function queryProjectionRows(collectionName, request) {
 
 async function attachLivePatientAges(rows) {
   const missingIds = Array.from(new Set(rows
-    .filter((row) => (row.patientAge == null || row.patientAge === '') && row.patientId)
-    .map((row) => row.patientId)));
+    .filter((row) => (row.patientAge == null || row.patientAge === ''))
+    .map((row) => row.patientId || row.rowId || row.id)
+    .filter(Boolean)));
   if (!missingIds.length) return rows;
   try {
     const snapshots = await db().getAll(
@@ -253,7 +254,7 @@ async function attachLivePatientAges(rows) {
     });
     return rows.map((row) => {
       if (row.patientAge != null && row.patientAge !== '') return row;
-      const age = ages.get(row.patientId);
+      const age = ages.get(row.patientId || row.rowId || row.id);
       return age == null ? row : { ...row, patientAge: age };
     });
   } catch (error) {

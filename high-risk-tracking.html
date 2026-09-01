@@ -1290,6 +1290,7 @@
     var _hrtLoadingPage = false;
     var _hrtPageError = '';
     var _hrtLoadId = 0;
+    var _hrtAgeByPatientId = {};
 
     var T = {
       en: {
@@ -2051,11 +2052,18 @@
       return p.patient_id || p.registration_id || p.patientId || '\u2014';
     }
 
+    function parseStoredAge(value) {
+      var age = parseInt(value, 10);
+      return (!isNaN(age) && age > 0 && age < 120) ? age : null;
+    }
+
     function formatPatientAge(p) {
-      var raw = p.age != null && p.age !== '' ? p.age
-        : (p._trackingProjection && p._trackingProjection.patientAge);
-      var age = parseInt(raw, 10);
-      if (!isNaN(age) && age > 0) return String(age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
+      var projection = p && p._trackingProjection ? p._trackingProjection : {};
+      var age = parseStoredAge(p && p.age) ||
+        parseStoredAge(projection.patientAge) ||
+        parseStoredAge(projection.age) ||
+        parseStoredAge(_hrtAgeByPatientId[p && (p.id || p.patientId)]);
+      if (age != null) return String(age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
       return '\u2014';
     }
 
@@ -2548,14 +2556,61 @@
       return out;
     }
 
+    function applyAgeToHrtRow(row, age) {
+      if (age == null || !row) return row;
+      row.patientAge = age;
+      row.age = age;
+      if (row.patient) {
+        row.patient.age = age;
+        if (row.patient._trackingProjection) row.patient._trackingProjection.patientAge = age;
+      }
+      return row;
+    }
+
+    async function hydrateHrtPatientAges(rows) {
+      var db = firebase.firestore();
+      var missing = [];
+      (rows || []).forEach(function (row) {
+        var id = (row.patient && row.patient.id) || row.patientId || row.rowId || row.id;
+        var existing = parseStoredAge(row.patient && row.patient.age) ||
+          parseStoredAge(row.patientAge) ||
+          parseStoredAge(row.age) ||
+          parseStoredAge(_hrtAgeByPatientId[id]);
+        if (existing != null) {
+          if (id) _hrtAgeByPatientId[id] = existing;
+          applyAgeToHrtRow(row, existing);
+          return;
+        }
+        if (id) missing.push({ row: row, id: id });
+      });
+      if (!missing.length) return rows;
+      await mapWithConcurrency(missing, CONCURRENCY, async function (item) {
+        try {
+          var snap = await db.collection('patients').doc(item.id).get();
+          if (!snap.exists) return;
+          var data = snap.data() || {};
+          var age = parseStoredAge(data.age) || parseStoredAge(data.Age) ||
+            parseStoredAge(data.patientAge);
+          if (age == null) return;
+          _hrtAgeByPatientId[item.id] = age;
+          applyAgeToHrtRow(item.row, age);
+        } catch (error) {
+          console.warn('HRT age load', item.id, error);
+        }
+      });
+      return rows;
+    }
+
     function projectionHrtRow(row) {
+      var patientId = row.patientId || row.rowId || row.id;
       var patient = {
-        id: row.patientId,
+        id: patientId,
         name: row.patientName,
         patientName: row.patientName,
         patient_id: row.patientCode,
         phone: row.patientPhone,
-        age: row.patientAge,
+        age: parseStoredAge(row.patientAge) || parseStoredAge(row.age) ||
+          parseStoredAge(_hrtAgeByPatientId[patientId]),
         infectionFlags: row.infectionFlags || {},
         _trackingProjection: row
       };
@@ -2604,6 +2659,8 @@
           window._hrtStatusFilter = 'all';
         }
         setHrtPageState(window._hrtRows.length ? 'ready' : 'empty');
+        renderAll(getFilteredHrtRows());
+        await hydrateHrtPatientAges(mapped);
         renderAll(getFilteredHrtRows());
       } catch (error) {
         var message = (error && error.message) || 'Unable to load tracking data.';
