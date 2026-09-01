@@ -184,6 +184,11 @@ test('legacy Midwife without active field retains clinical workflow access', asy
   }));
 });
 
+test('Midwife can probe an unused voucher code before issuing', async () => {
+  const db = env.authenticatedContext('mw').firestore();
+  await assertSucceeds(getDoc(doc(db, `vouchers/${VOUCHER_ID}`)));
+});
+
 test('voucher issuance and quota decrement must be atomic', async () => {
   await assertSucceeds(issueVoucher());
   const adminDb = env.authenticatedContext('po').firestore();
