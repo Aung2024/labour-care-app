@@ -16,7 +16,6 @@
   <script src="js/facility-config.js"></script>
   <script src="js/tracking-reader.js"></script>
   <script src="js/analytics-refresh-queue.js"></script>
-  <script src="js/edd-display.js"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
@@ -80,6 +79,22 @@
     }
 
     #tableState.card-panel { padding: 0; overflow: hidden; }
+
+    .hrt-retry-btn {
+      margin-top: 1rem;
+      min-height: 44px;
+      min-width: 44px;
+      padding: 0.5rem 1.1rem;
+      border: 0;
+      border-radius: 10px;
+      background: #b91c1c;
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
 
     /* Table desktop */
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -1167,8 +1182,9 @@
       <p class="mt-2 mb-0 hrt-loading">Loading...</p>
     </div>
     <div id="emptyState" class="card-panel text-center py-5 d-none">
-      <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+      <i id="emptyStateIcon" class="fas fa-check-circle text-success fa-3x mb-3"></i>
       <p class="mb-0 hrt-empty"></p>
+      <button type="button" id="hrtRetryBtn" class="hrt-retry-btn d-none" onclick="retryHrtLoad()">Try again</button>
     </div>
 
     <div id="tableState" class="card-panel d-none">
@@ -1273,6 +1289,8 @@
         title: 'High Risk Pregnancy Tracker',
         loading: 'Loading patients and ANC visits...',
         empty: 'No high-risk patients in your access scope.',
+        loadFailed: 'Unable to load tracking data. Check the connection and try again.',
+        retry: 'Try again',
         offline: 'High Risk Tracking needs an internet connection.',
         colName: 'Patient',
         colPhone: 'Phone',
@@ -1374,6 +1392,8 @@
         title: 'အန္တရာယ်ဖြစ်နိုင်ချေမြင့်မားသော ကိုယ်ဝန်ဆောင်များအား စောင့်ကြည့်ခြင်း',
         loading: 'လူနာမှတ်တမ်းများ ဖတ်နေသည်…',
         empty: 'သင့်အခွင့်အရေးအတွင်း အန္တရာယ်ရှိ လူနာ မရှိသေးပါ။',
+        loadFailed: 'မှတ်တမ်းများ ဖတ်၍မရပါ။ အင်တာနက် စစ်ဆေးပြီး ထပ်စမ်းပါ။',
+        retry: 'ထပ်စမ်းရန်',
         offline: 'ANC မှတ်တမ်းများ ဖတ်ရန် အင်တာနက် လိုအပ်သည်။',
         colName: 'လူနာ',
         colPhone: 'ဖုန်း',
@@ -1489,6 +1509,8 @@
       document.querySelector('.hrt-title').textContent = tr('title');
       document.querySelector('.hrt-loading').textContent = tr('loading');
       document.querySelector('.hrt-empty').textContent = tr('empty');
+      var retryBtn = document.getElementById('hrtRetryBtn');
+      if (retryBtn) retryBtn.textContent = tr('retry');
 
       document.querySelectorAll('.language-btn').forEach(function (btn) {
         btn.classList.toggle('active', btn.dataset.lang === lang);
@@ -2607,7 +2629,21 @@
       document.getElementById('emptyState').classList.toggle('d-none', state !== 'empty' && state !== 'error');
       document.getElementById('dashboardState').classList.toggle('d-none', state === 'loading' || state === 'error');
       document.getElementById('tableState').classList.toggle('d-none', state === 'loading' || state === 'error' || state === 'empty');
+      var icon = document.getElementById('emptyStateIcon');
+      var retryBtn = document.getElementById('hrtRetryBtn');
+      if (icon) {
+        icon.className = state === 'error'
+          ? 'fas fa-circle-exclamation text-danger fa-3x mb-3'
+          : 'fas fa-check-circle text-success fa-3x mb-3';
+      }
+      if (retryBtn) retryBtn.classList.toggle('d-none', state !== 'error');
       if (message) document.querySelector('.hrt-empty').textContent = message;
+    }
+
+    function retryHrtLoad() {
+      loadAllHrtProjections().catch(function (error) {
+        console.error('HRT retry', error);
+      });
     }
 
     async function loadHrtProjectionPage(append) {
@@ -2636,7 +2672,9 @@
         await hydrateHrtPatientAges(mapped);
         renderAll(getFilteredHrtRows());
       } catch (error) {
-        var message = (error && error.message) || 'Unable to load tracking data.';
+        var raw = (error && error.message) || '';
+        var message = /failed to fetch|network|connection|unavailable/i.test(raw)
+          ? tr('loadFailed') : (raw || tr('loadFailed'));
         if (!append) setHrtPageState('error', message);
         else _hrtPageError = message;
         if (append) return;
@@ -2687,7 +2725,11 @@
       TrackingReader.restoreUrl(_hrtFilters);
       window._hrtRows = [];
       window._hrtFilterQuery = '';
-      await loadAllHrtProjections();
+      try {
+        await loadAllHrtProjections();
+      } catch (error) {
+        console.error('HRT projection load', error);
+      }
       return true;
     }
 
@@ -2800,9 +2842,10 @@
         }
       } catch (err) {
         console.error(err);
-        document.getElementById('loadingState').classList.add('d-none');
-        document.getElementById('emptyState').classList.remove('d-none');
-        document.querySelector('.hrt-empty').textContent = (err && err.message) || String(err);
+        var raw = (err && err.message) || String(err);
+        var message = /failed to fetch|network|connection|unavailable/i.test(raw)
+          ? tr('loadFailed') : raw;
+        setHrtPageState('error', message);
       }
     });
   </script>

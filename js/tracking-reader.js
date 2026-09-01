@@ -353,10 +353,29 @@
   function callableUrl(name) {
     var projectId = global.firebaseConfig && firebaseConfig.projectId ||
       firebase.app().options.projectId;
-    return 'https://us-central1-' + projectId + '.cloudfunctions.net/' + name;
+    return 'https://us-central1-' + encodeURIComponent(projectId) +
+      '.cloudfunctions.net/' + encodeURIComponent(name);
   }
 
-  async function call(name, payload) {
+  function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function isRetryableTrackingError(error) {
+    if (!error) return false;
+    if (error.name === 'AbortError' || error.code === 'timeout') return true;
+    var text = String(error.message || error.code || '');
+    return /failed to fetch|networkerror|err_connection|load failed|unavailable|internal/i.test(text);
+  }
+
+  function friendlyTrackingError(error) {
+    if (!isRetryableTrackingError(error) && !(error && error.name === 'TypeError')) return error;
+    var friendly = new Error('The tracking service could not be reached. Check the connection and try again.');
+    friendly.code = error && error.code || 'unavailable';
+    return friendly;
+  }
+
+  async function callOnce(name, payload) {
     var user = firebase.auth().currentUser;
     if (!user) throw new Error('Sign in is required.');
     var token = await user.getIdToken();
@@ -365,6 +384,8 @@
     try {
       var response = await fetch(callableUrl(name), {
         method: 'POST',
+        mode: 'cors',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ data: payload }),
         signal: controller.signal
@@ -387,6 +408,22 @@
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function call(name, payload) {
+    var lastError = null;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await callOnce(name, payload);
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableTrackingError(error) || attempt === 3) {
+          throw friendlyTrackingError(error);
+        }
+        await sleep(700 * attempt);
+      }
+    }
+    throw friendlyTrackingError(lastError);
   }
 
   function payload(filters, pageToken) {
