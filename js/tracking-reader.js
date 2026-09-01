@@ -1,8 +1,8 @@
 (function (global) {
   'use strict';
 
-  var PAGE_SIZE = 100;
-  var TIMEOUT_MS = 50000;
+  var PAGE_SIZE = 40;
+  var TIMEOUT_MS = 55000;
   var FACILITY_TYPE_LABELS = {
     district_hospital: 'District hospital',
     maternity_home: 'Maternity home',
@@ -247,12 +247,18 @@
     var toggle = wrap.querySelector('.tracking-filters-toggle');
     var summary = wrap.querySelector('.tracking-filters-toggle-summary');
     var anchor = document.getElementById('dashboardState') || document.getElementById('loadingState');
+    if (!host || !anchor || !anchor.parentNode) {
+      throw new Error('Tracking filters could not be placed on this page.');
+    }
     anchor.parentNode.insertBefore(wrap, anchor);
 
     function syncMonthState() {
-      var hasYear = !!host.elements.year.value;
-      host.elements.month.disabled = !hasYear;
-      if (!hasYear) host.elements.month.value = '';
+      var yearEl = host.elements.year;
+      var monthEl = host.elements.month;
+      if (!yearEl || !monthEl) return;
+      var hasYear = !!yearEl.value;
+      monthEl.disabled = !hasYear;
+      if (!hasYear) monthEl.value = '';
     }
     function refreshSummary() {
       summary.textContent = filterSummary(host, level);
@@ -266,11 +272,13 @@
     toggle.addEventListener('click', function () {
       setOpen(!wrap.classList.contains('is-open'));
     });
-    host.elements.year.addEventListener('change', function () {
-      syncMonthState();
-      refreshSummary();
-    });
-    host.elements.month.addEventListener('change', refreshSummary);
+    if (host.elements.year) {
+      host.elements.year.addEventListener('change', function () {
+        syncMonthState();
+        refreshSummary();
+      });
+    }
+    if (host.elements.month) host.elements.month.addEventListener('change', refreshSummary);
     if (host.elements.region) {
       host.elements.region.addEventListener('change', function () {
         host.elements.township.innerHTML = townshipOptions(host.elements.region.value, '', '');
@@ -318,8 +326,8 @@
 
   function readFilters(form, level) {
     var values = {
-      year: form.elements.year.value,
-      month: form.elements.month.disabled ? '' : form.elements.month.value,
+      year: form.elements.year ? form.elements.year.value : '',
+      month: (form.elements.month && !form.elements.month.disabled) ? form.elements.month.value : '',
       region: form.elements.region ? form.elements.region.value : '',
       township: form.elements.township ? form.elements.township.value : '',
       department: form.elements.department ? form.elements.department.value : '',

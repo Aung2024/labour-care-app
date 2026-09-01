@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const {
   buildHrtProjection,
   buildKmcProjections,
-  addCalendarMonths
+  addCalendarMonths,
+  resolvePatientAge
 } = require('../src/analytics/projections');
 const { projectionHash } = require('../src/analytics/tracking-repository');
 
@@ -64,6 +65,25 @@ test('HRT row includes scope and manual next visit is authoritative', () => {
   assert.equal(row.department, 'doph');
   assert.equal(row.facilityType, 'rhc');
   assert.equal(row.status, 'on_track');
+});
+
+test('HRT patient age accepts numeric strings', () => {
+  const row = buildHrtProjection(facts({
+    profile: {
+      name: 'Mother One',
+      patient_id: 'P-1',
+      age: '32',
+      lmp: '2026-01-01',
+      edd: '2026-10-08'
+    }
+  }), { asOf: '2026-05-10' });
+  assert.equal(row.patientAge, 32);
+});
+
+test('resolvePatientAge reads stored age values', () => {
+  assert.equal(resolvePatientAge({ age: 28 }), 28);
+  assert.equal(resolvePatientAge({ age: '19' }), 19);
+  assert.equal(resolvePatientAge({}), null);
 });
 
 test('HRT explicit clinical completion takes precedence', () => {

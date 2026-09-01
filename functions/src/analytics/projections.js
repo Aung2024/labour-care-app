@@ -116,13 +116,23 @@ function scopeFields(facts) {
   };
 }
 
+function resolvePatientAge(profile) {
+  const data = profile || {};
+  const parsed = parseInt(data.age, 10);
+  if (parsed > 0 && parsed < 120) return parsed;
+  const dob = firstDate(data, ['date_of_birth', 'dateOfBirth', 'dob', 'birthDate']);
+  if (!dob) return null;
+  const years = Math.floor((Date.now() - dob.getTime()) / (365.25 * DAY_MS));
+  return years > 0 && years < 120 ? years : null;
+}
+
 function patientFields(facts) {
   const profile = facts.profile || facts.registration || {};
   return {
     patientName: profile.name || profile.patientName || '',
     patientCode: profile.patient_id || profile.patientId || facts.id || '',
     patientPhone: profile.phone || profile.phoneNumber || '',
-    patientAge: profile.age != null && profile.age !== '' ? profile.age : null,
+    patientAge: resolvePatientAge(profile),
     infectionFlags: facts.infectionFlags || {}
   };
 }
@@ -434,5 +444,6 @@ module.exports = {
   buildHrtProjection,
   buildKmcProjections,
   addCalendarMonths,
-  isoDate
+  isoDate,
+  resolvePatientAge
 };

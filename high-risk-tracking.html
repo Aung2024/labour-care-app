@@ -1415,9 +1415,9 @@
         registerLabel: 'မှတ်ပုံတင်',
         statusCol: 'အခြေအနေ',
         outcomeColLabel: 'ရလဒ်',
-        statusOnTrack: 'ရက်ချိန်းမှန်သော ကိုယ်ဝန်ဆောင်များ',
-        statusOverdueFollowup: 'ရက်ချိန်းလွန်သော ကိုယ်ဝန်ဆောင်များ',
-        statusLostToFollowup: 'အဆက်အသွယ်မရသော ကိုယ်ဝန်ဆောင်များ',
+        statusOnTrack: 'ရက်ချိန်းမှန်',
+        statusOverdueFollowup: 'ရက်ချိန်းလွန်',
+        statusLostToFollowup: 'အဆက်အသွယ်မရ',
         statusComplete: 'စောင့်ရှောက်မှု ပြီးမြောက်',
         outcomeAlive: 'အရှင်',
         outcomeTransfer: 'လွှဲပြောင်း',
@@ -2052,9 +2052,10 @@
     }
 
     function formatPatientAge(p) {
-      var age = p.age != null && p.age !== '' ? p.age
+      var raw = p.age != null && p.age !== '' ? p.age
         : (p._trackingProjection && p._trackingProjection.patientAge);
-      if (age != null && age !== '') return String(age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
+      var age = parseInt(raw, 10);
+      if (!isNaN(age) && age > 0) return String(age) + (lang === 'mm' ? ' နှစ်' : ' yrs');
       return '\u2014';
     }
 
@@ -2619,9 +2620,22 @@
     async function loadAllHrtProjections() {
       var loadId = ++_hrtLoadId;
       await loadHrtProjectionPage(false);
-      while (_hrtNextPageToken && !_hrtPageError && loadId === _hrtLoadId) {
-        await loadHrtProjectionPage(true);
-      }
+      fillRemainingHrtPages(loadId);
+    }
+
+    function fillRemainingHrtPages(loadId) {
+      (async function () {
+        try {
+          while (_hrtNextPageToken && !_hrtPageError && loadId === _hrtLoadId) {
+            await loadHrtProjectionPage(true);
+          }
+        } catch (error) {
+          if (loadId === _hrtLoadId) {
+            _hrtPageError = (error && error.message) || 'Unable to load remaining patients.';
+            renderAll(getFilteredHrtRows());
+          }
+        }
+      })();
     }
 
     async function initializeHrtProjection(userData) {

@@ -7,7 +7,8 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { facilityTypes } = require('../shared/facility-taxonomy');
 const {
   HRT_COLLECTION,
-  KMC_COLLECTION
+  KMC_COLLECTION,
+  resolvePatientAge
 } = require('./projections');
 const { recomputePatientProjections } = require('./tracking-repository');
 
@@ -158,6 +159,11 @@ async function queryProjectionRows(collectionName, request) {
     throw new HttpsError('invalid-argument', 'periodStart must not follow periodEnd.');
   }
   let query = applyRoleScope(db().collection(collectionName), user);
+  // Central users may also narrow by region; that uses the same composite
+  // index as Regional Officer (region + activeFrom + activeUntil).
+  if (filters.region && ['super admin', 'central', 'admin'].includes(user.role)) {
+    query = query.where('region', '==', filters.region);
+  }
   if (filters.periodEnd) query = query.where('activeFrom', '<=', filters.periodEnd);
   if (filters.periodStart) query = query.where('activeUntil', '>=', filters.periodStart);
   // Firestore appends inequality fields that are missing from the explicit
@@ -169,8 +175,12 @@ async function queryProjectionRows(collectionName, request) {
   // Optional dimensions are filtered in this trusted service. Keeping them
   // out of the Firestore query avoids an unsafe combinatorial index matrix.
   // The scan cursor still advances over non-matching rows.
-  const scanLimit = Math.min(500, Math.max(filters.pageSize + 1, filters.pageSize * 10));
-  const maxScanned = 2000;
+  const extraScan = !!(filters.township || filters.department ||
+    filters.status || filters.facilityTypes.length);
+  const scanLimit = extraScan
+    ? Math.min(500, Math.max(filters.pageSize + 1, filters.pageSize * 10))
+    : filters.pageSize + 1;
+  const maxScanned = extraScan ? 2000 : filters.pageSize + 1;
   const matches = [];
   let scanned = 0;
   let collectionExhausted = false;
@@ -215,20 +225,49 @@ async function queryProjectionRows(collectionName, request) {
   const cursorSnapshot = moreMatches
     ? page[page.length - 1]
     : (!collectionExhausted ? lastScanned : null);
+  const rows = await attachLivePatientAges(
+    page.map((item) => ({ id: item.id, ...item.data() }))
+  );
   return {
     schemaVersion: collectionName === HRT_COLLECTION
       ? 'tracking-hrt-v1' : 'tracking-kmc-v1',
-    rows: page.map((item) => ({ id: item.id, ...item.data() })),
+    rows,
     nextPageToken: cursorSnapshot ? encodePageToken(cursorSnapshot) : null
   };
 }
 
+async function attachLivePatientAges(rows) {
+  const missingIds = Array.from(new Set(rows
+    .filter((row) => (row.patientAge == null || row.patientAge === '') && row.patientId)
+    .map((row) => row.patientId)));
+  if (!missingIds.length) return rows;
+  try {
+    const snapshots = await db().getAll(
+      ...missingIds.map((id) => db().collection('patients').doc(id))
+    );
+    const ages = new Map();
+    snapshots.forEach((snapshot) => {
+      if (!snapshot.exists) return;
+      const age = resolvePatientAge(snapshot.data() || {});
+      if (age != null) ages.set(snapshot.id, age);
+    });
+    return rows.map((row) => {
+      if (row.patientAge != null && row.patientAge !== '') return row;
+      const age = ages.get(row.patientId);
+      return age == null ? row : { ...row, patientAge: age };
+    });
+  } catch (error) {
+    console.warn('Tracking age hydration failed', error);
+    return rows;
+  }
+}
+
 const queryHrtTracking = onCall({
-  region: REGION, timeoutSeconds: 60, memory: '256MiB', enforceAppCheck: false
+  region: REGION, timeoutSeconds: 120, memory: '512MiB', enforceAppCheck: false
 }, (request) => queryProjectionRows(HRT_COLLECTION, request));
 
 const queryKmcTracking = onCall({
-  region: REGION, timeoutSeconds: 60, memory: '256MiB', enforceAppCheck: false
+  region: REGION, timeoutSeconds: 120, memory: '512MiB', enforceAppCheck: false
 }, (request) => queryProjectionRows(KMC_COLLECTION, request));
 
 async function startTrackingRepair(user) {
