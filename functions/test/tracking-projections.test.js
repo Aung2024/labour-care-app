@@ -199,6 +199,49 @@ test('KMC emits independent rows and completion for each baby', () => {
   assert.equal(rows[1].rowId, 'mother-1_2');
 });
 
+test('KMC birth weight treats kg-scale values as kilograms', () => {
+  const [row] = buildKmcProjections(facts({
+    newbornVisits: [{
+      data: {
+        visit_number: 1,
+        visitDate: '2026-04-01',
+        body_weight_gram: 3,
+        kmc_selected: 'yes',
+        potential_kmc: true,
+        kmc_eligible_reasons: ['preterm']
+      }
+    }]
+  }), { asOf: '2026-04-10' });
+  assert.equal(row.birthWeightGram, 3000);
+  assert.equal(row.eligible, true);
+});
+
+test('KMC birth weight prefers visit 1 over later current weight', () => {
+  const [row] = buildKmcProjections(facts({
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-04-01',
+          body_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-04-08',
+          current_weight_gram: 2100,
+          body_weight_gram: 3,
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  }), { asOf: '2026-04-10' });
+  assert.equal(row.birthWeightGram, 1800);
+  assert.equal(row.latestWeightGram, 2100);
+});
+
 test('KMC derives completion at birth plus two calendar months', () => {
   const [row] = buildKmcProjections(facts({
     newbornVisits: [{

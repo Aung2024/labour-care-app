@@ -35,13 +35,14 @@ test('newborn care uses shared alert logic and canonical storage patient ID', ()
   assert.match(source, /InfectionAlerts\.collectFlags\(tests\)/);
   assert.match(
     source,
-    /weightEl\.value = DeliveryNotesUtils\.gramsToKilograms\(matchedBaby\.birthWeightGram\)/
+    /weightEl\.value = DeliveryNotesUtils\.gramsToKilograms\(grams\)/
   );
   assert.doesNotMatch(
     source,
     /\.doc\(patientId\)\s*\.collection\('newborn_care'\)/
   );
-  assert.match(source, /patientId: getNewbornCareStoragePatientId\(\)/);
+  assert.match(source, /id="body_weight_gram"[^>]*required/);
+  assert.match(source, /stored > NEWBORN_SCHEDULE_VISIT_COUNT/);
   assert.match(
     source,
     /\.doc\(getNewbornCareStoragePatientId\(\)\)\s*\.collection\('newborn_care'\)/

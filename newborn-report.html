@@ -419,8 +419,8 @@
           </div>
           <div class="summary-card">
             <h6 class="lang-text" data-en="Birth Details" data-mm="မွေးဖွားမှု အသေးစိတ်">Birth Details</h6>
-            <div><strong class="lang-text" data-en="Birth Weight:" data-mm="မွေးချိန် အလေးချိန်:">Birth Weight:</strong> <span id="birthWeight">-</span></div>
-            <div><strong class="lang-text" data-en="Birth Length:" data-mm="မွေးချိန် အရပ်အမြင့်:">Birth Length:</strong> <span id="birthLength">-</span></div>
+            <div><strong class="lang-text" data-en="Birth Weight:" data-mm="မွေးကင်းစ ကိုယ်အလေးချိန်:">Birth Weight:</strong> <span id="birthWeight">-</span></div>
+            <div><strong class="lang-text" data-en="Birth Length:" data-mm="မွေးကင်းစ ကိုယ်အရပ်အမြင့်:">Birth Length:</strong> <span id="birthLength">-</span></div>
             <div><strong class="lang-text" data-en="Head Circumference:" data-mm="ဉီးခေါင်းပတ်လည်:">Head Circumference:</strong> <span id="headCircumference">-</span></div>
             <div><strong class="lang-text" data-en="Birth Place:" data-mm="မွေးဖွားသည့်နေရာ:">Birth Place:</strong> <span id="birthPlaceDetail">-</span></div>
             <div><strong class="lang-text" data-en="Mode of Delivery:" data-mm="မွေးဖွားသည့်နည်းလမ်း:">Mode of Delivery:</strong> <span id="birthModeDetail">-</span></div>
@@ -533,8 +533,8 @@
       babyName: { en: 'Baby Name:', mm: 'ကလေး၏ အမည်:' },
       gender: { en: 'Gender:', mm: 'ကျား/မ:' },
       birthTime: { en: 'Birth Time:', mm: 'မွေးဖွားချိန်:' },
-      birthWeight: { en: 'Birth Weight:', mm: 'မွေးချိန် အလေးချိန်:' },
-      birthLength: { en: 'Birth Length:', mm: 'မွေးချိန် အရပ်အမြင့်:' },
+      birthWeight: { en: 'Birth Weight:', mm: 'မွေးကင်းစ ကိုယ်အလေးချိန်:' },
+      birthLength: { en: 'Birth Length:', mm: 'မွေးကင်းစ ကိုယ်အရပ်အမြင့်:' },
       headCircumference: { en: 'Head Circumference:', mm: 'ဉီးခေါင်းပတ်လည်:' },
       lengthCm: { en: 'Length (cm):', mm: 'အရပ်အမြင့် (စ.m):' },
       headCircCm: { en: 'Head circumference (cm):', mm: 'ဉီးခေါင်းပတ်လည် (စ.m):' },
@@ -926,8 +926,14 @@
 
     function parseWeightGramFromRecord(record) {
       if (!record) return null;
+      if (window.KmcUtils && KmcUtils.normalizeWeightToGrams) {
+        const fromGram = KmcUtils.normalizeWeightToGrams(record.body_weight_gram || record.birth_weight_gram || record.birthWeightGram);
+        if (fromGram) return fromGram;
+      }
       const gram = parseFloat(record.body_weight_gram || record.birth_weight_gram || record.birthWeightGram);
-      if (!isNaN(gram) && gram > 0) return gram;
+      if (!isNaN(gram) && gram > 0) {
+        return gram < 30 ? Math.round(gram * 1000) : Math.round(gram);
+      }
       const kg = parseFloat(record.birth_weight_kg || record.birthWeightKg);
       if (!isNaN(kg) && kg > 0) return kg * 1000;
       const lb = parseFloat(record.birth_weight_lb || record.birthWeight || record.birth_weight);
@@ -936,9 +942,13 @@
     }
 
     function formatWeightKg(grams) {
+      if (window.KmcUtils && KmcUtils.formatWeightKg) {
+        return KmcUtils.formatWeightKg(grams) || t('notRecorded');
+      }
       const value = parseFloat(grams);
       if (isNaN(value) || value <= 0) return t('notRecorded');
-      return (value / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + ' kg';
+      const normalized = value < 30 ? value * 1000 : value;
+      return (normalized / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + ' kg';
     }
 
     function getBestBirthWeightGram() {
@@ -955,25 +965,7 @@
     }
 
     function getNormalizedNewbornVisitRows() {
-      const byVisit = {};
-      let maxVisit = 1;
-      newbornCareVisits.forEach(function (v) {
-        const n = parseInt(v.visit_number || v.visitNumber, 10) || 1;
-        byVisit[n] = v;
-        maxVisit = Math.max(maxVisit, n);
-      });
-      const rows = [];
-      const birthWeight = getBestBirthWeightGram();
-      for (let n = 1; n <= maxVisit; n++) {
-        const data = byVisit[n] || null;
-        const row = data ? Object.assign({}, data) : { visit_number: n, missing_visit: true };
-        if (n === 1 && row.body_weight_gram == null && birthWeight != null) {
-          row.body_weight_gram = Math.round(birthWeight);
-          row.birth_weight_baseline = true;
-        }
-        rows.push(row);
-      }
-      return rows;
+      return getReportNewbornVisitRows();
     }
 
     function isAnchorOnlyNewbornVisit(visit) {
@@ -1012,25 +1004,21 @@
 
     function getReportNewbornVisitRows() {
       var sorted = (newbornCareVisits || []).slice().sort(function (a, b) {
-        const av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
-        const bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
-        if (av !== bv) return av - bv;
-        return String(a.visitDate || a.visit_date || a.birth_time || '').localeCompare(String(b.visitDate || b.visit_date || b.birth_time || ''));
+        var ad = String(a.visitDate || a.visit_date || a.recorded_at || a.birth_time || '');
+        var bd = String(b.visitDate || b.visit_date || b.recorded_at || b.birth_time || '');
+        if (ad !== bd) return ad.localeCompare(bd);
+        var av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
+        var bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
+        return av - bv;
       });
       var filtered = sorted.filter(function (v) { return !isAnchorOnlyNewbornVisit(v); });
       if (!filtered.length && sorted.length) {
         filtered = [sorted[sorted.length - 1]];
       }
-      var byVisit = {};
-      filtered.forEach(function (v) {
-        var n = parseInt(v.visit_number || v.visitNumber, 10) || 1;
-        var existing = byVisit[n];
-        if (!existing || newbornVisitRichnessScore(v) > newbornVisitRichnessScore(existing)) {
-          byVisit[n] = v;
-        }
-      });
-      return Object.keys(byVisit).map(function (n) { return parseInt(n, 10); }).sort(function (a, b) { return a - b; }).map(function (n) {
-        return byVisit[n];
+      return filtered.map(function (visit, index) {
+        var row = Object.assign({}, visit);
+        row.display_visit_number = index + 1;
+        return row;
       });
     }
 
@@ -1178,7 +1166,7 @@
       }
       section.style.display = 'block';
       tbody.innerHTML = historyRows.map(function (visit, index) {
-        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || (index + 1);
+        var n = parseInt(visit.display_visit_number || visit.visit_number || visit.visitNumber, 10) || (index + 1);
         var weight = visit.current_weight_gram != null
           ? visit.current_weight_gram
           : (visit.body_weight_gram != null ? visit.body_weight_gram : '');
@@ -1203,7 +1191,7 @@
         return;
       }
       tbody.innerHTML = rows.map(function (visit, index) {
-        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || (index + 1);
+        var n = parseInt(visit.display_visit_number || visit.visit_number || visit.visitNumber, 10) || (index + 1);
         var weight = visit.current_weight_gram != null
           ? visit.current_weight_gram
           : (visit.body_weight_gram != null ? visit.body_weight_gram : '');
@@ -1237,7 +1225,7 @@
       const kmcPrint = document.getElementById('newbornKmcPrintSection');
       const rows = getReportNewbornVisitRows();
       renderNewbornPrintTable(rows);
-      renderNewbornMeasurementsHistory(newbornCareVisits);
+      renderNewbornMeasurementsHistory(rows);
       if (kmcPrint) kmcPrint.innerHTML = renderKmcReportSection();
       if (!rows.length) {
         container.innerHTML = '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
@@ -1246,7 +1234,7 @@
       let html = '<div class="visit-tabbed-card">';
       html += '<div class="visit-tab-bar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">';
       rows.forEach(function (visit, index) {
-        const n = parseInt(visit.visit_number || visit.visitNumber, 10) || (index + 1);
+        const n = parseInt(visit.display_visit_number || visit.visit_number || visit.visitNumber, 10) || (index + 1);
         const tabId = index + 1;
         const label = getReportLang() === 'mm' ? ('အကြိမ် ' + n) : ('Visit ' + n);
         html += '<button type="button" class="visit-tab-btn btn btn-sm ' + (index === 0 ? 'btn-success' : 'btn-outline-success') + '" data-visit-tab="' + tabId + '" onclick="switchNewbornVisitTab(' + tabId + ')">' + escapeHtml(label) + '</button>';
@@ -1316,8 +1304,15 @@
     }
 
     function goBack() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const patientId = urlParams.get('patient');
+      const from = urlParams.get('from');
+      if (from === 'kmc') {
+        window.location.href = 'kmc-tracking.html';
+        return;
+      }
+      if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
       if (window.AppNavBack) {
         AppNavBack.toImmediateNewbornCare(patientId);
         return;

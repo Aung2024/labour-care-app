@@ -91,14 +91,28 @@
     return days != null && days >= PRETERM_DAYS_BEFORE_EDD;
   }
 
+  function normalizeWeightToGrams(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n) || n <= 0) return null;
+    // Values under 30 were entered as kilograms in a grams field (e.g. 3 → 3 kg).
+    if (n < 30) return Math.round(n * 1000);
+    return Math.round(n);
+  }
+
+  function formatWeightKg(value) {
+    var grams = normalizeWeightToGrams(value);
+    if (grams == null) return '';
+    return (grams / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + ' kg';
+  }
+
   function isLowBirthWeight(weightGram) {
-    var w = parseFloat(weightGram);
-    return !isNaN(w) && w > 0 && w < LOW_BIRTH_WEIGHT_GRAM;
+    var w = normalizeWeightToGrams(weightGram);
+    return w != null && w < LOW_BIRTH_WEIGHT_GRAM;
   }
 
   function evaluateKmcEligibility(patient, newbornCare, birthAnchor, latestAnc) {
     var reasons = [];
-    var weight = newbornCare ? newbornCare.body_weight_gram : null;
+    var weight = newbornCare ? normalizeWeightToGrams(newbornCare.body_weight_gram) : null;
     if (isLowBirthWeight(weight)) reasons.push('low_weight');
 
     var birthDateStr = getBirthDateStr(newbornCare, birthAnchor);
@@ -114,7 +128,7 @@
       eligible: reasons.length > 0,
       reasons: reasons,
       birthDateStr: birthDateStr,
-      birthWeightGram: weight != null && weight !== '' ? parseFloat(weight) : null,
+      birthWeightGram: weight,
       babyName: babyName,
       edd: edd,
       daysBeforeEdd: birthDateStr && edd ? daysBeforeEdd(birthDateStr, edd) : null
@@ -504,6 +518,8 @@
     reasonLabels: reasonLabels,
     isLowBirthWeight: isLowBirthWeight,
     isPrematureBirth: isPrematureBirth,
+    normalizeWeightToGrams: normalizeWeightToGrams,
+    formatWeightKg: formatWeightKg,
     rowIsCompleted: rowIsCompleted
   };
 })(typeof window !== 'undefined' ? window : this);

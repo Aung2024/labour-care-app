@@ -271,6 +271,13 @@ function firstNewbornVisit(facts) {
   ) || visits[0] || {};
 }
 
+function parseWeightGram(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 30) return Math.round(n * 1000);
+  return Math.round(n);
+}
+
 function babiesForKmc(facts) {
   const care = firstNewbornVisit(facts);
   const profile = facts.profile || {};
@@ -303,8 +310,18 @@ function babiesForKmc(facts) {
     babyIndex,
     babyName: baby.babyName || baby.baby_name || care.baby_name ||
       (profile.name ? `Baby ${profile.name}` : 'Baby'),
-    birthWeightGram: Number(baby.birthWeightGram || baby.birth_weight_gram ||
-      baby.body_weight_gram || care.body_weight_gram) || null,
+    birthWeightGram: parseWeightGram(care.birthWeightGram) ||
+      parseWeightGram(care.birth_weight_gram) ||
+      parseWeightGram(care.body_weight_gram) ||
+      parseWeightGram(baby.birthWeightGram) ||
+      parseWeightGram(baby.birth_weight_gram) ||
+      parseWeightGram(baby.body_weight_gram) ||
+      null,
+    latestWeightGram: parseWeightGram(baby.current_weight_gram) ||
+      parseWeightGram(baby.currentWeightGram) ||
+      parseWeightGram(baby.body_weight_gram) ||
+      parseWeightGram(care.body_weight_gram) ||
+      null,
     birthDate: firstDate(baby, [
       'birthTime', 'birth_time', 'dateOfBirth', 'date_of_birth'
     ]) || firstDate(care, ['birth_time', 'birthTime']) ||
@@ -401,6 +418,7 @@ function buildKmcProjections(facts, options) {
       eligibilityReasons: reasons,
       enrolled,
       birthWeightGram: baby.birthWeightGram,
+      latestWeightGram: baby.latestWeightGram,
       birthAnchorDate: isoDate(birth),
       birthAnchorSource: birth
         ? (facts.birthAnchor && facts.birthAnchor.source || 'newborn_baby') : null,
