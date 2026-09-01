@@ -455,6 +455,7 @@
     var _kmcNextPageToken = null;
     var _kmcLoadingPage = false;
     var _kmcPageError = '';
+    var _kmcLoadId = 0;
 
     var I18N = {
       en: {
@@ -516,7 +517,8 @@
         saveFailed: 'Could not save visit. Try again.',
         days: ' days',
         noWeight: '—',
-        scheduleHint: 'Schedule: +3d · Day 7 · Day 14 · monthly after discharge'
+        scheduleHint: 'Schedule: +3d · Day 7 · Day 14 · monthly after discharge',
+        loadingRemaining: 'Loading remaining patients…'
       },
       mm: {
         loading: 'KMC မှတ်တမ်း ဖတ်နေသည်…',
@@ -577,7 +579,8 @@
         saveFailed: 'သိမ်း၍မရပါ။ ထပ်စမ်းပါ။',
         days: ' ရက်',
         noWeight: '—',
-        scheduleHint: '+၃ရက် · Day 7 · Day 14 · လစဉ်'
+        scheduleHint: '+၃ရက် · Day 7 · Day 14 · လစဉ်',
+        loadingRemaining: 'ကျန်ရှိသော လူနာများကို ဖတ်နေသည်…'
       }
     };
 
@@ -1170,9 +1173,7 @@
       if (!display.length) {
         desktopBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">' + escapeHtml(tr('noKmcMatch')) + '</td></tr>';
         mobileBody.innerHTML = '<div class="hrt-mobile-card text-muted">' + escapeHtml(tr('noKmcMatch')) + '</div>';
-        return;
-      }
-
+      } else {
       display.forEach(function (r) {
         var p = r.patient || {};
         var patientId = p.id || '';
@@ -1225,14 +1226,12 @@
           '</div>';
         mobileBody.appendChild(card);
       });
-      if (_kmcNextPageToken) {
-        var more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'tracking-load-more';
-        more.textContent = _kmcLoadingPage ? 'Loading…' : 'Load more';
-        more.disabled = _kmcLoadingPage;
-        more.onclick = function () { loadKmcProjectionPage(true); };
-        container.appendChild(more);
+      }
+      if (_kmcNextPageToken || _kmcLoadingPage) {
+        var filling = document.createElement('div');
+        filling.className = 'tracking-pager';
+        filling.textContent = tr('loadingRemaining');
+        container.appendChild(filling);
       }
       if (_kmcPageError) {
         var pageError = document.createElement('div');
@@ -1655,7 +1654,7 @@
     }
 
     async function loadKmcProjectionPage(append) {
-      if (_kmcLoadingPage) return;
+      if (_kmcLoadingPage && append) return;
       _kmcLoadingPage = true;
       _kmcPageError = '';
       if (!append) setKmcPageState('loading');
@@ -1671,7 +1670,7 @@
         var mapped = result.rows.map(projectionKmcRow);
         window._kmcRows = append ? (window._kmcRows || []).concat(mapped) : mapped;
         _kmcNextPageToken = result.nextPageToken || null;
-        _kmcCardFilter = 'all';
+        if (!append) _kmcCardFilter = 'all';
         setKmcPageState(window._kmcRows.length ? 'ready' : 'empty');
         renderAll(getFilteredKmcRows());
       } catch (error) {
@@ -1686,6 +1685,27 @@
       }
     }
 
+    async function loadAllKmcProjections() {
+      var loadId = ++_kmcLoadId;
+      await loadKmcProjectionPage(false);
+      fillRemainingKmcPages(loadId);
+    }
+
+    function fillRemainingKmcPages(loadId) {
+      (async function () {
+        try {
+          while (_kmcNextPageToken && !_kmcPageError && loadId === _kmcLoadId) {
+            await loadKmcProjectionPage(true);
+          }
+        } catch (error) {
+          if (loadId === _kmcLoadId) {
+            _kmcPageError = (error && error.message) || 'Unable to load remaining patients.';
+            renderAll(getFilteredKmcRows());
+          }
+        }
+      })();
+    }
+
     async function initializeKmcProjection(userData) {
       if (!window.TrackingReader || !TrackingReader.enabled()) return false;
       var controls = TrackingReader.createControls({
@@ -1695,7 +1715,7 @@
         onApply: async function (filters) {
           _kmcFilters = filters;
           TrackingReader.restoreUrl(filters);
-          try { await loadKmcProjectionPage(false); }
+          try { await loadAllKmcProjections(); }
           catch (error) { console.error('KMC projection reload', error); }
         },
         onReset: function () { location.href = location.pathname; }
@@ -1705,7 +1725,7 @@
       TrackingReader.restoreUrl(_kmcFilters);
       window._kmcRows = [];
       window._kmcFilterQuery = '';
-      await loadKmcProjectionPage(false);
+      await loadAllKmcProjections();
       return true;
     }
 
