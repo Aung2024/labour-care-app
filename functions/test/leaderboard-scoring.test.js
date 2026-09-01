@@ -175,6 +175,29 @@ test('achievement milestones do not repeat in later monthly periods', () => {
   assert.equal(calculatePatientContribution(patient, activity, '2026-07').categories.ancVisits, 0);
 });
 
+test('scores delivery note and first KMC Yes on year periods and baby arrays', () => {
+  const result = calculatePatientContribution({ created_by: 'provider' }, {
+    deliveryNotes: {
+      updatedAt: '2026-03-12',
+      deliveryDetails: { modeOfDelivery: 'vaginal' }
+    },
+    newbornCare: [
+      {
+        visitDate: '2026-04-02',
+        kmc_babies: [{ kmc_selected: 'yes' }]
+      },
+      {
+        visitDate: '2026-05-02',
+        kmc_selected: 'yes'
+      }
+    ]
+  }, '2026');
+
+  assert.equal(result.categories.deliveryNotes, 1);
+  assert.equal(result.categories.kmcYes, 1);
+  assert.equal(result.categories.newbornCare, 1);
+});
+
 test('supports year periods', () => {
   const result = calculatePatientContribution({
     created_by: 'provider',
