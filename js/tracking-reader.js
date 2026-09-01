@@ -353,6 +353,20 @@
   function callableUrl(name) {
     var projectId = global.firebaseConfig && firebaseConfig.projectId ||
       firebase.app().options.projectId;
+    var configuredUrls = global.firebaseConfig && firebaseConfig.functionUrls || {};
+    if (configuredUrls[name]) return configuredUrls[name];
+    // The Cloud Functions vanity host is intermittently reset by some local
+    // networks. This is the same deployed Gen 2 service on its stable Cloud
+    // Run host, not a separate backend.
+    var serviceUrls = {
+      'mnch-1cbda': {
+        queryHrtTracking: 'https://queryhrttracking-houbbz2mta-uc.a.run.app',
+        queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app'
+      }
+    };
+    if (serviceUrls[projectId] && serviceUrls[projectId][name]) {
+      return serviceUrls[projectId][name];
+    }
     return 'https://us-central1-' + encodeURIComponent(projectId) +
       '.cloudfunctions.net/' + encodeURIComponent(name);
   }
