@@ -753,6 +753,29 @@
       color: #991b1b;
     }
 
+    .delivery-locked-banner {
+      display: none;
+      margin: 0 0 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 10px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    #thirdStageModal.delivery-notes-locked input,
+    #thirdStageModal.delivery-notes-locked select {
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    #deliveryGestationalWeek[readonly] {
+      background: #f8fafc;
+      color: #334155;
+    }
+
     @media (max-width: 768px) {
       .modal-content {
         width: 95%;
@@ -1098,6 +1121,7 @@
     let currentUser = null;
     let selectedPatient = null;
     let loadedDeliveryNotes = null;
+    let deliveryGaLockedFromAnc = false;
     const deliveryEditParams = new URLSearchParams(window.location.search);
     const isDeliveryEditMode = deliveryEditParams.get('editDelivery') === '1';
     const deliveryEditApprovalId = deliveryEditParams.get('editApprovalId') || '';
@@ -1189,7 +1213,10 @@
 
         await loadLatestAncForRiskDisplay(patientId);
         displayPatientInfo();
-        await loadCareStats();
+        await Promise.all([
+          loadCareStats(),
+          ensureBabyPatientsFromSavedDeliveryNotes()
+        ]);
         
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('patientInfoBar').style.display = 'flex';
@@ -1206,6 +1233,26 @@
 
     function hubT(en, mm) {
       return currentLanguage === 'en' ? en : mm;
+    }
+
+    async function ensureBabyPatientsFromSavedDeliveryNotes() {
+      if (!selectedPatient || !selectedPatient.id) return;
+      if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(selectedPatient)) return;
+      if (!window.DeliveryNotesUtils || !window.BabyPatientUtils) return;
+      try {
+        const notes = await DeliveryNotesUtils.fetchDeliveryNotes(selectedPatient.id);
+        if (!notes) return;
+        const uid = (currentUser && currentUser.uid) ||
+          (firebase.auth().currentUser && firebase.auth().currentUser.uid) || null;
+        await BabyPatientUtils.createOrUpdateBabiesFromDeliveryNotes(
+          selectedPatient.id,
+          notes,
+          uid,
+          { motherData: selectedPatient }
+        );
+      } catch (err) {
+        console.warn('Could not ensure baby patient from delivery notes:', err);
+      }
     }
 
     function formatHubDate(val) {
@@ -1945,7 +1992,7 @@
     }
 
     // Delivery Notes Modal Functions
-    function openThirdStageModal() {
+    async function openThirdStageModal() {
       if (!selectedPatient || !selectedPatient.id) {
         alert(currentLanguage === 'en' ? 'No patient selected' : 'လူနာ ရွေးချယ်ထားခြင်း မရှိပါ');
         return;
@@ -1956,10 +2003,7 @@
         return;
       }
 
-      // Load existing data if available
-      loadThirdStageData();
-
-      // Update modal text based on current language
+      await loadThirdStageData();
       updateModalLanguage();
 
       // Show modal
@@ -2015,31 +2059,32 @@
           document.getElementById('thirdStageOxytocin').checked = notes.thirdStage.oxytocinGiven === true;
           document.getElementById('thirdStageCCT').checked = notes.thirdStage.controlledCordTraction === true;
           document.getElementById('deliveryPregnancyType').value = notes.deliveryDetails.pregnancyType || 'single';
-          document.getElementById('deliveryGestationalWeek').value = notes.deliveryDetails.gestationalWeek || '';
           document.getElementById('deliveryBirthProvider').value = notes.deliveryDetails.birthProvider || '';
           document.getElementById('deliveryMode').value = notes.deliveryDetails.modeOfDelivery || '';
           document.getElementById('deliveryBirthPlace').value = DeliveryNotesUtils.normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || '';
           renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
-          const correctionBtn = document.getElementById('deliveryCorrectionBtn');
-          if (correctionBtn) correctionBtn.style.display = isDeliveryEditMode ? 'none' : '';
         } else {
-          const correctionBtn = document.getElementById('deliveryCorrectionBtn');
-          if (correctionBtn) correctionBtn.style.display = 'none';
           document.getElementById('thirdStageOxytocin').checked = false;
           document.getElementById('thirdStageCCT').checked = false;
           document.getElementById('deliveryPregnancyType').value = 'single';
-          document.getElementById('deliveryGestationalWeek').value = await loadLatestDeliveryGestationalWeek(patientId) || '';
           document.getElementById('deliveryBirthProvider').value = '';
           document.getElementById('deliveryMode').value = '';
           document.getElementById('deliveryBirthPlace').value = '';
           renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         }
+        await applyDeliveryGestationalWeek(
+          patientId,
+          notes && notes.deliveryDetails ? notes.deliveryDetails.gestationalWeek : ''
+        );
+        applyDeliveryNotesFormState();
       } catch (error) {
         console.error('Error loading delivery notes:', error);
         document.getElementById('thirdStageOxytocin').checked = false;
         document.getElementById('thirdStageCCT').checked = false;
         document.getElementById('deliveryPregnancyType').value = 'single';
         renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
+        await applyDeliveryGestationalWeek(selectedPatient.id, '');
+        applyDeliveryNotesFormState();
       }
     }
 
@@ -2061,6 +2106,67 @@
         (latest.manualGestationalAge != null ? latest.manualGestationalAge : latest.gestational_age);
       const week = parseFloat(value);
       return !isNaN(week) && week >= 20 && week <= 45 ? Math.round(week * 10) / 10 : null;
+    }
+
+    async function applyDeliveryGestationalWeek(patientId, savedWeek) {
+      const gaEl = document.getElementById('deliveryGestationalWeek');
+      const hint = document.getElementById('deliveryGestationalWeekHint');
+      const ancWeek = await loadLatestDeliveryGestationalWeek(patientId);
+      deliveryGaLockedFromAnc = ancWeek != null;
+      if (gaEl) {
+        if (deliveryGaLockedFromAnc) {
+          gaEl.value = ancWeek;
+          gaEl.readOnly = true;
+          gaEl.setAttribute('aria-readonly', 'true');
+        } else {
+          gaEl.readOnly = false;
+          gaEl.removeAttribute('aria-readonly');
+          gaEl.value = savedWeek != null && savedWeek !== '' ? savedWeek : '';
+        }
+      }
+      if (hint) {
+        hint.setAttribute(
+          'data-en',
+          deliveryGaLockedFromAnc
+            ? 'Loaded from the latest ANC visit and locked so gestational age is not entered twice.'
+            : 'No ANC gestational age found. Enter a week from 20 to 45.'
+        );
+        hint.setAttribute(
+          'data-mm',
+          deliveryGaLockedFromAnc
+            ? 'နောက်ဆုံး ANC မှ ယူထားပြီး ကိုယ်ဝန်ပတ် ထပ်မထည့်နိုင်အောင် ပိတ်ထားသည်။'
+            : 'ANC ကိုယ်ဝန်ပတ် မရှိပါ။ ၂၀ မှ ၄၅ အတွင်း ထည့်ပါ။'
+        );
+      }
+      updateModalLanguage();
+    }
+
+    function isDeliveryNotesLocked() {
+      return !!loadedDeliveryNotes && !isDeliveryEditMode;
+    }
+
+    function applyDeliveryNotesFormState() {
+      const modal = document.getElementById('thirdStageModal');
+      if (!modal) return;
+      const locked = isDeliveryNotesLocked();
+      modal.classList.toggle('delivery-notes-locked', locked);
+      const banner = document.getElementById('deliveryNotesLockedBanner');
+      if (banner) banner.style.display = locked ? 'block' : 'none';
+      const saveBtn = document.getElementById('deliverySaveBtn');
+      if (saveBtn) saveBtn.style.display = locked ? 'none' : '';
+      const correctionBtn = document.getElementById('deliveryCorrectionBtn');
+      if (correctionBtn) correctionBtn.style.display = (loadedDeliveryNotes && !isDeliveryEditMode) ? '' : 'none';
+      modal.querySelectorAll('input, select, textarea, button.delivery-remove-btn, #deliveryAddBabyBtn').forEach(function (el) {
+        if (!el) return;
+        if (el.id === 'deliveryGestationalWeek') {
+          el.disabled = locked;
+          el.readOnly = deliveryGaLockedFromAnc || locked;
+          return;
+        }
+        el.disabled = locked;
+      });
+      const addBtn = document.getElementById('deliveryAddBabyBtn');
+      if (addBtn && locked) addBtn.style.display = 'none';
     }
 
     function renderDeliveryBabyRows(babies) {
@@ -2119,9 +2225,11 @@
       const addBtn = document.getElementById('deliveryAddBabyBtn');
       if (addBtn) addBtn.style.display = pregnancyType === 'twins' ? 'inline-flex' : 'none';
       updateModalLanguage();
+      applyDeliveryNotesFormState();
     }
 
     function handleDeliveryPregnancyTypeChange() {
+      if (isDeliveryNotesLocked()) return;
       const type = document.getElementById('deliveryPregnancyType').value;
       const current = collectDeliveryBabies();
       renderDeliveryBabyRows(type === 'twins' ? current : current.slice(0, 1));
@@ -2259,6 +2367,15 @@
 
     async function saveThirdStageData() {
       if (window.SubmitGuard && SubmitGuard.isLocked('delivery-notes-save')) return;
+      if (isDeliveryNotesLocked()) {
+        showHubNotice(
+          currentLanguage === 'en'
+            ? 'Delivery Notes are already saved. Request a supervised correction to edit.'
+            : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းပြီးပါပြီ။ ပြင်ဆင်ရန် ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းပါ။',
+          currentLanguage === 'mm' ? 'သိမ်းပြီး' : 'Already saved'
+        );
+        return;
+      }
       if (!selectedPatient || !selectedPatient.id) {
         alert(currentLanguage === 'en' ? 'No patient selected' : 'လူနာ ရွေးချယ်ထားခြင်း မရှိပါ');
         return;
@@ -2269,7 +2386,7 @@
         return;
       }
 
-      const saveBtn = document.querySelector('#thirdStageModal .btn-primary');
+      const saveBtn = document.getElementById('deliverySaveBtn') || document.querySelector('#thirdStageModal .btn-primary');
       const restoreHtml = saveBtn ? saveBtn.innerHTML : '';
       const runSave = async function () {
         if (!validateDeliveryNotesForm()) return;
@@ -2420,6 +2537,11 @@
       </div>
       <div class="modal-body">
         <div id="deliveryInfectionAlert" style="display:none;"></div>
+        <div id="deliveryNotesLockedBanner" class="delivery-locked-banner lang-text"
+          data-en="Delivery Notes are saved and locked. Request a supervised correction if a change is needed."
+          data-mm="မွေးဖွားခြင်းမှတ်တမ်း သိမ်းပြီး ပိတ်ထားသည်။ ပြင်ဆင်ရန် ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းပါ။">
+          Delivery Notes are saved and locked. Request a supervised correction if a change is needed.
+        </div>
         <section class="delivery-section">
           <h5 class="delivery-section-title"><i class="fas fa-clipboard-check"></i><span class="lang-text" data-en="Management of Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Management of Labour Third Stage</span></h5>
           <div class="form-check mb-3">
@@ -2453,7 +2575,7 @@
             <div class="delivery-field">
               <label for="deliveryGestationalWeek" class="lang-text" data-en="Gestational week *" data-mm="ကိုယ်ဝန်ပတ် *">Gestational week *</label>
               <input id="deliveryGestationalWeek" type="number" min="20" max="45" step="0.1" inputmode="decimal" required>
-              <small class="lang-text" data-en="Loaded from the latest ANC visit; enter manually if unavailable." data-mm="နောက်ဆုံး ANC မှ ဖြည့်ပေးထားသည်။ မရှိပါက ကိုယ်တိုင်ထည့်ပါ။">Loaded from latest ANC; enter manually if unavailable.</small>
+              <small id="deliveryGestationalWeekHint" class="lang-text" data-en="Loaded from the latest ANC visit; enter manually if unavailable." data-mm="နောက်ဆုံး ANC မှ ဖြည့်ပေးထားသည်။ မရှိပါက ကိုယ်တိုင်ထည့်ပါ။">Loaded from latest ANC; enter manually if unavailable.</small>
             </div>
             <div class="delivery-field">
               <label for="deliveryBirthProvider" class="lang-text" data-en="Birth provider *" data-mm="မွေးဖွားပေးသူ *">Birth provider *</label>
@@ -2502,7 +2624,7 @@
         <button type="button" class="btn btn-secondary" onclick="closeThirdStageModal()">
           <span class="lang-text" data-en="Cancel" data-mm="ပယ်ဖျက်ရန်">Cancel</span>
         </button>
-        <button type="button" class="btn btn-primary" onclick="saveThirdStageData()">
+        <button type="button" id="deliverySaveBtn" class="btn btn-primary" onclick="saveThirdStageData()">
           <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းရန်">Save Delivery Notes</span>
         </button>
       </div>

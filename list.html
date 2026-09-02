@@ -1443,6 +1443,117 @@
       }
     }
 
+    function mergePatientDocs(patientMap, snapshot) {
+      if (!snapshot || typeof snapshot.forEach !== 'function' || snapshot.empty) return;
+      snapshot.forEach(function (doc) {
+        if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
+          patientMap.set(doc.id, { id: doc.id, ...doc.data() });
+        }
+      });
+    }
+
+    async function loadPatientsForMidwifeUid(db, uid, isIOS) {
+      const patientMap = new Map();
+      const queries = [
+        db.collection('patients').where('created_by', '==', uid),
+        db.collection('patients').where('createdBy', '==', uid),
+        db.collection('patients').where('care_team_midwife_ids', 'array-contains', uid)
+      ];
+      for (let i = 0; i < queries.length; i++) {
+        try {
+          const snapshot = await listSmartQuery(
+            queries[i],
+            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+          );
+          mergePatientDocs(patientMap, snapshot);
+        } catch (err) {
+          console.warn('Patient ownership query failed:', err);
+        }
+      }
+      return Array.from(patientMap.values());
+    }
+
+    async function hydrateLinkedBabyPatients(db, patients, isIOS) {
+      if (!Array.isArray(patients) || !patients.length) return patients;
+      const byId = new Map();
+      patients.forEach(function (patient) {
+        if (patient && patient.id) byId.set(patient.id, patient);
+      });
+      const motherIds = patients.filter(function (patient) {
+        if (!patient || !patient.id || patientTypeOf(patient) !== 'mother') return false;
+        return (Array.isArray(patient.baby_patient_ids) && patient.baby_patient_ids.length) ||
+          patient.birth_time ||
+          patient.deliveredDateTime ||
+          patient.pregnancy_type ||
+          patient.linked_from_delivery_notes;
+      }).map(function (patient) { return patient.id; });
+
+      for (let i = 0; i < motherIds.length; i += 10) {
+        const chunk = motherIds.slice(i, i + 10);
+        try {
+          const snap = await listSmartQuery(
+            db.collection('patients').where('mother_patient_id', 'in', chunk),
+            { preferCache: isIOS, timeout: 8000, retries: 1, fallbackToCache: true }
+          );
+          if (snap && typeof snap.forEach === 'function') {
+            snap.forEach(function (doc) {
+              if (!doc || !doc.id || !doc.data || byId.has(doc.id)) return;
+              const row = { id: doc.id, ...doc.data() };
+              byId.set(doc.id, row);
+              patients.push(row);
+            });
+          }
+        } catch (err) {
+          console.warn('Could not hydrate baby patients for mothers', err);
+        }
+      }
+
+      const deterministicIds = [];
+      motherIds.forEach(function (id) {
+        deterministicIds.push(id + '_baby_1');
+        deterministicIds.push(id + '_baby_2');
+      });
+      const missingDeterministic = Array.from(new Set(deterministicIds))
+        .filter(function (id) { return id && !byId.has(id); })
+        .slice(0, 40);
+      await Promise.all(missingDeterministic.map(async function (id) {
+        try {
+          const doc = await listSmartQuery(
+            db.collection('patients').doc(id),
+            { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+          );
+          if (doc && doc.exists && doc.data && !byId.has(doc.id)) {
+            const row = { id: doc.id, ...doc.data() };
+            byId.set(doc.id, row);
+            patients.push(row);
+          }
+        } catch (err) {}
+      }));
+
+      const missingLinkedIds = [];
+      patients.forEach(function (patient) {
+        const ids = Array.isArray(patient.baby_patient_ids) ? patient.baby_patient_ids : [];
+        ids.forEach(function (id) {
+          if (id && !byId.has(id)) missingLinkedIds.push(id);
+        });
+      });
+      const uniqueMissing = Array.from(new Set(missingLinkedIds)).slice(0, 80);
+      await Promise.all(uniqueMissing.map(async function (id) {
+        try {
+          const doc = await listSmartQuery(
+            db.collection('patients').doc(id),
+            { preferCache: isIOS, timeout: 5000, retries: 1, fallbackToCache: true }
+          );
+          if (doc && doc.exists && doc.data && !byId.has(doc.id)) {
+            const row = { id: doc.id, ...doc.data() };
+            byId.set(doc.id, row);
+            patients.push(row);
+          }
+        } catch (err) {}
+      }));
+      return patients;
+    }
+
     function getPilotCachedUser() {
       const uid = localStorage.getItem('uid');
       if (!uid || localStorage.getItem('rememberMe') !== 'true') return null;
@@ -1586,32 +1697,10 @@
 
         // Apply role-based filtering
         if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
-          // Default to Midwife if role not loaded yet.
-          // MOH DB schema is canonical: created_by + created_at.
-          console.log('Loading as Midwife using created_by field...');
+          console.log('Loading as Midwife using created_by, createdBy, and care team...');
           try {
-            const patientQuery = db.collection('patients').where('created_by', '==', currentUser.uid);
-            const snapshot = await listSmartQuery(
-              patientQuery,
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-            );
-            console.log('created_by query result:', snapshot?.empty ? 'empty' : `${snapshot?.size || 0} docs`);
-
-            allPatients = [];
-            if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-              let count = 0;
-              snapshot.forEach(doc => {
-                if (doc && doc.id && doc.data) {
-                  allPatients.push({ id: doc.id, ...doc.data() });
-                  count++;
-                }
-              });
-              console.log('✅ Loaded', count, 'patients from created_by field');
-            } else {
-              console.log('⚠️ created_by query returned empty or invalid result');
-            }
-            console.log('📊 Total patients:', allPatients.length);
-            
+            allPatients = await loadPatientsForMidwifeUid(db, currentUser.uid, isIOS);
+            console.log('✅ Loaded', allPatients.length, 'patients for midwife');
             if (allPatients.length === 0) {
               console.warn('⚠️ No patients found. Possible reasons:');
               console.warn('  1. User has not created any patients yet');
@@ -1695,20 +1784,7 @@
           if (selectedMidwifeId && selectedMidwifeId !== 'all') {
             console.log('Filtering by selected midwife:', selectedMidwifeId);
             try {
-              const midwifeQuery = db.collection('patients').where('created_by', '==', selectedMidwifeId);
-              const snapshot = await listSmartQuery(
-                midwifeQuery,
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-              );
-
-              allPatients = [];
-              if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
-                snapshot.forEach(doc => {
-                  if (doc && doc.id && doc.data) {
-                    allPatients.push({ id: doc.id, ...doc.data() });
-                  }
-                });
-              }
+              allPatients = await loadPatientsForMidwifeUid(db, selectedMidwifeId, isIOS);
               console.log('✅ Loaded', allPatients.length, 'patients for selected midwife');
             } catch (error) {
               console.error('❌ Error loading patients for selected midwife:', error);
@@ -1740,6 +1816,18 @@
         }
 
         console.log('✅ Loaded', allPatients.length, 'patients total');
+
+        const shouldHydrateBabies = userRole === 'Midwife' || userRole === 'midwife' || !userRole ||
+          userRole === 'TMO' ||
+          userRole === 'Regional Officer' ||
+          ((userRole === 'Super Admin' || userRole === 'admin') && selectedMidwifeId && selectedMidwifeId !== 'all');
+        if (shouldHydrateBabies) {
+          try {
+            allPatients = await hydrateLinkedBabyPatients(db, allPatients, isIOS);
+          } catch (hydrateError) {
+            console.warn('Could not hydrate linked baby patients:', hydrateError);
+          }
+        }
         
         // Sort by creation date (newest first) - optimized
         allPatients.sort((a, b) => {

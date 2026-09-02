@@ -186,22 +186,21 @@
     .hrt-pill--kmc-lbw { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
     .hrt-pill--kmc-preterm { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
     .kmc-weight { font-weight: 700; color: #1e293b; }
-    .kmc-weight-block { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7.5rem; }
-    .kmc-weight-spark { display: block; width: 96px; height: 36px; }
-    .kmc-weight-points { font-size: 0.68rem; color: #64748b; line-height: 1.35; }
+    .kmc-weight-cell { white-space: normal; min-width: 7.75rem; vertical-align: top; }
+    .kmc-weight-block { display: flex; flex-direction: column; gap: 0.25rem; min-width: 7.5rem; white-space: normal; }
+    .kmc-weight-spark {
+      display: block;
+      width: 108px;
+      height: 40px;
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-radius: 6px;
+    }
+    .kmc-weight-points { font-size: 0.68rem; color: #64748b; line-height: 1.35; white-space: normal; }
     .kmc-weight-primary { font-weight: 800; color: #1e293b; }
     .kmc-weight-trend { font-size: 0.78rem; font-weight: 700; }
     .kmc-weight-trend.gain { color: #047857; }
     .kmc-weight-trend.loss { color: #b91c1c; }
-    .kmc-weight-history {
-      font-size: 0.72rem;
-      color: #64748b;
-      display: -webkit-box;
-      line-clamp: 2;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
     .kmc-status-track-btn {
       border: 0;
       background: transparent;
@@ -479,6 +478,7 @@
         weightCol: 'Weight (kg)',
         birthWeightShort: 'Birth',
         latestWeightShort: 'Latest',
+        latestWeightShort: 'Latest',
         ageCol: 'Age (days)',
         reasonCol: 'KMC reason',
         visitsCol: 'KMC visits',
@@ -543,6 +543,7 @@
         motherCol: 'မိခင်',
         weightCol: 'ကိုယ်အလေးချိန် (kg)',
         birthWeightShort: 'မွေးကင်းစ',
+        latestWeightShort: 'နောက်ဆုံး',
         latestWeightShort: 'နောက်ဆုံး',
         ageCol: 'အသက် (ရက်)',
         reasonCol: 'KMC အကြောင်းရင်း',
@@ -907,13 +908,14 @@
 
     function getWeightPoints(row) {
       if (Array.isArray(row && row.weightHistory) && row.weightHistory.length) {
-        return row.weightHistory.map(function (item, index) {
+        var history = row.weightHistory.map(function (item, index) {
           return {
             visit: parseInt(item.visitNumber, 10) || (index + 1),
             weight: normalizeWeightToGrams(item.grams || item.weight),
             date: item.date || ''
           };
         }).filter(function (p) { return p.weight; });
+        if (history.length) return history;
       }
       var visits = (row && row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
       visits.sort(function (a, b) {
@@ -930,47 +932,61 @@
           };
         })
         .filter(function (p) { return !isNaN(p.weight) && p.weight > 0; });
-      var hasVisit1 = points.some(function (p) { return p.visit === 1; });
       var birthWeight = getBestBirthWeightGram(row);
-      if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
-        points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
-      }
-      if (!points.length && row && row.birthWeightGram) {
-        var birthG = normalizeWeightToGrams(row.birthWeightGram);
-        if (birthG) points.push({ visit: 1, weight: birthG, isBirthBaseline: true });
-        var latestG = normalizeWeightToGrams(row.latestWeightGram);
-        if (latestG && latestG !== birthG) points.push({ visit: 2, weight: latestG });
+      var latestWeight = normalizeWeightToGrams(row && row.latestWeightGram);
+      if (!points.length) {
+        if (!isNaN(birthWeight) && birthWeight > 0) {
+          points.push({ visit: 1, weight: birthWeight, isBirthBaseline: true });
+        }
+        if (latestWeight && (!points.length || latestWeight !== points[0].weight)) {
+          points.push({ visit: Math.max(2, points.length + 1), weight: latestWeight });
+        }
+      } else {
+        var hasVisit1 = points.some(function (p) { return p.visit === 1; });
+        if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
+          points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
+        }
       }
       return points;
     }
 
+    function sparklineX(i, count, w, pad) {
+      if (count <= 1) return w / 2;
+      return pad + (i / (count - 1)) * (w - pad * 2);
+    }
+
     function weightSparklineSvg(points) {
-      if (!points || points.length < 2) return '';
-      var w = 96;
-      var h = 36;
-      var pad = 4;
+      if (!points || !points.length) return '';
+      var w = 108;
+      var h = 40;
+      var pad = 6;
       var grams = points.map(function (p) { return p.weight; });
       var min = Math.min.apply(null, grams);
       var max = Math.max.apply(null, grams);
       var span = (max - min) || 1;
       var coords = points.map(function (p, i) {
-        var x = pad + (i / (points.length - 1)) * (w - pad * 2);
+        var x = sparklineX(i, points.length, w, pad);
         var y = h - pad - ((p.weight - min) / span) * (h - pad * 2);
         return x.toFixed(1) + ',' + y.toFixed(1);
       });
       var dots = points.map(function (p, i) {
-        var x = pad + (i / (points.length - 1)) * (w - pad * 2);
+        var x = sparklineX(i, points.length, w, pad);
         var y = h - pad - ((p.weight - min) / span) * (h - pad * 2);
-        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.2" fill="#1d4ed8"></circle>';
+        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.4" fill="#1d4ed8"></circle>';
       }).join('');
-      return '<svg class="kmc-weight-spark" viewBox="0 0 ' + w + ' ' + h + '" width="96" height="36" aria-hidden="true">' +
-        '<polyline fill="none" stroke="#2563eb" stroke-width="1.6" points="' + coords.join(' ') + '"></polyline>' +
-        dots + '</svg>';
+      var line = points.length > 1
+        ? '<polyline fill="none" stroke="#2563eb" stroke-width="1.8" points="' + coords.join(' ') + '"></polyline>'
+        : '';
+      return '<svg class="kmc-weight-spark" viewBox="0 0 ' + w + ' ' + h + '" width="108" height="40" role="img" aria-label="' +
+        escapeHtml(tr('weightCol')) + '">' +
+        '<line x1="' + pad + '" y1="' + (h - pad) + '" x2="' + (w - pad) + '" y2="' + (h - pad) + '" stroke="#bfdbfe" stroke-width="1"></line>' +
+        line + dots + '</svg>';
     }
 
     function weightCellHtml(row) {
       var points = getWeightPoints(row);
       var birthG = normalizeWeightToGrams(getBestBirthWeightGram(row) || (row && row.birthWeightGram));
+      var latestG = normalizeWeightToGrams(row && row.latestWeightGram) || (points.length ? points[points.length - 1].weight : null);
       if (!points.length && birthG) points = [{ visit: 1, weight: birthG, isBirthBaseline: true }];
       if (!points.length) return '<span class="text-muted">—</span>';
       var latest = points[points.length - 1];
@@ -978,10 +994,8 @@
       html += '<div class="kmc-weight-primary">' + escapeHtml(formatKgLabel(latest.weight)) + '</div>';
       html += weightSparklineSvg(points);
       html += '<div class="kmc-weight-points">';
-      html += points.map(function (p, index) {
-        var label = (index === 0 || p.isBirthBaseline) ? tr('birthWeightShort') : ('V' + p.visit);
-        return escapeHtml(label + ' ' + formatKgLabel(p.weight));
-      }).join(' · ');
+      html += escapeHtml(tr('birthWeightShort') + ' ' + formatKgLabel(birthG || points[0].weight));
+      html += '<br>' + escapeHtml(tr('latestWeightShort') + ' ' + formatKgLabel(latestG || latest.weight));
       html += '</div></div>';
       return html;
     }
@@ -1280,7 +1294,7 @@
         trEl.innerHTML =
           '<td><div class="hrt-patient-main">' + babyName + '</div>' +
             (infections ? '<div class="hrt-patient-meta">' + infections + '</div>' : '') + '</td>' +
-          '<td>' + weightCellHtml(r) + '</td>' +
+          '<td class="kmc-weight-cell">' + weightCellHtml(r) + '</td>' +
           '<td>' + ageHtml + '</td>' +
           '<td>' + reasonPillsHtml(r.reasons) + '</td>' +
           '<td>' + statusTrackHtml(r.completedVisitCount || 0, r) + '</td>' +
@@ -1299,7 +1313,7 @@
               '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
             '</div>' +
             '<div class="hrt-mobile-grid">' +
-              '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
                 '<div class="hrt-mobile-value">' + weightCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('ageCol')) + '</span>' +
                 '<div class="hrt-mobile-value">' + (ageDays != null ? ageDays + tr('days') : '—') + '</div></div>' +

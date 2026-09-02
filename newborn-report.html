@@ -555,7 +555,6 @@
             <tbody id="newbornPrintTableBody"></tbody>
           </table>
         </div>
-        <div id="newbornKmcPrintSection" class="report-print-only-section"></div>
       </div>
 
       <!-- Clinical Notes -->
@@ -599,6 +598,7 @@
       female: { en: 'Female', mm: 'မ' },
       alive: { en: 'Alive', mm: 'ရှင်သန်သည်' },
       dead: { en: 'Dead', mm: 'ကွယ်လွန်သည်' },
+      stillbirth: { en: 'Stillbirth', mm: 'သေမွေး' },
       noImmediateCareData: { en: 'No immediate newborn care data recorded.', mm: 'မွေးပြီးပြီးချင်း ကလေးစောင့်ရှောက်မှု အချက်အလက် မမှတ်ရသေးပါ။' },
       noNewbornCareData: { en: 'No newborn care assessment data recorded.', mm: 'မွေးကင်းစကလေး စောင့်ရှောက်မှု စစ်ဆေးချက် မမှတ်ရသေးပါ။' },
       noProcedures: { en: 'No procedures recorded.', mm: 'လုပ်ဆောင်ချက် မမှတ်ရသေးပါ။' },
@@ -1170,71 +1170,6 @@
       });
     }
 
-    function renderKmcReportSection() {
-      if (!newbornCareVisits.length || !window.KmcUtils) return '';
-      const latestWithBabyKmc = newbornCareVisits.slice().reverse().find(function (v) {
-        return Array.isArray(v.kmc_babies) && v.kmc_babies.length;
-      });
-      if (latestWithBabyKmc) {
-        let rowsHtml = '';
-        latestWithBabyKmc.kmc_babies.forEach(function (baby) {
-          const babyIndex = parseInt(baby.babyIndex || baby.baby_index, 10) || 1;
-          const outcome = KmcUtils.getCompletionOutcome({ babyIndex: babyIndex, kmcActions: kmcActions });
-          const showRow = baby.potential_kmc || (baby.kmc_eligible_reasons || []).length;
-          if (!showRow) return;
-          rowsHtml += '<tr id="kmc-report-baby-' + babyIndex + '">' +
-            '<td>' + escapeHtml(baby.babyName || ('Baby ' + babyIndex)) + '</td>' +
-            '<td>' + escapeHtml(KmcUtils.reasonLabels(baby.kmc_eligible_reasons || [], getReportLang()).join(', ') || t('notRecorded')) + '</td>' +
-            '<td>' + escapeHtml(baby.kmc_selected ? String(baby.kmc_selected).toUpperCase() : t('notRecorded')) + '</td>' +
-            '<td>' + escapeHtml(baby.discharge_date || t('notRecorded')) + '</td>' +
-            '<td>' + escapeHtml(outcome ? (getReportLang() === 'mm' ? outcome.labelMm : outcome.labelEn) : t('notRecorded')) + '</td>' +
-            '</tr>';
-        });
-        if (!rowsHtml) return '';
-        let html = '<div class="treatment-item mb-3">';
-        html += '<div class="treatment-header">KMC Tracking</div>';
-        html += '<div class="treatment-content">';
-        html += '<div style="overflow-x:auto;"><table class="table table-sm table-bordered mb-0"><thead><tr>' +
-          '<th>Baby</th><th>KMC reason</th><th>Decision</th><th>Discharge</th><th>Completion</th></tr></thead><tbody>';
-        html += rowsHtml;
-        html += '</tbody></table></div>';
-        html += '</div></div>';
-        return html;
-      }
-      const latestDecision = KmcUtils.getLatestKmcDecision(newbornCareVisits) || {};
-      const hasKmcStory = latestDecision.potential_kmc ||
-        (latestDecision.kmc_eligible_reasons || []).length ||
-        latestDecision.kmc_selected === 'yes' ||
-        newbornCareVisits.some(function (v) { return visitHadPotentialKmc(v); });
-      if (!hasKmcStory) return '';
-
-      const reasonSet = new Set();
-      (latestDecision.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
-      newbornCareVisits.forEach(function (v) {
-        (v.kmc_eligible_reasons || []).forEach(function (r) { if (r) reasonSet.add(r); });
-      });
-      const reasons = Array.from(reasonSet);
-      const completeOutcome = KmcUtils.getCompletionOutcome({ kmcActions: kmcActions });
-      let html = '<div class="treatment-item mb-3">';
-      html += '<div class="treatment-header">KMC Tracking</div>';
-      html += '<div class="treatment-content">';
-      if (reasons.length) {
-        html += '<p><strong>KMC reason:</strong> ' + escapeHtml(KmcUtils.reasonLabels(reasons, getReportLang()).join(', ')) + '</p>';
-      }
-      if (latestDecision.kmc_selected === 'yes') {
-        html += '<p><strong>KMC Decision:</strong> ' + escapeHtml(String(latestDecision.kmc_selected).toUpperCase()) + '</p>';
-      }
-      if (latestDecision.kmc_selected === 'no' && visitHadPotentialKmc(latestDecision)) {
-        html += '<p><strong>Reason category:</strong> ' + escapeHtml(latestDecision.kmc_no_category || t('notRecorded')) + '</p>';
-        html += '<p><strong>Reason:</strong> ' + escapeHtml(latestDecision.kmc_no_reason || t('notRecorded')) + '</p>';
-      }
-      const dischargeDate = KmcUtils.getLatestDischargeDate(newbornCareVisits);
-      if (dischargeDate) html += '<p><strong>Discharge date:</strong> ' + escapeHtml(dischargeDate) + '</p>';
-      if (completeOutcome) html += '<p><strong>Completion outcome:</strong> ' + escapeHtml(completeOutcome.labelEn) + '</p>';
-      html += '</div></div>';
-      return html;
-    }
-
     function buildVisitPanelHtml(visit) {
       if (!visit) {
         return '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
@@ -1291,8 +1226,14 @@
     function formatVisitOutcome(visit) {
       var raw = visit && (visit.outcome || visit.baby_outcome) || '';
       if (raw === 'dead' || raw === 'death') return t('dead');
+      if (raw === 'stillbirth' || raw === 'still_birth') return t('stillbirth');
       if (raw === 'alive') return t('alive');
       return raw ? String(raw) : t('notRecorded');
+    }
+
+    function visitHasDeathOutcome(visit) {
+      var raw = String((visit && (visit.outcome || visit.baby_outcome)) || '').toLowerCase();
+      return raw === 'dead' || raw === 'death' || raw === 'stillbirth' || raw === 'still_birth' || raw === 'neonatal_death';
     }
 
     function formatFeedingSummary(visit) {
@@ -1529,17 +1470,17 @@
 
     function populateNewbornCareInfo() {
       const container = document.getElementById('newbornCareInfo');
-      const kmcPrint = document.getElementById('newbornKmcPrintSection');
       const columns = getComparisonColumns();
-      const rows = columns.map(function (col) { return col.visit; });
       renderNewbornPrintTable(getReportNewbornVisitRows());
       var historySection = document.getElementById('newbornMeasurementsHistory');
       if (historySection) historySection.style.display = 'none';
-      if (kmcPrint) kmcPrint.innerHTML = '';
       if (!columns.length) {
         container.innerHTML = '<p class="text-muted">' + t('noNewbornCareData') + '</p>';
         return;
       }
+      const showCauseOfDeath = columns.some(function (col) {
+        return visitHasDeathOutcome(col.visit);
+      });
       const fields = [
         ['date', t('compareDate')],
         ['weight', t('compareWeight')],
@@ -1564,10 +1505,12 @@
         ['kmc_hours_per_day', t('compareKmcHours')],
         ['kmc_total_hours', t('compareKmcTotal')],
         ['follow_up_appointment_date', t('compareFollowUp')],
-        ['outcome', t('outcome').replace(':', '')],
-        ['cause_of_death', t('causeOfDeath').replace(':', '')],
-        ['clinical_notes', t('clinicalNotes').replace(':', '')]
+        ['outcome', t('outcome').replace(':', '')]
       ];
+      if (showCauseOfDeath) {
+        fields.push(['cause_of_death', t('causeOfDeath').replace(':', '')]);
+      }
+      fields.push(['clinical_notes', t('clinicalNotes').replace(':', '')]);
       let html = '<table class="newborn-compare-table"><thead><tr><th></th>';
       columns.forEach(function (col) {
         html += '<th>' + escapeHtml(col.label) + '</th>';
@@ -1581,7 +1524,6 @@
         html += '</tr>';
       });
       html += '</tbody></table>';
-      html += renderKmcReportSection();
       container.innerHTML = html;
     }
 

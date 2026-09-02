@@ -228,12 +228,35 @@
     return firstOf(notes && notes.birth_group_id, details.birthGroupId, motherId + '_delivery_' + (firstBirth || 'unknown'));
   }
 
+  function copyMotherScopeFields(mother) {
+    mother = mother || {};
+    var keys = [
+      'township', 'region', 'region_short_code', 'tsp_code', 'tspCode',
+      'facility_code', 'facilityCode', 'facility_name', 'facilityName',
+      'facility_type', 'facilityType', 'department', 'village', 'address',
+      'state', 'district'
+    ];
+    var out = {};
+    keys.forEach(function (key) {
+      if (mother[key] != null && mother[key] !== '') out[key] = mother[key];
+    });
+    return out;
+  }
+
   function babyPayload(motherId, mother, baby, birthOrder, groupId, ancContext, userId, totalBabies) {
     mother = mother || {};
     baby = baby || {};
     var dob = dateFromBirthTime(baby.birthTime) || baby.date_of_birth || '';
     var years = ageInYears(dob);
-    return {
+    var careTeam = [];
+    (mother.care_team_midwife_ids || []).forEach(function (id) {
+      if (id && careTeam.indexOf(id) === -1) careTeam.push(id);
+    });
+    [userId, mother.created_by, mother.createdBy].forEach(function (id) {
+      if (id && careTeam.indexOf(id) === -1) careTeam.push(id);
+    });
+    var createdBy = userId || mother.created_by || mother.createdBy || null;
+    var payload = {
       patient_type: PATIENT_TYPE_BABY,
       name: babyDisplayName(mother.name || mother.patientName || '', birthOrder, baby.babyName || baby.baby_name, totalBabies),
       mother_patient_id: motherId,
@@ -252,19 +275,20 @@
       maternal_edd_source: ancContext.maternal_edd_source || (mother.edd ? 'mother_patient' : null),
       phone: firstOf(mother.phone, mother.phoneNumber) || null,
       phoneNumber: firstOf(mother.phoneNumber, mother.phone) || null,
-      township: mother.township || null,
-      region: mother.region || null,
-      region_short_code: mother.region_short_code || null,
-      tsp_code: mother.tsp_code || null,
-      facility_code: mother.facility_code || mother.facilityCode || '003',
-      created_by: userId || mother.created_by || mother.createdBy || null,
-      createdBy: userId || mother.created_by || mother.createdBy || null,
-      care_team_midwife_ids: mother.care_team_midwife_ids || [mother.created_by || mother.createdBy || userId].filter(Boolean),
+      created_by: createdBy,
+      createdBy: createdBy,
+      care_team_midwife_ids: careTeam,
       status: 'registered',
       linked_from_delivery_notes: true,
       updated_at: nowServer(),
       updated_by: userId || null
     };
+    Object.assign(payload, copyMotherScopeFields(mother));
+    if (!payload.township && mother.township) payload.township = mother.township;
+    if (!payload.region && mother.region) payload.region = mother.region;
+    payload.tsp_code = firstOf(payload.tsp_code, mother.tsp_code, mother.tspCode) || null;
+    payload.facility_code = firstOf(payload.facility_code, mother.facility_code, mother.facilityCode) || '003';
+    return payload;
   }
 
   function babyDocId(motherId, birthOrder) {
@@ -285,12 +309,21 @@
   async function createOrUpdateBabiesFromDeliveryNotes(motherId, notes, userId, options) {
     options = options || {};
     if (!motherId || !global.firebase) throw new Error('Baby patient service unavailable');
-    var mother = options.motherData || null;
-    if (!mother) throw new Error('Patient data required to create baby record');
-    if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient');
-
     var db = firebase.firestore();
     var motherRef = db.collection('patients').doc(motherId);
+    var mother = {};
+    var motherSnap = await motherRef.get();
+    if (motherSnap.exists) mother = Object.assign({ id: motherId }, motherSnap.data());
+    if (options.motherData) {
+      Object.keys(options.motherData).forEach(function (key) {
+        if (mother[key] == null || mother[key] === '') mother[key] = options.motherData[key];
+      });
+    }
+    if (!mother || (!motherSnap.exists && !options.motherData)) {
+      throw new Error('Patient data required to create baby record');
+    }
+    if (isBabyPatient(mother)) throw new Error('Save delivery notes on the mother patient');
+
     var details = (notes && notes.deliveryDetails) || {};
     var rawBabies = Array.isArray(details.babies) ? details.babies : [];
     var babies = rawBabies.filter(function (baby) {
@@ -306,6 +339,7 @@
     var pregnancyType = String(details.pregnancyType || details.pregnancy_type || '').toLowerCase();
     var totalBabies = babies.length > 1 || pregnancyType === 'twins' ? Math.max(babies.length, 2) : 1;
     var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
+    var ancContext = await fetchLatestAncContext(db, motherId);
     var ids = [];
     var batch = db.batch();
 
@@ -313,8 +347,22 @@
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
       var babyId = babyDocId(motherId, birthOrder);
       var babyRef = db.collection('patients').doc(babyId);
-      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, {}, userId, totalBabies);
+      var existing = await babyRef.get();
+      var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, ancContext, userId, totalBabies);
       payload.patient_unique_id = babyUniqueIdFromMother(mother, birthOrder);
+      if (existing.exists) {
+        var existingData = existing.data() || {};
+        if (existingData.created_by || existingData.createdBy) {
+          delete payload.created_by;
+          delete payload.createdBy;
+        }
+        if (userId && firebase.firestore.FieldValue) {
+          payload.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
+        }
+      } else {
+        payload.created_at = nowServer();
+        payload.createdAt = nowServer();
+      }
       batch.set(babyRef, payload, { merge: true });
       ids.push(babyId);
     }

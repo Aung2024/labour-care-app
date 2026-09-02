@@ -48,3 +48,27 @@ test('newborn care uses shared alert logic and canonical storage patient ID', ()
     /\.doc\(getNewbornCareStoragePatientId\(\)\)\s*\.collection\('newborn_care'\)/
   );
 });
+
+test('newborn report hides KMC table and cause of death unless death is recorded', () => {
+  const source = readAppFile('newborn-report.html');
+  assert.doesNotMatch(source, /function renderKmcReportSection/);
+  assert.match(source, /function visitHasDeathOutcome/);
+  assert.match(source, /showCauseOfDeath/);
+});
+
+test('delivery notes lock after save and reuse ANC gestational age', () => {
+  const source = readAppFile('patient-care-hub.html');
+  assert.match(source, /function isDeliveryNotesLocked/);
+  assert.match(source, /function applyDeliveryGestationalWeek/);
+  assert.match(source, /deliveryGaLockedFromAnc/);
+  const utils = readAppFile('js/baby-patient-utils.js');
+  assert.match(utils, /copyMotherScopeFields/);
+  assert.match(utils, /fetchLatestAncContext/);
+});
+
+test('KMC tracker weight column always draws a sparkline block', () => {
+  const source = readAppFile('kmc-tracking.html');
+  assert.match(source, /kmc-weight-spark/);
+  assert.match(source, /function weightSparklineSvg/);
+  assert.doesNotMatch(source, /if \(!points \|\| points\.length < 2\) return '';/);
+});
