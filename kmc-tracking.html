@@ -186,7 +186,9 @@
     .hrt-pill--kmc-lbw { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
     .hrt-pill--kmc-preterm { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
     .kmc-weight { font-weight: 700; color: #1e293b; }
-    .kmc-weight-block { display: flex; flex-direction: column; gap: 0.2rem; }
+    .kmc-weight-block { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7.5rem; }
+    .kmc-weight-spark { display: block; width: 96px; height: 36px; }
+    .kmc-weight-points { font-size: 0.68rem; color: #64748b; line-height: 1.35; }
     .kmc-weight-primary { font-weight: 800; color: #1e293b; }
     .kmc-weight-trend { font-size: 0.78rem; font-weight: 700; }
     .kmc-weight-trend.gain { color: #047857; }
@@ -904,6 +906,15 @@
     }
 
     function getWeightPoints(row) {
+      if (Array.isArray(row && row.weightHistory) && row.weightHistory.length) {
+        return row.weightHistory.map(function (item, index) {
+          return {
+            visit: parseInt(item.visitNumber, 10) || (index + 1),
+            weight: normalizeWeightToGrams(item.grams || item.weight),
+            date: item.date || ''
+          };
+        }).filter(function (p) { return p.weight; });
+      }
       var visits = (row && row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
       visits.sort(function (a, b) {
         var av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
@@ -924,33 +935,54 @@
       if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
         points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
       }
+      if (!points.length && row && row.birthWeightGram) {
+        var birthG = normalizeWeightToGrams(row.birthWeightGram);
+        if (birthG) points.push({ visit: 1, weight: birthG, isBirthBaseline: true });
+        var latestG = normalizeWeightToGrams(row.latestWeightGram);
+        if (latestG && latestG !== birthG) points.push({ visit: 2, weight: latestG });
+      }
       return points;
     }
 
+    function weightSparklineSvg(points) {
+      if (!points || points.length < 2) return '';
+      var w = 96;
+      var h = 36;
+      var pad = 4;
+      var grams = points.map(function (p) { return p.weight; });
+      var min = Math.min.apply(null, grams);
+      var max = Math.max.apply(null, grams);
+      var span = (max - min) || 1;
+      var coords = points.map(function (p, i) {
+        var x = pad + (i / (points.length - 1)) * (w - pad * 2);
+        var y = h - pad - ((p.weight - min) / span) * (h - pad * 2);
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      });
+      var dots = points.map(function (p, i) {
+        var x = pad + (i / (points.length - 1)) * (w - pad * 2);
+        var y = h - pad - ((p.weight - min) / span) * (h - pad * 2);
+        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.2" fill="#1d4ed8"></circle>';
+      }).join('');
+      return '<svg class="kmc-weight-spark" viewBox="0 0 ' + w + ' ' + h + '" width="96" height="36" aria-hidden="true">' +
+        '<polyline fill="none" stroke="#2563eb" stroke-width="1.6" points="' + coords.join(' ') + '"></polyline>' +
+        dots + '</svg>';
+    }
+
     function weightCellHtml(row) {
+      var points = getWeightPoints(row);
       var birthG = normalizeWeightToGrams(getBestBirthWeightGram(row) || (row && row.birthWeightGram));
-      var latestG = normalizeWeightToGrams(row && row.latestWeightGram);
-      if (!latestG) {
-        var points = getWeightPoints(row);
-        if (points.length) latestG = normalizeWeightToGrams(points[points.length - 1].weight);
-      }
-      var primary = latestG || birthG;
-      if (!primary) return '<span class="text-muted">—</span>';
+      if (!points.length && birthG) points = [{ visit: 1, weight: birthG, isBirthBaseline: true }];
+      if (!points.length) return '<span class="text-muted">—</span>';
+      var latest = points[points.length - 1];
       var html = '<div class="kmc-weight-block">';
-      html += '<div class="kmc-weight-primary">' + escapeHtml(formatKgLabel(primary)) + '</div>';
-      if (birthG && latestG && birthG !== latestG) {
-        var diffKg = Math.round(((latestG - birthG) / 1000) * 1000) / 1000;
-        var trendClass = diffKg > 0 ? 'gain' : (diffKg < 0 ? 'loss' : '');
-        var trendText = diffKg > 0
-          ? '<i class="fas fa-arrow-up"></i> +' + diffKg + ' kg'
-          : (diffKg < 0 ? '<i class="fas fa-arrow-down"></i> ' + diffKg + ' kg' : '<i class="fas fa-minus"></i> 0 kg');
-        html += '<div class="kmc-weight-trend ' + trendClass + '">' + trendText + '</div>';
-        html += '<div class="kmc-weight-history">' + escapeHtml(tr('birthWeightShort')) + ': ' +
-          escapeHtml(formatKgLabel(birthG)) + '</div>';
-      } else if (birthG) {
-        html += '<div class="kmc-weight-history">' + escapeHtml(tr('birthWeightShort')) + '</div>';
-      }
-      html += '</div>';
+      html += '<div class="kmc-weight-primary">' + escapeHtml(formatKgLabel(latest.weight)) + '</div>';
+      html += weightSparklineSvg(points);
+      html += '<div class="kmc-weight-points">';
+      html += points.map(function (p, index) {
+        var label = (index === 0 || p.isBirthBaseline) ? tr('birthWeightShort') : ('V' + p.visit);
+        return escapeHtml(label + ' ' + formatKgLabel(p.weight));
+      }).join(' · ');
+      html += '</div></div>';
       return html;
     }
 
@@ -1691,6 +1723,7 @@
         kmcSelected: row.enrolled ? 'yes' : '',
         potentialKmc: !!row.eligible,
         latestWeightGram: row.latestWeightGram || null,
+        weightHistory: Array.isArray(row.weightHistory) ? row.weightHistory : [],
         ageDays: row.postpartumAgeDays,
         completedVisitCount: row.visitCount || 0,
         completedPostDischargeVisitCount: row.visitCount || 0,

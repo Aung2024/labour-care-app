@@ -240,6 +240,9 @@ test('KMC birth weight prefers visit 1 over later current weight', () => {
   }), { asOf: '2026-04-10' });
   assert.equal(row.birthWeightGram, 1800);
   assert.equal(row.latestWeightGram, 2100);
+  assert.equal(row.weightHistory.length, 2);
+  assert.equal(row.weightHistory[0].grams, 1800);
+  assert.equal(row.weightHistory[1].grams, 2100);
 });
 
 test('KMC derives completion at birth plus two calendar months', () => {

@@ -353,6 +353,35 @@ function kmcVisits(facts, babyIndex) {
       (firstDate(b, ['visitDate', 'visit_date']) || 0));
 }
 
+function visitWeightHistory(facts, babyIndex) {
+  return newbornVisitData(facts).map((visit) => {
+    const n = Number(visit.visit_number || visit.visitNumber || 1);
+    let source = null;
+    if (Array.isArray(visit.babies)) {
+      const baby = visit.babies.find((item) =>
+        Number(item.babyIndex || item.baby_index || 1) === babyIndex);
+      if (baby) {
+        source = n > 1
+          ? (baby.current_weight_gram || baby.currentWeightGram || baby.body_weight_gram)
+          : (baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram);
+      }
+    }
+    if (!source && babyIndex === 1) {
+      source = n > 1
+        ? (visit.current_weight_gram || visit.body_weight_gram)
+        : (visit.body_weight_gram || visit.birthWeightGram);
+    }
+    const grams = parseWeightGram(source);
+    if (!grams) return null;
+    return {
+      visitNumber: n,
+      grams,
+      date: isoDate(firstDate(visit, ['visitDate', 'visit_date', 'recordedAt']))
+    };
+  }).filter(Boolean).sort((a, b) => (a.date || '').localeCompare(b.date || '') ||
+    a.visitNumber - b.visitNumber);
+}
+
 function kmcCompletion(actions, babyIndex) {
   return (actions || []).map(unwrap).filter((action) => {
     const index = Number(action.babyIndex || action.baby_index || 1);
@@ -419,6 +448,7 @@ function buildKmcProjections(facts, options) {
       enrolled,
       birthWeightGram: baby.birthWeightGram,
       latestWeightGram: baby.latestWeightGram,
+      weightHistory: visitWeightHistory(facts, baby.babyIndex),
       birthAnchorDate: isoDate(birth),
       birthAnchorSource: birth
         ? (facts.birthAnchor && facts.birthAnchor.source || 'newborn_baby') : null,

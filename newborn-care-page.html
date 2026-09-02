@@ -855,7 +855,7 @@
           </div>
           <div class="col-md-6">
             <label for="head_circumference_cm" class="form-label">
-              <span class="lang-text" data-en="Head Circumference (cm)" data-mm="ဉီးခေါင်းပတ်လည် (စင်တီမီတာ)">Head Circumference (cm)</span><span class="required-marker" aria-hidden="true">*</span>
+              <span class="lang-text" data-en="Birth Head Circumference (cm)" data-mm="မွေးကင်းစ ဦးခေါင်းပတ်လည် (စင်တီမီတာ)">Birth Head Circumference (cm)</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <input type="number" class="form-control" id="head_circumference_cm" name="head_circumference_cm" step="0.1" min="0" required placeholder="">
           </div>
@@ -1123,7 +1123,7 @@
             <label for="discharge_date" class="form-label">
               <span class="lang-text" data-en="Discharge Date" data-mm="ဆေးရုံမှဆင်းသည့်ရက်">Discharge Date</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
-            <input type="date" class="form-control" id="discharge_date" name="discharge_date" onchange="updateNewbornVisitSchedule()">
+            <input type="date" class="form-control" id="discharge_date" name="discharge_date" onchange="persistActiveBabyState(); updateNewbornVisitSchedule()">
           </div>
         </div>
 
@@ -2835,20 +2835,24 @@
       document.querySelectorAll('input[name="kmc_selected"]').forEach(function (el) {
         el.disabled = lockKmcYes;
         const choice = el.closest('.form-check');
-        if (choice) choice.style.display = inheritedKmcYes ? 'none' : '';
+        if (choice) choice.style.display = lockKmcYes ? 'none' : '';
       });
-      if (inheritedKmcYes) setRadioValue('kmc_selected', 'yes');
+      if (lockKmcYes) setRadioValue('kmc_selected', 'yes');
       const inherited = document.getElementById('kmcInheritedState');
       if (inherited) {
-        inherited.style.display = inheritedKmcYes ? '' : 'none';
-        inherited.textContent = inheritedKmcYes
-          ? (currentLanguage === 'mm' ? 'ယခင်အကြိမ်မှ KMC စာရင်းဝင်ပြီးဖြစ်သည်။' : 'KMC enrolled on a prior newborn visit.')
+        inherited.style.display = lockKmcYes ? '' : 'none';
+        inherited.textContent = lockKmcYes
+          ? (currentLanguage === 'mm'
+            ? 'ယခင်အကြိမ်မှ KMC Yes ရွေးပြီးဖြစ်သည်။ ဆင်းသည့်ရက်ကို ပြင်နိုင်သည်။'
+            : 'KMC Yes was already selected. Discharge date can still be updated.')
           : '';
       }
       const discharge = document.getElementById('discharge_date');
       if (discharge) {
-        discharge.readOnly = lockKmcYes;
-        discharge.classList.toggle('next-visit-readonly', lockKmcYes);
+        discharge.readOnly = false;
+        discharge.removeAttribute('disabled');
+        discharge.classList.remove('next-visit-readonly');
+        if (lockKmcYes || getSelectedKmcValue() === 'yes') discharge.required = true;
       }
       const decisionWrap = document.getElementById('kmcDecisionWrap');
       if (decisionWrap) decisionWrap.classList.toggle('kmc-decision-locked', lockKmcYes);
@@ -3786,7 +3790,18 @@
           }
         }
       }
-      
+
+      for (let i = 0; i < babyRows.length; i++) {
+        const baby = babyRows[i];
+        if (String(baby.kmc_selected || '').toLowerCase() !== 'yes') continue;
+        if (baby.discharge_date) continue;
+        await switchBabyTab(parseInt(baby.babyIndex, 10) || (i + 1));
+        alert(currentLanguage === 'mm' ? 'KMC Yes — ဆေးရုံမှဆင်းသည့်ရက် ထည့်ပါ။' : 'Please enter Discharge Date for KMC tracking.');
+        const dischargeEl = document.getElementById('discharge_date');
+        if (dischargeEl) dischargeEl.focus();
+        return;
+      }
+
       const submitButton = document.querySelector('button[form="newbornCareForm"]');
       const restoreHtml = submitButton ? submitButton.innerHTML : '';
       const saveData = async function () {
