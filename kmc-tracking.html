@@ -893,59 +893,89 @@
       return null;
     }
 
+    function visitBabyForIndex(visit, babyIndex) {
+      if (!visit || !Array.isArray(visit.babies)) return {};
+      return visit.babies.find(function (item, index) {
+        return (parseInt(item.babyIndex || item.baby_index, 10) || (index + 1)) === babyIndex;
+      }) || {};
+    }
+
+    function visitRecordWeightGrams(visit, babyIndex) {
+      if (!visit) return null;
+      var n = parseInt(visit.visit_number || visit.visitNumber, 10) || 1;
+      var baby = visitBabyForIndex(visit, babyIndex || 1);
+      if (n > 1) {
+        return normalizeWeightToGrams(
+          visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram ||
+          baby.current_weight_gram || baby.currentWeightGram
+        );
+      }
+      return normalizeWeightToGrams(
+        baby.birthWeightGram || baby.birth_weight_gram ||
+        visit.body_weight_gram || visit.birthWeightGram || baby.body_weight_gram
+      );
+    }
+
+    function buildWeightHistoryFromVisits(visits, babyIndex) {
+      var byVisit = new Map();
+      (visits || []).forEach(function (visit) {
+        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || 1;
+        var grams = visitRecordWeightGrams(visit, babyIndex);
+        if (!grams) return;
+        var existing = byVisit.get(n);
+        if (!existing || (n > 1 && grams !== existing.weight)) {
+          byVisit.set(n, {
+            visit: n,
+            weight: grams,
+            date: visit.visitDate || visit.visit_date || ''
+          });
+        }
+      });
+      return Array.from(byVisit.values()).sort(function (a, b) { return a.visit - b.visit; });
+    }
+
+    function historyLooksFlat(points) {
+      if (!points || points.length < 2) return !points || points.length <= 1;
+      return points.every(function (p) { return p.weight === points[0].weight; });
+    }
+
     function getBestBirthWeightGram(row) {
       var visits = row && row.newbornCareVisits ? row.newbornCareVisits : [];
       var visitOne = visits.find(function (v) {
         return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
       });
-      return parseWeightGramFromRecord(visitOne) ||
+      var babyIndex = parseInt(row && row.babyIndex, 10) || 1;
+      return visitRecordWeightGrams(visitOne, babyIndex) ||
         parseWeightGramFromRecord(row && row.immediateNewbornCare) ||
         parseWeightGramFromRecord(row && row.newbornCare) ||
         parseWeightGramFromRecord(row && row.patient) ||
-        parseFloat(row && row.birthWeightGram) ||
+        normalizeWeightToGrams(row && row.birthWeightGram) ||
         null;
     }
 
     function getWeightPoints(row) {
+      var babyIndex = parseInt(row && row.babyIndex, 10) || 1;
+      var fromVisits = buildWeightHistoryFromVisits(row && row.newbornCareVisits, babyIndex);
+      if (fromVisits.length > 1 && !historyLooksFlat(fromVisits)) return fromVisits;
+      var fromHistory = [];
       if (Array.isArray(row && row.weightHistory) && row.weightHistory.length) {
-        var history = row.weightHistory.map(function (item, index) {
+        fromHistory = row.weightHistory.map(function (item, index) {
           return {
-            visit: parseInt(item.visitNumber, 10) || (index + 1),
+            visit: parseInt(item.visitNumber || item.visit, 10) || (index + 1),
             weight: normalizeWeightToGrams(item.grams || item.weight),
             date: item.date || ''
           };
         }).filter(function (p) { return p.weight; });
-        if (history.length) return history;
       }
-      var visits = (row && row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
-      visits.sort(function (a, b) {
-        var av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
-        var bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
-        return av - bv;
-      });
-      var points = visits
-        .map(function (v) {
-          var visit = parseInt(v.visit_number || v.visitNumber, 10) || 1;
-          return {
-            visit: visit,
-            weight: normalizeWeightToGrams(visit > 1 ? (v.current_weight_gram || v.visit_weight_gram || v.body_weight_gram) : v.body_weight_gram)
-          };
-        })
-        .filter(function (p) { return !isNaN(p.weight) && p.weight > 0; });
+      if (fromHistory.length > 1 && !historyLooksFlat(fromHistory)) return fromHistory;
+      if (fromVisits.length) return fromVisits;
+      if (fromHistory.length) return fromHistory;
       var birthWeight = getBestBirthWeightGram(row);
       var latestWeight = normalizeWeightToGrams(row && row.latestWeightGram);
-      if (!points.length) {
-        if (!isNaN(birthWeight) && birthWeight > 0) {
-          points.push({ visit: 1, weight: birthWeight, isBirthBaseline: true });
-        }
-        if (latestWeight && (!points.length || latestWeight !== points[0].weight)) {
-          points.push({ visit: Math.max(2, points.length + 1), weight: latestWeight });
-        }
-      } else {
-        var hasVisit1 = points.some(function (p) { return p.visit === 1; });
-        if (!hasVisit1 && !isNaN(birthWeight) && birthWeight > 0) {
-          points.unshift({ visit: 1, weight: birthWeight, isBirthBaseline: true });
-        }
+      var points = [];
+      if (birthWeight) points.push({ visit: 1, weight: birthWeight, isBirthBaseline: true });
+      if (latestWeight && (!points.length || latestWeight !== points[0].weight)) {
+        points.push({ visit: 2, weight: latestWeight });
       }
       return points;
     }
@@ -985,8 +1015,7 @@
 
     function weightCellHtml(row) {
       var points = getWeightPoints(row);
-      var birthG = normalizeWeightToGrams(getBestBirthWeightGram(row) || (row && row.birthWeightGram));
-      var latestG = normalizeWeightToGrams(row && row.latestWeightGram) || (points.length ? points[points.length - 1].weight : null);
+      var birthG = getBestBirthWeightGram(row) || (points[0] && points[0].weight);
       if (!points.length && birthG) points = [{ visit: 1, weight: birthG, isBirthBaseline: true }];
       if (!points.length) return '<span class="text-muted">—</span>';
       var latest = points[points.length - 1];
@@ -995,7 +1024,12 @@
       html += weightSparklineSvg(points);
       html += '<div class="kmc-weight-points">';
       html += escapeHtml(tr('birthWeightShort') + ' ' + formatKgLabel(birthG || points[0].weight));
-      html += '<br>' + escapeHtml(tr('latestWeightShort') + ' ' + formatKgLabel(latestG || latest.weight));
+      html += '<br>' + escapeHtml(tr('latestWeightShort') + ' ' + formatKgLabel(latest.weight));
+      if (points.length > 2) {
+        html += '<br>' + escapeHtml(points.map(function (p) {
+          return (p.isBirthBaseline ? tr('birthWeightShort') : ('V' + p.visit)) + ' ' + formatKgLabel(p.weight);
+        }).join(' · '));
+      }
       html += '</div></div>';
       return html;
     }
@@ -1035,18 +1069,22 @@
       renderAll(getFilteredKmcRows());
     }
 
-    function getRowsForCardFilter(filter) {
-      var rows = window._kmcRows || [];
+    function rowMatchesCardFilter(r, filter) {
       var statusFilter = filter || 'all';
-      return rows.filter(function (r) {
-        if (statusFilter === 'potential') return !!r.potentialKmc;
-        var isKmcYes = (r.kmcSelected || '').toLowerCase() === 'yes' || isCompleted(r);
-        if (!isKmcYes) return false;
-        if (statusFilter === 'all') return true;
-        var status = rowTrackingStatus(r);
-        if (statusFilter === 'complete') return status.key === 'complete' || isCompleted(r);
-        if (isCompleted(r)) return false;
-        return status.key === statusFilter;
+      if (statusFilter === 'potential') return !!r.potentialKmc;
+      var completed = isCompleted(r);
+      var isKmcYes = (r.kmcSelected || '').toLowerCase() === 'yes' || completed;
+      if (!isKmcYes) return false;
+      if (statusFilter === 'all') return true;
+      var status = rowTrackingStatus(r);
+      if (statusFilter === 'complete') return status.key === 'complete' || completed;
+      if (completed) return false;
+      return status.key === statusFilter;
+    }
+
+    function getRowsForCardFilter(filter) {
+      return (window._kmcRows || []).filter(function (r) {
+        return rowMatchesCardFilter(r, filter);
       });
     }
 
@@ -1094,35 +1132,73 @@
       bootstrap.Modal.getOrCreateInstance(modalEl).show();
     }
 
+    function canonicalKmcKey(row) {
+      var rawId = String((row && (row.patientId || (row.patient && row.patient.id))) || '');
+      var babyFromId = rawId.match(/_baby_(\d+)$/);
+      var motherId = babyFromId ? rawId.replace(/_baby_\d+$/, '') : rawId;
+      var idx = babyFromId
+        ? (parseInt(babyFromId[1], 10) || 1)
+        : (parseInt(row && row.babyIndex, 10) || 1);
+      if (motherId) return 'pid:' + motherId + ':' + idx;
+      var name = String((row && row.babyName) || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      var township = String((row && row.township) || '').trim().toLowerCase();
+      var birth = String((row && (row.birthAnchorDate || row.birthDateStr)) || '').slice(0, 10);
+      if (name) return 'name:' + name + '|' + township + '|' + birth + '|' + idx;
+      return 'row:' + ((row && row.rowId) || '');
+    }
+
+    function kmcRowRichness(row) {
+      var history = (row && row.weightHistory) || [];
+      var visits = (row && row.newbornCareVisits) || [];
+      return (history.length * 10) + visits.length + (row.completedVisitCount || 0) +
+        (row.birthWeightGram || row.latestWeightGram ? 1 : 0);
+    }
+
+    function mergeKmcRow(keep, extra) {
+      if (!keep) return extra;
+      if (!extra) return keep;
+      if (kmcRowRichness(extra) > kmcRowRichness(keep)) {
+        var swapped = mergeKmcRow(extra, keep);
+        return swapped;
+      }
+      if ((!keep.weightHistory || !keep.weightHistory.length) && extra.weightHistory && extra.weightHistory.length) {
+        keep.weightHistory = extra.weightHistory;
+      }
+      if ((!keep.newbornCareVisits || !keep.newbornCareVisits.length) && extra.newbornCareVisits && extra.newbornCareVisits.length) {
+        keep.newbornCareVisits = extra.newbornCareVisits;
+      }
+      if (!keep.latestWeightGram && extra.latestWeightGram) keep.latestWeightGram = extra.latestWeightGram;
+      if (!keep.birthWeightGram && extra.birthWeightGram) keep.birthWeightGram = extra.birthWeightGram;
+      if ((extra.completedVisitCount || 0) > (keep.completedVisitCount || 0)) {
+        keep.completedVisitCount = extra.completedVisitCount;
+      }
+      var extraId = extra.patientId || (extra.patient && extra.patient.id) || '';
+      var keepId = keep.patientId || (keep.patient && keep.patient.id) || '';
+      if (/_baby_\d+$/.test(extraId) && !/_baby_\d+$/.test(keepId)) {
+        keep.patientId = extraId;
+        if (keep.patient) keep.patient.id = extraId;
+      }
+      return keep;
+    }
+
     function dedupeKmcRows(rows) {
-      var byRowId = new Map();
+      var byKey = new Map();
       (rows || []).forEach(function (row) {
-        var id = row.rowId || (((row.patient && row.patient.id) || '') + '_' + (row.babyIndex || 1));
-        var existing = byRowId.get(id);
-        if (!existing || (row.completedVisitCount || 0) > (existing.completedVisitCount || 0)) {
-          byRowId.set(id, row);
-        }
+        var key = canonicalKmcKey(row);
+        byKey.set(key, mergeKmcRow(byKey.get(key), row));
       });
-      var byIdentity = new Map();
-      Array.from(byRowId.values()).forEach(function (row) {
+      var byName = new Map();
+      Array.from(byKey.values()).forEach(function (row) {
         var name = String(row.babyName || '').replace(/\s+/g, ' ').trim().toLowerCase();
-        var grams = normalizeWeightToGrams(row.birthWeightGram);
         var township = String(row.township || '').trim().toLowerCase();
         var idx = parseInt(row.babyIndex, 10) || 1;
-        var key = (!name || grams == null)
-          ? ('id:' + (row.rowId || ((row.patient && row.patient.id) || '') + '_' + idx))
-          : (name + '|' + grams + '|' + township + '|' + idx);
-        var existing = byIdentity.get(key);
-        if (!existing) {
-          byIdentity.set(key, row);
-          return;
-        }
-        var preferNew = (!!row.enrolled || row.kmcSelected === 'yes') &&
-          !(existing.enrolled || existing.kmcSelected === 'yes');
-        var moreVisits = (row.completedVisitCount || 0) > (existing.completedVisitCount || 0);
-        if (preferNew || moreVisits) byIdentity.set(key, row);
+        var birth = String(row.birthAnchorDate || row.birthDateStr || '').slice(0, 10);
+        var nameKey = name
+          ? ('name:' + name + '|' + township + '|' + (birth || idx))
+          : canonicalKmcKey(row);
+        byName.set(nameKey, mergeKmcRow(byName.get(nameKey), row));
       });
-      return Array.from(byIdentity.values());
+      return Array.from(byName.values());
     }
 
     function getFilteredKmcRows() {
@@ -1136,20 +1212,10 @@
         var phone = String(p.phone || p.phoneNumber || '').toLowerCase();
         if (q && baby.indexOf(q) === -1 && mother.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
 
-        if (statusFilter === 'potential') {
-          return !!r.potentialKmc;
+        if (statusFilter === 'all') {
+          return rowMatchesCardFilter(r, 'all') && !isCompleted(r);
         }
-
-        if ((r.kmcSelected || '').toLowerCase() !== 'yes' && !isCompleted(r)) return false;
-        if (statusFilter !== 'all') {
-          var status = rowTrackingStatus(r);
-          if (statusFilter === 'complete') {
-            if (status.key !== 'complete' && !isCompleted(r)) return false;
-          } else if (status.key !== statusFilter) return false;
-        } else if (isCompleted(r)) {
-          return false;
-        }
-        return true;
+        return rowMatchesCardFilter(r, statusFilter);
       });
     }
 
@@ -1161,25 +1227,12 @@
 
     function updateDashboardStats(allRows) {
       var rows = allRows || [];
-      var potential = 0, totalKmc = 0, onTrack = 0, overdue = 0, lost = 0, completed = 0, current = 0;
-      var breakdown = { alive: 0, death: 0, discontinuation: 0, transfer: 0 };
-      rows.forEach(function (r) {
-        if (r.potentialKmc) potential++;
-        var isKmcYes = (r.kmcSelected || '').toLowerCase() === 'yes';
-        if (isKmcYes) totalKmc++;
-        if (!isKmcYes) return;
-        if (isCompleted(r)) {
-          completed++;
-          var outcome = KmcUtils.getCompletionOutcome(r);
-          if (outcome && breakdown[outcome.key] != null) breakdown[outcome.key]++;
-          return;
-        }
-        current++;
-        var status = rowTrackingStatus(r);
-        if (status.key === 'on_track') onTrack++;
-        else if (status.key === 'overdue_followup') overdue++;
-        else if (status.key === 'lost_to_followup') lost++;
-      });
+      var potential = rows.filter(function (r) { return rowMatchesCardFilter(r, 'potential'); }).length;
+      var totalKmc = rows.filter(function (r) { return rowMatchesCardFilter(r, 'all'); }).length;
+      var onTrack = rows.filter(function (r) { return rowMatchesCardFilter(r, 'on_track'); }).length;
+      var overdue = rows.filter(function (r) { return rowMatchesCardFilter(r, 'overdue_followup'); }).length;
+      var lost = rows.filter(function (r) { return rowMatchesCardFilter(r, 'lost_to_followup'); }).length;
+      var completed = rows.filter(function (r) { return rowMatchesCardFilter(r, 'complete'); }).length;
       document.getElementById('statTotalPotentialKmc').textContent = potential;
       document.getElementById('statTotalKmc').textContent = totalKmc;
       document.getElementById('statActiveKmc').textContent = onTrack;
@@ -1280,7 +1333,7 @@
       } else {
       display.forEach(function (r) {
         var p = r.patient || {};
-        var patientId = p.id || '';
+        var patientId = r.patientId || p.id || '';
         var isTwins = r.newbornCare && (r.newbornCare.pregnancy_type === 'twins' || (Array.isArray(r.newbornCare.babies) && r.newbornCare.babies.length > 1));
         var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex, isTwins));
         var infections = window.TrackingReader ? TrackingReader.infectionHtml(r.infectionFlags || p.infectionFlags) : '';
@@ -1549,8 +1602,10 @@
       var visits = await fetchNewbornCareVisitsForDoc(db, patientId);
       var motherId = patient && patient.mother_patient_id;
       if (motherId && motherId !== patientId) {
-        var motherVisits = await fetchNewbornCareVisitsForDoc(db, motherId);
-        visits = mergeNewbornVisitRecords(visits, motherVisits);
+        visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, motherId));
+      } else if (patientId) {
+        visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, patientId + '_baby_1'));
+        visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, patientId + '_baby_2'));
       }
       return visits;
     }
@@ -1715,6 +1770,48 @@
       }).filter(Boolean);
     }
 
+    function relatedNewbornPatientIds(row) {
+      var id = String((row && (row.patientId || (row.patient && row.patient.id))) || '');
+      var idx = parseInt(row && row.babyIndex, 10) || 1;
+      var ids = [];
+      if (id) ids.push(id);
+      if (/_baby_\d+$/.test(id)) ids.push(id.replace(/_baby_\d+$/, ''));
+      else if (id) ids.push(id + '_baby_' + idx);
+      return ids.filter(function (value, index, all) {
+        return value && all.indexOf(value) === index;
+      });
+    }
+
+    async function enrichKmcRowWeights(rows) {
+      if (!window.firebase || !firebase.firestore) return rows;
+      var db = firebase.firestore();
+      var pending = (rows || []).filter(function (row) { return row && !row._weightsEnriched; });
+      var concurrency = 6;
+      for (var i = 0; i < pending.length; i += concurrency) {
+        var batch = pending.slice(i, i + concurrency);
+        await Promise.all(batch.map(async function (row) {
+          var babyIndex = parseInt(row.babyIndex, 10) || 1;
+          var visits = Array.isArray(row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
+          var ids = relatedNewbornPatientIds(row);
+          for (var v = 0; v < ids.length; v++) {
+            visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, ids[v]));
+          }
+          row.newbornCareVisits = visits;
+          var history = buildWeightHistoryFromVisits(visits, babyIndex);
+          if (history.length) {
+            row.weightHistory = history.map(function (point) {
+              return { visitNumber: point.visit, grams: point.weight, date: point.date || '' };
+            });
+            var birth = history.find(function (point) { return point.visit === 1; }) || history[0];
+            row.birthWeightGram = birth.weight;
+            row.latestWeightGram = history[history.length - 1].weight;
+          }
+          row._weightsEnriched = true;
+        }));
+      }
+      return rows;
+    }
+
     function projectionKmcRow(row) {
       var patient = {
         id: row.patientId,
@@ -1773,6 +1870,7 @@
           throw new Error('Unexpected KMC tracking response.');
         }
         var mapped = result.rows.map(projectionKmcRow);
+        await enrichKmcRowWeights(mapped);
         window._kmcRows = dedupeKmcRows(append ? (window._kmcRows || []).concat(mapped) : mapped);
         _kmcNextPageToken = result.nextPageToken || null;
         if (!append) {
@@ -1909,6 +2007,7 @@
               window._kmcRows.push.apply(window._kmcRows, rows);
             }
           });
+          window._kmcRows = dedupeKmcRows(window._kmcRows);
           sortKmcRows(window._kmcRows);
           renderAll(getFilteredKmcRows());
         }

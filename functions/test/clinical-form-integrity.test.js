@@ -70,5 +70,8 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   const source = readAppFile('kmc-tracking.html');
   assert.match(source, /kmc-weight-spark/);
   assert.match(source, /function weightSparklineSvg/);
+  assert.match(source, /function enrichKmcRowWeights/);
+  assert.match(source, /function canonicalKmcKey/);
+  assert.match(source, /visit\.current_weight_gram \|\| visit\.currentWeightGram/);
   assert.doesNotMatch(source, /if \(!points \|\| points\.length < 2\) return '';/);
 });

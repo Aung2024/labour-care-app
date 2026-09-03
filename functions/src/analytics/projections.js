@@ -317,11 +317,7 @@ function babiesForKmc(facts) {
       parseWeightGram(baby.birth_weight_gram) ||
       parseWeightGram(baby.body_weight_gram) ||
       null,
-    latestWeightGram: parseWeightGram(baby.current_weight_gram) ||
-      parseWeightGram(baby.currentWeightGram) ||
-      parseWeightGram(baby.body_weight_gram) ||
-      parseWeightGram(care.body_weight_gram) ||
-      null,
+    latestWeightGram: null,
     birthDate: firstDate(baby, [
       'birthTime', 'birth_time', 'dateOfBirth', 'date_of_birth'
     ]) || firstDate(care, ['birth_time', 'birthTime']) ||
@@ -353,33 +349,41 @@ function kmcVisits(facts, babyIndex) {
       (firstDate(b, ['visitDate', 'visit_date']) || 0));
 }
 
+function visitWeightSource(visit, babyIndex) {
+  const n = Number(visit.visit_number || visit.visitNumber || 1);
+  let baby = null;
+  if (Array.isArray(visit.babies)) {
+    baby = visit.babies.find((item) =>
+      Number(item.babyIndex || item.baby_index || 1) === babyIndex) || null;
+  }
+  baby = baby || {};
+  if (n > 1) {
+    return parseWeightGram(
+      visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram ||
+      baby.current_weight_gram || baby.currentWeightGram
+    );
+  }
+  return parseWeightGram(
+    baby.birthWeightGram || baby.birth_weight_gram ||
+    visit.body_weight_gram || visit.birthWeightGram || baby.body_weight_gram
+  );
+}
+
 function visitWeightHistory(facts, babyIndex) {
-  return newbornVisitData(facts).map((visit) => {
+  const byVisit = new Map();
+  newbornVisitData(facts).forEach((visit) => {
     const n = Number(visit.visit_number || visit.visitNumber || 1);
-    let source = null;
-    if (Array.isArray(visit.babies)) {
-      const baby = visit.babies.find((item) =>
-        Number(item.babyIndex || item.baby_index || 1) === babyIndex);
-      if (baby) {
-        source = n > 1
-          ? (baby.current_weight_gram || baby.currentWeightGram || baby.body_weight_gram)
-          : (baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram);
-      }
-    }
-    if (!source && babyIndex === 1) {
-      source = n > 1
-        ? (visit.current_weight_gram || visit.body_weight_gram)
-        : (visit.body_weight_gram || visit.birthWeightGram);
-    }
-    const grams = parseWeightGram(source);
-    if (!grams) return null;
-    return {
+    const grams = visitWeightSource(visit, babyIndex);
+    if (!grams) return;
+    const next = {
       visitNumber: n,
       grams,
       date: isoDate(firstDate(visit, ['visitDate', 'visit_date', 'recordedAt']))
     };
-  }).filter(Boolean).sort((a, b) => (a.date || '').localeCompare(b.date || '') ||
-    a.visitNumber - b.visitNumber);
+    const existing = byVisit.get(n);
+    if (!existing || (n > 1 && next.grams !== existing.grams)) byVisit.set(n, next);
+  });
+  return Array.from(byVisit.values()).sort((a, b) => a.visitNumber - b.visitNumber);
 }
 
 function kmcCompletion(actions, babyIndex) {
@@ -416,6 +420,12 @@ function buildKmcProjections(facts, options) {
     baby.recordedReasons.forEach((reason) => {
       if (reason && !reasons.includes(reason)) reasons.push(reason);
     });
+    const history = visitWeightHistory(facts, baby.babyIndex);
+    const birthWeightGram = (history.find((item) => item.visitNumber === 1) || {}).grams ||
+      baby.birthWeightGram;
+    const latestWeightGram = history.length
+      ? history[history.length - 1].grams
+      : baby.latestWeightGram;
     const visits = kmcVisits(facts, baby.babyIndex);
     const enrolled = visits.length > 0;
     if (!reasons.length && !enrolled && !baby.potentialKmc) return null;
@@ -446,9 +456,9 @@ function buildKmcProjections(facts, options) {
       eligible: reasons.length > 0,
       eligibilityReasons: reasons,
       enrolled,
-      birthWeightGram: baby.birthWeightGram,
-      latestWeightGram: baby.latestWeightGram,
-      weightHistory: visitWeightHistory(facts, baby.babyIndex),
+      birthWeightGram,
+      latestWeightGram,
+      weightHistory: history,
       birthAnchorDate: isoDate(birth),
       birthAnchorSource: birth
         ? (facts.birthAnchor && facts.birthAnchor.source || 'newborn_baby') : null,

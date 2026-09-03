@@ -245,6 +245,56 @@ test('KMC birth weight prefers visit 1 over later current weight', () => {
   assert.equal(row.weightHistory[1].grams, 2100);
 });
 
+test('KMC latest weight uses visit current weight even when babies[] only has birth weight', () => {
+  const [row] = buildKmcProjections(facts({
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-06-25',
+          body_weight_gram: 2910,
+          babies: [{ babyIndex: 1, birthWeightGram: 2910 }],
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-06-29',
+          current_weight_gram: 2920,
+          body_weight_gram: 2910,
+          babies: [{ babyIndex: 1, birthWeightGram: 2910 }],
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 3,
+          visitDate: '2026-07-02',
+          current_weight_gram: 2936,
+          body_weight_gram: 2910,
+          babies: [{ babyIndex: 1, birthWeightGram: 2910 }],
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 4,
+          visitDate: '2026-07-08',
+          current_weight_gram: 3000,
+          body_weight_gram: 2910,
+          babies: [{ babyIndex: 1, birthWeightGram: 2910 }],
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  }), { asOf: '2026-07-20' });
+  assert.equal(row.birthWeightGram, 2910);
+  assert.equal(row.latestWeightGram, 3000);
+  assert.equal(row.weightHistory.length, 4);
+  assert.deepEqual(row.weightHistory.map((item) => item.grams), [2910, 2920, 2936, 3000]);
+});
+
 test('KMC derives completion at birth plus two calendar months', () => {
   const [row] = buildKmcProjections(facts({
     newbornVisits: [{
