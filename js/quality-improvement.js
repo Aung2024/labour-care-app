@@ -459,29 +459,53 @@
       action.nextTargetPercent != null || action.targetMonth);
   }
 
-  async function loadComments(providerId, scoreMonth, indicatorId) {
+  function commentRef(providerId, scoreMonth, indicatorId) {
     var Scoring = global.QualityScoring;
-    var docId = Scoring.planDocId(providerId, scoreMonth);
-    var snap = await withTimeout(
-      firebase.firestore()
-        .collection('quality_improvement_plans')
-        .doc(docId)
-        .collection('comments')
-        .where('indicatorId', '==', indicatorId)
-        .limit(50)
-        .get(),
-      8000,
-      'QI comments'
-    );
-    var comments = snap.docs.map(function (doc) {
-      return Object.assign({ id: doc.id }, doc.data() || {});
-    });
-    comments.sort(function (a, b) {
-      var aTime = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
-      var bTime = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
-      return aTime - bTime;
-    });
-    return comments;
+    return firebase.firestore()
+      .collection('quality_improvement_plans')
+      .doc(Scoring.planDocId(providerId, scoreMonth))
+      .collection('comments')
+      .doc(String(indicatorId));
+  }
+
+  async function loadSupervisorComment(providerId, scoreMonth, indicatorId) {
+    var canonical = await withTimeout(commentRef(providerId, scoreMonth, indicatorId).get(), 8000, 'QI comment');
+    if (canonical.exists) {
+      return Object.assign({ id: canonical.id }, canonical.data() || {});
+    }
+
+    try {
+      var snap = await withTimeout(
+        firebase.firestore()
+          .collection('quality_improvement_plans')
+          .doc(global.QualityScoring.planDocId(providerId, scoreMonth))
+          .collection('comments')
+          .where('indicatorId', '==', indicatorId)
+          .limit(20)
+          .get(),
+        8000,
+        'QI comments'
+      );
+      var comments = snap.docs.map(function (doc) {
+        return Object.assign({ id: doc.id }, doc.data() || {});
+      });
+      comments.sort(function (a, b) {
+        var aTime = a.updatedAt && a.updatedAt.toMillis ? a.updatedAt.toMillis()
+          : (a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0);
+        var bTime = b.updatedAt && b.updatedAt.toMillis ? b.updatedAt.toMillis()
+          : (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0);
+        return aTime - bTime;
+      });
+      return comments.length ? comments[comments.length - 1] : null;
+    } catch (error) {
+      console.warn('QI comment list fallback failed', error);
+      return null;
+    }
+  }
+
+  async function loadComments(providerId, scoreMonth, indicatorId) {
+    var comment = await loadSupervisorComment(providerId, scoreMonth, indicatorId);
+    return comment ? [comment] : [];
   }
 
   function formatMonthLabel(month, lang) {
@@ -613,22 +637,23 @@
     });
   }
 
-  async function addSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
+  async function saveSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
     if (!isSupervisorRole(viewer.role)) {
       throw new Error('Only TMO and above can comment');
     }
     var body = String(text || '').trim();
     if (!body) throw new Error('Enter a comment');
     var Scoring = global.QualityScoring;
-    var docId = Scoring.planDocId(providerId, scoreMonth);
-    var planRef = firebase.firestore().collection('quality_improvement_plans').doc(docId);
+    var planId = Scoring.planDocId(providerId, scoreMonth);
+    var planRef = firebase.firestore().collection('quality_improvement_plans').doc(planId);
     await planRef.set({
       providerId: providerId,
       scoreMonth: scoreMonth,
-      targetMonth: Scoring.nextMonthKey(scoreMonth),
+      targetMonth: Scoring.nextMonthKey(scoreMonth) || scoreMonth,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
-    await planRef.collection('comments').add({
+    var existing = await loadSupervisorComment(providerId, scoreMonth, indicatorId);
+    var payload = {
       indicatorId: indicatorId,
       text: body,
       authorId: viewer.uid,
@@ -636,8 +661,16 @@
       authorRole: viewer.role,
       township: viewer.township || '',
       region: viewer.region || '',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (existing && existing.createdAt) payload.createdAt = existing.createdAt;
+    else payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    await commentRef(providerId, scoreMonth, indicatorId).set(payload, { merge: true });
+    return loadSupervisorComment(providerId, scoreMonth, indicatorId);
+  }
+
+  async function addSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
+    return saveSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text);
   }
 
   async function loadActiveTargetsForMidwife(providerId, now) {
@@ -695,6 +728,8 @@
     loadSavedActions: loadSavedActions,
     saveActionPlanIndicator: saveActionPlanIndicator,
     loadComments: loadComments,
+    loadSupervisorComment: loadSupervisorComment,
+    saveSupervisorComment: saveSupervisorComment,
     addSupervisorComment: addSupervisorComment,
     loadActiveTargetsForMidwife: loadActiveTargetsForMidwife
   };

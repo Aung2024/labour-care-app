@@ -104,8 +104,8 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(newborn, /id="modalActionOwnerType"/);
   assert.match(newborn, /id="modalActionOwnerOther"/);
   assert.match(newborn, /id="modalTargetMonth"/);
-  assert.match(newborn, /quality-scoring\.js\?v=286/);
-  assert.match(reviewActions, /quality-scoring\.js\?v=286/);
+  assert.match(newborn, /quality-scoring\.js\?v=287/);
+  assert.match(reviewActions, /quality-scoring\.js\?v=287/);
   assert.match(reviewActions, /loadSavedActions/);
   assert.match(reviewActions, /backToScoresBtn/);
   assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
@@ -113,7 +113,8 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.doesNotMatch(newborn, /ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်/);
   assert.match(newborn, /quality-review-actions\.html/);
   assert.match(reviewActions, /No saved improvement actions yet/);
-  assert.match(reviewActions, /data-post-comment/);
+  assert.match(reviewActions, /data-save-comment/);
+  assert.match(reviewActions, /Update comment|Save comment/);
 });
 
 test('QI action plans persist to the all-time document used by Review Actions', () => {

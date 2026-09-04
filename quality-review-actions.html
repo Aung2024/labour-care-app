@@ -17,8 +17,8 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
-  <script src="js/quality-scoring.js?v=286"></script>
-  <script src="js/quality-improvement.js?v=286"></script>
+  <script src="js/quality-scoring.js?v=287"></script>
+  <script src="js/quality-improvement.js?v=287"></script>
 </head>
 <body class="qi-app">
   <header class="app-header">
@@ -84,30 +84,47 @@
       status.classList.toggle('error', Boolean(isError))
     }
 
+    const renderComment = (card, comment) => {
+      const list = card.querySelector('.comment-list')
+      const textarea = card.querySelector('textarea')
+      const meta = card.querySelector('.comment-meta')
+      const button = card.querySelector('[data-save-comment]')
+      if (!comment || !comment.text) {
+        if (list) list.innerHTML = '<p class="text-muted small mb-2">No supervisor comment yet.</p>'
+        if (textarea) textarea.value = ''
+        if (meta) meta.textContent = ''
+        if (button) button.textContent = 'Save comment'
+        return
+      }
+      if (list) {
+        list.innerHTML = '<div class="comment"><strong>' +
+          escapeHtml(comment.authorName || comment.authorRole || 'Supervisor') +
+          '</strong><p>' + escapeHtml(comment.text) + '</p></div>'
+      }
+      if (textarea) textarea.value = comment.text
+      if (meta) {
+        meta.textContent = 'Last edited by ' + (comment.authorName || comment.authorRole || 'Supervisor')
+      }
+      if (button) button.textContent = 'Update comment'
+    }
+
     const loadComments = async (providerId, scoreMonth, indicatorId, mountId) => {
       const mount = document.getElementById(mountId)
       if (!mount) return
       try {
-        const comments = await QualityImprovement.loadComments(
-          providerId,
-          scoreMonth,
-          indicatorId
-        )
-        const existing = comments.length
-          ? comments.map((comment) => (
-            '<div class="comment"><strong>' +
-            escapeHtml(comment.authorName || comment.authorRole || 'Supervisor') +
-            '</strong><p>' + escapeHtml(comment.text) + '</p></div>'
-          )).join('')
-          : '<p class="text-muted small mb-2">No supervisor comments yet.</p>'
-        mount.querySelector('.comment-list').innerHTML = existing
+        const loader = QualityImprovement.loadSupervisorComment || function () {
+          return QualityImprovement.loadComments(providerId, scoreMonth, indicatorId)
+            .then((rows) => rows[0] || null)
+        }
+        const comment = await loader(providerId, scoreMonth, indicatorId)
+        renderComment(mount, comment)
       } catch (error) {
-        mount.querySelector('.comment-list').innerHTML =
-          '<p class="text-muted small">Comments could not be loaded.</p>'
+        const list = mount.querySelector('.comment-list')
+        if (list) list.innerHTML = '<p class="text-muted small">Comment could not be loaded.</p>'
       }
     }
 
-    const postComment = async (button) => {
+    const saveComment = async (button) => {
       const card = button.closest('[data-action-row]')
       const textarea = card.querySelector('textarea')
       const providerId = card.dataset.providerId
@@ -115,17 +132,17 @@
       const indicatorId = card.dataset.indicatorId
       button.disabled = true
       try {
-        await QualityImprovement.addSupervisorComment(
+        const saver = QualityImprovement.saveSupervisorComment || QualityImprovement.addSupervisorComment
+        const saved = await saver(
           viewer,
           providerId,
           scoreMonth,
           indicatorId,
           textarea.value
         )
-        textarea.value = ''
-        await loadComments(providerId, scoreMonth, indicatorId, card.id)
+        renderComment(card, saved || { text: textarea.value, authorName: viewer.name, authorRole: viewer.role })
       } catch (error) {
-        alert(error.message || 'Could not post comment.')
+        alert(error.message || 'Could not save comment.')
       } finally {
         button.disabled = false
       }
@@ -175,11 +192,12 @@
           (targetMonth ? ' by ' + escapeHtml(monthLabel(targetMonth)) : '') +
           '</span></div>' +
           '</div>' +
-          '<div class="comments"><div class="comment-list">Loading comments…</div>' +
+          '<div class="comments"><div class="comment-list">Loading comment…</div>' +
           (QualityImprovement.isSupervisorRole(viewer.role)
             ? '<label class="form-label fw-bold mt-2">TMO / Supervisor comment</label>' +
-              '<textarea class="form-control" rows="2" placeholder="Guidance for reaching the target"></textarea>' +
-              '<button type="button" class="btn btn-success touch-control mt-2" data-post-comment>Post comment</button>'
+              '<textarea class="form-control" rows="3" placeholder="Guidance for reaching the target"></textarea>' +
+              '<p class="comment-meta qi-muted mt-2 mb-0"></p>' +
+              '<button type="button" class="btn btn-success touch-control mt-2" data-save-comment>Save comment</button>'
             : '') +
           '</div></article>'
       }).join('')
@@ -233,8 +251,8 @@
       loadActions()
     })
     document.getElementById('actionList').addEventListener('click', (event) => {
-      const button = event.target.closest('[data-post-comment]')
-      if (button) postComment(button)
+      const button = event.target.closest('[data-save-comment]')
+      if (button) saveComment(button)
     })
 
     firebase.auth().onAuthStateChanged(async (user) => {

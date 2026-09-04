@@ -605,7 +605,7 @@ test('TMO and above can comment on QI plans in scope', async () => {
   const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
 
   await assertSucceeds(setDoc(
-    doc(tmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c1'),
+    doc(tmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin'),
     {
       indicatorId: 'skin_to_skin',
       text: 'Practice skin-to-skin immediately after birth.',
@@ -615,8 +615,18 @@ test('TMO and above can comment on QI plans in scope', async () => {
       createdAt: new Date()
     }
   ));
+  await assertSucceeds(updateDoc(
+    doc(tmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin'),
+    {
+      indicatorId: 'skin_to_skin',
+      text: 'Updated guidance for the same action.',
+      authorId: 'tmo-a',
+      authorName: 'TMO A',
+      authorRole: 'TMO'
+    }
+  ));
   await assertFails(setDoc(
-    doc(outOfScopeTmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c2'),
+    doc(outOfScopeTmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin'),
     {
       indicatorId: 'skin_to_skin',
       text: 'Out of township',
@@ -627,7 +637,7 @@ test('TMO and above can comment on QI plans in scope', async () => {
     }
   ));
   await assertFails(setDoc(
-    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c3'),
+    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin'),
     {
       indicatorId: 'skin_to_skin',
       text: 'Midwife cannot comment as supervisor',
@@ -638,6 +648,6 @@ test('TMO and above can comment on QI plans in scope', async () => {
     }
   ));
   await assertSucceeds(getDoc(
-    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c1')
+    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin')
   ));
 });
