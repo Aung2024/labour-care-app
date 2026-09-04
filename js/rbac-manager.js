@@ -47,7 +47,12 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: true,
     manageFacilities: true,
-    viewSystemStats: true
+    viewSystemStats: true,
+
+    // Quality Improvement
+    viewQualityImprovement: true,
+    editOwnQualityPlan: true,
+    commentQualityPlan: true
   },
   
   'Regional Officer': {
@@ -91,7 +96,12 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: false,
     manageFacilities: false,
-    viewSystemStats: false
+    viewSystemStats: false,
+
+    // Quality Improvement
+    viewQualityImprovement: true,
+    editOwnQualityPlan: false,
+    commentQualityPlan: true
   },
   
   'TMO': {
@@ -134,7 +144,12 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: false,
     manageFacilities: false,
-    viewSystemStats: false
+    viewSystemStats: false,
+
+    // Quality Improvement
+    viewQualityImprovement: true,
+    editOwnQualityPlan: false,
+    commentQualityPlan: true
   },
   
   'Midwife': {
@@ -181,7 +196,12 @@ const ROLE_PERMISSIONS = {
     // Admin Features
     accessAdminPanel: false,
     manageFacilities: false,
-    viewSystemStats: false
+    viewSystemStats: false,
+
+    // Quality Improvement
+    viewQualityImprovement: true,
+    editOwnQualityPlan: true,
+    commentQualityPlan: false
   }
 };
 

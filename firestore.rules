@@ -46,6 +46,56 @@ service cloud.firestore {
         );
     }
 
+    function canReadQualityProvider(providerId) {
+      return currentUserExists()
+        && (
+          currentUserData().role in ["Super Admin", "Central", "admin"]
+          || request.auth.uid == providerId
+          || (
+            currentUserData().role == "Regional Officer"
+            && currentUserData().region == resource.data.region
+          )
+          || (
+            currentUserData().role == "TMO"
+            && currentUserData().township == resource.data.township
+          )
+        );
+    }
+
+    function isQualitySupervisor() {
+      return currentUserExists()
+        && currentUserData().role in ["TMO", "Regional Officer", "Super Admin", "Central", "admin"];
+    }
+
+    function canSuperviseQualityProvider(providerId) {
+      return isQualitySupervisor()
+        && (
+          currentUserData().role in ["Super Admin", "Central", "admin"]
+          || (
+            currentUserData().role == "Regional Officer"
+            && exists(/databases/$(database)/documents/users/$(providerId))
+            && get(/databases/$(database)/documents/users/$(providerId)).data.region == currentUserData().region
+          )
+          || (
+            currentUserData().role == "TMO"
+            && exists(/databases/$(database)/documents/users/$(providerId))
+            && get(/databases/$(database)/documents/users/$(providerId)).data.township == currentUserData().township
+          )
+        );
+    }
+
+    function qualityPlanProviderId(planId) {
+      return planId.size() > 8 ? planId[0:planId.size() - 8] : '';
+    }
+
+    function canReadQualityPlan(planId) {
+      return signedIn()
+        && (
+          qualityPlanProviderId(planId) == request.auth.uid
+          || canSuperviseQualityProvider(qualityPlanProviderId(planId))
+        );
+    }
+
     function canReadAnalyticsScope() {
       return currentUserExists()
         && (
@@ -451,6 +501,59 @@ service cloud.firestore {
 
     match /tracking_v2_jobs/{jobId} {
       allow read, write: if false;
+    }
+
+    // Quality Improvement V1 — server-derived monthly provider summaries.
+    match /quality_improvement_v1_months/{month} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /providers/{providerId} {
+        allow read: if canReadQualityProvider(providerId);
+        allow write: if false;
+      }
+    }
+
+    match /quality_improvement_v1_contributions/{contributionId} {
+      allow read, write: if false;
+    }
+
+    // Midwife-authored monthly reasons/targets and supervisor comments.
+    match /quality_improvement_plans/{planId} {
+      allow read: if canReadQualityPlan(planId);
+      allow create: if signedIn()
+        && request.resource.data.providerId is string
+        && request.resource.data.scoreMonth is string
+        && planId == request.resource.data.providerId + '_' + request.resource.data.scoreMonth
+        && (
+          request.resource.data.providerId == request.auth.uid
+          || canSuperviseQualityProvider(request.resource.data.providerId)
+        );
+      allow update: if signedIn()
+        && resource.data.providerId is string
+        && (
+          (
+            resource.data.providerId == request.auth.uid
+            && request.resource.data.providerId == request.auth.uid
+            && planId == request.auth.uid + '_' + request.resource.data.scoreMonth
+          )
+          || (
+            canSuperviseQualityProvider(resource.data.providerId)
+            && request.resource.data.providerId == resource.data.providerId
+            && request.resource.data.scoreMonth == resource.data.scoreMonth
+          )
+        );
+      allow delete: if false;
+
+      match /comments/{commentId} {
+        allow read: if canReadQualityPlan(planId);
+        allow create: if signedIn()
+          && canSuperviseQualityProvider(qualityPlanProviderId(planId))
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.indicatorId is string
+          && request.resource.data.text is string;
+        allow update, delete: if false;
+      }
     }
   }
 }

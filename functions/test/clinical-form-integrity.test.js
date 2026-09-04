@@ -75,3 +75,38 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   assert.match(source, /visit\.current_weight_gram \|\| visit\.currentWeightGram/);
   assert.doesNotMatch(source, /if \(!points \|\| points\.length < 2\) return '';/);
 });
+
+test('home page exposes a role-gated Quality Improvement card', () => {
+  const source = readAppFile('home.html');
+  assert.match(source, /id="qiCard"/);
+  assert.match(source, /'qiCard'/);
+  assert.match(source, /case 'quality-improvement'/);
+  assert.match(source, /quality-improvement\.html/);
+});
+
+test('quality hubs and newborn score page are wired for the partner demo', () => {
+  const hub = readAppFile('quality-improvement.html');
+  const competency = readAppFile('quality-competency.html');
+  const newborn = readAppFile('quality-newborn.html');
+  assert.match(hub, /Facility Readiness Assessment/);
+  assert.match(hub, /Coming soon/);
+  assert.match(hub, /quality-competency\.html/);
+  assert.match(competency, /Antenatal/);
+  assert.match(competency, /Intrapartum/);
+  assert.match(competency, /Postnatal/);
+  assert.match(competency, /quality-newborn\.html/);
+  assert.match(newborn, /QualityScoring\.INDICATOR_DEFS/);
+  assert.match(newborn, /Reason category/);
+  assert.match(newborn, /Supervisor guidance/);
+});
+
+test('immediate and routine newborn forms load QI target reminders', () => {
+  const immediate = readAppFile('immediate-newborn-care-form.html');
+  const newborn = readAppFile('newborn-care-page.html');
+  assert.match(immediate, /quality-target-banner\.js/);
+  assert.match(immediate, /QualityTargetBanner\.render/);
+  assert.match(immediate, /source: 'immediate'/);
+  assert.match(newborn, /quality-target-banner\.js/);
+  assert.match(newborn, /QualityTargetBanner\.render/);
+  assert.match(newborn, /source: 'newborn_visit'/);
+});

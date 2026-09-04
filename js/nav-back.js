@@ -36,6 +36,8 @@
     toHome: function () { go('home.html'); },
     toList: function () { go('list.html'); },
     toPatientTransfers: function () { go('patient-transfers.html'); },
+    toQualityImprovement: function () { go('quality-improvement.html'); },
+    toQualityCompetency: function () { go('quality-competency.html'); },
     toAntenatalCare: function (patientId) {
       patientId = patientId || patientIdFromUrl();
       go(patientId ? ('antenatal-care.html?patient=' + encodeURIComponent(patientId)) : 'list.html');

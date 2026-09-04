@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v280-moh';
+const CACHE_NAME = 'mch-care-v281-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -41,6 +41,9 @@ const FILES_TO_CACHE = [
   './newborn-report.html',
   './baby-care.html',
   './baby.html',
+  './quality-improvement.html',
+  './quality-competency.html',
+  './quality-newborn.html',
   './vaccine-home.html',
   './vaccine-record.html',
   './vaccine-records.html',
@@ -105,6 +108,10 @@ const FILES_TO_CACHE = [
   './js/sent-transfer-hrt-view.js',
   './js/transfer-load-utils.js',
   './js/user-cache.js',
+  './js/quality-scoring.js',
+  './js/quality-improvement.js',
+  './js/quality-target-banner.js',
+  './js/rbac-manager.js',
   './css/style.css',
   './css/hrt-register.css',
   './css/choice-controls.css',

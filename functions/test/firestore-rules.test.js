@@ -96,6 +96,40 @@ async function seed() {
     await setDoc(doc(database, 'tracking_v2_jobs', 'tracking-projection-repair'), {
       status: 'running'
     });
+    await setDoc(
+      doc(database, 'quality_improvement_v1_months', '2026-09', 'providers', 'midwife-a'),
+      {
+        providerId: 'midwife-a',
+        providerName: 'Provider A',
+        township: 'Alpha',
+        region: 'North',
+        summaryPercentage: 60,
+        indicators: {}
+      }
+    );
+    await setDoc(
+      doc(database, 'quality_improvement_v1_months', '2026-09', 'providers', 'midwife-b'),
+      {
+        providerId: 'midwife-b',
+        providerName: 'Provider B',
+        township: 'Beta',
+        region: 'North',
+        summaryPercentage: 40,
+        indicators: {}
+      }
+    );
+    await setDoc(doc(database, 'quality_improvement_plans', 'midwife-a_2026-09'), {
+      providerId: 'midwife-a',
+      scoreMonth: '2026-09',
+      targetMonth: '2026-10',
+      indicators: {
+        skin_to_skin: {
+          reasonCategory: 'supplies_equipment',
+          explanation: 'Need more warm towels',
+          nextTargetPercent: 80
+        }
+      }
+    });
   });
 }
 
@@ -405,4 +439,114 @@ test('ordinary authenticated clinical visit creates and updates remain allowed',
   await assertSucceeds(updateDoc(ancRef, { notes: 'updated' }));
   await assertSucceeds(setDoc(newbornRef, { createdBy: 'midwife-a', visit_number: 1 }));
   await assertSucceeds(updateDoc(newbornRef, { clinical_notes: 'updated' }));
+});
+
+function qiProviderRef(uid, providerId) {
+  return doc(
+    environment.authenticatedContext(uid).firestore(),
+    'quality_improvement_v1_months',
+    '2026-09',
+    'providers',
+    providerId
+  );
+}
+
+test('QI summaries are readable by owner and scoped supervisors only', async () => {
+  await assertSucceeds(getDoc(qiProviderRef('midwife-a', 'midwife-a')));
+  await assertFails(getDoc(qiProviderRef('midwife-a', 'midwife-b')));
+  await assertSucceeds(getDoc(qiProviderRef('tmo-a', 'midwife-a')));
+  await assertFails(getDoc(qiProviderRef('tmo-a', 'midwife-b')));
+  await assertSucceeds(getDoc(qiProviderRef('regional', 'midwife-a')));
+  await assertSucceeds(getDoc(qiProviderRef('super', 'midwife-b')));
+});
+
+test('QI summaries and contributions are not client-writable', async () => {
+  const database = environment.authenticatedContext('midwife-a').firestore();
+  await assertFails(setDoc(
+    doc(database, 'quality_improvement_v1_months', '2026-09', 'providers', 'midwife-a'),
+    { summaryPercentage: 99 }
+  ));
+  await assertFails(setDoc(
+    doc(database, 'quality_improvement_v1_contributions', 'patient-a_2026-09'),
+    { patientId: 'patient-a', month: '2026-09' }
+  ));
+});
+
+test('midwives can edit only their own QI action plans', async () => {
+  const ownerDb = environment.authenticatedContext('midwife-a').firestore();
+  const otherDb = environment.authenticatedContext('midwife-b').firestore();
+  await assertSucceeds(updateDoc(
+    doc(ownerDb, 'quality_improvement_plans', 'midwife-a_2026-09'),
+    {
+      providerId: 'midwife-a',
+      scoreMonth: '2026-09',
+      'indicators.skin_to_skin.nextTargetPercent': 85
+    }
+  ));
+  await assertFails(setDoc(
+    doc(otherDb, 'quality_improvement_plans', 'midwife-a_2026-09'),
+    {
+      providerId: 'midwife-a',
+      scoreMonth: '2026-09',
+      indicators: {}
+    }
+  ));
+  await assertSucceeds(setDoc(
+    doc(otherDb, 'quality_improvement_plans', 'midwife-b_2026-09'),
+    {
+      providerId: 'midwife-b',
+      scoreMonth: '2026-09',
+      targetMonth: '2026-10',
+      indicators: {
+        skin_to_skin: {
+          reasonCategory: 'knowledge_training',
+          explanation: 'Need coaching',
+          nextTargetPercent: 70
+        }
+      }
+    }
+  ));
+});
+
+test('TMO and above can comment on QI plans in scope', async () => {
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  const outOfScopeTmoDb = environment.authenticatedContext('tmo-b').firestore();
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+
+  await assertSucceeds(setDoc(
+    doc(tmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c1'),
+    {
+      indicatorId: 'skin_to_skin',
+      text: 'Practice skin-to-skin immediately after birth.',
+      authorId: 'tmo-a',
+      authorName: 'TMO A',
+      authorRole: 'TMO',
+      createdAt: new Date()
+    }
+  ));
+  await assertFails(setDoc(
+    doc(outOfScopeTmoDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c2'),
+    {
+      indicatorId: 'skin_to_skin',
+      text: 'Out of township',
+      authorId: 'tmo-b',
+      authorName: 'TMO B',
+      authorRole: 'TMO',
+      createdAt: new Date()
+    }
+  ));
+  await assertFails(setDoc(
+    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c3'),
+    {
+      indicatorId: 'skin_to_skin',
+      text: 'Midwife cannot comment as supervisor',
+      authorId: 'midwife-a',
+      authorName: 'Midwife A',
+      authorRole: 'Midwife',
+      createdAt: new Date()
+    }
+  ));
+  await assertSucceeds(getDoc(
+    doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'c1')
+  ));
 });

@@ -11,6 +11,7 @@ const {
 } = require('../leaderboard/scoring');
 const { eventMonths, periodsWithAllTime } = require('../leaderboard/functions');
 const { recomputePatientProjections } = require('./tracking-repository');
+const { recomputeLoadedPatientQualityMonths } = require('../quality/service');
 
 const REGION = 'us-central1';
 const TRACKING_QUEUE = 'tracking_v2_refresh_queue';
@@ -106,6 +107,8 @@ async function processLeaderboardRefreshQueue(database, now, options) {
         if (month) periodsWithAllTime([month]).forEach((period) => periods.add(period));
       });
       await recomputeLoadedPatientMonths(db, queued.id, Array.from(periods), loaded);
+      const qualityMonths = Array.from(periods).filter((period) => /^\d{4}-\d{2}$/.test(period));
+      await recomputeLoadedPatientQualityMonths(db, queued.id, qualityMonths, loaded, now);
       await queued.ref.delete();
     });
     processed += snapshot.size;

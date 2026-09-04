@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Newborn Competency - Quality Improvement</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script src="js/quality-scoring.js"></script>
+  <script src="js/quality-improvement.js"></script>
+  <style>
+    :root {
+      --primary-color: #0d9488;
+      --secondary-color: #0f766e;
+    }
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: 'Inter', 'Myanmar Text', 'Segoe UI', sans-serif;
+      min-height: 100dvh;
+    }
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 0.85rem 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .header-section .container, .page-main { max-width: 920px; }
+    .header-section h1 { font-size: 1.15rem; font-weight: 800; margin: 0; }
+    .header-actions {
+      display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap;
+    }
+    .header-actions .btn, .language-btn, .filter-bar select, .filter-bar button, .qi-btn {
+      min-height: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .page-main { padding: 1rem 1rem 2.5rem; margin: 0 auto; width: 100%; }
+    .filter-bar, .summary-card, .indicator-card {
+      background: rgba(255,255,255,0.97);
+      border-radius: 16px;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+      border: 1px solid rgba(13, 148, 136, 0.12);
+    }
+    .filter-bar { padding: 0.9rem 1rem; margin-bottom: 0.85rem; }
+    .filter-bar .form-label { font-weight: 700; font-size: 0.85rem; color: #334155; margin-bottom: 0.25rem; }
+    .summary-card {
+      padding: 1rem 1.1rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .summary-pct {
+      width: 88px; height: 88px; border-radius: 50%;
+      background: linear-gradient(135deg, #ccfbf1, #99f6e4);
+      color: #115e59;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1.35rem; font-weight: 900;
+      flex: 0 0 88px;
+    }
+    .summary-meta { flex: 1; min-width: 180px; }
+    .summary-meta h2 { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.25rem; color: #0f172a; }
+    .summary-meta p { margin: 0; color: #64748b; font-size: 0.9rem; }
+    .indicator-list { display: grid; gap: 0.85rem; }
+    .indicator-card { padding: 1rem 1.05rem; }
+    .indicator-top {
+      display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;
+    }
+    .indicator-title { font-size: 0.98rem; font-weight: 800; color: #0f172a; margin: 0 0 0.25rem; }
+    .indicator-source { font-size: 0.8rem; color: #64748b; margin: 0; }
+    .pct-badge {
+      min-width: 64px;
+      text-align: center;
+      border-radius: 12px;
+      padding: 0.45rem 0.55rem;
+      background: #ecfeff;
+      color: #0f766e;
+      font-weight: 900;
+      font-size: 1.05rem;
+      line-height: 1.1;
+    }
+    .pct-badge small { display: block; font-size: 0.68rem; font-weight: 700; color: #64748b; }
+    .meter {
+      height: 8px; border-radius: 999px; background: #e2e8f0; margin: 0.75rem 0 0.5rem; overflow: hidden;
+    }
+    .meter > span {
+      display: block; height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #14b8a6, #0d9488);
+    }
+    .qi-muted { color: #64748b; font-size: 0.85rem; }
+    .qi-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+    .qi-btn {
+      border: none;
+      border-radius: 10px;
+      padding: 0.55rem 0.85rem;
+      font-weight: 700;
+      font-size: 0.88rem;
+      background: #0d9488;
+      color: white;
+    }
+    .qi-btn.secondary { background: #e2e8f0; color: #334155; }
+    .qi-panel {
+      margin-top: 0.85rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid #e2e8f0;
+      display: none;
+    }
+    .qi-panel.open { display: block; }
+    .comment-item {
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .comment-item strong { font-size: 0.85rem; color: #0f172a; }
+    .comment-item p { margin: 0.25rem 0 0; font-size: 0.88rem; color: #334155; }
+    .status-banner {
+      background: rgba(255,255,255,0.95);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.85rem;
+      color: #334155;
+      font-weight: 600;
+    }
+    .status-banner.error { background: #fef2f2; color: #991b1b; }
+    .language-switcher { display: flex; gap: 0.25rem; }
+    .language-btn {
+      min-width: 44px; padding: 0.375rem 0.75rem; font-size: 0.875rem; border-radius: 8px;
+      background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;
+    }
+    .language-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+    @media (max-width: 768px) {
+      .header-section .row > [class*="col-"] { width: 100%; }
+      .header-actions { justify-content: flex-start; margin-top: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <h1><i class="fas fa-baby me-2"></i><span class="lang-text" data-en="Newborn Competency" data-mm="မွေးကင်းစ ကျွမ်းကျင်မှု">Newborn Competency</span></h1>
+        </div>
+        <div class="col-md-6">
+          <div class="header-actions">
+            <div class="language-switcher" role="group" aria-label="Language">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" aria-label="English">ENG</button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" aria-label="Myanmar">MM</button>
+            </div>
+            <a href="quality-competency.html" class="btn btn-outline-light btn-sm" aria-label="Back">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="page-main container">
+    <div id="statusBanner" class="status-banner" role="status" aria-live="polite">
+      <span class="lang-text" data-en="Loading newborn competency scores…" data-mm="မွေးကင်းစ ကျွမ်းကျင်မှု အမှတ်များ တင်နေသည်…">Loading newborn competency scores…</span>
+    </div>
+
+    <div class="filter-bar">
+      <div class="row g-2 align-items-end">
+        <div class="col-sm-4">
+          <label class="form-label lang-text" for="monthSelect" data-en="Score month" data-mm="အမှတ် လ">Score month</label>
+          <select id="monthSelect" class="form-select" aria-label="Score month"></select>
+        </div>
+        <div class="col-sm-5" id="midwifeFilterWrap" style="display:none;">
+          <label class="form-label lang-text" for="midwifeSelect" data-en="Midwife" data-mm="သားဖွား">Midwife</label>
+          <select id="midwifeSelect" class="form-select" aria-label="Midwife"></select>
+        </div>
+        <div class="col-sm-3">
+          <button type="button" class="btn btn-success w-100 qi-btn" id="refreshBtn" aria-label="Refresh scores">
+            <i class="fas fa-sync-alt me-1"></i><span class="lang-text" data-en="Refresh" data-mm="ပြန်တင်ရန်">Refresh</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-card" id="summaryCard" style="display:none;">
+      <div class="summary-pct" id="summaryPct">0%</div>
+      <div class="summary-meta">
+        <h2 id="summaryTitle">—</h2>
+        <p id="summarySubtitle" class="qi-muted"></p>
+        <p id="summaryHint" class="qi-muted mt-1"></p>
+      </div>
+    </div>
+
+    <div class="indicator-list" id="indicatorList" aria-live="polite"></div>
+  </main>
+
+  <script>
+    let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    let viewer = null;
+    let midwives = [];
+    let selectedProviderId = null;
+    let selectedMonth = null;
+    let currentSummary = null;
+    let currentPlan = null;
+    let previousPlan = null;
+
+    function t(en, mm) {
+      return currentLanguage === 'en' ? en : mm;
+    }
+
+    function applyLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var text = lang === 'en' ? el.getAttribute('data-en') : el.getAttribute('data-mm');
+        if (text) el.textContent = text;
+      });
+      if (currentSummary) renderAll();
+    }
+
+    function setStatus(message, isError) {
+      var banner = document.getElementById('statusBanner');
+      if (!banner) return;
+      banner.style.display = message ? '' : 'none';
+      banner.classList.toggle('error', !!isError);
+      banner.textContent = message || '';
+    }
+
+    function monthOptions() {
+      var options = [];
+      var cursor = QualityScoring.currentYangonMonthKey(new Date());
+      for (var i = 0; i < 12; i++) {
+        options.push(cursor);
+        cursor = QualityScoring.previousMonthKey(cursor);
+        if (!cursor) break;
+      }
+      return options;
+    }
+
+    function fillMonthSelect() {
+      var select = document.getElementById('monthSelect');
+      select.innerHTML = monthOptions().map(function (month) {
+        return '<option value="' + month + '">' + month + '</option>';
+      }).join('');
+      selectedMonth = select.value;
+    }
+
+    function fillMidwifeSelect() {
+      var wrap = document.getElementById('midwifeFilterWrap');
+      var select = document.getElementById('midwifeSelect');
+      if (!QualityImprovement.isSupervisorRole(viewer.role)) {
+        wrap.style.display = 'none';
+        selectedProviderId = viewer.uid;
+        return;
+      }
+      wrap.style.display = '';
+      select.innerHTML = midwives.map(function (midwife) {
+        return '<option value="' + midwife.id + '">' + escapeHtml(midwife.name) +
+          (midwife.township ? (' · ' + escapeHtml(midwife.township)) : '') + '</option>';
+      }).join('');
+      if (!midwives.length) {
+        select.innerHTML = '<option value="">' + t('No midwives found', 'သားဖွား မတွေ့ပါ') + '</option>';
+        selectedProviderId = null;
+        return;
+      }
+      selectedProviderId = select.value || midwives[0].id;
+      select.value = selectedProviderId;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function selectedProviderMeta() {
+      if (!QualityImprovement.isSupervisorRole(viewer.role)) {
+        return {
+          id: viewer.uid,
+          name: viewer.name,
+          township: viewer.township,
+          region: viewer.region,
+          facility_code: viewer.facility_code
+        };
+      }
+      return midwives.find(function (item) { return item.id === selectedProviderId; }) || null;
+    }
+
+    function reasonLabel(categoryId) {
+      var found = QualityScoring.REASON_CATEGORIES.find(function (item) { return item.id === categoryId; });
+      if (!found) return categoryId || '—';
+      return currentLanguage === 'en' ? found.en : found.mm;
+    }
+
+    function indicatorTitle(indicator) {
+      return currentLanguage === 'en' ? indicator.en : indicator.mm;
+    }
+
+    function indicatorSource(indicator) {
+      return currentLanguage === 'en' ? indicator.dataSourceEn : indicator.dataSourceMm;
+    }
+
+    function planEntry(plan, indicatorId) {
+      return (plan && plan.indicators && plan.indicators[indicatorId]) || null;
+    }
+
+    function renderSummary() {
+      var card = document.getElementById('summaryCard');
+      var meta = selectedProviderMeta();
+      if (!currentSummary || !meta) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'flex';
+      document.getElementById('summaryPct').textContent = (currentSummary.summaryPercentage || 0) + '%';
+      document.getElementById('summaryTitle').textContent = meta.name || selectedProviderId;
+      document.getElementById('summarySubtitle').textContent = t(
+        'Average of scored newborn indicators for ' + selectedMonth,
+        selectedMonth + ' အတွက် မွေးကင်းစ အမှတ် ပျမ်းမျှ'
+      );
+      document.getElementById('summaryHint').textContent = currentSummary.computedLocally
+        ? t('Computed from this midwife’s patient records for the demo.', 'ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်။')
+        : t('Loaded from cached QI summary.', 'သိမ်းဆည်းထားသော QI အနှစ်ချုပ်မှ တင်ထားသည်။');
+    }
+
+    function renderIndicatorCard(indicator) {
+      var totals = (currentSummary && currentSummary.indicators && currentSummary.indicators[indicator.id]) ||
+        { numerator: 0, denominator: 0, percentage: 0 };
+      var currentEntry = planEntry(currentPlan, indicator.id);
+      var previousEntry = planEntry(previousPlan, indicator.id);
+      var canEdit = QualityImprovement.isMidwifeRole(viewer.role) && viewer.uid === selectedProviderId;
+      var canComment = QualityImprovement.isSupervisorRole(viewer.role);
+      var pct = totals.percentage || 0;
+      var gap = Math.max(0, 100 - pct);
+
+      var html = '';
+      html += '<article class="indicator-card" id="indicator-' + indicator.id + '">';
+      html += '<div class="indicator-top">';
+      html += '<div><h3 class="indicator-title">' + escapeHtml(indicatorTitle(indicator)) + '</h3>';
+      html += '<p class="indicator-source">' + escapeHtml(indicatorSource(indicator)) + '</p></div>';
+      html += '<div class="pct-badge" aria-label="' + pct + ' percent">' + pct + '%<small>' +
+        totals.numerator + '/' + totals.denominator + '</small></div></div>';
+      html += '<div class="meter" aria-hidden="true"><span style="width:' + Math.min(100, pct) + '%"></span></div>';
+      html += '<p class="qi-muted">' + t(
+        pct + '% of newborn babies met this indicator' + (gap ? ('; midwife can explain why ' + gap + '% did not.') : '.'),
+        'မွေးကင်းစ ' + pct + '% သည် ဤအချက်နှင့် ကိုက်ညီသည်' + (gap ? ('။ ကျန် ' + gap + '% အတွက် အကြောင်းရင်း ရှင်းပြနိုင်သည်။') : '။')
+      ) + '</p>';
+
+      if (previousEntry && previousEntry.nextTargetPercent != null) {
+        html += '<p class="qi-muted"><strong>' + t('This month target', 'ယခုလ ပန်းတိုင်') + ':</strong> ' +
+          previousEntry.nextTargetPercent + '%</p>';
+      }
+      if (currentEntry) {
+        html += '<p class="qi-muted"><strong>' + t('Next month target', 'နောက်လ ပန်းတိုင်') + ':</strong> ' +
+          (currentEntry.nextTargetPercent != null ? currentEntry.nextTargetPercent + '%' : '—') +
+          ' · <strong>' + t('Reason', 'အကြောင်းရင်း') + ':</strong> ' + escapeHtml(reasonLabel(currentEntry.reasonCategory)) + '</p>';
+        if (currentEntry.explanation) {
+          html += '<p class="qi-muted">' + escapeHtml(currentEntry.explanation) + '</p>';
+        }
+      }
+
+      html += '<div class="qi-actions">';
+      if (canEdit) {
+        html += '<button type="button" class="qi-btn" data-action="reason" data-id="' + indicator.id + '">' +
+          t('Reason & next target', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင်') + '</button>';
+      }
+      html += '<button type="button" class="qi-btn secondary" data-action="comments" data-id="' + indicator.id + '">' +
+        t('Comments', 'မှတ်ချက်များ') + '</button>';
+      html += '</div>';
+
+      html += '<div class="qi-panel" id="reason-panel-' + indicator.id + '">';
+      if (canEdit) {
+        html += '<div class="mb-2"><label class="form-label">' + t('Reason category', 'အကြောင်းရင်း အမျိုးအစား') + '</label>';
+        html += '<select class="form-select" id="reason-cat-' + indicator.id + '"><option value="">' +
+          t('Select category', 'အမျိုးအစား ရွေးပါ') + '</option>';
+        QualityScoring.REASON_CATEGORIES.forEach(function (cat) {
+          var selected = currentEntry && currentEntry.reasonCategory === cat.id ? ' selected' : '';
+          html += '<option value="' + cat.id + '"' + selected + '>' + escapeHtml(currentLanguage === 'en' ? cat.en : cat.mm) + '</option>';
+        });
+        html += '</select></div>';
+        html += '<div class="mb-2"><label class="form-label">' + t('Explanation', 'ရှင်းလင်းချက်') + '</label>';
+        html += '<textarea class="form-control" rows="3" id="reason-text-' + indicator.id + '">' +
+          escapeHtml((currentEntry && currentEntry.explanation) || '') + '</textarea></div>';
+        html += '<div class="mb-2"><label class="form-label">' + t('Next month target (%)', 'နောက်လ ပန်းတိုင် (%)') + '</label>';
+        html += '<input type="number" min="0" max="100" class="form-control" id="reason-target-' + indicator.id + '" value="' +
+          ((currentEntry && currentEntry.nextTargetPercent != null) ? currentEntry.nextTargetPercent : (indicator.defaultTarget || 80)) +
+          '"></div>';
+        html += '<button type="button" class="qi-btn" data-action="save-reason" data-id="' + indicator.id + '">' +
+          t('Save', 'သိမ်းရန်') + '</button>';
+      } else {
+        html += '<p class="qi-muted">' + t('Only the midwife can edit reasons and targets.', 'အကြောင်းရင်းနှင့် ပန်းတိုင်ကို သားဖွားသာ ပြင်နိုင်သည်။') + '</p>';
+      }
+      html += '</div>';
+
+      html += '<div class="qi-panel" id="comment-panel-' + indicator.id + '">';
+      html += '<div id="comment-list-' + indicator.id + '" class="qi-muted">' + t('Loading comments…', 'မှတ်ချက်များ တင်နေသည်…') + '</div>';
+      if (canComment) {
+        html += '<div class="mt-2"><label class="form-label">' + t('Supervisor guidance', 'ကြီးကြပ်သူ လမ်းညွှန်ချက်') + '</label>';
+        html += '<textarea class="form-control" rows="2" id="comment-text-' + indicator.id + '" placeholder="' +
+          escapeHtml(t('How to reach the next target…', 'နောက်လ ပန်းတိုင် ရောက်ရန် လမ်းညွှန်…')) + '"></textarea></div>';
+        html += '<button type="button" class="qi-btn mt-2" data-action="save-comment" data-id="' + indicator.id + '">' +
+          t('Post comment', 'မှတ်ချက် ပေးရန်') + '</button>';
+      }
+      html += '</div>';
+
+      html += '</article>';
+      return html;
+    }
+
+    function renderAll() {
+      renderSummary();
+      document.getElementById('indicatorList').innerHTML = QualityScoring.INDICATOR_DEFS.map(renderIndicatorCard).join('');
+    }
+
+    async function loadCommentsFor(indicatorId) {
+      var list = document.getElementById('comment-list-' + indicatorId);
+      if (!list || !selectedProviderId) return;
+      try {
+        var comments = await QualityImprovement.loadComments(selectedProviderId, selectedMonth, indicatorId);
+        if (!comments.length) {
+          list.innerHTML = '<p class="qi-muted mb-0">' + t('No comments yet.', 'မှတ်ချက် မရှိသေးပါ။') + '</p>';
+          return;
+        }
+        list.innerHTML = comments.map(function (comment) {
+          return '<div class="comment-item"><strong>' + escapeHtml(comment.authorName || comment.authorRole || 'Supervisor') +
+            '</strong><p>' + escapeHtml(comment.text || '') + '</p></div>';
+        }).join('');
+      } catch (error) {
+        list.innerHTML = '<p class="qi-muted mb-0">' + escapeHtml(error.message || 'Could not load comments') + '</p>';
+      }
+    }
+
+    async function refreshScores() {
+      var meta = selectedProviderMeta();
+      if (!selectedProviderId || !meta) {
+        setStatus(t('Select a midwife to view scores.', 'အမှတ်များကြည့်ရန် သားဖွား ရွေးပါ။'), true);
+        return;
+      }
+      setStatus(t('Loading scores…', 'အမှတ်များ တင်နေသည်…'));
+      document.getElementById('refreshBtn').disabled = true;
+      try {
+        QualityImprovement.clearSummaryCache(selectedProviderId, selectedMonth);
+        currentSummary = await QualityImprovement.loadProviderMonthSummary(selectedProviderId, selectedMonth, meta);
+        currentPlan = await QualityImprovement.loadActionPlan(selectedProviderId, selectedMonth);
+        previousPlan = await QualityImprovement.loadActionPlan(
+          selectedProviderId,
+          QualityScoring.previousMonthKey(selectedMonth)
+        );
+        setStatus('');
+        renderAll();
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || t('Could not load scores.', 'အမှတ်များ တင်၍မရပါ။'), true);
+      } finally {
+        document.getElementById('refreshBtn').disabled = false;
+      }
+    }
+
+    async function handleSaveReason(indicatorId) {
+      var category = document.getElementById('reason-cat-' + indicatorId).value;
+      var explanation = document.getElementById('reason-text-' + indicatorId).value;
+      var target = document.getElementById('reason-target-' + indicatorId).value;
+      try {
+        currentPlan = await QualityImprovement.saveActionPlanIndicator(
+          viewer,
+          selectedProviderId,
+          selectedMonth,
+          indicatorId,
+          {
+            reasonCategory: category,
+            explanation: explanation,
+            nextTargetPercent: target
+          }
+        );
+        if (window.AppDialog && AppDialog.alert) {
+          await AppDialog.alert(t('Reason and next-month target saved.', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင် သိမ်းပြီးပါပြီ။'), { title: 'Quality Improvement' });
+        } else {
+          alert(t('Reason and next-month target saved.', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင် သိမ်းပြီးပါပြီ။'));
+        }
+        renderAll();
+        document.getElementById('reason-panel-' + indicatorId).classList.add('open');
+      } catch (error) {
+        alert(error.message || t('Could not save.', 'သိမ်း၍မရပါ။'));
+      }
+    }
+
+    async function handleSaveComment(indicatorId) {
+      var text = document.getElementById('comment-text-' + indicatorId).value;
+      try {
+        await QualityImprovement.addSupervisorComment(
+          viewer,
+          selectedProviderId,
+          selectedMonth,
+          indicatorId,
+          text
+        );
+        document.getElementById('comment-text-' + indicatorId).value = '';
+        await loadCommentsFor(indicatorId);
+      } catch (error) {
+        alert(error.message || t('Could not post comment.', 'မှတ်ချက် ပေး၍မရပါ။'));
+      }
+    }
+
+    document.getElementById('indicatorList').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-action]');
+      if (!button) return;
+      var action = button.getAttribute('data-action');
+      var indicatorId = button.getAttribute('data-id');
+      if (action === 'reason') {
+        document.getElementById('reason-panel-' + indicatorId).classList.toggle('open');
+        document.getElementById('comment-panel-' + indicatorId).classList.remove('open');
+      } else if (action === 'comments') {
+        var panel = document.getElementById('comment-panel-' + indicatorId);
+        panel.classList.toggle('open');
+        document.getElementById('reason-panel-' + indicatorId).classList.remove('open');
+        if (panel.classList.contains('open')) loadCommentsFor(indicatorId);
+      } else if (action === 'save-reason') {
+        handleSaveReason(indicatorId);
+      } else if (action === 'save-comment') {
+        handleSaveComment(indicatorId);
+      }
+    });
+
+    document.getElementById('monthSelect').addEventListener('change', function () {
+      selectedMonth = document.getElementById('monthSelect').value;
+      refreshScores();
+    });
+    document.getElementById('midwifeSelect').addEventListener('change', function () {
+      selectedProviderId = document.getElementById('midwifeSelect').value;
+      refreshScores();
+    });
+    document.getElementById('refreshBtn').addEventListener('click', refreshScores);
+    document.querySelectorAll('.language-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyLanguage(btn.dataset.lang); });
+    });
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+      if (!user) return;
+      try {
+        applyLanguage(currentLanguage);
+        fillMonthSelect();
+        viewer = await QualityImprovement.loadCurrentUserProfile();
+        if (QualityImprovement.isSupervisorRole(viewer.role)) {
+          midwives = await QualityImprovement.listScopedMidwives(viewer);
+        }
+        fillMidwifeSelect();
+        await refreshScores();
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || t('Could not initialize page.', 'စာမျက်နှာ စတင်၍မရပါ။'), true);
+      }
+    });
+  </script>
+</body>
+</html>
