@@ -1,5 +1,5 @@
 /**
- * Non-blocking QI target reminders on newborn care forms.
+ * Non-blocking QI target reminders on clinical care forms.
  */
 (function (global) {
   'use strict';

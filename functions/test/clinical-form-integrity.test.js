@@ -88,6 +88,7 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   const hub = readAppFile('quality-improvement.html');
   const competency = readAppFile('quality-competency.html');
   const newborn = readAppFile('quality-newborn.html');
+  const antenatal = readAppFile('quality-antenatal.html');
   const reviewActions = readAppFile('quality-review-actions.html');
   assert.match(hub, /Facility Readiness Assessment/);
   assert.match(hub, /Coming soon/);
@@ -96,7 +97,16 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(competency, /Intrapartum/);
   assert.match(competency, /Postnatal/);
   assert.match(competency, /quality-newborn\.html/);
+  assert.match(competency, /quality-antenatal\.html/);
+  assert.match(competency, /navigateToAntenatal/);
+  assert.doesNotMatch(competency, /showComingSoon\('Antenatal'\)/);
   assert.match(newborn, /QualityScoring\.INDICATOR_DEFS/);
+  assert.doesNotMatch(newborn, /QualityScoring\.ANC_INDICATOR_DEFS/);
+  assert.match(newborn, /loadProviderMonthSummary/);
+  assert.doesNotMatch(newborn, /loadProviderAncMonthSummary/);
+  assert.match(antenatal, /QualityScoring\.ANC_INDICATOR_DEFS/);
+  assert.match(antenatal, /loadProviderAncMonthSummary/);
+  assert.doesNotMatch(antenatal, /QualityImprovement\.loadProviderMonthSummary/);
   assert.match(newborn, /var options = \['all'\]/);
   assert.match(newborn, /'all'/);
   assert.match(newborn, /id="actionModal"/);
@@ -104,14 +114,17 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(newborn, /id="modalActionOwnerType"/);
   assert.match(newborn, /id="modalActionOwnerOther"/);
   assert.match(newborn, /id="modalTargetMonth"/);
-  assert.match(newborn, /quality-scoring\.js\?v=287/);
-  assert.match(reviewActions, /quality-scoring\.js\?v=287/);
+  assert.match(newborn, /quality-scoring\.js\?v=288/);
+  assert.match(antenatal, /quality-scoring\.js\?v=288/);
+  assert.match(reviewActions, /quality-scoring\.js\?v=288/);
   assert.match(reviewActions, /loadSavedActions/);
+  assert.match(reviewActions, /pageDomain/);
   assert.match(reviewActions, /backToScoresBtn/);
   assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
   assert.doesNotMatch(newborn, /Computed from this midwife/);
   assert.doesNotMatch(newborn, /ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်/);
   assert.match(newborn, /quality-review-actions\.html/);
+  assert.match(antenatal, /domain=antenatal/);
   assert.match(reviewActions, /No saved improvement actions yet/);
   assert.match(reviewActions, /data-save-comment/);
   assert.match(reviewActions, /Update comment|Save comment/);
@@ -123,6 +136,17 @@ test('QI action plans persist to the all-time document used by Review Actions', 
   assert.match(helper, /loadSavedActions/);
   assert.match(helper, /formatMonthLabel/);
   assert.match(helper, /knownPlanMonths/);
+  assert.match(helper, /loadPatientAncActivity/);
+  assert.match(helper, /calculatePatientAncContribution/);
+  assert.match(helper, /loadProviderAncMonthSummary/);
+  assert.match(helper, /domain: 'antenatal'/);
+});
+
+test('server QI rebuild stays newborn-only', () => {
+  const service = readAppFile('functions/src/quality/service.js');
+  assert.match(service, /calculatePatientQualityContribution/);
+  assert.doesNotMatch(service, /calculatePatientAncContribution/);
+  assert.doesNotMatch(service, /antenatalVisits/);
 });
 
 test('immediate and routine newborn forms load QI target reminders', () => {
@@ -134,4 +158,15 @@ test('immediate and routine newborn forms load QI target reminders', () => {
   assert.match(newborn, /quality-target-banner\.js/);
   assert.match(newborn, /QualityTargetBanner\.render/);
   assert.match(newborn, /source: 'newborn_visit'/);
+});
+
+test('antenatal forms load QI target reminders without changing newborn sources', () => {
+  const visitForm = readAppFile('antenatal-form.html');
+  const testForm = readAppFile('antenatal-tests-form.html');
+  assert.match(visitForm, /quality-target-banner\.js/);
+  assert.match(visitForm, /QualityTargetBanner\.render/);
+  assert.match(visitForm, /source: 'anc_visit'/);
+  assert.match(testForm, /quality-target-banner\.js/);
+  assert.match(testForm, /QualityTargetBanner\.render/);
+  assert.match(testForm, /source: 'anc_test'/);
 });

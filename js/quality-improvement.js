@@ -214,6 +214,38 @@
     };
   }
 
+  async function loadPatientAncActivity(patientDoc) {
+    var patient = Object.assign({ id: patientDoc.id }, patientDoc.data() || {});
+    var activityRows = await Promise.all([
+      loadCollection(patientDoc.ref.collection('antenatal_visits')),
+      loadCollection(patientDoc.ref.collection('testRecords'))
+    ]);
+    return {
+      patient: patient,
+      activity: {
+        antenatalVisits: activityRows[0],
+        testRecords: activityRows[1]
+      }
+    };
+  }
+
+  function resolveActionDomain(indicatorId, explicit) {
+    if (explicit === 'antenatal' || explicit === 'newborn') return explicit;
+    var Scoring = global.QualityScoring;
+    if (Scoring && Scoring.ANC_INDICATOR_DEFS && Scoring.ANC_INDICATOR_DEFS.some(function (item) {
+      return item.id === indicatorId;
+    })) {
+      return 'antenatal';
+    }
+    return 'newborn';
+  }
+
+  function actionMatchesDomain(action, domain) {
+    if (!action || !domain) return true;
+    var resolved = resolveActionDomain(action.indicatorId, action.domain);
+    return resolved === domain;
+  }
+
   async function computeProviderMonthSummary(providerId, month, providerMeta) {
     var Scoring = global.QualityScoring;
     if (!Scoring) throw new Error('QualityScoring is not loaded');
@@ -291,9 +323,71 @@
     return computed;
   }
 
+  async function computeProviderAncMonthSummary(providerId, month, providerMeta) {
+    var Scoring = global.QualityScoring;
+    if (!Scoring) throw new Error('QualityScoring is not loaded');
+    if (typeof Scoring.calculatePatientAncContribution !== 'function') {
+      throw new Error('ANC scoring is not loaded');
+    }
+
+    var defs = Scoring.ANC_INDICATOR_DEFS || [];
+    var patientDocs = await loadOwnedPatients(providerId);
+    var indicators = Scoring.emptyIndicatorTotals(defs);
+    var processed = 0;
+    for (var offset = 0; offset < patientDocs.length; offset += 8) {
+      var bundles = await Promise.all(
+        patientDocs.slice(offset, offset + 8).map(loadPatientAncActivity)
+      );
+      bundles.forEach(function (bundle) {
+        var activity = bundle.activity;
+        if (!activity.antenatalVisits.length && !activity.testRecords.length) return;
+        var contribution = Scoring.calculatePatientAncContribution(
+          bundle.patient,
+          activity,
+          month
+        );
+        var providerPart = contribution.providers && contribution.providers[providerId];
+        if (!providerPart) return;
+        Scoring.mergeProviderIndicators(indicators, providerPart.indicators, defs);
+        processed += 1;
+      });
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+    }
+
+    var summary = Scoring.summarizeProviderIndicators(indicators, defs);
+    return {
+      month: month,
+      providerId: providerId,
+      providerName: (providerMeta && providerMeta.name) || '',
+      township: (providerMeta && providerMeta.township) || '',
+      region: (providerMeta && providerMeta.region) || '',
+      facilityCode: (providerMeta && providerMeta.facility_code) || '',
+      domain: 'antenatal',
+      schemaVersion: Scoring.QI_SCHEMA_VERSION,
+      indicators: summary.indicators,
+      summaryPercentage: summary.summaryPercentage,
+      scoredIndicatorCount: summary.scoredIndicatorCount,
+      indicatorCount: summary.indicatorCount,
+      computedLocally: true,
+      patientsProcessed: processed
+    };
+  }
+
+  async function loadProviderAncMonthSummary(providerId, month, providerMeta) {
+    var cacheKey = 'anc:' + month + ':' + providerId;
+    if (SUMMARY_CACHE[cacheKey]) return SUMMARY_CACHE[cacheKey];
+    var computed = await computeProviderAncMonthSummary(providerId, month, providerMeta);
+    SUMMARY_CACHE[cacheKey] = computed;
+    return computed;
+  }
+
   function clearSummaryCache(providerId, month) {
-    if (providerId && month) delete SUMMARY_CACHE[month + ':' + providerId];
-    else SUMMARY_CACHE = {};
+    if (providerId && month) {
+      delete SUMMARY_CACHE[month + ':' + providerId];
+      delete SUMMARY_CACHE['anc:' + month + ':' + providerId];
+    } else {
+      SUMMARY_CACHE = {};
+    }
   }
 
   async function loadActionPlan(providerId, scoreMonth) {
@@ -360,6 +454,7 @@
     var actionRecord = {
       providerId: providerId,
       indicatorId: indicatorId,
+      domain: resolveActionDomain(indicatorId, payload.domain),
       scoreMonth: scoreMonth,
       targetMonth: targetMonth,
       sourceScoreMonth: scoreMonth,
@@ -574,14 +669,20 @@
     });
   }
 
-  async function loadSavedActions(providerId) {
+  async function loadSavedActions(providerId, domain) {
     var Scoring = global.QualityScoring;
+    var resolvedDomain = domain || 'newborn';
+    var defs = Scoring.indicatorDefsForDomain
+      ? Scoring.indicatorDefsForDomain(resolvedDomain)
+      : Scoring.INDICATOR_DEFS;
     var byIndicator = {};
     var addAction = function (action, fallbackId) {
       if (!action || typeof action !== 'object') return;
       var indicatorId = action.indicatorId || fallbackId;
       if (!indicatorId || !isSavedAction(action)) return;
-      byIndicator[indicatorId] = Object.assign({ indicatorId: indicatorId }, action);
+      var next = Object.assign({ indicatorId: indicatorId }, action);
+      if (!actionMatchesDomain(next, resolvedDomain)) return;
+      byIndicator[indicatorId] = next;
     };
 
     try {
@@ -600,7 +701,7 @@
       console.warn('QI action query unavailable, reading known action docs', error);
     }
 
-    var actionReads = Scoring.INDICATOR_DEFS.map(function (indicator) {
+    var actionReads = defs.map(function (indicator) {
       return withTimeout(
         firebase.firestore().collection('quality_improvement_actions')
           .doc(actionDocId(providerId, indicator.id))
@@ -682,8 +783,11 @@
       return loadActionPlan(providerId, month);
     }));
     var targets = {};
+    var targetDefs = Scoring.indicatorDefsForDomain
+      ? Scoring.indicatorDefsForDomain('all')
+      : Scoring.INDICATOR_DEFS;
     plans.forEach(function (plan) {
-      Scoring.INDICATOR_DEFS.forEach(function (indicator) {
+      targetDefs.forEach(function (indicator) {
         if (targets[indicator.id]) return;
         var entry = plan.indicators && plan.indicators[indicator.id];
         if (!entry || !Scoring.isValidTargetPercent(entry.nextTargetPercent)) return;
@@ -719,6 +823,8 @@
     loadTownshipTmo: loadTownshipTmo,
     loadProviderMonthSummary: loadProviderMonthSummary,
     computeProviderMonthSummary: computeProviderMonthSummary,
+    loadProviderAncMonthSummary: loadProviderAncMonthSummary,
+    computeProviderAncMonthSummary: computeProviderAncMonthSummary,
     clearSummaryCache: clearSummaryCache,
     loadActionPlan: loadActionPlan,
     isSavedAction: isSavedAction,

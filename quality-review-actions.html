@@ -17,8 +17,8 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
-  <script src="js/quality-scoring.js?v=287"></script>
-  <script src="js/quality-improvement.js?v=287"></script>
+  <script src="js/quality-scoring.js?v=288"></script>
+  <script src="js/quality-improvement.js?v=288"></script>
 </head>
 <body class="qi-app">
   <header class="app-header">
@@ -43,6 +43,12 @@
     let viewer = null
     let midwives = []
     let selectedProviderId = null
+    const pageDomain = new URLSearchParams(location.search).get('domain') === 'antenatal'
+      ? 'antenatal'
+      : 'newborn'
+    const scorePage = pageDomain === 'antenatal' ? 'quality-antenatal.html' : 'quality-newborn.html'
+    const initialBack = document.getElementById('backToScoresBtn')
+    if (initialBack) initialBack.href = scorePage
 
     const escapeHtml = (value) => String(value || '')
       .replace(/&/g, '&amp;')
@@ -50,7 +56,16 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
 
-    const indicatorById = (indicatorId) => QualityScoring.INDICATOR_DEFS.find(
+    const indicatorDefs = () => {
+      if (QualityScoring.indicatorDefsForDomain) {
+        return QualityScoring.indicatorDefsForDomain(pageDomain)
+      }
+      return pageDomain === 'antenatal'
+        ? (QualityScoring.ANC_INDICATOR_DEFS || [])
+        : QualityScoring.INDICATOR_DEFS
+    }
+
+    const indicatorById = (indicatorId) => indicatorDefs().find(
       (indicator) => indicator.id === indicatorId
     )
 
@@ -220,7 +235,7 @@
       setStatus('Loading review actions…')
       try {
         const loader = QualityImprovement.loadSavedActions || QualityImprovement.loadActionPlans
-        const actions = await loader(selectedProviderId)
+        const actions = await loader(selectedProviderId, pageDomain)
         setStatus('')
         await renderActions(actions)
       } catch (error) {
@@ -266,8 +281,8 @@
         const back = document.getElementById('backToScoresBtn')
         if (back) {
           back.href = selectedProviderId
-            ? ('quality-newborn.html?provider=' + encodeURIComponent(selectedProviderId))
-            : 'quality-newborn.html'
+            ? (scorePage + '?provider=' + encodeURIComponent(selectedProviderId))
+            : scorePage
         }
         await loadActions()
       } catch (error) {

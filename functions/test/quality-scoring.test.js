@@ -5,7 +5,10 @@ const assert = require('node:assert/strict');
 const {
   QI_SCHEMA_VERSION,
   INDICATOR_DEFS,
+  ANC_INDICATOR_DEFS,
+  emptyIndicatorTotals,
   calculatePatientQualityContribution,
+  calculatePatientAncContribution,
   summarizeProviderFromContributions,
   isValidReasonCategory,
   isValidTargetPercent,
@@ -14,7 +17,8 @@ const {
   previousMonthKey,
   monthKeyForDate,
   babyKeysFromVisit,
-  evaluateVisitIndicator
+  evaluateVisitIndicator,
+  evaluateAncIndicator
 } = require('../src/quality/scoring');
 
 test('defines eleven newborn competency indicators', () => {
@@ -256,4 +260,190 @@ test('baby key and visit indicator helpers handle missing data', () => {
     anatomy_abnormalities: false,
     danger_signs: []
   }), true);
+});
+
+test('keeps newborn indicator defs unchanged while adding twelve ANC indicators', () => {
+  assert.equal(INDICATOR_DEFS.length, 11);
+  assert.equal(ANC_INDICATOR_DEFS.length, 12);
+  assert.equal(Object.keys(emptyIndicatorTotals()).length, 11);
+  assert.ok(!Object.keys(emptyIndicatorTotals()).some((id) => id.indexOf('anc_') === 0));
+  assert.equal(ANC_INDICATOR_DEFS.filter((item) => item.source === 'anc_visit').length, 10);
+  assert.equal(ANC_INDICATOR_DEFS.filter((item) => item.source === 'anc_test').length, 2);
+});
+
+test('newborn scoring ignores antenatal collections', () => {
+  const result = calculatePatientQualityContribution({
+    id: 'p-anc-ignore',
+    created_by: 'mw1'
+  }, {
+    immediateNewbornCare: [],
+    newbornCare: [],
+    antenatalVisits: [{
+      visitDate: '2026-09-10',
+      recordedBy: 'mw1',
+      ironFolicAcid: 'Prescribed'
+    }],
+    testRecords: [{
+      testDate: '2026-09-10',
+      createdBy: 'mw1',
+      hivResult: 'Non-reactive',
+      syphilisResult: 'Non-reactive',
+      hemoglobinResult: 11.2
+    }]
+  }, '2026-09');
+
+  assert.deepEqual(result.providers, {});
+});
+
+test('scores the first ANC visit in the month against existing form fields', () => {
+  const result = calculatePatientAncContribution({
+    id: 'p-anc-1',
+    created_by: 'mw1'
+  }, {
+    antenatalVisits: [
+      {
+        visitDate: '2026-09-04',
+        recordedBy: 'mw1',
+        lmp: '2026-07-01',
+        edd: '2027-04-07',
+        lmpStatus: 'known',
+        early_anc_visit: true,
+        systolicBP: 110,
+        diastolicBP: 70,
+        weight: 52,
+        ironFolicAcid: 'Already Prescribed',
+        tetanusToxoid: 'TD1',
+        dangerSignsPresent: 'no',
+        high_risk: 'no',
+        nextVisitDate: '2026-10-02',
+        provisionalDiagnosisType: 'Routine ANC'
+      },
+      {
+        visitDate: '2026-09-20',
+        recordedBy: 'mw1',
+        ironFolicAcid: 'Not Prescribed',
+        tetanusToxoid: 'Not Prescribed'
+      }
+    ],
+    testRecords: []
+  }, '2026-09');
+
+  const provider = result.providers.mw1;
+  assert.ok(provider);
+  assert.equal(provider.indicators.anc_early.numerator, 1);
+  assert.equal(provider.indicators.anc_dating.numerator, 1);
+  assert.equal(provider.indicators.anc_bp.numerator, 1);
+  assert.equal(provider.indicators.anc_weight.numerator, 1);
+  assert.equal(provider.indicators.anc_ifa.numerator, 1);
+  assert.equal(provider.indicators.anc_td.numerator, 1);
+  assert.equal(provider.indicators.anc_danger_screen.numerator, 1);
+  assert.equal(provider.indicators.anc_high_risk.numerator, 1);
+  assert.equal(provider.indicators.anc_next_visit.numerator, 1);
+  assert.equal(provider.indicators.anc_diagnosis.numerator, 1);
+  assert.equal(provider.indicators.anc_ifa.denominator, 1);
+  assert.equal(provider.indicators.anc_hiv_syphilis.denominator, 0);
+});
+
+test('attributes ANC lab indicators to the first test in the month', () => {
+  const result = calculatePatientAncContribution({
+    id: 'p-anc-2',
+    created_by: 'owner1'
+  }, {
+    antenatalVisits: [],
+    testRecords: [
+      {
+        testDate: '2026-09-08',
+        createdBy: 'mw2',
+        hivResult: 'Non-reactive',
+        syphilisResult: 'Non-reactive',
+        hemoglobinResult: 10.8
+      },
+      {
+        testDate: '2026-09-22',
+        createdBy: 'mw2',
+        hivResult: 'No Test Yet',
+        syphilisResult: 'No Test Yet'
+      }
+    ]
+  }, '2026-09');
+
+  assert.ok(result.providers.mw2);
+  assert.equal(result.providers.mw2.indicators.anc_hiv_syphilis.percentage, 100);
+  assert.equal(result.providers.mw2.indicators.anc_hemoglobin.percentage, 100);
+  assert.equal(result.providers.owner1, undefined);
+  assert.equal(result.providers.mw2.indicators.anc_ifa.denominator, 0);
+});
+
+test('fails incomplete ANC documentation on existing fields only', () => {
+  assert.equal(evaluateAncIndicator('anc_ifa', { ironFolicAcid: 'Not Prescribed' }), false);
+  assert.equal(evaluateAncIndicator('anc_td', { tetanusToxoid: '' }), false);
+  assert.equal(evaluateAncIndicator('anc_high_risk', { high_risk: 'yes', risk_factors: [] }), false);
+  assert.equal(evaluateAncIndicator('anc_high_risk', { high_risk: 'yes', risk_factors: ['anemia'] }), true);
+  assert.equal(evaluateAncIndicator('anc_diagnosis', { provisionalDiagnosisType: 'Other' }), false);
+  assert.equal(evaluateAncIndicator('anc_diagnosis', {
+    provisionalDiagnosisType: 'Other',
+    provisionalDiagnosisOther: 'Malaria'
+  }), true);
+  assert.equal(evaluateAncIndicator('anc_dating', {
+    lmpStatus: 'unknown',
+    manualGestationalAge: 16
+  }), true);
+  assert.equal(evaluateAncIndicator('anc_hiv_syphilis', {
+    hivResult: 'Non-reactive',
+    syphilisResult: 'No Test Yet'
+  }), false);
+  assert.equal(evaluateAncIndicator('anc_early', {
+    visitDate: '2026-09-10',
+    lmp: '2026-07-20',
+    lmpStatus: 'known'
+  }), true);
+  assert.equal(evaluateAncIndicator('anc_early', {
+    visitDate: '2026-09-10',
+    lmp: '2026-04-01',
+    lmpStatus: 'known'
+  }), false);
+});
+
+test('all-time ANC scoring uses the first dated visit and test', () => {
+  const result = calculatePatientAncContribution({
+    id: 'p-anc-all',
+    created_by: 'mw1'
+  }, {
+    antenatalVisits: [
+      {
+        visitDate: '2026-07-02',
+        recordedBy: 'mw1',
+        lmp: '2026-05-01',
+        edd: '2027-02-05',
+        lmpStatus: 'known',
+        systolicBP: 118,
+        diastolicBP: 76,
+        weight: 54,
+        ironFolicAcid: 'Prescribed',
+        tetanusToxoid: 'Completed',
+        dangerSignsPresent: 'yes',
+        high_risk: 'no',
+        nextVisitDate: '2026-08-01',
+        provisionalDiagnosisType: 'Routine ANC'
+      },
+      {
+        visitDate: '2026-09-02',
+        recordedBy: 'mw1',
+        ironFolicAcid: 'Not Prescribed'
+      }
+    ],
+    testRecords: [
+      {
+        testDate: '2026-08-15',
+        createdBy: 'mw1',
+        hivResult: 'Non-reactive',
+        syphilisResult: 'Non-reactive',
+        hemoglobinResult: 12
+      }
+    ]
+  }, 'all');
+
+  assert.equal(result.providers.mw1.indicators.anc_ifa.numerator, 1);
+  assert.equal(result.providers.mw1.indicators.anc_ifa.denominator, 1);
+  assert.equal(result.providers.mw1.indicators.anc_hiv_syphilis.denominator, 1);
 });

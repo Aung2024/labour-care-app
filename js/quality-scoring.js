@@ -194,6 +194,173 @@
     }
   ];
 
+  var NEWBORN_INDICATOR_DEFS = INDICATOR_DEFS;
+
+  var ANC_INDICATOR_DEFS = [
+    {
+      id: 'anc_early',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'earlyAncSection',
+      en: 'Early ANC visit (before 14 weeks)',
+      mm: 'ကိုယ်ဝန် (၁၄)ပတ်အတွင်း ပထမဆုံး ANC ပြသခြင်း',
+      shortEn: 'Early ANC',
+      shortMm: 'စောစီးစွာ ANC',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_dating',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'lmp',
+      en: 'Pregnancy dating recorded (LMP and EDD, or manual dating)',
+      mm: 'ကိုယ်ဝန်သက်တမ်း သတ်မှတ်ခြင်း (LMP နှင့် EDD)',
+      shortEn: 'Pregnancy dating',
+      shortMm: 'ကိုယ်ဝန်သက်တမ်း',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_bp',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'systolicBP',
+      en: 'Blood pressure recorded',
+      mm: 'သွေးပေါင်ချိန် တိုင်းတာမှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Blood pressure',
+      shortMm: 'သွေးပေါင်ချိန်',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_weight',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'weight',
+      en: 'Weight recorded',
+      mm: 'ကိုယ်အလေးချိန် တိုင်းတာမှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Weight',
+      shortMm: 'ကိုယ်အလေးချိန်',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_ifa',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'ironFolicAcid',
+      en: 'Iron and folic acid prescribed',
+      mm: 'သံဓာတ်နှင့် ဖောလစ်အက်ဆစ် ပေးခြင်း',
+      shortEn: 'Iron and folic acid',
+      shortMm: 'သံဓာတ်နှင့် ဖောလစ်အက်ဆစ်',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_td',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'tetanusToxoid',
+      en: 'Tetanus diphtheria (TD) status recorded',
+      mm: 'မေးခိုင်၊ ဆုံဆို့နာ ကာကွယ်ဆေး (TD) မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Tetanus diphtheria (TD)',
+      shortMm: 'TD ကာကွယ်ဆေး',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_danger_screen',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'dangerSignsNo',
+      en: 'Danger signs screened',
+      mm: 'အန္တရာယ်လက္ခဏာ စစ်ဆေးခြင်း',
+      shortEn: 'Danger signs',
+      shortMm: 'အန္တရာယ်လက္ခဏာ',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_high_risk',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'highRiskNo',
+      en: 'High-risk status documented',
+      mm: 'အန္တရာယ်ဖြစ်နိုင်ခြေ မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'High-risk status',
+      shortMm: 'အန္တရာယ်ဖြစ်နိုင်ခြေ',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_next_visit',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'nextVisitDate',
+      en: 'Next ANC visit date scheduled',
+      mm: 'နောက်တစ်ကြိမ် ANC ပြန်ပြရက် သတ်မှတ်ခြင်း',
+      shortEn: 'Next ANC visit',
+      shortMm: 'ANC ပြန်ပြရက်',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_diagnosis',
+      domain: 'antenatal',
+      source: 'anc_visit',
+      formHighlight: 'provisionalDiagnosisType',
+      en: 'Provisional diagnosis recorded',
+      mm: 'ယာယီရောဂါသတ်မှတ်ချက် မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Provisional diagnosis',
+      shortMm: 'ယာယီရောဂါသတ်မှတ်ချက်',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC visit',
+      dataSourceMm: 'ANC ပြသမှတ်တမ်း'
+    },
+    {
+      id: 'anc_hiv_syphilis',
+      domain: 'antenatal',
+      source: 'anc_test',
+      formHighlight: 'hivResult',
+      en: 'HIV and syphilis test results recorded',
+      mm: 'HIV နှင့် ကာလသားရောဂါ စစ်ဆေးမှု ရလဒ် မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'HIV and syphilis',
+      shortMm: 'HIV နှင့် ကာလသားရောဂါ',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC lab tests',
+      dataSourceMm: 'ANC ဓာတ်ခွဲစစ်ဆေးမှု'
+    },
+    {
+      id: 'anc_hemoglobin',
+      domain: 'antenatal',
+      source: 'anc_test',
+      formHighlight: 'hemoglobinResult',
+      en: 'Hemoglobin result recorded',
+      mm: 'သွေးအား (Hb) ရလဒ် မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Hemoglobin',
+      shortMm: 'သွေးအား (Hb)',
+      defaultTarget: 80,
+      dataSourceEn: 'ANC lab tests',
+      dataSourceMm: 'ANC ဓာတ်ခွဲစစ်ဆေးမှု'
+    }
+  ];
+
+  function indicatorDefsForDomain(domain) {
+    if (domain === 'antenatal') return ANC_INDICATOR_DEFS;
+    if (domain === 'all') return INDICATOR_DEFS.concat(ANC_INDICATOR_DEFS);
+    return INDICATOR_DEFS;
+  }
+
   function isAffirmative(value) {
     return value === true || ['yes', 'y', 'true', '1'].indexOf(String(value || '').toLowerCase().trim()) >= 0;
   }
@@ -315,9 +482,9 @@
     return null;
   }
 
-  function emptyIndicatorTotals() {
+  function emptyIndicatorTotals(defs) {
     var result = {};
-    INDICATOR_DEFS.forEach(function (indicator) {
+    (defs || INDICATOR_DEFS).forEach(function (indicator) {
       result[indicator.id] = { numerator: 0, denominator: 0, percentage: 0 };
     });
     return result;
@@ -482,8 +649,184 @@
     return { patientId: patientId, month: month, schemaVersion: QI_SCHEMA_VERSION, providers: byProvider };
   }
 
-  function mergeProviderIndicators(target, source) {
-    INDICATOR_DEFS.forEach(function (indicator) {
+  function sortedAncVisits(visits) {
+    return (visits || []).slice().sort(function (left, right) {
+      var leftDate = dateFromFields(left, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
+      var rightDate = dateFromFields(right, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
+      var leftTime = leftDate ? leftDate.getTime() : 0;
+      var rightTime = rightDate ? rightDate.getTime() : 0;
+      if (leftTime !== rightTime) return leftTime - rightTime;
+      return visitNumberOf(left) - visitNumberOf(right);
+    });
+  }
+
+  function sortedAncTests(tests) {
+    return (tests || []).slice().sort(function (left, right) {
+      var leftDate = dateFromFields(left, ['testDate', 'test_date', 'timestamp', 'createdAt', 'created_at']);
+      var rightDate = dateFromFields(right, ['testDate', 'test_date', 'timestamp', 'createdAt', 'created_at']);
+      return (leftDate ? leftDate.getTime() : 0) - (rightDate ? rightDate.getTime() : 0);
+    });
+  }
+
+  function isAncMedicationRecorded(value) {
+    var key = String(value || '').trim();
+    return key === 'Prescribed' || key === 'Given' || key === 'Already Prescribed';
+  }
+
+  function hasTdStatus(visit) {
+    var key = String((visit && (visit.tetanusToxoid || visit.td)) || '').trim();
+    if (!key || key === 'Not Prescribed') return false;
+    return ['TD1', 'TD2', 'Completed', 'Prescribed', 'Already Prescribed', 'Given'].indexOf(key) >= 0;
+  }
+
+  function hasBloodPressure(visit) {
+    if (hasNumericValue(visit && visit.systolicBP) && hasNumericValue(visit && visit.diastolicBP)) return true;
+    var raw = String((visit && (visit.bloodPressure || visit.bp)) || '').trim();
+    var match = raw.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/);
+    return !!(match && Number(match[1]) > 0 && Number(match[2]) > 0);
+  }
+
+  function hasPregnancyDating(visit) {
+    var status = String((visit && visit.lmpStatus) || '').toLowerCase();
+    var lmp = visit && visit.lmp;
+    var edd = visit && (visit.edd || visit.manualEdd);
+    if (status === 'unknown') {
+      return hasNumericValue(visit.manualGestationalAge) || !!(visit.manualEdd || visit.manualEDD);
+    }
+    return !!(lmp && edd);
+  }
+
+  function isEarlyAncVisit(visit, patient) {
+    if (!visit) return false;
+    if (visit.early_anc_visit === true || isAffirmative(visit.early_anc_visit)) return true;
+    if (visit.early_anc_visit === false) return false;
+    var visitDate = dateFromFields(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
+    var profile = patient || {};
+    var lmp = visit.lmp || profile.lmp || (profile.profile && profile.profile.lmp);
+    if (lmp && visit.lmpStatus !== 'unknown' && visitDate) {
+      var lmpDate = timestampToDate(lmp);
+      if (lmpDate) {
+        var days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
+        if (days >= 0) return days < 98;
+      }
+    }
+    var ga = parseFloat(visit.gestationalAge != null ? visit.gestationalAge : visit.gestational_age != null ? visit.gestational_age : visit.ga_weeks != null ? visit.ga_weeks : visit.manualGestationalAge);
+    return Number.isFinite(ga) && ga > 0 && ga < 14;
+  }
+
+  function hasHighRiskDocumented(visit) {
+    var hr = String((visit && (visit.high_risk || visit.highRisk)) || '').toLowerCase();
+    if (hr === 'no' || hr === 'false') return true;
+    if (hr === 'yes' || hr === 'true') {
+      var factors = (visit && (visit.risk_factors || visit.riskFactors)) || [];
+      return Array.isArray(factors) && factors.length >= 1;
+    }
+    return false;
+  }
+
+  function hasProvisionalDiagnosis(visit) {
+    var type = String((visit && visit.provisionalDiagnosisType) || '').trim();
+    if (!type) return false;
+    if (type.toLowerCase() === 'other') {
+      return !!String((visit && visit.provisionalDiagnosisOther) || '').trim();
+    }
+    return true;
+  }
+
+  function hasLabResult(value) {
+    var text = String(value == null ? '' : value).trim();
+    if (!text) return false;
+    return text.toLowerCase() !== 'no test yet';
+  }
+
+  function evaluateAncIndicator(indicatorId, record, patient) {
+    if (indicatorId === 'anc_early') return isEarlyAncVisit(record, patient);
+    if (indicatorId === 'anc_dating') return hasPregnancyDating(record);
+    if (indicatorId === 'anc_bp') return hasBloodPressure(record);
+    if (indicatorId === 'anc_weight') return hasNumericValue(record && record.weight);
+    if (indicatorId === 'anc_ifa') return isAncMedicationRecorded(record && record.ironFolicAcid);
+    if (indicatorId === 'anc_td') return hasTdStatus(record);
+    if (indicatorId === 'anc_danger_screen') {
+      var danger = String((record && record.dangerSignsPresent) || '').toLowerCase();
+      return danger === 'yes' || danger === 'no';
+    }
+    if (indicatorId === 'anc_high_risk') return hasHighRiskDocumented(record);
+    if (indicatorId === 'anc_next_visit') return !!(record && (record.nextVisitDate || record.next_visit_date));
+    if (indicatorId === 'anc_diagnosis') return hasProvisionalDiagnosis(record);
+    if (indicatorId === 'anc_hiv_syphilis') {
+      return hasLabResult(record && record.hivResult) &&
+        hasLabResult(record && (record.syphilisResult || record.vdrlResult));
+    }
+    if (indicatorId === 'anc_hemoglobin') return hasNumericValue(record && record.hemoglobinResult);
+    return false;
+  }
+
+  function calculatePatientAncContribution(patient, activity, month) {
+    var profile = patient || {};
+    var patientId = profile.id || profile.patientId || 'unknown';
+    var visits = Array.isArray(activity && activity.antenatalVisits) ? activity.antenatalVisits : [];
+    var tests = Array.isArray(activity && activity.testRecords) ? activity.testRecords : [];
+    var byProvider = {};
+
+    function ensure(providerId) {
+      if (!byProvider[providerId]) {
+        byProvider[providerId] = {
+          providerId: providerId,
+          indicators: emptyIndicatorTotals(ANC_INDICATOR_DEFS)
+        };
+      }
+      return byProvider[providerId];
+    }
+
+    var monthVisits = sortedAncVisits(visits).filter(function (visit) {
+      var eventDate = dateFromFields(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
+      return eventDate && (month === 'all' || monthKeyForDate(eventDate) === month);
+    });
+    var firstVisit = monthVisits[0];
+    if (firstVisit) {
+      var visitProviderId = providerFromRecord(firstVisit, profile);
+      if (visitProviderId) {
+        var visitBucket = ensure(visitProviderId);
+        ANC_INDICATOR_DEFS.forEach(function (indicator) {
+          if (indicator.source !== 'anc_visit') return;
+          var totals = visitBucket.indicators[indicator.id];
+          totals.denominator += 1;
+          if (evaluateAncIndicator(indicator.id, firstVisit, profile)) totals.numerator += 1;
+        });
+      }
+    }
+
+    var monthTests = sortedAncTests(tests).filter(function (test) {
+      var eventDate = dateFromFields(test, ['testDate', 'test_date', 'timestamp', 'createdAt', 'created_at']);
+      return eventDate && (month === 'all' || monthKeyForDate(eventDate) === month);
+    });
+    var firstTest = monthTests[0];
+    if (firstTest) {
+      var testProviderId = providerFromRecord(firstTest, profile);
+      if (testProviderId) {
+        var testBucket = ensure(testProviderId);
+        ANC_INDICATOR_DEFS.forEach(function (indicator) {
+          if (indicator.source !== 'anc_test') return;
+          var totals = testBucket.indicators[indicator.id];
+          totals.denominator += 1;
+          if (evaluateAncIndicator(indicator.id, firstTest, profile)) totals.numerator += 1;
+        });
+      }
+    }
+
+    Object.keys(byProvider).forEach(function (providerId) {
+      var bucket = byProvider[providerId];
+      ANC_INDICATOR_DEFS.forEach(function (indicator) {
+        var totals = bucket.indicators[indicator.id];
+        totals.percentage = percentage(totals.numerator, totals.denominator);
+      });
+    });
+
+    return { patientId: patientId, month: month, schemaVersion: QI_SCHEMA_VERSION, providers: byProvider };
+  }
+
+  function mergeProviderIndicators(target, source, defs) {
+    (defs || INDICATOR_DEFS).forEach(function (indicator) {
       var left = target[indicator.id] || { numerator: 0, denominator: 0 };
       var right = (source && source[indicator.id]) || { numerator: 0, denominator: 0 };
       var numerator = (left.numerator || 0) + (right.numerator || 0);
@@ -497,10 +840,11 @@
     return target;
   }
 
-  function summarizeProviderIndicators(indicators) {
+  function summarizeProviderIndicators(indicators, defs) {
+    var list = defs || INDICATOR_DEFS;
     var scored = 0;
     var totalPct = 0;
-    INDICATOR_DEFS.forEach(function (indicator) {
+    list.forEach(function (indicator) {
       var item = indicators[indicator.id];
       if (item && item.denominator > 0) {
         scored += 1;
@@ -511,7 +855,7 @@
       indicators: indicators,
       summaryPercentage: scored ? Math.round((totalPct / scored) * 10) / 10 : 0,
       scoredIndicatorCount: scored,
-      indicatorCount: INDICATOR_DEFS.length
+      indicatorCount: list.length
     };
   }
 
@@ -532,6 +876,9 @@
     QI_SCHEMA_VERSION: QI_SCHEMA_VERSION,
     REASON_CATEGORIES: REASON_CATEGORIES,
     INDICATOR_DEFS: INDICATOR_DEFS,
+    NEWBORN_INDICATOR_DEFS: NEWBORN_INDICATOR_DEFS,
+    ANC_INDICATOR_DEFS: ANC_INDICATOR_DEFS,
+    indicatorDefsForDomain: indicatorDefsForDomain,
     monthKeyForDate: monthKeyForDate,
     currentYangonMonthKey: currentYangonMonthKey,
     nextMonthKey: nextMonthKey,
@@ -543,6 +890,8 @@
     scoreBand: scoreBand,
     emptyIndicatorTotals: emptyIndicatorTotals,
     calculatePatientQualityContribution: calculatePatientQualityContribution,
+    calculatePatientAncContribution: calculatePatientAncContribution,
+    evaluateAncIndicator: evaluateAncIndicator,
     mergeProviderIndicators: mergeProviderIndicators,
     summarizeProviderIndicators: summarizeProviderIndicators,
     isValidReasonCategory: isValidReasonCategory,
