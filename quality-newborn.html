@@ -18,8 +18,8 @@
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
   <script src="js/ui-dialogs.js"></script>
-  <script src="js/quality-scoring.js"></script>
-  <script src="js/quality-improvement.js"></script>
+  <script src="js/quality-scoring.js?v=285"></script>
+  <script src="js/quality-improvement.js?v=285"></script>
 </head>
 <body class="qi-app">
   <div class="header-section">
@@ -215,20 +215,46 @@
       return options;
     }
 
+    function monthLabel(month) {
+      if (window.QualityImprovement && typeof QualityImprovement.formatMonthLabel === 'function') {
+        return QualityImprovement.formatMonthLabel(month, currentLanguage);
+      }
+      if (window.QualityScoring && typeof QualityScoring.monthLabel === 'function') {
+        return QualityScoring.monthLabel(month, currentLanguage);
+      }
+      if (month === 'all') return t('All time', 'အချိန်အားလုံး');
+      return String(month || '—');
+    }
+
     function fillMonthSelect() {
       var select = document.getElementById('monthSelect');
+      var previous = selectedMonth || select.value || 'all';
       select.innerHTML = monthOptions().map(function (month) {
-        var label = QualityScoring.monthLabel(month, currentLanguage);
-        return '<option value="' + month + '">' + label + '</option>';
+        return '<option value="' + month + '">' + monthLabel(month) + '</option>';
       }).join('');
-      select.value = 'all';
-      selectedMonth = 'all';
+      select.value = previous && monthOptions().indexOf(previous) >= 0 ? previous : 'all';
+      selectedMonth = select.value;
     }
 
     function actionScoreMonth() {
       return selectedMonth === 'all'
         ? QualityScoring.currentYangonMonthKey(new Date())
         : selectedMonth;
+    }
+
+    async function loadPlanForEdit() {
+      var monthPlan = await QualityImprovement.loadActionPlan(selectedProviderId, actionScoreMonth());
+      var allPlan = await QualityImprovement.loadActionPlan(selectedProviderId, 'all');
+      return {
+        id: monthPlan && monthPlan.id,
+        providerId: selectedProviderId,
+        scoreMonth: actionScoreMonth(),
+        indicators: Object.assign(
+          {},
+          (allPlan && allPlan.indicators) || {},
+          (monthPlan && monthPlan.indicators) || {}
+        )
+      };
     }
 
     function fillMidwifeSelect() {
@@ -249,7 +275,10 @@
         selectedProviderId = null;
         return;
       }
-      selectedProviderId = select.value || midwives[0].id;
+      var requested = new URLSearchParams(location.search).get('provider');
+      selectedProviderId = (requested && midwives.some(function (item) { return item.id === requested; }))
+        ? requested
+        : (select.value || midwives[0].id);
       select.value = selectedProviderId;
     }
 
@@ -340,7 +369,7 @@
       try {
         QualityImprovement.clearSummaryCache(selectedProviderId, selectedMonth);
         currentSummary = await QualityImprovement.loadProviderMonthSummary(selectedProviderId, selectedMonth, meta);
-        currentPlan = await QualityImprovement.loadActionPlan(selectedProviderId, actionScoreMonth());
+        currentPlan = await loadPlanForEdit();
         townshipTmo = meta.township
           ? await QualityImprovement.loadTownshipTmo(meta.township)
           : null;
@@ -441,7 +470,7 @@
       var keys = QualityScoring.upcomingMonthKeys(scoreMonth, 13);
       if (keys.indexOf(value) < 0) keys.unshift(value);
       select.innerHTML = keys.map(function (month) {
-        return '<option value="' + month + '">' + QualityScoring.monthLabel(month, currentLanguage) + '</option>';
+        return '<option value="' + month + '">' + monthLabel(month) + '</option>';
       }).join('');
       select.value = value;
     }
@@ -516,7 +545,7 @@
       saveButton.disabled = true;
       try {
         var owner = resolveActionOwner();
-        currentPlan = await QualityImprovement.saveActionPlanIndicator(
+        await QualityImprovement.saveActionPlanIndicator(
           viewer,
           selectedProviderId,
           actionScoreMonth(),
@@ -532,6 +561,7 @@
             targetMonth: document.getElementById('modalTargetMonth').value
           }
         );
+        currentPlan = await loadPlanForEdit();
         actionModal.hide();
         await AppDialog.alert(
           t('Improvement action saved.', 'တိုးတက်ရေး လုပ်ဆောင်ချက် သိမ်းပြီးပါပြီ။'),
@@ -573,21 +603,34 @@
       btn.addEventListener('click', function () { applyLanguage(btn.dataset.lang); });
     });
 
+    async function initializePage() {
+      if (!firebase.auth().currentUser) return;
+      applyLanguage(currentLanguage);
+      fillMonthSelect();
+      viewer = await QualityImprovement.loadCurrentUserProfile();
+      if (QualityImprovement.isSupervisorRole(viewer.role)) {
+        midwives = await QualityImprovement.listScopedMidwives(viewer);
+      }
+      fillMidwifeSelect();
+      updateReviewActionsLink();
+      await refreshScores();
+    }
+
     firebase.auth().onAuthStateChanged(async function (user) {
       if (!user) return;
       try {
-        applyLanguage(currentLanguage);
-        fillMonthSelect();
-        viewer = await QualityImprovement.loadCurrentUserProfile();
-        if (QualityImprovement.isSupervisorRole(viewer.role)) {
-          midwives = await QualityImprovement.listScopedMidwives(viewer);
-        }
-        fillMidwifeSelect();
-        await refreshScores();
+        await initializePage();
       } catch (error) {
         console.error(error);
         setStatus(error.message || t('Could not initialize page.', 'စာမျက်နှာ စတင်၍မရပါ။'), true);
       }
+    });
+    window.addEventListener('pageshow', function (event) {
+      if (!event.persisted) return;
+      initializePage().catch(function (error) {
+        console.error(error);
+        setStatus(error.message || t('Could not initialize page.', 'စာမျက်နှာ စတင်၍မရပါ။'), true);
+      });
     });
   </script>
 </body>

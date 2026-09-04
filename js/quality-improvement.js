@@ -356,17 +356,7 @@
     if (!actionOwner) throw new Error('Please enter who will do the action');
     var actionOwnerId = String(payload.actionOwnerId || '').trim();
 
-    var docId = Scoring.planDocId(providerId, scoreMonth);
-    var indicatorPath = 'indicators.' + indicatorId;
-    var update = {
-      providerId: providerId,
-      scoreMonth: scoreMonth,
-      targetMonth: targetMonth,
-      hasSavedActions: true,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: viewer.uid
-    };
-    update[indicatorPath] = {
+    var indicatorPayload = {
       reasonCategory: payload.reasonCategory,
       explanation: explanation,
       nextAction: nextAction,
@@ -375,11 +365,38 @@
       actionOwnerId: actionOwnerId,
       nextTargetPercent: Number(payload.nextTargetPercent),
       targetMonth: targetMonth,
+      sourceScoreMonth: scoreMonth,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedBy: viewer.uid
     };
-    await firebase.firestore().collection('quality_improvement_plans').doc(docId).set(update, { merge: true });
-    delete PLAN_CACHE[docId];
+    var monthlyId = Scoring.planDocId(providerId, scoreMonth);
+    var allId = Scoring.planDocId(providerId, 'all');
+    var indicatorPath = 'indicators.' + indicatorId;
+    var monthlyUpdate = {
+      providerId: providerId,
+      scoreMonth: scoreMonth,
+      targetMonth: targetMonth,
+      hasSavedActions: true,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: viewer.uid
+    };
+    monthlyUpdate[indicatorPath] = indicatorPayload;
+    var allUpdate = {
+      providerId: providerId,
+      scoreMonth: 'all',
+      targetMonth: targetMonth,
+      hasSavedActions: true,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: viewer.uid
+    };
+    allUpdate[indicatorPath] = indicatorPayload;
+    var plans = firebase.firestore().collection('quality_improvement_plans');
+    await Promise.all([
+      plans.doc(monthlyId).set(monthlyUpdate, { merge: true }),
+      plans.doc(allId).set(allUpdate, { merge: true })
+    ]);
+    delete PLAN_CACHE[monthlyId];
+    delete PLAN_CACHE[allId];
     return loadActionPlan(providerId, scoreMonth);
   }
 
@@ -414,6 +431,29 @@
     return comments;
   }
 
+  function formatMonthLabel(month, lang) {
+    var Scoring = global.QualityScoring;
+    if (Scoring && typeof Scoring.monthLabel === 'function') {
+      return Scoring.monthLabel(month, lang);
+    }
+    if (month === 'all') return lang === 'en' ? 'All time' : 'အချိန်အားလုံး';
+    return String(month || '—');
+  }
+
+  function knownPlanMonths() {
+    var Scoring = global.QualityScoring;
+    if (Scoring && typeof Scoring.recentMonthKeys === 'function') {
+      return ['all'].concat(Scoring.recentMonthKeys(Scoring.currentYangonMonthKey(new Date()), 18));
+    }
+    var keys = ['all'];
+    var cursor = Scoring.currentYangonMonthKey(new Date());
+    for (var i = 0; i < 18 && cursor; i++) {
+      keys.push(cursor);
+      cursor = Scoring.previousMonthKey(cursor);
+    }
+    return keys;
+  }
+
   async function loadActionPlans(providerId) {
     var Scoring = global.QualityScoring;
     var byId = {};
@@ -421,6 +461,16 @@
       if (!docSnap || !docSnap.exists) return;
       var data = Object.assign({ id: docSnap.id }, docSnap.data() || {});
       byId[docSnap.id] = data;
+    };
+    var readDoc = function (docId) {
+      return withTimeout(
+        firebase.firestore().collection('quality_improvement_plans').doc(docId).get(),
+        8000,
+        'QI plan'
+      ).then(addPlan).catch(function (error) {
+        console.warn('QI plan read failed', docId, error);
+        return null;
+      });
     };
 
     try {
@@ -437,17 +487,10 @@
       console.warn('QI action plan query unavailable, reading known months', error);
     }
 
-    var months = ['all'].concat(Scoring.recentMonthKeys(Scoring.currentYangonMonthKey(new Date()), 18));
-    var reads = months.map(function (month) {
-      return withTimeout(
-        firebase.firestore().collection('quality_improvement_plans')
-          .doc(Scoring.planDocId(providerId, month))
-          .get(),
-        8000,
-        'QI plan'
-      ).then(addPlan).catch(function () { return null; });
+    var ids = knownPlanMonths().map(function (month) {
+      return Scoring.planDocId(providerId, month);
     });
-    await Promise.all(reads);
+    await Promise.all(ids.map(readDoc));
 
     return Object.keys(byId).map(function (id) { return byId[id]; }).sort(function (a, b) {
       return String(b.scoreMonth || '').localeCompare(String(a.scoreMonth || ''));
@@ -485,7 +528,7 @@
     var Scoring = global.QualityScoring;
     var currentMonth = Scoring.currentYangonMonthKey(now);
     var previousMonth = Scoring.previousMonthKey(currentMonth);
-    var months = Scoring.recentMonthKeys(currentMonth, 14);
+    var months = knownPlanMonths();
     var plans = await Promise.all(months.map(function (month) {
       return loadActionPlan(providerId, month);
     }));
@@ -530,6 +573,7 @@
     clearSummaryCache: clearSummaryCache,
     loadActionPlan: loadActionPlan,
     isSavedAction: isSavedAction,
+    formatMonthLabel: formatMonthLabel,
     loadActionPlans: loadActionPlans,
     saveActionPlanIndicator: saveActionPlanIndicator,
     loadComments: loadComments,

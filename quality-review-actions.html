@@ -17,14 +17,14 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
-  <script src="js/quality-scoring.js"></script>
-  <script src="js/quality-improvement.js"></script>
+  <script src="js/quality-scoring.js?v=285"></script>
+  <script src="js/quality-improvement.js?v=285"></script>
 </head>
 <body class="qi-app">
   <header class="app-header">
     <div class="container header-row">
       <h1><i class="fas fa-list-check me-2"></i><span class="lang-text" data-en="Review Actions" data-mm="လုပ်ဆောင်ချက်များ ပြန်ကြည့်ရန်">Review Actions</span></h1>
-      <a href="quality-newborn.html" class="btn btn-outline-light btn-sm touch-control">
+      <a href="quality-newborn.html" id="backToScoresBtn" class="btn btn-outline-light btn-sm touch-control">
         <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
       </a>
     </div>
@@ -57,6 +57,24 @@
     const reasonLabel = (reasonId) => {
       const reason = QualityScoring.REASON_CATEGORIES.find((item) => item.id === reasonId)
       return reason ? reason.en : reasonId
+    }
+
+    const monthLabel = (month) => {
+      if (window.QualityImprovement && typeof QualityImprovement.formatMonthLabel === 'function') {
+        return QualityImprovement.formatMonthLabel(month, 'en')
+      }
+      if (window.QualityScoring && typeof QualityScoring.monthLabel === 'function') {
+        return QualityScoring.monthLabel(month, 'en')
+      }
+      return month === 'all' ? 'All time' : String(month || '—')
+    }
+
+    const isSavedAction = (action) => {
+      if (window.QualityImprovement && typeof QualityImprovement.isSavedAction === 'function') {
+        return QualityImprovement.isSavedAction(action)
+      }
+      return !!(action && (action.nextAction || action.reasonCategory || action.explanation ||
+        action.nextTargetPercent != null || action.targetMonth))
     }
 
     const setStatus = (message, isError) => {
@@ -115,14 +133,26 @@
 
     const renderActions = async (plans) => {
       const mount = document.getElementById('actionList')
+      const monthlyPlans = plans.filter((plan) => plan.scoreMonth && plan.scoreMonth !== 'all')
+      const allPlans = plans.filter((plan) => plan.scoreMonth === 'all' || String(plan.id || '').endsWith('_all'))
       const rows = []
-      plans.forEach((plan) => {
+      const seenIndicators = {}
+      const collect = (plan, onlyNew) => {
         Object.keys(plan.indicators || {}).forEach((indicatorId) => {
           const action = plan.indicators[indicatorId]
-          if (!QualityImprovement.isSavedAction(action)) return
-          rows.push({ plan, indicatorId, action })
+          if (!isSavedAction(action)) return
+          if (onlyNew && seenIndicators[indicatorId]) return
+          seenIndicators[indicatorId] = true
+          rows.push({
+            plan,
+            indicatorId,
+            action,
+            scoreMonth: action.sourceScoreMonth || plan.scoreMonth || ''
+          })
         })
-      })
+      }
+      monthlyPlans.forEach((plan) => collect(plan, true))
+      allPlans.forEach((plan) => collect(plan, true))
       if (!rows.length) {
         mount.innerHTML = '<div class="empty-state"><i class="fas fa-clipboard-check fa-2x mb-3"></i>' +
           '<p class="mb-0">No saved improvement actions yet.</p></div>'
@@ -133,7 +163,7 @@
         const indicator = indicatorById(row.indicatorId) || { en: row.indicatorId }
         const action = row.action
         const rowId = 'action-row-' + index
-        const scoreMonth = row.plan.scoreMonth || ''
+        const scoreMonth = row.scoreMonth || row.plan.scoreMonth || ''
         const targetMonth = action.targetMonth || row.plan.targetMonth || ''
         const ownerType = action.actionOwnerType
         const ownerPrefix = ownerType === 'self'
@@ -146,9 +176,9 @@
           '<div class="d-flex justify-content-between align-items-start gap-2">' +
           '<h2 class="action-title">' + escapeHtml(indicator.en) + '</h2>' +
           '<div class="qi-badges">' +
-          '<span class="period-badge">Score · ' + escapeHtml(QualityScoring.monthLabel(scoreMonth, 'en')) + '</span>' +
+          '<span class="period-badge">Score · ' + escapeHtml(monthLabel(scoreMonth)) + '</span>' +
           (targetMonth
-            ? '<span class="period-badge target">Target · ' + escapeHtml(QualityScoring.monthLabel(targetMonth, 'en')) + '</span>'
+            ? '<span class="period-badge target">Target · ' + escapeHtml(monthLabel(targetMonth)) + '</span>'
             : '') +
           '</div></div>' +
           '<div class="detail-grid">' +
@@ -162,7 +192,7 @@
           '<span class="detail-value">' + escapeHtml(ownerPrefix + (action.actionOwner || '—')) + '</span></div>' +
           '<div class="detail"><span class="detail-label">Next target</span>' +
           '<span class="detail-value">' + escapeHtml(action.nextTargetPercent != null ? action.nextTargetPercent + '%' : '—') +
-          (targetMonth ? ' by ' + escapeHtml(QualityScoring.monthLabel(targetMonth, 'en')) : '') +
+          (targetMonth ? ' by ' + escapeHtml(monthLabel(targetMonth)) : '') +
           '</span></div>' +
           '</div>' +
           '<div class="comments"><div class="comment-list">Loading comments…</div>' +
@@ -175,7 +205,7 @@
       }).join('')
 
       rows.forEach((row, index) => {
-        loadComments(row.plan.providerId, row.plan.scoreMonth, row.indicatorId, 'action-row-' + index)
+        loadComments(row.plan.providerId, row.scoreMonth || row.plan.scoreMonth, row.indicatorId, 'action-row-' + index)
       })
     }
 
@@ -229,6 +259,12 @@
           midwives = await QualityImprovement.listScopedMidwives(viewer)
         }
         initializeProviderFilter()
+        const back = document.getElementById('backToScoresBtn')
+        if (back) {
+          back.href = selectedProviderId
+            ? ('quality-newborn.html?provider=' + encodeURIComponent(selectedProviderId))
+            : 'quality-newborn.html'
+        }
         await loadActions()
       } catch (error) {
         setStatus(error.message || 'Could not initialize Review Actions.', true)

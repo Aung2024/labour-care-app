@@ -98,18 +98,28 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(competency, /quality-newborn\.html/);
   assert.match(newborn, /QualityScoring\.INDICATOR_DEFS/);
   assert.match(newborn, /var options = \['all'\]/);
-  assert.match(newborn, /select\.value = 'all'/);
+  assert.match(newborn, /'all'/);
   assert.match(newborn, /id="actionModal"/);
   assert.match(newborn, /id="modalNextAction"/);
   assert.match(newborn, /id="modalActionOwnerType"/);
   assert.match(newborn, /id="modalActionOwnerOther"/);
   assert.match(newborn, /id="modalTargetMonth"/);
+  assert.match(newborn, /quality-scoring\.js\?v=285/);
+  assert.match(reviewActions, /quality-scoring\.js\?v=285/);
+  assert.match(reviewActions, /backToScoresBtn/);
   assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
   assert.doesNotMatch(newborn, /Computed from this midwife/);
   assert.doesNotMatch(newborn, /ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်/);
   assert.match(newborn, /quality-review-actions\.html/);
   assert.match(reviewActions, /No saved improvement actions yet/);
   assert.match(reviewActions, /data-post-comment/);
+});
+
+test('QI action plans persist to the all-time document used by Review Actions', () => {
+  const helper = readAppFile('js/quality-improvement.js');
+  assert.match(helper, /planDocId\(providerId, 'all'\)/);
+  assert.match(helper, /formatMonthLabel/);
+  assert.match(helper, /knownPlanMonths/);
 });
 
 test('immediate and routine newborn forms load QI target reminders', () => {

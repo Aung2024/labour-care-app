@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v284-moh';
+const CACHE_NAME = 'mch-care-v285-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -211,15 +211,9 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
-
-      return fetch(event.request)
+      const fetchPromise = fetch(event.request)
         .then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-
-          if (shouldCacheRequest(requestUrl)) {
+          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           }
@@ -227,14 +221,14 @@ self.addEventListener('fetch', (event) => {
         })
         .catch((error) => {
           console.error('[Service Worker] Asset fetch failed:', error);
-          return caches.match(event.request).then((fallback) =>
-            fallback || new Response('Resource temporarily unavailable', {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-            })
-          );
+          return cachedResponse || new Response('Resource temporarily unavailable', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+          });
         });
+
+      return cachedResponse || fetchPromise;
     })
   );
 });
