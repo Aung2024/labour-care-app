@@ -532,6 +532,36 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Flat per-indicator QI actions. Midwives list by providerId; TMO by township.
+    match /quality_improvement_actions/{actionId} {
+      allow read: if signedIn()
+        && resource.data.providerId is string
+        && (
+          resource.data.providerId == request.auth.uid
+          || (
+            isQualitySupervisor()
+            && currentUserData().role in ["Super Admin", "Central", "admin"]
+          )
+          || (
+            currentUserExists()
+            && currentUserData().role == "TMO"
+            && resource.data.township is string
+            && currentUserData().township == resource.data.township
+          )
+          || (
+            currentUserExists()
+            && currentUserData().role == "Regional Officer"
+            && resource.data.region is string
+            && currentUserData().region == resource.data.region
+          )
+        );
+      allow create, update: if signedIn()
+        && request.resource.data.providerId == request.auth.uid
+        && request.resource.data.indicatorId is string
+        && request.resource.data.nextAction is string;
+      allow delete: if false;
+    }
+
     // Midwife-authored monthly reasons/targets and supervisor comments.
     match /quality_improvement_plans/{planId} {
       allow read: if canReadQualityPlanData() || canReadQualityPlan(planId);

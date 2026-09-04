@@ -17,8 +17,8 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
-  <script src="js/quality-scoring.js?v=285"></script>
-  <script src="js/quality-improvement.js?v=285"></script>
+  <script src="js/quality-scoring.js?v=286"></script>
+  <script src="js/quality-improvement.js?v=286"></script>
 </head>
 <body class="qi-app">
   <header class="app-header">
@@ -131,48 +131,28 @@
       }
     }
 
-    const renderActions = async (plans) => {
+    const renderActions = async (actions) => {
       const mount = document.getElementById('actionList')
-      const monthlyPlans = plans.filter((plan) => plan.scoreMonth && plan.scoreMonth !== 'all')
-      const allPlans = plans.filter((plan) => plan.scoreMonth === 'all' || String(plan.id || '').endsWith('_all'))
-      const rows = []
-      const seenIndicators = {}
-      const collect = (plan, onlyNew) => {
-        Object.keys(plan.indicators || {}).forEach((indicatorId) => {
-          const action = plan.indicators[indicatorId]
-          if (!isSavedAction(action)) return
-          if (onlyNew && seenIndicators[indicatorId]) return
-          seenIndicators[indicatorId] = true
-          rows.push({
-            plan,
-            indicatorId,
-            action,
-            scoreMonth: action.sourceScoreMonth || plan.scoreMonth || ''
-          })
-        })
-      }
-      monthlyPlans.forEach((plan) => collect(plan, true))
-      allPlans.forEach((plan) => collect(plan, true))
+      const rows = (actions || []).filter((action) => isSavedAction(action) && action.indicatorId)
       if (!rows.length) {
         mount.innerHTML = '<div class="empty-state"><i class="fas fa-clipboard-check fa-2x mb-3"></i>' +
           '<p class="mb-0">No saved improvement actions yet.</p></div>'
         return
       }
 
-      mount.innerHTML = rows.map((row, index) => {
-        const indicator = indicatorById(row.indicatorId) || { en: row.indicatorId }
-        const action = row.action
+      mount.innerHTML = rows.map((action, index) => {
+        const indicator = indicatorById(action.indicatorId) || { en: action.indicatorId }
         const rowId = 'action-row-' + index
-        const scoreMonth = row.scoreMonth || row.plan.scoreMonth || ''
-        const targetMonth = action.targetMonth || row.plan.targetMonth || ''
+        const scoreMonth = action.sourceScoreMonth || action.scoreMonth || ''
+        const targetMonth = action.targetMonth || ''
         const ownerType = action.actionOwnerType
         const ownerPrefix = ownerType === 'self'
           ? 'Self · '
           : (ownerType === 'tmo' ? 'TMO · ' : (ownerType === 'other' ? 'Other · ' : ''))
         return '<article class="action-card" id="' + rowId + '" data-action-row ' +
-          'data-provider-id="' + escapeHtml(row.plan.providerId) + '" ' +
+          'data-provider-id="' + escapeHtml(action.providerId || selectedProviderId) + '" ' +
           'data-score-month="' + escapeHtml(scoreMonth) + '" ' +
-          'data-indicator-id="' + escapeHtml(row.indicatorId) + '">' +
+          'data-indicator-id="' + escapeHtml(action.indicatorId) + '">' +
           '<div class="d-flex justify-content-between align-items-start gap-2">' +
           '<h2 class="action-title">' + escapeHtml(indicator.en) + '</h2>' +
           '<div class="qi-badges">' +
@@ -204,8 +184,13 @@
           '</div></article>'
       }).join('')
 
-      rows.forEach((row, index) => {
-        loadComments(row.plan.providerId, row.scoreMonth || row.plan.scoreMonth, row.indicatorId, 'action-row-' + index)
+      rows.forEach((action, index) => {
+        loadComments(
+          action.providerId || selectedProviderId,
+          action.sourceScoreMonth || action.scoreMonth,
+          action.indicatorId,
+          'action-row-' + index
+        )
       })
     }
 
@@ -216,9 +201,10 @@
       }
       setStatus('Loading review actions…')
       try {
-        const plans = await QualityImprovement.loadActionPlans(selectedProviderId)
+        const loader = QualityImprovement.loadSavedActions || QualityImprovement.loadActionPlans
+        const actions = await loader(selectedProviderId)
         setStatus('')
-        await renderActions(plans)
+        await renderActions(actions)
       } catch (error) {
         setStatus(error.message || 'Could not load review actions.', true)
       }

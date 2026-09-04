@@ -559,6 +559,46 @@ test('midwives and scoped TMOs can list QI action plans by providerId', async ()
   await assertFails(getDocs(outOfScopeQuery));
 });
 
+test('midwives can write and list their own flat QI actions', async () => {
+  const ownerDb = environment.authenticatedContext('midwife-a').firestore();
+  const otherDb = environment.authenticatedContext('midwife-b').firestore();
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  await assertSucceeds(setDoc(
+    doc(ownerDb, 'quality_improvement_actions', 'midwife-a__skin_to_skin'),
+    {
+      providerId: 'midwife-a',
+      indicatorId: 'skin_to_skin',
+      nextAction: 'Coach skin-to-skin after every birth',
+      township: 'Alpha',
+      region: 'North',
+      scoreMonth: '2026-09',
+      nextTargetPercent: 80
+    }
+  ));
+  await assertFails(setDoc(
+    doc(otherDb, 'quality_improvement_actions', 'midwife-a__skin_to_skin'),
+    {
+      providerId: 'midwife-a',
+      indicatorId: 'skin_to_skin',
+      nextAction: 'Should not overwrite another midwife'
+    }
+  ));
+  await assertSucceeds(getDoc(
+    doc(ownerDb, 'quality_improvement_actions', 'midwife-a__skin_to_skin')
+  ));
+  await assertSucceeds(getDocs(query(
+    collection(ownerDb, 'quality_improvement_actions'),
+    where('providerId', '==', 'midwife-a')
+  )));
+  await assertFails(getDocs(query(
+    collection(otherDb, 'quality_improvement_actions'),
+    where('providerId', '==', 'midwife-a')
+  )));
+  await assertSucceeds(getDoc(
+    doc(tmoDb, 'quality_improvement_actions', 'midwife-a__skin_to_skin')
+  ));
+});
+
 test('TMO and above can comment on QI plans in scope', async () => {
   const tmoDb = environment.authenticatedContext('tmo-a').firestore();
   const outOfScopeTmoDb = environment.authenticatedContext('tmo-b').firestore();

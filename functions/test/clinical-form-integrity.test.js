@@ -104,8 +104,9 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(newborn, /id="modalActionOwnerType"/);
   assert.match(newborn, /id="modalActionOwnerOther"/);
   assert.match(newborn, /id="modalTargetMonth"/);
-  assert.match(newborn, /quality-scoring\.js\?v=285/);
-  assert.match(reviewActions, /quality-scoring\.js\?v=285/);
+  assert.match(newborn, /quality-scoring\.js\?v=286/);
+  assert.match(reviewActions, /quality-scoring\.js\?v=286/);
+  assert.match(reviewActions, /loadSavedActions/);
   assert.match(reviewActions, /backToScoresBtn/);
   assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
   assert.doesNotMatch(newborn, /Computed from this midwife/);
@@ -117,7 +118,8 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
 
 test('QI action plans persist to the all-time document used by Review Actions', () => {
   const helper = readAppFile('js/quality-improvement.js');
-  assert.match(helper, /planDocId\(providerId, 'all'\)/);
+  assert.match(helper, /quality_improvement_actions/);
+  assert.match(helper, /loadSavedActions/);
   assert.match(helper, /formatMonthLabel/);
   assert.match(helper, /knownPlanMonths/);
 });

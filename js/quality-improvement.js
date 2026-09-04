@@ -356,7 +356,15 @@
     if (!actionOwner) throw new Error('Please enter who will do the action');
     var actionOwnerId = String(payload.actionOwnerId || '').trim();
 
-    var indicatorPayload = {
+    var savedAt = new Date().toISOString();
+    var actionRecord = {
+      providerId: providerId,
+      indicatorId: indicatorId,
+      scoreMonth: scoreMonth,
+      targetMonth: targetMonth,
+      sourceScoreMonth: scoreMonth,
+      township: viewer.township || '',
+      region: viewer.region || '',
       reasonCategory: payload.reasonCategory,
       explanation: explanation,
       nextAction: nextAction,
@@ -364,40 +372,85 @@
       actionOwner: actionOwner,
       actionOwnerId: actionOwnerId,
       nextTargetPercent: Number(payload.nextTargetPercent),
-      targetMonth: targetMonth,
-      sourceScoreMonth: scoreMonth,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: savedAt,
       updatedBy: viewer.uid
     };
-    var monthlyId = Scoring.planDocId(providerId, scoreMonth);
-    var allId = Scoring.planDocId(providerId, 'all');
-    var indicatorPath = 'indicators.' + indicatorId;
-    var monthlyUpdate = {
+    var actionRef = firebase.firestore()
+      .collection('quality_improvement_actions')
+      .doc(actionDocId(providerId, indicatorId));
+    await actionRef.set(actionRecord, { merge: true });
+    if (firebase.firestore().waitForPendingWrites) {
+      await firebase.firestore().waitForPendingWrites();
+    }
+    var verify = await actionRef.get();
+    if (!verify.exists) {
+      throw new Error('Action did not save to the server. Please try again.');
+    }
+
+    try {
+      await writePlanIndicator(providerId, scoreMonth, indicatorId, actionRecord);
+      await writePlanIndicator(providerId, 'all', indicatorId, actionRecord);
+    } catch (error) {
+      console.warn('QI plan mirror failed after action save', error);
+    }
+    return loadActionPlan(providerId, scoreMonth);
+  }
+
+  function actionDocId(providerId, indicatorId) {
+    return String(providerId) + '__' + String(indicatorId);
+  }
+
+  function extractIndicators(plan) {
+    var result = {};
+    if (!plan || typeof plan !== 'object') return result;
+    var indicators = plan.indicators;
+    if (indicators && typeof indicators === 'object') {
+      Object.keys(indicators).forEach(function (id) {
+        result[id] = indicators[id];
+      });
+    }
+    Object.keys(plan).forEach(function (key) {
+      if (key.indexOf('indicators.') === 0) {
+        result[key.slice('indicators.'.length)] = plan[key];
+      }
+    });
+    return result;
+  }
+
+  async function writePlanIndicator(providerId, scoreMonth, indicatorId, actionRecord) {
+    var Scoring = global.QualityScoring;
+    var docId = Scoring.planDocId(providerId, scoreMonth);
+    var ref = firebase.firestore().collection('quality_improvement_plans').doc(docId);
+    var existing = {};
+    try {
+      var snap = await ref.get();
+      if (snap.exists) existing = extractIndicators(Object.assign({ id: snap.id }, snap.data() || {}));
+    } catch (error) {
+      console.warn('QI plan read before save failed', docId, error);
+    }
+    existing[indicatorId] = {
+      reasonCategory: actionRecord.reasonCategory,
+      explanation: actionRecord.explanation,
+      nextAction: actionRecord.nextAction,
+      actionOwnerType: actionRecord.actionOwnerType,
+      actionOwner: actionRecord.actionOwner,
+      actionOwnerId: actionRecord.actionOwnerId,
+      nextTargetPercent: actionRecord.nextTargetPercent,
+      targetMonth: actionRecord.targetMonth,
+      sourceScoreMonth: actionRecord.sourceScoreMonth,
+      updatedAt: actionRecord.updatedAt,
+      updatedBy: actionRecord.updatedBy
+    };
+    await ref.set({
       providerId: providerId,
       scoreMonth: scoreMonth,
-      targetMonth: targetMonth,
+      targetMonth: actionRecord.targetMonth,
       hasSavedActions: true,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: viewer.uid
-    };
-    monthlyUpdate[indicatorPath] = indicatorPayload;
-    var allUpdate = {
-      providerId: providerId,
-      scoreMonth: 'all',
-      targetMonth: targetMonth,
-      hasSavedActions: true,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: viewer.uid
-    };
-    allUpdate[indicatorPath] = indicatorPayload;
-    var plans = firebase.firestore().collection('quality_improvement_plans');
-    await Promise.all([
-      plans.doc(monthlyId).set(monthlyUpdate, { merge: true }),
-      plans.doc(allId).set(allUpdate, { merge: true })
-    ]);
-    delete PLAN_CACHE[monthlyId];
-    delete PLAN_CACHE[allId];
-    return loadActionPlan(providerId, scoreMonth);
+      indicators: existing,
+      updatedAt: actionRecord.updatedAt,
+      updatedBy: actionRecord.updatedBy
+    }, { merge: true });
+    delete PLAN_CACHE[docId];
   }
 
   function isSavedAction(action) {
@@ -497,6 +550,69 @@
     });
   }
 
+  async function loadSavedActions(providerId) {
+    var Scoring = global.QualityScoring;
+    var byIndicator = {};
+    var addAction = function (action, fallbackId) {
+      if (!action || typeof action !== 'object') return;
+      var indicatorId = action.indicatorId || fallbackId;
+      if (!indicatorId || !isSavedAction(action)) return;
+      byIndicator[indicatorId] = Object.assign({ indicatorId: indicatorId }, action);
+    };
+
+    try {
+      var snap = await withTimeout(
+        firebase.firestore().collection('quality_improvement_actions')
+          .where('providerId', '==', providerId)
+          .limit(50)
+          .get(),
+        8000,
+        'Saved actions'
+      );
+      snap.docs.forEach(function (docSnap) {
+        addAction(Object.assign({ id: docSnap.id }, docSnap.data() || {}));
+      });
+    } catch (error) {
+      console.warn('QI action query unavailable, reading known action docs', error);
+    }
+
+    var actionReads = Scoring.INDICATOR_DEFS.map(function (indicator) {
+      return withTimeout(
+        firebase.firestore().collection('quality_improvement_actions')
+          .doc(actionDocId(providerId, indicator.id))
+          .get(),
+        8000,
+        'QI action'
+      ).then(function (docSnap) {
+        if (docSnap && docSnap.exists) {
+          addAction(Object.assign({ id: docSnap.id }, docSnap.data() || {}), indicator.id);
+        }
+      }).catch(function (error) {
+        console.warn('QI action read failed', indicator.id, error);
+      });
+    });
+    await Promise.all(actionReads);
+
+    if (!Object.keys(byIndicator).length) {
+      var plans = await loadActionPlans(providerId);
+      plans.forEach(function (plan) {
+        var indicators = extractIndicators(plan);
+        Object.keys(indicators).forEach(function (indicatorId) {
+          if (byIndicator[indicatorId]) return;
+          addAction(Object.assign({
+            providerId: plan.providerId,
+            scoreMonth: plan.scoreMonth,
+            targetMonth: plan.targetMonth
+          }, indicators[indicatorId] || {}), indicatorId);
+        });
+      });
+    }
+
+    return Object.keys(byIndicator).map(function (id) { return byIndicator[id]; }).sort(function (a, b) {
+      return String(b.updatedAt || b.scoreMonth || '').localeCompare(String(a.updatedAt || a.scoreMonth || ''));
+    });
+  }
+
   async function addSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
     if (!isSupervisorRole(viewer.role)) {
       throw new Error('Only TMO and above can comment');
@@ -573,8 +689,10 @@
     clearSummaryCache: clearSummaryCache,
     loadActionPlan: loadActionPlan,
     isSavedAction: isSavedAction,
+    extractIndicators: extractIndicators,
     formatMonthLabel: formatMonthLabel,
     loadActionPlans: loadActionPlans,
+    loadSavedActions: loadSavedActions,
     saveActionPlanIndicator: saveActionPlanIndicator,
     loadComments: loadComments,
     addSupervisorComment: addSupervisorComment,
