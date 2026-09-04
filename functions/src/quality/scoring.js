@@ -408,6 +408,13 @@ function isValidTargetPercent(value) {
   return Number.isFinite(number) && number >= 0 && number <= 100;
 }
 
+function scoreBand(percent) {
+  const value = Number(percent);
+  if (!Number.isFinite(value) || value < 50) return 'red';
+  if (value < 80) return 'yellow';
+  return 'green';
+}
+
 function nextMonthKey(month) {
   const match = String(month || '').match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
@@ -452,6 +459,7 @@ module.exports = {
   isValidReasonCategory,
   isValidTargetPercent,
   nextMonthKey,
+  scoreBand,
   previousMonthKey,
   currentYangonMonthKey,
   evaluateVisitIndicator,

@@ -248,6 +248,53 @@
     return year + '-' + String(monthNumber).padStart(2, '0');
   }
 
+  function isMonthKey(value) {
+    return /^\d{4}-\d{2}$/.test(String(value || ''))
+  }
+
+  function monthLabel(month, lang) {
+    if (month === 'all') return lang === 'en' ? 'All time' : 'အချိန်အားလုံး'
+    var match = String(month || '').match(/^(\d{4})-(\d{2})$/)
+    if (!match) return String(month || '—')
+    var date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
+    return date.toLocaleDateString(lang === 'mm' ? 'en-GB' : 'en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC'
+    })
+  }
+
+  function upcomingMonthKeys(fromMonth, count) {
+    var keys = []
+    var cursor = isMonthKey(fromMonth) ? fromMonth : currentYangonMonthKey(new Date())
+    var total = count || 12
+    for (var i = 0; i < total; i++) {
+      keys.push(cursor)
+      cursor = nextMonthKey(cursor)
+      if (!cursor) break
+    }
+    return keys
+  }
+
+  function recentMonthKeys(fromMonth, count) {
+    var keys = []
+    var cursor = isMonthKey(fromMonth) ? fromMonth : currentYangonMonthKey(new Date())
+    var total = count || 18
+    for (var i = 0; i < total; i++) {
+      keys.push(cursor)
+      cursor = previousMonthKey(cursor)
+      if (!cursor) break
+    }
+    return keys
+  }
+
+  function scoreBand(percent) {
+    var value = Number(percent)
+    if (!Number.isFinite(value) || value < 50) return 'red'
+    if (value < 80) return 'yellow'
+    return 'green'
+  }
+
   function previousMonthKey(month) {
     var match = String(month || '').match(/^(\d{4})-(\d{2})$/);
     if (!match) return null;
@@ -489,6 +536,11 @@
     currentYangonMonthKey: currentYangonMonthKey,
     nextMonthKey: nextMonthKey,
     previousMonthKey: previousMonthKey,
+    isMonthKey: isMonthKey,
+    monthLabel: monthLabel,
+    upcomingMonthKeys: upcomingMonthKeys,
+    recentMonthKeys: recentMonthKeys,
+    scoreBand: scoreBand,
     emptyIndicatorTotals: emptyIndicatorTotals,
     calculatePatientQualityContribution: calculatePatientQualityContribution,
     mergeProviderIndicators: mergeProviderIndicators,

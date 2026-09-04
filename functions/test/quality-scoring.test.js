@@ -10,6 +10,7 @@ const {
   isValidReasonCategory,
   isValidTargetPercent,
   nextMonthKey,
+  scoreBand,
   previousMonthKey,
   monthKeyForDate,
   babyKeysFromVisit,
@@ -236,6 +237,10 @@ test('summarizes provider contributions and validates plan fields', () => {
   assert.equal(isValidReasonCategory('invalid'), false);
   assert.equal(isValidTargetPercent(80), true);
   assert.equal(isValidTargetPercent(101), false);
+  assert.equal(scoreBand(80), 'green');
+  assert.equal(scoreBand(79.9), 'yellow');
+  assert.equal(scoreBand(50), 'yellow');
+  assert.equal(scoreBand(49.9), 'red');
   assert.equal(nextMonthKey('2026-09'), '2026-10');
   assert.equal(previousMonthKey('2026-01'), '2025-12');
   assert.equal(monthKeyForDate('2026-09-15T12:00:00+06:30'), '2026-09');

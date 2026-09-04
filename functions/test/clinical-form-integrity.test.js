@@ -101,7 +101,12 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(newborn, /select\.value = 'all'/);
   assert.match(newborn, /id="actionModal"/);
   assert.match(newborn, /id="modalNextAction"/);
-  assert.match(newborn, /id="modalActionOwner"/);
+  assert.match(newborn, /id="modalActionOwnerType"/);
+  assert.match(newborn, /id="modalActionOwnerOther"/);
+  assert.match(newborn, /id="modalTargetMonth"/);
+  assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
+  assert.doesNotMatch(newborn, /Computed from this midwife/);
+  assert.doesNotMatch(newborn, /ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်/);
   assert.match(newborn, /quality-review-actions\.html/);
   assert.match(reviewActions, /No saved improvement actions yet/);
   assert.match(reviewActions, /data-post-comment/);

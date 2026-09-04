@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v283-moh';
+const CACHE_NAME = 'mch-care-v284-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -113,6 +113,7 @@ const FILES_TO_CACHE = [
   './js/quality-improvement.js',
   './js/quality-target-banner.js',
   './js/rbac-manager.js',
+  './css/quality-improvement.css',
   './css/style.css',
   './css/hrt-register.css',
   './css/choice-controls.css',

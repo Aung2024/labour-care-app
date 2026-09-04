@@ -135,6 +135,50 @@
     return midwives;
   }
 
+  function userDisplayName(data, fallbackId) {
+    var profile = data || {};
+    return profile.name || profile.displayName || profile.full_name || profile.email || fallbackId || '';
+  }
+
+  async function loadTownshipTmo(township) {
+    var area = String(township || '').trim();
+    if (!area) return null;
+
+    var snap;
+    try {
+      snap = await withTimeout(
+        firebase.firestore().collection('users')
+          .where('township', '==', area)
+          .where('role', 'in', ['TMO', 'tmo'])
+          .limit(8)
+          .get(),
+        8000,
+        'Township TMO'
+      );
+    } catch (error) {
+      snap = await withTimeout(
+        firebase.firestore().collection('users').where('township', '==', area).limit(80).get(),
+        8000,
+        'Township TMO'
+      );
+    }
+
+    var tmos = [];
+    snap.forEach(function (doc) {
+      var data = doc.data() || {};
+      if (normalizeRole(data.role) !== 'tmo') return;
+      tmos.push({
+        id: doc.id,
+        name: userDisplayName(data, doc.id),
+        township: data.township || area
+      });
+    });
+    tmos.sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name));
+    });
+    return tmos[0] || null;
+  }
+
   async function loadCollection(ref) {
     var snap = await ref.get();
     return snap.docs.map(function (doc) {
@@ -294,19 +338,31 @@
     if (!Scoring.isValidTargetPercent(payload.nextTargetPercent)) {
       throw new Error('Target must be between 0 and 100');
     }
+    var targetMonth = Scoring.isMonthKey(payload.targetMonth)
+      ? payload.targetMonth
+      : Scoring.nextMonthKey(scoreMonth) || Scoring.nextMonthKey(Scoring.currentYangonMonthKey(new Date()));
+    if (!Scoring.isMonthKey(targetMonth)) {
+      throw new Error('Select a target month');
+    }
     var explanation = String(payload.explanation || '').trim();
     if (!explanation) throw new Error('Please enter an explanation');
     var nextAction = String(payload.nextAction || '').trim();
     if (!nextAction) throw new Error('Please enter the next action');
+    var actionOwnerType = String(payload.actionOwnerType || '').trim();
+    if (['self', 'tmo', 'other'].indexOf(actionOwnerType) < 0) {
+      throw new Error('Select who will do the action');
+    }
     var actionOwner = String(payload.actionOwner || '').trim();
     if (!actionOwner) throw new Error('Please enter who will do the action');
+    var actionOwnerId = String(payload.actionOwnerId || '').trim();
 
     var docId = Scoring.planDocId(providerId, scoreMonth);
     var indicatorPath = 'indicators.' + indicatorId;
     var update = {
       providerId: providerId,
       scoreMonth: scoreMonth,
-      targetMonth: Scoring.nextMonthKey(scoreMonth),
+      targetMonth: targetMonth,
+      hasSavedActions: true,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedBy: viewer.uid
     };
@@ -314,14 +370,23 @@
       reasonCategory: payload.reasonCategory,
       explanation: explanation,
       nextAction: nextAction,
+      actionOwnerType: actionOwnerType,
       actionOwner: actionOwner,
+      actionOwnerId: actionOwnerId,
       nextTargetPercent: Number(payload.nextTargetPercent),
+      targetMonth: targetMonth,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedBy: viewer.uid
     };
     await firebase.firestore().collection('quality_improvement_plans').doc(docId).set(update, { merge: true });
     delete PLAN_CACHE[docId];
     return loadActionPlan(providerId, scoreMonth);
+  }
+
+  function isSavedAction(action) {
+    if (!action || typeof action !== 'object') return false;
+    return !!(action.nextAction || action.reasonCategory || action.explanation ||
+      action.nextTargetPercent != null || action.targetMonth);
   }
 
   async function loadComments(providerId, scoreMonth, indicatorId) {
@@ -350,27 +415,43 @@
   }
 
   async function loadActionPlans(providerId) {
-    var snap;
+    var Scoring = global.QualityScoring;
+    var byId = {};
+    var addPlan = function (docSnap) {
+      if (!docSnap || !docSnap.exists) return;
+      var data = Object.assign({ id: docSnap.id }, docSnap.data() || {});
+      byId[docSnap.id] = data;
+    };
+
     try {
-      snap = await withTimeout(
+      var snap = await withTimeout(
         firebase.firestore().collection('quality_improvement_plans')
           .where('providerId', '==', providerId)
           .limit(36)
           .get(),
-        10000,
+        8000,
         'Review actions'
       );
+      snap.docs.forEach(addPlan);
     } catch (error) {
-      console.warn('QI action plans could not be listed yet', error);
-      return [];
+      console.warn('QI action plan query unavailable, reading known months', error);
     }
-    var plans = snap.docs.map(function (doc) {
-      return Object.assign({ id: doc.id }, doc.data() || {});
+
+    var months = ['all'].concat(Scoring.recentMonthKeys(Scoring.currentYangonMonthKey(new Date()), 18));
+    var reads = months.map(function (month) {
+      return withTimeout(
+        firebase.firestore().collection('quality_improvement_plans')
+          .doc(Scoring.planDocId(providerId, month))
+          .get(),
+        8000,
+        'QI plan'
+      ).then(addPlan).catch(function () { return null; });
     });
-    plans.sort(function (a, b) {
+    await Promise.all(reads);
+
+    return Object.keys(byId).map(function (id) { return byId[id]; }).sort(function (a, b) {
       return String(b.scoreMonth || '').localeCompare(String(a.scoreMonth || ''));
     });
-    return plans;
   }
 
   async function addSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
@@ -404,20 +485,29 @@
     var Scoring = global.QualityScoring;
     var currentMonth = Scoring.currentYangonMonthKey(now);
     var previousMonth = Scoring.previousMonthKey(currentMonth);
-    var plan = await loadActionPlan(providerId, previousMonth);
+    var months = Scoring.recentMonthKeys(currentMonth, 14);
+    var plans = await Promise.all(months.map(function (month) {
+      return loadActionPlan(providerId, month);
+    }));
     var targets = {};
-    Scoring.INDICATOR_DEFS.forEach(function (indicator) {
-      var entry = plan.indicators && plan.indicators[indicator.id];
-      if (entry && Scoring.isValidTargetPercent(entry.nextTargetPercent)) {
+    plans.forEach(function (plan) {
+      Scoring.INDICATOR_DEFS.forEach(function (indicator) {
+        if (targets[indicator.id]) return;
+        var entry = plan.indicators && plan.indicators[indicator.id];
+        if (!entry || !Scoring.isValidTargetPercent(entry.nextTargetPercent)) return;
+        var dueMonth = Scoring.isMonthKey(entry.targetMonth)
+          ? entry.targetMonth
+          : (Scoring.isMonthKey(plan.targetMonth) ? plan.targetMonth : Scoring.nextMonthKey(plan.scoreMonth));
+        if (dueMonth !== currentMonth) return;
         targets[indicator.id] = {
           percent: Number(entry.nextTargetPercent),
           reasonCategory: entry.reasonCategory || '',
           explanation: entry.explanation || '',
-          scoreMonth: previousMonth,
-          targetMonth: currentMonth,
+          scoreMonth: plan.scoreMonth || previousMonth,
+          targetMonth: dueMonth,
           indicator: indicator
         };
-      }
+      });
     });
     return {
       currentMonth: currentMonth,
@@ -434,10 +524,12 @@
     canViewProvider: canViewProvider,
     loadCurrentUserProfile: loadCurrentUserProfile,
     listScopedMidwives: listScopedMidwives,
+    loadTownshipTmo: loadTownshipTmo,
     loadProviderMonthSummary: loadProviderMonthSummary,
     computeProviderMonthSummary: computeProviderMonthSummary,
     clearSummaryCache: clearSummaryCache,
     loadActionPlan: loadActionPlan,
+    isSavedAction: isSavedAction,
     loadActionPlans: loadActionPlans,
     saveActionPlanIndicator: saveActionPlanIndicator,
     loadComments: loadComments,
