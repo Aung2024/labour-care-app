@@ -100,6 +100,16 @@ service cloud.firestore {
         );
     }
 
+    function canReadQualityPlanData() {
+      return signedIn()
+        && resource != null
+        && resource.data.providerId is string
+        && (
+          resource.data.providerId == request.auth.uid
+          || canSuperviseQualityProvider(resource.data.providerId)
+        );
+    }
+
     function canReadAnalyticsScope() {
       return currentUserExists()
         && (
@@ -524,7 +534,7 @@ service cloud.firestore {
 
     // Midwife-authored monthly reasons/targets and supervisor comments.
     match /quality_improvement_plans/{planId} {
-      allow read: if canReadQualityPlan(planId);
+      allow read: if canReadQualityPlanData() || canReadQualityPlan(planId);
       allow create: if signedIn()
         && request.resource.data.providerId is string
         && request.resource.data.scoreMonth is string

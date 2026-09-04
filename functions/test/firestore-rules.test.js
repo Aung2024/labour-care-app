@@ -532,6 +532,33 @@ test('midwives can edit only their own QI action plans', async () => {
   ));
 });
 
+test('midwives and scoped TMOs can list QI action plans by providerId', async () => {
+  const ownerDb = environment.authenticatedContext('midwife-a').firestore();
+  const otherDb = environment.authenticatedContext('midwife-b').firestore();
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  const outOfScopeTmoDb = environment.authenticatedContext('tmo-b').firestore();
+  const ownerQuery = query(
+    collection(ownerDb, 'quality_improvement_plans'),
+    where('providerId', '==', 'midwife-a')
+  );
+  const otherQuery = query(
+    collection(otherDb, 'quality_improvement_plans'),
+    where('providerId', '==', 'midwife-a')
+  );
+  const tmoQuery = query(
+    collection(tmoDb, 'quality_improvement_plans'),
+    where('providerId', '==', 'midwife-a')
+  );
+  const outOfScopeQuery = query(
+    collection(outOfScopeTmoDb, 'quality_improvement_plans'),
+    where('providerId', '==', 'midwife-a')
+  );
+  await assertSucceeds(getDocs(ownerQuery));
+  await assertFails(getDocs(otherQuery));
+  await assertSucceeds(getDocs(tmoQuery));
+  await assertFails(getDocs(outOfScopeQuery));
+});
+
 test('TMO and above can comment on QI plans in scope', async () => {
   const tmoDb = environment.authenticatedContext('tmo-a').firestore();
   const outOfScopeTmoDb = environment.authenticatedContext('tmo-b').firestore();
