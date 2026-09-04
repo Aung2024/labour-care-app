@@ -88,6 +88,7 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   const hub = readAppFile('quality-improvement.html');
   const competency = readAppFile('quality-competency.html');
   const newborn = readAppFile('quality-newborn.html');
+  const reviewActions = readAppFile('quality-review-actions.html');
   assert.match(hub, /Facility Readiness Assessment/);
   assert.match(hub, /Coming soon/);
   assert.match(hub, /quality-competency\.html/);
@@ -96,8 +97,14 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(competency, /Postnatal/);
   assert.match(competency, /quality-newborn\.html/);
   assert.match(newborn, /QualityScoring\.INDICATOR_DEFS/);
-  assert.match(newborn, /Reason category/);
-  assert.match(newborn, /Supervisor guidance/);
+  assert.match(newborn, /var options = \['all'\]/);
+  assert.match(newborn, /select\.value = 'all'/);
+  assert.match(newborn, /id="actionModal"/);
+  assert.match(newborn, /id="modalNextAction"/);
+  assert.match(newborn, /id="modalActionOwner"/);
+  assert.match(newborn, /quality-review-actions\.html/);
+  assert.match(reviewActions, /No saved improvement actions yet/);
+  assert.match(reviewActions, /data-post-comment/);
 });
 
 test('immediate and routine newborn forms load QI target reminders', () => {

@@ -9,12 +9,48 @@
   var QI_TIME_ZONE = 'Asia/Yangon';
 
   var REASON_CATEGORIES = [
-    { id: 'knowledge_training', en: 'Knowledge/Training', mm: 'အသိပညာ/သင်တန်း' },
-    { id: 'infrastructure', en: 'Infrastructure', mm: 'အခြေခံအဆောက်အအုံ' },
-    { id: 'drugs', en: 'Drugs', mm: 'ဆေးဝါး' },
-    { id: 'supplies_equipment', en: 'Supplies and Equipment', mm: 'ပစ္စည်းနှင့် စက်ကိရိယာ' },
-    { id: 'laboratory_test', en: 'Laboratory test', mm: 'ဓာတ်ခွဲစစ်ဆေးမှု' },
-    { id: 'other', en: 'Other', mm: 'အခြား' }
+    {
+      id: 'knowledge_training',
+      en: 'Knowledge/Training',
+      mm: 'အသိပညာ/သင်တန်း',
+      defaultEn: 'Staff need more coaching or refresher training on this practice.',
+      defaultMm: 'ဤလုပ်ငန်းစဉ်အတွက် ဝန်ထမ်းများအား ထပ်မံ လေ့ကျင့်သင်ကြားရန် လိုအပ်သည်။'
+    },
+    {
+      id: 'infrastructure',
+      en: 'Infrastructure',
+      mm: 'အခြေခံအဆောက်အအုံ',
+      defaultEn: 'The facility space, privacy, or room setup makes this practice hard to complete.',
+      defaultMm: 'ဌာနနေရာ၊ ကိုယ်ပိုင်နေရာ သို့မဟုတ် အခန်းအနေအထားကြောင့် ဤလုပ်ငန်းစဉ် လုပ်ရန် ခက်ခဲသည်။'
+    },
+    {
+      id: 'drugs',
+      en: 'Drugs',
+      mm: 'ဆေးဝါး',
+      defaultEn: 'Required medicines were not available at the time of care.',
+      defaultMm: 'စောင့်ရှောက်ချိန်တွင် လိုအပ်သော ဆေးဝါး မရှိခဲ့ပါ။'
+    },
+    {
+      id: 'supplies_equipment',
+      en: 'Supplies and Equipment',
+      mm: 'ပစ္စည်းနှင့် စက်ကိရိယာ',
+      defaultEn: 'Needed supplies or equipment were missing, delayed, or not ready.',
+      defaultMm: 'လိုအပ်သော ပစ္စည်း သို့မဟုတ် စက်ကိရိယာ မရှိခြင်း၊ နောက်ကျခြင်း သို့မဟုတ် မပြင်ဆင်ရသေးခြင်း။'
+    },
+    {
+      id: 'laboratory_test',
+      en: 'Laboratory test',
+      mm: 'ဓာတ်ခွဲစစ်ဆေးမှု',
+      defaultEn: 'A required laboratory test was unavailable or delayed.',
+      defaultMm: 'လိုအပ်သော ဓာတ်ခွဲစစ်ဆေးမှု မရနိုင်ခြင်း သို့မဟုတ် နောက်ကျခြင်း။'
+    },
+    {
+      id: 'other',
+      en: 'Other',
+      mm: 'အခြား',
+      defaultEn: 'Another reason prevented this practice. Please describe it.',
+      defaultMm: 'အခြား အကြောင်းရင်းကြောင့် ဤလုပ်ငန်းစဉ် မလုပ်နိုင်ခဲ့ပါ။ ရှင်းပြပါ။'
+    }
   ];
 
   var INDICATOR_DEFS = [
@@ -346,7 +382,7 @@
     immediateRecords.forEach(function (record) {
       if (!hasImmediateCareRecord(record)) return;
       var eventDate = dateFromFields(record, ['timestamp', 'createdAt', 'created_at', 'recordedAt', 'visitDate']);
-      if (!eventDate || monthKeyForDate(eventDate) !== month) return;
+      if (!eventDate || (month !== 'all' && monthKeyForDate(eventDate) !== month)) return;
       var providerId = providerFromRecord(record, profile);
       if (!providerId) return;
       var bucket = ensure(providerId);
@@ -365,7 +401,7 @@
 
     var monthVisits = sortedNewbornVisits(newbornVisits).filter(function (visit) {
       var eventDate = dateFromFields(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
-      return eventDate && monthKeyForDate(eventDate) === month;
+      return eventDate && (month === 'all' || monthKeyForDate(eventDate) === month);
     });
     var firstVisitByBaby = {};
     monthVisits.forEach(function (visit) {

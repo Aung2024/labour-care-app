@@ -278,7 +278,7 @@ function calculatePatientQualityContribution(patient, activity, month) {
   immediateRecords.forEach((record) => {
     if (!hasImmediateCareRecord(record)) return;
     const eventDate = dateFromFields(record, ['timestamp', 'createdAt', 'created_at', 'recordedAt', 'visitDate']);
-    if (!eventDate || monthKeyForDate(eventDate) !== month) return;
+    if (!eventDate || (month !== 'all' && monthKeyForDate(eventDate) !== month)) return;
     const providerId = providerFromRecord(record, profile);
     if (!providerId) return;
     const bucket = ensureProviderBucket(byProvider, providerId, month);
@@ -297,7 +297,7 @@ function calculatePatientQualityContribution(patient, activity, month) {
 
   const monthVisits = sortedNewbornVisits(newbornVisits).filter((visit) => {
     const eventDate = dateFromFields(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
-    return eventDate && monthKeyForDate(eventDate) === month;
+    return eventDate && (month === 'all' || monthKeyForDate(eventDate) === month);
   });
 
   const firstVisitByBaby = new Map();

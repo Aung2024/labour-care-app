@@ -79,6 +79,38 @@ test('ignores records outside the selected Yangon month', () => {
   assert.deepEqual(result.providers, {});
 });
 
+test('all-time scoring includes records across months', () => {
+  const result = calculatePatientQualityContribution({
+    id: 'p-all',
+    created_by: 'mw1'
+  }, {
+    immediateNewbornCare: [
+      {
+        skin_to_skin_contact: true,
+        thorough_drying: true,
+        delayed_cord_clamping: true,
+        support_early_exclusive_breastfeeding: true,
+        eye_care_teo: true,
+        vitamin_k: true,
+        timestamp: '2026-07-01T08:00:00+06:30'
+      }
+    ],
+    newbornCare: [
+      {
+        visit_number: 1,
+        visitDate: '2026-09-01',
+        temperature: 36.8,
+        heart_rate: 130,
+        respiration_rate: 46,
+        body_weight_gram: 2900
+      }
+    ]
+  }, 'all');
+
+  assert.equal(result.providers.mw1.indicators.skin_to_skin.denominator, 1);
+  assert.equal(result.providers.mw1.indicators.vital_signs.denominator, 1);
+});
+
 test('attributes newborn visit indicators to recordedBy provider', () => {
   const result = calculatePatientQualityContribution({
     id: 'p3',

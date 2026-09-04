@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
   <link rel="stylesheet" href="css/style.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
@@ -76,7 +77,18 @@
     .summary-meta h2 { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.25rem; color: #0f172a; }
     .summary-meta p { margin: 0; color: #64748b; font-size: 0.9rem; }
     .indicator-list { display: grid; gap: 0.85rem; }
-    .indicator-card { padding: 1rem 1.05rem; }
+    .indicator-card {
+      padding: 1rem 1.05rem;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .indicator-card:hover, .indicator-card:focus {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+      outline: 3px solid rgba(20, 184, 166, 0.28);
+    }
     .indicator-top {
       display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start;
     }
@@ -102,7 +114,6 @@
       background: linear-gradient(90deg, #14b8a6, #0d9488);
     }
     .qi-muted { color: #64748b; font-size: 0.85rem; }
-    .qi-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
     .qi-btn {
       border: none;
       border-radius: 10px;
@@ -113,21 +124,6 @@
       color: white;
     }
     .qi-btn.secondary { background: #e2e8f0; color: #334155; }
-    .qi-panel {
-      margin-top: 0.85rem;
-      padding-top: 0.85rem;
-      border-top: 1px solid #e2e8f0;
-      display: none;
-    }
-    .qi-panel.open { display: block; }
-    .comment-item {
-      background: #f8fafc;
-      border-radius: 10px;
-      padding: 0.65rem 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-    .comment-item strong { font-size: 0.85rem; color: #0f172a; }
-    .comment-item p { margin: 0.25rem 0 0; font-size: 0.88rem; color: #334155; }
     .status-banner {
       background: rgba(255,255,255,0.95);
       border-radius: 12px;
@@ -137,6 +133,28 @@
       font-weight: 600;
     }
     .status-banner.error { background: #fef2f2; color: #991b1b; }
+    .action-modal .modal-dialog { max-width: 720px; }
+    .action-modal .modal-content { border: 0; border-radius: 18px; overflow: hidden; }
+    .action-modal .modal-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border: 0;
+    }
+    .action-modal .modal-title { font-size: 1.05rem; font-weight: 800; }
+    .action-modal .form-label { color: #334155; font-weight: 700; }
+    .action-modal .form-control, .action-modal .form-select { min-height: 44px; }
+    .modal-score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 82px;
+      min-height: 54px;
+      border-radius: 14px;
+      background: #ccfbf1;
+      color: #115e59;
+      font-size: 1.3rem;
+      font-weight: 900;
+    }
     .language-switcher { display: flex; gap: 0.25rem; }
     .language-btn {
       min-width: 44px; padding: 0.375rem 0.75rem; font-size: 0.875rem; border-radius: 8px;
@@ -178,18 +196,23 @@
 
     <div class="filter-bar">
       <div class="row g-2 align-items-end">
-        <div class="col-sm-4">
+        <div class="col-sm-3">
           <label class="form-label lang-text" for="monthSelect" data-en="Score month" data-mm="အမှတ် လ">Score month</label>
           <select id="monthSelect" class="form-select" aria-label="Score month"></select>
         </div>
-        <div class="col-sm-5" id="midwifeFilterWrap" style="display:none;">
+        <div class="col-sm-4" id="midwifeFilterWrap" style="display:none;">
           <label class="form-label lang-text" for="midwifeSelect" data-en="Midwife" data-mm="သားဖွား">Midwife</label>
           <select id="midwifeSelect" class="form-select" aria-label="Midwife"></select>
         </div>
-        <div class="col-sm-3">
+        <div class="col-sm-2">
           <button type="button" class="btn btn-success w-100 qi-btn" id="refreshBtn" aria-label="Refresh scores">
             <i class="fas fa-sync-alt me-1"></i><span class="lang-text" data-en="Refresh" data-mm="ပြန်တင်ရန်">Refresh</span>
           </button>
+        </div>
+        <div class="col-sm-3">
+          <a href="quality-review-actions.html" class="btn btn-outline-success w-100 qi-btn secondary" id="reviewActionsBtn">
+            <i class="fas fa-list-check me-1"></i><span class="lang-text" data-en="Review Actions" data-mm="လုပ်ဆောင်ချက်များ ပြန်ကြည့်ရန်">Review Actions</span>
+          </a>
         </div>
       </div>
     </div>
@@ -206,6 +229,51 @@
     <div class="indicator-list" id="indicatorList" aria-live="polite"></div>
   </main>
 
+  <div class="modal fade action-modal" id="actionModal" tabindex="-1" aria-labelledby="actionModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title" id="actionModalTitle">Quality Improvement Action</h2>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex gap-3 align-items-start justify-content-between mb-3">
+            <p class="mb-0 fw-bold" id="modalIndicatorTitle"></p>
+            <div class="modal-score" id="modalScore">0%</div>
+          </div>
+          <p class="qi-muted" id="modalScoreDetail"></p>
+          <div class="mb-3">
+            <label class="form-label" for="modalReasonCategory">Reason category</label>
+            <select class="form-select" id="modalReasonCategory"></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="modalReasonText">Reason details</label>
+            <textarea class="form-control" id="modalReasonText" rows="3"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="modalNextAction">Next Action</label>
+            <textarea class="form-control" id="modalNextAction" rows="3"></textarea>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label class="form-label" for="modalActionOwner">Who will do this action?</label>
+              <input type="text" class="form-control" id="modalActionOwner" />
+            </div>
+            <div class="col-md-5">
+              <label class="form-label" for="modalTarget">Next target (%)</label>
+              <input type="number" min="0" max="100" class="form-control" id="modalTarget" />
+            </div>
+          </div>
+          <p class="qi-muted mt-3 mb-0" id="modalReadOnlyHint" style="display:none;"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success qi-btn" id="saveActionBtn">Save Action</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
     let viewer = null;
@@ -214,7 +282,8 @@
     let selectedMonth = null;
     let currentSummary = null;
     let currentPlan = null;
-    let previousPlan = null;
+    let selectedIndicatorId = null;
+    let actionModal = null;
 
     function t(en, mm) {
       return currentLanguage === 'en' ? en : mm;
@@ -242,7 +311,7 @@
     }
 
     function monthOptions() {
-      var options = [];
+      var options = ['all'];
       var cursor = QualityScoring.currentYangonMonthKey(new Date());
       for (var i = 0; i < 12; i++) {
         options.push(cursor);
@@ -255,9 +324,17 @@
     function fillMonthSelect() {
       var select = document.getElementById('monthSelect');
       select.innerHTML = monthOptions().map(function (month) {
-        return '<option value="' + month + '">' + month + '</option>';
+        var label = month === 'all' ? t('All time', 'အချိန်အားလုံး') : month;
+        return '<option value="' + month + '">' + label + '</option>';
       }).join('');
-      selectedMonth = select.value;
+      select.value = 'all';
+      selectedMonth = 'all';
+    }
+
+    function actionScoreMonth() {
+      return selectedMonth === 'all'
+        ? QualityScoring.currentYangonMonthKey(new Date())
+        : selectedMonth;
     }
 
     function fillMidwifeSelect() {
@@ -303,12 +380,6 @@
       return midwives.find(function (item) { return item.id === selectedProviderId; }) || null;
     }
 
-    function reasonLabel(categoryId) {
-      var found = QualityScoring.REASON_CATEGORIES.find(function (item) { return item.id === categoryId; });
-      if (!found) return categoryId || '—';
-      return currentLanguage === 'en' ? found.en : found.mm;
-    }
-
     function indicatorTitle(indicator) {
       return currentLanguage === 'en' ? indicator.en : indicator.mm;
     }
@@ -331,9 +402,10 @@
       card.style.display = 'flex';
       document.getElementById('summaryPct').textContent = (currentSummary.summaryPercentage || 0) + '%';
       document.getElementById('summaryTitle').textContent = meta.name || selectedProviderId;
+      var periodLabel = selectedMonth === 'all' ? t('all time', 'အချိန်အားလုံး') : selectedMonth;
       document.getElementById('summarySubtitle').textContent = t(
-        'Average of scored newborn indicators for ' + selectedMonth,
-        selectedMonth + ' အတွက် မွေးကင်းစ အမှတ် ပျမ်းမျှ'
+        'Average of scored newborn indicators for ' + periodLabel,
+        periodLabel + ' အတွက် မွေးကင်းစ အမှတ် ပျမ်းမျှ'
       );
       document.getElementById('summaryHint').textContent = currentSummary.computedLocally
         ? t('Computed from this midwife’s patient records for the demo.', 'ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်။')
@@ -343,83 +415,18 @@
     function renderIndicatorCard(indicator) {
       var totals = (currentSummary && currentSummary.indicators && currentSummary.indicators[indicator.id]) ||
         { numerator: 0, denominator: 0, percentage: 0 };
-      var currentEntry = planEntry(currentPlan, indicator.id);
-      var previousEntry = planEntry(previousPlan, indicator.id);
-      var canEdit = QualityImprovement.isMidwifeRole(viewer.role) && viewer.uid === selectedProviderId;
-      var canComment = QualityImprovement.isSupervisorRole(viewer.role);
       var pct = totals.percentage || 0;
-      var gap = Math.max(0, 100 - pct);
 
       var html = '';
-      html += '<article class="indicator-card" id="indicator-' + indicator.id + '">';
+      html += '<article class="indicator-card" id="indicator-' + indicator.id +
+        '" role="button" tabindex="0" data-indicator-id="' + indicator.id +
+        '" aria-label="' + escapeHtml(indicatorTitle(indicator)) + ', ' + pct + ' percent">';
       html += '<div class="indicator-top">';
       html += '<div><h3 class="indicator-title">' + escapeHtml(indicatorTitle(indicator)) + '</h3>';
       html += '<p class="indicator-source">' + escapeHtml(indicatorSource(indicator)) + '</p></div>';
       html += '<div class="pct-badge" aria-label="' + pct + ' percent">' + pct + '%<small>' +
         totals.numerator + '/' + totals.denominator + '</small></div></div>';
       html += '<div class="meter" aria-hidden="true"><span style="width:' + Math.min(100, pct) + '%"></span></div>';
-      html += '<p class="qi-muted">' + t(
-        pct + '% of newborn babies met this indicator' + (gap ? ('; midwife can explain why ' + gap + '% did not.') : '.'),
-        'မွေးကင်းစ ' + pct + '% သည် ဤအချက်နှင့် ကိုက်ညီသည်' + (gap ? ('။ ကျန် ' + gap + '% အတွက် အကြောင်းရင်း ရှင်းပြနိုင်သည်။') : '။')
-      ) + '</p>';
-
-      if (previousEntry && previousEntry.nextTargetPercent != null) {
-        html += '<p class="qi-muted"><strong>' + t('This month target', 'ယခုလ ပန်းတိုင်') + ':</strong> ' +
-          previousEntry.nextTargetPercent + '%</p>';
-      }
-      if (currentEntry) {
-        html += '<p class="qi-muted"><strong>' + t('Next month target', 'နောက်လ ပန်းတိုင်') + ':</strong> ' +
-          (currentEntry.nextTargetPercent != null ? currentEntry.nextTargetPercent + '%' : '—') +
-          ' · <strong>' + t('Reason', 'အကြောင်းရင်း') + ':</strong> ' + escapeHtml(reasonLabel(currentEntry.reasonCategory)) + '</p>';
-        if (currentEntry.explanation) {
-          html += '<p class="qi-muted">' + escapeHtml(currentEntry.explanation) + '</p>';
-        }
-      }
-
-      html += '<div class="qi-actions">';
-      if (canEdit) {
-        html += '<button type="button" class="qi-btn" data-action="reason" data-id="' + indicator.id + '">' +
-          t('Reason & next target', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင်') + '</button>';
-      }
-      html += '<button type="button" class="qi-btn secondary" data-action="comments" data-id="' + indicator.id + '">' +
-        t('Comments', 'မှတ်ချက်များ') + '</button>';
-      html += '</div>';
-
-      html += '<div class="qi-panel" id="reason-panel-' + indicator.id + '">';
-      if (canEdit) {
-        html += '<div class="mb-2"><label class="form-label">' + t('Reason category', 'အကြောင်းရင်း အမျိုးအစား') + '</label>';
-        html += '<select class="form-select" id="reason-cat-' + indicator.id + '"><option value="">' +
-          t('Select category', 'အမျိုးအစား ရွေးပါ') + '</option>';
-        QualityScoring.REASON_CATEGORIES.forEach(function (cat) {
-          var selected = currentEntry && currentEntry.reasonCategory === cat.id ? ' selected' : '';
-          html += '<option value="' + cat.id + '"' + selected + '>' + escapeHtml(currentLanguage === 'en' ? cat.en : cat.mm) + '</option>';
-        });
-        html += '</select></div>';
-        html += '<div class="mb-2"><label class="form-label">' + t('Explanation', 'ရှင်းလင်းချက်') + '</label>';
-        html += '<textarea class="form-control" rows="3" id="reason-text-' + indicator.id + '">' +
-          escapeHtml((currentEntry && currentEntry.explanation) || '') + '</textarea></div>';
-        html += '<div class="mb-2"><label class="form-label">' + t('Next month target (%)', 'နောက်လ ပန်းတိုင် (%)') + '</label>';
-        html += '<input type="number" min="0" max="100" class="form-control" id="reason-target-' + indicator.id + '" value="' +
-          ((currentEntry && currentEntry.nextTargetPercent != null) ? currentEntry.nextTargetPercent : (indicator.defaultTarget || 80)) +
-          '"></div>';
-        html += '<button type="button" class="qi-btn" data-action="save-reason" data-id="' + indicator.id + '">' +
-          t('Save', 'သိမ်းရန်') + '</button>';
-      } else {
-        html += '<p class="qi-muted">' + t('Only the midwife can edit reasons and targets.', 'အကြောင်းရင်းနှင့် ပန်းတိုင်ကို သားဖွားသာ ပြင်နိုင်သည်။') + '</p>';
-      }
-      html += '</div>';
-
-      html += '<div class="qi-panel" id="comment-panel-' + indicator.id + '">';
-      html += '<div id="comment-list-' + indicator.id + '" class="qi-muted">' + t('Loading comments…', 'မှတ်ချက်များ တင်နေသည်…') + '</div>';
-      if (canComment) {
-        html += '<div class="mt-2"><label class="form-label">' + t('Supervisor guidance', 'ကြီးကြပ်သူ လမ်းညွှန်ချက်') + '</label>';
-        html += '<textarea class="form-control" rows="2" id="comment-text-' + indicator.id + '" placeholder="' +
-          escapeHtml(t('How to reach the next target…', 'နောက်လ ပန်းတိုင် ရောက်ရန် လမ်းညွှန်…')) + '"></textarea></div>';
-        html += '<button type="button" class="qi-btn mt-2" data-action="save-comment" data-id="' + indicator.id + '">' +
-          t('Post comment', 'မှတ်ချက် ပေးရန်') + '</button>';
-      }
-      html += '</div>';
-
       html += '</article>';
       return html;
     }
@@ -427,24 +434,6 @@
     function renderAll() {
       renderSummary();
       document.getElementById('indicatorList').innerHTML = QualityScoring.INDICATOR_DEFS.map(renderIndicatorCard).join('');
-    }
-
-    async function loadCommentsFor(indicatorId) {
-      var list = document.getElementById('comment-list-' + indicatorId);
-      if (!list || !selectedProviderId) return;
-      try {
-        var comments = await QualityImprovement.loadComments(selectedProviderId, selectedMonth, indicatorId);
-        if (!comments.length) {
-          list.innerHTML = '<p class="qi-muted mb-0">' + t('No comments yet.', 'မှတ်ချက် မရှိသေးပါ။') + '</p>';
-          return;
-        }
-        list.innerHTML = comments.map(function (comment) {
-          return '<div class="comment-item"><strong>' + escapeHtml(comment.authorName || comment.authorRole || 'Supervisor') +
-            '</strong><p>' + escapeHtml(comment.text || '') + '</p></div>';
-        }).join('');
-      } catch (error) {
-        list.innerHTML = '<p class="qi-muted mb-0">' + escapeHtml(error.message || 'Could not load comments') + '</p>';
-      }
     }
 
     async function refreshScores() {
@@ -458,11 +447,8 @@
       try {
         QualityImprovement.clearSummaryCache(selectedProviderId, selectedMonth);
         currentSummary = await QualityImprovement.loadProviderMonthSummary(selectedProviderId, selectedMonth, meta);
-        currentPlan = await QualityImprovement.loadActionPlan(selectedProviderId, selectedMonth);
-        previousPlan = await QualityImprovement.loadActionPlan(
-          selectedProviderId,
-          QualityScoring.previousMonthKey(selectedMonth)
-        );
+        currentPlan = await QualityImprovement.loadActionPlan(selectedProviderId, actionScoreMonth());
+        updateReviewActionsLink();
         setStatus('');
         renderAll();
       } catch (error) {
@@ -473,70 +459,116 @@
       }
     }
 
-    async function handleSaveReason(indicatorId) {
-      var category = document.getElementById('reason-cat-' + indicatorId).value;
-      var explanation = document.getElementById('reason-text-' + indicatorId).value;
-      var target = document.getElementById('reason-target-' + indicatorId).value;
+    function updateReviewActionsLink() {
+      var url = 'quality-review-actions.html';
+      if (selectedProviderId) url += '?provider=' + encodeURIComponent(selectedProviderId);
+      document.getElementById('reviewActionsBtn').href = url;
+    }
+
+    function openActionModal(indicatorId) {
+      var indicator = QualityScoring.INDICATOR_DEFS.find(function (item) {
+        return item.id === indicatorId;
+      });
+      if (!indicator) return;
+      selectedIndicatorId = indicatorId;
+      var totals = currentSummary.indicators[indicatorId] ||
+        { numerator: 0, denominator: 0, percentage: 0 };
+      var entry = planEntry(currentPlan, indicatorId) || {};
+      var canEdit = QualityImprovement.isMidwifeRole(viewer.role) &&
+        viewer.uid === selectedProviderId;
+      document.getElementById('modalIndicatorTitle').textContent = indicatorTitle(indicator);
+      document.getElementById('modalScore').textContent = (totals.percentage || 0) + '%';
+      document.getElementById('modalScoreDetail').textContent =
+        totals.numerator + ' / ' + totals.denominator + ' ' +
+        t('newborn babies met this indicator.', 'မွေးကင်းစကလေးများ ဤအချက်နှင့် ကိုက်ညီသည်။');
+      document.getElementById('modalReasonCategory').innerHTML =
+        '<option value="">' + t('Select category', 'အမျိုးအစား ရွေးပါ') + '</option>' +
+        QualityScoring.REASON_CATEGORIES.map(function (category) {
+          var selected = entry.reasonCategory === category.id ? ' selected' : '';
+          return '<option value="' + category.id + '"' + selected + '>' +
+            escapeHtml(currentLanguage === 'en' ? category.en : category.mm) + '</option>';
+        }).join('');
+      document.getElementById('modalReasonText').value = entry.explanation || '';
+      document.getElementById('modalNextAction').value = entry.nextAction || '';
+      document.getElementById('modalActionOwner').value = entry.actionOwner || viewer.name || '';
+      document.getElementById('modalTarget').value =
+        entry.nextTargetPercent != null ? entry.nextTargetPercent : indicator.defaultTarget;
+      if (!entry.explanation) applyReasonTemplate();
+
+      ['modalReasonCategory', 'modalReasonText', 'modalNextAction',
+        'modalActionOwner', 'modalTarget'].forEach(function (id) {
+        document.getElementById(id).disabled = !canEdit;
+      });
+      document.getElementById('saveActionBtn').style.display = canEdit ? '' : 'none';
+      var hint = document.getElementById('modalReadOnlyHint');
+      hint.style.display = canEdit ? 'none' : '';
+      hint.textContent = t(
+        'This action is read-only here. Supervisors can comment from Review Actions.',
+        'ဤနေရာတွင် ဖတ်ရှုရန်သာဖြစ်သည်။ ကြီးကြပ်သူသည် လုပ်ဆောင်ချက်များ ပြန်ကြည့်ရန် စာမျက်နှာမှ မှတ်ချက်ပေးနိုင်သည်။'
+      );
+      if (!actionModal) actionModal = new bootstrap.Modal(document.getElementById('actionModal'));
+      actionModal.show();
+    }
+
+    function applyReasonTemplate() {
+      var categoryId = document.getElementById('modalReasonCategory').value;
+      var textarea = document.getElementById('modalReasonText');
+      var category = QualityScoring.REASON_CATEGORIES.find(function (item) {
+        return item.id === categoryId;
+      });
+      if (!category) return;
+      var template = currentLanguage === 'en' ? category.defaultEn : category.defaultMm;
+      var templates = QualityScoring.REASON_CATEGORIES.reduce(function (list, item) {
+        list.push(item.defaultEn, item.defaultMm);
+        return list;
+      }, []);
+      var current = String(textarea.value || '').trim();
+      if (!current || templates.indexOf(current) >= 0) textarea.value = template;
+    }
+
+    async function handleSaveAction() {
+      if (!selectedIndicatorId) return;
+      var saveButton = document.getElementById('saveActionBtn');
+      saveButton.disabled = true;
       try {
         currentPlan = await QualityImprovement.saveActionPlanIndicator(
           viewer,
           selectedProviderId,
-          selectedMonth,
-          indicatorId,
+          actionScoreMonth(),
+          selectedIndicatorId,
           {
-            reasonCategory: category,
-            explanation: explanation,
-            nextTargetPercent: target
+            reasonCategory: document.getElementById('modalReasonCategory').value,
+            explanation: document.getElementById('modalReasonText').value,
+            nextAction: document.getElementById('modalNextAction').value,
+            actionOwner: document.getElementById('modalActionOwner').value,
+            nextTargetPercent: document.getElementById('modalTarget').value
           }
         );
-        if (window.AppDialog && AppDialog.alert) {
-          await AppDialog.alert(t('Reason and next-month target saved.', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင် သိမ်းပြီးပါပြီ။'), { title: 'Quality Improvement' });
-        } else {
-          alert(t('Reason and next-month target saved.', 'အကြောင်းရင်းနှင့် နောက်လ ပန်းတိုင် သိမ်းပြီးပါပြီ။'));
-        }
-        renderAll();
-        document.getElementById('reason-panel-' + indicatorId).classList.add('open');
+        actionModal.hide();
+        await AppDialog.alert(
+          t('Improvement action saved.', 'တိုးတက်ရေး လုပ်ဆောင်ချက် သိမ်းပြီးပါပြီ။'),
+          { title: 'Quality Improvement' }
+        );
       } catch (error) {
         alert(error.message || t('Could not save.', 'သိမ်း၍မရပါ။'));
-      }
-    }
-
-    async function handleSaveComment(indicatorId) {
-      var text = document.getElementById('comment-text-' + indicatorId).value;
-      try {
-        await QualityImprovement.addSupervisorComment(
-          viewer,
-          selectedProviderId,
-          selectedMonth,
-          indicatorId,
-          text
-        );
-        document.getElementById('comment-text-' + indicatorId).value = '';
-        await loadCommentsFor(indicatorId);
-      } catch (error) {
-        alert(error.message || t('Could not post comment.', 'မှတ်ချက် ပေး၍မရပါ။'));
+      } finally {
+        saveButton.disabled = false;
       }
     }
 
     document.getElementById('indicatorList').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-action]');
-      if (!button) return;
-      var action = button.getAttribute('data-action');
-      var indicatorId = button.getAttribute('data-id');
-      if (action === 'reason') {
-        document.getElementById('reason-panel-' + indicatorId).classList.toggle('open');
-        document.getElementById('comment-panel-' + indicatorId).classList.remove('open');
-      } else if (action === 'comments') {
-        var panel = document.getElementById('comment-panel-' + indicatorId);
-        panel.classList.toggle('open');
-        document.getElementById('reason-panel-' + indicatorId).classList.remove('open');
-        if (panel.classList.contains('open')) loadCommentsFor(indicatorId);
-      } else if (action === 'save-reason') {
-        handleSaveReason(indicatorId);
-      } else if (action === 'save-comment') {
-        handleSaveComment(indicatorId);
-      }
+      var row = event.target.closest('[data-indicator-id]');
+      if (row) openActionModal(row.getAttribute('data-indicator-id'));
     });
+    document.getElementById('indicatorList').addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var row = event.target.closest('[data-indicator-id]');
+      if (!row) return;
+      event.preventDefault();
+      openActionModal(row.getAttribute('data-indicator-id'));
+    });
+    document.getElementById('saveActionBtn').addEventListener('click', handleSaveAction);
+    document.getElementById('modalReasonCategory').addEventListener('change', applyReasonTemplate);
 
     document.getElementById('monthSelect').addEventListener('change', function () {
       selectedMonth = document.getElementById('monthSelect').value;
@@ -544,6 +576,7 @@
     });
     document.getElementById('midwifeSelect').addEventListener('change', function () {
       selectedProviderId = document.getElementById('midwifeSelect').value;
+      updateReviewActionsLink();
       refreshScores();
     });
     document.getElementById('refreshBtn').addEventListener('click', refreshScores);

@@ -142,36 +142,59 @@
     });
   }
 
+  async function loadOwnedPatients(providerId) {
+    var patients = firebase.firestore().collection('patients');
+    var snapshots = await withTimeout(Promise.all([
+      patients.where('created_by', '==', providerId).limit(200).get(),
+      patients.where('createdBy', '==', providerId).limit(200).get()
+    ]), 15000, 'Patients');
+    var byId = {};
+    snapshots.forEach(function (snapshot) {
+      snapshot.docs.forEach(function (doc) { byId[doc.id] = doc; });
+    });
+    return Object.keys(byId).map(function (id) { return byId[id]; });
+  }
+
+  async function loadPatientQualityActivity(patientDoc) {
+    var patient = Object.assign({ id: patientDoc.id }, patientDoc.data() || {});
+    var activityRows = await Promise.all([
+      loadCollection(patientDoc.ref.collection('immediate_newborn_care')),
+      loadCollection(patientDoc.ref.collection('newborn_care'))
+    ]);
+    return {
+      patient: patient,
+      activity: {
+        immediateNewbornCare: activityRows[0],
+        newbornCare: activityRows[1]
+      }
+    };
+  }
+
   async function computeProviderMonthSummary(providerId, month, providerMeta) {
     var Scoring = global.QualityScoring;
     if (!Scoring) throw new Error('QualityScoring is not loaded');
 
-    var patientsSnap = await withTimeout(
-      firebase.firestore().collection('patients')
-        .where('created_by', '==', providerId)
-        .limit(120)
-        .get(),
-      15000,
-      'Patients'
-    );
-
+    var patientDocs = await loadOwnedPatients(providerId);
     var indicators = Scoring.emptyIndicatorTotals();
     var processed = 0;
-    for (var i = 0; i < patientsSnap.docs.length; i++) {
-      var patientDoc = patientsSnap.docs[i];
-      var patient = Object.assign({ id: patientDoc.id }, patientDoc.data() || {});
-      var patientRef = patientDoc.ref;
-      var activity = {
-        immediateNewbornCare: await loadCollection(patientRef.collection('immediate_newborn_care')),
-        newbornCare: await loadCollection(patientRef.collection('newborn_care'))
-      };
-      if (!activity.immediateNewbornCare.length && !activity.newbornCare.length) continue;
-      var contribution = Scoring.calculatePatientQualityContribution(patient, activity, month);
-      var providerPart = contribution.providers && contribution.providers[providerId];
-      if (!providerPart) continue;
-      Scoring.mergeProviderIndicators(indicators, providerPart.indicators);
-      processed += 1;
-      if (i % 8 === 0) await new Promise(function (resolve) { setTimeout(resolve, 0); });
+    for (var offset = 0; offset < patientDocs.length; offset += 8) {
+      var bundles = await Promise.all(
+        patientDocs.slice(offset, offset + 8).map(loadPatientQualityActivity)
+      );
+      bundles.forEach(function (bundle) {
+        var activity = bundle.activity;
+        if (!activity.immediateNewbornCare.length && !activity.newbornCare.length) return;
+        var contribution = Scoring.calculatePatientQualityContribution(
+          bundle.patient,
+          activity,
+          month
+        );
+        var providerPart = contribution.providers && contribution.providers[providerId];
+        if (!providerPart) return;
+        Scoring.mergeProviderIndicators(indicators, providerPart.indicators);
+        processed += 1;
+      });
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
     }
 
     var summary = Scoring.summarizeProviderIndicators(indicators);
@@ -196,6 +219,8 @@
     var cacheKey = month + ':' + providerId;
     if (SUMMARY_CACHE[cacheKey]) return SUMMARY_CACHE[cacheKey];
 
+    // Scores are derived from the midwife's own patient records. Cached
+    // summaries are optional and must never block the page.
     try {
       var snap = await withTimeout(
         firebase.firestore()
@@ -204,7 +229,7 @@
           .collection('providers')
           .doc(providerId)
           .get(),
-        8000,
+        4000,
         'QI summary'
       );
       if (snap.exists) {
@@ -213,7 +238,8 @@
         return cached;
       }
     } catch (error) {
-      console.warn('QI summary read failed, computing locally', error);
+      // Missing QI collections/rules are expected until those rules are
+      // deployed. Patient reads are unchanged and used for local scoring.
     }
 
     var computed = await computeProviderMonthSummary(providerId, month, providerMeta);
@@ -230,11 +256,22 @@
     var Scoring = global.QualityScoring;
     var docId = Scoring.planDocId(providerId, scoreMonth);
     if (PLAN_CACHE[docId]) return PLAN_CACHE[docId];
-    var snap = await withTimeout(
-      firebase.firestore().collection('quality_improvement_plans').doc(docId).get(),
-      8000,
-      'QI plan'
-    );
+    var snap;
+    try {
+      snap = await withTimeout(
+        firebase.firestore().collection('quality_improvement_plans').doc(docId).get(),
+        8000,
+        'QI plan'
+      );
+    } catch (error) {
+      if (error && (error.code === 'permission-denied' ||
+          String(error.message || '').toLowerCase().indexOf('permission') >= 0)) {
+        console.warn('QI plan rules are not deployed yet; using an empty plan.');
+        snap = { exists: false };
+      } else {
+        throw error;
+      }
+    }
     var plan = snap.exists ? Object.assign({ id: docId }, snap.data() || {}) : {
       id: docId,
       providerId: providerId,
@@ -259,6 +296,10 @@
     }
     var explanation = String(payload.explanation || '').trim();
     if (!explanation) throw new Error('Please enter an explanation');
+    var nextAction = String(payload.nextAction || '').trim();
+    if (!nextAction) throw new Error('Please enter the next action');
+    var actionOwner = String(payload.actionOwner || '').trim();
+    if (!actionOwner) throw new Error('Please enter who will do the action');
 
     var docId = Scoring.planDocId(providerId, scoreMonth);
     var indicatorPath = 'indicators.' + indicatorId;
@@ -272,6 +313,8 @@
     update[indicatorPath] = {
       reasonCategory: payload.reasonCategory,
       explanation: explanation,
+      nextAction: nextAction,
+      actionOwner: actionOwner,
       nextTargetPercent: Number(payload.nextTargetPercent),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedBy: viewer.uid
@@ -304,6 +347,30 @@
       return aTime - bTime;
     });
     return comments;
+  }
+
+  async function loadActionPlans(providerId) {
+    var snap;
+    try {
+      snap = await withTimeout(
+        firebase.firestore().collection('quality_improvement_plans')
+          .where('providerId', '==', providerId)
+          .limit(36)
+          .get(),
+        10000,
+        'Review actions'
+      );
+    } catch (error) {
+      console.warn('QI action plans could not be listed yet', error);
+      return [];
+    }
+    var plans = snap.docs.map(function (doc) {
+      return Object.assign({ id: doc.id }, doc.data() || {});
+    });
+    plans.sort(function (a, b) {
+      return String(b.scoreMonth || '').localeCompare(String(a.scoreMonth || ''));
+    });
+    return plans;
   }
 
   async function addSupervisorComment(viewer, providerId, scoreMonth, indicatorId, text) {
@@ -371,6 +438,7 @@
     computeProviderMonthSummary: computeProviderMonthSummary,
     clearSummaryCache: clearSummaryCache,
     loadActionPlan: loadActionPlan,
+    loadActionPlans: loadActionPlans,
     saveActionPlanIndicator: saveActionPlanIndicator,
     loadComments: loadComments,
     addSupervisorComment: addSupervisorComment,

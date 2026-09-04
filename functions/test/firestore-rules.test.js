@@ -460,6 +460,18 @@ test('QI summaries are readable by owner and scoped supervisors only', async () 
   await assertSucceeds(getDoc(qiProviderRef('super', 'midwife-b')));
 });
 
+test('missing QI summary docs remain readable by the owner', async () => {
+  const missing = doc(
+    environment.authenticatedContext('midwife-a').firestore(),
+    'quality_improvement_v1_months',
+    '2026-01',
+    'providers',
+    'midwife-a'
+  );
+  const snapshot = await assertSucceeds(getDoc(missing));
+  assert.equal(snapshot.exists(), false);
+});
+
 test('QI summaries and contributions are not client-writable', async () => {
   const database = environment.authenticatedContext('midwife-a').firestore();
   await assertFails(setDoc(
@@ -505,6 +517,18 @@ test('midwives can edit only their own QI action plans', async () => {
         }
       }
     }
+  ));
+  await assertSucceeds(setDoc(
+    doc(ownerDb, 'quality_improvement_plans', 'midwife-a_all'),
+    {
+      providerId: 'midwife-a',
+      scoreMonth: 'all',
+      targetMonth: '2026-10',
+      indicators: {}
+    }
+  ));
+  await assertSucceeds(getDoc(
+    doc(ownerDb, 'quality_improvement_plans', 'midwife-a_all')
   ));
 });
 

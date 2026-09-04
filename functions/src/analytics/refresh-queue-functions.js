@@ -107,7 +107,9 @@ async function processLeaderboardRefreshQueue(database, now, options) {
         if (month) periodsWithAllTime([month]).forEach((period) => periods.add(period));
       });
       await recomputeLoadedPatientMonths(db, queued.id, Array.from(periods), loaded);
-      const qualityMonths = Array.from(periods).filter((period) => /^\d{4}-\d{2}$/.test(period));
+      const qualityMonths = Array.from(periods).filter((period) =>
+        period === 'all' || /^\d{4}-\d{2}$/.test(period)
+      );
       await recomputeLoadedPatientQualityMonths(db, queued.id, qualityMonths, loaded, now);
       await queued.ref.delete();
     });

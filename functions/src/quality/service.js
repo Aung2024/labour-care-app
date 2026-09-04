@@ -97,7 +97,7 @@ async function rebuildProviderMonthSummary(db, month, providerId) {
 async function recomputeLoadedPatientQualityMonths(db, patientId, months, loaded, now) {
   const patient = loaded && loaded.patient ? Object.assign({ id: patientId }, loaded.patient) : null;
   const activity = loaded && loaded.activity || {};
-  const touched = new Set((months || []).filter(Boolean));
+  const touched = new Set(['all', ...(months || []).filter(Boolean)]);
   monthsTouchedByActivity(patient || {}, activity, now).forEach((month) => touched.add(month));
 
   const existing = await db.collection(CONTRIBUTIONS)
@@ -111,7 +111,7 @@ async function recomputeLoadedPatientQualityMonths(db, patientId, months, loaded
   const affectedProviders = new Set();
   const results = [];
   for (const month of touched) {
-    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    if (month !== 'all' && !/^\d{4}-\d{2}$/.test(month)) continue;
     const previous = existing.docs.find((doc) => (doc.data() || {}).month === month);
     const previousProviders = previous && previous.data() && previous.data().providers
       ? Object.keys(previous.data().providers)
@@ -127,7 +127,7 @@ async function recomputeLoadedPatientQualityMonths(db, patientId, months, loaded
 
   for (const providerId of affectedProviders) {
     for (const month of touched) {
-      if (!/^\d{4}-\d{2}$/.test(month)) continue;
+      if (month !== 'all' && !/^\d{4}-\d{2}$/.test(month)) continue;
       await rebuildProviderMonthSummary(db, month, providerId);
     }
   }

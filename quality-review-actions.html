@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Review Actions - Quality Improvement</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/user-cache.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/quality-scoring.js"></script>
+  <script src="js/quality-improvement.js"></script>
+  <style>
+    :root {
+      --primary-color: #0d9488;
+      --secondary-color: #0f766e;
+    }
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: 'Inter', 'Myanmar Text', 'Segoe UI', sans-serif;
+      min-height: 100dvh;
+    }
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0.85rem 1rem;
+      color: white;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      box-shadow: 0 4px 8px rgba(15, 23, 42, 0.16);
+    }
+    .app-header .container, .page-main { max-width: 920px; }
+    .app-header h1 { margin: 0; font-size: 1.15rem; font-weight: 800; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .page-main { margin: 0 auto; padding: 1rem 1rem 2.5rem; }
+    .filter-card, .action-card, .empty-state {
+      border: 1px solid rgba(13, 148, 136, 0.14);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+    }
+    .filter-card { padding: 0.9rem 1rem; margin-bottom: 0.85rem; }
+    .action-list { display: grid; gap: 0.85rem; }
+    .action-card { padding: 1rem 1.05rem; }
+    .action-title { margin: 0; color: #0f172a; font-size: 1rem; font-weight: 800; }
+    .period-badge {
+      display: inline-flex;
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      background: #ccfbf1;
+      color: #115e59;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-top: 0.85rem;
+    }
+    .detail {
+      padding: 0.7rem 0.8rem;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+    .detail-label { display: block; color: #64748b; font-size: 0.74rem; font-weight: 700; }
+    .detail-value { color: #1e293b; font-size: 0.9rem; white-space: pre-wrap; }
+    .comments {
+      margin-top: 0.9rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid #e2e8f0;
+    }
+    .comment {
+      margin-bottom: 0.5rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 10px;
+      background: #f0fdfa;
+    }
+    .comment strong { color: #115e59; font-size: 0.82rem; }
+    .comment p { margin: 0.2rem 0 0; color: #334155; font-size: 0.88rem; }
+    .touch-control { min-height: 44px; touch-action: manipulation; }
+    .empty-state { padding: 2rem 1rem; text-align: center; color: #64748b; }
+    .status {
+      margin-bottom: 0.85rem;
+      padding: 0.8rem 1rem;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.96);
+      color: #334155;
+    }
+    .status.error { color: #991b1b; background: #fef2f2; }
+    @media (max-width: 600px) {
+      .detail-grid { grid-template-columns: 1fr; }
+      .header-row { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="container header-row">
+      <h1><i class="fas fa-list-check me-2"></i><span class="lang-text" data-en="Review Actions" data-mm="လုပ်ဆောင်ချက်များ ပြန်ကြည့်ရန်">Review Actions</span></h1>
+      <a href="quality-newborn.html" class="btn btn-outline-light btn-sm touch-control">
+        <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="page-main container">
+    <div id="status" class="status" role="status" aria-live="polite">Loading review actions…</div>
+    <section class="filter-card" id="supervisorFilter" style="display:none;">
+      <label for="midwifeSelect" class="form-label fw-bold">Midwife</label>
+      <select id="midwifeSelect" class="form-select touch-control"></select>
+    </section>
+    <div id="actionList" class="action-list"></div>
+  </main>
+
+  <script>
+    let viewer = null
+    let midwives = []
+    let selectedProviderId = null
+
+    const escapeHtml = (value) => String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
+    const indicatorById = (indicatorId) => QualityScoring.INDICATOR_DEFS.find(
+      (indicator) => indicator.id === indicatorId
+    )
+
+    const reasonLabel = (reasonId) => {
+      const reason = QualityScoring.REASON_CATEGORIES.find((item) => item.id === reasonId)
+      return reason ? reason.en : reasonId
+    }
+
+    const setStatus = (message, isError) => {
+      const status = document.getElementById('status')
+      status.style.display = message ? '' : 'none'
+      status.textContent = message || ''
+      status.classList.toggle('error', Boolean(isError))
+    }
+
+    const loadComments = async (providerId, scoreMonth, indicatorId, mountId) => {
+      const mount = document.getElementById(mountId)
+      if (!mount) return
+      try {
+        const comments = await QualityImprovement.loadComments(
+          providerId,
+          scoreMonth,
+          indicatorId
+        )
+        const existing = comments.length
+          ? comments.map((comment) => (
+            '<div class="comment"><strong>' +
+            escapeHtml(comment.authorName || comment.authorRole || 'Supervisor') +
+            '</strong><p>' + escapeHtml(comment.text) + '</p></div>'
+          )).join('')
+          : '<p class="text-muted small mb-2">No supervisor comments yet.</p>'
+        mount.querySelector('.comment-list').innerHTML = existing
+      } catch (error) {
+        mount.querySelector('.comment-list').innerHTML =
+          '<p class="text-muted small">Comments could not be loaded.</p>'
+      }
+    }
+
+    const postComment = async (button) => {
+      const card = button.closest('[data-action-row]')
+      const textarea = card.querySelector('textarea')
+      const providerId = card.dataset.providerId
+      const scoreMonth = card.dataset.scoreMonth
+      const indicatorId = card.dataset.indicatorId
+      button.disabled = true
+      try {
+        await QualityImprovement.addSupervisorComment(
+          viewer,
+          providerId,
+          scoreMonth,
+          indicatorId,
+          textarea.value
+        )
+        textarea.value = ''
+        await loadComments(providerId, scoreMonth, indicatorId, card.id)
+      } catch (error) {
+        alert(error.message || 'Could not post comment.')
+      } finally {
+        button.disabled = false
+      }
+    }
+
+    const renderActions = async (plans) => {
+      const mount = document.getElementById('actionList')
+      const rows = []
+      plans.forEach((plan) => {
+        Object.keys(plan.indicators || {}).forEach((indicatorId) => {
+          const action = plan.indicators[indicatorId]
+          if (!action || !action.nextAction) return
+          rows.push({ plan, indicatorId, action })
+        })
+      })
+      if (!rows.length) {
+        mount.innerHTML = '<div class="empty-state"><i class="fas fa-clipboard-check fa-2x mb-3"></i>' +
+          '<p class="mb-0">No saved improvement actions yet.</p></div>'
+        return
+      }
+
+      mount.innerHTML = rows.map((row, index) => {
+        const indicator = indicatorById(row.indicatorId) || { en: row.indicatorId }
+        const action = row.action
+        const rowId = 'action-row-' + index
+        return '<article class="action-card" id="' + rowId + '" data-action-row ' +
+          'data-provider-id="' + escapeHtml(row.plan.providerId) + '" ' +
+          'data-score-month="' + escapeHtml(row.plan.scoreMonth) + '" ' +
+          'data-indicator-id="' + escapeHtml(row.indicatorId) + '">' +
+          '<div class="d-flex justify-content-between align-items-start gap-2">' +
+          '<h2 class="action-title">' + escapeHtml(indicator.en) + '</h2>' +
+          '<span class="period-badge">' + escapeHtml(row.plan.scoreMonth) + '</span></div>' +
+          '<div class="detail-grid">' +
+          '<div class="detail"><span class="detail-label">Reason category</span>' +
+          '<span class="detail-value">' + escapeHtml(reasonLabel(action.reasonCategory)) + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Reason details</span>' +
+          '<span class="detail-value">' + escapeHtml(action.explanation) + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Next Action</span>' +
+          '<span class="detail-value">' + escapeHtml(action.nextAction) + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Who will do it</span>' +
+          '<span class="detail-value">' + escapeHtml(action.actionOwner) + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Next target</span>' +
+          '<span class="detail-value">' + escapeHtml(action.nextTargetPercent) + '%</span></div>' +
+          '</div>' +
+          '<div class="comments"><div class="comment-list">Loading comments…</div>' +
+          (QualityImprovement.isSupervisorRole(viewer.role)
+            ? '<label class="form-label fw-bold mt-2">TMO / Supervisor comment</label>' +
+              '<textarea class="form-control" rows="2" placeholder="Guidance for reaching the target"></textarea>' +
+              '<button type="button" class="btn btn-success touch-control mt-2" data-post-comment>Post comment</button>'
+            : '') +
+          '</div></article>'
+      }).join('')
+
+      rows.forEach((row, index) => {
+        loadComments(row.plan.providerId, row.plan.scoreMonth, row.indicatorId, 'action-row-' + index)
+      })
+    }
+
+    const loadActions = async () => {
+      if (!selectedProviderId) {
+        setStatus('Select a midwife.', true)
+        return
+      }
+      setStatus('Loading review actions…')
+      try {
+        const plans = await QualityImprovement.loadActionPlans(selectedProviderId)
+        setStatus('')
+        await renderActions(plans)
+      } catch (error) {
+        setStatus(error.message || 'Could not load review actions.', true)
+      }
+    }
+
+    const initializeProviderFilter = () => {
+      const select = document.getElementById('midwifeSelect')
+      if (!QualityImprovement.isSupervisorRole(viewer.role)) {
+        selectedProviderId = viewer.uid
+        return
+      }
+      document.getElementById('supervisorFilter').style.display = ''
+      select.innerHTML = midwives.map((midwife) => (
+        '<option value="' + midwife.id + '">' + escapeHtml(midwife.name) +
+        (midwife.township ? ' · ' + escapeHtml(midwife.township) : '') + '</option>'
+      )).join('')
+      const requested = new URLSearchParams(location.search).get('provider')
+      selectedProviderId = midwives.some((midwife) => midwife.id === requested)
+        ? requested
+        : (midwives[0] && midwives[0].id)
+      select.value = selectedProviderId || ''
+    }
+
+    document.getElementById('midwifeSelect').addEventListener('change', (event) => {
+      selectedProviderId = event.target.value
+      loadActions()
+    })
+    document.getElementById('actionList').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-post-comment]')
+      if (button) postComment(button)
+    })
+
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (!user) return
+      try {
+        viewer = await QualityImprovement.loadCurrentUserProfile()
+        if (QualityImprovement.isSupervisorRole(viewer.role)) {
+          midwives = await QualityImprovement.listScopedMidwives(viewer)
+        }
+        initializeProviderFilter()
+        await loadActions()
+      } catch (error) {
+        setStatus(error.message || 'Could not initialize Review Actions.', true)
+      }
+    })
+  </script>
+</body>
+</html>
