@@ -457,7 +457,6 @@
       }).filter(Boolean).join('; ');
     }
     var nextAction = String(payload.nextAction || '').trim();
-    if (!nextAction) throw new Error('Please enter the next action');
     var actionOwnerType = String(payload.actionOwnerType || '').trim();
     if (['self', 'tmo', 'other'].indexOf(actionOwnerType) < 0) {
       throw new Error('Select who will do the action');
