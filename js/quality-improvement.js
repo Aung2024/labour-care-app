@@ -426,20 +426,36 @@
     if (!isMidwifeRole(viewer.role) || viewer.uid !== providerId) {
       throw new Error('Only the midwife owner can edit reasons and targets');
     }
-    if (!Scoring.isValidReasonCategory(payload.reasonCategory)) {
+    var possibleCauses = Array.isArray(payload.possibleCauses) ? payload.possibleCauses : [];
+    var actionRows = Array.isArray(payload.actionRows) ? payload.actionRows : [];
+    var hasStructuredCauses = possibleCauses.length > 0 || actionRows.length > 0;
+    if (!hasStructuredCauses && !Scoring.isValidReasonCategory(payload.reasonCategory)) {
       throw new Error('Select a reason category first');
     }
     if (!Scoring.isValidTargetPercent(payload.nextTargetPercent)) {
       throw new Error('Target must be between 0 and 100');
     }
+    var targetMonths = Array.isArray(payload.targetMonths)
+      ? payload.targetMonths.filter(function (month) { return Scoring.isMonthKey(month); }).slice(0, 3)
+      : [];
     var targetMonth = Scoring.isMonthKey(payload.targetMonth)
       ? payload.targetMonth
-      : Scoring.nextMonthKey(scoreMonth) || Scoring.nextMonthKey(Scoring.currentYangonMonthKey(new Date()));
+      : (targetMonths[0] || Scoring.nextMonthKey(scoreMonth) ||
+        Scoring.nextMonthKey(Scoring.currentYangonMonthKey(new Date())));
     if (!Scoring.isMonthKey(targetMonth)) {
       throw new Error('Select a target month');
     }
+    if (!targetMonths.length) targetMonths = [targetMonth];
+    if (targetMonths.indexOf(targetMonth) < 0) targetMonths.unshift(targetMonth);
+    targetMonths = targetMonths.slice(0, 3);
+
     var explanation = String(payload.explanation || '').trim();
-    if (!explanation) throw new Error('Please enter an explanation');
+    if (!explanation && !hasStructuredCauses) throw new Error('Please enter an explanation');
+    if (!explanation && possibleCauses.length) {
+      explanation = possibleCauses.map(function (item) {
+        return item.en || item.mm || item.id || '';
+      }).filter(Boolean).join('; ');
+    }
     var nextAction = String(payload.nextAction || '').trim();
     if (!nextAction) throw new Error('Please enter the next action');
     var actionOwnerType = String(payload.actionOwnerType || '').trim();
@@ -457,11 +473,14 @@
       domain: resolveActionDomain(indicatorId, payload.domain),
       scoreMonth: scoreMonth,
       targetMonth: targetMonth,
+      targetMonths: targetMonths,
       sourceScoreMonth: scoreMonth,
       township: viewer.township || '',
       region: viewer.region || '',
-      reasonCategory: payload.reasonCategory,
+      reasonCategory: payload.reasonCategory || (hasStructuredCauses ? 'other' : ''),
       explanation: explanation,
+      possibleCauses: possibleCauses,
+      actionRows: actionRows,
       nextAction: nextAction,
       actionOwnerType: actionOwnerType,
       actionOwner: actionOwner,
@@ -526,12 +545,15 @@
     existing[indicatorId] = {
       reasonCategory: actionRecord.reasonCategory,
       explanation: actionRecord.explanation,
+      possibleCauses: actionRecord.possibleCauses || [],
+      actionRows: actionRecord.actionRows || [],
       nextAction: actionRecord.nextAction,
       actionOwnerType: actionRecord.actionOwnerType,
       actionOwner: actionRecord.actionOwner,
       actionOwnerId: actionRecord.actionOwnerId,
       nextTargetPercent: actionRecord.nextTargetPercent,
       targetMonth: actionRecord.targetMonth,
+      targetMonths: actionRecord.targetMonths || [actionRecord.targetMonth],
       sourceScoreMonth: actionRecord.sourceScoreMonth,
       updatedAt: actionRecord.updatedAt,
       updatedBy: actionRecord.updatedBy
@@ -551,7 +573,10 @@
   function isSavedAction(action) {
     if (!action || typeof action !== 'object') return false;
     return !!(action.nextAction || action.reasonCategory || action.explanation ||
-      action.nextTargetPercent != null || action.targetMonth);
+      action.nextTargetPercent != null || action.targetMonth ||
+      (Array.isArray(action.possibleCauses) && action.possibleCauses.length) ||
+      (Array.isArray(action.actionRows) && action.actionRows.length) ||
+      (Array.isArray(action.targetMonths) && action.targetMonths.length));
   }
 
   function commentRef(providerId, scoreMonth, indicatorId) {
@@ -791,16 +816,23 @@
         if (targets[indicator.id]) return;
         var entry = plan.indicators && plan.indicators[indicator.id];
         if (!entry || !Scoring.isValidTargetPercent(entry.nextTargetPercent)) return;
-        var dueMonth = Scoring.isMonthKey(entry.targetMonth)
-          ? entry.targetMonth
-          : (Scoring.isMonthKey(plan.targetMonth) ? plan.targetMonth : Scoring.nextMonthKey(plan.scoreMonth));
-        if (dueMonth !== currentMonth) return;
+        var months = Array.isArray(entry.targetMonths)
+          ? entry.targetMonths.filter(function (month) { return Scoring.isMonthKey(month); })
+          : [];
+        if (!months.length) {
+          var dueMonth = Scoring.isMonthKey(entry.targetMonth)
+            ? entry.targetMonth
+            : (Scoring.isMonthKey(plan.targetMonth) ? plan.targetMonth : Scoring.nextMonthKey(plan.scoreMonth));
+          if (dueMonth) months = [dueMonth];
+        }
+        if (months.indexOf(currentMonth) < 0) return;
         targets[indicator.id] = {
           percent: Number(entry.nextTargetPercent),
           reasonCategory: entry.reasonCategory || '',
           explanation: entry.explanation || '',
           scoreMonth: plan.scoreMonth || previousMonth,
-          targetMonth: dueMonth,
+          targetMonth: currentMonth,
+          targetMonths: months,
           indicator: indicator
         };
       });

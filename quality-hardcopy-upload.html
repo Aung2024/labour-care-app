@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hard Copy Upload - Quality Improvement</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/quality-improvement.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <style>
+    :root { --primary-color: #0d9488; --secondary-color: #0f766e; }
+    body { font-family: 'Inter', 'Myanmar Text', 'Segoe UI', sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white; padding: 0.85rem 1rem; position: sticky; top: 0; z-index: 100;
+    }
+    .header-section .container, .page-main { max-width: 760px; }
+    .header-section h1 { font-size: 1.15rem; font-weight: 800; margin: 0; }
+    .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+    .header-actions .btn, .language-btn, .qi-btn { min-height: 44px; touch-action: manipulation; }
+    .page-main { flex: 1; width: 100%; margin: 0 auto; padding: 1rem 1rem 2rem; }
+    .upload-card {
+      background: #fff; border-radius: 16px; border: 1px solid #d7e0e8;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); padding: 1.1rem;
+    }
+    .upload-drop {
+      border: 2px dashed #99f6e4; border-radius: 14px; background: #f0fdfa;
+      padding: 1.5rem 1rem; text-align: center; color: #0f766e;
+    }
+    .upload-drop strong { display: block; margin-bottom: 0.35rem; }
+    .file-list { list-style: none; padding: 0; margin: 1rem 0 0; }
+    .file-list li {
+      display: flex; align-items: center; gap: 0.65rem; padding: 0.7rem 0.85rem;
+      border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 0.5rem;
+      min-height: 44px; background: #f8fafc;
+    }
+    .file-list .meta { flex: 1; min-width: 0; }
+    .file-list .name { font-weight: 700; color: #0f172a; word-break: break-word; }
+    .file-list .size { font-size: 0.8rem; color: #64748b; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+    .action-row .btn { flex: 1 1 140px; }
+    .extract-table { margin-top: 1rem; overflow-x: auto; }
+    .extract-table table { width: 100%; font-size: 0.88rem; }
+    .status-banner {
+      display: none; margin-bottom: 0.85rem; padding: 0.75rem 0.9rem;
+      border-radius: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-weight: 600;
+    }
+    .status-banner.show { display: block; }
+    .language-switcher { display: flex; gap: 0.25rem; }
+    .language-btn {
+      min-width: 44px; padding: 0.375rem 0.75rem; border-radius: 8px;
+      background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;
+    }
+    .language-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+    .demo-note {
+      margin-top: 0.85rem; padding: 0.55rem 0.75rem; border-radius: 10px;
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 0.85rem; font-weight: 600;
+    }
+  </style>
+</head>
+<body class="qi-app">
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-7">
+          <h1><i class="fas fa-file-upload me-2"></i><span class="lang-text" data-en="Hard Copy Upload" data-mm="Hard Copy တင်ရန်">Hard Copy Upload</span></h1>
+        </div>
+        <div class="col-md-5">
+          <div class="header-actions">
+            <div class="language-switcher" role="group" aria-label="Language">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" aria-label="English">ENG</button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" aria-label="Myanmar">MM</button>
+            </div>
+            <a href="quality-clinical-database.html" class="btn btn-outline-light btn-sm" aria-label="Back">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="page-main container">
+    <div id="statusBanner" class="status-banner" role="status" aria-live="polite"></div>
+    <div class="upload-card">
+      <div class="upload-drop">
+        <strong class="lang-text" data-en="Select Excel, Word, or image files" data-mm="Excel၊ Word သို့မဟုတ် ပုံဖိုင်များ ရွေးပါ">Select Excel, Word, or image files</strong>
+        <p class="mb-3 small lang-text" data-en="Accepted: .xlsx, .xls, .doc, .docx, .jpg, .jpeg, .png, .pdf" data-mm="လက်ခံ: .xlsx, .xls, .doc, .docx, .jpg, .jpeg, .png, .pdf">Accepted: .xlsx, .xls, .doc, .docx, .jpg, .jpeg, .png, .pdf</p>
+        <input type="file" id="fileInput" class="form-control" multiple accept=".xlsx,.xls,.doc,.docx,.jpg,.jpeg,.png,.pdf,image/*" aria-label="Choose hard copy files" />
+      </div>
+      <ul class="file-list" id="fileList" aria-live="polite"></ul>
+      <div class="action-row">
+        <button type="button" class="btn btn-success qi-btn" id="uploadBtn" aria-label="Upload files">
+          <i class="fas fa-cloud-upload-alt me-1"></i><span class="lang-text" data-en="Upload" data-mm="တင်ရန်">Upload</span>
+        </button>
+        <button type="button" class="btn btn-outline-success qi-btn" id="extractBtn" aria-label="Extract or read records">
+          <i class="fas fa-magic me-1"></i><span class="lang-text" data-en="Extract / Read records" data-mm="မှတ်တမ်းများ ထုတ်ယူ/ဖတ်ရန်">Extract / Read records</span>
+        </button>
+      </div>
+      <p class="demo-note lang-text" data-en="Demo only: files are listed in this session. Automatic reading of paper records is not enabled yet." data-mm="နမူနာသာ: ဖိုင်များကို ဤ session တွင် စာရင်းပြသည်။ စက္ကူမှတ်တမ်း အလိုအလျောက် ဖတ်ခြင်း မရသေးပါ။">Demo only: files are listed in this session. Automatic reading of paper records is not enabled yet.</p>
+      <div class="extract-table" id="extractPanel" style="display:none;">
+        <h2 class="h6 fw-bold mt-2 lang-text" data-en="Sample extracted records" data-mm="နမူနာ ထုတ်ယူထားသော မှတ်တမ်းများ">Sample extracted records</h2>
+        <table class="table table-sm table-bordered bg-white">
+          <thead>
+            <tr>
+              <th class="lang-text" data-en="Mother" data-mm="မိခင်">Mother</th>
+              <th class="lang-text" data-en="Visit date" data-mm="ပြသရက်">Visit date</th>
+              <th class="lang-text" data-en="Indicator note" data-mm="အချက် မှတ်ချက်">Indicator note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Ma Aye Aye</td><td>2026-08-12</td><td>TEO given</td></tr>
+            <tr><td>Ma Hla Hla</td><td>2026-08-18</td><td>Skin-to-skin documented</td></tr>
+            <tr><td>Ma Su Su</td><td>2026-08-22</td><td>Birth weight 2.9 kg</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    let selectedFiles = [];
+    let uploaded = false;
+
+    function t(en, mm) { return currentLanguage === 'en' ? en : mm; }
+
+    function applyLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var text = lang === 'en' ? el.getAttribute('data-en') : el.getAttribute('data-mm');
+        if (text) el.textContent = text;
+      });
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function setStatus(message) {
+      var banner = document.getElementById('statusBanner');
+      banner.textContent = message || '';
+      banner.classList.toggle('show', !!message);
+    }
+
+    function renderFiles() {
+      var list = document.getElementById('fileList');
+      if (!selectedFiles.length) {
+        list.innerHTML = '';
+        return;
+      }
+      list.innerHTML = selectedFiles.map(function (file, index) {
+        return '<li><i class="fas fa-file-alt text-success" aria-hidden="true"></i>' +
+          '<div class="meta"><div class="name">' + escapeHtml(file.name) + '</div>' +
+          '<div class="size">' + escapeHtml(formatSize(file.size)) + '</div></div>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary" data-remove="' + index + '" aria-label="Remove file">' +
+          '<i class="fas fa-times"></i></button></li>';
+      }).join('');
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    document.getElementById('fileInput').addEventListener('change', function (event) {
+      var files = Array.from(event.target.files || []);
+      selectedFiles = selectedFiles.concat(files);
+      uploaded = false;
+      document.getElementById('extractPanel').style.display = 'none';
+      setStatus('');
+      renderFiles();
+      event.target.value = '';
+    });
+
+    document.getElementById('fileList').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-remove]');
+      if (!button) return;
+      selectedFiles.splice(Number(button.getAttribute('data-remove')), 1);
+      renderFiles();
+    });
+
+    document.getElementById('uploadBtn').addEventListener('click', function () {
+      if (!selectedFiles.length) {
+        var msg = t('Select at least one file first.', 'အနည်းဆုံး ဖိုင်တစ်ခု ရွေးပါ။');
+        if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: 'Hard Copy Upload' });
+        else alert(msg);
+        return;
+      }
+      uploaded = true;
+      setStatus(t(
+        selectedFiles.length + ' file(s) received for this demo session.',
+        selectedFiles.length + ' ဖိုင် ဤနမူနာ session အတွက် လက်ခံပြီးပါပြီ။'
+      ));
+    });
+
+    document.getElementById('extractBtn').addEventListener('click', function () {
+      if (!selectedFiles.length) {
+        var msg = t('Select and upload files first.', 'ဖိုင်များ ရွေးပြီး တင်ပါ။');
+        if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: 'Hard Copy Upload' });
+        else alert(msg);
+        return;
+      }
+      if (!uploaded) {
+        var warn = t('Tap Upload first, then extract sample records.', 'Upload ကို နှိပ်ပြီးမှ နမူနာမှတ်တမ်းများ ထုတ်ယူပါ။');
+        if (window.AppDialog && AppDialog.alert) AppDialog.alert(warn, { title: 'Hard Copy Upload' });
+        else alert(warn);
+        return;
+      }
+      document.getElementById('extractPanel').style.display = '';
+      setStatus(t(
+        'Sample records shown. Automatic reading is not connected yet.',
+        'နမူနာ မှတ်တမ်းများ ပြထားသည်။ အလိုအလျောက် ဖတ်ခြင်း မချိတ်ဆက်ရသေးပါ။'
+      ));
+    });
+
+    document.querySelectorAll('.language-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyLanguage(btn.dataset.lang); });
+    });
+    applyLanguage(currentLanguage);
+  </script>
+</body>
+</html>

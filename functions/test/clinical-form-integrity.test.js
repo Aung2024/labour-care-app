@@ -86,13 +86,48 @@ test('home page exposes a role-gated Quality Improvement card', () => {
 
 test('quality hubs and newborn score page are wired for the partner demo', () => {
   const hub = readAppFile('quality-improvement.html');
+  const clinical = readAppFile('quality-clinical-database.html');
+  const hardcopy = readAppFile('quality-hardcopy-upload.html');
+  const readiness = readAppFile('quality-periodic-readiness.html');
+  const checklist = readAppFile('quality-readiness-checklist.html');
+  const facilityVisit = readAppFile('quality-facility-visit.html');
+  const virtualVisits = readAppFile('quality-virtual-visits.html');
+  const facilityReports = readAppFile('quality-facility-reports.html');
   const competency = readAppFile('quality-competency.html');
   const newborn = readAppFile('quality-newborn.html');
   const antenatal = readAppFile('quality-antenatal.html');
   const reviewActions = readAppFile('quality-review-actions.html');
-  assert.match(hub, /Facility Readiness Assessment/);
-  assert.match(hub, /Coming soon/);
-  assert.match(hub, /quality-competency\.html/);
+  const home = readAppFile('home.html');
+
+  assert.doesNotMatch(home, /stat-number[^>]*>QI</);
+  assert.match(hub, /Clinical Database Assessment/);
+  assert.match(hub, /Periodic Readiness Assessment/);
+  assert.match(hub, /Facility Visit Assessment/);
+  assert.match(hub, /Progress and Target Tracking/);
+  assert.match(hub, /quality-clinical-database\.html/);
+  assert.match(hub, /quality-periodic-readiness\.html/);
+  assert.match(hub, /quality-facility-visit\.html/);
+  assert.doesNotMatch(hub, /Competency Assessment/);
+  assert.doesNotMatch(hub, /Facility Readiness Assessment/);
+  assert.doesNotMatch(hub, /Coming soon/);
+
+  assert.match(clinical, /Existing Database/);
+  assert.match(clinical, /Create New database \(Hard copies\)/);
+  assert.match(clinical, /quality-competency\.html/);
+  assert.match(clinical, /quality-hardcopy-upload\.html/);
+  assert.match(hardcopy, /Extract \/ Read records/);
+  assert.match(hardcopy, /accept="\.xlsx/);
+
+  assert.match(readiness, /quality-readiness-checklist\.html\?domain=/);
+  assert.match(checklist, /localStorage/);
+  assert.match(checklist, /CHECKLISTS/);
+  assert.match(facilityVisit, /quality-virtual-visits\.html/);
+  assert.match(facilityVisit, /quality-facility-reports\.html/);
+  assert.match(virtualVisits, /Upcoming calls/);
+  assert.match(virtualVisits, /Previous calls/);
+  assert.match(facilityReports, /Daw Thin Thin \(TMO\)/);
+
+  assert.match(competency, /quality-clinical-database\.html/);
   assert.match(competency, /Antenatal/);
   assert.match(competency, /Intrapartum/);
   assert.match(competency, /Postnatal/);
@@ -100,6 +135,7 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(competency, /quality-antenatal\.html/);
   assert.match(competency, /navigateToAntenatal/);
   assert.doesNotMatch(competency, /showComingSoon\('Antenatal'\)/);
+
   assert.match(newborn, /QualityScoring\.INDICATOR_DEFS/);
   assert.doesNotMatch(newborn, /QualityScoring\.ANC_INDICATOR_DEFS/);
   assert.match(newborn, /loadProviderMonthSummary/);
@@ -111,15 +147,23 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   assert.match(newborn, /'all'/);
   assert.match(newborn, /id="actionModal"/);
   assert.match(newborn, /id="modalNextAction"/);
-  assert.match(newborn, /id="modalActionOwnerType"/);
-  assert.match(newborn, /id="modalActionOwnerOther"/);
-  assert.match(newborn, /id="modalTargetMonth"/);
-  assert.match(newborn, /quality-scoring\.js\?v=288/);
-  assert.match(antenatal, /quality-scoring\.js\?v=288/);
-  assert.match(reviewActions, /quality-scoring\.js\?v=288/);
+  assert.match(newborn, /id="modalPossibleCauses"/);
+  assert.match(newborn, /id="modalActionRows"/);
+  assert.match(newborn, /id="modalTargetMonths"/);
+  assert.match(newborn, /Possible causes/);
+  assert.doesNotMatch(newborn, /Reason category/);
+  assert.doesNotMatch(newborn, /Reason details/);
+  assert.doesNotMatch(newborn, /id="modalReasonCategory"/);
+  assert.doesNotMatch(newborn, /id="modalReasonText"/);
+  assert.match(newborn, /quality-possible-causes\.js\?v=289/);
+  assert.match(newborn, /quality-scoring\.js\?v=289/);
+  assert.match(antenatal, /quality-scoring\.js\?v=289/);
+  assert.match(antenatal, /Reason category/);
+  assert.match(reviewActions, /quality-scoring\.js\?v=289/);
   assert.match(reviewActions, /loadSavedActions/);
   assert.match(reviewActions, /pageDomain/);
   assert.match(reviewActions, /backToScoresBtn/);
+  assert.match(reviewActions, /Possible causes/);
   assert.doesNotMatch(newborn, /Average of scored newborn indicators/);
   assert.doesNotMatch(newborn, /Computed from this midwife/);
   assert.doesNotMatch(newborn, /ဒီမိုအတွက် သားဖွား၏ လူနာမှတ်တမ်းများမှ တွက်ချက်ထားသည်/);
@@ -132,6 +176,7 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
 
 test('QI action plans persist to the all-time document used by Review Actions', () => {
   const helper = readAppFile('js/quality-improvement.js');
+  const causes = readAppFile('js/quality-possible-causes.js');
   assert.match(helper, /quality_improvement_actions/);
   assert.match(helper, /loadSavedActions/);
   assert.match(helper, /formatMonthLabel/);
@@ -140,6 +185,13 @@ test('QI action plans persist to the all-time document used by Review Actions', 
   assert.match(helper, /calculatePatientAncContribution/);
   assert.match(helper, /loadProviderAncMonthSummary/);
   assert.match(helper, /domain: 'antenatal'/);
+  assert.match(helper, /possibleCauses/);
+  assert.match(helper, /actionRows/);
+  assert.match(helper, /targetMonths/);
+  assert.match(causes, /skin_to_skin/);
+  assert.match(causes, /eye_care_teo/);
+  assert.match(causes, /follow_up_schedule/);
+  assert.match(causes, /QualityPossibleCauses/);
 });
 
 test('server QI rebuild stays newborn-only', () => {

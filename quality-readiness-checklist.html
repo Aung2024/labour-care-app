@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Readiness Checklist - Quality Improvement</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/quality-improvement.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <style>
+    :root { --primary-color: #0d9488; --secondary-color: #0f766e; }
+    body { font-family: 'Inter', 'Myanmar Text', 'Segoe UI', sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white; padding: 0.85rem 1rem; position: sticky; top: 0; z-index: 100;
+    }
+    .header-section .container, .page-main { max-width: 760px; }
+    .header-section h1 { font-size: 1.1rem; font-weight: 800; margin: 0; line-height: 1.3; }
+    .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+    .header-actions .btn, .language-btn, .qi-btn { min-height: 44px; touch-action: manipulation; }
+    .page-main { flex: 1; width: 100%; margin: 0 auto; padding: 1rem 1rem calc(2rem + env(safe-area-inset-bottom)); }
+    .checklist-card {
+      background: #fff; border-radius: 16px; border: 1px solid #d7e0e8;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); padding: 1rem;
+    }
+    .check-item {
+      display: flex; align-items: flex-start; gap: 0.75rem;
+      padding: 0.75rem 0.35rem; border-bottom: 1px solid #eef2f7;
+      min-height: 52px;
+    }
+    .check-item:last-child { border-bottom: 0; }
+    .check-item input[type="checkbox"] {
+      width: 22px; height: 22px; margin-top: 0.15rem; flex: 0 0 22px;
+      accent-color: #0d9488;
+    }
+    .check-item label {
+      flex: 1; margin: 0; font-weight: 600; color: #0f172a; line-height: 1.4; cursor: pointer;
+    }
+    .progress-line { color: #64748b; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; }
+    .language-switcher { display: flex; gap: 0.25rem; }
+    .language-btn {
+      min-width: 44px; padding: 0.375rem 0.75rem; border-radius: 8px;
+      background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;
+    }
+    .language-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+    .demo-note {
+      margin-top: 0.85rem; padding: 0.55rem 0.75rem; border-radius: 10px;
+      background: #f0fdfa; border: 1px solid #99f6e4; color: #115e59; font-size: 0.82rem; font-weight: 600;
+    }
+  </style>
+</head>
+<body class="qi-app">
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-7">
+          <h1><i class="fas fa-tasks me-2"></i><span id="pageTitle">Readiness Checklist</span></h1>
+        </div>
+        <div class="col-md-5">
+          <div class="header-actions">
+            <div class="language-switcher" role="group" aria-label="Language">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" aria-label="English">ENG</button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" aria-label="Myanmar">MM</button>
+            </div>
+            <a href="quality-periodic-readiness.html" class="btn btn-outline-light btn-sm" aria-label="Back">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="page-main container">
+    <p class="progress-line" id="progressLine"></p>
+    <div class="checklist-card">
+      <div id="checklistMount" role="group" aria-label="Readiness checklist items"></div>
+      <button type="button" class="btn btn-success qi-btn w-100 mt-3" id="saveBtn" aria-label="Save checklist">
+        <i class="fas fa-save me-1"></i><span class="lang-text" data-en="Save checklist" data-mm="စစ်ဆေးစာရင်း သိမ်းရန်">Save checklist</span>
+      </button>
+      <p class="demo-note lang-text" data-en="WHO/UNICEF-style demo checklist. Tick answers are stored on this device only." data-mm="WHO/UNICEF ပုံစံ နမူနာ စစ်ဆေးစာရင်း။ အမှန်ခြစ်များကို ဤကိရိယာတွင်သာ သိမ်းသည်။">WHO/UNICEF-style demo checklist. Tick answers are stored on this device only.</p>
+    </div>
+  </main>
+
+  <script>
+    const CHECKLISTS = {
+      antenatal: {
+        titleEn: 'Antenatal readiness',
+        titleMm: 'မီးယပ်မတိုင်မီ အဆင်သင့်ဖြစ်မှု',
+        items: [
+          { id: 'anc_space', en: 'Private ANC consultation space is available', mm: 'ကိုယ်ပိုင် ANC တွေ့ဆုံနေရာ ရှိသည်' },
+          { id: 'anc_bp', en: 'Working blood pressure device and adult cuff available', mm: 'အလုပ်လုပ်သော သွေးပေါင်ကိရိယာနှင့် adult cuff ရှိသည်' },
+          { id: 'anc_scale', en: 'Adult scale calibrated and ready', mm: 'မိခင်ချိန်ခွင် စံချိန်ပြီး အဆင်သင့်ရှိသည်' },
+          { id: 'anc_ifa', en: 'Iron–folic acid tablets in stock (not expired)', mm: 'သံဓာတ်–ဖောလစ်အက်ဆစ် စတော့ရှိ (သက်တမ်းမကုန်)' },
+          { id: 'anc_td', en: 'Tetanus diphtheria (TD) vaccine available', mm: 'မေးခိုင်–ဆုံဆို့နာ (TD) ကာကွယ်ဆေး ရှိသည်' },
+          { id: 'anc_hiv', en: 'HIV and syphilis test kits available', mm: 'HIV နှင့် ကာလသားရောဂါ စစ်ဆေးကိရိယာ ရှိသည်' },
+          { id: 'anc_hb', en: 'Hemoglobin testing supplies available', mm: 'သွေးအား (Hb) စစ်ဆေးပစ္စည်း ရှိသည်' },
+          { id: 'anc_danger', en: 'ANC danger-sign job aid displayed or available', mm: 'ANC အန္တရာယ်လက္ခဏာ job aid ရှိသည်' },
+          { id: 'anc_protocol', en: 'National ANC protocol / checklist available', mm: 'နိုင်ငံတော် ANC လမ်းညွှန် / checklist ရှိသည်' },
+          { id: 'anc_register', en: 'ANC register and visit cards ready for documentation', mm: 'ANC မှတ်ပုံတင်နှင့် ပြသကတ်များ အဆင်သင့်ရှိသည်' }
+        ]
+      },
+      intrapartum: {
+        titleEn: 'Intrapartum readiness',
+        titleMm: 'မီးဖွားချိန် အဆင်သင့်ဖြစ်မှု',
+        items: [
+          { id: 'ip_room', en: 'Clean labour / delivery room ready for use', mm: 'သန့်ရှင်းသော မွေးခန်း အသုံးပြုရန် အဆင်သင့်ရှိသည်' },
+          { id: 'ip_partograph', en: 'Partograph forms available', mm: 'Partograph ပုံစံများ ရှိသည်' },
+          { id: 'ip_oxytocin', en: 'Oxytocin available and stored correctly', mm: 'Oxytocin ရှိပြီး မှန်ကန်စွာ သိမ်းဆည်းထားသည်' },
+          { id: 'ip_mgso4', en: 'Magnesium sulfate available for eclampsia', mm: 'အကြောတက်မှုအတွက် Magnesium sulfate ရှိသည်' },
+          { id: 'ip_antibiotics', en: 'Injectable antibiotics available', mm: 'ထိုးဆေး ပဋိဇီဝဆေးများ ရှိသည်' },
+          { id: 'ip_delivery_kit', en: 'Clean / sterile delivery instruments ready', mm: 'သန့်ရှင်း / sterile မွေးဖွားကိရိယာ အဆင်သင့်ရှိသည်' },
+          { id: 'ip_gloves', en: 'Sterile gloves and PPE available', mm: 'Sterile လက်အိတ်နှင့် PPE ရှိသည်' },
+          { id: 'ip_resusc', en: 'Newborn resuscitation area set up near delivery bed', mm: 'မွေးခင်းအနီး မွေးကင်းစ အသက်ပြန်ရှူစေရေး နေရာ ရှိသည်' },
+          { id: 'ip_referral', en: 'Emergency referral plan and transport contacts posted', mm: 'အရေးပေါ် လွှဲပြောင်းအစီအစဉ်နှင့် ဆက်သွယ်ရန် ဖုန်းများ ရှိသည်' },
+          { id: 'ip_staff', en: 'Skilled birth attendant roster covered for this shift', mm: 'ဤဆိုင်းအတွက် ကျွမ်းကျင် မီးဖွားသူ အစီအစဉ် ရှိသည်' }
+        ]
+      },
+      postnatal: {
+        titleEn: 'Postnatal readiness',
+        titleMm: 'မီးတွင်း အဆင်သင့်ဖြစ်မှု',
+        items: [
+          { id: 'pnc_space', en: 'Space available for postnatal mother assessment', mm: 'မီးတွင်း မိခင် စစ်ဆေးရန် နေရာ ရှိသည်' },
+          { id: 'pnc_bp', en: 'BP device ready for postpartum checks', mm: 'မီးတွင်း သွေးပေါင်စစ်ရန် ကိရိယာ အဆင်သင့်ရှိသည်' },
+          { id: 'pnc_bleeding', en: 'PPH emergency drugs and supplies available', mm: 'မွေးပြီးသွေးထွက်များခြင်း အရေးပေါ် ဆေးနှင့် ပစ္စည်း ရှိသည်' },
+          { id: 'pnc_infection', en: 'Infection prevention supplies available', mm: 'ရောဂါကူးစက်မှု ကာကွယ်ရေး ပစ္စည်းများ ရှိသည်' },
+          { id: 'pnc_counselling', en: 'Postnatal counselling job aids available', mm: 'မီးတွင်း အကြံပေး job aid များ ရှိသည်' },
+          { id: 'pnc_fp', en: 'Postpartum family planning methods / referral pathway available', mm: 'မီးတွင်း မိသားစုစီမံကိန်း နည်းလမ်း / လွှဲပြောင်းလမ်းကြောင်း ရှိသည်' },
+          { id: 'pnc_danger', en: 'Maternal danger-sign counselling materials available', mm: 'မိခင် အန္တရာယ်လက္ခဏာ အကြံပေး ပစ္စည်း ရှိသည်' },
+          { id: 'pnc_schedule', en: 'Postnatal visit schedule card / reminder system ready', mm: 'မီးတွင်း ပြန်ပြရက်ကတ် / သတိပေးစနစ် အဆင်သင့်ရှိသည်' },
+          { id: 'pnc_register', en: 'Postnatal register available for documentation', mm: 'မီးတွင်း မှတ်ပုံတင် မှတ်တမ်းတင်ရန် ရှိသည်' },
+          { id: 'pnc_home', en: 'Home visit / outreach plan defined for postpartum mothers', mm: 'မီးတွင်း မိခင်များအတွက် အိမ်လာစစ်ဆေး / အပြင်ထွက် အစီအစဉ် ရှိသည်' }
+        ]
+      },
+      newborn: {
+        titleEn: 'Newborn readiness',
+        titleMm: 'မွေးကင်းစ အဆင်သင့်ဖြစ်မှု',
+        items: [
+          { id: 'nb_warmer', en: 'Warm clean surface / radiant warmer ready for newborn', mm: 'မွေးကင်းစအတွက် နွေးထွေးသန့်ရှင်းသော မျက်နှာပြင် / warmer အဆင်သင့်ရှိသည်' },
+          { id: 'nb_towels', en: 'Clean dry towels / cloths prepared before every birth', mm: 'မွေးဖွားမှုတိုင်း မတိုင်မီ သန့်ရှင်းခြောက်သွေ့အနှီးများ ပြင်ဆင်ထားသည်' },
+          { id: 'nb_cord', en: 'Sterile cord clamps / ties and scissors available', mm: 'Sterile ချက်ကြိုးညှပ် / ကြိုးနှင့် ကတ်ကြေး ရှိသည်' },
+          { id: 'nb_teo', en: 'Tetra Eye Ointment (TEO) in stock and not expired', mm: 'TEO စတော့ရှိပြီး သက်တမ်းမကုန်' },
+          { id: 'nb_vitk', en: 'Vitamin K injection available', mm: 'ဗီတာမင် ကေ ထိုးဆေး ရှိသည်' },
+          { id: 'nb_resusc', en: 'Bag-mask and suction ready for newborn resuscitation', mm: 'မွေးကင်းစ အသက်ပြန်ရှူစေရေး bag-mask နှင့် suction အဆင်သင့်ရှိသည်' },
+          { id: 'nb_scale', en: 'Newborn scale available and working', mm: 'မွေးကင်းစ ချိန်ခွင် ရှိပြီး အလုပ်လုပ်သည်' },
+          { id: 'nb_bf', en: 'Breastfeeding counselling materials available', mm: 'မိခင်နို့တိုက်ကျွေးရေး အကြံပေး ပစ္စည်း ရှိသည်' },
+          { id: 'nb_exam', en: 'Pre-discharge newborn exam checklist available', mm: 'မဆင်းမီ မွေးကင်းစ စစ်ဆေးစာရင်း ရှိသည်' },
+          { id: 'nb_followup', en: 'Newborn follow-up appointment cards available', mm: 'မွေးကင်းစ ပြန်ပြရက်ကတ်များ ရှိသည်' }
+        ]
+      }
+    };
+
+    let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    const domain = new URLSearchParams(location.search).get('domain') || 'newborn';
+    const checklist = CHECKLISTS[domain] || CHECKLISTS.newborn;
+    const storageKey = 'qi_readiness_' + domain;
+
+    function applyLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var text = lang === 'en' ? el.getAttribute('data-en') : el.getAttribute('data-mm');
+        if (text) el.textContent = text;
+      });
+      document.getElementById('pageTitle').textContent =
+        lang === 'en' ? checklist.titleEn : checklist.titleMm;
+      renderChecklist();
+    }
+
+    function loadSaved() {
+      try {
+        return JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function renderChecklist() {
+      var saved = loadSaved();
+      var mount = document.getElementById('checklistMount');
+      mount.innerHTML = checklist.items.map(function (item) {
+        var checked = saved[item.id] ? ' checked' : '';
+        var label = currentLanguage === 'en' ? item.en : item.mm;
+        return '<div class="check-item">' +
+          '<input type="checkbox" id="item_' + item.id + '" data-id="' + item.id + '"' + checked + ' />' +
+          '<label for="item_' + item.id + '">' + label + '</label></div>';
+      }).join('');
+      updateProgress();
+    }
+
+    function updateProgress() {
+      var boxes = Array.from(document.querySelectorAll('#checklistMount input[type="checkbox"]'));
+      var done = boxes.filter(function (box) { return box.checked; }).length;
+      var total = boxes.length;
+      document.getElementById('progressLine').textContent = currentLanguage === 'en'
+        ? (done + ' of ' + total + ' items checked')
+        : (total + ' ချက်အနက် ' + done + ' ချက် အမှန်ခြစ်ပြီး');
+    }
+
+    document.getElementById('checklistMount').addEventListener('change', updateProgress);
+
+    document.getElementById('saveBtn').addEventListener('click', function () {
+      var next = {};
+      document.querySelectorAll('#checklistMount input[type="checkbox"]').forEach(function (box) {
+        next[box.getAttribute('data-id')] = box.checked;
+      });
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      updateProgress();
+      var msg = currentLanguage === 'en'
+        ? 'Checklist saved on this device.'
+        : 'စစ်ဆေးစာရင်းကို ဤကိရိယာတွင် သိမ်းပြီးပါပြီ။';
+      if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: 'Readiness Checklist' });
+      else alert(msg);
+    });
+
+    document.querySelectorAll('.language-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyLanguage(btn.dataset.lang); });
+    });
+    applyLanguage(currentLanguage);
+  </script>
+</body>
+</html>

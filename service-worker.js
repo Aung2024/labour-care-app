@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v288-moh';
+const CACHE_NAME = 'mch-care-v289-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -42,6 +42,13 @@ const FILES_TO_CACHE = [
   './baby-care.html',
   './baby.html',
   './quality-improvement.html',
+  './quality-clinical-database.html',
+  './quality-hardcopy-upload.html',
+  './quality-periodic-readiness.html',
+  './quality-readiness-checklist.html',
+  './quality-facility-visit.html',
+  './quality-virtual-visits.html',
+  './quality-facility-reports.html',
   './quality-competency.html',
   './quality-newborn.html',
   './quality-antenatal.html',
@@ -111,6 +118,7 @@ const FILES_TO_CACHE = [
   './js/transfer-load-utils.js',
   './js/user-cache.js',
   './js/quality-scoring.js',
+  './js/quality-possible-causes.js',
   './js/quality-improvement.js',
   './js/quality-target-banner.js',
   './js/rbac-manager.js',

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtual Visits - Quality Improvement</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/quality-improvement.css" />
+  <script src="js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <style>
+    :root { --primary-color: #0d9488; --secondary-color: #0f766e; }
+    body { font-family: 'Inter', 'Myanmar Text', 'Segoe UI', sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
+    .header-section {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white; padding: 0.85rem 1rem; position: sticky; top: 0; z-index: 100;
+    }
+    .header-section .container, .page-main { max-width: 760px; }
+    .header-section h1 { font-size: 1.15rem; font-weight: 800; margin: 0; }
+    .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+    .header-actions .btn, .language-btn, .qi-btn { min-height: 44px; touch-action: manipulation; }
+    .page-main { flex: 1; width: 100%; margin: 0 auto; padding: 1rem 1rem 2rem; }
+    .section-title { font-size: 0.95rem; font-weight: 800; color: #0f766e; margin: 1rem 0 0.65rem; }
+    .visit-card {
+      background: #fff; border-radius: 14px; border: 1px solid #d7e0e8;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05); padding: 0.95rem 1rem; margin-bottom: 0.75rem;
+    }
+    .visit-card h3 { font-size: 1rem; font-weight: 800; margin: 0 0 0.35rem; }
+    .visit-meta { color: #64748b; font-size: 0.88rem; margin: 0 0 0.65rem; line-height: 1.45; }
+    .badge-status {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700; margin-bottom: 0.55rem;
+    }
+    .badge-status.completed { background: #ecfdf5; color: #047857; }
+    .badge-status.upcoming { background: #eff6ff; color: #1d4ed8; }
+    .visit-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .visit-actions .btn { flex: 1 1 120px; }
+    .language-switcher { display: flex; gap: 0.25rem; }
+    .language-btn {
+      min-width: 44px; padding: 0.375rem 0.75rem; border-radius: 8px;
+      background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;
+    }
+    .language-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+    .demo-note {
+      margin-top: 0.85rem; padding: 0.55rem 0.75rem; border-radius: 10px;
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 0.82rem; font-weight: 600;
+    }
+  </style>
+</head>
+<body class="qi-app">
+  <div class="header-section">
+    <div class="container">
+      <div class="row align-items-center">
+        <div class="col-md-7">
+          <h1><i class="fas fa-video me-2"></i><span class="lang-text" data-en="Virtual Visits" data-mm="အွန်လိုင်း လည်ပတ်မှုများ">Virtual Visits</span></h1>
+        </div>
+        <div class="col-md-5">
+          <div class="header-actions">
+            <div class="language-switcher" role="group" aria-label="Language">
+              <button type="button" class="btn btn-sm language-btn" data-lang="en" aria-label="English">ENG</button>
+              <button type="button" class="btn btn-sm language-btn active" data-lang="mm" aria-label="Myanmar">MM</button>
+            </div>
+            <a href="quality-facility-visit.html" class="btn btn-outline-light btn-sm" aria-label="Back">
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="page-main container">
+    <h2 class="section-title lang-text" data-en="Upcoming calls" data-mm="လာမည့် ခေါ်ဆိုမှုများ">Upcoming calls</h2>
+    <div id="upcomingList"></div>
+    <h2 class="section-title lang-text" data-en="Previous calls" data-mm="ပြီးခဲ့သော ခေါ်ဆိုမှုများ">Previous calls</h2>
+    <div id="pastList"></div>
+    <p class="demo-note lang-text" data-en="Demo schedule only. Video calling is not enabled in this version." data-mm="နမူနာ အချိန်ဇယားသာ။ ဤဗားရှင်းတွင် ဗီဒီယိုခေါ်ဆိုမှု မဖွင့်ရသေးပါ။">Demo schedule only. Video calling is not enabled in this version.</p>
+  </main>
+
+  <script>
+    let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    const upcoming = [
+      { id: 'u1', dateEn: '12 Sep 2026 · 10:00–10:30', dateMm: '၁၂ စက် ၂၀၂၆ · ၁၀:၀၀–၁၀:၃၀', supervisor: 'Daw Thin Thin (TMO)', topicEn: 'Newborn TEO and Vitamin K coaching', topicMm: 'မွေးကင်းစ TEO နှင့် ဗီတာမင်ကေ နည်းလမ်းသင်ကြားမှု' },
+      { id: 'u2', dateEn: '26 Sep 2026 · 14:00–14:30', dateMm: '၂၆ စက် ၂၀၂၆ · ၁၄:၀၀–၁၄:၃၀', supervisor: 'U Kyaw Min (Regional Officer)', topicEn: 'Follow-up on action plan targets', topicMm: 'တိုးတက်ရေး လုပ်ဆောင်ချက် ပန်းတိုင်များ ပြန်လည်သုံးသပ်ခြင်း' }
+    ];
+    const past = [
+      { id: 'p1', dateEn: '28 Aug 2026 · 09:30–10:00', dateMm: '၂၈ သြ ၂၀၂၆ · ၀၉:၃၀–၁၀:၀၀', supervisor: 'Daw Thin Thin (TMO)', topicEn: 'Skin-to-skin and early breastfeeding review', topicMm: 'အသားချင်းထိကပ်နှင့် စောစီးနို့တိုက်မှု ပြန်လည်သုံးသပ်ခြင်း', notesEn: 'Agreed to restock clean towels and display breastfeeding job aid.', notesMm: 'သန့်ရှင်းအနှီး ပြန်ဖြည့်ပြီး breastfeeding job aid ချိတ်ဆွဲရန် သဘောတူခဲ့သည်။' },
+      { id: 'p2', dateEn: '14 Aug 2026 · 15:00–15:25', dateMm: '၁၄ သြ ၂၀၂၆ · ၁၅:၀၀–၁၅:၂၅', supervisor: 'Daw Hnin Ei (Supervisor)', topicEn: 'Monthly QI score discussion', topicMm: 'လစဉ် QI အမှတ် ဆွေးနွေးမှု', notesEn: 'TEO target set at 80% for next two months.', notesMm: 'လာမည့် နှစ်လအတွက် TEO ပန်းတိုင် ၈၀% သတ်မှတ်ခဲ့သည်။' }
+    ];
+
+    function applyLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('appLanguage', lang);
+      document.querySelectorAll('.language-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+      });
+      document.querySelectorAll('.lang-text').forEach(function (el) {
+        var text = lang === 'en' ? el.getAttribute('data-en') : el.getAttribute('data-mm');
+        if (text) el.textContent = text;
+      });
+      renderLists();
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderCard(item, isUpcoming) {
+      var date = currentLanguage === 'en' ? item.dateEn : item.dateMm;
+      var topic = currentLanguage === 'en' ? item.topicEn : item.topicMm;
+      var status = isUpcoming
+        ? (currentLanguage === 'en' ? 'Upcoming' : 'လာမည်')
+        : (currentLanguage === 'en' ? 'Completed' : 'ပြီးမြောက်');
+      var badgeClass = isUpcoming ? 'upcoming' : 'completed';
+      var actions = isUpcoming
+        ? '<button type="button" class="btn btn-success qi-btn" disabled aria-disabled="true">' +
+          (currentLanguage === 'en' ? 'Join (coming soon)' : 'ဝင်ရန် (မကြာမီ)') + '</button>' +
+          '<button type="button" class="btn btn-outline-success qi-btn" data-details="' + item.id + '">' +
+          (currentLanguage === 'en' ? 'Details' : 'အသေးစိတ်') + '</button>'
+        : '<button type="button" class="btn btn-outline-success qi-btn" data-details="' + item.id + '">' +
+          (currentLanguage === 'en' ? 'Details' : 'အသေးစိတ်') + '</button>';
+      return '<article class="visit-card">' +
+        '<span class="badge-status ' + badgeClass + '">' + status + '</span>' +
+        '<h3>' + escapeHtml(topic) + '</h3>' +
+        '<p class="visit-meta">' + escapeHtml(date) + '<br>' +
+        (currentLanguage === 'en' ? 'Supervisor: ' : 'ကြီးကြပ်သူ: ') + escapeHtml(item.supervisor) + '</p>' +
+        '<div class="visit-actions">' + actions + '</div></article>';
+    }
+
+    function renderLists() {
+      document.getElementById('upcomingList').innerHTML = upcoming.map(function (item) {
+        return renderCard(item, true);
+      }).join('');
+      document.getElementById('pastList').innerHTML = past.map(function (item) {
+        return renderCard(item, false);
+      }).join('');
+    }
+
+    document.querySelector('.page-main').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-details]');
+      if (!button) return;
+      var id = button.getAttribute('data-details');
+      var item = upcoming.concat(past).find(function (row) { return row.id === id; });
+      if (!item) return;
+      var body = [
+        currentLanguage === 'en' ? item.dateEn : item.dateMm,
+        (currentLanguage === 'en' ? 'Supervisor: ' : 'ကြီးကြပ်သူ: ') + item.supervisor,
+        currentLanguage === 'en' ? item.topicEn : item.topicMm
+      ];
+      if (item.notesEn) {
+        body.push(currentLanguage === 'en' ? item.notesEn : item.notesMm);
+      } else {
+        body.push(currentLanguage === 'en'
+          ? 'Video call join will be enabled in a later release.'
+          : 'ဗီဒီယိုခေါ်ဆိုမှု ဝင်ရောက်ခြင်းကို နောက်ဗားရှင်းတွင် ဖွင့်မည်။');
+      }
+      var msg = body.join('\n\n');
+      if (window.AppDialog && AppDialog.alert) AppDialog.alert(msg, { title: currentLanguage === 'en' ? 'Virtual visit' : 'အွန်လိုင်း လည်ပတ်မှု' });
+      else alert(msg);
+    });
+
+    document.querySelectorAll('.language-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyLanguage(btn.dataset.lang); });
+    });
+    applyLanguage(currentLanguage);
+  </script>
+</body>
+</html>

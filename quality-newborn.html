@@ -18,8 +18,9 @@
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
   <script src="js/ui-dialogs.js"></script>
-  <script src="js/quality-scoring.js?v=288"></script>
-  <script src="js/quality-improvement.js?v=288"></script>
+  <script src="js/quality-scoring.js?v=289"></script>
+  <script src="js/quality-possible-causes.js?v=289"></script>
+  <script src="js/quality-improvement.js?v=289"></script>
 </head>
 <body class="qi-app">
   <div class="header-section">
@@ -124,38 +125,46 @@
           </div>
           <p class="qi-muted" id="modalScoreDetail"></p>
           <div class="mb-3">
-            <label class="form-label" for="modalReasonCategory">Reason category</label>
-            <select class="form-select" id="modalReasonCategory"></select>
+            <span class="form-label d-block" id="possibleCausesLabel">
+              <span class="lang-text" data-en="Possible causes" data-mm="ဖြစ်နိုင်သော အကြောင်းရင်းများ">Possible causes</span>
+            </span>
+            <div class="cause-list" id="modalPossibleCauses" role="group" aria-labelledby="possibleCausesLabel"></div>
+          </div>
+          <div class="mb-3" id="actionRowsSection">
+            <span class="form-label d-block">
+              <span class="lang-text" data-en="Recommended actions" data-mm="အကြံပြု လုပ်ဆောင်ချက်များ">Recommended actions</span>
+            </span>
+            <div class="action-rows-wrap">
+              <table class="action-rows-table" aria-label="Recommended actions table">
+                <thead>
+                  <tr>
+                    <th class="lang-text" data-en="Recommended actions" data-mm="အကြံပြု လုပ်ဆောင်ချက်များ">Recommended actions</th>
+                    <th class="lang-text" data-en="Responsible" data-mm="တာဝန်ရှိသူ">Responsible</th>
+                    <th class="lang-text" data-en="Date to complete" data-mm="ပြီးမြောက်ရမည့်ရက်">Date to complete</th>
+                  </tr>
+                </thead>
+                <tbody id="modalActionRows"></tbody>
+              </table>
+            </div>
+            <p class="qi-muted small mb-0" id="actionRowsEmptyHint"></p>
           </div>
           <div class="mb-3">
-            <label class="form-label" for="modalReasonText">Reason details</label>
-            <textarea class="form-control" id="modalReasonText" rows="3"></textarea>
-          </div>
-          <div class="mb-3">
-            <label class="form-label" for="modalNextAction">Next Action</label>
+            <label class="form-label" for="modalNextAction">
+              <span class="lang-text" data-en="Next Action" data-mm="နောက်လုပ်ဆောင်ချက်">Next Action</span>
+            </label>
             <textarea class="form-control" id="modalNextAction" rows="3"></textarea>
           </div>
-          <div class="row g-3">
-            <div class="col-md-7">
-              <label class="form-label" for="modalActionOwnerType">
-                <span class="lang-text" data-en="Who will do this action?" data-mm="ဤလုပ်ဆောင်ချက်ကို မည်သူလုပ်မည်နည်း။">Who will do this action?</span>
-              </label>
-              <select class="form-select" id="modalActionOwnerType" aria-label="Who will do this action"></select>
-              <input type="text" class="form-control mt-2" id="modalActionOwnerOther" style="display:none;"
-                placeholder="Name" aria-label="Other action owner" />
-            </div>
-            <div class="col-md-5">
-              <label class="form-label" for="modalTarget">
-                <span class="lang-text" data-en="Next target (%)" data-mm="နောက်ပန်းတိုင် (%)">Next target (%)</span>
-              </label>
-              <input type="number" min="0" max="100" class="form-control" id="modalTarget" />
-            </div>
-            <div class="col-md-5">
-              <label class="form-label" for="modalTargetMonth">
-                <span class="lang-text" data-en="Target month" data-mm="ပန်းတိုင် လ">Target month</span>
-              </label>
-              <select class="form-select" id="modalTargetMonth" aria-label="Target month"></select>
-            </div>
+          <div class="mb-3">
+            <label class="form-label" for="modalTarget">
+              <span class="lang-text" data-en="Next target (%)" data-mm="နောက်ပန်းတိုင် (%)">Next target (%)</span>
+            </label>
+            <input type="number" min="0" max="100" class="form-control" id="modalTarget" />
+          </div>
+          <div class="mb-3">
+            <span class="form-label d-block" id="targetMonthsLabel">
+              <span class="lang-text" data-en="Target months (up to 3)" data-mm="ပန်းတိုင် လများ (အများဆုံး ၃)">Target months (up to 3)</span>
+            </span>
+            <div class="month-chip-list" id="modalTargetMonths" role="group" aria-labelledby="targetMonthsLabel"></div>
           </div>
           <p class="qi-muted mt-3 mb-0" id="modalReadOnlyHint" style="display:none;"></p>
         </div>
@@ -395,41 +404,117 @@
       return (meta && meta.name) || viewer.name || '';
     }
 
-    function fillOwnerSelect(entry) {
-      var select = document.getElementById('modalActionOwnerType');
-      var otherInput = document.getElementById('modalActionOwnerOther');
+    function ownerOptionsHtml(selectedType) {
       var selfName = selectedMidwifeName();
       var tmoName = townshipTmo && townshipTmo.name
         ? townshipTmo.name
         : t('not assigned', 'မရှိသေးပါ');
-      var savedType = entry && entry.actionOwnerType;
-      if (!savedType && entry && entry.actionOwner) {
-        if (entry.actionOwner === selfName) savedType = 'self';
-        else if (townshipTmo && entry.actionOwner === townshipTmo.name) savedType = 'tmo';
-        else savedType = 'other';
+      var type = selectedType || 'self';
+      if (type === 'tmo' && !townshipTmo) type = 'other';
+      return '<option value="self"' + (type === 'self' ? ' selected' : '') + '>' +
+        t('Self', 'ကိုယ်တိုင်') + ' (' + escapeHtml(selfName) + ')</option>' +
+        '<option value="tmo"' + (townshipTmo ? '' : ' disabled') +
+        (type === 'tmo' ? ' selected' : '') + '>' +
+        t('TMO', 'TMO') + ' (' + escapeHtml(tmoName) + ')</option>' +
+        '<option value="other"' + (type === 'other' ? ' selected' : '') + '>' +
+        t('Other', 'အခြား') + '</option>';
+    }
+
+    function selectedCauseIds() {
+      return Array.from(document.querySelectorAll('#modalPossibleCauses input[type="checkbox"]:checked'))
+        .map(function (box) { return box.value; });
+    }
+
+    function selectedTargetMonths() {
+      return Array.from(document.querySelectorAll('#modalTargetMonths input[type="checkbox"]:checked'))
+        .map(function (box) { return box.value; });
+    }
+
+    function renderPossibleCauses(indicatorId, savedCauses, canEdit) {
+      var causes = QualityPossibleCauses.causesForIndicator(indicatorId);
+      var savedIds = Array.isArray(savedCauses)
+        ? savedCauses.map(function (item) { return item.id || item; })
+        : [];
+      document.getElementById('modalPossibleCauses').innerHTML = causes.map(function (cause) {
+        var checked = savedIds.indexOf(cause.id) >= 0 ? ' checked' : '';
+        var label = currentLanguage === 'en' ? cause.en : cause.mm;
+        return '<label class="cause-option">' +
+          '<input type="checkbox" value="' + escapeHtml(cause.id) + '"' + checked +
+          (canEdit ? '' : ' disabled') + ' />' +
+          '<span>' + escapeHtml(label) + '</span></label>';
+      }).join('');
+    }
+
+    function findSavedRow(entry, causeId) {
+      var rows = (entry && entry.actionRows) || [];
+      return rows.find(function (row) { return row.causeId === causeId; }) || null;
+    }
+
+    function renderActionRows(indicatorId, entry, canEdit) {
+      var tbody = document.getElementById('modalActionRows');
+      var hint = document.getElementById('actionRowsEmptyHint');
+      var selected = selectedCauseIds();
+      if (!selected.length) {
+        tbody.innerHTML = '';
+        hint.textContent = t(
+          'Select one or more possible causes to show recommended actions.',
+          'အကြံပြု လုပ်ဆောင်ချက်များ ပြရန် ဖြစ်နိုင်သော အကြောင်းရင်း တစ်ခု သို့မဟုတ် တစ်ခုထက်ပို ရွေးပါ။'
+        );
+        return;
       }
-      if (!savedType) savedType = 'self';
-      select.innerHTML =
-        '<option value="self">' + t('Self', 'ကိုယ်တိုင်') + ' (' + escapeHtml(selfName) + ')</option>' +
-        '<option value="tmo"' + (townshipTmo ? '' : ' disabled') + '>' +
-          t('TMO', 'TMO') + ' (' + escapeHtml(tmoName) + ')</option>' +
-        '<option value="other">' + t('Other', 'အခြား') + '</option>';
-      if (savedType === 'tmo' && !townshipTmo) savedType = 'other';
-      select.value = savedType;
-      otherInput.value = savedType === 'other' ? (entry.actionOwner || '') : '';
-      otherInput.placeholder = t('Enter name', 'အမည် ရိုက်ထည့်ပါ');
-      syncOwnerOtherVisibility();
+      hint.textContent = '';
+      tbody.innerHTML = selected.map(function (causeId, index) {
+        var cause = QualityPossibleCauses.causeById(indicatorId, causeId) ||
+          QualityPossibleCauses.OTHER_CAUSE;
+        var saved = findSavedRow(entry, causeId) || {};
+        var recommended = cause.isOther
+          ? (saved.recommendedAction || '')
+          : (currentLanguage === 'en' ? cause.actionEn : cause.actionMm);
+        var ownerType = saved.actionOwnerType || 'self';
+        var otherName = saved.actionOwnerType === 'other' ? (saved.actionOwner || '') : '';
+        var dueDate = saved.dateToComplete || '';
+        var actionCell = cause.isOther
+          ? ('<textarea class="form-control" rows="3" data-row-action="' + index + '"' +
+            (canEdit ? '' : ' disabled') + ' placeholder="' +
+            escapeHtml(t('Describe the action for Other', 'အခြား အတွက် လုပ်ဆောင်ချက် ရေးပါ')) +
+            '">' + escapeHtml(recommended) + '</textarea>')
+          : ('<div>' + escapeHtml(recommended) + '</div>');
+        return '<tr data-cause-id="' + escapeHtml(causeId) + '">' +
+          '<td>' + actionCell + '</td>' +
+          '<td><select class="form-select" data-row-owner="' + index + '"' +
+          (canEdit ? '' : ' disabled') + '>' + ownerOptionsHtml(ownerType) + '</select>' +
+          '<input type="text" class="form-control mt-2" data-row-owner-other="' + index + '"' +
+          ' style="' + (ownerType === 'other' ? '' : 'display:none;') + '"' +
+          (canEdit ? '' : ' disabled') +
+          ' placeholder="' + escapeHtml(t('Enter name', 'အမည် ရိုက်ထည့်ပါ')) + '" value="' +
+          escapeHtml(otherName) + '" /></td>' +
+          '<td><input type="date" class="form-control" data-row-date="' + index + '"' +
+          (canEdit ? '' : ' disabled') + ' value="' + escapeHtml(dueDate) + '" /></td>' +
+          '</tr>';
+      }).join('');
     }
 
-    function syncOwnerOtherVisibility() {
-      var type = document.getElementById('modalActionOwnerType').value;
-      var otherInput = document.getElementById('modalActionOwnerOther');
-      otherInput.style.display = type === 'other' ? '' : 'none';
-      if (type === 'other') otherInput.focus();
+    function fillTargetMonthChips(savedMonths, canEdit) {
+      var mount = document.getElementById('modalTargetMonths');
+      var scoreMonth = actionScoreMonth();
+      var keys = QualityScoring.upcomingMonthKeys(scoreMonth, 13);
+      var selected = Array.isArray(savedMonths) ? savedMonths.filter(QualityScoring.isMonthKey) : [];
+      if (!selected.length) {
+        var fallback = QualityScoring.nextMonthKey(scoreMonth) ||
+          QualityScoring.nextMonthKey(QualityScoring.currentYangonMonthKey(new Date()));
+        if (fallback) selected = [fallback];
+      }
+      mount.innerHTML = keys.map(function (month) {
+        var isOn = selected.indexOf(month) >= 0;
+        return '<label class="month-chip' + (isOn ? ' is-selected' : '') + '">' +
+          '<input type="checkbox" value="' + month + '"' + (isOn ? ' checked' : '') +
+          (canEdit ? '' : ' disabled') + ' />' +
+          '<span>' + escapeHtml(monthLabel(month)) + '</span></label>';
+      }).join('');
     }
 
-    function resolveActionOwner() {
-      var type = document.getElementById('modalActionOwnerType').value;
+    function resolveRowOwner(rowEl) {
+      var type = rowEl.querySelector('[data-row-owner]').value;
       if (type === 'self') {
         return {
           actionOwnerType: 'self',
@@ -450,29 +535,51 @@
           actionOwnerId: townshipTmo.id
         };
       }
-      var otherName = String(document.getElementById('modalActionOwnerOther').value || '').trim();
+      var otherName = String(rowEl.querySelector('[data-row-owner-other]').value || '').trim();
       if (!otherName) {
-        throw new Error(t('Enter the name of the person who will do this action.', 'လုပ်မည့်သူ၏ အမည် ရိုက်ထည့်ပါ။'));
+        throw new Error(t(
+          'Enter the name of the person who will do each action.',
+          'လုပ်ဆောင်ချက်တိုင်းအတွက် တာဝန်ရှိသူ အမည် ရိုက်ထည့်ပါ။'
+        ));
       }
-      return {
-        actionOwnerType: 'other',
-        actionOwner: otherName,
-        actionOwnerId: ''
-      };
+      return { actionOwnerType: 'other', actionOwner: otherName, actionOwnerId: '' };
     }
 
-    function fillTargetMonthSelect(savedMonth) {
-      var select = document.getElementById('modalTargetMonth');
-      var scoreMonth = actionScoreMonth();
-      var defaultMonth = QualityScoring.nextMonthKey(scoreMonth) ||
-        QualityScoring.nextMonthKey(QualityScoring.currentYangonMonthKey(new Date()));
-      var value = QualityScoring.isMonthKey(savedMonth) ? savedMonth : defaultMonth;
-      var keys = QualityScoring.upcomingMonthKeys(scoreMonth, 13);
-      if (keys.indexOf(value) < 0) keys.unshift(value);
-      select.innerHTML = keys.map(function (month) {
-        return '<option value="' + month + '">' + monthLabel(month) + '</option>';
-      }).join('');
-      select.value = value;
+    function collectActionRows(indicatorId) {
+      var rows = [];
+      Array.from(document.querySelectorAll('#modalActionRows tr[data-cause-id]')).forEach(function (rowEl) {
+        var causeId = rowEl.getAttribute('data-cause-id');
+        var cause = QualityPossibleCauses.causeById(indicatorId, causeId) ||
+          QualityPossibleCauses.OTHER_CAUSE;
+        var owner = resolveRowOwner(rowEl);
+        var recommended = cause.isOther
+          ? String(rowEl.querySelector('[data-row-action]').value || '').trim()
+          : (currentLanguage === 'en' ? cause.actionEn : cause.actionMm);
+        if (cause.isOther && !recommended) {
+          throw new Error(t(
+            'Enter a recommended action for Other.',
+            'အခြား အတွက် အကြံပြု လုပ်ဆောင်ချက် ရေးပါ။'
+          ));
+        }
+        var dateToComplete = String(rowEl.querySelector('[data-row-date]').value || '').trim();
+        if (!dateToComplete) {
+          throw new Error(t(
+            'Enter a date to complete for each selected cause.',
+            'ရွေးထားသော အကြောင်းရင်းတိုင်းအတွက် ပြီးမြောက်ရမည့်ရက် ထည့်ပါ။'
+          ));
+        }
+        rows.push({
+          causeId: causeId,
+          causeLabelEn: cause.en,
+          causeLabelMm: cause.mm,
+          recommendedAction: recommended,
+          actionOwnerType: owner.actionOwnerType,
+          actionOwner: owner.actionOwner,
+          actionOwnerId: owner.actionOwnerId,
+          dateToComplete: dateToComplete
+        });
+      });
+      return rows;
     }
 
     function openActionModal(indicatorId) {
@@ -493,25 +600,15 @@
       document.getElementById('modalScoreDetail').textContent =
         totals.numerator + ' / ' + totals.denominator + ' ' +
         t('newborn babies met this indicator.', 'မွေးကင်းစကလေးများ ဤအချက်နှင့် ကိုက်ညီသည်။');
-      document.getElementById('modalReasonCategory').innerHTML =
-        '<option value="">' + t('Select category', 'အမျိုးအစား ရွေးပါ') + '</option>' +
-        QualityScoring.REASON_CATEGORIES.map(function (category) {
-          var selected = entry.reasonCategory === category.id ? ' selected' : '';
-          return '<option value="' + category.id + '"' + selected + '>' +
-            escapeHtml(currentLanguage === 'en' ? category.en : category.mm) + '</option>';
-        }).join('');
-      document.getElementById('modalReasonText').value = entry.explanation || '';
+      renderPossibleCauses(indicatorId, entry.possibleCauses, canEdit);
+      renderActionRows(indicatorId, entry, canEdit);
       document.getElementById('modalNextAction').value = entry.nextAction || '';
       document.getElementById('modalTarget').value =
         entry.nextTargetPercent != null ? entry.nextTargetPercent : indicator.defaultTarget;
-      fillOwnerSelect(entry);
-      fillTargetMonthSelect(entry.targetMonth);
-      if (!entry.explanation) applyReasonTemplate();
+      fillTargetMonthChips(entry.targetMonths || (entry.targetMonth ? [entry.targetMonth] : []), canEdit);
 
-      ['modalReasonCategory', 'modalReasonText', 'modalNextAction',
-        'modalActionOwnerType', 'modalActionOwnerOther', 'modalTarget', 'modalTargetMonth'].forEach(function (id) {
-        document.getElementById(id).disabled = !canEdit;
-      });
+      document.getElementById('modalNextAction').disabled = !canEdit;
+      document.getElementById('modalTarget').disabled = !canEdit;
       document.getElementById('saveActionBtn').style.display = canEdit ? '' : 'none';
       var hint = document.getElementById('modalReadOnlyHint');
       hint.style.display = canEdit ? 'none' : '';
@@ -523,42 +620,49 @@
       actionModal.show();
     }
 
-    function applyReasonTemplate() {
-      var categoryId = document.getElementById('modalReasonCategory').value;
-      var textarea = document.getElementById('modalReasonText');
-      var category = QualityScoring.REASON_CATEGORIES.find(function (item) {
-        return item.id === categoryId;
-      });
-      if (!category) return;
-      var template = currentLanguage === 'en' ? category.defaultEn : category.defaultMm;
-      var templates = QualityScoring.REASON_CATEGORIES.reduce(function (list, item) {
-        list.push(item.defaultEn, item.defaultMm);
-        return list;
-      }, []);
-      var current = String(textarea.value || '').trim();
-      if (!current || templates.indexOf(current) >= 0) textarea.value = template;
-    }
-
     async function handleSaveAction() {
       if (!selectedIndicatorId) return;
       var saveButton = document.getElementById('saveActionBtn');
       saveButton.disabled = true;
       try {
-        var owner = resolveActionOwner();
+        var causeIds = selectedCauseIds();
+        if (!causeIds.length) {
+          throw new Error(t('Select at least one possible cause.', 'ဖြစ်နိုင်သော အကြောင်းရင်း အနည်းဆုံး တစ်ခု ရွေးပါ။'));
+        }
+        var targetMonths = selectedTargetMonths();
+        if (!targetMonths.length) {
+          throw new Error(t('Select at least one target month.', 'ပန်းတိုင် လ အနည်းဆုံး တစ်ခု ရွေးပါ။'));
+        }
+        if (targetMonths.length > 3) {
+          throw new Error(t('Select up to 3 target months.', 'ပန်းတိုင် လ အများဆုံး ၃ ခု ရွေးပါ။'));
+        }
+        var actionRows = collectActionRows(selectedIndicatorId);
+        var possibleCauses = causeIds.map(function (causeId) {
+          var cause = QualityPossibleCauses.causeById(selectedIndicatorId, causeId) ||
+            QualityPossibleCauses.OTHER_CAUSE;
+          return { id: cause.id, en: cause.en, mm: cause.mm };
+        });
+        var firstOwner = actionRows[0];
         await QualityImprovement.saveActionPlanIndicator(
           viewer,
           selectedProviderId,
           actionScoreMonth(),
           selectedIndicatorId,
           {
-            reasonCategory: document.getElementById('modalReasonCategory').value,
-            explanation: document.getElementById('modalReasonText').value,
+            domain: 'newborn',
+            possibleCauses: possibleCauses,
+            actionRows: actionRows,
+            reasonCategory: causeIds.indexOf('other') >= 0 ? 'other' : 'knowledge_training',
+            explanation: possibleCauses.map(function (item) {
+              return currentLanguage === 'en' ? item.en : item.mm;
+            }).join('; '),
             nextAction: document.getElementById('modalNextAction').value,
-            actionOwnerType: owner.actionOwnerType,
-            actionOwner: owner.actionOwner,
-            actionOwnerId: owner.actionOwnerId,
+            actionOwnerType: firstOwner.actionOwnerType,
+            actionOwner: firstOwner.actionOwner,
+            actionOwnerId: firstOwner.actionOwnerId,
             nextTargetPercent: document.getElementById('modalTarget').value,
-            targetMonth: document.getElementById('modalTargetMonth').value
+            targetMonth: targetMonths[0],
+            targetMonths: targetMonths
           }
         );
         currentPlan = await loadPlanForEdit();
@@ -586,8 +690,32 @@
       openActionModal(row.getAttribute('data-indicator-id'));
     });
     document.getElementById('saveActionBtn').addEventListener('click', handleSaveAction);
-    document.getElementById('modalReasonCategory').addEventListener('change', applyReasonTemplate);
-    document.getElementById('modalActionOwnerType').addEventListener('change', syncOwnerOtherVisibility);
+    document.getElementById('modalPossibleCauses').addEventListener('change', function () {
+      var entry = planEntry(currentPlan, selectedIndicatorId) || {};
+      var canEdit = QualityImprovement.isMidwifeRole(viewer.role) &&
+        viewer.uid === selectedProviderId;
+      renderActionRows(selectedIndicatorId, entry, canEdit);
+    });
+    document.getElementById('modalActionRows').addEventListener('change', function (event) {
+      var select = event.target.closest('[data-row-owner]');
+      if (!select) return;
+      var row = select.closest('tr');
+      var other = row.querySelector('[data-row-owner-other]');
+      if (other) other.style.display = select.value === 'other' ? '' : 'none';
+    });
+    document.getElementById('modalTargetMonths').addEventListener('change', function (event) {
+      var box = event.target.closest('input[type="checkbox"]');
+      if (!box) return;
+      var checked = selectedTargetMonths();
+      if (checked.length > 3) {
+        box.checked = false;
+        alert(t('Select up to 3 target months.', 'ပန်းတိုင် လ အများဆုံး ၃ ခု ရွေးပါ။'));
+      }
+      document.querySelectorAll('#modalTargetMonths .month-chip').forEach(function (chip) {
+        var input = chip.querySelector('input');
+        chip.classList.toggle('is-selected', !!(input && input.checked));
+      });
+    });
 
     document.getElementById('monthSelect').addEventListener('change', function () {
       selectedMonth = document.getElementById('monthSelect').value;

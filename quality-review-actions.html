@@ -17,8 +17,8 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/nav-back.js"></script>
-  <script src="js/quality-scoring.js?v=288"></script>
-  <script src="js/quality-improvement.js?v=288"></script>
+  <script src="js/quality-scoring.js?v=289"></script>
+  <script src="js/quality-improvement.js?v=289"></script>
 </head>
 <body class="qi-app">
   <header class="app-header">
@@ -163,6 +163,61 @@
       }
     }
 
+    const renderActionDetails = (action) => {
+      const targetMonths = Array.isArray(action.targetMonths) && action.targetMonths.length
+        ? action.targetMonths
+        : (action.targetMonth ? [action.targetMonth] : [])
+      const targetLabel = targetMonths.map((month) => monthLabel(month)).join(', ')
+      const hasStructured = Array.isArray(action.possibleCauses) && action.possibleCauses.length
+
+      if (pageDomain === 'newborn' && hasStructured) {
+        const causes = action.possibleCauses.map((cause) => escapeHtml(cause.en || cause.mm || cause.id || '')).join('; ')
+        const rows = (action.actionRows || []).map((row) => {
+          const ownerType = row.actionOwnerType
+          const ownerPrefix = ownerType === 'self'
+            ? 'Self · '
+            : (ownerType === 'tmo' ? 'TMO · ' : (ownerType === 'other' ? 'Other · ' : ''))
+          return '<tr><td>' + escapeHtml(row.recommendedAction || '—') + '</td>' +
+            '<td>' + escapeHtml(ownerPrefix + (row.actionOwner || '—')) + '</td>' +
+            '<td>' + escapeHtml(row.dateToComplete || '—') + '</td></tr>'
+        }).join('')
+        return '<div class="detail-grid">' +
+          '<div class="detail"><span class="detail-label">Possible causes</span>' +
+          '<span class="detail-value">' + causes + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Next Action</span>' +
+          '<span class="detail-value">' + escapeHtml(action.nextAction) + '</span></div>' +
+          '<div class="detail"><span class="detail-label">Next target</span>' +
+          '<span class="detail-value">' +
+          escapeHtml(action.nextTargetPercent != null ? action.nextTargetPercent + '%' : '—') +
+          (targetLabel ? ' by ' + escapeHtml(targetLabel) : '') +
+          '</span></div></div>' +
+          (rows
+            ? '<div class="action-rows-wrap mt-3"><table class="action-rows-table"><thead><tr>' +
+              '<th>Recommended actions</th><th>Responsible</th><th>Date to complete</th></tr></thead><tbody>' +
+              rows + '</tbody></table></div>'
+            : '')
+      }
+
+      const ownerType = action.actionOwnerType
+      const ownerPrefix = ownerType === 'self'
+        ? 'Self · '
+        : (ownerType === 'tmo' ? 'TMO · ' : (ownerType === 'other' ? 'Other · ' : ''))
+      const targetMonth = action.targetMonth || ''
+      return '<div class="detail-grid">' +
+        '<div class="detail"><span class="detail-label">Reason category</span>' +
+        '<span class="detail-value">' + escapeHtml(reasonLabel(action.reasonCategory)) + '</span></div>' +
+        '<div class="detail"><span class="detail-label">Reason details</span>' +
+        '<span class="detail-value">' + escapeHtml(action.explanation) + '</span></div>' +
+        '<div class="detail"><span class="detail-label">Next Action</span>' +
+        '<span class="detail-value">' + escapeHtml(action.nextAction) + '</span></div>' +
+        '<div class="detail"><span class="detail-label">Who will do it</span>' +
+        '<span class="detail-value">' + escapeHtml(ownerPrefix + (action.actionOwner || '—')) + '</span></div>' +
+        '<div class="detail"><span class="detail-label">Next target</span>' +
+        '<span class="detail-value">' + escapeHtml(action.nextTargetPercent != null ? action.nextTargetPercent + '%' : '—') +
+        (targetMonth ? ' by ' + escapeHtml(monthLabel(targetMonth)) : '') +
+        '</span></div></div>'
+    }
+
     const renderActions = async (actions) => {
       const mount = document.getElementById('actionList')
       const rows = (actions || []).filter((action) => isSavedAction(action) && action.indicatorId)
@@ -176,11 +231,9 @@
         const indicator = indicatorById(action.indicatorId) || { en: action.indicatorId }
         const rowId = 'action-row-' + index
         const scoreMonth = action.sourceScoreMonth || action.scoreMonth || ''
-        const targetMonth = action.targetMonth || ''
-        const ownerType = action.actionOwnerType
-        const ownerPrefix = ownerType === 'self'
-          ? 'Self · '
-          : (ownerType === 'tmo' ? 'TMO · ' : (ownerType === 'other' ? 'Other · ' : ''))
+        const targetMonths = Array.isArray(action.targetMonths) && action.targetMonths.length
+          ? action.targetMonths
+          : (action.targetMonth ? [action.targetMonth] : [])
         return '<article class="action-card" id="' + rowId + '" data-action-row ' +
           'data-provider-id="' + escapeHtml(action.providerId || selectedProviderId) + '" ' +
           'data-score-month="' + escapeHtml(scoreMonth) + '" ' +
@@ -189,24 +242,11 @@
           '<h2 class="action-title">' + escapeHtml(indicator.en) + '</h2>' +
           '<div class="qi-badges">' +
           '<span class="period-badge">Score · ' + escapeHtml(monthLabel(scoreMonth)) + '</span>' +
-          (targetMonth
-            ? '<span class="period-badge target">Target · ' + escapeHtml(monthLabel(targetMonth)) + '</span>'
-            : '') +
+          targetMonths.map((month) =>
+            '<span class="period-badge target">Target · ' + escapeHtml(monthLabel(month)) + '</span>'
+          ).join('') +
           '</div></div>' +
-          '<div class="detail-grid">' +
-          '<div class="detail"><span class="detail-label">Reason category</span>' +
-          '<span class="detail-value">' + escapeHtml(reasonLabel(action.reasonCategory)) + '</span></div>' +
-          '<div class="detail"><span class="detail-label">Reason details</span>' +
-          '<span class="detail-value">' + escapeHtml(action.explanation) + '</span></div>' +
-          '<div class="detail"><span class="detail-label">Next Action</span>' +
-          '<span class="detail-value">' + escapeHtml(action.nextAction) + '</span></div>' +
-          '<div class="detail"><span class="detail-label">Who will do it</span>' +
-          '<span class="detail-value">' + escapeHtml(ownerPrefix + (action.actionOwner || '—')) + '</span></div>' +
-          '<div class="detail"><span class="detail-label">Next target</span>' +
-          '<span class="detail-value">' + escapeHtml(action.nextTargetPercent != null ? action.nextTargetPercent + '%' : '—') +
-          (targetMonth ? ' by ' + escapeHtml(monthLabel(targetMonth)) : '') +
-          '</span></div>' +
-          '</div>' +
+          renderActionDetails(action) +
           '<div class="comments"><div class="comment-list">Loading comment…</div>' +
           (QualityImprovement.isSupervisorRole(viewer.role)
             ? '<label class="form-label fw-bold mt-2">TMO / Supervisor comment</label>' +
