@@ -129,11 +129,6 @@
     }
   }
 
-  function selectedLabName() {
-    var match = state.labs.find(function (lab) { return lab.id === state.labId; });
-    return match ? match.name : '';
-  }
-
   async function loadTestCatalog() {
     state.labId = el('selectedLab').value;
     if (!state.labId) {
@@ -234,23 +229,13 @@
   function voucherRecord(result) {
     return result && (result.voucher || result.data || result);
   }
-  function renderVoucher(voucher, tests) {
+  function renderVoucher(voucher) {
     var code = voucher.code || voucher.voucherCode || voucher.opaqueCode || voucher.id;
     if (!code) throw new Error('Voucher service did not return an opaque voucher code.');
     var qrPayload = voucher.qrPayload || voucher.redeemUrl || voucher.redemptionUrl ||
       new URL('lab-vouchers.html?code=' + encodeURIComponent(code), window.location.href).href;
-    var generatedAt = voucher.generatedAt || voucher.createdAt || new Date().toISOString();
-    var generatedBy = voucher.generatedByName || voucher.issuerName || issuerDisplayName(state.profile, state.user);
-    var patientRef = voucher.patientReference || voucher.patientRef || state.patientId;
 
     el('voucherCode').textContent = code;
-    el('voucherLabName').textContent = selectedLabName() || 'the selected laboratory';
-    el('voucherPatientRef').textContent = patientRef;
-    el('voucherGeneratedBy').textContent = generatedBy;
-    el('voucherGeneratedAt').textContent = new Date(generatedAt && generatedAt.toDate ? generatedAt.toDate() : generatedAt).toLocaleString();
-    el('voucherTests').innerHTML = tests.map(function (test) {
-      return '<tr><td>' + escapeHtml(test.name) + '</td><td class="money">' + money(test.clientCostShare) + '</td></tr>';
-    }).join('');
     el('voucherQr').innerHTML = '';
     if (typeof window.QRCode !== 'function') throw new Error('QR library did not load. Check the internet connection and try again.');
     new window.QRCode(el('voucherQr'), { text: qrPayload, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
@@ -301,7 +286,7 @@
         generatedByName: payload.issuer.displayName,
         generatedAt: new Date().toISOString()
       });
-      renderVoucher(state.voucher, tests);
+      renderVoucher(state.voucher);
       setStatus('Voucher generated successfully.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
