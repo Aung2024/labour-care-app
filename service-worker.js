@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v262-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v263-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -106,7 +106,6 @@ const FILES_TO_CACHE = [
   './js/status-manager.js',
   './js/sent-transfer-hrt-view.js',
   './js/transfer-load-utils.js',
-  './js/user-cache.js',
   './css/style.css',
   './css/program-officer.css',
   './css/vouchers.css',

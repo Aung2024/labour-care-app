@@ -12,6 +12,11 @@
   ];
 
   function el(id) { return document.getElementById(id); }
+  function requireEl(id) {
+    var node = el(id);
+    if (!node) throw new Error('Voucher page is out of date. Refresh once, then generate again.');
+    return node;
+  }
   function text(value) { return value === undefined || value === null || value === '' ? '—' : String(value); }
   function escapeHtml(value) {
     return String(value === undefined || value === null ? '' : value)
@@ -235,12 +240,15 @@
     var qrPayload = voucher.qrPayload || voucher.redeemUrl || voucher.redemptionUrl ||
       new URL('lab-vouchers.html?code=' + encodeURIComponent(code), window.location.href).href;
 
-    el('voucherCode').textContent = code;
-    el('voucherQr').innerHTML = '';
+    var codeNode = requireEl('voucherCode');
+    var qrNode = requireEl('voucherQr');
+    var resultNode = requireEl('voucherResult');
+    codeNode.textContent = code;
+    qrNode.innerHTML = '';
     if (typeof window.QRCode !== 'function') throw new Error('QR library did not load. Check the internet connection and try again.');
-    new window.QRCode(el('voucherQr'), { text: qrPayload, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
-    el('voucherResult').classList.add('show');
-    el('voucherResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    new window.QRCode(qrNode, { text: qrPayload, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
+    resultNode.classList.add('show');
+    resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function generate(event) {
