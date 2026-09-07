@@ -253,7 +253,7 @@
     }).join('');
     el('voucherQr').innerHTML = '';
     if (typeof window.QRCode !== 'function') throw new Error('QR library did not load. Check the internet connection and try again.');
-    new window.QRCode(el('voucherQr'), { text: qrPayload, width: 220, height: 220, correctLevel: window.QRCode.CorrectLevel.M });
+    new window.QRCode(el('voucherQr'), { text: qrPayload, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
     el('voucherResult').classList.add('show');
     el('voucherResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -311,12 +311,24 @@
     }
   }
 
+  function waitForVoucherImages() {
+    var images = Array.from(el('a5Voucher').querySelectorAll('img'));
+    return Promise.all(images.map(function (image) {
+      if (image.complete && image.naturalWidth) return Promise.resolve();
+      return new Promise(function (resolve) {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    }));
+  }
+
   async function downloadPng() {
     var button = el('downloadButton');
     try {
       assertOnline();
       if (typeof window.html2canvas !== 'function') throw new Error('PNG export library is unavailable.');
       button.disabled = true;
+      await waitForVoucherImages();
       var canvas = await window.html2canvas(el('a5Voucher'), {
         backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false, width: 559, height: 794
       });

@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v260-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v261-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -114,7 +114,9 @@ const FILES_TO_CACHE = [
   './css/choice-controls.css',
   './css/compact-app-bar.css',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './images/logos/momentum-global.png',
+  './images/logos/jhpiego.png'
 ];
 
 // Install event - cache resources
