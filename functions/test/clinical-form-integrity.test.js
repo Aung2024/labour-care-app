@@ -100,7 +100,7 @@ test('quality hubs and newborn score page are wired for the partner demo', () =>
   const home = readAppFile('home.html');
 
   assert.doesNotMatch(home, /stat-number[^>]*>QI</);
-  assert.match(hub, /Clinical Database Assessment/);
+  assert.match(hub, /Clinical Data-based Assessment/);
   assert.match(hub, /Periodic Readiness Assessment/);
   assert.match(hub, /Facility Visit Assessment/);
   assert.match(hub, /Progress and Target Tracking/);
