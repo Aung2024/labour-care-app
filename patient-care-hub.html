@@ -1080,10 +1080,10 @@
   <script src="js/page-performance.js"></script>
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
-  <script src="js/ui-dialogs.js"></script>
+  <script src="js/ui-dialogs.js?v=299"></script>
   <script src="js/high-risk-utils.js"></script>
   <script src="js/baby-patient-utils.js"></script>
-  <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/delivery-notes-utils.js?v=299"></script>
   <script src="js/infection-alerts.js"></script>
   <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/submit-guard.js"></script>
@@ -2219,9 +2219,9 @@
           document.getElementById('thirdStageOxytocin').checked = notes.thirdStage.oxytocinGiven === true;
           document.getElementById('thirdStageCCT').checked = notes.thirdStage.controlledCordTraction === true;
           document.getElementById('deliveryPregnancyType').value = notes.deliveryDetails.pregnancyType || 'single';
-          document.getElementById('deliveryBirthProvider').value = DeliveryNotesUtils.normalizeBirthProvider(notes.deliveryDetails.birthProvider) || '';
-          document.getElementById('deliveryMode').value = DeliveryNotesUtils.normalizeDeliveryModeForForm(notes.deliveryDetails.modeOfDelivery) || '';
-          document.getElementById('deliveryBirthPlace').value = DeliveryNotesUtils.normalizeBirthPlaceForForm(notes.deliveryDetails.birthPlace) || '';
+          document.getElementById('deliveryBirthProvider').value = mapDeliveryBirthProvider(notes.deliveryDetails.birthProvider);
+          document.getElementById('deliveryMode').value = mapDeliveryMode(notes.deliveryDetails.modeOfDelivery);
+          document.getElementById('deliveryBirthPlace').value = mapDeliveryBirthPlace(notes.deliveryDetails.birthPlace);
           renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
         } else {
           document.getElementById('thirdStageOxytocin').checked = false;
@@ -2243,7 +2243,12 @@
         document.getElementById('thirdStageCCT').checked = false;
         document.getElementById('deliveryPregnancyType').value = 'single';
         renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
-        await applyDeliveryGestationalWeek(selectedPatient.id, '');
+        try {
+          await applyDeliveryGestationalWeek(selectedPatient.id, '');
+        } catch (gaError) {
+          console.warn('Could not apply delivery gestational age:', gaError);
+          applyDeliveryGaDisplay('');
+        }
         applyDeliveryNotesFormState();
       }
     }
@@ -2268,20 +2273,92 @@
       return !isNaN(week) && week >= 20 && week <= 45 ? Math.round(week * 10) / 10 : null;
     }
 
+    function splitDeliveryGestationalAge(value) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.splitGestationalAge === 'function') {
+        return DeliveryNotesUtils.splitGestationalAge(value);
+      }
+      var n = parseFloat(value);
+      if (isNaN(n)) return null;
+      var weeks = Math.floor(n);
+      var days = Math.round((n - weeks) * 7);
+      if (days === 7) {
+        weeks += 1;
+        days = 0;
+      }
+      if (days < 0) days = 0;
+      return { weeks: weeks, days: days };
+    }
+
+    function combineDeliveryGestationalAge(weeks, days) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.combineGestationalAge === 'function') {
+        return DeliveryNotesUtils.combineGestationalAge(weeks, days);
+      }
+      var w = parseInt(weeks, 10);
+      var d = parseInt(days, 10);
+      if (isNaN(w)) return null;
+      if (isNaN(d) || d < 0) d = 0;
+      if (d > 6) d = 6;
+      return w + (d / 7);
+    }
+
+    function formatDeliveryGestationalAge(value, language) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.formatGestationalAgeWeeksDays === 'function') {
+        return DeliveryNotesUtils.formatGestationalAgeWeeksDays(value, language);
+      }
+      var parts = splitDeliveryGestationalAge(value);
+      if (!parts) return '';
+      if (language === 'mm') {
+        var digits = '၀၁၂၃၄၅၆၇၈၉';
+        var mm = String(parts.weeks) + ' ပတ် ' + String(parts.days) + ' ရက်';
+        return mm.replace(/\d/g, function (digit) { return digits[digit]; });
+      }
+      return parts.weeks + (parts.weeks === 1 ? ' week ' : ' weeks ') +
+        parts.days + (parts.days === 1 ? ' day' : ' days');
+    }
+
+    function mapDeliveryBirthProvider(value) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.normalizeBirthProvider === 'function') {
+        return DeliveryNotesUtils.normalizeBirthProvider(value) || '';
+      }
+      var v = String(value || '').toLowerCase();
+      if (v === 'tba_other') return 'tba';
+      return value || '';
+    }
+
+    function mapDeliveryMode(value) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.normalizeDeliveryModeForForm === 'function') {
+        return DeliveryNotesUtils.normalizeDeliveryModeForForm(value) || '';
+      }
+      var v = String(value || '').toLowerCase();
+      if (v === 'c_section' || v === 'caesarean_section') return 'emergency_c_section';
+      return value || '';
+    }
+
+    function mapDeliveryBirthPlace(value) {
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.normalizeBirthPlaceForForm === 'function') {
+        return DeliveryNotesUtils.normalizeBirthPlaceForForm(value) || '';
+      }
+      if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.normalizeBirthPlaceForNewborn === 'function') {
+        var key = DeliveryNotesUtils.normalizeBirthPlaceForNewborn(value);
+        return key === 'public_facility' ? 'health_facility_subfacility' : (key || '');
+      }
+      return value === 'public_facility' ? 'health_facility_subfacility' : (value || '');
+    }
+
     function syncDeliveryGestationalWeekFromManual() {
       const hidden = document.getElementById('deliveryGestationalWeek');
       const weeksEl = document.getElementById('deliveryGaWeeks');
       const daysEl = document.getElementById('deliveryGaDays');
-      if (!hidden || !weeksEl || !window.DeliveryNotesUtils) return;
-      const combined = DeliveryNotesUtils.combineGestationalAge(weeksEl.value, daysEl && daysEl.value);
+      if (!hidden || !weeksEl) return;
+      const combined = combineDeliveryGestationalAge(weeksEl.value, daysEl && daysEl.value);
       hidden.value = combined == null ? '' : String(Math.round(combined * 1000) / 1000);
     }
 
     function refreshDeliveryGaReadout() {
       const readout = document.getElementById('deliveryGaReadout');
       const hidden = document.getElementById('deliveryGestationalWeek');
-      if (!readout || readout.hidden || !hidden || !window.DeliveryNotesUtils) return;
-      readout.textContent = DeliveryNotesUtils.formatGestationalAgeWeeksDays(hidden.value, currentLanguage);
+      if (!readout || readout.hidden || !hidden) return;
+      readout.textContent = formatDeliveryGestationalAge(hidden.value, currentLanguage);
     }
 
     function applyDeliveryGaDisplay(weekValue) {
@@ -2291,12 +2368,12 @@
       const hint = document.getElementById('deliveryGestationalWeekHint');
       const weeksEl = document.getElementById('deliveryGaWeeks');
       const daysEl = document.getElementById('deliveryGaDays');
-      const parts = window.DeliveryNotesUtils ? DeliveryNotesUtils.splitGestationalAge(weekValue) : null;
+      const parts = splitDeliveryGestationalAge(weekValue);
       if (hidden) hidden.value = weekValue != null && weekValue !== '' ? String(weekValue) : '';
       if (deliveryGaLockedFromAnc && parts) {
         if (readout) {
           readout.hidden = false;
-          readout.textContent = DeliveryNotesUtils.formatGestationalAgeWeeksDays(weekValue, currentLanguage);
+          readout.textContent = formatDeliveryGestationalAge(weekValue, currentLanguage);
         }
         if (manual) manual.hidden = true;
         if (weeksEl) weeksEl.value = parts.weeks;
