@@ -13,6 +13,7 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/patient-session.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/offline-manager.js"></script>
   <script src="js/session-manager.js"></script>
@@ -815,11 +816,15 @@
       return currentLanguage === 'en' ? en : mm;
     }
 
-    function updatePatientMetaLine(age, lmp, ga) {
+    function updatePatientMetaLine(age, lmp, ga, hasBirthed) {
       var parts = [];
       if (age != null && age !== '') parts.push(labT('Age ' + age, 'အသက် ' + age));
       if (lmp) parts.push(labT('LMP ' + lmp, 'နောက်ဆုံးရာသီ ' + lmp));
-      if (ga) parts.push(labT('GA ' + ga, 'ကိုယ်ဝန် ' + ga));
+      if (hasBirthed) {
+        parts.push(labT('Birthed', 'မွေးပြီး'));
+      } else if (ga) {
+        parts.push(labT('GA ' + ga, 'ကိုယ်ဝန် ' + ga));
+      }
       var metaEl = document.getElementById('patientMetaLine');
       if (metaEl) metaEl.textContent = parts.length ? parts.join(' · ') : '—';
     }
@@ -1190,14 +1195,26 @@
           }
         }
         
-        updatePatientMetaLine(currentPatient.age || 'N/A', lmp, currentGA);
+        const hasBirthed = typeof resolveMotherHasBirthed === 'function'
+          ? await resolveMotherHasBirthed(currentPatient.id, currentPatient)
+          : false;
+        updatePatientMetaLine(currentPatient.age || 'N/A', lmp, currentGA, hasBirthed);
         
       } catch (error) {
         console.error('Error loading patient visit data:', error);
+        let hasBirthed = false;
+        try {
+          if (typeof resolveMotherHasBirthed === 'function') {
+            hasBirthed = await resolveMotherHasBirthed(currentPatient.id, currentPatient);
+          }
+        } catch (birthErr) {
+          console.warn('Unable to resolve lab-form birth status:', birthErr);
+        }
         updatePatientMetaLine(
           currentPatient.age || 'N/A',
           currentPatient.lmp || labT('Not recorded', 'မမှတ်ရ'),
-          labT('Not calculated', 'မတွက်ရ')
+          labT('Not calculated', 'မတွက်ရ'),
+          hasBirthed
         );
       }
     }

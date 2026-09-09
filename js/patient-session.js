@@ -375,6 +375,51 @@ function parseVisitDateMs(data) {
   return d && !isNaN(d.getTime()) ? d.getTime() : 0;
 }
 
+function patientRecordIndicatesBirth(data) {
+  if (!data) return false;
+  var status = String(data.status || data.treatmentStatus || data.patient_status || data.current_status || '').toLowerCase();
+  if (
+    status.indexOf('postnatal') !== -1 ||
+    status === 'postpartum' ||
+    status === 'birthed' ||
+    status === 'birthed_postnatal'
+  ) {
+    return true;
+  }
+  return !!(
+    data.deliveryDate ||
+    data.deliveredDateTime ||
+    data.birth_time ||
+    data.actualBirthDate ||
+    data.actual_birth_date
+  );
+}
+
+async function resolveMotherHasBirthed(patientId, patientData) {
+  if (patientRecordIndicatesBirth(patientData)) return true;
+  if (!patientId || typeof firebase === 'undefined' || !firebase.firestore) return false;
+  try {
+    if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.fetchDeliveryNotes === 'function') {
+      var notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+      if (notes) return true;
+    }
+    var ref = firebase.firestore().collection('patients').doc(patientId);
+    var results = await Promise.all([
+      ref.collection('records').doc('deliveryNotes').get(),
+      ref.collection('records').doc('thirdStage').get(),
+      ref.collection('postpartum_visits').limit(1).get(),
+      ref.collection('newborn_care').limit(1).get()
+    ]);
+    if (results[0] && results[0].exists) return true;
+    if (results[1] && results[1].exists) return true;
+    if (results[2] && !results[2].empty) return true;
+    if (results[3] && !results[3].empty) return true;
+  } catch (error) {
+    console.warn('Unable to resolve mother birth status:', error);
+  }
+  return false;
+}
+
 async function displayAncPatientBanner(containerId = 'patientBanner') {
   const patient = getSelectedPatient();
   if (!patient) return;
@@ -384,6 +429,14 @@ async function displayAncPatientBanner(containerId = 'patientBanner') {
   
   if (!container) {
     console.warn('Patient banner container not found');
+    return;
+  }
+
+  const lang = localStorage.getItem('appLanguage') || 'mm';
+  const L = function (en, mm) { return lang === 'en' ? en : mm; };
+  const hasBirthed = await resolveMotherHasBirthed(patient.id, data);
+  if (hasBirthed) {
+    renderAncPatientBanner(container, data, L, true, '');
     return;
   }
   
@@ -539,7 +592,14 @@ async function displayAncPatientBanner(containerId = 'patientBanner') {
   }
   
   console.log('Final GA display:', gaDisplay);
-  
+  renderAncPatientBanner(container, data, L, false, gaDisplay);
+}
+
+function renderAncPatientBanner(container, data, L, hasBirthed, gaDisplay) {
+  const metaLine = hasBirthed
+    ? (L('Age', 'အသက်') + ': ' + (data.age || '-') + ' | ' + L('Birthed', 'မွေးပြီး'))
+    : (L('Age', 'အသက်') + ': ' + (data.age || '-') + ' | ' + L('GA', 'ကိုယ်ဝန်') + ': ' + (gaDisplay || '-'));
+
   container.innerHTML = `
     <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
       <div style="flex: 1;">
@@ -547,7 +607,7 @@ async function displayAncPatientBanner(containerId = 'patientBanner') {
           ${data.name || 'Unknown Patient'}
         </div>
         <div style="font-size: 0.9rem; opacity: 0.9;">
-          Age: ${data.age || '-'} | GA: ${gaDisplay}
+          ${metaLine}
         </div>
       </div>
       <div>

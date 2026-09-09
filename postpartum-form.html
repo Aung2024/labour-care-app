@@ -1692,6 +1692,10 @@
           window.location.href = 'postpartum-care.html';
           return;
         }
+
+        if (!isEditMode && !(await ensureDeliveryNotesBeforePnc(patientId))) {
+          return;
+        }
         
         const networkOff = typeof navigator !== 'undefined' && navigator.onLine === false;
         const legacyToggle = window.OfflineManager && window.OfflineManager.isOfflineMode();
@@ -2270,6 +2274,23 @@
     }
 
     // Show/hide loading spinner
+    async function ensureDeliveryNotesBeforePnc(id) {
+      try {
+        if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.fetchDeliveryNotes === 'function') {
+          const notes = await DeliveryNotesUtils.fetchDeliveryNotes(id);
+          if (notes) return true;
+        }
+      } catch (error) {
+        console.warn('Could not verify Delivery Notes before PNC:', error);
+      }
+      if (typeof showLoading === 'function') showLoading(false);
+      alert(currentLanguage === 'mm'
+        ? 'PNC မစတင်မီ Delivery Notes ကို အရင်သိမ်းပါ။'
+        : 'Save Delivery Notes before starting a PNC visit.');
+      window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(id);
+      return false;
+    }
+
     function showLoading(show) {
       const spinner = document.getElementById('loadingSpinner');
       const container = document.querySelector('.container');
@@ -2288,6 +2309,9 @@
       e.preventDefault();
       
       if (!validatePncOutcomes()) return;
+      if (!isEditMode && !(await ensureDeliveryNotesBeforePnc(patientId || (currentPatient && currentPatient.id)))) {
+        return;
+      }
 
       const submitButton = document.querySelector('button[form="postpartumForm"]');
       const restoreHtml = submitButton ? submitButton.innerHTML : '';

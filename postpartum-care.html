@@ -15,6 +15,7 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/patient-session.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/session-manager.js"></script>
@@ -316,13 +317,31 @@
         : 'patient-care-hub.html';
     }
 
-    function newPostnatalVisit() {
+    async function ensureDeliveryNotesForPnc(patientId) {
+      try {
+        if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.fetchDeliveryNotes === 'function') {
+          var notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+          if (notes) return true;
+        }
+      } catch (error) {
+        console.warn('Could not verify Delivery Notes before PNC:', error);
+      }
+      alert(hubT(
+        'Save Delivery Notes before starting a PNC visit.',
+        'PNC မစတင်မီ Delivery Notes ကို အရင်သိမ်းပါ။'
+      ));
+      window.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
+      return false;
+    }
+
+    async function newPostnatalVisit() {
       var patientId = getPatientId();
       if (!patientId) {
         alert(hubT('No patient selected.', 'လူနာ မရွေးချယ်ရသေးပါ။'));
         window.location.href = 'list.html';
         return;
       }
+      if (!(await ensureDeliveryNotesForPnc(patientId))) return;
       window.location.href = 'postpartum-form.html?patient=' + encodeURIComponent(patientId);
     }
 

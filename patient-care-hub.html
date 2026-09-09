@@ -1266,6 +1266,49 @@
       }
     }
 
+    function hubPatientIndicatesBirth(data) {
+      if (!data) return false;
+      const status = String(data.status || data.treatmentStatus || data.patient_status || '').toLowerCase();
+      if (
+        status.indexOf('postnatal') !== -1 ||
+        status === 'postpartum' ||
+        status === 'birthed' ||
+        status === 'birthed_postnatal'
+      ) {
+        return true;
+      }
+      return !!(data.deliveryDate || data.deliveredDateTime || data.birth_time || data.actualBirthDate);
+    }
+
+    async function markHubBirthStatus(patient) {
+      if (!patient || patient._hasBirthed || hubPatientIndicatesBirth(patient)) {
+        if (patient && hubPatientIndicatesBirth(patient)) patient._hasBirthed = true;
+        return;
+      }
+      try {
+        if (window.DeliveryNotesUtils && typeof DeliveryNotesUtils.fetchDeliveryNotes === 'function') {
+          const notes = await DeliveryNotesUtils.fetchDeliveryNotes(patient.id);
+          if (notes) {
+            patient._hasBirthed = true;
+            displayPatientInfo();
+            return;
+          }
+        }
+        if (!patient.id || typeof firebase === 'undefined' || !firebase.firestore) return;
+        const ref = firebase.firestore().collection('patients').doc(patient.id);
+        const results = await Promise.all([
+          ref.collection('postpartum_visits').limit(1).get(),
+          ref.collection('newborn_care').limit(1).get()
+        ]);
+        if ((results[0] && !results[0].empty) || (results[1] && !results[1].empty)) {
+          patient._hasBirthed = true;
+          displayPatientInfo();
+        }
+      } catch (error) {
+        console.warn('Unable to resolve hub birth status:', error);
+      }
+    }
+
     function buildPatientMetaLine(p) {
       const parts = [];
       if (p.age) {
@@ -1284,7 +1327,10 @@
           ? window.DataMasking.maskPhone(phone, true) : phone;
         parts.push(display);
       }
-      if (p.gestational_age != null && p.gestational_age !== '') {
+      const hasBirthed = !!(p && p._hasBirthed) || hubPatientIndicatesBirth(p);
+      if (hasBirthed) {
+        parts.push(hubT('Birthed', 'မွေးပြီး'));
+      } else if (p.gestational_age != null && p.gestational_age !== '') {
         parts.push(hubT('GA ' + p.gestational_age + ' wks', 'ကိုယ်ဝန် ' + p.gestational_age + ' ပတ်'));
       } else if (p.lmp && p.lmp !== 'unknown') {
         const ga = calculateGestationalAgeWeeks(p.lmp);
@@ -1370,6 +1416,10 @@
         }).catch(function (error) {
           console.warn('Could not load infection alerts:', error);
         });
+      }
+      if (selectedPatient && !selectedPatient._hasBirthed && !selectedPatient._birthStatusChecked) {
+        selectedPatient._birthStatusChecked = true;
+        markHubBirthStatus(selectedPatient);
       }
     }
 
