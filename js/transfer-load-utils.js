@@ -55,23 +55,19 @@
     } catch (e) { /* quota */ }
   }
 
-  async function batchGetPatientDocs(db, patientIds) {
+  async function batchGetPatientDocs(db, patientIds, options) {
     var map = new Map();
     var ids = Array.from(new Set((patientIds || []).filter(Boolean)));
     if (!ids.length) return map;
+    var queryOpts = Object.assign({ timeout: 8000, retries: 1 }, options || {});
 
     for (var i = 0; i < ids.length; i += 10) {
       var chunk = ids.slice(i, i + 10);
       var refs = chunk.map(function (id) { return db.collection('patients').doc(id); });
       try {
-        var snaps;
-        if (typeof db.getAll === 'function') {
-          snaps = await db.getAll.apply(db, refs);
-        } else {
-          snaps = await Promise.all(refs.map(function (ref) {
-            return smartQuery(Promise.resolve(ref), { timeout: 8000, retries: 1 });
-          }));
-        }
+        var snaps = await Promise.all(refs.map(function (ref) {
+          return smartQuery(Promise.resolve(ref), queryOpts);
+        }));
         (snaps || []).forEach(function (snap) {
           if (snap && snap.exists && snap.id) {
             map.set(snap.id, { id: snap.id, ...(snap.data() || {}) });
@@ -84,12 +80,21 @@
     return map;
   }
 
+  function isUnavailablePatient(patient) {
+    if (!patient) return true;
+    var status = String(patient.status || '').toLowerCase();
+    if (status === 'deleted' || status === 'duplicate_archived') return true;
+    if (patient.deleted === true || patient.isDeleted === true) return true;
+    return false;
+  }
+
   global.TransferLoadUtils = {
     isAppleMobileOrTablet: isAppleMobileOrTablet,
     smartQuery: smartQuery,
     mapWithConcurrency: mapWithConcurrency,
     cacheRead: cacheRead,
     cacheWrite: cacheWrite,
-    batchGetPatientDocs: batchGetPatientDocs
+    batchGetPatientDocs: batchGetPatientDocs,
+    isUnavailablePatient: isUnavailablePatient
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -92,6 +92,7 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/transfer-load-utils.js?v=300"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/lang-apply.js"></script>
@@ -121,6 +122,18 @@
       statusCol: { en: 'Status', mm: 'အခြေအနေ' },
       dateCol: { en: 'Date', mm: 'ရက်စွဲ' },
       noteCol: { en: 'Note', mm: 'မှတ်ချက်' },
+      destCol: {
+        en: 'Destination',
+        mm: 'လွှဲပြောင်းရာ'
+      },
+      destInternal: {
+        en: 'Application-using hospital/health facility',
+        mm: 'Application အသုံးပြုသော ဆေးရုံ/ကျန်းမာရေးဌာန'
+      },
+      destExternal: {
+        en: 'Application-not-using hospital/health facility',
+        mm: 'Application အသုံးမပြုသော ဆေးရုံ/ကျန်းမာရေးဌာန'
+      },
       actionCol: { en: 'Action', mm: 'လုပ်ဆောင်ချက်' },
       transferComplete: {
         en: 'Patient transferred successfully. They will now appear in your patient list and dashboard. The sending midwife no longer has this patient in their list.',
@@ -208,7 +221,19 @@
         const rows = [];
         snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
         sortRequestsByDateDesc(rows);
-        currentRows = rows.slice(0, 50);
+        let visible = rows.slice(0, 50);
+        if (window.TransferLoadUtils && typeof TransferLoadUtils.batchGetPatientDocs === 'function') {
+          const patientIds = visible.map(function (r) { return r.patientId; }).filter(Boolean);
+          const patientMap = await TransferLoadUtils.batchGetPatientDocs(db, patientIds, { preferCache: false });
+          const isUnavailable = typeof TransferLoadUtils.isUnavailablePatient === 'function'
+            ? TransferLoadUtils.isUnavailablePatient
+            : function (patient) { return !patient; };
+          visible = visible.filter(function (r) {
+            if (!r.patientId) return false;
+            return !isUnavailable(patientMap.get(r.patientId));
+          });
+        }
+        currentRows = visible;
         renderRows(currentRows);
       } catch (e) {
         console.error(e);
@@ -255,6 +280,7 @@
             '<th class="col-patient">' + escapeHtml(t('patientCol')) + '</th>' +
             '<th class="col-from">' + escapeHtml(t('fromCol')) + '</th>' +
             '<th class="col-to">' + escapeHtml(t('toCol')) + '</th>' +
+            '<th class="col-dest">' + escapeHtml(t('destCol')) + '</th>' +
             '<th class="col-status">' + escapeHtml(t('statusCol')) + '</th>' +
             '<th class="col-date">' + escapeHtml(t('dateCol')) + '</th>' +
             '<th class="col-note">' + escapeHtml(t('noteCol')) + '</th>' +
@@ -268,6 +294,12 @@
         '</div>';
     }
 
+    function destinationLabel(r) {
+      return String(r.transferDestination || '').toLowerCase() === 'external'
+        ? t('destExternal')
+        : t('destInternal');
+    }
+
     function renderDesktopRow(r) {
       const toText = (r.recipients || []).map(function (x) { return x.name || x.uid; }).join(', ');
       const patientName = escapeHtml(r.patientName || t('unknownPatient'));
@@ -276,6 +308,7 @@
         '<td><div class="hrt-patient-main">' + patientName + '</div></td>' +
         '<td><div class="hrt-pregnancy-meta">' + escapeHtml(r.fromMidwifeName || r.fromMidwifeEmail || '—') + '</div></td>' +
         '<td><div class="hrt-pregnancy-meta">' + escapeHtml(toText || '—') + '</div></td>' +
+        '<td><div class="hrt-pregnancy-meta">' + escapeHtml(destinationLabel(r)) + '</div></td>' +
         '<td>' + statusPill(r.status) + '</td>' +
         '<td><span class="transfer-date">' + escapeHtml(formatCreatedAt(r)) + '</span></td>' +
         '<td>' + note + '</td>' +
@@ -295,6 +328,7 @@
         '<div class="hrt-mobile-grid">' +
           '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(t('fromCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(r.fromMidwifeName || r.fromMidwifeEmail || '—') + '</div></div>' +
           '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(t('toCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(toText || '—') + '</div></div>' +
+          '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(t('destCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(destinationLabel(r)) + '</div></div>' +
           (r.notes ? '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(t('noteCol')) + '</span><div class="hrt-mobile-value">' + escapeHtml(r.notes) + '</div></div>' : '') +
           (activeTab === 'incoming' && r.status === 'pending'
             ? '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(t('actionCol')) + '</span><div class="hrt-mobile-value">' + actionButtons(r) + '</div></div>'

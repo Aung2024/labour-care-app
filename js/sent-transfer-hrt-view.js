@@ -411,11 +411,38 @@
     return html;
   }
 
-  function transferStatusHtml(transferStatus) {
-    var accepted = transferStatus === 'accepted';
+  function currentLang() {
+    try {
+      return localStorage.getItem('appLanguage') || 'mm';
+    } catch (e) {
+      return 'mm';
+    }
+  }
+
+  function transferDestinationLabel(transfer) {
+    var dest = String((transfer && transfer.transferDestination) || 'internal').toLowerCase();
+    var lang = currentLang();
+    if (dest === 'external') {
+      return lang === 'en'
+        ? 'Application-not-using hospital/health facility'
+        : 'Application အသုံးမပြုသော ဆေးရုံ/ကျန်းမာရေးဌာန';
+    }
+    return lang === 'en'
+      ? 'Application-using hospital/health facility'
+      : 'Application အသုံးပြုသော ဆေးရုံ/ကျန်းမာရေးဌာန';
+  }
+
+  function transferStatusHtml(transfer, transferStatus) {
+    var status = transferStatus || (transfer && transfer.status) || 'pending';
+    var accepted = status === 'accepted';
     var cls = accepted ? 'accepted' : 'pending';
     var label = accepted ? 'Accepted' : 'Not Accepted yet';
-    return '<span class="hrt-transfer-status ' + cls + '">' + escapeHtml(label) + '</span>';
+    return '<span class="hrt-transfer-status ' + cls + '">' + escapeHtml(label) + '</span>' +
+      '<div class="hrt-pregnancy-meta">' + escapeHtml(transferDestinationLabel(transfer)) + '</div>';
+  }
+
+  function overallReportUrl(patientId) {
+    return 'overall-patient-report.html?patient=' + encodeURIComponent(patientId) + '&from=transfers';
   }
 
   function openAncReport(patientId) {
@@ -427,11 +454,11 @@
   }
 
   function openMotherReport(patientId) {
-    global.location.href = 'overall-patient-report.html?patient=' + encodeURIComponent(patientId);
+    global.location.href = overallReportUrl(patientId);
   }
 
   function openOverallReport(patientId) {
-    global.location.href = 'overall-patient-report.html?patient=' + encodeURIComponent(patientId);
+    global.location.href = overallReportUrl(patientId);
   }
 
   function openReport(patientId) {
@@ -455,7 +482,19 @@
   }
 
   function cacheKey(uid) {
-    return 'sentTransferHrt:v2:' + uid;
+    return 'sentTransferHrt:v3:' + uid;
+  }
+
+  function isUnavailablePatient(patient) {
+    var utils = getUtils();
+    if (typeof utils.isUnavailablePatient === 'function') {
+      return utils.isUnavailablePatient(patient);
+    }
+    if (!patient) return true;
+    var status = String(patient.status || '').toLowerCase();
+    if (status === 'deleted' || status === 'duplicate_archived') return true;
+    if (patient.deleted === true || patient.isDeleted === true) return true;
+    return false;
   }
 
   function snapToVisitList(snap) {
@@ -543,25 +582,7 @@
     if (!patientId) return null;
 
     var patient = patientMap.get(patientId);
-    if (!patient) {
-      return {
-        transfer: transferReq,
-        patient: {
-          id: patientId,
-          name: transferReq.patientName || 'Unknown',
-          patient_unique_id: transferReq.patientUniqueId || transferReq.patient_unique_id || ''
-        },
-        isBaby: false,
-        mother: null,
-        factorsUnique: [],
-        ancVisitCount: 0,
-        newbornVisitCount: 0,
-        latestAnc: null,
-        latestNewborn: null,
-        visits: [],
-        actions: []
-      };
-    }
+    if (isUnavailablePatient(patient)) return null;
 
     var isBaby = isBabyPatient(patient);
     var visits = [];
@@ -687,7 +708,7 @@
         '<td>' + recommendationCellHtml(r) + '</td>' +
         '<td>' + (reportsHtml || '<span class="text-muted">\u2014</span>') + '</td>' +
         '<td>' + smsContactHtml(contact) + '</td>' +
-        '<td>' + transferStatusHtml(transferStatus) + '</td>';
+        '<td>' + transferStatusHtml(r.transfer, transferStatus) + '</td>';
       desktopBody.appendChild(trEl);
 
       var card = document.createElement('div');
@@ -698,7 +719,7 @@
           '<div><div class="hrt-mobile-name">' + patientName +
             (isBaby ? ' <span class="hrt-baby-tag">Baby</span>' : '') +
             '</div><div class="hrt-mobile-id">Age: ' + ageText + '<br>' + phone + '</div></div>' +
-          '<div>' + transferStatusHtml(transferStatus) + '</div>' +
+          '<div>' + transferStatusHtml(r.transfer, transferStatus) + '</div>' +
         '</div>' +
         '<div class="hrt-mobile-grid">' +
           '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(detailsLabel) + '</span><div class="hrt-mobile-value">' + escapeHtml(details.line1) + '<br>' + escapeHtml(details.line2) + '</div></div>' +
@@ -719,6 +740,9 @@
     if (!containerEl || !midwifeUid) return;
     var utils = getUtils();
     var cached = utils.cacheRead ? utils.cacheRead(cacheKey(midwifeUid), CACHE_TTL_MS) : null;
+    if (cached && cached.length) {
+      cached = cached.filter(function (row) { return row && !isUnavailablePatient(row.patient); });
+    }
     if (cached && cached.length) {
       renderRows(containerEl, cached);
     } else {
@@ -753,7 +777,7 @@
 
       var patientIds = transfers.map(function (t) { return t.patientId; }).filter(Boolean);
       var patientMap = utils.batchGetPatientDocs
-        ? await utils.batchGetPatientDocs(db, patientIds)
+        ? await utils.batchGetPatientDocs(db, patientIds, { preferCache: false })
         : new Map();
 
       var mapFn = utils.mapWithConcurrency || async function (items, limit, fn) {

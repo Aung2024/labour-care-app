@@ -232,3 +232,23 @@ test('antenatal forms load QI target reminders without changing newborn sources'
   assert.match(testForm, /QualityTargetBanner\.render/);
   assert.match(testForm, /source: 'anc_test'/);
 });
+
+test('transfer hub hides deleted patients and returns from overall report', () => {
+  const hubView = readAppFile('js/sent-transfer-hrt-view.js');
+  const report = readAppFile('overall-patient-report.html');
+  const form = readAppFile('transfer-patient.html');
+  const requests = readAppFile('transfer-requests.html');
+  const sw = readAppFile('service-worker.js');
+
+  assert.match(hubView, /isUnavailablePatient/);
+  assert.match(hubView, /if \(isUnavailablePatient\(patient\)\) return null;/);
+  assert.doesNotMatch(hubView, /transferReq\.patientName \|\| 'Unknown'/);
+  assert.match(hubView, /from=transfers/);
+  assert.match(report, /reportFrom === 'transfers'/);
+  assert.match(report, /AppNavBack\.toPatientTransfers/);
+  assert.match(form, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
+  assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
+  assert.match(requests, /destInternal/);
+  assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
+  assert.match(sw, /mch-care-v300-moh/);
+});
