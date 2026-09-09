@@ -85,6 +85,8 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   assert.match(source, /function canonicalKmcKey/);
   assert.match(source, /visit\.current_weight_gram \|\| visit\.currentWeightGram/);
   assert.match(source, /serialCol/);
+  assert.doesNotMatch(source, /hrt-patient-meta.*registerNo|registerNo \? '<div class="hrt-patient-meta'/);
+  assert.doesNotMatch(source, /registerNo \? '<div class="hrt-mobile-id'/);
   assert.match(source, /pageSize: 100/);
   assert.match(source, /row\._projection && Array\.isArray\(row\.weightHistory\)/);
   assert.doesNotMatch(source, /statusFilter === 'all'\) \{\s*return rowMatchesCardFilter\(r, 'all'\) && !isCompleted\(r\);/);
@@ -217,15 +219,15 @@ test('server QI rebuild stays newborn-only', () => {
   assert.doesNotMatch(service, /antenatalVisits/);
 });
 
-test('immediate and routine newborn forms load QI target reminders', () => {
+test('immediate and routine newborn forms do not show QI target reminders', () => {
   const immediate = readAppFile('immediate-newborn-care-form.html');
   const newborn = readAppFile('newborn-care-page.html');
-  assert.match(immediate, /quality-target-banner\.js/);
-  assert.match(immediate, /QualityTargetBanner\.render/);
-  assert.match(immediate, /source: 'immediate'/);
-  assert.match(newborn, /quality-target-banner\.js/);
-  assert.match(newborn, /QualityTargetBanner\.render/);
-  assert.match(newborn, /source: 'newborn_visit'/);
+  assert.doesNotMatch(immediate, /quality-target-banner\.js/);
+  assert.doesNotMatch(immediate, /QualityTargetBanner\.render/);
+  assert.doesNotMatch(immediate, /qiTargetBannerMount/);
+  assert.doesNotMatch(newborn, /quality-target-banner\.js/);
+  assert.doesNotMatch(newborn, /QualityTargetBanner\.render/);
+  assert.doesNotMatch(newborn, /qiTargetBannerMount/);
 });
 
 test('antenatal forms load QI target reminders without changing newborn sources', () => {
@@ -256,7 +258,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v303-moh/);
+  assert.match(sw, /mch-care-v305-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
