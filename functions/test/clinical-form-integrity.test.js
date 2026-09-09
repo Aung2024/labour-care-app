@@ -250,14 +250,15 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v301-moh/);
+  assert.match(sw, /mch-care-v302-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
   const form = readAppFile('transfer-patient.html');
   assert.match(form, /type="radio" name="receivingMidwife"/);
   assert.match(form, /ids\.length !== 1/);
-  assert.match(form, /function clearSelectedMidwife/);
+  assert.match(form, /လက်ခံမည့် နေရာ/);
+  assert.doesNotMatch(form, /data-mm="လက်ခံမည့် midwife"/);
   assert.doesNotMatch(form, /toggleAllMidwives/);
   assert.doesNotMatch(form, /အားလုံး ရွေးပါ/);
   assert.doesNotMatch(form, /လွှဲပြောင်းနိုင်သော Midwife/);
