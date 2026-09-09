@@ -27,6 +27,12 @@ test('immediate newborn care requires exactly one breathing status before save',
   assert.equal(requiredBreathingInputs.length, 2);
   assert.match(source, /selectedBreathingStatuses\.length !== 1/);
   assert.match(source, /form\.reportValidity\(\);/);
+  assert.match(source, /id="tactile_stimulation"/);
+  assert.match(source, /id="bag_and_mask"/);
+  assert.match(source, /name="resuscitation_outcome"/);
+  assert.match(source, /အသက်ရှူစေရန် နှိုးဆွခြင်း/);
+  assert.match(source, /လေအိတ်နှင့်မျက်နှာဖုံးကိုအသုံးပြု၍ အသက်ကယ်ပြုစုပေးခြင်း/);
+  assert.match(source, /ကလေးအခြေအနေ/);
 });
 
 test('newborn care uses shared alert logic and canonical storage patient ID', () => {
@@ -250,7 +256,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v302-moh/);
+  assert.match(sw, /mch-care-v303-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
