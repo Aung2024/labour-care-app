@@ -187,6 +187,20 @@
       transition: width 0.2s ease;
     }
 
+    .anc-progress-missing {
+      display: none;
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 650;
+      line-height: 1.35;
+      color: #ecfdf5;
+      opacity: 0.95;
+    }
+
+    .anc-progress-missing.is-visible {
+      display: block;
+    }
+
     .header-section {
       display: none;
     }
@@ -1460,6 +1474,7 @@
         <div class="anc-progress-track" id="ancVisitProgressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Visit completion">
           <div class="anc-progress-fill" id="ancVisitProgressFill"></div>
         </div>
+        <div class="anc-progress-missing" id="ancVisitProgressMissing" aria-live="polite"></div>
       </div>
     </div>
   </header>
@@ -2356,7 +2371,7 @@
             </div>
           </div>
           <div class="col-12 col-md-4 col-sm-6">
-            <label for="initial" class="form-label lang-text" data-en="Initial" data-mm="အမည်အတိုကောက်">Initial</label>
+            <label for="initial" class="form-label lang-text" data-en="Initial *" data-mm="အမည်အတိုကောက် *">Initial *</label>
             <input type="text" id="initial" name="initial" class="form-control" placeholder="Initials">
           </div>
         </div>
@@ -3081,12 +3096,8 @@
     function updateHeightRequirement() {
       const visitNumber = parseInt(document.getElementById('visitNumber')?.value, 10) || visitCount || 1;
       const required = visitNumber === 1;
-      ['heightFeet', 'heightInches'].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.required = required;
-        el.setAttribute('aria-required', required ? 'true' : 'false');
-      });
+      setRequiredState(document.getElementById('heightFeet'), required);
+      setRequiredState(document.getElementById('heightInches'), false);
     }
 
     async function loadHeightFromFirstVisitIfNeeded() {
@@ -4547,13 +4558,6 @@
     }
 
     function updateTwinFields() {
-      const twins = !!document.getElementById('riskTwinsPregnancy')?.checked;
-      ['secondFetalLie', 'secondFetalPresentation'].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.required = twins;
-        el.setAttribute('aria-required', twins ? 'true' : 'false');
-      });
       updateFetalRiskStyles();
       if (!applyApplicableRequirements._applying) updateSectionCompletion();
     }
@@ -4673,11 +4677,10 @@
       applyApplicableRequirements._applying = true;
       try {
         [
-          'visitDate', 'chiefComplaint', 'goiterStatus', 'weight',
+          'visitDate', 'goiterStatus', 'weight',
           'systolicBP', 'diastolicBP', 'pulseRate', 'temperature',
           'urineProtein', 'urineSugar', 'anemiaStatus', 'pittingEdema',
-          'tbSymptoms', 'fundalHeight', 'fetalHeartRate',
-          'fetalLie', 'fetalPresentation', 'ironFolicAcid',
+          'tbSymptoms', 'ironFolicAcid',
           'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid',
           'nextVisitDate', 'provisionalDiagnosisType', 'initial'
         ].forEach(function (id) {
@@ -4687,13 +4690,22 @@
         const lmpKnown = !!document.getElementById('lmpKnown')?.checked;
         setRequiredState(document.getElementById('lmp'), lmpKnown);
         setRequiredState(document.getElementById('manualGestationalAge'), !lmpKnown);
-        document.querySelectorAll('input[name="fetalMovement"]').forEach(function (el) {
-          el.required = true;
-        });
 
+        const gaWeeks = currentGestationalWeeks();
+        const requireFundalHeight = gaWeeks == null || gaWeeks >= 12;
+        const requireFetalHeartAndMovement = gaWeeks != null && gaWeeks >= 20;
+        const requireFetalPosition = gaWeeks != null && gaWeeks >= 36;
         const twins = !!document.getElementById('riskTwinsPregnancy')?.checked;
-        setRequiredState(document.getElementById('secondFetalLie'), twins);
-        setRequiredState(document.getElementById('secondFetalPresentation'), twins);
+
+        setRequiredState(document.getElementById('fundalHeight'), requireFundalHeight);
+        setRequiredState(document.getElementById('fetalHeartRate'), requireFetalHeartAndMovement);
+        setRequiredState(document.getElementById('fetalLie'), requireFetalPosition);
+        setRequiredState(document.getElementById('fetalPresentation'), requireFetalPosition);
+        setRequiredState(document.getElementById('secondFetalLie'), twins && requireFetalPosition);
+        setRequiredState(document.getElementById('secondFetalPresentation'), twins && requireFetalPosition);
+        document.querySelectorAll('input[name="fetalMovement"]').forEach(function (el) {
+          el.required = requireFetalHeartAndMovement;
+        });
 
         setRequiredState(document.getElementById('pastHistoryNotes'), !!document.getElementById('pastHistoryStatusRisk')?.checked);
         setRequiredState(document.getElementById('coinfectionNotes'), document.getElementById('tbSymptoms')?.value === 'Yes');
@@ -4722,7 +4734,7 @@
         updateHeightRequirement();
         [
           'cleanDeliveryKitDate', 'edd', 'manualEdd', 'gestationalAgeDisplay', 'visitNumber',
-          'otherFindings', 'otherMedications', 'clinicalNotes'
+          'otherFindings', 'otherMedications', 'clinicalNotes', 'chiefComplaint'
         ].forEach(function (id) {
           setRequiredState(document.getElementById(id), false);
         });
@@ -4780,20 +4792,60 @@
       return true;
     }
 
-    function updateVisitProgressBar(percent) {
+    function fieldHasCompletionValue(el) {
+      if (!el) return false;
+      if (el.type === 'radio') {
+        return !!document.querySelector('input[name="' + el.name + '"]:checked');
+      }
+      if (el.type === 'checkbox') return !!el.checked;
+      return String(el.value == null ? '' : el.value).trim() !== '';
+    }
+
+    function completionFieldLabel(el) {
+      if (!el) return '';
+      if (el.type === 'radio') {
+        const groupLabel = el.closest('.form-field, [class*="col-"]')?.querySelector('.form-label');
+        if (groupLabel) return groupLabel.textContent.replace(/\*$/, '').trim();
+        return el.name || '';
+      }
+      if (el.id) {
+        const labelled = document.querySelector('label[for="' + el.id + '"]');
+        if (labelled) return labelled.textContent.replace(/\*$/, '').trim();
+      }
+      const wrapLabel = el.closest('.form-field, [class*="col-"]')?.querySelector('.form-label');
+      return wrapLabel ? wrapLabel.textContent.replace(/\*$/, '').trim() : (el.id || el.name || '');
+    }
+
+    function updateVisitProgressBar(percent, missingLabels) {
       const safe = Math.max(0, Math.min(100, percent));
       const valueEl = document.getElementById('ancVisitProgressValue');
       const fillEl = document.getElementById('ancVisitProgressFill');
       const barEl = document.getElementById('ancVisitProgressBar');
+      const missingEl = document.getElementById('ancVisitProgressMissing');
       if (valueEl) valueEl.textContent = safe + '%';
       if (fillEl) fillEl.style.width = safe + '%';
       if (barEl) barEl.setAttribute('aria-valuenow', String(safe));
+      if (missingEl) {
+        const unique = [];
+        (missingLabels || []).forEach(function (label) {
+          if (label && unique.indexOf(label) === -1) unique.push(label);
+        });
+        if (safe >= 100 || !unique.length) {
+          missingEl.textContent = '';
+          missingEl.classList.remove('is-visible');
+          return;
+        }
+        const prefix = currentLanguage === 'en' ? 'Still needed: ' : 'လိုအပ်သေးသည်: ';
+        missingEl.textContent = prefix + unique.slice(0, 4).join(' · ') + (unique.length > 4 ? '…' : '');
+        missingEl.classList.add('is-visible');
+      }
     }
 
     function updateSectionCompletion() {
       applyApplicableRequirements();
       let total = 0;
       let complete = 0;
+      const missingLabels = [];
       document.querySelectorAll('.form-section').forEach(function (section) {
         const fields = Array.from(section.querySelectorAll('input:required,select:required,textarea:required'))
           .filter(isApplicableRequiredField);
@@ -4805,17 +4857,19 @@
             if (uniqueRadioNames.has(el.name)) return;
             uniqueRadioNames.add(el.name);
             sectionTotal++;
-            if (document.querySelector('input[name="' + el.name + '"]:checked')) sectionComplete++;
+            if (fieldHasCompletionValue(el)) sectionComplete++;
+            else missingLabels.push(completionFieldLabel(el));
           } else {
             sectionTotal++;
-            if (String(el.value || '').trim() && el.checkValidity()) sectionComplete++;
+            if (fieldHasCompletionValue(el)) sectionComplete++;
+            else missingLabels.push(completionFieldLabel(el));
           }
         });
         section.classList.toggle('has-errors', sectionTotal > sectionComplete);
         total += sectionTotal;
         complete += sectionComplete;
       });
-      updateVisitProgressBar(total ? Math.round((complete / total) * 100) : 0);
+      updateVisitProgressBar(total ? Math.round((complete / total) * 100) : 0, missingLabels);
     }
 
     function showValidationSummary(firstInvalid) {
@@ -5074,11 +5128,12 @@
 
         if (currentVisitNumber === 1) {
           const heightFeet = getNumber('heightFeet');
-          const heightInches = getNumber('heightInches');
-          if (heightFeet === null || heightFeet <= 0 || heightInches === null || heightInches < 0 || heightInches > 11) {
+          let heightInches = getNumber('heightInches');
+          if (heightInches === null) heightInches = 0;
+          if (heightFeet === null || heightFeet <= 0 || heightInches < 0 || heightInches > 11) {
             alert(langMm
-              ? 'ANC အကြိမ် ၁ အတွက် အရပ်အမြင့် (ပေနှင့် လက်မ) ထည့်ပါ။'
-              : 'Height is required for ANC Visit 1. Please enter both feet and inches (enter 0 inches when applicable).');
+              ? 'ANC အကြိမ် ၁ အတွက် အရပ်အမြင့် (ပေ) ထည့်ပါ။ လက်မ မဖြည့်ပါက ၀ အဖြစ် သိမ်းပါမည်။'
+              : 'Height is required for ANC Visit 1. Enter feet; inches can be left blank for 0.');
             const heightFeetInput = document.getElementById('heightFeet');
             if (heightFeetInput) {
               heightFeetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5196,7 +5251,7 @@
             return feet && inches ? `${feet}ft ${inches}in` : (feet || inches ? `${feet || '0'}ft ${inches || '0'}in` : '');
           })(),
           heightFeet: getNumber('heightFeet'),
-          heightInches: getNumber('heightInches'),
+          heightInches: getNumber('heightInches') != null ? getNumber('heightInches') : (getNumber('heightFeet') != null ? 0 : null),
           bloodPressure: buildBloodPressureString(),
           systolicBP: getInt('systolicBP'),
           diastolicBP: getInt('diastolicBP'),
