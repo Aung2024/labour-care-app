@@ -278,6 +278,27 @@ function parseWeightGram(value) {
   return Math.round(n);
 }
 
+function kmcIdentity(facts) {
+  const id = String((facts && facts.id) || '');
+  const babyMatch = id.match(/_baby_(\d+)$/);
+  const motherFromFacts = facts && facts.newbornFacts && facts.newbornFacts.motherPatientId;
+  if (babyMatch) {
+    return {
+      motherPatientId: String(motherFromFacts || id.replace(/_baby_\d+$/, '')),
+      ownBabyIndex: parseInt(babyMatch[1], 10) || 1
+    };
+  }
+  const type = String((facts && facts.newbornFacts && facts.newbornFacts.patientType) || '').toLowerCase();
+  if (type === 'baby') {
+    const profile = (facts && facts.profile) || {};
+    return {
+      motherPatientId: String(motherFromFacts || id),
+      ownBabyIndex: Number(profile.baby_index || profile.babyIndex || 1) || 1
+    };
+  }
+  return { motherPatientId: id, ownBabyIndex: null };
+}
+
 function babiesForKmc(facts) {
   const care = firstNewbornVisit(facts);
   const profile = facts.profile || {};
@@ -305,7 +326,13 @@ function babiesForKmc(facts) {
     });
   });
   if (!byIndex.size) byIndex.set(1, care);
-  return Array.from(byIndex.entries()).sort((a, b) => a[0] - b[0])
+  const identity = kmcIdentity(facts);
+  let entries = Array.from(byIndex.entries()).sort((a, b) => a[0] - b[0]);
+  if (identity.ownBabyIndex) {
+    const own = entries.filter((item) => item[0] === identity.ownBabyIndex);
+    entries = own.length ? own : [[identity.ownBabyIndex, entries[0][1]]];
+  }
+  return entries
     .map(([babyIndex, baby]) => ({
     babyIndex,
     babyName: baby.babyName || baby.baby_name || care.baby_name ||
@@ -449,6 +476,7 @@ function buildKmcProjections(facts, options) {
       projectionType: 'kmc',
       rowId: `${facts.id}_${baby.babyIndex}`,
       patientId: facts.id,
+      motherPatientId: kmcIdentity(facts).motherPatientId,
       babyIndex: baby.babyIndex,
       babyName: baby.babyName,
       ...patientFields(facts),

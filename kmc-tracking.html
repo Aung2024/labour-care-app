@@ -198,6 +198,12 @@
     }
     .kmc-weight-points { font-size: 0.68rem; color: #64748b; line-height: 1.35; white-space: normal; }
     .kmc-weight-primary { font-weight: 800; color: #1e293b; }
+    .hrt-register-table th:first-child,
+    .hrt-register-table td:first-child {
+      width: 3.25rem;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
     .kmc-weight-trend { font-size: 0.78rem; font-weight: 700; }
     .kmc-weight-trend.gain { color: #047857; }
     .kmc-weight-trend.loss { color: #b91c1c; }
@@ -466,7 +472,9 @@
         offline: 'KMC registry requires an internet connection.',
         registryTitle: 'KMC registry',
         registryHint: 'Potential KMC babies are LBW under 2000 g or born ≥3 weeks before EDD. Active tracker shows KMC Yes babies until completion.',
-        searchPlaceholder: 'Search baby or mother name…',
+        searchPlaceholder: 'Search baby, mother, or serial…',
+        serialCol: 'No.',
+        showingCount: 'Showing {n} babies',
         statPotential: 'Total LBW/Preterm',
         statTotal: 'Total KMC patients',
         statActive: 'Active KMC',
@@ -532,7 +540,9 @@
         offline: 'KMC မှတ်တမ်းအတွက် အင်တာနက် လိုအပ်သည်။',
         registryTitle: 'KMC မှတ်တမ်း',
         registryHint: 'ပေါင်ချိန်မပြည့် (LBW) သို့မဟုတ် လမစေ့ (Preterm)  ကလေးများ။',
-        searchPlaceholder: 'ကလေး/မိခင် အမည် ရှာပါ…',
+        searchPlaceholder: 'ကလေး၊ မိခင် သို့မဟုတ် စဉ် ရှာပါ…',
+        serialCol: 'စဉ်',
+        showingCount: '{n} ဦး ပြသထားသည်',
         statPotential: 'ပေါင်ချိန်မပြည့်/လမစေ့',
         statTotal: 'KMC လူနာ စုစုပေါင်း',
         statActive: 'ရက်ချိန်းမှန်သော KMC',
@@ -1133,72 +1143,21 @@
     }
 
     function canonicalKmcKey(row) {
-      var rawId = String((row && (row.patientId || (row.patient && row.patient.id))) || '');
-      var babyFromId = rawId.match(/_baby_(\d+)$/);
-      var motherId = babyFromId ? rawId.replace(/_baby_\d+$/, '') : rawId;
-      var idx = babyFromId
-        ? (parseInt(babyFromId[1], 10) || 1)
-        : (parseInt(row && row.babyIndex, 10) || 1);
-      if (motherId) return 'pid:' + motherId + ':' + idx;
-      var name = String((row && row.babyName) || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      var township = String((row && row.township) || '').trim().toLowerCase();
-      var birth = String((row && (row.birthAnchorDate || row.birthDateStr)) || '').slice(0, 10);
-      if (name) return 'name:' + name + '|' + township + '|' + birth + '|' + idx;
-      return 'row:' + ((row && row.rowId) || '');
-    }
-
-    function kmcRowRichness(row) {
-      var history = (row && row.weightHistory) || [];
-      var visits = (row && row.newbornCareVisits) || [];
-      return (history.length * 10) + visits.length + (row.completedVisitCount || 0) +
-        (row.birthWeightGram || row.latestWeightGram ? 1 : 0);
-    }
-
-    function mergeKmcRow(keep, extra) {
-      if (!keep) return extra;
-      if (!extra) return keep;
-      if (kmcRowRichness(extra) > kmcRowRichness(keep)) {
-        var swapped = mergeKmcRow(extra, keep);
-        return swapped;
-      }
-      if ((!keep.weightHistory || !keep.weightHistory.length) && extra.weightHistory && extra.weightHistory.length) {
-        keep.weightHistory = extra.weightHistory;
-      }
-      if ((!keep.newbornCareVisits || !keep.newbornCareVisits.length) && extra.newbornCareVisits && extra.newbornCareVisits.length) {
-        keep.newbornCareVisits = extra.newbornCareVisits;
-      }
-      if (!keep.latestWeightGram && extra.latestWeightGram) keep.latestWeightGram = extra.latestWeightGram;
-      if (!keep.birthWeightGram && extra.birthWeightGram) keep.birthWeightGram = extra.birthWeightGram;
-      if ((extra.completedVisitCount || 0) > (keep.completedVisitCount || 0)) {
-        keep.completedVisitCount = extra.completedVisitCount;
-      }
-      var extraId = extra.patientId || (extra.patient && extra.patient.id) || '';
-      var keepId = keep.patientId || (keep.patient && keep.patient.id) || '';
-      if (/_baby_\d+$/.test(extraId) && !/_baby_\d+$/.test(keepId)) {
-        keep.patientId = extraId;
-        if (keep.patient) keep.patient.id = extraId;
-      }
-      return keep;
+      return window.KmcUtils && KmcUtils.canonicalKmcKey
+        ? KmcUtils.canonicalKmcKey(row)
+        : ('row:' + ((row && row.rowId) || ''));
     }
 
     function dedupeKmcRows(rows) {
-      var byKey = new Map();
-      (rows || []).forEach(function (row) {
-        var key = canonicalKmcKey(row);
-        byKey.set(key, mergeKmcRow(byKey.get(key), row));
-      });
-      var byName = new Map();
-      Array.from(byKey.values()).forEach(function (row) {
-        var name = String(row.babyName || '').replace(/\s+/g, ' ').trim().toLowerCase();
-        var township = String(row.township || '').trim().toLowerCase();
-        var idx = parseInt(row.babyIndex, 10) || 1;
-        var birth = String(row.birthAnchorDate || row.birthDateStr || '').slice(0, 10);
-        var nameKey = name
-          ? ('name:' + name + '|' + township + '|' + (birth || idx))
-          : canonicalKmcKey(row);
-        byName.set(nameKey, mergeKmcRow(byName.get(nameKey), row));
-      });
-      return Array.from(byName.values());
+      return window.KmcUtils && KmcUtils.dedupeKmcRows
+        ? KmcUtils.dedupeKmcRows(rows)
+        : (rows || []);
+    }
+
+    function formatKmcRegisterNo(patient, row) {
+      return (row && row.patientCode) ||
+        (patient && (patient.patient_id || patient.registration_id || patient.patientId)) ||
+        '';
     }
 
     function getFilteredKmcRows() {
@@ -1210,11 +1169,8 @@
         var baby = (r.babyName || '').toLowerCase();
         var mother = (p.name || p.patientName || '').toLowerCase();
         var phone = String(p.phone || p.phoneNumber || '').toLowerCase();
-        if (q && baby.indexOf(q) === -1 && mother.indexOf(q) === -1 && phone.indexOf(q) === -1) return false;
-
-        if (statusFilter === 'all') {
-          return rowMatchesCardFilter(r, 'all') && !isCompleted(r);
-        }
+        var serial = String(formatKmcRegisterNo(p, r)).toLowerCase();
+        if (q && baby.indexOf(q) === -1 && mother.indexOf(q) === -1 && phone.indexOf(q) === -1 && serial.indexOf(q) === -1) return false;
         return rowMatchesCardFilter(r, statusFilter);
       });
     }
@@ -1311,8 +1267,13 @@
       updateDashboardStats(window._kmcRows || []);
       var display = rows || [];
       var actionCol = _kmcRoleLevel === 'provider';
+      var hintEl = document.getElementById('registryHint');
+      if (hintEl) {
+        hintEl.textContent = tr('showingCount').replace('{n}', String(display.length));
+      }
       var container = document.getElementById('kmcRows');
       container.innerHTML = '<div class="hrt-register-desktop"><table class="hrt-register-table"><thead><tr>' +
+        '<th>' + escapeHtml(tr('serialCol')) + '</th>' +
         '<th>' + escapeHtml(tr('babyCol')) + '</th>' +
         '<th>' + escapeHtml(tr('weightCol')) + '</th>' +
         '<th>' + escapeHtml(tr('ageCol')) + '</th>' +
@@ -1325,27 +1286,31 @@
         '<div class="hrt-mobile-register" id="kmcMobileBody"></div>';
       var desktopBody = document.getElementById('kmcDesktopBody');
       var mobileBody = document.getElementById('kmcMobileBody');
-      var emptyCols = actionCol ? 8 : 7;
+      var emptyCols = actionCol ? 9 : 8;
 
       if (!display.length) {
         desktopBody.innerHTML = '<tr><td colspan="' + emptyCols + '" class="text-center text-muted py-4">' + escapeHtml(tr('noKmcMatch')) + '</td></tr>';
         mobileBody.innerHTML = '<div class="hrt-mobile-card text-muted">' + escapeHtml(tr('noKmcMatch')) + '</div>';
       } else {
-      display.forEach(function (r) {
+      display.forEach(function (r, index) {
         var p = r.patient || {};
         var patientId = r.patientId || p.id || '';
         var isTwins = r.newbornCare && (r.newbornCare.pregnancy_type === 'twins' || (Array.isArray(r.newbornCare.babies) && r.newbornCare.babies.length > 1));
         var babyName = escapeHtml(formatKmcBabyDisplayName(r.babyName, r.babyIndex, isTwins));
+        var registerNo = formatKmcRegisterNo(p, r);
         var infections = window.TrackingReader ? TrackingReader.infectionHtml(r.infectionFlags || p.infectionFlags) : '';
         var ageDays = r.ageDays != null ? r.ageDays : null;
         var ageHtml = ageDays != null
           ? '<span class="kmc-age-pill">' + ageDays + escapeHtml(tr('days')) + '</span>'
           : '<span class="text-muted">—</span>';
+        var serial = String(index + 1);
 
         var trEl = document.createElement('tr');
         trEl.setAttribute('onclick', "openNewbornReport('" + escapeHtml(patientId) + "'," + (parseInt(r.babyIndex, 10) || 1) + ")");
         trEl.innerHTML =
+          '<td>' + escapeHtml(serial) + '</td>' +
           '<td><div class="hrt-patient-main">' + babyName + '</div>' +
+            (registerNo ? '<div class="hrt-patient-meta">' + escapeHtml(registerNo) + '</div>' : '') +
             (infections ? '<div class="hrt-patient-meta">' + infections + '</div>' : '') + '</td>' +
           '<td class="kmc-weight-cell">' + weightCellHtml(r) + '</td>' +
           '<td>' + ageHtml + '</td>' +
@@ -1361,7 +1326,8 @@
         card.innerHTML =
           '<div class="hrt-mobile-card-main" role="button" tabindex="0" onclick="openNewbornReport(\'' + escapeHtml(patientId) + '\',' + (parseInt(r.babyIndex, 10) || 1) + ')">' +
             '<div class="hrt-mobile-top">' +
-              '<div><div class="hrt-mobile-name">' + babyName + '</div>' +
+              '<div><div class="hrt-mobile-name">' + escapeHtml(serial) + '. ' + babyName + '</div>' +
+              (registerNo ? '<div class="hrt-mobile-id">' + escapeHtml(registerNo) + '</div>' : '') +
               (infections ? '<div class="hrt-mobile-id">' + infections + '</div>' : '') + '</div>' +
               '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
             '</div>' +
@@ -1785,7 +1751,14 @@
     async function enrichKmcRowWeights(rows) {
       if (!window.firebase || !firebase.firestore) return rows;
       var db = firebase.firestore();
-      var pending = (rows || []).filter(function (row) { return row && !row._weightsEnriched; });
+      var pending = (rows || []).filter(function (row) {
+        if (!row || row._weightsEnriched) return false;
+        if (row._projection && Array.isArray(row.weightHistory) && row.weightHistory.length) {
+          row._weightsEnriched = true;
+          return false;
+        }
+        return true;
+      });
       var concurrency = 6;
       for (var i = 0; i < pending.length; i += concurrency) {
         var batch = pending.slice(i, i + concurrency);
@@ -1830,6 +1803,8 @@
       return Object.assign({}, row, {
         _projection: true,
         patient: patient,
+        motherPatientId: row.motherPatientId || '',
+        patientCode: row.patientCode || '',
         reasons: row.eligibilityReasons || [],
         kmcSelected: row.enrolled ? 'yes' : '',
         potentialKmc: !!row.eligible,
@@ -1864,7 +1839,7 @@
       try {
         var result = await TrackingReader.call(
           'queryKmcTracking',
-          TrackingReader.payload(_kmcFilters, append ? _kmcNextPageToken : null)
+          TrackingReader.payload(_kmcFilters, append ? _kmcNextPageToken : null, { pageSize: 100 })
         );
         if (result.schemaVersion !== 'tracking-kmc-v1' || !Array.isArray(result.rows)) {
           throw new Error('Unexpected KMC tracking response.');

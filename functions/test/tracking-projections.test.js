@@ -197,6 +197,36 @@ test('KMC emits independent rows and completion for each baby', () => {
   assert.equal(rows[1].status, 'lost_to_followup');
   assert.equal(rows[1].explicitCompletion, false);
   assert.equal(rows[1].rowId, 'mother-1_2');
+  assert.equal(rows[0].motherPatientId, 'mother-1');
+  assert.equal(rows[1].motherPatientId, 'mother-1');
+});
+
+test('KMC baby-patient facts emit only that baby and keep the mother id', () => {
+  const rows = buildKmcProjections(facts({
+    id: 'mother-1_baby_2',
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1'
+    },
+    newbornVisits: [{
+      data: {
+        visit_number: 1,
+        visitDate: '2026-05-02',
+        babies: [
+          { babyIndex: 1, babyName: 'Baby A', birthWeightGram: 1800, birthTime: '2026-05-01T10:00:00Z' },
+          { babyIndex: 2, babyName: 'Baby B', birthWeightGram: 1900, birthTime: '2026-05-01T10:05:00Z' }
+        ],
+        kmc_babies: [
+          { babyIndex: 1, kmc_selected: 'yes' },
+          { babyIndex: 2, kmc_selected: 'yes' }
+        ]
+      }
+    }]
+  }), { asOf: '2026-05-10' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].babyIndex, 2);
+  assert.equal(rows[0].motherPatientId, 'mother-1');
+  assert.equal(rows[0].babyName, 'Baby B');
 });
 
 test('KMC birth weight treats kg-scale values as kilograms', () => {

@@ -440,8 +440,9 @@
     throw friendlyTrackingError(lastError);
   }
 
-  function payload(filters, pageToken) {
-    var result = { pageSize: PAGE_SIZE };
+  function payload(filters, pageToken, options) {
+    var requested = options && options.pageSize;
+    var result = { pageSize: requested ? requested : PAGE_SIZE };
     ['periodStart', 'periodEnd', 'region', 'township', 'department', 'status'].forEach(function (key) {
       if (filters[key]) result[key] = filters[key];
     });

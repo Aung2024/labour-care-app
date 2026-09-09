@@ -471,6 +471,91 @@
     return !!getCompleteAction(row.kmcActions || row.actions || []);
   }
 
+  function kmcPatientId(row) {
+    return String((row && (row.patientId || (row.patient && row.patient.id))) || '');
+  }
+
+  function kmcMotherPatientId(row) {
+    if (!row) return '';
+    if (row.motherPatientId) return String(row.motherPatientId);
+    var rawId = kmcPatientId(row);
+    if (/_baby_\d+$/.test(rawId)) return rawId.replace(/_baby_\d+$/, '');
+    var rowId = String(row.rowId || '');
+    var fromRow = rowId.match(/^(.*)_baby_(\d+)_(\d+)$/);
+    if (fromRow) return fromRow[1];
+    return rawId;
+  }
+
+  function kmcBabyIndex(row) {
+    var rawId = kmcPatientId(row);
+    var fromId = rawId.match(/_baby_(\d+)$/);
+    if (fromId) return parseInt(fromId[1], 10) || 1;
+    var rowId = String((row && row.rowId) || '');
+    var fromBabyRow = rowId.match(/_baby_(\d+)_\d+$/);
+    if (fromBabyRow) return parseInt(fromBabyRow[1], 10) || 1;
+    return parseInt(row && row.babyIndex, 10) || 1;
+  }
+
+  function canonicalKmcKey(row) {
+    var motherId = kmcMotherPatientId(row);
+    var idx = kmcBabyIndex(row);
+    if (motherId) return 'pid:' + motherId + ':' + idx;
+    var code = String((row && (row.patientCode || (row.patient && (row.patient.patient_id || row.patient.patientId)))) || '')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
+    if (code) return 'code:' + code + ':' + idx;
+    return 'row:' + ((row && row.rowId) || '');
+  }
+
+  function kmcRowRichness(row) {
+    var history = (row && row.weightHistory) || [];
+    var visits = (row && row.newbornCareVisits) || [];
+    return (history.length * 10) + visits.length + (row && row.completedVisitCount || 0) +
+      (row && (row.birthWeightGram || row.latestWeightGram) ? 1 : 0);
+  }
+
+  function mergeKmcRow(keep, extra) {
+    if (!keep) return extra;
+    if (!extra) return keep;
+    if (kmcRowRichness(extra) > kmcRowRichness(keep)) return mergeKmcRow(extra, keep);
+    if ((!keep.weightHistory || !keep.weightHistory.length) && extra.weightHistory && extra.weightHistory.length) {
+      keep.weightHistory = extra.weightHistory;
+    }
+    if ((!keep.newbornCareVisits || !keep.newbornCareVisits.length) && extra.newbornCareVisits && extra.newbornCareVisits.length) {
+      keep.newbornCareVisits = extra.newbornCareVisits;
+    }
+    if (!keep.latestWeightGram && extra.latestWeightGram) keep.latestWeightGram = extra.latestWeightGram;
+    if (!keep.birthWeightGram && extra.birthWeightGram) keep.birthWeightGram = extra.birthWeightGram;
+    if ((extra.completedVisitCount || 0) > (keep.completedVisitCount || 0)) {
+      keep.completedVisitCount = extra.completedVisitCount;
+    }
+    if (!keep.motherPatientId && extra.motherPatientId) keep.motherPatientId = extra.motherPatientId;
+    var extraId = kmcPatientId(extra);
+    var keepId = kmcPatientId(keep);
+    if (/_baby_\d+$/.test(extraId) && !/_baby_\d+$/.test(keepId)) {
+      keep.patientId = extraId;
+      if (keep.patient) keep.patient.id = extraId;
+    }
+    return keep;
+  }
+
+  function finalizeKmcRowIdentity(row) {
+    if (!row) return row;
+    var id = kmcPatientId(row);
+    var idx = kmcBabyIndex(row);
+    row.motherPatientId = kmcMotherPatientId(row);
+    row.babyIndex = /_baby_\d+$/.test(id) ? 1 : idx;
+    return row;
+  }
+
+  function dedupeKmcRows(rows) {
+    var byKey = new Map();
+    (rows || []).forEach(function (row) {
+      var key = canonicalKmcKey(row);
+      byKey.set(key, mergeKmcRow(byKey.get(key), row));
+    });
+    return Array.from(byKey.values()).map(finalizeKmcRowIdentity);
+  }
+
   function getCompletionOutcome(row) {
     var action = row && row.babyIndex
       ? getCompleteActionForBaby(row.kmcActions || row.actions || [], row.babyIndex)
@@ -520,6 +605,11 @@
     isPrematureBirth: isPrematureBirth,
     normalizeWeightToGrams: normalizeWeightToGrams,
     formatWeightKg: formatWeightKg,
-    rowIsCompleted: rowIsCompleted
+    rowIsCompleted: rowIsCompleted,
+    kmcMotherPatientId: kmcMotherPatientId,
+    kmcBabyIndex: kmcBabyIndex,
+    canonicalKmcKey: canonicalKmcKey,
+    mergeKmcRow: mergeKmcRow,
+    dedupeKmcRows: dedupeKmcRows
   };
 })(typeof window !== 'undefined' ? window : this);

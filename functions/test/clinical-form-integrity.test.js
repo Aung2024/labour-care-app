@@ -78,6 +78,10 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   assert.match(source, /function enrichKmcRowWeights/);
   assert.match(source, /function canonicalKmcKey/);
   assert.match(source, /visit\.current_weight_gram \|\| visit\.currentWeightGram/);
+  assert.match(source, /serialCol/);
+  assert.match(source, /pageSize: 100/);
+  assert.match(source, /row\._projection && Array\.isArray\(row\.weightHistory\)/);
+  assert.doesNotMatch(source, /statusFilter === 'all'\) \{\s*return rowMatchesCardFilter\(r, 'all'\) && !isCompleted\(r\);/);
   assert.doesNotMatch(source, /if \(!points \|\| points\.length < 2\) return '';/);
 });
 

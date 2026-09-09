@@ -157,6 +157,20 @@ test('syncs complete twin identity into existing Newborn Visit 1', async () => {
   assert.equal(savedPatch.babies[0].clinical_notes, 'retain me');
 });
 
+test('dedupes mother and baby-patient KMC rows without collapsing twins', () => {
+  const utils = loadKmcUtils();
+  const rows = utils.dedupeKmcRows([
+    { rowId: 'abc_1', patientId: 'abc', babyIndex: 1, babyName: 'Baby Aye', motherPatientId: 'abc' },
+    { rowId: 'abc_baby_1_1', patientId: 'abc_baby_1', babyIndex: 1, babyName: 'Baby Aye' },
+    { rowId: 'abc_2', patientId: 'abc', babyIndex: 2, babyName: 'Baby Aye', motherPatientId: 'abc' },
+    { rowId: 'abc_baby_2_1', patientId: 'abc_baby_2', babyIndex: 1, babyName: 'Baby Aye' }
+  ]);
+  assert.equal(rows.length, 2);
+  const keys = new Set(rows.map((row) => utils.canonicalKmcKey(row)));
+  assert.equal(keys.has('pid:abc:1'), true);
+  assert.equal(keys.has('pid:abc:2'), true);
+});
+
 test('inherits KMC enrolment independently for each baby', () => {
   const utils = loadKmcUtils();
   const visits = [{
