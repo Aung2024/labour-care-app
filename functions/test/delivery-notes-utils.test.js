@@ -59,6 +59,27 @@ test('preserves per-baby canonical gram fields and delivery metadata', () => {
   );
 });
 
+test('formats gestational age as weeks and days instead of a decimal', () => {
+  const utils = loadUtils();
+  const parts = utils.splitGestationalAge(38.5);
+  assert.equal(parts.weeks, 38);
+  assert.equal(parts.days, 4);
+  assert.equal(utils.combineGestationalAge(38, 4), 38 + 4 / 7);
+  assert.equal(utils.formatGestationalAgeWeeksDays(38.5, 'en'), '38 weeks 4 days');
+  assert.equal(utils.formatGestationalAgeWeeksDays(38.5, 'mm'), '၃၈ ပတ် ၄ ရက်');
+});
+
+test('maps legacy delivery options without exposing them as new choices', () => {
+  const utils = loadUtils();
+  assert.equal(utils.normalizeBirthPlaceForForm('public_facility'), 'health_facility_subfacility');
+  assert.equal(utils.birthPlaceLabel('health_facility_subfacility', 'en'), 'RHC/SRHC');
+  assert.equal(utils.birthPlaceLabel('health_facility_subfacility', 'mm'), 'ကျန်းမာရေးဌာန/ဌာနခွဲ');
+  assert.equal(utils.normalizeDeliveryModeForForm('c_section'), 'emergency_c_section');
+  assert.equal(utils.normalizeBirthProvider('tba_other'), 'tba');
+  assert.equal(utils.birthProviderLabel('tba', 'en'), 'အရပ်လက်သည်');
+  assert.equal(utils.birthProviderLabel('skilled_birth_attendant', 'en'), 'Skilled Birth Attendance');
+});
+
 test('converts delivery-note grams to newborn-form kilograms', () => {
   const utils = loadUtils();
   assert.equal(utils.gramsToKilograms(2450), 2.45);

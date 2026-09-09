@@ -18,7 +18,7 @@
         align-items: center;
         justify-content: center;
         z-index: 9999;
-        padding: 1.25rem;
+        padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
       }
       .app-modal {
         background: #fff;
@@ -31,34 +31,40 @@
         overflow: hidden;
       }
       .app-modal-header {
-        padding: 0.85rem 1.25rem;
+        padding: 0.95rem 1.25rem;
         background: linear-gradient(135deg, #4f46e5, #0ea5e9);
         color: #fff;
-        font-weight: 600;
-        font-size: 0.95rem;
+        font-weight: 700;
+        font-size: 1.05rem;
+        line-height: 1.35;
       }
       .app-modal-body {
-        padding: 1.1rem 1.25rem 0.5rem;
+        padding: 1.15rem 1.25rem 0.65rem;
         color: #111827;
-        font-size: 0.95rem;
-        line-height: 1.5;
+        font-size: 1rem;
+        line-height: 1.55;
       }
       .app-modal-body p { margin: 0; }
       .app-modal-footer {
-        padding: 0.75rem 1.25rem 1.1rem;
+        padding: 0.85rem 1.25rem 1.15rem;
         display: flex;
         justify-content: flex-end;
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.6rem;
       }
       .app-modal-footer button {
         border: none;
-        border-radius: 999px;
-        padding: 0.4rem 1.3rem;
-        font-size: 0.9rem;
-        font-weight: 500;
+        border-radius: 12px;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0.65rem 1.15rem;
+        font-size: 0.98rem;
+        font-weight: 700;
         background: linear-gradient(135deg, #22c55e, #16a34a);
         color: #fff;
         box-shadow: 0 8px 20px rgba(22, 163, 74, 0.35);
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       }
       .app-modal-footer button.app-btn-secondary {
         background: #e5e7eb;
@@ -71,7 +77,13 @@
       }
       @media (max-width: 480px) {
         .app-modal { max-width: 100%; }
-        .app-modal-body { font-size: 0.9rem; }
+        .app-modal-body { font-size: 1rem; }
+        .app-modal-footer {
+          flex-direction: column-reverse;
+        }
+        .app-modal-footer button {
+          width: 100%;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -111,6 +123,7 @@
 
       titleEl.textContent = (options && options.title) || 'Notice';
       msgEl.textContent = message || '';
+      okBtn.textContent = (options && options.okLabel) || 'OK';
 
       function close() {
         backdrop.style.display = 'none';
@@ -172,6 +185,8 @@
 
       titleEl.textContent = (options && options.title) || 'Confirm';
       msgEl.textContent = message || '';
+      okBtn.textContent = (options && options.okLabel) || 'OK';
+      cancelBtn.textContent = (options && options.cancelLabel) || 'Cancel';
 
       function close(result) {
         backdrop.style.display = 'none';

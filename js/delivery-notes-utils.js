@@ -63,7 +63,12 @@
       v === 'health facility' ||
       v === 'health facility subfacility' ||
       v === 'health_facility_subfacility' ||
-      v === 'subfacility'
+      v === 'subfacility' ||
+      v === 'rhc' ||
+      v === 'srhc' ||
+      v === 'rhc srhc' ||
+      v === 'rhc/srhc' ||
+      raw.indexOf('ကျန်းမာရေးဌာန') !== -1
     ) {
       return 'health_facility_subfacility';
     }
@@ -115,12 +120,117 @@
     var key = normalizeBirthPlaceForNewborn(value);
     var mm = language === 'mm';
     if (key === 'government_hospital') return mm ? 'အစိုးရဆေးရုံ' : 'Government Hospital';
-    if (key === 'health_facility_subfacility') return mm ? 'ကျန်းမာရေးဌာန / လက်အောက်ခံဌာန' : 'Health Facility / Subfacility';
-    if (key === 'public_facility') return mm ? 'အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန' : 'Public Facility (legacy)';
+    if (key === 'health_facility_subfacility') return mm ? 'ကျန်းမာရေးဌာန/ဌာနခွဲ' : 'RHC/SRHC';
+    if (key === 'public_facility') return mm ? 'ကျန်းမာရေးဌာန/ဌာနခွဲ' : 'RHC/SRHC';
     if (key === 'private_facility') return mm ? 'ပုဂ္ဂလိက' : 'Private Facility';
     if (key === 'home') return mm ? 'အိမ်မွေး' : 'Home Delivery';
-    if (key === 'other') return mm ? 'အခြား' : 'Others';
+    if (key === 'other') return mm ? 'အခြား' : 'Other';
     return value || '';
+  }
+
+  function myanmarDigits(value) {
+    return String(value == null ? '' : value).replace(/\d/g, function (digit) {
+      return '၀၁၂၃၄၅၆၇၈၉'[digit];
+    });
+  }
+
+  function splitGestationalAge(value) {
+    var n = toNumber(value);
+    if (n == null) return null;
+    var weeks = Math.floor(n);
+    var days = Math.round((n - weeks) * 7);
+    if (days === 7) {
+      weeks += 1;
+      days = 0;
+    }
+    if (days < 0) days = 0;
+    return { weeks: weeks, days: days, decimal: weeks + (days / 7) };
+  }
+
+  function combineGestationalAge(weeks, days) {
+    var w = parseInt(weeks, 10);
+    var d = parseInt(days, 10);
+    if (isNaN(w)) return null;
+    if (isNaN(d) || d < 0) d = 0;
+    if (d > 6) d = 6;
+    return w + (d / 7);
+  }
+
+  function formatGestationalAgeWeeksDays(value, language) {
+    var parts = splitGestationalAge(value);
+    if (!parts) return '';
+    if (language === 'mm') {
+      return myanmarDigits(parts.weeks) + ' ပတ် ' + myanmarDigits(parts.days) + ' ရက်';
+    }
+    return parts.weeks + (parts.weeks === 1 ? ' week ' : ' weeks ') +
+      parts.days + (parts.days === 1 ? ' day' : ' days');
+  }
+
+  function normalizeBirthProvider(value) {
+    var v = String(value || '').toLowerCase().replace(/[_\s-]+/g, '_');
+    if (!v) return '';
+    if (v === 'self') return 'self';
+    if (v === 'skilled_birth_attendant' || v === 'skilled_birth_attendance' || v === 'sba') {
+      return 'skilled_birth_attendant';
+    }
+    if (v === 'amw') return 'amw';
+    if (v === 'tba' || v === 'tba_other') return 'tba';
+    if (v === 'other' || v === 'others') return 'other';
+    return value;
+  }
+
+  function birthProviderLabel(value, language) {
+    var key = normalizeBirthProvider(value);
+    var mm = language === 'mm';
+    if (key === 'self') return mm ? 'ကိုယ်တိုင်' : 'Self';
+    if (key === 'skilled_birth_attendant') return mm ? 'ကျွမ်းကျင် မွေးဖွားသူ' : 'Skilled Birth Attendance';
+    if (key === 'amw') return mm ? 'အရံသားဖွား' : 'AMW';
+    if (key === 'tba') return 'အရပ်လက်သည်';
+    if (key === 'other') return mm ? 'အခြား' : 'Other';
+    return value || '';
+  }
+
+  function normalizeDeliveryModeForForm(value) {
+    var v = String(value || '').toLowerCase();
+    if (!v) return '';
+    if (v === 'normal' || v === 'normal_vaginal') return 'normal';
+    if (v === 'assisted' || v === 'assisted_vaginal') return 'assisted';
+    if (v === 'elective_c_section' || v === 'elective_caesarean_section') return 'elective_c_section';
+    if (v === 'emergency_c_section' || v === 'emergency_caesarean_section') return 'emergency_c_section';
+    if (v === 'c_section' || v === 'caesarean_section' || v === 'cesarean_section') return 'emergency_c_section';
+    return v;
+  }
+
+  function normalizeBirthPlaceForForm(value) {
+    var key = normalizeBirthPlaceForNewborn(value);
+    if (key === 'public_facility') return 'health_facility_subfacility';
+    return key;
+  }
+
+  async function promptDeliveryNotesRequired(patientId, language, options) {
+    options = options || {};
+    var mm = language === 'mm';
+    var title = options.title || (mm ? 'Delivery Notes လိုအပ်သည်' : 'Delivery Notes required');
+    var message = options.message || (mm
+      ? 'PNC မစတင်မီ Delivery Notes ကို အရင်သိမ်းပါ။'
+      : 'Save Delivery Notes before starting a PNC visit.');
+    var okLabel = options.okLabel || (mm ? 'Delivery Notes ဖွင့်ရန်' : 'Open Delivery Notes');
+    var cancelLabel = options.cancelLabel || (mm ? 'ပိတ်ရန်' : 'Close');
+    var allowCancel = options.allowCancel === true;
+    var go = true;
+    if (allowCancel && global.AppDialog && typeof global.AppDialog.confirm === 'function') {
+      go = await global.AppDialog.confirm(message, { title: title, okLabel: okLabel, cancelLabel: cancelLabel });
+    } else if (global.AppDialog && typeof global.AppDialog.alert === 'function') {
+      await global.AppDialog.alert(message, { title: title, okLabel: okLabel });
+    } else if (allowCancel && global.confirm) {
+      go = global.confirm(message);
+    } else if (global.alert) {
+      global.alert(message);
+    }
+    if (go && patientId) {
+      global.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
+    }
+    return false;
   }
 
   function toDatetimeLocal(value, fallbackDate) {
@@ -204,7 +314,7 @@
         pregnancyType: pregnancyType,
         gestationalWeek: toNumber(firstOf(details.gestationalWeek, details.gestational_week, data.gestationalWeek)),
         anusPresent: firstOf(details.anusPresent, details.anus_present, data.anusPresent),
-        birthProvider: firstOf(details.birthProvider, details.birth_provider, data.birthProvider),
+        birthProvider: normalizeBirthProvider(firstOf(details.birthProvider, details.birth_provider, data.birthProvider)),
         modeOfDelivery: firstOf(details.modeOfDelivery, details.mode_of_delivery),
         birthPlace: firstOf(details.birthPlace, details.birthplace),
         babies: babies
@@ -409,8 +519,16 @@
     defaultBabies: defaultBabies,
     normalizeBaby: normalizeBaby,
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
+    normalizeDeliveryModeForForm: normalizeDeliveryModeForForm,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
+    normalizeBirthPlaceForForm: normalizeBirthPlaceForForm,
+    normalizeBirthProvider: normalizeBirthProvider,
     birthPlaceLabel: birthPlaceLabel,
+    birthProviderLabel: birthProviderLabel,
+    splitGestationalAge: splitGestationalAge,
+    combineGestationalAge: combineGestationalAge,
+    formatGestationalAgeWeeksDays: formatGestationalAgeWeeksDays,
+    promptDeliveryNotesRequired: promptDeliveryNotesRequired,
     toDatetimeLocal: toDatetimeLocal,
     gramsToKilograms: gramsToKilograms
   };

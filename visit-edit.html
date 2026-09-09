@@ -209,6 +209,7 @@
       return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '-';
     }
     function visitLabel(data, index) {
+      if (visitType === 'delivery') return visitConfig.label;
       return visitConfig.label + ' Visit ' + (data.visitNumber || data.visit_number || index + 1);
     }
     function editUrl(visitId, approvalId) {
@@ -286,7 +287,7 @@
         card.innerHTML = `
           <div class="visit-title">${escapeHtml(visitLabel(visit, row.index))}</div>
           <div class="visit-meta">
-            Visit date: ${escapeHtml(formatDate(visit.visitDate || visit.visit_date))}<br>
+            Visit date: ${escapeHtml(formatDate(visit.visitDate || visit.visit_date || (visit.deliveryDetails && visit.deliveryDetails.babies && visit.deliveryDetails.babies[0] && visit.deliveryDetails.babies[0].birthTime) || visit.createdAt))}<br>
             Created: ${escapeHtml(formatDate(visit.createdAt || visit.timestamp || visit.offline_created_at))}<br>
             ${ownRecord ? 'Created by you' : 'Created by another user'}
           </div>
@@ -297,7 +298,9 @@
           const link = document.createElement('a');
           link.href = editUrl(row.id, approval ? approval.id : '');
           link.className = 'btn-action btn-edit';
-          link.innerHTML = '<i class="fas fa-edit"></i> Edit Visit';
+          link.innerHTML = visitType === 'delivery'
+            ? '<i class="fas fa-edit"></i> Edit Delivery Notes'
+            : '<i class="fas fa-edit"></i> Edit Visit';
           actions.appendChild(link);
         } else if (ownRecord) {
           const btn = document.createElement('button');
@@ -327,7 +330,9 @@
         setStatus('Unknown visit type.', 'error');
         return;
       }
-      document.getElementById('pageTitle').textContent = 'Edit ' + visitConfig.label + ' Visits';
+      document.getElementById('pageTitle').textContent = visitType === 'delivery'
+        ? 'Edit Delivery Notes'
+        : 'Edit ' + visitConfig.label + ' Visits';
       const patientId = qs('patient') || sessionStorage.getItem('selectedPatientId');
       if (!patientId) { window.location.href = 'list.html'; return; }
       const patientDoc = await firebase.firestore().collection('patients').doc(patientId).get();

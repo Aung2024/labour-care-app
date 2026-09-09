@@ -61,6 +61,11 @@ test('delivery notes lock after save and reuse ANC gestational age', () => {
   assert.match(source, /function isDeliveryNotesLocked/);
   assert.match(source, /function applyDeliveryGestationalWeek/);
   assert.match(source, /deliveryGaLockedFromAnc/);
+  assert.match(source, /RHC\/SRHC/);
+  assert.match(source, /ကျန်းမာရေးဌာန\/ဌာနခွဲ/);
+  assert.doesNotMatch(source, /C-section \(legacy/);
+  assert.doesNotMatch(source, /Public Facility \(legacy\)/);
+  assert.doesNotMatch(source, /နောက်ဆုံး ANC မှ ယူထားပြီး ကိုယ်ဝန်ပတ် ထပ်မထည့်နိုင်အောင် ပိတ်ထားသည်/);
   const utils = readAppFile('js/baby-patient-utils.js');
   assert.match(utils, /copyMotherScopeFields/);
   assert.match(utils, /fetchLatestAncContext/);
