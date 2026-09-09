@@ -70,6 +70,46 @@
       transition: all 0.3s ease;
     }
     .btn-save:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35); color: white; }
+    .vaccine-entry {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 1rem;
+      margin-bottom: 0.85rem;
+      background: #f8fafc;
+    }
+    .vaccine-entry-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .vaccine-entry-title {
+      font-weight: 700;
+      color: #111827;
+      margin: 0;
+    }
+    .btn-remove-vaccine {
+      min-height: 44px;
+      min-width: 44px;
+      border-radius: 10px;
+      font-weight: 700;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-add-vaccine {
+      min-height: 44px;
+      width: 100%;
+      margin-bottom: 1rem;
+      border-radius: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
     .vaccine-select-premium {
       border: 2px solid #e5e7eb;
       border-radius: 12px;
@@ -120,22 +160,13 @@
 
     <div class="form-card">
       <form id="vaccineForm">
-        <div class="mb-4">
-          <label class="form-label lang-text" data-en="Select Vaccine" data-mm="ကာကွယ်ဆေး ရွေးချယ်ပါ">Select Vaccine</label>
-          <select id="vaccineSelect" class="form-select form-select-lg vaccine-select-premium" required>
-            <option value="">-- Select vaccine --</option>
-          </select>
-        </div>
-        <div class="mb-4">
-          <label for="dateGiven" class="form-label lang-text" data-en="Date Given" data-mm="ထိုးသည့်ရက်">Date Given</label>
-          <input type="date" id="dateGiven" class="form-control form-control-lg" required>
-        </div>
-        <div class="mb-4">
-          <label for="notes" class="form-label lang-text" data-en="Notes (optional)" data-mm="မှတ်ချက် (ရွေးချယ်နိုင်သည်)">Notes (optional)</label>
-          <textarea id="notes" class="form-control" rows="2" placeholder="Batch number, site, reactions..."></textarea>
-        </div>
+        <div id="vaccineRows"></div>
+        <button type="button" class="btn btn-outline-success btn-add-vaccine" id="addVaccineRowBtn">
+          <i class="fas fa-plus"></i>
+          <span class="lang-text" data-en="Add more vaccine" data-mm="ကာကွယ်ဆေး ထပ်ထည့်ရန်">Add more vaccine</span>
+        </button>
         <button type="submit" class="btn btn-save w-100" id="submitBtn">
-          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Record" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Record</span>
+          <i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Records" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Records</span>
         </button>
       </form>
     </div>
@@ -204,9 +235,167 @@
       if (!user) { window.location.href = 'login.html'; return; }
       if (!patientId) { vaccNotice(lang === 'mm' ? 'လူနာ ID မပါဝင်ပါ။' : 'No patient ID'); goBack(); return; }
       await loadBabyInfo();
-      renderVaccineOptions();
-      document.getElementById('dateGiven').valueAsDate = new Date();
     });
+
+    document.getElementById('addVaccineRowBtn').addEventListener('click', function () {
+      addVaccineRow();
+    });
+
+    let vaccineRowSeq = 0;
+
+    function localDateValue(date) {
+      const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function lastRowDate() {
+      const dates = document.querySelectorAll('.vaccine-date');
+      if (!dates.length) return localDateValue();
+      return dates[dates.length - 1].value || localDateValue();
+    }
+
+    function vaccineOptionsHtml() {
+      const placeholder = lang === 'mm' ? 'ကာကွယ်ဆေး ရွေးချယ်ပါ' : 'Select vaccine';
+      return '<option value="">-- ' + placeholder + ' --</option>' +
+        VACCINES.map(function (v) {
+          return '<option value="' + v.id + '">' + (lang === 'mm' ? v.nameMm : v.name) + '</option>';
+        }).join('');
+    }
+
+    function addVaccineRow() {
+      vaccineRowSeq += 1;
+      const rowId = String(vaccineRowSeq);
+      const wrap = document.getElementById('vaccineRows');
+      const row = document.createElement('div');
+      row.className = 'vaccine-entry';
+      row.dataset.rowId = rowId;
+      const title = (lang === 'mm' ? 'ကာကွယ်ဆေး ' : 'Vaccine ') + rowId;
+      row.innerHTML =
+        '<div class="vaccine-entry-head">' +
+          '<h6 class="vaccine-entry-title">' + title + '</h6>' +
+          '<button type="button" class="btn btn-outline-danger btn-remove-vaccine" data-remove-row="' + rowId + '" aria-label="' + (lang === 'mm' ? 'ဖယ်ရှားရန်' : 'Remove') + '">' +
+            '<i class="fas fa-times"></i>' +
+          '</button>' +
+        '</div>' +
+        '<div class="mb-3">' +
+          '<label class="form-label" for="vaccineSelect-' + rowId + '">' + (lang === 'mm' ? 'ကာကွယ်ဆေး ရွေးချယ်ပါ' : 'Select Vaccine') + '</label>' +
+          '<select id="vaccineSelect-' + rowId + '" class="form-select form-select-lg vaccine-select-premium vaccine-select">' +
+            vaccineOptionsHtml() +
+          '</select>' +
+        '</div>' +
+        '<div class="mb-3">' +
+          '<label class="form-label" for="dateGiven-' + rowId + '">' + (lang === 'mm' ? 'ထိုးသည့်ရက်' : 'Date Given') + '</label>' +
+          '<input type="date" id="dateGiven-' + rowId + '" class="form-control form-control-lg vaccine-date" value="' + lastRowDate() + '">' +
+        '</div>' +
+        '<div class="mb-0">' +
+          '<label class="form-label" for="notes-' + rowId + '">' + (lang === 'mm' ? 'မှတ်ချက် (ရွေးချယ်နိုင်သည်)' : 'Notes (optional)') + '</label>' +
+          '<textarea id="notes-' + rowId + '" class="form-control vaccine-notes" rows="2" placeholder="' + (lang === 'mm' ? 'အသုတ်နံပါတ်၊ ထိုးသည့်နေရာ၊ တုံ့ပြန်မှု...' : 'Batch number, site, reactions...') + '"></textarea>' +
+        '</div>';
+      wrap.appendChild(row);
+      row.querySelector('[data-remove-row]').addEventListener('click', function () {
+        removeVaccineRow(rowId);
+      });
+      refreshRemoveButtons();
+      if (document.querySelectorAll('.vaccine-entry').length > 1) {
+        const nextSelect = row.querySelector('.vaccine-select');
+        if (nextSelect) nextSelect.focus();
+      }
+    }
+
+    function removeVaccineRow(rowId) {
+      const rows = document.querySelectorAll('.vaccine-entry');
+      if (rows.length <= 1) return;
+      const row = document.querySelector('.vaccine-entry[data-row-id="' + rowId + '"]');
+      if (row) row.remove();
+      refreshRemoveButtons();
+    }
+
+    function refreshRemoveButtons() {
+      const rows = document.querySelectorAll('.vaccine-entry');
+      rows.forEach(function (row, index) {
+        const title = row.querySelector('.vaccine-entry-title');
+        if (title) title.textContent = (lang === 'mm' ? 'ကာကွယ်ဆေး ' : 'Vaccine ') + (index + 1);
+        const btn = row.querySelector('.btn-remove-vaccine');
+        if (btn) btn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+      });
+    }
+
+    function collectVaccineEntries() {
+      const entries = [];
+      document.querySelectorAll('.vaccine-entry').forEach(function (row) {
+        const vaccineId = String(row.querySelector('.vaccine-select')?.value || '').trim();
+        const dateGiven = String(row.querySelector('.vaccine-date')?.value || '').trim();
+        const notes = String(row.querySelector('.vaccine-notes')?.value || '').trim();
+        if (!vaccineId && !dateGiven && !notes) return;
+        entries.push({ vaccineId: vaccineId, dateGiven: dateGiven, notes: notes });
+      });
+      return entries;
+    }
+
+    document.getElementById('vaccineForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const rawEntries = collectVaccineEntries();
+      if (!rawEntries.length) {
+        await vaccNotice(lang === 'mm' ? 'ကာကွယ်ဆေး အနည်းဆုံး တစ်ခု ရွေးပါ။' : 'Please add at least one vaccine.', lang === 'mm' ? 'လိုအပ်သည်' : 'Required');
+        return;
+      }
+      const incomplete = rawEntries.some(function (row) { return !row.vaccineId || !row.dateGiven; });
+      if (incomplete) {
+        await vaccNotice(lang === 'mm' ? 'ကာကွယ်ဆေးနှင့် ထိုးသည့်ရက်ကို ဖြည့်ပါ။' : 'Please complete the vaccine and date for each row.', lang === 'mm' ? 'လိုအပ်သည်' : 'Required');
+        return;
+      }
+      const seen = new Set();
+      const duplicate = rawEntries.find(function (row) {
+        if (row.vaccineId === 'other') return false;
+        if (seen.has(row.vaccineId)) return true;
+        seen.add(row.vaccineId);
+        return false;
+      });
+      if (duplicate) {
+        await vaccNotice(lang === 'mm' ? 'တူညီသော ကာကွယ်ဆေးကို ထပ်မရွေးပါနှင့်။' : 'The same vaccine is selected more than once.', lang === 'mm' ? 'သတိ' : 'Notice');
+        return;
+      }
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + (lang === 'mm' ? 'သိမ်းနေသည်...' : 'Saving...');
+      try {
+        const batch = db.batch();
+        const col = db.collection('patients').doc(patientId).collection('vaccinations');
+        const uid = firebase.auth().currentUser.uid;
+        rawEntries.forEach(function (row) {
+          const vaccine = VACCINES.find(function (v) { return v.id === row.vaccineId; });
+          if (!vaccine) return;
+          batch.set(col.doc(), {
+            vaccineId: row.vaccineId,
+            vaccineName: vaccine.name,
+            vaccineNameMm: vaccine.nameMm,
+            type: vaccine.type,
+            dateGiven: row.dateGiven,
+            notes: row.notes || null,
+            recordedBy: uid,
+            recordedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+        await batch.commit();
+        const savedCount = rawEntries.length;
+        const savedMsg = lang === 'mm'
+          ? ('ကာကွယ်ဆေး မှတ်တမ်း ' + savedCount + ' ခု သိမ်းဆည်းပြီးပါပြီ။')
+          : (savedCount === 1 ? 'Vaccine record saved successfully.' : savedCount + ' vaccine records saved successfully.');
+        await vaccNotice(savedMsg, lang === 'mm' ? 'သိမ်းပြီး' : 'Saved');
+        window.location.href = `vaccine-home.html?patient=${patientId}`;
+      } catch (err) {
+        vaccNotice('Error: ' + err.message, lang === 'mm' ? 'အမှား' : 'Error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Records" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Records</span>';
+      }
+    });
+
+    function goBack() {
+      window.location.href = `vaccine-home.html?patient=${patientId}`;
+    }
+
+    addVaccineRow();
 
     async function loadBabyInfo() {
       try {
@@ -243,48 +432,6 @@
       if (d < 30) return `(${d} ${lang === 'mm' ? 'ရက်' : 'days'})`;
       if (d < 365) return `(${Math.floor(d / 30)} ${lang === 'mm' ? 'လ' : 'months'})`;
       return `(${Math.floor(d / 365)} ${lang === 'mm' ? 'နှစ်' : 'years'})`;
-    }
-
-    function renderVaccineOptions() {
-      const select = document.getElementById('vaccineSelect');
-      if (!select) return;
-      select.innerHTML = '<option value="">-- ' + (lang === 'mm' ? 'ကာကွယ်ဆေး ရွေးချယ်ပါ' : 'Select vaccine') + ' --</option>' +
-        VACCINES.map(v => `<option value="${v.id}">${lang === 'mm' ? v.nameMm : v.name}</option>`).join('');
-    }
-
-    document.getElementById('vaccineForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const vaccineId = document.getElementById('vaccineSelect')?.value;
-      const vaccine = VACCINES.find(v => v.id === vaccineId);
-      const dateGiven = document.getElementById('dateGiven').value;
-      const notes = document.getElementById('notes').value.trim();
-      if (!vaccine || !dateGiven) return;
-      const btn = document.getElementById('submitBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
-      try {
-        await db.collection('patients').doc(patientId).collection('vaccinations').add({
-          vaccineId,
-          vaccineName: vaccine.name,
-          vaccineNameMm: vaccine.nameMm,
-          type: vaccine.type,
-          dateGiven,
-          notes: notes || null,
-          recordedBy: firebase.auth().currentUser.uid,
-          recordedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        await vaccNotice(lang === 'mm' ? 'ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပြီးပါပြီ။' : 'Vaccine record saved successfully.', lang === 'mm' ? 'သိမ်းပြီး' : 'Saved');
-        window.location.href = `vaccine-home.html?patient=${patientId}`;
-      } catch (err) {
-        vaccNotice('Error: ' + err.message, lang === 'mm' ? 'အမှား' : 'Error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Vaccine Record" data-mm="ကာကွယ်ဆေး မှတ်တမ်း သိမ်းဆည်းပါ">Save Vaccine Record</span>';
-      }
-    });
-
-    function goBack() {
-      window.location.href = `vaccine-home.html?patient=${patientId}`;
     }
   </script>
 </body>

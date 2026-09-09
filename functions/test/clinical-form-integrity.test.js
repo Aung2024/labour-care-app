@@ -250,5 +250,34 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v300-moh/);
+  assert.match(sw, /mch-care-v301-moh/);
+});
+
+test('transfer page is single-midwife and hides helper counts', () => {
+  const form = readAppFile('transfer-patient.html');
+  assert.match(form, /type="radio" name="receivingMidwife"/);
+  assert.match(form, /ids\.length !== 1/);
+  assert.match(form, /function clearSelectedMidwife/);
+  assert.doesNotMatch(form, /toggleAllMidwives/);
+  assert.doesNotMatch(form, /အားလုံး ရွေးပါ/);
+  assert.doesNotMatch(form, /လွှဲပြောင်းနိုင်သော Midwife/);
+  assert.doesNotMatch(form, /အမည်၊ အီးမေးလ်၊ ကျန်းမာရေးဌာန၊ တိုင်းဒေသကြီး သို့မဟုတ် မြို့နယ်ဖြင့် ရှာနိုင်ပါသည်/);
+  assert.doesNotMatch(form, /type="checkbox"/);
+});
+
+test('new vaccine page can record multiple vaccines at once', () => {
+  const source = readAppFile('vaccine-record.html');
+  assert.match(source, /Add more vaccine/);
+  assert.match(source, /ကာကွယ်ဆေး ထပ်ထည့်ရန်/);
+  assert.match(source, /function addVaccineRow/);
+  assert.match(source, /batch\.commit/);
+});
+
+test('patient registration requires patient phone and allows reused numbers', () => {
+  const source = readAppFile('patient-enhanced.html');
+  assert.match(source, /name="phone" id="phone"[^>]*required/);
+  assert.match(source, /Patient phone number is required/);
+  assert.match(source, /same phone is allowed/);
+  assert.doesNotMatch(source, /This phone number already exists for another patient/);
+  assert.doesNotMatch(source, /liveDuplicateState\.phoneBlocked = phoneDup/);
 });

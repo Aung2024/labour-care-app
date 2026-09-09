@@ -2999,12 +2999,11 @@
           phone: phone
         }, options);
 
-        const phoneDup = !!(duplicateCheck.phoneMatches && duplicateCheck.phoneMatches.length);
         const nameDup = !!(duplicateCheck.nameMatches && duplicateCheck.nameMatches.length);
 
-        liveDuplicateState.phoneBlocked = phoneDup;
+        liveDuplicateState.phoneBlocked = false;
         liveDuplicateState.nameWarning = nameDup;
-        toggleInlineDuplicateAlert('phoneDuplicateAlert', phoneDup);
+        toggleInlineDuplicateAlert('phoneDuplicateAlert', false);
         toggleInlineDuplicateAlert('nameDuplicateAlert', nameDup);
       } catch (error) {
         console.warn('Live duplicate check failed:', error);
@@ -3337,7 +3336,18 @@
       
       // Basic form validation
       if (!data.name || data.age === '' || data.age == null || !data.registration_date) {
-        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Please fill in all required fields (Name, Age, Registration Date).</div>';
+        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
+          (currentLanguage === 'mm'
+            ? 'လိုအပ်သော အချက်အလက်များ ဖြည့်ပါ (အမည်၊ အသက်၊ ဖုန်းနံပါတ်၊ မှတ်ပုံတင်သည့်နေ့)။'
+            : 'Please fill in all required fields (Name, Age, Phone Number, Registration Date).') + '</div>';
+        return;
+      }
+
+      if (!(data.phone || '').trim()) {
+        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
+          (currentLanguage === 'mm'
+            ? 'လူနာဖုန်းနံပါတ် ဖြည့်ရန် လိုအပ်ပါသည်။'
+            : 'Patient phone number is required.') + '</div>';
         return;
       }
 
@@ -3358,16 +3368,8 @@
             : 'Please select Gravida (G) and Parity (P).') + '</div>';
         return;
       }
-      
-      if (liveDuplicateState.phoneBlocked) {
-        messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-ban me-2"></i>' +
-          (currentLanguage === 'mm'
-            ? 'ဤဖုန်းနံပါတ်သည် အခြားလူနာတစ်ဦးအတွက် မှတ်ပုံတင်ထားပြီးဖြစ်သည်။'
-            : 'This phone number is already registered to another patient.') + '</div>';
-        return;
-      }
 
-      // STEP 1: Check for duplicate patients (final confirm before save)
+      // STEP 1: Check for duplicate patients (name warning only; same phone is allowed)
       if (!window.DuplicateDetector) {
         console.error('❌ DuplicateDetector not loaded! Check if js/duplicate-detector.js is included.');
       }
@@ -3382,11 +3384,7 @@
         }, await getRegistrationDuplicateOptions());
         
         if (duplicateCheck.phoneMatches && duplicateCheck.phoneMatches.length) {
-          console.log('⛔ Duplicate phone found:', duplicateCheck.phoneMatches);
-          liveDuplicateState.phoneBlocked = true;
-          toggleInlineDuplicateAlert('phoneDuplicateAlert', true);
-          messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-ban me-2"></i>This phone number already exists for another patient. Please check the patient list instead of registering a duplicate patient.</div>';
-          return;
+          console.log('ℹ️ Same phone already used by another patient; continuing registration.');
         }
 
         if (duplicateCheck.nameMatches && duplicateCheck.nameMatches.length) {
@@ -3905,14 +3903,10 @@
           <div class="row">
             <div class="col-lg-4 col-md-6">
               <div class="form-group">
-                <label for="phone" class="form-label">
+                <label for="phone" class="form-label required-field">
                   <i class="fas fa-phone"></i><span class="lang-text" data-en="Phone Number" data-mm="ဖုန်းနံပါတ်">Phone Number</span>
                 </label>
-                <input type="tel" name="phone" id="phone" class="form-control">
-                <div id="phoneDuplicateAlert" class="alert alert-danger hide" role="status" aria-live="polite" style="display: none;">
-                  <i class="fas fa-ban me-2"></i>
-                  <span class="lang-text" data-en="This phone number is already registered to another patient. Use the patient list or a different number." data-mm="ဤဖုန်းနံပါတ်သည် အခြားလူနာတစ်ဦးအတွက် မှတ်ပုံတင်ထားပြီးဖြစ်သည်။ လူနာစာရင်း သို့မဟုတ် အခြားနံပါတ် အသုံးပြုပါ။">This phone number is already registered to another patient. Use the patient list or a different number.</span>
-                </div>
+                <input type="tel" name="phone" id="phone" class="form-control" required inputmode="tel" autocomplete="tel">
               </div>
             </div>
             <div class="col-lg-4 col-md-6">
