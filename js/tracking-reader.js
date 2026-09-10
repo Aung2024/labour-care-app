@@ -361,7 +361,8 @@
     var serviceUrls = {
       'mnch-1cbda': {
         queryHrtTracking: 'https://queryhrttracking-houbbz2mta-uc.a.run.app',
-        queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app'
+        queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app',
+        sendHrtSms: 'https://sendhrtsms-houbbz2mta-uc.a.run.app'
       }
     };
     if (serviceUrls[projectId] && serviceUrls[projectId][name]) {
@@ -424,14 +425,15 @@
     }
   }
 
-  async function call(name, payload) {
+  async function call(name, payload, options) {
+    var maxAttempts = options && options.retry === false ? 1 : 3;
     var lastError = null;
-    for (var attempt = 1; attempt <= 3; attempt++) {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         return await callOnce(name, payload);
       } catch (error) {
         lastError = error;
-        if (!isRetryableTrackingError(error) || attempt === 3) {
+        if (!isRetryableTrackingError(error) || attempt === maxAttempts) {
           throw friendlyTrackingError(error);
         }
         await sleep(700 * attempt);
@@ -482,6 +484,7 @@
     createControls: createControls,
     restoreUrl: restoreUrl,
     call: call,
+    callOnce: callOnce,
     payload: payload,
     roleLevel: roleLevel,
     enabled: trackingV2Enabled,

@@ -465,5 +465,6 @@ module.exports = {
   processTrackingRepairBatch,
   processTrackingRepairUntilDeadline,
   processActiveTrackingReconciliation,
-  validateFilters
+  validateFilters,
+  authorizedUser
 };

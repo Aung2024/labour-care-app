@@ -315,6 +315,12 @@ test('tracking projections and repair checkpoints are server-only', async () => 
   await assertFails(getDoc(doc(
     database, 'tracking_v2_jobs', 'tracking-projection-repair'
   )));
+  await assertFails(getDoc(doc(database, 'sms_sends', 'sms-1')));
+  await assertFails(setDoc(doc(database, 'sms_sends', 'sms-1'), {
+    type: 'hrt',
+    patientId: 'patient-a',
+    status: 'accepted'
+  }));
 });
 
 test('authenticated clients can enqueue only their own refresh requests', async () => {

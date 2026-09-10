@@ -22,6 +22,7 @@
   <script src="js/offline-manager.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/lang-apply.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <script src="js/register-sw.js"></script>
   <style>
     :root {
@@ -710,8 +711,8 @@
     .hrt-register-table .col-danger { width: 14%; }
     .hrt-register-table .col-anc-visits { width: 12%; }
     .hrt-register-table .col-outcome { width: 9%; }
-    .hrt-register-table .col-recommendation { width: 16%; }
-    .hrt-register-table .col-sms { width: 13%; }
+    .hrt-register-table .col-recommendation { width: 14%; }
+    .hrt-register-table .col-sms { width: 16%; }
     .hrt-register-table .col-action { width: 10%; }
 
     .hrt-mobile-register {
@@ -836,6 +837,7 @@
     .hrt-sms-contact {
       display: flex;
       flex-direction: row;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: center;
       gap: 0.35rem;
@@ -845,6 +847,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.3rem;
     }
     .hrt-contact-label {
       position: absolute;
@@ -889,6 +893,114 @@
       color: #cbd5e1;
       border-color: #e2e8f0;
       pointer-events: none;
+    }
+    .hrt-sms-send-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.28rem;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0 0.7rem;
+      border-radius: 999px;
+      border: 1px solid #c4b5fd;
+      background: #f5f3ff;
+      color: #5b21b6;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hrt-sms-send-btn:hover:not(:disabled) {
+      background: #ede9fe;
+      color: #4c1d95;
+    }
+    .hrt-sms-send-btn:disabled,
+    .hrt-sms-send-btn.is-busy {
+      opacity: 0.45;
+      cursor: not-allowed;
+      background: #f8fafc;
+      color: #64748b;
+      border-color: #e2e8f0;
+    }
+    .hrt-sms-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+      background: rgba(15, 23, 42, 0.55);
+      z-index: 1200;
+    }
+    .hrt-sms-modal-backdrop.is-open { display: flex; }
+    .hrt-sms-modal {
+      width: min(520px, 100%);
+      max-height: min(88dvh, 720px);
+      overflow: auto;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.28);
+      padding: 1.1rem 1.15rem 1.15rem;
+    }
+    .hrt-sms-modal-title {
+      margin: 0 0 0.25rem;
+      color: #0f172a;
+      font-size: 1.05rem;
+      font-weight: 900;
+    }
+    .hrt-sms-modal-patient {
+      margin: 0 0 0.75rem;
+      color: #64748b;
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
+    .hrt-sms-modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 0.75rem;
+    }
+    .hrt-sms-message {
+      margin: 0 0 0.85rem;
+      padding: 0.75rem 0.8rem;
+      border: 1px solid #ddd6fe;
+      border-radius: 14px;
+      background: #faf8ff;
+      color: #1e1b4b;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .hrt-sms-modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+    .hrt-sms-modal-actions button {
+      flex: 1 1 140px;
+      min-height: 44px;
+      border-radius: 14px;
+      font-weight: 800;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hrt-sms-cancel {
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+    }
+    .hrt-sms-confirm {
+      border: 0;
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      color: #fff;
+    }
+    .hrt-sms-confirm:disabled {
+      opacity: 0.6;
+      cursor: wait;
     }
     .hrt-contact-patient .hrt-phone-call-btn:not(.disabled):hover { background: #dbeafe; color: #1d4ed8; }
     .hrt-contact-emergency .hrt-phone-call-btn:not(.disabled):hover { background: #fee2e2; color: #991b1b; }
@@ -1269,6 +1381,33 @@
     </div>
   </div>
 
+  <div id="hrtSmsModalBackdrop" class="hrt-sms-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="hrtSmsModalTitle" onclick="handleHrtSmsBackdropClick(event)">
+    <div class="hrt-sms-modal">
+      <h3 id="hrtSmsModalTitle" class="hrt-sms-modal-title" data-i18n="smsPreviewTitle">Send high-risk SMS</h3>
+      <p id="hrtSmsPatientName" class="hrt-sms-modal-patient">—</p>
+      <div class="hrt-sms-modal-grid">
+        <div class="hrt-modal-box">
+          <div class="hrt-modal-label" data-i18n="smsToLabel">To</div>
+          <div id="hrtSmsToValue" class="hrt-modal-value">—</div>
+        </div>
+        <div class="hrt-modal-box">
+          <div class="hrt-modal-label" data-i18n="smsGaLabel">Gestational age</div>
+          <div id="hrtSmsGaValue" class="hrt-modal-value">—</div>
+        </div>
+        <div class="hrt-modal-box" style="grid-column:1/-1;">
+          <div class="hrt-modal-label" data-i18n="smsReasonLabel">Message type</div>
+          <div id="hrtSmsReasonValue" class="hrt-modal-value">—</div>
+        </div>
+      </div>
+      <div class="hrt-modal-label" data-i18n="smsMessageLabel">Message</div>
+      <div id="hrtSmsMessageValue" class="hrt-sms-message"></div>
+      <div class="hrt-sms-modal-actions">
+        <button type="button" class="hrt-sms-cancel" id="hrtSmsCancelBtn" onclick="closeHrtSmsModal()" data-i18n="smsCancel">Cancel</button>
+        <button type="button" class="hrt-sms-confirm" id="hrtSmsConfirmBtn" onclick="confirmHrtSmsSend()" data-i18n="smsConfirmSend">Send SMS</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script>
     var CONCURRENCY = 8;
@@ -1277,6 +1416,8 @@
     var _currentUser = null;
     var _currentUserName = '';
     var _hrtRoleLevel = 'provider';
+    var _hrtSmsDraft = null;
+    var _hrtSmsBusy = false;
     var _hrtFilters = null;
     var _hrtNextPageToken = null;
     var _hrtLoadingPage = false;
@@ -1386,7 +1527,22 @@
         postpartumPeriod: 'Postpartum Period',
         deliveryDate: 'Delivery Date',
         loadingRemaining: 'Loading remaining patients…',
-        nextVisitDue: 'Next visit'
+        nextVisitDue: 'Next visit',
+        sendSms: 'Send SMS',
+        smsUnavailable: 'Patient phone is missing or is not a Myanmar mobile number',
+        smsPreviewTitle: 'Send high-risk SMS',
+        smsToLabel: 'To',
+        smsReasonLabel: 'Message type',
+        smsGaLabel: 'Gestational age',
+        smsMessageLabel: 'Message',
+        smsCancel: 'Cancel',
+        smsConfirmSend: 'Send SMS',
+        smsSending: 'Sending…',
+        smsLoadingPreview: 'Preparing message…',
+        smsAccepted: 'SMS accepted by the gateway',
+        smsOffline: 'SMS requires an internet connection',
+        smsNoPhone: 'This patient has no valid mobile number',
+        smsCompletedBlock: 'Completed patients cannot be sent a follow-up SMS'
       },
       mm: {
         title: 'အန္တရာယ်ဖြစ်နိုင်ချေမြင့်မားသော ကိုယ်ဝန်ဆောင်များအား စောင့်ကြည့်ခြင်း',
@@ -1494,7 +1650,22 @@
         postpartumPeriod: 'မီးဖွားပြီးကာလ',
         deliveryDate: 'မီးဖွားသည့်ရက်',
         loadingRemaining: 'ကျန်ရှိသော လူနာများကို ဖတ်နေသည်…',
-        nextVisitDue: 'နောက်တစ်ကြိမ် ပြန်ပြရက်'
+        nextVisitDue: 'နောက်တစ်ကြိမ် ပြန်ပြရက်',
+        sendSms: 'SMS ပို့ရန်',
+        smsUnavailable: 'လူနာဖုန်းနံပါတ် မရှိသေးပါ (သို့) မြန်မာမိုဘိုင်းနံပါတ် မဟုတ်ပါ',
+        smsPreviewTitle: 'အန္တရာယ်ရှိ ကိုယ်ဝန်ဆောင် SMS ပို့ရန်',
+        smsToLabel: 'ပို့ရမည့်နံပါတ်',
+        smsReasonLabel: 'စာအမျိုးအစား',
+        smsGaLabel: 'ကိုယ်ဝန် အပတ်',
+        smsMessageLabel: 'စာသား',
+        smsCancel: 'မလုပ်တော့ပါ',
+        smsConfirmSend: 'SMS ပို့ရန်',
+        smsSending: 'ပို့နေသည်…',
+        smsLoadingPreview: 'စာသား ပြင်ဆင်နေသည်…',
+        smsAccepted: 'SMS ကို လက်ခံပြီးပါပြီ',
+        smsOffline: 'SMS ပို့ရန် အင်တာနက် လိုအပ်သည်',
+        smsNoPhone: 'ဤလူနာတွင် ပို့နိုင်သော ဖုန်းနံပါတ် မရှိပါ',
+        smsCompletedBlock: 'ပြီးမြောက်ပြီးသော လူနာထံ follow-up SMS မပို့နိုင်ပါ'
       }
     };
 
@@ -1540,6 +1711,9 @@
       var visitTitle = document.getElementById('visitStatusModalTitle');
       if (visitTitle) visitTitle.textContent = tr('visitStatusModalTitle');
       document.querySelectorAll('#visitStatusModalBackdrop [data-i18n]').forEach(function (el) {
+        el.textContent = tr(el.getAttribute('data-i18n'));
+      });
+      document.querySelectorAll('#hrtSmsModalBackdrop [data-i18n]').forEach(function (el) {
         el.textContent = tr(el.getAttribute('data-i18n'));
       });
     }
@@ -2157,7 +2331,7 @@
       return '<div class="hrt-recommendation-text" title="' + escapeHtml(text) + '">' + escapeHtml(text) + '</div>';
     }
 
-    function contactActionRowHtml(labelKey, rawPhone, callLabelKey, contactClass, callIcon) {
+    function contactActionRowHtml(labelKey, rawPhone, callLabelKey, contactClass, callIcon, extraHtml) {
       var label = tr(labelKey);
       var callLabel = tr(callLabelKey);
       var href = phoneHrefFromRaw(rawPhone);
@@ -2169,22 +2343,171 @@
       } else {
         html += '<span class="hrt-phone-call-btn disabled" aria-hidden="true" title="' + escapeHtml(tr('phoneLabel')) + '">—</span>';
       }
+      if (extraHtml) html += extraHtml;
       html += '</div>';
       return html;
     }
 
-    function communicationContactHtml(patient) {
+    function normalizeMyanmarMobile(raw) {
+      if (raw == null) return '';
+      var digits = String(raw).trim().replace(/[^\d+]/g, '');
+      if (!digits) return '';
+      if (digits.charAt(0) === '+') digits = digits.slice(1);
+      if (digits.indexOf('95') === 0 && digits.charAt(2) === '9') digits = '0' + digits.slice(2);
+      else if (digits.charAt(0) === '9' && digits.indexOf('09') !== 0) digits = '0' + digits;
+      return /^09\d{7,10}$/.test(digits) ? digits : '';
+    }
+
+    function hrtSmsEnabled() {
+      var projectId = (window.firebaseConfig && firebaseConfig.projectId) ||
+        (window.firebase && firebase.app && firebase.app().options.projectId) || '';
+      return projectId === 'mnch-1cbda';
+    }
+
+    function smsButtonHtml(patientId, enabled, reason) {
+      if (!hrtSmsEnabled() || !patientId || _hrtRoleLevel !== 'provider') return '';
+      var label = tr('sendSms');
+      var title = enabled ? label : (reason || tr('smsUnavailable'));
+      return '<button type="button" class="hrt-sms-send-btn" data-patient-id="' + escapeHtml(patientId) + '"' +
+        (enabled ? '' : ' disabled') +
+        ' onclick="event.stopPropagation(); handleHrtSmsClick(\'' + escapeHtml(patientId) + '\')" aria-label="' +
+        escapeHtml(label) + '" title="' + escapeHtml(title) + '">' +
+        '<i class="fas fa-comment" aria-hidden="true"></i><span>SMS</span></button>';
+    }
+
+    function communicationContactHtml(patient, row) {
       if (_hrtRoleLevel !== 'provider' && patient._trackingProjection) {
         var provider = patient._trackingProjection;
         return '<div class="tracking-facility"><strong>' +
           escapeHtml(provider.providerName || '—') + '</strong><br>' +
           phoneCellHtml({ phone: provider.providerPhone || '' }) + '</div>';
       }
+      var patientId = (patient && patient.id) || (row && (row.patientId || row.id)) || '';
+      var canSms = !!normalizeMyanmarMobile(patientPhoneValue(patient));
+      var smsReason = '';
+      if (row && isCompleted(row)) {
+        canSms = false;
+        smsReason = tr('smsCompletedBlock');
+      } else if (!canSms) {
+        smsReason = tr('smsNoPhone');
+      }
       return '<div class="hrt-sms-contact">' +
-        contactActionRowHtml('contactPatient', patientPhoneValue(patient), 'callPatient', 'hrt-contact-patient', 'fa-phone') +
+        contactActionRowHtml('contactPatient', patientPhoneValue(patient), 'callPatient', 'hrt-contact-patient', 'fa-phone', smsButtonHtml(patientId, canSms, smsReason)) +
         contactActionRowHtml('contactEmergency', emergencyPhoneValue(patient), 'callEmergency', 'hrt-contact-emergency', 'fa-phone-alt') +
         contactActionRowHtml('contactChw', chwPhoneValue(patient), 'callChw', 'hrt-contact-chw', 'fa-mobile-alt') +
         '</div>';
+    }
+
+    function isHrtSmsOffline() {
+      if (window.OfflineManager && OfflineManager.isOfflineMode && OfflineManager.isOfflineMode()) return true;
+      return typeof navigator !== 'undefined' && navigator.onLine === false;
+    }
+
+    function notifyHrtSms(message, title) {
+      if (window.AppDialog && AppDialog.alert) {
+        return AppDialog.alert(String(message || ''), { title: title || tr('smsPreviewTitle') });
+      }
+      window.alert(String(message || ''));
+      return Promise.resolve();
+    }
+
+    function fillHrtSmsModal(draft) {
+      var name = (draft && draft.patientName) || '—';
+      var reason = lang === 'mm'
+        ? ((draft && draft.templateLabelMm) || (draft && draft.templateLabelEn) || '—')
+        : ((draft && draft.templateLabelEn) || '—');
+      document.getElementById('hrtSmsPatientName').textContent = name;
+      document.getElementById('hrtSmsToValue').textContent = (draft && draft.to) || '—';
+      document.getElementById('hrtSmsGaValue').textContent = draft && draft.gaWeeks != null
+        ? String(draft.gaWeeks) + (lang === 'mm' ? ' ပတ်' : ' w')
+        : '—';
+      document.getElementById('hrtSmsReasonValue').textContent = reason;
+      document.getElementById('hrtSmsMessageValue').textContent = (draft && draft.message) || '';
+    }
+
+    function closeHrtSmsModal() {
+      if (_hrtSmsBusy) return;
+      _hrtSmsDraft = null;
+      var backdrop = document.getElementById('hrtSmsModalBackdrop');
+      if (backdrop) backdrop.classList.remove('is-open');
+    }
+
+    function handleHrtSmsBackdropClick(event) {
+      if (event && event.target && event.target.id === 'hrtSmsModalBackdrop') closeHrtSmsModal();
+    }
+
+    function setHrtSmsConfirmBusy(busy) {
+      _hrtSmsBusy = !!busy;
+      var btn = document.getElementById('hrtSmsConfirmBtn');
+      if (!btn) return;
+      btn.disabled = !!busy;
+      btn.textContent = busy ? tr('smsSending') : tr('smsConfirmSend');
+    }
+
+    async function handleHrtSmsClick(patientId) {
+      if (!hrtSmsEnabled() || !patientId || _hrtSmsBusy) return;
+      if (isHrtSmsOffline()) {
+        await notifyHrtSms(tr('smsOffline'), tr('sendSms'));
+        return;
+      }
+      if (!window.TrackingReader || !TrackingReader.call) {
+        await notifyHrtSms(tr('loadFailed'), tr('sendSms'));
+        return;
+      }
+      var row = (window._hrtRows || []).find(function (item) {
+        return (item.patient && item.patient.id) === patientId || item.patientId === patientId;
+      });
+      if (row && isCompleted(row)) {
+        await notifyHrtSms(tr('smsCompletedBlock'), tr('sendSms'));
+        return;
+      }
+      var trigger = document.querySelector('.hrt-sms-send-btn[data-patient-id="' + patientId + '"]');
+      if (trigger) {
+        trigger.classList.add('is-busy');
+        trigger.disabled = true;
+      }
+      try {
+        var preview = await TrackingReader.call('sendHrtSms', {
+          patientId: patientId,
+          previewOnly: true
+        });
+        _hrtSmsDraft = preview;
+        fillHrtSmsModal(preview);
+        document.getElementById('hrtSmsModalBackdrop').classList.add('is-open');
+      } catch (error) {
+        await notifyHrtSms((error && error.message) || tr('loadFailed'), tr('sendSms'));
+      } finally {
+        if (trigger) {
+          trigger.classList.remove('is-busy');
+          trigger.disabled = !normalizeMyanmarMobile(row && row.patient
+            ? patientPhoneValue(row.patient)
+            : '');
+        }
+      }
+    }
+
+    async function confirmHrtSmsSend() {
+      if (!_hrtSmsDraft || !_hrtSmsDraft.patientId || _hrtSmsBusy) return;
+      if (isHrtSmsOffline()) {
+        await notifyHrtSms(tr('smsOffline'), tr('sendSms'));
+        return;
+      }
+      setHrtSmsConfirmBusy(true);
+      try {
+        var result = await TrackingReader.call('sendHrtSms', {
+          patientId: _hrtSmsDraft.patientId
+        }, { retry: false });
+        _hrtSmsBusy = false;
+        closeHrtSmsModal();
+        await notifyHrtSms(
+          tr('smsAccepted') + (result && result.messageId ? '\n' + result.messageId : ''),
+          tr('sendSms')
+        );
+      } catch (error) {
+        await notifyHrtSms((error && error.message) || tr('loadFailed'), tr('sendSms'));
+      } finally {
+        setHrtSmsConfirmBusy(false);
+      }
     }
 
     function getFilteredHrtRows() {
@@ -2303,7 +2626,7 @@
           '<td>' + statusTrackHtml(completedVisits, r) + '</td>' +
           '<td>' + statusCellHtml(r) + '</td>' +
           '<td>' + recommendationCellHtml(r) + '</td>' +
-          '<td>' + communicationContactHtml(p) + '</td>' +
+          '<td>' + communicationContactHtml(p, r) + '</td>' +
           (actionCol ? '<td>' + hrtToolsHtml(patientId, r) + '</td>' : '');
         desktopBody.appendChild(trEl);
 
@@ -2322,7 +2645,7 @@
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('recommendationCol')) + '</span><div class="hrt-mobile-value">' + recommendationCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field"><span class="hrt-mobile-label">' + escapeHtml(tr('outcomeCol')) + '</span><div class="hrt-mobile-value">' + statusCellHtml(r) + '</div></div>' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('danger')) + '</span><div class="hrt-mobile-value">' + compactRiskListHtml(r.factorsUnique || []) + '</div></div>' +
-              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(_hrtRoleLevel === 'provider' ? tr('smsCol') + ' / ' + tr('actionCol') : tr('smsCol')) + '</span><div class="hrt-mobile-value">' + communicationContactHtml(p) + (_hrtRoleLevel === 'provider' ? ' ' + hrtToolsHtml(patientId, r) : '') + '</div></div>' +
+              '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(_hrtRoleLevel === 'provider' ? tr('smsCol') + ' / ' + tr('actionCol') : tr('smsCol')) + '</span><div class="hrt-mobile-value">' + communicationContactHtml(p, r) + (_hrtRoleLevel === 'provider' ? ' ' + hrtToolsHtml(patientId, r) : '') + '</div></div>' +
             '</div>' +
           '</div>';
         mobileBody.appendChild(card);

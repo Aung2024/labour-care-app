@@ -258,7 +258,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v305-moh/);
+  assert.match(sw, /mch-care-v307-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {

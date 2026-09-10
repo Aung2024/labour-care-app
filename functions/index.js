@@ -303,6 +303,9 @@ exports.trackingProjectionRepairWorker =
 exports.trackingWeeklyReconciliation =
   trackingFunctions.trackingWeeklyReconciliation;
 
+const smsFunctions = require('./src/sms/functions');
+exports.sendHrtSms = smsFunctions.sendHrtSms;
+
 // Incremental queues used because asia-southeast3 cannot host Firestore
 // document triggers. Clinical clients enqueue only patient IDs.
 const refreshQueueFunctions = require('./src/analytics/refresh-queue-functions');
