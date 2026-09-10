@@ -14,8 +14,9 @@ const {
   currentGaWeeks,
   latestVisit,
   riskFactorsFromFacts,
-  resolveHrtSmsTemplate
+  resolveHrtSmsTemplates
 } = require('./hrt-templates');
+const { selectOutgoingMessages, resolveSendPhone } = require('./compose');
 const { sendSmsPoh } = require('./smspoh-client');
 
 const REGION = 'us-central1';
@@ -36,17 +37,19 @@ function requirePatientId(data) {
   return patientId;
 }
 
-function mapResolveError(result) {
-  const code = result && result.code;
-  if (code === 'GA_REQUIRED') {
-    return new HttpsError('failed-precondition', result.message);
-  }
-  return new HttpsError('failed-precondition', result.message ||
-    'No approved high-risk SMS template matches this patient.');
-}
-
 function profilePhone(profile, fallback) {
   return (profile && (profile.phone || profile.phoneNumber)) || fallback || '';
+}
+
+function publicTemplates(templates) {
+  return (templates || []).map((template) => ({
+    key: template.key,
+    labelEn: template.labelEn,
+    labelMm: template.labelMm,
+    credit: template.credit,
+    message: template.message,
+    matchedFactor: template.matchedFactor || null
+  }));
 }
 
 async function resolveHrtSmsDraft(patientId, user) {
@@ -74,27 +77,18 @@ async function resolveHrtSmsDraft(patientId, user) {
     ? riskFactorsFromFacts(facts, row.riskFactors)
     : (Array.isArray(row.riskFactors) ? row.riskFactors : []);
   const phone = normalizeMyanmarMobile(profilePhone(profile, row.patientPhone));
-  if (!phone) {
-    throw new HttpsError(
-      'failed-precondition',
-      'This patient has no valid Myanmar mobile number.'
-    );
-  }
-  const resolved = resolveHrtSmsTemplate(riskFactors, gaWeeks);
-  if (!resolved.ok) throw mapResolveError(resolved);
+  const resolved = resolveHrtSmsTemplates(riskFactors, gaWeeks);
   return {
     patientId,
     patientName: row.patientName || profile.name || profile.patientName || '',
     to: phone,
+    storedPhone: phone,
     gaWeeks,
     gaBand: resolved.gaBand,
+    needsGa: !!resolved.needsGa,
     riskFactors,
-    matchedFactor: resolved.matchedFactor,
-    templateKey: resolved.template.key,
-    templateLabelEn: resolved.template.labelEn,
-    templateLabelMm: resolved.template.labelMm,
-    credit: resolved.template.credit,
-    message: resolved.template.message,
+    templates: resolved.templates,
+    canCustom: true,
     source: SMS_SOURCE
   };
 }
@@ -113,14 +107,92 @@ function publicDraft(draft) {
     patientId: draft.patientId,
     patientName: draft.patientName,
     to: draft.to,
+    needsPhone: !draft.to,
     gaWeeks: draft.gaWeeks,
-    templateKey: draft.templateKey,
-    templateLabelEn: draft.templateLabelEn,
-    templateLabelMm: draft.templateLabelMm,
-    matchedFactor: draft.matchedFactor,
-    credit: draft.credit,
-    message: draft.message
+    gaBand: draft.gaBand,
+    needsGa: !!draft.needsGa,
+    riskFactors: draft.riskFactors || [],
+    templates: publicTemplates(draft.templates),
+    canCustom: true
   };
+}
+
+async function persistPatientPhone(patientId, phone, user) {
+  const batch = db().batch();
+  batch.set(db().collection('patients').doc(patientId), {
+    phone,
+    phoneNumber: phone,
+    phoneUpdatedAt: FieldValue.serverTimestamp(),
+    phoneUpdatedBy: user.uid,
+    phoneUpdatedSource: 'hrt_sms'
+  }, { merge: true });
+  batch.set(db().collection(HRT_COLLECTION).doc(patientId), {
+    patientPhone: phone
+  }, { merge: true });
+  batch.set(db().collection('tracking_v2_refresh_queue').doc(patientId), {
+    patientId,
+    requestedBy: user.uid,
+    reason: 'hrt_sms_phone',
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  await batch.commit();
+}
+
+async function sendOneHrtSms({ draft, item, phone, user, sender, apiKey, apiSecret, senderId }) {
+  const logId = await writeSmsLog({
+    type: 'hrt',
+    status: 'pending',
+    patientId: draft.patientId,
+    patientName: draft.patientName,
+    to: phone,
+    gaWeeks: draft.gaWeeks,
+    riskFactors: draft.riskFactors,
+    matchedFactor: item.matchedFactor,
+    templateKey: item.key,
+    sourceType: item.sourceType,
+    message: item.message,
+    senderUid: user.uid,
+    senderRole: user.role,
+    source: draft.source
+  });
+  try {
+    const result = await sender({
+      apiKey,
+      apiSecret,
+      from: senderId,
+      to: phone,
+      message: item.message,
+      clientReference: logId,
+      test: String(process.env.SMSPOH_TEST_MODE || '').toLowerCase() === 'true'
+    });
+    await db().collection(SMS_COLLECTION).doc(logId).set({
+      status: 'accepted',
+      messageId: result.messageId || '',
+      operator: result.operator || '',
+      acceptedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    return {
+      ok: true,
+      templateKey: item.key,
+      sourceType: item.sourceType,
+      messageId: result.messageId || '',
+      operator: result.operator || '',
+      logId
+    };
+  } catch (error) {
+    await db().collection(SMS_COLLECTION).doc(logId).set({
+      status: 'failed',
+      errorCode: error.code || 'unavailable',
+      failedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    return {
+      ok: false,
+      templateKey: item.key,
+      sourceType: item.sourceType,
+      logId,
+      error: error.message || 'The SMS could not be sent.'
+    };
+  }
 }
 
 async function handleSendHrtSms(request, sender) {
@@ -132,6 +204,19 @@ async function handleSendHrtSms(request, sender) {
   if (previewOnly) {
     return { preview: true, ...publicDraft(draft) };
   }
+  const outgoing = selectOutgoingMessages(draft.templates, request.data);
+  const phone = resolveSendPhone(draft.storedPhone, request.data && request.data.phone);
+  if (!phone) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Enter a valid Myanmar mobile number before sending.'
+    );
+  }
+  let phoneSaved = false;
+  if (request.data && request.data.savePhone !== false && phone !== draft.storedPhone) {
+    await persistPatientPhone(patientId, phone, user);
+    phoneSaved = true;
+  }
   const senderId = String(smspohSenderId.value() || '').trim();
   const apiKey = String(smspohApiKey.value() || '').trim();
   const apiSecret = String(smspohApiSecret.value() || '').trim();
@@ -141,59 +226,45 @@ async function handleSendHrtSms(request, sender) {
       'SMS account secrets are not configured on the server yet.'
     );
   }
-  const logId = await writeSmsLog({
-    type: 'hrt',
-    status: 'pending',
-    patientId: draft.patientId,
-    patientName: draft.patientName,
-    to: draft.to,
-    gaWeeks: draft.gaWeeks,
-    riskFactors: draft.riskFactors,
-    matchedFactor: draft.matchedFactor,
-    templateKey: draft.templateKey,
-    message: draft.message,
-    senderUid: user.uid,
-    senderRole: user.role,
-    source: draft.source
-  });
-  try {
-    const result = await (sender || sendSmsPoh)({
+  const send = sender || sendSmsPoh;
+  const sends = [];
+  for (const item of outgoing) {
+    sends.push(await sendOneHrtSms({
+      draft,
+      item,
+      phone,
+      user,
+      sender: send,
       apiKey,
       apiSecret,
-      from: senderId,
-      to: draft.to,
-      message: draft.message,
-      clientReference: logId,
-      test: String(process.env.SMSPOH_TEST_MODE || '').toLowerCase() === 'true'
-    });
-    await db().collection(SMS_COLLECTION).doc(logId).set({
-      status: 'accepted',
-      messageId: result.messageId || '',
-      operator: result.operator || '',
-      acceptedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-    return {
-      preview: false,
-      accepted: true,
-      messageId: result.messageId || '',
-      operator: result.operator || '',
-      ...publicDraft(draft)
-    };
-  } catch (error) {
-    await db().collection(SMS_COLLECTION).doc(logId).set({
-      status: 'failed',
-      errorCode: error.code || 'unavailable',
-      failedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError(error.code || 'unavailable', error.message ||
-      'The SMS could not be sent.');
+      senderId
+    }));
   }
+  const accepted = sends.filter((item) => item.ok);
+  const failed = sends.filter((item) => !item.ok);
+  if (!accepted.length) {
+    const first = failed[0];
+    throw new HttpsError(first && first.error && /credit|balance/i.test(first.error)
+      ? 'resource-exhausted'
+      : 'unavailable', (first && first.error) || 'The SMS could not be sent.');
+  }
+  return {
+    preview: false,
+    accepted: true,
+    phone,
+    phoneSaved,
+    sentCount: accepted.length,
+    failedCount: failed.length,
+    messageId: accepted[0].messageId || '',
+    operator: accepted[0].operator || '',
+    sends,
+    ...publicDraft({ ...draft, to: phone })
+  };
 }
 
 const sendHrtSms = onCall({
   region: REGION,
-  timeoutSeconds: 60,
+  timeoutSeconds: 120,
   memory: '256MiB',
   enforceAppCheck: false,
   secrets: [smspohApiKey, smspohApiSecret, smspohSenderId]

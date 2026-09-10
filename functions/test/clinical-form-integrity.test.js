@@ -260,7 +260,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v308-moh/);
+  assert.match(sw, /mch-care-v309-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
@@ -282,6 +282,15 @@ test('new vaccine page can record multiple vaccines at once', () => {
   assert.match(source, /ကာကွယ်ဆေး ထပ်ထည့်ရန်/);
   assert.match(source, /function addVaccineRow/);
   assert.match(source, /batch\.commit/);
+});
+
+test('HRT SMS lets midwives choose templates, write custom text, and save a phone', () => {
+  const source = readAppFile('high-risk-tracking.html');
+  assert.match(source, /id="hrtSmsPhoneInput"/);
+  assert.match(source, /id="hrtSmsSavePhone"/);
+  assert.match(source, /id="hrtSmsCustomToggle"/);
+  assert.match(source, /templateKeys: templateKeys/);
+  assert.match(source, /customMessage: customMessage/);
 });
 
 test('patient registration requires patient phone and allows reused numbers', () => {

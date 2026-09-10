@@ -332,47 +332,77 @@ function riskFactorsFromFacts(facts, fallback) {
   return normalizeRiskFactors(fallback);
 }
 
-function resolveHrtSmsTemplate(riskFactors, gaWeeks) {
+function publicTemplateChoice(template, matchedFactor, gaBand) {
+  return {
+    key: template.key,
+    labelEn: template.labelEn,
+    labelMm: template.labelMm,
+    credit: template.credit,
+    message: template.message,
+    matchedFactor,
+    gaBand: template.gaBand || gaBand || null
+  };
+}
+
+function resolveHrtSmsTemplates(riskFactors, gaWeeks) {
   const factors = normalizeRiskFactors(riskFactors);
   const factorSet = new Set(factors);
   const band = gaBandForWeeks(gaWeeks);
   let needsGa = false;
+  const templates = [];
+  const seen = new Set();
   const sorted = HRT_SMS_TEMPLATES.slice().sort((left, right) =>
     left.priority - right.priority
   );
   for (const template of sorted) {
     if (!template.riskFactors.some((factor) => factorSet.has(factor))) continue;
-    if (!template.gaBand) {
-      return {
-        ok: true,
-        template,
-        matchedFactor: template.riskFactors.find((factor) => factorSet.has(factor)),
-        gaBand: band
-      };
+    if (template.gaBand) {
+      if (!band) {
+        needsGa = true;
+        continue;
+      }
+      if (template.gaBand !== band) continue;
     }
-    if (!band) {
-      needsGa = true;
-      continue;
-    }
-    if (template.gaBand === band) {
-      return {
-        ok: true,
-        template,
-        matchedFactor: template.riskFactors.find((factor) => factorSet.has(factor)),
-        gaBand: band
-      };
-    }
+    if (seen.has(template.key)) continue;
+    seen.add(template.key);
+    templates.push(publicTemplateChoice(
+      template,
+      template.riskFactors.find((factor) => factorSet.has(factor)),
+      band
+    ));
   }
-  if (needsGa) {
+  return {
+    ok: templates.length > 0,
+    templates,
+    gaBand: band,
+    needsGa,
+    canCustom: true,
+    unsupportedOnly: factors.length > 0 && factors.every((factor) =>
+      UNSUPPORTED_RISK_FACTORS.includes(factor)
+    )
+  };
+}
+
+function resolveHrtSmsTemplate(riskFactors, gaWeeks) {
+  const resolved = resolveHrtSmsTemplates(riskFactors, gaWeeks);
+  if (resolved.templates.length) {
+    const first = resolved.templates[0];
+    const template = HRT_SMS_TEMPLATES.find((item) => item.key === first.key);
+    return {
+      ok: true,
+      template,
+      matchedFactor: first.matchedFactor,
+      gaBand: resolved.gaBand
+    };
+  }
+  if (resolved.needsGa) {
     return {
       ok: false,
       code: 'GA_REQUIRED',
       message: 'Gestational age is required for this high-risk SMS template.'
     };
   }
-  if (factors.length && factors.every((factor) =>
-    UNSUPPORTED_RISK_FACTORS.includes(factor)
-  )) {
+  if (resolved.unsupportedOnly) {
     return {
       ok: false,
       code: 'UNSUPPORTED_FACTOR',
@@ -396,5 +426,7 @@ module.exports = {
   gaBandForWeeks,
   normalizeRiskFactors,
   riskFactorsFromFacts,
+  publicTemplateChoice,
+  resolveHrtSmsTemplates,
   resolveHrtSmsTemplate
 };

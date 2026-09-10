@@ -8,9 +8,16 @@ const {
   HRT_SMS_TEMPLATES,
   currentGaWeeks,
   gaBandForWeeks,
-  resolveHrtSmsTemplate
+  resolveHrtSmsTemplate,
+  resolveHrtSmsTemplates
 } = require('../src/sms/hrt-templates');
-const { buildSmsPohPayload, authHeader } = require('../src/sms/smspoh-client');
+const { selectOutgoingMessages, resolveSendPhone } = require('../src/sms/compose');
+const {
+  buildSmsPohPayload,
+  authHeader,
+  interpretSmsPohResponse,
+  mapSmsPohError
+} = require('../src/sms/smspoh-client');
 const { assertCanSendHrtSms, assertTrackingRowScope } = require('../src/sms/access');
 
 test('normalizes Myanmar mobiles to 09 form', () => {
@@ -54,6 +61,34 @@ test('picks the first matching HRT template by spreadsheet priority', () => {
   assert.equal(resolved.template.key, 'diabetes');
 });
 
+test('lists every matching official HRT template for selection', () => {
+  const resolved = resolveHrtSmsTemplates([
+    'Primigravida',
+    'Diabetes (pre-existing or gestational)'
+  ], 22);
+  assert.deepEqual(resolved.templates.map((item) => item.key), ['diabetes', 'primigravida']);
+});
+
+test('midwives can send selected official messages plus a custom SMS', () => {
+  const templates = resolveHrtSmsTemplates([
+    'Primigravida',
+    'Diabetes (pre-existing or gestational)'
+  ], 22).templates;
+  const outgoing = selectOutgoingMessages(templates, {
+    templateKeys: ['diabetes', 'primigravida'],
+    customMessage: 'ရက်ချိန်း လာပါ'
+  });
+  assert.deepEqual(outgoing.map((item) => item.key), ['diabetes', 'primigravida', 'custom']);
+  assert.equal(outgoing[2].message, 'ရက်ချိန်း လာပါ');
+  assert.throws(
+    () => selectOutgoingMessages(templates, { templateKeys: ['heart_disease'] }),
+    (error) => error instanceof HttpsError && error.code === 'invalid-argument'
+  );
+  assert.equal(resolveSendPhone(null, '959123456789'), '09123456789');
+  assert.equal(resolveSendPhone('09111111111', ''), '09111111111');
+  assert.equal(selectOutgoingMessages(templates, {}).map((item) => item.key).join(), 'diabetes');
+});
+
 test('PIH and placenta templates depend on GA band', () => {
   const pihEarly = resolveHrtSmsTemplate([
     'Pregnancy Induced Hypertension/Pre-eclampsia/Eclampsia'
@@ -83,6 +118,35 @@ test('HRT templates keep official Myanmar copy and skip KMC', () => {
   assert.equal(HRT_SMS_TEMPLATES.some((template) => /kmc/i.test(template.key)), false);
 });
 
+test('SMSPoh treats 2xx without an error body as accepted', () => {
+  const documented = interpretSmsPohResponse(201, {
+    messages: [{ messageId: 'abc', status: 'Accepted', network: 'MPT' }]
+  });
+  assert.equal(documented.ok, true);
+  assert.equal(documented.messageId, 'abc');
+  assert.equal(documented.operator, 'MPT');
+
+  const http200 = interpretSmsPohResponse(200, {
+    messages: [{ messageId: 'def', status: 'queued' }]
+  });
+  assert.equal(http200.ok, true);
+
+  const emptyCreated = interpretSmsPohResponse(201, {});
+  assert.equal(emptyCreated.ok, true);
+
+  const topLevel = interpretSmsPohResponse(201, {
+    messageId: 'ghi',
+    message: 'ယခုကာလသည်',
+    status: 'Accepted'
+  });
+  assert.equal(topLevel.ok, true);
+  assert.equal(topLevel.messageId, 'ghi');
+
+  const rejected = interpretSmsPohResponse(400, { unicode: 'Unicode must be a number.' });
+  assert.equal(rejected.ok, false);
+  assert.equal(mapSmsPohError(400, { message: 'Invalid Sender ID' }).code, 'failed-precondition');
+});
+
 test('SMSPoh payload forces unicode and Bearer auth', () => {
   const payload = buildSmsPohPayload({
     to: '09123456789',
@@ -90,7 +154,7 @@ test('SMSPoh payload forces unicode and Bearer auth', () => {
     from: 'MOH',
     clientReference: 'sms-1'
   });
-  assert.equal(payload.unicode, true);
+  assert.equal(payload.unicode, 1);
   assert.equal(payload.from, 'MOH');
   assert.equal(authHeader('key', 'secret'), `Bearer ${Buffer.from('key:secret').toString('base64')}`);
 });

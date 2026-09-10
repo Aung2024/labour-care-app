@@ -7,10 +7,10 @@ function buildSmsPohPayload({ to, message, from, clientReference, test }) {
     to,
     message,
     from,
-    unicode: true
+    unicode: 1
   };
   if (clientReference) payload.clientReference = String(clientReference);
-  if (test) payload.test = true;
+  if (test) payload.test = 1;
   return payload;
 }
 
@@ -19,8 +19,57 @@ function authHeader(apiKey, apiSecret) {
   return `Bearer ${token}`;
 }
 
+function messageItems(body) {
+  if (Array.isArray(body)) return body;
+  if (!body || typeof body !== 'object') return [];
+  if (Array.isArray(body.messages)) return body.messages;
+  if (body.message && typeof body.message === 'object' && !Array.isArray(body.message)) {
+    return [body.message];
+  }
+  if (body.messageId || body.status) return [body];
+  return [];
+}
+
+function explicitErrorText(body) {
+  if (!body || typeof body !== 'object') return '';
+  if (body.errors && typeof body.errors === 'object') {
+    return Object.values(body.errors).filter(Boolean).join(' ');
+  }
+  if (typeof body.error === 'string' && body.error.trim()) return body.error.trim();
+  if (typeof body.message === 'string' && body.message.trim() &&
+      (body.name || Number(body.status) >= 400)) {
+    return body.message.trim();
+  }
+  return '';
+}
+
+function hasExplicitError(body) {
+  if (!body || typeof body !== 'object') return false;
+  if (body.errors) return true;
+  if (typeof body.error === 'string' && body.error.trim()) return true;
+  if (Number(body.status) >= 400) return true;
+  if (body.name && typeof body.message === 'string') return true;
+  return false;
+}
+
+function interpretSmsPohResponse(httpStatus, body) {
+  const items = messageItems(body);
+  const first = items[0] || {};
+  if (httpStatus >= 200 && httpStatus < 300 && !hasExplicitError(body)) {
+    return {
+      ok: true,
+      messageId: first.messageId || '',
+      status: first.status || 'Accepted',
+      operator: first.operator || first.network || '',
+      to: first.to || '',
+      credits: first.credits != null ? first.credits : null
+    };
+  }
+  return { ok: false, items };
+}
+
 function mapSmsPohError(status, body) {
-  const text = JSON.stringify(body || {}).toLowerCase();
+  const text = `${explicitErrorText(body)} ${JSON.stringify(body || {})}`.toLowerCase();
   if (status === 401) {
     return {
       code: 'failed-precondition',
@@ -46,8 +95,9 @@ function mapSmsPohError(status, body) {
     };
   }
   return {
-    code: 'unavailable',
-    message: 'The SMS could not be accepted. Try again or check the SMSPoh dashboard.'
+    code: 'failed-precondition',
+    message: explicitErrorText(body) ||
+      'The SMS could not be accepted. Try again or check the SMSPoh dashboard.'
   };
 }
 
@@ -62,23 +112,21 @@ async function sendSmsPoh(options) {
     body: JSON.stringify(payload)
   });
   const body = await response.json().catch(() => ({}));
-  const accepted = response.status === 201 &&
-    Array.isArray(body.messages) &&
-    body.messages.some((item) => String(item && item.status) === 'Accepted');
-  if (!accepted) {
+  const interpreted = interpretSmsPohResponse(response.status, body);
+  if (!interpreted.ok) {
+    console.error('SMSPoh rejected send', response.status, body);
     const mapped = mapSmsPohError(response.status, body);
     const error = new Error(mapped.message);
     error.code = mapped.code;
     error.status = response.status;
     throw error;
   }
-  const first = body.messages[0] || {};
   return {
-    messageId: first.messageId || '',
-    status: first.status || 'Accepted',
-    operator: first.operator || '',
-    to: first.to || options.to,
-    credits: first.credits != null ? first.credits : null
+    messageId: interpreted.messageId,
+    status: interpreted.status,
+    operator: interpreted.operator,
+    to: interpreted.to || options.to,
+    credits: interpreted.credits
   };
 }
 
@@ -86,6 +134,7 @@ module.exports = {
   SMSPOH_SEND_URL,
   buildSmsPohPayload,
   authHeader,
+  interpretSmsPohResponse,
   mapSmsPohError,
   sendSmsPoh
 };
