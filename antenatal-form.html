@@ -546,15 +546,13 @@
       position: absolute;
       inset: 0;
       z-index: 2;
-      opacity: 0;
+      opacity: 0.01;
       width: 100%;
       height: 100%;
       margin: 0;
       border: 0;
       padding: 0;
       cursor: pointer;
-      -webkit-appearance: none;
-      appearance: none;
     }
 
     .date-long-field.is-readonly .date-long-native {
@@ -578,6 +576,7 @@
       font-weight: 700;
       line-height: 1.35;
       box-shadow: none;
+      pointer-events: none;
     }
 
     .date-long-display::after {
@@ -1544,7 +1543,7 @@
           <div class="col-lg-4 col-md-6 history-known-only" id="lmpKnownGroup">
             <label for="lmp" class="form-label lang-text" data-en="Last Menstrual Period (LMP)" data-mm="နောက်ဆုံးရာသီပေါ်သည့် ရက်စွဲ (LMP)">Last Menstrual Period (LMP)</label>
             <div class="date-long-field">
-              <input type="date" id="lmp" name="lmp" class="date-long-native" onchange="onLmpOrVisitChanged()" oninput="refreshLmpEddLongDisplays()" aria-describedby="lmpLongDisplay">
+              <input type="date" id="lmp" name="lmp" class="date-long-native" onchange="onLmpOrVisitChanged()" oninput="refreshLmpEddLongDisplays()" aria-describedby="lmpLongDisplay" aria-label="Last Menstrual Period">
               <div id="lmpLongDisplay" class="date-long-display is-empty" aria-live="polite"></div>
             </div>
             </div>
@@ -3835,6 +3834,38 @@
       el.classList.remove('is-empty');
     }
 
+    function openNativeDatePicker(input) {
+      if (!input || input.disabled || input.readOnly) return;
+      try {
+        input.focus({ preventScroll: true });
+      } catch (error) {
+        input.focus();
+      }
+      if (typeof input.showPicker !== 'function') return;
+      try {
+        input.showPicker();
+      } catch (error) {
+        // Chrome throws if the picker is already open or the call is not from a gesture.
+      }
+    }
+
+    function bindDateLongPickers() {
+      document.querySelectorAll('.date-long-field:not(.is-readonly)').forEach(function (field) {
+        const input = field.querySelector('input.date-long-native[type="date"]');
+        if (!input || input.dataset.pickerBound === '1') return;
+        input.dataset.pickerBound = '1';
+        field.addEventListener('click', function () {
+          openNativeDatePicker(input);
+        });
+        input.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openNativeDatePicker(input);
+          }
+        });
+      });
+    }
+
     function refreshLmpEddLongDisplays() {
       setDateLongDisplay(
         'lmpLongDisplay',
@@ -4915,6 +4946,7 @@
         document.getElementById(id)?.addEventListener('change', updateFetalRiskStyles);
       });
       refreshLmpEddLongDisplays();
+      bindDateLongPickers();
       // Add event listeners to high risk radios
       document.querySelectorAll('input[name="highRisk"]').forEach(radio => {
         radio.addEventListener('change', toggleHighRiskDetails);
