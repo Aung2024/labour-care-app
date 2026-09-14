@@ -436,6 +436,7 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/role-landing.js"></script>
   <script src="js/consent-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/password-policy.js"></script>
@@ -790,7 +791,8 @@
         }
         
         // Store user data
-        localStorage.setItem("role", userData.role);
+        if (window.RoleLanding) RoleLanding.rememberRole(userData.role);
+        else localStorage.setItem("role", userData.role);
         localStorage.setItem("providerType", userData.provider_type || 'midwife');
         localStorage.setItem("uid", userCred.user.uid);
         localStorage.setItem("userEmail", email);
@@ -814,25 +816,24 @@
           SessionManager.start();
         }
         
-        // Always return to Home after login. Stale redirect URLs from offline
-        // auth recovery can otherwise send users to Register/List unexpectedly.
-        const redirectUrl = null;
-        
-        // Check provider consent before redirecting
+        const landingPage = (window.RoleLanding && RoleLanding.landingPageForRole(userData.role)) || 'home.html';
+        const voucherOnly = window.RoleLanding && RoleLanding.isVoucherOnlyRole(userData.role);
+
+        if (voucherOnly) {
+          setTimeout(() => {
+            window.location.replace(landingPage);
+          }, 400);
+          return;
+        }
+
         const consentCheck = await ConsentManager.checkProviderConsent(userCred.user.uid);
         if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
-          // Redirect to consent page (preserve redirect URL if exists)
-          const consentUrl = redirectUrl 
-            ? `provider-consent.html?redirect=${encodeURIComponent(redirectUrl)}`
-            : "provider-consent.html";
           setTimeout(() => {
-            window.location.replace(consentUrl);
+            window.location.replace('provider-consent.html');
           }, 1000);
         } else {
-          // Consent is valid, redirect to app or original page
-          const targetUrl = redirectUrl || "home.html";
           setTimeout(() => {
-            window.location.replace(targetUrl);
+            window.location.replace(landingPage);
           }, 1000);
         }
         
@@ -1013,9 +1014,9 @@
             // Double-check we're still on login page (not already redirected)
             if (window.location.pathname.includes('login.html')) {
               if (checkSessionExpiry()) {
-                // Valid session, redirect to dashboard
+                const landing = (window.RoleLanding && RoleLanding.cachedLandingPage()) || 'home.html';
                 console.log('Valid session found, redirecting...');
-                window.location.replace("home.html");
+                window.location.replace(landing);
               } else {
                 // Session expired, sign out
                 console.log('Session expired, signing out...');

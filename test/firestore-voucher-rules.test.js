@@ -44,15 +44,40 @@ async function seed() {
         midwifeId: null,
         currency: 'MMK',
         status: 'published',
-        serviceIds: ['urine-re'],
+        serviceIds: ['urine-re', 'hb'],
         services: [{
           serviceId: 'urine-re',
           serviceCode: 'URINE_RE',
           serviceName: 'Urine RE',
-          subsidizedCostMinor: 500000,
-          clientCostShareMinor: 50000,
-          projectCostShareMinor: 450000
+          regularPriceMinor: 500000,
+          labCostShareMinor: 50000,
+          subsidizedCostMinor: 450000,
+          clientCostShareMinor: 45000,
+          projectCostShareMinor: 405000
+        }, {
+          serviceId: 'hb',
+          serviceCode: 'HB',
+          serviceName: 'Hb%',
+          regularPriceMinor: 400000,
+          labCostShareMinor: 40000,
+          subsidizedCostMinor: 360000,
+          clientCostShareMinor: 36000,
+          projectCostShareMinor: 324000
         }],
+        pricesByServiceId: {
+          'urine-re': {
+            regularPriceMinor: 500000,
+            labCostShareMinor: 50000,
+            clientCostShareMinor: 45000,
+            projectCostShareMinor: 405000
+          },
+          hb: {
+            regularPriceMinor: 400000,
+            labCostShareMinor: 40000,
+            clientCostShareMinor: 36000,
+            projectCostShareMinor: 324000
+          }
+        },
         publishedAt: new Date(),
         publishedBy: 'po'
       }),
@@ -202,43 +227,234 @@ test('voucher issuance and quota decrement must be atomic', async () => {
   }));
 });
 
+async function writeClientSignature(uid) {
+  const db = env.authenticatedContext(uid).firestore();
+  await setDoc(doc(db, `vouchers/${VOUCHER_ID}/artifacts/signatures`), {
+    clientSignature: 'data:image/png;base64,aaaaaaaaaaaaaaaaaaaa',
+    cashierSignature: '',
+    labSeal: '',
+    poSignature: '',
+    updatedAt: serverTimestamp(),
+    updatedBy: uid
+  });
+}
+
+function redeemPayload(uid) {
+  return {
+    status: 'redeemed',
+    redeemedAt: serverTimestamp(),
+    redeemedBy: uid,
+    labDisplayNameSnapshot: uid,
+    submissionReference: '',
+    cashierIndex: 0,
+    cashierNameSnapshot: 'Cashier 1',
+    labSealAttached: false,
+    clientSigned: true,
+    redemptionAudit: { action: 'redeemed', actorId: uid, at: serverTimestamp() }
+  };
+}
+
 test('only the selected Lab can redeem the voucher', async () => {
   await issueVoucher();
+  await writeClientSignature('lab1');
   const redeem = (uid) => {
     const db = env.authenticatedContext(uid).firestore();
     const ref = doc(db, `vouchers/${VOUCHER_ID}`);
     return runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(ref);
       if (snapshot.data().status !== 'issued') throw new Error('already redeemed');
-      transaction.update(ref, {
-        status: 'redeemed',
-        redeemedAt: serverTimestamp(),
-        redeemedBy: uid,
-        labDisplayNameSnapshot: uid,
-        submissionReference: '',
-        redemptionAudit: { action: 'redeemed', actorId: uid, at: serverTimestamp() }
-      });
+      transaction.update(ref, redeemPayload(uid));
     });
   };
   await assertFails(redeem('lab2'));
   await assertSucceeds(redeem('lab1'));
 });
 
+test('Lab redeem requires a client signature artifact', async () => {
+  await issueVoucher();
+  const db = env.authenticatedContext('lab1').firestore();
+  await assertFails(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1')));
+  await writeClientSignature('lab1');
+  await assertSucceeds(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1')));
+});
+
+test('Lab can add or remove catalog tests on an issued voucher', async () => {
+  await issueVoucher();
+  const db = env.authenticatedContext('lab1').firestore();
+  await assertSucceeds(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
+    selectedServiceIds: ['urine-re', 'hb']
+  }));
+  await assertFails(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
+    selectedServiceIds: ['unknown-test']
+  }));
+  await assertFails(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
+    selectedServiceIds: ['urine-re'],
+    lineItems: [
+      { serviceId: 'urine-re', serviceName: 'Urine RE', regularPriceMinor: 1, labCostShareMinor: 0, clientCopayMinor: 0, projectContributionMinor: 1 }
+    ],
+    totals: { regularPriceMinor: 1, labCostShareMinor: 0, clientCopayMinor: 0, projectContributionMinor: 1 }
+  }));
+});
+
+test('Program Officer can verify reject and pay redeemed vouchers', async () => {
+  await issueVoucher();
+  const labDb = env.authenticatedContext('lab1').firestore();
+  await writeClientSignature('lab1');
+  await updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1'));
+  const poDb = env.authenticatedContext('po').firestore();
+  await assertFails(updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}`), {
+    status: 'verified',
+    verifiedAt: serverTimestamp(),
+    verifiedBy: 'lab1'
+  }));
+  await assertSucceeds(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}`), {
+    status: 'verified',
+    verifiedAt: serverTimestamp(),
+    verifiedBy: 'po',
+    poNameSnapshot: 'Officer',
+    poDesignationSnapshot: 'PO',
+    verificationAudit: { action: 'verified', actorId: 'po', at: serverTimestamp() }
+  }));
+  await assertSucceeds(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}`), {
+    status: 'paid',
+    paidAt: serverTimestamp(),
+    paidBy: 'po',
+    paymentAudit: { action: 'paid', actorId: 'po', at: serverTimestamp() }
+  }));
+});
+
+test('rejected vouchers cannot be verified again', async () => {
+  await issueVoucher();
+  const labDb = env.authenticatedContext('lab1').firestore();
+  await writeClientSignature('lab1');
+  await updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1'));
+  const poDb = env.authenticatedContext('po').firestore();
+  await assertSucceeds(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}`), {
+    status: 'rejected',
+    rejectedAt: serverTimestamp(),
+    rejectedBy: 'po',
+    rejectReason: 'Incomplete tests',
+    rejectionAudit: { action: 'rejected', actorId: 'po', at: serverTimestamp() }
+  }));
+  await assertFails(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}`), {
+    status: 'verified',
+    verifiedAt: serverTimestamp(),
+    verifiedBy: 'po'
+  }));
+});
+
+test('Lab can list vouchers assigned to that laboratory', async () => {
+  await issueVoucher();
+  const labDb = env.authenticatedContext('lab1').firestore();
+  await assertSucceeds(getDocs(query(
+    collection(labDb, 'vouchers'),
+    where('labId', '==', 'lab1'),
+    orderBy('issuedAt', 'desc')
+  )));
+});
+
 test('Lab can list only its own redeemed submissions', async () => {
   await issueVoucher();
   const labDb = env.authenticatedContext('lab1').firestore();
-  await updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}`), {
-    status: 'redeemed',
-    redeemedAt: serverTimestamp(),
-    redeemedBy: 'lab1',
-    labDisplayNameSnapshot: 'Lab One',
-    submissionReference: '',
-    redemptionAudit: { action: 'redeemed', actorId: 'lab1', at: serverTimestamp() }
-  });
+  await writeClientSignature('lab1');
+  await updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1'));
   await assertSucceeds(getDocs(query(
     collection(labDb, 'vouchers'),
     where('redeemedBy', '==', 'lab1'),
     orderBy('redeemedAt', 'desc')
   )));
   await assertFails(getDocs(collection(labDb, 'vouchers')));
+});
+
+test('period stats cannot be written without a coupled voucher status change', async () => {
+  await issueVoucher();
+  const labDb = env.authenticatedContext('lab1').firestore();
+  await assertFails(setDoc(doc(labDb, 'voucher_period_stats/lab_lab1_2026-09'), {
+    scope: 'lab',
+    period: '2026-09',
+    labId: 'lab1',
+    midwifeId: '',
+    lastVoucherId: VOUCHER_ID,
+    lastStatus: 'redeemed',
+    counts: { issued: 0, redeemed: 1, verified: 0, paid: 0, rejected: 0 },
+    projectVerifiedMinor: 0,
+    projectPaidMinor: 0,
+    updatedAt: serverTimestamp(),
+    updatedBy: 'lab1'
+  }));
+  const midwifeDb = env.authenticatedContext('mw').firestore();
+  await assertFails(setDoc(doc(midwifeDb, 'voucher_period_stats/global_2026-09'), {
+    scope: 'global',
+    period: '2026-09',
+    labId: '',
+    midwifeId: '',
+    lastVoucherId: VOUCHER_ID,
+    lastStatus: 'issued',
+    counts: { issued: 99, redeemed: 0, verified: 0, paid: 0, rejected: 0 },
+    projectVerifiedMinor: 0,
+    projectPaidMinor: 0,
+    updatedAt: serverTimestamp(),
+    updatedBy: 'mw'
+  }));
+});
+
+test('Lab cannot inflate period-stat money during redeem', async () => {
+  await issueVoucher();
+  await writeClientSignature('lab1');
+  const db = env.authenticatedContext('lab1').firestore();
+  await assertFails(runTransaction(db, async (transaction) => {
+    transaction.update(doc(db, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1'));
+    transaction.set(doc(db, 'voucher_period_stats/lab_lab1_2026-09'), {
+      scope: 'lab',
+      period: '2026-09',
+      labId: 'lab1',
+      midwifeId: '',
+      lastVoucherId: VOUCHER_ID,
+      lastStatus: 'redeemed',
+      counts: { issued: 0, redeemed: 1, verified: 0, paid: 0, rejected: 0 },
+      projectVerifiedMinor: 999999000,
+      projectPaidMinor: 0,
+      midwives: {},
+      updatedAt: serverTimestamp(),
+      updatedBy: 'lab1'
+    });
+  }));
+});
+
+test('Lab cannot overwrite another laboratory signature artifact', async () => {
+  await issueVoucher();
+  const otherLab = env.authenticatedContext('lab2').firestore();
+  await assertFails(setDoc(doc(otherLab, `vouchers/${VOUCHER_ID}/artifacts/signatures`), {
+    clientSignature: 'data:image/png;base64,bbbbbbbbbbbbbbbbbbbb',
+    cashierSignature: '',
+    labSeal: '',
+    poSignature: '',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'lab2'
+  }));
+});
+
+test('Lab can write period stats only in the redeem transaction', async () => {
+  await issueVoucher();
+  await writeClientSignature('lab1');
+  const db = env.authenticatedContext('lab1').firestore();
+  const voucherRef = doc(db, `vouchers/${VOUCHER_ID}`);
+  const statsRef = doc(db, 'voucher_period_stats/lab_lab1_2026-09');
+  await assertSucceeds(runTransaction(db, async (transaction) => {
+    transaction.update(voucherRef, redeemPayload('lab1'));
+    transaction.set(statsRef, {
+      scope: 'lab',
+      period: '2026-09',
+      labId: 'lab1',
+      midwifeId: '',
+      lastVoucherId: VOUCHER_ID,
+      lastStatus: 'redeemed',
+      counts: { issued: 0, redeemed: 1, verified: 0, paid: 0, rejected: 0 },
+      projectVerifiedMinor: 0,
+      projectPaidMinor: 0,
+      midwives: {},
+      updatedAt: serverTimestamp(),
+      updatedBy: 'lab1'
+    });
+  }));
 });

@@ -5,265 +5,177 @@
     user: null,
     profile: null,
     voucher: null,
+    settings: null,
     stream: null,
     detector: null,
     scanFrame: null,
-    redeeming: false,
-    loggingOut: false
+    clientPad: null,
+    cashierPads: [],
+    page: 'scan',
+    dashStatus: ''
   };
 
   function el(id) { return document.getElementById(id); }
   function escapeHtml(value) {
-    return String(value === undefined || value === null ? '' : value)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-  function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : String(value); }
-  function money(value) { return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+  function money(value) { return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' MMK'; }
   function normalizedRole(role) { return String(role || '').trim().toLowerCase().replace(/\s+/g, ' '); }
   function setStatus(message, kind) {
-    var box = el('pageStatus');
-    box.textContent = message;
-    box.className = 'status-box ' + (kind || 'info');
+    el('pageStatus').textContent = message;
+    el('pageStatus').className = 'status-box ' + (kind || 'info');
   }
   function assertOnline() {
-    if (navigator.onLine === false) throw new Error('Voucher redemption requires an internet connection.');
+    if (navigator.onLine === false) throw new Error('This laboratory page requires an internet connection.');
   }
-  function service() { return window.VoucherService || window.voucherService || null; }
-  function findMethod(names) {
-    var api = service();
-    for (var i = 0; api && i < names.length; i++) {
-      if (typeof api[names[i]] === 'function') return { api: api, fn: api[names[i]], name: names[i] };
-    }
-    return null;
-  }
-  async function callService(names, args) {
-    var method = findMethod(names);
-    if (!method) throw new Error('Voucher service is unavailable. Expected: ' + names.join(' or ') + '.');
-    return method.fn.apply(method.api, args || []);
-  }
-  function voucherRecord(result) { return result && (result.voucher || result.data || result); }
-  function dateValue(value) {
-    if (!value) return '—';
-    var date = value.toDate ? value.toDate() : new Date(value);
-    return isNaN(date.getTime()) ? valueOrDash(value) : date.toLocaleString();
-  }
-  function voucherCode(voucher) {
-    return voucher && (voucher.code || voucher.voucherCode || voucher.opaqueCode || voucher.id) || '';
-  }
-  function voucherStatus(voucher) {
-    if (!voucher) return '';
-    if (voucher.redeemed === true || voucher.submitted === true) return 'redeemed';
-    return String(voucher.status || 'active').toLowerCase();
+  function service() { return window.VoucherService; }
+
+  function showPage(page) {
+    state.page = page;
+    ['scan', 'dashboard', 'settings'].forEach(function (name) {
+      el(name + 'Page').classList.toggle('d-none', name !== page);
+    });
+    document.querySelectorAll('[data-page]').forEach(function (button) {
+      button.classList.toggle('is-active', button.getAttribute('data-page') === page);
+    });
+    el('labPageTitle').textContent = page === 'scan' ? 'Scan' : (page === 'dashboard' ? 'Dashboard' : 'Settings');
+    if (page === 'dashboard') loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
+    if (page === 'settings') renderSettings();
   }
 
   function parseCode(input) {
     var raw = String(input || '').trim();
     if (!raw) return '';
-    if (raw.charAt(0) === '{' && service() && typeof service().parseQrPayload === 'function') {
-      return service().parseQrPayload(raw);
-    }
-    var api = service();
-    if (api && typeof api.parseQrPayload === 'function' && raw.charAt(0) === '{') {
-      try { return api.parseQrPayload(raw); } catch (error) { return ''; }
-    }
+    if (raw.charAt(0) === '{') return service().parseQrPayload(raw);
     try {
-      var url = new URL(raw);
-      raw = url.searchParams.get('code') || raw;
-    } catch (error) {
-      // A plain opaque code is expected for manual entry.
-    }
-    raw = raw.trim();
-    var api = service();
-    if (api && typeof api.normalizeVoucherCode === 'function') {
-      try { return api.normalizeVoucherCode(raw); } catch (error) { return raw; }
-    }
-    return raw;
+      raw = new URL(raw).searchParams.get('code') || raw;
+    } catch (error) {}
+    return service().normalizeVoucherCode(raw);
   }
 
-  async function authenticatedLookup(code) {
-    var method = findMethod(['lookupVoucher', 'getVoucherByCode', 'findVoucher']);
-    if (method) return method.fn.call(method.api, code);
-    var api = service();
-    if (!api || !api.collections || !api.collections.VOUCHERS) {
-      throw new Error('Voucher lookup is not available.');
-    }
-    if (typeof api.validateOpaqueId === 'function') api.validateOpaqueId(code, 'Voucher code');
-    var snapshot = await firebase.firestore().collection(api.collections.VOUCHERS).doc(code).get();
-    if (!snapshot.exists) throw new Error('Voucher not found.');
-    return Object.assign({ id: snapshot.id }, snapshot.data());
+  function selectedIds() {
+    return Array.from(document.querySelectorAll('#lineEditor input:checked')).map(function (input) {
+      return input.value;
+    });
   }
 
-  function renderLookup(voucher) {
-    var code = voucherCode(voucher);
-    var status = voucherStatus(voucher);
-    var tests = voucher.tests || voucher.labTests || voucher.items || (voucher.serviceNameSnapshot ? [{
-      name: voucher.serviceNameSnapshot,
-      clientCostShare: 0,
-      projectCostShare: Number(voucher.unitPriceMinorSnapshot || 0) / 100
-    }] : []);
-    el('resultCode').textContent = valueOrDash(code);
-    el('resultPatient').textContent = valueOrDash(voucher.patientReference || voucher.patientRef || voucher.patientId || voucher.beneficiaryRef);
-    el('resultPatientName').textContent = valueOrDash(voucher.patientNameSnapshot);
-    el('resultPatientPhone').textContent = valueOrDash(voucher.patientPhoneSnapshot);
-    el('resultPatientNrc').textContent = valueOrDash(voucher.patientNrcSnapshot);
-    el('resultAncDate').textContent = valueOrDash(voucher.ancVisitDate || voucher.latestAncVisitDate);
-    el('resultIssuer').textContent = valueOrDash(voucher.generatedByName || voucher.issuerName ||
-      (voucher.issuer && voucher.issuer.displayName) || voucher.midwifeId || voucher.issuedBy);
-    el('resultLabName').textContent = valueOrDash(voucher.labNameSnapshot || voucher.labName);
-    el('resultIssuedAt').textContent = dateValue(voucher.generatedAt || voucher.createdAt || voucher.issuedAt);
-    el('resultTests').innerHTML = tests.length ? tests.map(function (test) {
-      return '<tr><td>' + escapeHtml(test.name || test.testName || test.label || test.id) + '</td>' +
-        '<td class="money">' + money(test.subsidizedCost || test.subsidized_cost) + '</td>' +
-        '<td class="money">' + money(test.clientCostShare || test.client_cost_share) + '</td>' +
-        '<td class="money">' + money(test.projectCostShare || test.project_cost_share) + '</td></tr>';
-    }).join('') : '<tr><td colspan="4" class="text-center text-muted">No tests listed</td></tr>';
+  function renderLineEditor(voucher) {
+    var selected = {};
+    (voucher.selectedServiceIds || []).forEach(function (id) { selected[id] = true; });
+    var tests = voucher.catalogTests || voucher.tests || [];
+    el('lineEditor').innerHTML = tests.map(function (test) {
+      var id = test.id || test.serviceId;
+      return '<label class="d-flex align-items-center gap-2 mb-2">' +
+        '<input type="checkbox" value="' + escapeHtml(id) + '"' + (selected[id] ? ' checked' : '') + '>' +
+        '<span>' + escapeHtml(test.name || test.serviceName) + '</span></label>';
+    }).join('') || '<p class="text-muted">No laboratory tests are configured for this lab.</p>';
+  }
 
-    var badge = el('voucherStatusBadge');
-    badge.textContent = status || 'unknown';
-    badge.className = 'badge rounded-pill ' + (status === 'active' || status === 'issued' ? 'bg-primary' :
-      status === 'redeemed' || status === 'submitted' ? 'badge-redeemed' : 'bg-secondary');
-    var canRedeem = status === 'active' || status === 'issued' || status === 'pending';
-    if (canRedeem && voucher.labId && state.user && voucher.labId !== state.user.uid) {
-      canRedeem = false;
-      el('redeemWarning').textContent = 'This voucher is assigned to another laboratory and cannot be redeemed here.';
-    } else {
-      el('redeemWarning').textContent = canRedeem
-        ? 'Verify the patient and tests before submitting. Redemption is final and can happen only once.'
-        : 'This voucher cannot be redeemed because its current status is "' + status + '".';
-    }
-    el('confirmRedeem').disabled = !canRedeem;
-    el('lookupResult').classList.remove('d-none');
-    el('lookupResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function cashierOptions() {
+    var cashiers = (state.settings && state.settings.cashiers) || [];
+    el('cashierSelect').innerHTML = cashiers.map(function (cashier, index) {
+      return '<option value="' + index + '">' + escapeHtml(cashier.name || ('Cashier ' + (index + 1))) + '</option>';
+    }).join('') || '<option value="0">Cashier 1</option>';
+  }
+
+  function extrasForVoucher(voucher, signatures) {
+    var cashierIndex = Number(el('cashierSelect').value || 0);
+    var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+    return {
+      lab: {
+        seal: (signatures && signatures.labSeal) || (state.settings && state.settings.seal) || '',
+        cashierSignature: (signatures && signatures.cashierSignature) || cashier.signature || '',
+        cashierName: voucher.cashierNameSnapshot || cashier.name || '',
+        date: voucher.status === 'issued' ? '' : window.VoucherInvoice.formatDate(voucher.redeemedAt || new Date())
+      },
+      client: {
+        signature: signatures && signatures.clientSignature,
+        name: voucher.patientNameSnapshot,
+        nrc: voucher.patientNrcSnapshot,
+        phone: voucher.patientPhoneSnapshot,
+        address: voucher.patientAddressSnapshot,
+        date: voucher.status === 'issued' ? '' : window.VoucherInvoice.formatDate(voucher.redeemedAt || new Date())
+      },
+      project: {}
+    };
+  }
+
+  function renderInvoice(voucher, signatures) {
+    window.VoucherInvoice.render(el('invoiceMount'), window.VoucherInvoice.modelFromVoucher(voucher, extrasForVoucher(voucher, signatures)));
   }
 
   async function lookup(event) {
     if (event) event.preventDefault();
-    var button = el('lookupButton');
     try {
       assertOnline();
       var code = parseCode(el('voucherCodeInput').value);
       if (!code) throw new Error('Enter a voucher code.');
-      button.disabled = true;
-      setStatus('Looking up authenticated voucher record…', 'info');
-      var result = await authenticatedLookup(code);
-      var voucher = voucherRecord(result);
-      if (!voucher || !voucherCode(voucher)) throw new Error('Voucher not found.');
+      setStatus('Looking up voucher…', 'info');
+      var voucher = await service().lookupVoucher(code);
+      if (voucher.labId && voucher.labId !== state.user.uid) {
+        throw new Error('This voucher is assigned to another laboratory.');
+      }
+      var catalog = null;
+      try { catalog = await service().getAssignedPriceSheet(state.user.uid); } catch (error) { catalog = null; }
+      voucher.catalogTests = ((catalog && catalog.services) || []).map(function (row) {
+        return { id: row.serviceId, name: row.serviceName };
+      });
+      if (!voucher.catalogTests.length) {
+        voucher.catalogTests = (voucher.tests || []).map(function (row) {
+          return { id: row.id || row.serviceId, name: row.name || row.serviceName };
+        });
+      }
       state.voucher = voucher;
-      el('voucherCodeInput').value = voucherCode(voucher);
-      renderLookup(voucher);
-      setStatus('Voucher found. Review it before confirming.', 'success');
+      el('voucherCodeInput').value = voucher.code;
+      renderLineEditor(voucher);
+      cashierOptions();
+      var signatures = voucher.status === 'issued' ? {} : await service().getVoucherSignatures(voucher.code);
+      renderInvoice(voucher, signatures);
+      el('lookupResult').classList.remove('d-none');
+      el('confirmRedeem').disabled = voucher.status !== 'issued';
+      setStatus('Review the invoice, update tests if needed, then collect the client signature.', 'success');
     } catch (error) {
       state.voucher = null;
       el('lookupResult').classList.add('d-none');
       setStatus(error.message || 'Voucher lookup failed.', 'error');
-    } finally {
-      button.disabled = false;
     }
   }
 
-  function idempotencyKey(code) {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return [state.user.uid, code, Date.now(), Math.random().toString(36).slice(2)].join('-');
+  async function saveLines() {
+    if (!state.voucher) return;
+    state.voucher = await service().updateIssuedLineItems(state.voucher.code, selectedIds());
+    var catalog = await service().getAssignedPriceSheet(state.user.uid);
+    state.voucher.catalogTests = (catalog.services || []).map(function (row) {
+      return { id: row.serviceId, name: row.serviceName };
+    });
+    renderLineEditor(state.voucher);
+    renderInvoice(state.voucher, {});
+    setStatus('Invoice tests updated.', 'success');
   }
 
   async function redeem() {
-    if (state.redeeming) return;
-    try {
-      assertOnline();
-      if (!state.voucher) throw new Error('Look up a voucher before redeeming it.');
-      var code = voucherCode(state.voucher);
-      if (voucherStatus(state.voucher) !== 'active' && voucherStatus(state.voucher) !== 'issued' &&
-          voucherStatus(state.voucher) !== 'pending') {
-        throw new Error('This voucher is not available for redemption.');
-      }
-      var confirmed = window.confirm(
-        'Confirm one-time redemption of voucher ' + code + '?\n\nThis submission is final and cannot be undone.'
-      );
-      if (!confirmed) return;
-
-      state.redeeming = true;
-      el('confirmRedeem').disabled = true;
-      setStatus('Submitting atomic one-time redemption…', 'info');
-      var payload = {
-        submissionReference: el('submissionReference').value.trim(),
-        labUserId: state.user.uid,
-        labDisplayName: state.profile.name || state.profile.displayName || state.user.displayName || state.user.email,
-        idempotencyKey: idempotencyKey(code)
-      };
-      // Do not retry this mutation in the UI. The service must perform its status check and
-      // redemption write atomically and enforce the idempotency key/one-time constraint.
-      var result = await callService(['redeemVoucher', 'submitVoucher', 'confirmRedemption'], [code, payload]);
-      var redeemed = typeof result === 'string'
-        ? voucherRecord(await authenticatedLookup(result))
-        : (voucherRecord(result) || Object.assign({}, state.voucher, { status: 'redeemed', redeemed: true }));
-      state.voucher = redeemed;
-      renderLookup(redeemed);
-      setStatus('Voucher redeemed and submitted successfully.', 'success');
-      await loadHistory();
-    } catch (error) {
-      setStatus(error.message || 'Redemption failed. The voucher was not resubmitted.', 'error');
-      el('confirmRedeem').disabled = false;
-    } finally {
-      state.redeeming = false;
-    }
-  }
-
-  function historyFilters() {
-    return {
-      search: el('historySearch').value.trim(),
-      from: el('historyFrom').value || null,
-      to: el('historyTo').value || null,
-      status: 'redeemed',
-      labUserId: state.user.uid
-    };
-  }
-  function historyRows(result) {
-    var rows = result && (result.vouchers || result.items || result.rows || result.data || result);
-    return Array.isArray(rows) ? rows : [];
-  }
-  async function loadHistory(event) {
-    if (event) event.preventDefault();
-    var body = el('historyBody');
-    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading…</td></tr>';
-    try {
-      assertOnline();
-      var filters = historyFilters();
-      var historyMethod = findMethod(['listSubmittedVouchers', 'listRedemptions', 'getRedemptionHistory']);
-      var result;
-      if (historyMethod) {
-        result = await historyMethod.fn.call(historyMethod.api, filters);
-      } else {
-        var api = service();
-        if (!api || typeof api.queryVoucherReport !== 'function') throw new Error('Voucher history is unavailable.');
-        var end = filters.to ? new Date(filters.to + 'T23:59:59') : new Date();
-        var start = filters.from ? new Date(filters.from + 'T00:00:00') : new Date(end.getTime() - (90 * 86400000));
-        result = await api.queryVoucherReport({ status: 'redeemed', startDate: start, endDate: end });
-      }
-      var rows = result && Array.isArray(result.docs)
-        ? result.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); })
-        : historyRows(result);
-      rows = rows.filter(function (row) {
-        if (row.redeemedBy && row.redeemedBy !== state.user.uid) return false;
-        if (!filters.search) return true;
-        var haystack = [voucherCode(row), row.patientReference, row.patientRef, row.patientId, row.beneficiaryRef]
-          .filter(Boolean).join(' ').toLowerCase();
-        return haystack.indexOf(filters.search.toLowerCase()) !== -1;
-      });
-      body.innerHTML = rows.length ? rows.map(function (row) {
-        var tests = row.tests || row.labTests || row.items ||
-          (row.selectedServiceIds || []).map(function (id) { return { name: id }; }) ||
-          (row.serviceNameSnapshot ? [{ name: row.serviceNameSnapshot }] : []);
-        return '<tr><td>' + escapeHtml(dateValue(row.redeemedAt || row.submittedAt || row.updatedAt)) + '</td>' +
-          '<td><code>' + escapeHtml(voucherCode(row)) + '</code></td>' +
-          '<td>' + escapeHtml(row.patientReference || row.patientRef || row.patientId || row.beneficiaryRef || '—') + '</td>' +
-          '<td>' + escapeHtml(tests.map(function (test) { return test.name || test.testName || test.id; }).join(', ') || '—') + '</td>' +
-          '<td>' + escapeHtml(row.labDisplayName || row.redeemedByName || row.labUserId || row.redeemedBy || '—') + '</td>' +
-          '<td><span class="badge badge-redeemed">Redeemed</span></td></tr>';
-      }).join('') : '<tr><td colspan="6" class="text-center text-muted">No submitted vouchers match these filters.</td></tr>';
-    } catch (error) {
-      body.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(error.message || 'Could not load history.') + '</td></tr>';
-    }
+    if (!state.voucher) throw new Error('Look up a voucher first.');
+    if (!state.clientPad || state.clientPad.isEmpty()) throw new Error('Ask the patient to sign before redeeming.');
+    var cashierIndex = Number(el('cashierSelect').value || 0);
+    var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+    var clientSignature = await window.VoucherInvoice.compressImage(state.clientPad.toDataUrl(), 320, 140);
+    await service().saveVoucherSignatures(state.voucher.code, {
+      clientSignature: clientSignature,
+      cashierSignature: cashier.signature || '',
+      labSeal: (state.settings && state.settings.seal) || ''
+    });
+    state.voucher = await service().redeemVoucher(state.voucher.code, {
+      labDisplayName: state.profile.displayName || state.profile.name || state.user.email,
+      submissionReference: '',
+      cashierIndex: cashierIndex,
+      cashierName: cashier.name || '',
+      labSealAttached: !!(state.settings && state.settings.seal),
+      clientSigned: true
+    });
+    renderInvoice(state.voucher, await service().getVoucherSignatures(state.voucher.code));
+    el('confirmRedeem').disabled = true;
+    setStatus('Voucher redeemed. Payment Made By (Project) is still empty for the Program Officer.', 'success');
   }
 
   async function scanLoop() {
@@ -282,39 +194,25 @@
           }
         }
       }
-    } catch (error) {
-      console.warn('[LabVouchers] QR scan frame failed.', error);
-    }
+    } catch (error) {}
     state.scanFrame = requestAnimationFrame(scanLoop);
   }
+
   async function startCamera() {
-    try {
-      assertOnline();
-      if (!('BarcodeDetector' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        el('cameraUnsupported').classList.remove('d-none');
-        return;
-      }
-      var formats = await window.BarcodeDetector.getSupportedFormats();
-      if (formats.indexOf('qr_code') === -1) {
-        el('cameraUnsupported').classList.remove('d-none');
-        return;
-      }
-      state.detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-      state.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }, audio: false
-      });
-      el('cameraVideo').srcObject = state.stream;
-      await el('cameraVideo').play();
-      el('scanner').classList.remove('d-none');
-      el('startCamera').classList.add('d-none');
-      el('stopCamera').classList.remove('d-none');
-      scanLoop();
-    } catch (error) {
-      setStatus(error.name === 'NotAllowedError' ? 'Camera permission was denied. Enter the code manually.' :
-        (error.message || 'Could not start camera.'), 'warning');
-      stopCamera();
+    if (!('BarcodeDetector' in window)) {
+      el('cameraUnsupported').classList.remove('d-none');
+      return;
     }
+    state.detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    el('cameraVideo').srcObject = state.stream;
+    await el('cameraVideo').play();
+    el('scanner').classList.remove('d-none');
+    el('startCamera').classList.add('d-none');
+    el('stopCamera').classList.remove('d-none');
+    scanLoop();
   }
+
   function stopCamera() {
     if (state.scanFrame) cancelAnimationFrame(state.scanFrame);
     state.scanFrame = null;
@@ -326,78 +224,169 @@
     el('stopCamera').classList.add('d-none');
   }
 
-  async function logout() {
-    var button = el('logoutBtn');
-    state.loggingOut = true;
-    button.disabled = true;
-    button.textContent = 'Logging out…';
-    stopCamera();
-    try {
-      await firebase.auth().signOut();
-      sessionStorage.clear();
-      ['role', 'userEmail', 'userId', 'providerType', 'userTownship', 'userRegion'].forEach(function (key) {
-        localStorage.removeItem(key);
-      });
-      window.location.replace('login.html');
-    } catch (error) {
-      state.loggingOut = false;
-      button.disabled = false;
-      button.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Log out';
-      setStatus('Could not log out: ' + (error.message || 'Unknown error.'), 'error');
+  function currentPeriod() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  }
+
+  async function loadDashboard() {
+    var period = el('labPeriod').value || currentPeriod();
+    var stats = await service().getPeriodStats({ period: period, labId: state.user.uid });
+    var row = stats[0] || { counts: {}, projectVerifiedMinor: 0, projectPaidMinor: 0, midwives: {} };
+    el('labIssued').textContent = row.counts.issued || 0;
+    el('labRedeemed').textContent = row.counts.redeemed || 0;
+    el('labIncoming').textContent = money((row.projectVerifiedMinor || 0) / 100);
+    el('labPaid').textContent = money((row.projectPaidMinor || 0) / 100);
+    var midwives = row.midwives || {};
+    el('labMidwives').innerHTML = Object.keys(midwives).length ?
+      '<table class="table"><thead><tr><th>Midwife</th><th>Redeemed</th><th>Verified</th><th>Paid</th></tr></thead><tbody>' +
+      Object.keys(midwives).map(function (id) {
+        var item = midwives[id];
+        return '<tr><td>' + escapeHtml(id) + '</td><td>' + (item.counts && item.counts.redeemed || 0) +
+          '</td><td>' + (item.counts && item.counts.verified || 0) +
+          '</td><td>' + (item.counts && item.counts.paid || 0) + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<p class="text-muted">No midwife breakdown for this period.</p>';
+    document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
+      tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
+    });
+    var history = await service().queryVouchersPaged({
+      labId: state.user.uid,
+      status: state.dashStatus || undefined,
+      pageSize: 50
+    });
+    el('labHistory').innerHTML = '<table class="table"><thead><tr><th>Code</th><th>Status</th><th>Patient</th></tr></thead><tbody>' +
+      (history.items || []).map(function (item) {
+        return '<tr><td>' + escapeHtml(item.code) + '</td><td>' + escapeHtml(item.status) + '</td><td>' +
+          escapeHtml(item.patientNameSnapshot || '') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function renderSettings() {
+    var settings = state.settings || { cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }] };
+    if (settings.seal) {
+      el('sealPreview').src = settings.seal;
+      el('sealPreview').classList.remove('d-none');
     }
+    el('cashierFields').innerHTML = [0, 1, 2].map(function (index) {
+      var cashier = (settings.cashiers || [])[index] || { name: '', signature: '' };
+      return '<div class="voucher-card"><label class="form-label">Cashier ' + (index + 1) + ' name</label>' +
+        '<input class="form-control cashier-name" data-index="' + index + '" value="' + escapeHtml(cashier.name || '') + '">' +
+        '<label class="form-label mt-2">Signature</label>' +
+        '<canvas class="sign-pad cashier-pad" data-index="' + index + '" width="640" height="180"></canvas>' +
+        '<button type="button" class="btn btn-outline-secondary btn-sm mt-2 clear-cashier" data-index="' + index + '">Clear</button></div>';
+    }).join('');
+    state.cashierPads = Array.from(document.querySelectorAll('.cashier-pad')).map(function (canvas) {
+      return window.VoucherInvoice.bindSignaturePad(canvas);
+    });
+  }
+
+  async function saveSettings() {
+    var sealFile = el('sealInput').files[0];
+    var seal = state.settings && state.settings.seal || '';
+    if (sealFile) {
+      seal = await window.VoucherInvoice.compressImage(await window.VoucherInvoice.fileToDataUrl(sealFile), 240, 240);
+    }
+    var cashiers = [0, 1, 2].map(function (index) {
+      var nameInput = document.querySelector('.cashier-name[data-index="' + index + '"]');
+      var pad = state.cashierPads[index];
+      var previous = ((state.settings && state.settings.cashiers) || [])[index] || {};
+      return {
+        name: nameInput ? nameInput.value.trim() : '',
+        signature: pad && !pad.isEmpty() ? pad.toDataUrl() : (previous.signature || '')
+      };
+    });
+    for (var index = 0; index < cashiers.length; index += 1) {
+      if (cashiers[index].signature) {
+        cashiers[index].signature = await window.VoucherInvoice.compressImage(cashiers[index].signature, 320, 140);
+      }
+    }
+    state.settings = await service().saveLabSettings({
+      labName: state.profile.displayName || state.profile.name || '',
+      address: state.profile.address || '',
+      seal: seal,
+      cashiers: cashiers
+    });
+    setStatus('Laboratory settings saved.', 'success');
+  }
+
+  async function logout() {
+    stopCamera();
+    await firebase.auth().signOut();
+    sessionStorage.clear();
+    ['role', 'userEmail', 'userId'].forEach(function (key) { localStorage.removeItem(key); });
+    window.location.replace('login.html');
   }
 
   async function initialize(user) {
-    try {
-      assertOnline();
-      state.user = user;
-      var profileDoc = await firebase.firestore().collection('users').doc(user.uid).get();
-      if (!profileDoc.exists) throw new Error('Lab account profile not found.');
-      state.profile = profileDoc.data() || {};
-      if (normalizedRole(state.profile.role) !== 'lab' ||
-          state.profile.active === false || state.profile.approved === false) {
-        el('accessDeniedMessage').textContent = 'Signed-in role "' + valueOrDash(state.profile.role) + '" is not authorized. A Lab account is required.';
-        el('accessDenied').classList.remove('d-none');
-        return;
-      }
-      el('labApp').classList.remove('d-none');
-      setStatus('Authenticated as ' + (state.profile.name || user.displayName || user.email) + '.', 'success');
-      if (!('BarcodeDetector' in window)) el('cameraUnsupported').classList.remove('d-none');
-      var initialCode = parseCode(new URLSearchParams(window.location.search).get('code'));
-      if (initialCode) {
-        el('voucherCodeInput').value = initialCode;
-        await lookup();
-      }
-      await loadHistory();
-    } catch (error) {
-      el('labApp').classList.remove('d-none');
-      setStatus(error.message || 'Could not initialize lab vouchers.', 'error');
+    assertOnline();
+    state.user = user;
+    var profileDoc = await firebase.firestore().collection('users').doc(user.uid).get();
+    if (!profileDoc.exists) throw new Error('Lab account profile not found.');
+    state.profile = profileDoc.data() || {};
+    if (normalizedRole(state.profile.role) !== 'lab' || state.profile.active === false || state.profile.approved === false) {
+      el('accessDeniedMessage').textContent = 'A Lab account is required.';
+      el('accessDenied').classList.remove('d-none');
+      return;
     }
+    state.settings = await service().getLabSettings(user.uid);
+    state.clientPad = window.VoucherInvoice.bindSignaturePad(el('clientPad'));
+    el('labPeriod').value = currentPeriod();
+    el('labApp').classList.remove('d-none');
+    if (!('BarcodeDetector' in window)) el('cameraUnsupported').classList.remove('d-none');
+    var initialCode = parseCode(new URLSearchParams(window.location.search).get('code'));
+    if (initialCode) {
+      el('voucherCodeInput').value = initialCode;
+      await lookup();
+    }
+    setStatus('Authenticated as ' + (state.profile.displayName || user.email) + '.', 'success');
   }
 
+  document.querySelectorAll('[data-page]').forEach(function (button) {
+    button.addEventListener('click', function () { showPage(button.getAttribute('data-page')); });
+  });
+  el('homeBtn').addEventListener('click', function () { showPage('scan'); });
   el('lookupForm').addEventListener('submit', lookup);
-  el('confirmRedeem').addEventListener('click', redeem);
-  el('historyFilters').addEventListener('submit', loadHistory);
-  el('refreshHistory').addEventListener('click', loadHistory);
-  el('startCamera').addEventListener('click', startCamera);
+  el('saveLinesBtn').addEventListener('click', function () {
+    saveLines().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('confirmRedeem').addEventListener('click', function () {
+    redeem().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('clearClientSign').addEventListener('click', function () { if (state.clientPad) state.clientPad.clear(); });
+  el('startCamera').addEventListener('click', function () {
+    startCamera().catch(function (error) { setStatus(error.message, 'warning'); });
+  });
   el('stopCamera').addEventListener('click', stopCamera);
+  el('saveSettingsBtn').addEventListener('click', function () {
+    saveSettings().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('labPeriod').addEventListener('change', function () {
+    loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('labStatTiles').addEventListener('click', function (event) {
+    var tile = event.target.closest('[data-status]');
+    if (!tile) return;
+    var next = tile.getAttribute('data-status');
+    state.dashStatus = state.dashStatus === next ? '' : next;
+    loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('cashierFields').addEventListener('click', function (event) {
+    var button = event.target.closest('.clear-cashier');
+    if (!button) return;
+    var pad = state.cashierPads[Number(button.getAttribute('data-index'))];
+    if (pad) pad.clear();
+  });
   el('logoutBtn').addEventListener('click', logout);
   window.addEventListener('beforeunload', stopCamera);
-  window.addEventListener('offline', function () {
-    stopCamera();
-    if (!el('labApp').classList.contains('d-none')) setStatus('Voucher redemption requires an internet connection.', 'warning');
-  });
-  window.addEventListener('online', function () {
-    if (!el('labApp').classList.contains('d-none')) setStatus('Connection restored.', 'success');
-  });
 
   firebase.auth().onAuthStateChanged(function (user) {
     if (!user) {
-      window.location.replace(state.loggingOut
-        ? 'login.html'
-        : 'login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));
+      window.location.replace('login.html');
       return;
     }
-    initialize(user);
+    initialize(user).catch(function (error) {
+      el('labApp').classList.remove('d-none');
+      setStatus(error.message || 'Could not initialize laboratory vouchers.', 'error');
+    });
   });
 })();

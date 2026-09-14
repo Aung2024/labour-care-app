@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v263-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v265-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -68,6 +68,9 @@ const FILES_TO_CACHE = [
   './js/vendor/html2canvas.min.js',
   './js/vendor/qrcode.min.js',
   './js/firebase.js',
+  './js/voucher-pricing.js',
+  './js/voucher-invoice.js',
+  './js/role-landing.js',
   './js/voucher-service.js',
   './js/program-officer.js',
   './js/promo-voucher.js',
@@ -109,6 +112,7 @@ const FILES_TO_CACHE = [
   './css/style.css',
   './css/program-officer.css',
   './css/vouchers.css',
+  './css/voucher-invoice.css',
   './css/hrt-register.css',
   './css/choice-controls.css',
   './css/compact-app-bar.css',
@@ -197,9 +201,22 @@ self.addEventListener('fetch', (event) => {
           console.error('[Service Worker] Document fetch failed:', error);
           const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
           if (cachedResponse) return cachedResponse;
+          let preferredHome = '';
+          try {
+            const preferred = await caches.open('mch-preferred-home').then((cache) => cache.match('./__preferred-home'));
+            if (preferred) preferredHome = (await preferred.text()).trim();
+          } catch (cacheError) {
+            preferredHome = '';
+          }
+          if (preferredHome && preferredHome !== './home.html' && preferredHome !== 'home.html') {
+            const roleFallback = await caches.match(preferredHome.charAt(0) === '.' ? preferredHome : ('./' + preferredHome));
+            if (roleFallback) return roleFallback;
+          }
           const homeFallback = await caches.match('./home.html');
-          if (homeFallback) return homeFallback;
-          return caches.match('./index.html');
+          if (homeFallback && (!preferredHome || preferredHome === 'home.html' || preferredHome === './home.html')) {
+            return homeFallback;
+          }
+          return caches.match('./login.html') || caches.match('./index.html');
         })
     );
     return;

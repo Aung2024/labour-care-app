@@ -17,8 +17,14 @@
     OVERRIDES: 'voucher_price_overrides',
     ACCOUNT_BUDGETS: 'voucher_account_budgets',
     ACCOUNT_QUOTAS: 'voucher_account_quotas',
-    VOUCHERS: 'vouchers'
+    VOUCHERS: 'vouchers',
+    LAB_CONFIGS: 'voucher_lab_configs',
+    LAB_SETTINGS: 'lab_settings',
+    PO_SETTINGS: 'po_settings',
+    PERIOD_STATS: 'voucher_period_stats'
   });
+  var VOUCHER_STATUSES = Object.freeze(['issued', 'redeemed', 'verified', 'paid', 'rejected']);
+  var MAX_IMAGE_CHARS = 180000;
   var OPAQUE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
   var SHORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var SHORT_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
@@ -65,6 +71,13 @@
       throw new Error('Service code contains unsupported characters.');
     }
     return code;
+  }
+
+  function pricingApi() {
+    if (!root.VoucherPricing) {
+      throw new Error('VoucherPricing must be loaded before VoucherService.');
+    }
+    return root.VoucherPricing;
   }
 
   function validateCostShares(subsidizedMinor, clientMinor, projectMinor) {
@@ -389,17 +402,40 @@
     });
   }
 
-  function normalizeSheetService(input) {
+  function normalizeSheetService(input, percents) {
     var service = requireObject(input, 'Price-sheet service');
+    var computed = null;
+    if (service.regularPriceMinor != null || service.labCostShareMinor != null) {
+      computed = pricingApi().computeInvoiceShares(
+        requireInteger(service.regularPriceMinor, 'Regular price', 0),
+        requireInteger(service.labCostShareMinor, 'Lab cost share', 0),
+        percents && percents.clientPercent,
+        percents && percents.projectPercent
+      );
+    }
     var shares = validateCostShares(
-      requireInteger(service.subsidizedCostMinor, 'Total cost', 0),
-      requireInteger(service.clientCostShareMinor, 'Discount price', 0),
-      requireInteger(service.projectCostShareMinor, 'Project cost share', 0)
+      requireInteger(
+        computed ? computed.subsidizedCostMinor : service.subsidizedCostMinor,
+        'Total cost',
+        0
+      ),
+      requireInteger(
+        computed ? computed.clientCopayMinor : service.clientCostShareMinor,
+        'Discount price',
+        0
+      ),
+      requireInteger(
+        computed ? computed.projectContributionMinor : service.projectCostShareMinor,
+        'Project cost share',
+        0
+      )
     );
     return {
       serviceId: requireString(service.serviceId, 'Service ID', 64),
       serviceCode: validateServiceCode(service.serviceCode),
       serviceName: requireString(service.serviceName, 'Service name', 120),
+      regularPriceMinor: computed ? computed.regularPriceMinor : shares.subsidized,
+      labCostShareMinor: computed ? computed.labCostShareMinor : 0,
       subsidizedCostMinor: shares.subsidized,
       clientCostShareMinor: shares.client,
       projectCostShareMinor: shares.project
@@ -410,7 +446,15 @@
     var data = requireObject(input, 'Price sheet');
     var context = firebaseContext();
     var labId = data.labId == null ? null : requireString(data.labId, 'Lab ID', 128);
-    var services = (data.services || []).map(normalizeSheetService);
+    var percents = data.clientPercent != null || data.projectPercent != null
+      ? pricingApi().normalizePercentPair(
+        data.projectPercent == null ? 100 - data.clientPercent : data.projectPercent,
+        data.clientPercent == null ? 100 - data.projectPercent : data.clientPercent
+      )
+      : null;
+    var services = (data.services || []).map(function (service) {
+      return normalizeSheetService(service, percents);
+    });
     if (!services.length || services.length > 30) {
       throw new Error('A price sheet must contain between 1 and 30 services.');
     }
@@ -423,16 +467,31 @@
     var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId);
     var assignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(assignmentId);
     var batch = context.db.batch();
-    batch.set(sheetRef, {
+    var pricesByServiceId = {};
+    services.forEach(function (item) {
+      pricesByServiceId[item.serviceId] = {
+        regularPriceMinor: item.regularPriceMinor,
+        labCostShareMinor: item.labCostShareMinor,
+        clientCostShareMinor: item.clientCostShareMinor,
+        projectCostShareMinor: item.projectCostShareMinor
+      };
+    });
+    var sheetRecord = {
       labId: labId,
       midwifeId: null,
       currency: validateCurrency(data.currency || 'MMK'),
       status: 'published',
       serviceIds: serviceIds,
       services: services,
+      pricesByServiceId: pricesByServiceId,
       publishedAt: serverTimestamp(context),
       publishedBy: context.user.uid
-    });
+    };
+    if (percents) {
+      sheetRecord.clientPercent = percents.clientPercent;
+      sheetRecord.projectPercent = percents.projectPercent;
+    }
+    batch.set(sheetRef, sheetRecord);
     batch.set(assignmentRef, {
       labId: labId,
       midwifeId: null,
@@ -487,13 +546,52 @@
     var overridePromise = labId ?
       context.db.collection(COLLECTIONS.OVERRIDES).where('labId', '==', labId).get() :
       Promise.resolve({ docs: [] });
-    return Promise.all([catalogPromise, overridePromise]).then(function (snapshots) {
+    var configPromise = labId ?
+      context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(labId).get() :
+      Promise.resolve({ exists: false, data: function () { return null; } });
+    return Promise.all([catalogPromise, overridePromise, configPromise]).then(function (snapshots) {
+      var config = snapshots[2].exists ? snapshots[2].data() : null;
+      if (config && Array.isArray(config.tests) && config.tests.length) {
+        var percents = pricingApi().normalizePercentPair(
+          config.projectPercent == null ? 90 : config.projectPercent,
+          config.clientPercent == null ? 10 : config.clientPercent
+        );
+        var services = config.tests.filter(function (test) { return test.active !== false; }).map(function (test) {
+          var catalog = {};
+          snapshots[0].docs.forEach(function (doc) {
+            if (doc.id === test.serviceId) catalog = doc.data() || {};
+          });
+          var computed = pricingApi().computeInvoiceShares(
+            test.regularPriceMinor,
+            test.labCostShareMinor,
+            percents.clientPercent,
+            percents.projectPercent
+          );
+          return {
+            serviceId: test.serviceId,
+            serviceCode: catalog.serviceCode || String(test.serviceCode || test.serviceId).toUpperCase(),
+            serviceName: catalog.serviceName || test.serviceName || test.serviceId,
+            regularPriceMinor: computed.regularPriceMinor,
+            labCostShareMinor: computed.labCostShareMinor,
+            subsidizedCostMinor: computed.subsidizedCostMinor,
+            clientCostShareMinor: computed.clientCopayMinor,
+            projectCostShareMinor: computed.projectContributionMinor
+          };
+        });
+        return publishPriceSheet({
+          labId: labId || null,
+          currency: 'MMK',
+          services: services,
+          clientPercent: percents.clientPercent,
+          projectPercent: percents.projectPercent
+        });
+      }
       var overrideByService = {};
       snapshots[1].docs.forEach(function (doc) {
         var row = doc.data();
         if (row.active !== false) overrideByService[row.serviceId] = row;
       });
-      var services = snapshots[0].docs.map(function (doc) {
+      var fallbackServices = snapshots[0].docs.map(function (doc) {
         var catalog = doc.data();
         var override = overrideByService[doc.id] || {};
         return {
@@ -508,7 +606,7 @@
             catalog.defaultProjectCostShareMinor : override.projectCostShareMinor
         };
       });
-      return publishPriceSheet({ labId: labId || null, currency: 'MMK', services: services });
+      return publishPriceSheet({ labId: labId || null, currency: 'MMK', services: fallbackServices });
     });
   }
 
@@ -537,34 +635,63 @@
     return role === 'lab' || role === 'laboratory';
   }
 
+  function listUsersByRoles(roles) {
+    var context = firebaseContext();
+    return Promise.all((roles || []).map(function (role) {
+      return context.db.collection('users').where('role', '==', role).get();
+    })).then(function (snapshots) {
+      var seen = {};
+      var rows = [];
+      snapshots.forEach(function (snapshot) {
+        snapshot.docs.forEach(function (doc) {
+          if (seen[doc.id]) return;
+          seen[doc.id] = true;
+          rows.push(Object.assign({ id: doc.id }, doc.data()));
+        });
+      });
+      return rows;
+    });
+  }
+
   function listLabs() {
     var context = firebaseContext();
-    return context.db.collection('users').get().then(function (snapshot) {
+    return context.db.collection(COLLECTIONS.LAB_CONFIGS).get().then(function (snapshot) {
       return snapshot.docs.map(function (doc) {
-        return Object.assign({ id: doc.id }, doc.data());
-      }).filter(function (profile) {
-        return isLabProfile(profile) && profile.active !== false && profile.approved !== false;
-      }).map(function (profile) {
+        var row = doc.data() || {};
         return {
-          id: profile.id,
-          name: profile.displayName || profile.name || profile.labName || profile.organization_name || profile.email || 'Lab'
+          id: doc.id,
+          name: row.labName || 'Lab',
+          address: row.address || ''
         };
       });
     });
   }
 
   function catalogFromSheet(sheet) {
+    var percents = {
+      clientPercent: sheet.clientPercent,
+      projectPercent: sheet.projectPercent
+    };
     return {
       priceSheetId: sheet.id,
       labId: sheet.labId || null,
+      clientPercent: sheet.clientPercent,
+      projectPercent: sheet.projectPercent,
       tests: (sheet.services || []).map(function (service) {
+        var item = pricingApi().lineItemFromSheetService(service, percents);
         return {
-          id: service.serviceId,
-          name: service.serviceName,
-          serviceCode: service.serviceCode,
-          subsidizedCost: service.subsidizedCostMinor / 100,
-          clientCostShare: service.clientCostShareMinor / 100,
-          projectCostShare: service.projectCostShareMinor / 100
+          id: item.serviceId,
+          name: item.serviceName,
+          serviceCode: item.serviceCode,
+          regularPrice: item.regularPriceMinor / 100,
+          labCostShare: item.labCostShareMinor / 100,
+          subsidizedCost: item.subsidizedCostMinor / 100,
+          clientCostShare: item.clientCopayMinor / 100,
+          projectCostShare: item.projectContributionMinor / 100,
+          regularPriceMinor: item.regularPriceMinor,
+          labCostShareMinor: item.labCostShareMinor,
+          clientCopayMinor: item.clientCopayMinor,
+          projectContributionMinor: item.projectContributionMinor
         };
       })
     };
@@ -597,8 +724,9 @@
       ]).then(function (snapshots) {
         var existing = snapshots[0].exists ? snapshots[0].data() : null;
         var assignment = snapshots[1].exists ? snapshots[1].data() : null;
-        if (!assignment || !assignment.priceSheetId) {
-          throw new Error('Publish the global service catalog before allocating vouchers.');
+        var priceSheetId = (assignment && assignment.priceSheetId) || (existing && existing.priceSheetId) || '';
+        if (!priceSheetId) {
+          throw new Error('Configure at least one laboratory before allocating vouchers.');
         }
         var allocatedUnits = (existing ? existing.allocatedUnits : 0) + units;
         var remainingUnits = (existing ? existing.remainingUnits : 0) + units;
@@ -607,7 +735,7 @@
           midwifeId: midwifeId,
           allocatedUnits: allocatedUnits,
           remainingUnits: remainingUnits,
-          priceSheetId: assignment.priceSheetId,
+          priceSheetId: priceSheetId,
           status: 'active',
           lastVoucherId: existing ? (existing.lastVoucherId || '') : '',
           updatedAt: now,
@@ -638,6 +766,89 @@
         return Object.assign({ id: doc.id, budget: budgets[doc.id] || null }, doc.data());
       });
     });
+  }
+
+  function emptyMidwifeMap() {
+    return {};
+  }
+
+  function writePeriodStats(transaction, context, snapshot, ref, identity, fromStatus, toStatus, projectMinor) {
+    var current = snapshot.exists ? snapshot.data() : {
+      counts: pricingApi().emptyCounts(),
+      projectVerifiedMinor: 0,
+      projectPaidMinor: 0,
+      midwives: emptyMidwifeMap()
+    };
+    var next = pricingApi().applyStatusDelta(current, fromStatus, toStatus, projectMinor);
+    var midwives = Object.assign({}, current.midwives || {});
+    if (identity.scope === 'lab' && identity.midwifeId) {
+      midwives[identity.midwifeId] = pricingApi().applyStatusDelta(
+        midwives[identity.midwifeId] || { counts: pricingApi().emptyCounts(), projectVerifiedMinor: 0, projectPaidMinor: 0 },
+        fromStatus,
+        toStatus,
+        projectMinor
+      );
+    }
+    transaction.set(ref, {
+      scope: identity.scope,
+      period: identity.period,
+      labId: identity.labId || '',
+      midwifeId: identity.scope === 'midwife' ? (identity.midwifeId || '') : '',
+      lastVoucherId: identity.voucherId || '',
+      lastStatus: toStatus || '',
+      counts: next.counts,
+      projectVerifiedMinor: next.projectVerifiedMinor,
+      projectPaidMinor: next.projectPaidMinor,
+      midwives: midwives,
+      updatedAt: serverTimestamp(context),
+      updatedBy: context.user.uid
+    }, { merge: true });
+  }
+
+  function projectAmountFromVoucher(voucher, sheet) {
+    if (sheet && Array.isArray(voucher.selectedServiceIds) && voucher.selectedServiceIds.length) {
+      return pricingApi().sumLineItems(lineItemsFromSelection(sheet, voucher.selectedServiceIds)).projectContributionMinor;
+    }
+    if (voucher.totals && Number.isSafeInteger(voucher.totals.projectContributionMinor)) {
+      return voucher.totals.projectContributionMinor;
+    }
+    return 0;
+  }
+
+  function hydrateVoucherTests(voucher, sheet) {
+    var percents = sheet ? { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent } : null;
+    if (sheet && Array.isArray(voucher.selectedServiceIds) && voucher.selectedServiceIds.length) {
+      var lineItems = lineItemsFromSelection(sheet, voucher.selectedServiceIds);
+      voucher.lineItems = lineItems;
+      voucher.totals = pricingApi().sumLineItems(lineItems);
+      voucher.tests = lineItems.map(function (item) {
+        return {
+          id: item.serviceId,
+          name: item.serviceName,
+          regularPrice: pricingApi().minorToMajor(item.regularPriceMinor),
+          labCostShare: pricingApi().minorToMajor(item.labCostShareMinor),
+          subsidizedCost: pricingApi().minorToMajor(item.subsidizedCostMinor),
+          clientCostShare: pricingApi().minorToMajor(item.clientCopayMinor),
+          projectCostShare: pricingApi().minorToMajor(item.projectContributionMinor)
+        };
+      });
+      return voucher;
+    }
+    if (Array.isArray(voucher.lineItems) && voucher.lineItems.length) {
+      voucher.tests = voucher.lineItems.map(function (item) {
+        var derived = pricingApi().lineItemFromSheetService(item, percents);
+        return {
+          id: derived.serviceId,
+          name: derived.serviceName,
+          regularPrice: pricingApi().minorToMajor(derived.regularPriceMinor),
+          labCostShare: pricingApi().minorToMajor(derived.labCostShareMinor),
+          subsidizedCost: pricingApi().minorToMajor(derived.subsidizedCostMinor),
+          clientCostShare: pricingApi().minorToMajor(derived.clientCopayMinor),
+          projectCostShare: pricingApi().minorToMajor(derived.projectContributionMinor)
+        };
+      });
+    }
+    return voucher;
   }
 
   function issueMultiServiceVoucher(input, attempt) {
@@ -695,34 +906,73 @@
           selectedServiceIds.forEach(function (serviceId) {
             if (sheet.serviceIds.indexOf(serviceId) === -1) throw new Error('A selected service is not on the assigned price sheet.');
           });
-          var now = serverTimestamp(context);
-          var labName = lab.displayName || lab.name || lab.labName || lab.organization_name || lab.email || 'Lab';
-          transaction.update(quotaRef, {
-            remainingUnits: quota.remainingUnits - 1,
-            lastVoucherId: voucherId,
-            updatedAt: now,
-            updatedBy: context.user.uid
+          var percents = { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent };
+          var lineItems = selectedServiceIds.map(function (serviceId) {
+            var service = (sheet.services || []).find(function (row) { return row.serviceId === serviceId; });
+            if (!service) throw new Error('A selected service is not on the assigned price sheet.');
+            return pricingApi().lineItemFromSheetService(service, percents);
           });
-          transaction.set(voucherRef, {
-            code: voucherId,
-            status: 'issued',
-            patientId: patientId,
-            patientNameSnapshot: requireString(patient.name || patient.patient_name, 'Patient name', 160),
-            patientAgeSnapshot: patient.age == null ? null : Number(patient.age),
-            patientPhoneSnapshot: typeof patient.phone === 'string' ? patient.phone.slice(0, 40) : '',
-            patientNrcSnapshot: typeof data.nrc === 'string' ? data.nrc.trim().slice(0, 80) :
-              (typeof patient.nrc === 'string' ? patient.nrc.slice(0, 80) : ''),
-            ancVisitDate: requireString(data.ancVisitDate, 'ANC visit date', 10),
-            midwifeId: context.user.uid,
-            issuerNameSnapshot: requireString(data.issuerName, 'Issuer name', 160),
-            labId: labId,
-            labNameSnapshot: String(labName).slice(0, 160),
-            priceSheetId: assignment.priceSheetId,
-            selectedServiceIds: selectedServiceIds,
-            issuedAt: now,
-            expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
+          var totals = pricingApi().sumLineItems(lineItems);
+          var period = pricingApi().calendarPeriod(new Date());
+          var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+            pricingApi().periodStatsId('global', null, period)
+          );
+          var labStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+            pricingApi().periodStatsId('lab', labId, period)
+          );
+          var midwifeStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+            pricingApi().periodStatsId('midwife', context.user.uid, period)
+          );
+          return Promise.all([
+            transaction.get(globalStatsRef),
+            transaction.get(labStatsRef),
+            transaction.get(midwifeStatsRef)
+          ]).then(function (statSnapshots) {
+            var now = serverTimestamp(context);
+            var labName = lab.displayName || lab.name || lab.labName || lab.organization_name || lab.email || 'Lab';
+            var address = typeof data.address === 'string' ? data.address.trim().slice(0, 240) :
+              (typeof patient.patient_address === 'string' ? patient.patient_address.slice(0, 240) :
+                (typeof patient.patientAddress === 'string' ? patient.patientAddress.slice(0, 240) : ''));
+            transaction.update(quotaRef, {
+              remainingUnits: quota.remainingUnits - 1,
+              lastVoucherId: voucherId,
+              updatedAt: now,
+              updatedBy: context.user.uid
+            });
+            transaction.set(voucherRef, {
+              code: voucherId,
+              status: 'issued',
+              patientId: patientId,
+              patientNameSnapshot: requireString(patient.name || patient.patient_name, 'Patient name', 160),
+              patientAgeSnapshot: patient.age == null ? null : Number(patient.age),
+              patientPhoneSnapshot: typeof patient.phone === 'string' ? patient.phone.slice(0, 40) : '',
+              patientNrcSnapshot: typeof data.nrc === 'string' ? data.nrc.trim().slice(0, 80) :
+                (typeof patient.nrc === 'string' ? patient.nrc.slice(0, 80) : ''),
+              patientAddressSnapshot: address,
+              ancVisitDate: requireString(data.ancVisitDate, 'ANC visit date', 10),
+              midwifeId: context.user.uid,
+              issuerNameSnapshot: requireString(data.issuerName, 'Issuer name', 160),
+              labId: labId,
+              labNameSnapshot: String(labName).slice(0, 160),
+              priceSheetId: assignment.priceSheetId,
+              selectedServiceIds: selectedServiceIds,
+              lineItems: lineItems,
+              totals: totals,
+              currencySnapshot: 'MMK',
+              issuedAt: now,
+              expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
+            });
+            writePeriodStats(transaction, context, statSnapshots[0], globalStatsRef, {
+              scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId
+            }, null, 'issued', totals.projectContributionMinor);
+            writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, {
+              scope: 'lab', period: period, labId: labId, midwifeId: context.user.uid, voucherId: voucherId
+            }, null, 'issued', totals.projectContributionMinor);
+            writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
+              scope: 'midwife', period: period, labId: labId, midwifeId: context.user.uid, voucherId: voucherId
+            }, null, 'issued', totals.projectContributionMinor);
+            return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId), lineItems: lineItems, totals: totals };
           });
-          return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId) };
         });
       });
     }).catch(function (error) {
@@ -740,21 +990,11 @@
       if (!voucherSnapshot.exists) throw new Error('Voucher was not found.');
       var voucher = Object.assign({ id: voucherSnapshot.id }, voucherSnapshot.data());
       return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get().then(function (sheetSnapshot) {
-        var services = sheetSnapshot.exists ? sheetSnapshot.data().services : [];
-        voucher.tests = services.filter(function (service) {
-          return voucher.selectedServiceIds.indexOf(service.serviceId) !== -1;
-        }).map(function (service) {
-          return {
-            id: service.serviceId,
-            name: service.serviceName,
-            subsidizedCost: service.subsidizedCostMinor / 100,
-            clientCostShare: service.clientCostShareMinor / 100,
-            projectCostShare: service.projectCostShareMinor / 100
-          };
-        });
+        hydrateVoucherTests(voucher, sheetSnapshot.exists ? sheetSnapshot.data() : null);
         voucher.patientReference = voucher.patientId;
         voucher.generatedByName = voucher.issuerNameSnapshot;
         voucher.labName = voucher.labNameSnapshot || '';
+        voucher.qrPayload = buildQrPayload(voucherId);
         return voucher;
       });
     });
@@ -837,23 +1077,424 @@
           throw new Error('Voucher has expired.');
         }
         var now = serverTimestamp(context);
-        transaction.update(voucherRef, {
-          status: 'redeemed',
-          redeemedAt: now,
-          redeemedBy: context.user.uid,
-          labDisplayNameSnapshot: typeof submission.labDisplayName === 'string' ?
-            submission.labDisplayName.trim().slice(0, 160) : '',
-          submissionReference: typeof submission.submissionReference === 'string' ?
-            submission.submissionReference.trim().slice(0, 120) : '',
-          redemptionAudit: {
-            action: 'redeemed',
-            actorId: context.user.uid,
-            at: now
-          }
+        var cashierIndex = submission.cashierIndex == null ? 0 : requireInteger(submission.cashierIndex, 'Cashier', 0);
+        if (cashierIndex > 2) throw new Error('Choose one of the three saved cashiers.');
+        var period = pricingApi().calendarPeriod(voucher.issuedAt && voucher.issuedAt.toDate ?
+          voucher.issuedAt.toDate() : new Date());
+        var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('global', null, period)
+        );
+        var labStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('lab', voucher.labId || context.user.uid, period)
+        );
+        var midwifeStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('midwife', voucher.midwifeId, period)
+        );
+        var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId);
+        return Promise.all([
+          transaction.get(globalStatsRef),
+          transaction.get(labStatsRef),
+          transaction.get(midwifeStatsRef),
+          voucher.priceSheetId ? transaction.get(sheetRef) : Promise.resolve({ exists: false, data: function () { return null; } })
+        ]).then(function (statSnapshots) {
+          var updates = {
+            status: 'redeemed',
+            redeemedAt: now,
+            redeemedBy: context.user.uid,
+            labDisplayNameSnapshot: typeof submission.labDisplayName === 'string' ?
+              submission.labDisplayName.trim().slice(0, 160) : '',
+            submissionReference: typeof submission.submissionReference === 'string' ?
+              submission.submissionReference.trim().slice(0, 120) : '',
+            cashierIndex: cashierIndex,
+            cashierNameSnapshot: typeof submission.cashierName === 'string' ?
+              submission.cashierName.trim().slice(0, 120) : '',
+            labSealAttached: submission.labSealAttached === true,
+            clientSigned: submission.clientSigned !== false,
+            redemptionAudit: {
+              action: 'redeemed',
+              actorId: context.user.uid,
+              at: now
+            }
+          };
+          transaction.update(voucherRef, updates);
+          var projectMinor = projectAmountFromVoucher(voucher, statSnapshots[3] && statSnapshots[3].exists ? statSnapshots[3].data() : null);
+          writePeriodStats(transaction, context, statSnapshots[0], globalStatsRef, {
+            scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId
+          }, 'issued', 'redeemed', projectMinor);
+          writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, {
+            scope: 'lab', period: period, labId: voucher.labId || context.user.uid, midwifeId: voucher.midwifeId, voucherId: voucherId
+          }, 'issued', 'redeemed', projectMinor);
+          writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
+            scope: 'midwife', period: period, labId: voucher.labId || '', midwifeId: voucher.midwifeId, voucherId: voucherId
+          }, 'issued', 'redeemed', projectMinor);
+          return voucherId;
         });
-        return voucherId;
       });
     }).then(function () { return lookupVoucher(voucherId); });
+  }
+
+  function getAccountQuota(midwifeId) {
+    var context = firebaseContext();
+    var uid = midwifeId || context.user.uid;
+    return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(uid).get().then(function (snapshot) {
+      if (!snapshot.exists) return null;
+      return Object.assign({ id: snapshot.id }, snapshot.data());
+    });
+  }
+
+  function listProviderProfiles() {
+    return listUsersByRoles(['Lab', 'laboratory', 'Midwife', 'midwife']);
+  }
+
+  function saveLabConfig(input) {
+    var data = requireObject(input, 'Lab config');
+    var context = firebaseContext();
+    var labId = requireString(data.labId, 'Lab ID', 128);
+    var percents = pricingApi().normalizePercentPair(
+      data.projectPercent == null ? 90 : data.projectPercent,
+      data.clientPercent == null ? 10 : data.clientPercent
+    );
+    var tests = (data.tests || []).map(function (test) {
+      var row = requireObject(test, 'Lab test');
+      var computed = pricingApi().computeInvoiceShares(
+        requireInteger(row.regularPriceMinor, 'Regular price', 0),
+        requireInteger(row.labCostShareMinor, 'Lab cost share', 0),
+        percents.clientPercent,
+        percents.projectPercent
+      );
+      return {
+        serviceId: requireString(row.serviceId, 'Service ID', 64),
+        serviceCode: row.serviceCode ? validateServiceCode(row.serviceCode) : requireString(row.serviceId, 'Service ID', 64).toUpperCase(),
+        serviceName: requireString(row.serviceName || row.serviceId, 'Service name', 120),
+        regularPriceMinor: computed.regularPriceMinor,
+        labCostShareMinor: computed.labCostShareMinor,
+        active: row.active !== false
+      };
+    });
+    if (!tests.length) throw new Error('Enable at least one laboratory test.');
+    var now = serverTimestamp(context);
+    var labRef = context.db.collection('users').doc(labId);
+    var configRef = context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(labId);
+    return labRef.get().then(function (labSnapshot) {
+      if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
+        throw new Error('Select an active laboratory account.');
+      }
+      var catalogWrites = pricingApi().STANDARD_LAB_TESTS.map(function (standard) {
+        var catalogShares = pricingApi().computeInvoiceShares(
+          standard.defaultRegularMinor, 0, percents.clientPercent, percents.projectPercent
+        );
+        return saveCatalogService({
+          serviceId: standard.id,
+          serviceCode: standard.code,
+          serviceName: standard.name,
+          description: '',
+          defaultUnitPriceMinor: standard.defaultRegularMinor,
+          defaultSubsidizedCostMinor: catalogShares.subsidizedCostMinor,
+          defaultClientCostShareMinor: catalogShares.clientCopayMinor,
+          defaultProjectCostShareMinor: catalogShares.projectContributionMinor,
+          currency: 'MMK',
+          active: true
+        });
+      });
+      return Promise.all(catalogWrites).then(function () {
+        return configRef.set({
+          labId: labId,
+          labName: requireString(data.labName, 'Lab name', 160),
+          address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+          projectPercent: percents.projectPercent,
+          clientPercent: percents.clientPercent,
+          tests: tests,
+          updatedAt: now,
+          updatedBy: context.user.uid
+        });
+      }).then(function () {
+        return labRef.update({
+          displayName: requireString(data.labName, 'Lab name', 160),
+          name: requireString(data.labName, 'Lab name', 160),
+          address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+          updatedAt: now,
+          updatedBy: context.user.uid
+        });
+      }).then(function () {
+        return publishCurrentPriceSheet(labId);
+      }).then(function (sheetId) {
+        return context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global').get().then(function (globalSnap) {
+          if (globalSnap.exists) return sheetId;
+          return publishCurrentPriceSheet(null).then(function () { return sheetId; });
+        });
+      });
+    });
+  }
+
+  function getLabConfig(labId) {
+    var context = firebaseContext();
+    var id = requireString(labId, 'Lab ID', 128);
+    return Promise.all([
+      context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(id).get(),
+      context.db.collection('users').doc(id).get()
+    ]).then(function (snapshots) {
+      var config = snapshots[0].exists ? Object.assign({ id: snapshots[0].id }, snapshots[0].data()) : null;
+      var profile = snapshots[1].exists ? Object.assign({ id: snapshots[1].id }, snapshots[1].data()) : null;
+      return { config: config, profile: profile };
+    });
+  }
+
+  function lineItemsFromSelection(sheet, selectedServiceIds) {
+    var percents = { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent };
+    return selectedServiceIds.map(function (serviceId) {
+      var service = (sheet.services || []).find(function (row) { return row.serviceId === serviceId; });
+      if (!service) throw new Error('A selected service is not on the assigned price sheet.');
+      return pricingApi().lineItemFromSheetService(service, percents);
+    });
+  }
+
+  function updateIssuedLineItems(voucherCode, selectedServiceIds) {
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    var ids = Array.from(new Set(selectedServiceIds || []));
+    if (!ids.length || ids.length > 16) throw new Error('Select between 1 and 16 services.');
+    var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
+    return context.db.runTransaction(function (transaction) {
+      return transaction.get(voucherRef).then(function (snapshot) {
+        if (!snapshot.exists) throw new Error('Voucher was not found.');
+        var voucher = snapshot.data();
+        if (voucher.status !== 'issued') throw new Error('Only issued vouchers can be edited.');
+        if (voucher.labId !== context.user.uid) throw new Error('This voucher is assigned to another laboratory.');
+        return transaction.get(context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId)).then(function (sheetSnapshot) {
+          if (!sheetSnapshot.exists) throw new Error('The assigned price sheet is unavailable.');
+          ids.forEach(function (serviceId) {
+            if ((sheetSnapshot.data().serviceIds || []).indexOf(serviceId) === -1) {
+              throw new Error('A selected service is not on the assigned price sheet.');
+            }
+          });
+          transaction.update(voucherRef, {
+            selectedServiceIds: ids
+          });
+          return voucherId;
+        });
+      });
+    }).then(function () { return lookupVoucher(voucherId); });
+  }
+
+  function setVoucherReviewStatus(voucherCode, action, details) {
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    var nextStatus = action === 'verify' ? 'verified' : (action === 'pay' ? 'paid' : (action === 'reject' ? 'rejected' : ''));
+    if (VOUCHER_STATUSES.indexOf(nextStatus) === -1 || nextStatus === 'issued' || nextStatus === 'redeemed') {
+      throw new Error('Unsupported review action.');
+    }
+    var submission = details || {};
+    var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
+    return context.db.runTransaction(function (transaction) {
+      return transaction.get(voucherRef).then(function (snapshot) {
+        if (!snapshot.exists) throw new Error('Voucher was not found.');
+        var voucher = snapshot.data();
+        if (nextStatus === 'verified' && voucher.status !== 'redeemed') {
+          throw new Error('Only redeemed vouchers can be verified.');
+        }
+        if (nextStatus === 'rejected' && voucher.status !== 'redeemed') {
+          throw new Error('Only redeemed vouchers can be rejected.');
+        }
+        if (nextStatus === 'paid' && voucher.status !== 'verified') {
+          throw new Error('Only verified vouchers can be marked paid.');
+        }
+        var now = serverTimestamp(context);
+        var period = pricingApi().calendarPeriod(voucher.issuedAt && voucher.issuedAt.toDate ?
+          voucher.issuedAt.toDate() : new Date());
+        var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('global', null, period)
+        );
+        var labStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('lab', voucher.labId, period)
+        );
+        var midwifeStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
+          pricingApi().periodStatsId('midwife', voucher.midwifeId, period)
+        );
+        var reviewSheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId);
+        return Promise.all([
+          transaction.get(globalStatsRef),
+          transaction.get(labStatsRef),
+          transaction.get(midwifeStatsRef),
+          voucher.priceSheetId ? transaction.get(reviewSheetRef) : Promise.resolve({ exists: false, data: function () { return null; } })
+        ]).then(function (statSnapshots) {
+          var updates = { status: nextStatus };
+          if (nextStatus === 'verified') {
+            updates.verifiedAt = now;
+            updates.verifiedBy = context.user.uid;
+            updates.poNameSnapshot = typeof submission.poName === 'string' ? submission.poName.trim().slice(0, 160) : '';
+            updates.poDesignationSnapshot = typeof submission.poDesignation === 'string' ?
+              submission.poDesignation.trim().slice(0, 160) : '';
+            updates.verificationAudit = { action: 'verified', actorId: context.user.uid, at: now };
+          } else if (nextStatus === 'rejected') {
+            updates.rejectedAt = now;
+            updates.rejectedBy = context.user.uid;
+            updates.rejectReason = requireString(submission.rejectReason, 'Reject reason', 240);
+            updates.rejectionAudit = { action: 'rejected', actorId: context.user.uid, at: now };
+          } else {
+            updates.paidAt = now;
+            updates.paidBy = context.user.uid;
+            updates.paymentAudit = { action: 'paid', actorId: context.user.uid, at: now };
+          }
+          transaction.update(voucherRef, updates);
+          var projectMinor = projectAmountFromVoucher(voucher, statSnapshots[3] && statSnapshots[3].exists ? statSnapshots[3].data() : null);
+          var fromStatus = voucher.status;
+          var identityGlobal = { scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId };
+          var identityLab = { scope: 'lab', period: period, labId: voucher.labId, midwifeId: voucher.midwifeId, voucherId: voucherId };
+          var identityMidwife = { scope: 'midwife', period: period, labId: voucher.labId, midwifeId: voucher.midwifeId, voucherId: voucherId };
+          writePeriodStats(transaction, context, statSnapshots[0], globalStatsRef, identityGlobal, fromStatus, nextStatus, projectMinor);
+          writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, identityLab, fromStatus, nextStatus, projectMinor);
+          writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, identityMidwife, fromStatus, nextStatus, projectMinor);
+          return voucherId;
+        });
+      });
+    }).then(function () { return lookupVoucher(voucherId); });
+  }
+
+  function clampImage(value, label) {
+    if (value == null || value === '') return '';
+    var image = requireString(value, label, MAX_IMAGE_CHARS);
+    if (image.indexOf('data:image/') !== 0) {
+      throw new Error(label + ' must be an image.');
+    }
+    return image;
+  }
+
+  function saveLabSettings(input) {
+    var data = requireObject(input, 'Lab settings');
+    var context = firebaseContext();
+    var cashiers = (data.cashiers || []).slice(0, 3).map(function (cashier, index) {
+      var row = cashier || {};
+      return {
+        name: typeof row.name === 'string' ? row.name.trim().slice(0, 120) : '',
+        signature: clampImage(row.signature || '', 'Cashier signature ' + (index + 1))
+      };
+    });
+    while (cashiers.length < 3) cashiers.push({ name: '', signature: '' });
+    var record = {
+      labName: typeof data.labName === 'string' ? data.labName.trim().slice(0, 160) : '',
+      address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+      seal: clampImage(data.seal || '', 'Lab seal'),
+      cashiers: cashiers,
+      updatedAt: serverTimestamp(context),
+      updatedBy: context.user.uid
+    };
+    return context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(context.user.uid).set(record, { merge: true })
+      .then(function () { return record; });
+  }
+
+  function getLabSettings(labId) {
+    var context = firebaseContext();
+    var id = labId || context.user.uid;
+    return context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(id).get().then(function (snapshot) {
+      return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : {
+        id: id, labName: '', address: '', seal: '', cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
+      };
+    });
+  }
+
+  function savePoSettings(input) {
+    var data = requireObject(input, 'Program Officer settings');
+    var context = firebaseContext();
+    var record = {
+      name: requireString(data.name, 'Name', 160),
+      designation: requireString(data.designation, 'Designation', 160),
+      signature: clampImage(data.signature || '', 'Signature'),
+      updatedAt: serverTimestamp(context),
+      updatedBy: context.user.uid
+    };
+    return context.db.collection(COLLECTIONS.PO_SETTINGS).doc(context.user.uid).set(record, { merge: true })
+      .then(function () { return record; });
+  }
+
+  function getPoSettings(uid) {
+    var context = firebaseContext();
+    var id = uid || context.user.uid;
+    return context.db.collection(COLLECTIONS.PO_SETTINGS).doc(id).get().then(function (snapshot) {
+      return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : {
+        id: id, name: '', designation: '', signature: ''
+      };
+    });
+  }
+
+  function saveVoucherSignatures(voucherCode, input) {
+    var data = requireObject(input, 'Signatures');
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    var record = {
+      clientSignature: clampImage(data.clientSignature || '', 'Client signature'),
+      cashierSignature: clampImage(data.cashierSignature || '', 'Cashier signature'),
+      labSeal: clampImage(data.labSeal || '', 'Lab seal'),
+      poSignature: clampImage(data.poSignature || '', 'Program Officer signature'),
+      updatedAt: serverTimestamp(context),
+      updatedBy: context.user.uid
+    };
+    return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId)
+      .collection('artifacts').doc('signatures').set(record, { merge: true })
+      .then(function () { return record; });
+  }
+
+  function getVoucherSignatures(voucherCode) {
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId)
+      .collection('artifacts').doc('signatures').get()
+      .then(function (snapshot) {
+        return snapshot.exists ? snapshot.data() : {
+          clientSignature: '', cashierSignature: '', labSeal: '', poSignature: ''
+        };
+      });
+  }
+
+  function getPeriodStats(filters) {
+    var input = filters || {};
+    var context = firebaseContext();
+    var period = input.period || pricingApi().calendarPeriod(new Date());
+    var refs = [];
+    if (input.midwifeId) {
+      refs.push(context.db.collection(COLLECTIONS.PERIOD_STATS).doc(pricingApi().periodStatsId('midwife', input.midwifeId, period)));
+    } else if (input.labId) {
+      refs.push(context.db.collection(COLLECTIONS.PERIOD_STATS).doc(pricingApi().periodStatsId('lab', input.labId, period)));
+    } else {
+      refs.push(context.db.collection(COLLECTIONS.PERIOD_STATS).doc(pricingApi().periodStatsId('global', null, period)));
+    }
+    return Promise.all(refs.map(function (ref) { return ref.get(); })).then(function (snapshots) {
+      return snapshots.map(function (snapshot) {
+        return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : {
+          id: snapshot.id,
+          period: period,
+          counts: pricingApi().emptyCounts(),
+          projectVerifiedMinor: 0,
+          projectPaidMinor: 0,
+          midwives: {}
+        };
+      });
+    });
+  }
+
+  function queryVouchersPaged(input) {
+    var filters = input || {};
+    var context = firebaseContext();
+    var pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 50));
+    var query = context.db.collection(COLLECTIONS.VOUCHERS);
+    if (filters.labId) query = query.where('labId', '==', filters.labId);
+    if (filters.midwifeId) query = query.where('midwifeId', '==', filters.midwifeId);
+    if (filters.status) query = query.where('status', '==', filters.status);
+    if (filters.redeemedBy) query = query.where('redeemedBy', '==', filters.redeemedBy);
+    var dateField = filters.dateField === 'redeemedAt' ? 'redeemedAt' : 'issuedAt';
+    if (filters.startDate || filters.endDate) {
+      var endDate = filters.endDate ? new Date(filters.endDate) : new Date();
+      var startDate = filters.startDate ? new Date(filters.startDate) :
+        new Date(endDate.getTime() - (MAX_REPORTING_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+      query = query.where(dateField, '>=', context.timestamp.fromDate(startDate))
+        .where(dateField, '<=', context.timestamp.fromDate(endDate));
+    }
+    query = query.orderBy(dateField, 'desc').limit(pageSize);
+    return query.get().then(function (snapshot) {
+      return {
+        items: snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); }),
+        nextCursor: snapshot.size === pageSize ? snapshot.docs[snapshot.docs.length - 1].id : null
+      };
+    });
   }
 
   function listSubmittedVouchers(input) {
@@ -896,6 +1537,7 @@
       .where('issuedAt', '>=', context.timestamp.fromDate(startDate))
       .where('issuedAt', '<=', context.timestamp.fromDate(endDate));
     if (filters.midwifeId) query = query.where('midwifeId', '==', filters.midwifeId);
+    else if (filters.labId) query = query.where('labId', '==', filters.labId);
     if (filters.status) query = query.where('status', '==', filters.status);
     query = query.orderBy('issuedAt', 'desc');
     if (filters.startAfterIssuedAt) {
@@ -914,22 +1556,18 @@
         });
         var items = rows.map(function (row) {
           var sheet = sheets[row.priceSheetId];
-          var selected = sheet ? sheet.services.filter(function (service) {
-            return row.selectedServiceIds.indexOf(service.serviceId) !== -1;
-          }) : [];
-          row.tests = selected.map(function (service) {
-            return {
-              id: service.serviceId,
-              name: service.serviceName,
-              subsidizedCost: service.subsidizedCostMinor / 100,
-              clientCostShare: service.clientCostShareMinor / 100,
-              projectCostShare: service.projectCostShareMinor / 100
-            };
-          });
-          row.amount = selected.reduce(function (sum, service) {
-            return sum + service.subsidizedCostMinor;
-          }, 0) / 100;
+          hydrateVoucherTests(row, sheet || null);
+          row.amount = row.totals
+            ? (row.totals.projectContributionMinor || 0) / 100
+            : (row.tests || []).reduce(function (sum, test) {
+              return sum + (Number(test.projectCostShare) || 0);
+            }, 0);
           return row;
+        }).filter(function (row) {
+          if (filters.labId && filters.midwifeId && String(row.labId || '') !== String(filters.labId)) {
+            return false;
+          }
+          return true;
         });
         var last = snapshot.docs[snapshot.docs.length - 1];
         return {
@@ -951,6 +1589,7 @@
     validateCurrency: validateCurrency,
     validateServiceCode: validateServiceCode,
     validateCostShares: validateCostShares,
+    voucherStatuses: VOUCHER_STATUSES,
     buildQrPayload: buildQrPayload,
     parseQrPayload: parseQrPayload,
     saveCatalogService: saveCatalogService,
@@ -969,6 +1608,20 @@
     allocateQuota: allocateQuota,
     allocateVouchers: allocateVouchers,
     getAllocations: getAllocations,
+    getAccountQuota: getAccountQuota,
+    listProviderProfiles: listProviderProfiles,
+    saveLabConfig: saveLabConfig,
+    getLabConfig: getLabConfig,
+    updateIssuedLineItems: updateIssuedLineItems,
+    setVoucherReviewStatus: setVoucherReviewStatus,
+    saveLabSettings: saveLabSettings,
+    getLabSettings: getLabSettings,
+    savePoSettings: savePoSettings,
+    getPoSettings: getPoSettings,
+    saveVoucherSignatures: saveVoucherSignatures,
+    getVoucherSignatures: getVoucherSignatures,
+    getPeriodStats: getPeriodStats,
+    queryVouchersPaged: queryVouchersPaged,
     issueSingleServiceVoucher: issueVoucher,
     issueVoucher: issueMultiServiceVoucher,
     lookupVoucher: lookupVoucher,

@@ -88,6 +88,63 @@ service cloud.firestore {
         && value.matches('^[A-Z0-9][A-Z0-9_-]*$');
     }
 
+    function sheetPrices(sheetId) {
+      return get(/databases/$(database)/documents/voucher_price_sheets/$(sheetId)).data.pricesByServiceId;
+    }
+
+    function voucherPath(voucherId) {
+      return /databases/$(database)/documents/vouchers/$(voucherId);
+    }
+
+    function periodStatsCoupled() {
+      return request.resource.data.lastVoucherId is string
+        && request.resource.data.lastStatus is string
+        && existsAfter(voucherPath(request.resource.data.lastVoucherId))
+        && getAfter(voucherPath(request.resource.data.lastVoucherId)).data.status == request.resource.data.lastStatus
+        && (
+          (
+            !exists(voucherPath(request.resource.data.lastVoucherId))
+            && request.resource.data.lastStatus == "issued"
+          )
+          || (
+            exists(voucherPath(request.resource.data.lastVoucherId))
+            && get(voucherPath(request.resource.data.lastVoucherId)).data.status
+              != getAfter(voucherPath(request.resource.data.lastVoucherId)).data.status
+          )
+        );
+    }
+
+    function voucherSignaturesPath(voucherId) {
+      return /databases/$(database)/documents/vouchers/$(voucherId)/artifacts/signatures;
+    }
+
+    function expectedPeriodStatId() {
+      return request.resource.data.scope == "global"
+        ? ("global_" + request.resource.data.period)
+        : (
+          request.resource.data.scope == "lab"
+            ? ("lab_" + request.resource.data.labId + "_" + request.resource.data.period)
+            : ("midwife_" + request.resource.data.midwifeId + "_" + request.resource.data.period)
+        );
+    }
+
+    function periodMoneyUnchanged() {
+      return request.resource.data.projectVerifiedMinor == (resource == null ? 0 : resource.data.projectVerifiedMinor)
+        && request.resource.data.projectPaidMinor == (resource == null ? 0 : resource.data.projectPaidMinor);
+    }
+
+    function periodSubjectMatchesVoucher() {
+      return request.resource.data.scope == "global"
+        || (
+          request.resource.data.scope == "lab"
+          && request.resource.data.labId == getAfter(voucherPath(request.resource.data.lastVoucherId)).data.labId
+        )
+        || (
+          request.resource.data.scope == "midwife"
+          && request.resource.data.midwifeId == getAfter(voucherPath(request.resource.data.lastVoucherId)).data.midwifeId
+        );
+    }
+
     // Users collection. Role assignment remains a Super Admin operation;
     // Program Officers may maintain display fields only.
     match /users/{userId} {
@@ -107,6 +164,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "name", "displayName", "midwife_name", "midwifeName", "organization_name",
           "facilityName", "maternityHomeName", "labName", "description", "active",
+          "address", "labAddress", "organization_address",
           "updatedAt", "updatedBy"
         ])
         && request.resource.data.role == resource.data.role
@@ -570,7 +628,7 @@ service cloud.firestore {
         && isOpaqueVoucherId(sheetId)
         && request.resource.data.keys().hasOnly([
           "labId", "midwifeId", "currency", "status", "serviceIds", "services",
-          "publishedAt", "publishedBy"
+          "pricesByServiceId", "clientPercent", "projectPercent", "publishedAt", "publishedBy"
         ])
         && request.resource.data.status == "published"
         && isCurrency(request.resource.data.currency)
@@ -682,14 +740,19 @@ service cloud.firestore {
         || (isMidwife() && (resource == null || resource.data.midwifeId == request.auth.uid));
       allow list: if isVoucherAdministrator()
         || (isMidwife() && resource.data.midwifeId == request.auth.uid)
-        || (isLab() && resource.data.redeemedBy == request.auth.uid);
+        || (isLab() && (
+          resource.data.redeemedBy == request.auth.uid
+          || resource.data.labId == request.auth.uid
+        ));
       allow create: if isMidwife()
         && isOpaqueVoucherId(voucherId)
         && request.resource.data.keys().hasOnly([
           "code", "status", "patientId", "patientNameSnapshot", "patientAgeSnapshot",
-          "patientPhoneSnapshot", "patientNrcSnapshot", "ancVisitDate", "midwifeId",
+          "patientPhoneSnapshot", "patientNrcSnapshot", "patientAddressSnapshot",
+          "ancVisitDate", "midwifeId",
           "issuerNameSnapshot", "labId", "labNameSnapshot", "priceSheetId",
-          "selectedServiceIds", "issuedAt", "expiresAt"
+          "selectedServiceIds", "lineItems", "totals", "currencySnapshot",
+          "issuedAt", "expiresAt"
         ])
         && request.resource.data.code == voucherId
         && request.resource.data.status == "issued"
@@ -713,6 +776,15 @@ service cloud.firestore {
         && request.resource.data.selectedServiceIds.hasOnly(
           get(/databases/$(database)/documents/voucher_price_sheets/$(request.resource.data.priceSheetId)).data.serviceIds
         )
+        && (
+          !("lineItems" in request.resource.data)
+          || (
+            request.resource.data.lineItems is list
+            && request.resource.data.lineItems.size() == request.resource.data.selectedServiceIds.size()
+            && request.resource.data.lineItems[0].projectContributionMinor
+              == sheetPrices(request.resource.data.priceSheetId)[request.resource.data.lineItems[0].serviceId].projectCostShareMinor
+          )
+        )
         && request.resource.data.issuedAt == request.time
         && request.resource.data.expiresAt > request.time
         && getAfter(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.lastVoucherId == voucherId
@@ -724,17 +796,143 @@ service cloud.firestore {
         && (!('labId' in resource.data) || resource.data.labId == request.auth.uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "redeemedAt", "redeemedBy", "labDisplayNameSnapshot",
-          "submissionReference", "redemptionAudit"
+          "submissionReference", "redemptionAudit", "cashierIndex",
+          "cashierNameSnapshot", "labSealAttached", "clientSigned"
         ])
         && request.resource.data.status == "redeemed"
         && request.resource.data.redeemedAt == request.time
         && request.resource.data.redeemedBy == request.auth.uid
         && request.resource.data.labDisplayNameSnapshot is string
         && request.resource.data.submissionReference is string
+        && request.resource.data.cashierIndex is int
+        && request.resource.data.cashierIndex >= 0
+        && request.resource.data.cashierIndex <= 2
+        && request.resource.data.clientSigned == true
+        && exists(voucherSignaturesPath(voucherId))
+        && get(voucherSignaturesPath(voucherId)).data.clientSignature is string
+        && get(voucherSignaturesPath(voucherId)).data.clientSignature.size() > 20
         && request.resource.data.redemptionAudit.keys().hasOnly(["action", "actorId", "at"])
         && request.resource.data.redemptionAudit.action == "redeemed"
         && request.resource.data.redemptionAudit.actorId == request.auth.uid
         && request.resource.data.redemptionAudit.at == request.time;
+      allow update: if isVoucherAdministrator()
+        && resource.data.status == "redeemed"
+        && request.resource.data.status in ["verified", "rejected"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "verifiedAt", "verifiedBy", "poNameSnapshot", "poDesignationSnapshot",
+          "verificationAudit", "rejectedAt", "rejectedBy", "rejectReason", "rejectionAudit"
+        ]);
+      allow update: if isVoucherAdministrator()
+        && resource.data.status == "verified"
+        && request.resource.data.status == "paid"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "paidAt", "paidBy", "paymentAudit"
+        ]);
+      allow update: if isLab()
+        && resource.data.status == "issued"
+        && resource.data.expiresAt > request.time
+        && (!('labId' in resource.data) || resource.data.labId == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["selectedServiceIds"])
+        && request.resource.data.selectedServiceIds is list
+        && request.resource.data.selectedServiceIds.size() > 0
+        && request.resource.data.selectedServiceIds.size() <= 16
+        && request.resource.data.selectedServiceIds.hasOnly(
+          get(/databases/$(database)/documents/voucher_price_sheets/$(resource.data.priceSheetId)).data.serviceIds
+        );
+      allow delete: if false;
+
+      match /artifacts/{artifactId} {
+        allow get: if isVoucherAdministrator()
+          || (
+            isLab()
+            && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.labId == request.auth.uid
+          )
+          || (isMidwife() && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.midwifeId == request.auth.uid);
+        allow list: if isVoucherAdministrator()
+          || (
+            isLab()
+            && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.labId == request.auth.uid
+          );
+        allow create, update: if artifactId == "signatures"
+          && request.resource.data.keys().hasOnly([
+            "clientSignature", "cashierSignature", "labSeal", "poSignature", "updatedAt", "updatedBy"
+          ])
+          && request.resource.data.updatedBy == request.auth.uid
+          && (
+            (
+              isLab()
+              && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.labId == request.auth.uid
+              && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.status == "issued"
+              && request.resource.data.poSignature == (resource == null ? "" : resource.data.get("poSignature", ""))
+            )
+            || (
+              isVoucherAdministrator()
+              && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.status in ["redeemed", "verified"]
+            )
+          );
+        allow delete: if false;
+      }
+    }
+
+    match /voucher_lab_configs/{labId} {
+      allow read: if signedIn();
+      allow create, update: if isVoucherAdministrator()
+        && isLabUser(labId)
+        && request.resource.data.labId == labId
+        && request.resource.data.projectPercent is int
+        && request.resource.data.clientPercent is int
+        && request.resource.data.projectPercent + request.resource.data.clientPercent == 100
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /lab_settings/{labId} {
+      allow read: if isVoucherAdministrator() || (isLab() && request.auth.uid == labId);
+      allow create, update: if isLab()
+        && request.auth.uid == labId
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /po_settings/{officerId} {
+      allow read: if isVoucherAdministrator();
+      allow create, update: if isProgramOfficer()
+        && request.auth.uid == officerId
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /voucher_period_stats/{statId} {
+      allow read: if isVoucherAdministrator()
+        || (isLab() && (resource == null || (
+          resource.data.scope == "lab" && resource.data.labId == request.auth.uid
+        )))
+        || (isMidwife() && (resource == null || (
+          resource.data.scope == "midwife" && resource.data.midwifeId == request.auth.uid
+        )));
+      allow create, update: if periodStatsCoupled()
+        && statId == expectedPeriodStatId()
+        && periodSubjectMatchesVoucher()
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            isMidwife()
+            && request.resource.data.lastStatus == "issued"
+            && periodMoneyUnchanged()
+            && getAfter(voucherPath(request.resource.data.lastVoucherId)).data.midwifeId == request.auth.uid
+          )
+          || (
+            isLab()
+            && request.resource.data.lastStatus == "redeemed"
+            && periodMoneyUnchanged()
+            && getAfter(voucherPath(request.resource.data.lastVoucherId)).data.labId == request.auth.uid
+          )
+          || (
+            isVoucherAdministrator()
+            && request.resource.data.lastStatus in ["verified", "paid", "rejected"]
+          )
+        );
       allow delete: if false;
     }
   }

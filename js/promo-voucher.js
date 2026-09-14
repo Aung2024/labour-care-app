@@ -1,15 +1,17 @@
 (function () {
   'use strict';
 
-  var state = { user: null, profile: null, patientId: '', patient: null, tests: [], labs: [], labId: '', voucher: null };
-  var defaultTests = [
-    { id: 'cbc', name: 'Complete Blood Count (CBC)', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 },
-    { id: 'urine-re', name: 'Urine Routine Examination', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 },
-    { id: 'blood-group', name: 'Blood Group and Rh', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 },
-    { id: 'hiv', name: 'HIV Screening', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 },
-    { id: 'hbsag', name: 'HBsAg', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 },
-    { id: 'syphilis', name: 'Syphilis Screening', subsidizedCost: 0, clientCostShare: 0, projectCostShare: 0 }
-  ];
+  var state = {
+    user: null,
+    profile: null,
+    patientId: '',
+    patient: null,
+    tests: [],
+    labs: [],
+    labId: '',
+    voucher: null,
+    quota: null
+  };
 
   function el(id) { return document.getElementById(id); }
   function requireEl(id) {
@@ -25,7 +27,7 @@
   }
   function normalizedRole(role) { return String(role || '').trim().toLowerCase().replace(/\s+/g, ' '); }
   function money(value) {
-    return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
   }
   function setStatus(message, kind) {
     var box = el('pageStatus');
@@ -35,26 +37,7 @@
   function assertOnline() {
     if (navigator.onLine === false) throw new Error('Voucher generation is online-only. Please reconnect and try again.');
   }
-
-  function service() {
-    return window.VoucherService || window.voucherService || null;
-  }
-  async function callService(names, args, optional) {
-    var api = service();
-    for (var i = 0; api && i < names.length; i++) {
-      if (typeof api[names[i]] === 'function') return api[names[i]].apply(api, args || []);
-    }
-    if (optional) return null;
-    throw new Error('Voucher service is unavailable. Expected: ' + names.join(' or ') + '.');
-  }
-  function findCreateMethod() {
-    var api = service();
-    var names = ['createVoucher', 'generateVoucher', 'issueVoucher'];
-    for (var i = 0; api && i < names.length; i++) {
-      if (typeof api[names[i]] === 'function') return { api: api, fn: api[names[i]], name: names[i] };
-    }
-    throw new Error('Voucher service is unavailable. Expected: ' + names.join(' or ') + '.');
-  }
+  function service() { return window.VoucherService || null; }
 
   function resolvePatientId() {
     var params = new URLSearchParams(window.location.search);
@@ -73,6 +56,9 @@
     var age = now.getFullYear() - date.getFullYear();
     if (now < new Date(now.getFullYear(), date.getMonth(), date.getDate())) age--;
     return Math.max(0, age);
+  }
+  function patientAddress(patient) {
+    return patient.patient_address || patient.patientAddress || patient.address || '';
   }
   function toDateInput(value) {
     if (!value) return '';
@@ -110,27 +96,37 @@
     return [facility, account].filter(Boolean).join(' / ');
   }
 
-  async function loadLabs() {
-    var rows = await callService(['listLabs', 'getLabs'], [], true);
-    if (!Array.isArray(rows) || !rows.length) {
-      var snapshot = await firebase.firestore().collection('users').get();
-      rows = snapshot.docs.map(function (doc) {
-        var profile = Object.assign({ id: doc.id }, doc.data() || {});
-        var role = String(profile.role || '').trim().toLowerCase();
-        if ((role !== 'lab' && role !== 'laboratory') || profile.active === false || profile.approved === false) return null;
-        return {
-          id: profile.id,
-          name: profile.displayName || profile.name || profile.labName || profile.organization_name || profile.email || 'Lab'
-        };
-      }).filter(Boolean);
+  function renderQuota() {
+    var chip = el('quotaChip');
+    if (!chip) return;
+    if (!state.quota) {
+      chip.textContent = 'No allocation';
+      chip.classList.add('is-empty');
+      return;
     }
-    state.labs = rows;
+    chip.classList.remove('is-empty');
+    chip.textContent = 'Allocation ' + Number(state.quota.remainingUnits || 0) + ' / ' + Number(state.quota.allocatedUnits || 0);
+    var generate = el('generateButton');
+    if (generate) generate.disabled = Number(state.quota.remainingUnits || 0) < 1;
+  }
+
+  async function loadQuota() {
+    state.quota = await service().getAccountQuota(state.user.uid);
+    renderQuota();
+    if (!state.quota || state.quota.status !== 'active') {
+      throw new Error('No voucher allocation is available for this account.');
+    }
+  }
+
+  async function loadLabs() {
+    var rows = await service().listLabs();
+    state.labs = rows || [];
     el('selectedLab').innerHTML = '<option value="">Select the laboratory</option>' +
       state.labs.map(function (lab) {
         return '<option value="' + escapeHtml(lab.id) + '">' + escapeHtml(lab.name) + '</option>';
       }).join('');
     if (!state.labs.length) {
-      throw new Error('No active laboratory accounts are available. Ask the Program Officer to create a Lab account.');
+      throw new Error('No active laboratory accounts are available. Ask the Program Officer to configure a Lab.');
     }
   }
 
@@ -138,41 +134,20 @@
     state.labId = el('selectedLab').value;
     if (!state.labId) {
       state.tests = [];
-      el('testsBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Select a laboratory to load its discount prices.</td></tr>';
-      el('totalClient').textContent = money(0);
+      el('testsBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Select a laboratory to load its prices.</td></tr>';
+      updateTotals();
       return;
     }
-    var result = await callService(['getTestCatalog', 'listTests', 'getVoucherTests'], [state.labId], true);
-    var rows = result && (result.tests || result.items || result);
-    if (!Array.isArray(rows) || !rows.length) {
-      var api = service();
-      if (api && api.collections && api.collections.QUOTAS) {
-        var quotaSnapshot = await firebase.firestore().collection(api.collections.QUOTAS)
-          .where('midwifeId', '==', state.user.uid).get();
-        rows = quotaSnapshot.docs.map(function (doc) {
-          var quota = doc.data() || {};
-          return {
-            id: quota.serviceId || doc.id,
-            quotaId: doc.id,
-            name: quota.serviceNameSnapshot || quota.serviceCodeSnapshot || quota.serviceId,
-            subsidizedCost: Number(quota.unitPriceMinor || 0) / 100,
-            clientCostShare: 0,
-            projectCostShare: Number(quota.unitPriceMinor || 0) / 100,
-            disabled: quota.status !== 'active' || Number(quota.remainingUnits || 0) < 1
-          };
-        });
-      }
-    }
-    if (!Array.isArray(rows) || !rows.length) rows = defaultTests;
-    state.tests = rows.map(function (row, index) {
+    var result = await service().getTestCatalog(state.labId);
+    state.tests = (result.tests || []).map(function (row, index) {
       return {
-        id: String(row.id || row.code || ('test-' + index)),
-        quotaId: row.quotaId || null,
-        name: row.name || row.testName || row.label || ('Test ' + (index + 1)),
-        subsidizedCost: Number(row.subsidizedCost || row.subsidized_cost || 0),
-        clientCostShare: Number(row.clientCostShare || row.client_cost_share || 0),
-        projectCostShare: Number(row.projectCostShare || row.project_cost_share || 0),
-        disabled: row.disabled === true
+        id: String(row.id || ('test-' + index)),
+        name: row.name,
+        regularPrice: Number(row.regularPrice || 0),
+        labCostShare: Number(row.labCostShare || 0),
+        subsidizedCost: Number(row.subsidizedCost || 0),
+        clientCostShare: Number(row.clientCostShare || 0),
+        projectCostShare: Number(row.projectCostShare || 0)
       };
     });
     renderTests();
@@ -180,75 +155,66 @@
 
   function renderTests() {
     if (!state.tests.length) {
-      el('testsBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Select a laboratory to load its discount prices.</td></tr>';
-      el('totalClient').textContent = money(0);
+      el('testsBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Select a laboratory to load its prices.</td></tr>';
+      updateTotals();
       return;
     }
     el('testsBody').innerHTML = state.tests.map(function (test, index) {
       return '<tr data-index="' + index + '">' +
-        '<td><input class="form-check-input test-select" type="checkbox" ' + (test.disabled ? 'disabled ' : '') +
-          'aria-label="Select ' + escapeHtml(test.name) + '"></td>' +
+        '<td><input class="form-check-input test-select" type="checkbox" aria-label="Select ' + escapeHtml(test.name) + '"></td>' +
         '<td class="fw-semibold">' + escapeHtml(test.name) + '</td>' +
+        '<td class="money">' + money(test.regularPrice) + '</td>' +
+        '<td class="money">' + money(test.labCostShare) + '</td>' +
         '<td class="money">' + money(test.clientCostShare) + '</td>' +
+        '<td class="money">' + money(test.projectCostShare) + '</td>' +
       '</tr>';
     }).join('');
     updateTotals();
   }
+
   function selectedTests() {
     return Array.from(el('testsBody').querySelectorAll('tr')).filter(function (row) {
       var box = row.querySelector('.test-select');
       return box && box.checked;
     }).map(function (row) {
-      var source = state.tests[Number(row.dataset.index)];
-      return {
-        id: source.id,
-        name: source.name,
-        subsidizedCost: source.subsidizedCost,
-        clientCostShare: source.clientCostShare,
-        projectCostShare: source.projectCostShare
-      };
-    });
+      return state.tests[Number(row.dataset.index)];
+    }).filter(Boolean);
   }
+
   function updateTotals() {
     var totals = selectedTests().reduce(function (sum, row) {
-      sum.subsidized += row.subsidizedCost;
-      sum.client += row.clientCostShare;
-      sum.project += row.projectCostShare;
+      sum.regular += Number(row.regularPrice) || 0;
+      sum.lab += Number(row.labCostShare) || 0;
+      sum.client += Number(row.clientCostShare) || 0;
+      sum.project += Number(row.projectCostShare) || 0;
       return sum;
-    }, { subsidized: 0, client: 0, project: 0 });
+    }, { regular: 0, lab: 0, client: 0, project: 0 });
+    el('totalRegular').textContent = money(totals.regular);
+    el('totalLabShare').textContent = money(totals.lab);
     el('totalClient').textContent = money(totals.client);
+    el('totalProject').textContent = money(totals.project);
   }
 
-  function validateTests(tests) {
-    if (!tests.length) throw new Error('Select at least one lab test.');
-    tests.forEach(function (test) {
-      ['subsidizedCost', 'clientCostShare', 'projectCostShare'].forEach(function (key) {
-        if (!Number.isFinite(test[key]) || test[key] < 0) throw new Error('Costs must be valid non-negative numbers.');
-      });
-      if (Math.abs(test.subsidizedCost - test.clientCostShare - test.projectCostShare) > 0.01) {
-        throw new Error(test.name + ': discount price and project cost share must equal the total cost.');
+  function renderInvoice(voucher) {
+    var model = window.VoucherInvoice.modelFromVoucher(voucher, {
+      client: {
+        name: patientName(state.patient),
+        nrc: el('patientNrc').value.trim(),
+        phone: state.patient.phone || '',
+        address: el('patientAddress').value.trim()
       }
     });
+    window.VoucherInvoice.render(requireEl('invoiceMount'), model);
+    requireEl('voucherResult').classList.add('show');
+    requireEl('voucherResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function voucherRecord(result) {
-    return result && (result.voucher || result.data || result);
-  }
-  function renderVoucher(voucher) {
-    var code = voucher.code || voucher.voucherCode || voucher.opaqueCode || voucher.id;
-    if (!code) throw new Error('Voucher service did not return an opaque voucher code.');
-    var qrPayload = voucher.qrPayload || voucher.redeemUrl || voucher.redemptionUrl ||
-      new URL('lab-vouchers.html?code=' + encodeURIComponent(code), window.location.href).href;
-
-    var codeNode = requireEl('voucherCode');
-    var qrNode = requireEl('voucherQr');
-    var resultNode = requireEl('voucherResult');
-    codeNode.textContent = code;
-    qrNode.innerHTML = '';
-    if (typeof window.QRCode !== 'function') throw new Error('QR library did not load. Check the internet connection and try again.');
-    new window.QRCode(qrNode, { text: qrPayload, width: 240, height: 240, correctLevel: window.QRCode.CorrectLevel.M });
-    resultNode.classList.add('show');
-    resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  async function savePatientAddress(address) {
+    await firebase.firestore().collection('patients').doc(state.patientId).update({
+      patient_address: address,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    state.patient.patient_address = address;
   }
 
   async function generate(event) {
@@ -257,78 +223,65 @@
     try {
       assertOnline();
       var tests = selectedTests();
-      validateTests(tests);
+      if (!tests.length) throw new Error('Select at least one lab test.');
       if (!el('ancVisitDate').value) throw new Error('Enter the latest ANC visit date.');
       if (!el('selectedLab').value) throw new Error('Select the laboratory that will receive this voucher.');
+      if (!state.quota || Number(state.quota.remainingUnits || 0) < 1) {
+        throw new Error('No remaining voucher allocation is available.');
+      }
       button.disabled = true;
       setStatus('Generating voucher securely…', 'info');
-      var payload = {
-        patientId: state.patientId,
-        patientReference: state.patientId,
-        patient: {
-          name: patientName(state.patient),
-          age: patientAge(state.patient),
-          phone: state.patient.phone || '',
-          nrc: state.patient.nrc || state.patient.NRC || ''
-        },
-        ancVisitDate: el('ancVisitDate').value,
-        issuer: {
-          uid: state.user.uid,
-          displayName: issuerDisplayName(state.profile, state.user),
-          maternityHome: state.profile.maternityHomeName || state.profile.maternity_home_name || state.profile.facilityName || ''
-        },
-        tests: tests
-      };
-      var createMethod = findCreateMethod();
-      var result = await createMethod.fn.call(createMethod.api, {
+      var address = el('patientAddress').value.trim();
+      if (address) await savePatientAddress(address);
+      var result = await service().issueVoucher({
         patientId: state.patientId,
         labId: el('selectedLab').value,
         selectedServiceIds: tests.map(function (test) { return test.id; }),
         nrc: el('patientNrc').value.trim(),
-        ancVisitDate: payload.ancVisitDate,
-        issuerName: payload.issuer.displayName,
+        address: address,
+        ancVisitDate: el('ancVisitDate').value,
+        issuerName: issuerDisplayName(state.profile, state.user),
         expiresAt: new Date(Date.now() + (90 * 24 * 60 * 60 * 1000))
       });
-      state.voucher = Object.assign({}, voucherRecord(result), {
-        patientReference: payload.patientReference,
-        generatedByName: payload.issuer.displayName,
-        generatedAt: new Date().toISOString()
+      state.voucher = Object.assign({}, result, {
+        patientNameSnapshot: patientName(state.patient),
+        patientAgeSnapshot: patientAge(state.patient),
+        patientPhoneSnapshot: state.patient.phone || '',
+        patientNrcSnapshot: el('patientNrc').value.trim(),
+        patientAddressSnapshot: address,
+        selectedServiceIds: tests.map(function (test) { return test.id; }),
+        lineItems: result.lineItems || tests.map(function (test) {
+          return {
+            serviceId: test.id,
+            serviceName: test.name,
+            regularPriceMinor: Math.round(test.regularPrice * 100),
+            labCostShareMinor: Math.round(test.labCostShare * 100),
+            clientCopayMinor: Math.round(test.clientCostShare * 100),
+            projectContributionMinor: Math.round(test.projectCostShare * 100)
+          };
+        }),
+        totals: result.totals,
+        issuedAt: new Date()
       });
-      renderVoucher(state.voucher);
+      renderInvoice(state.voucher);
+      await loadQuota();
       setStatus('Voucher generated successfully.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
       setStatus(error.message || 'Unable to generate voucher.', 'error');
     } finally {
-      button.disabled = false;
+      button.disabled = Number(state.quota && state.quota.remainingUnits) < 1;
     }
-  }
-
-  function waitForVoucherImages() {
-    var images = Array.from(el('a5Voucher').querySelectorAll('img'));
-    return Promise.all(images.map(function (image) {
-      if (image.complete && image.naturalWidth) return Promise.resolve();
-      return new Promise(function (resolve) {
-        image.addEventListener('load', resolve, { once: true });
-        image.addEventListener('error', resolve, { once: true });
-      });
-    }));
   }
 
   async function downloadPng() {
     var button = el('downloadButton');
     try {
       assertOnline();
-      if (typeof window.html2canvas !== 'function') throw new Error('PNG export library is unavailable.');
       button.disabled = true;
-      await waitForVoucherImages();
-      var canvas = await window.html2canvas(el('a5Voucher'), {
-        backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false, width: 559, height: 794
-      });
-      var link = document.createElement('a');
-      link.download = 'promo-voucher-' + String(el('voucherCode').textContent).replace(/[^A-Za-z0-9_-]/g, '_') + '.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      var sheet = document.getElementById('invoiceSheet');
+      if (!sheet) throw new Error('Generate a voucher before downloading it.');
+      await window.VoucherInvoice.downloadPng(sheet, 'laboratory-invoice-' + (state.voucher && state.voucher.code || 'voucher') + '.png');
     } catch (error) {
       setStatus(error.message || 'Could not download voucher.', 'error');
     } finally {
@@ -359,13 +312,14 @@
       state.patient = results[1].data() || {};
 
       sessionStorage.setItem('selectedPatientId', state.patientId);
-      sessionStorage.setItem('selectedPatientData', JSON.stringify(Object.assign({ id: state.patientId }, state.patient)));
       el('patientName').textContent = text(patientName(state.patient));
       el('patientAge').textContent = text(patientAge(state.patient));
       el('patientPhone').textContent = text(state.patient.phone);
       el('patientNrc').value = state.patient.nrc || state.patient.NRC || '';
+      el('patientAddress').value = patientAddress(state.patient);
       el('issuerName').textContent = text(issuerDisplayName(state.profile, user));
       el('ancVisitDate').value = await latestAncDate(db);
+      await loadQuota();
       await loadLabs();
       await loadTestCatalog();
       el('voucherForm').classList.remove('d-none');
@@ -398,7 +352,7 @@
   });
   window.addEventListener('online', function () {
     setStatus('Connection restored.', 'success');
-    el('generateButton').disabled = false;
+    renderQuota();
   });
 
   firebase.auth().onAuthStateChanged(function (user) {

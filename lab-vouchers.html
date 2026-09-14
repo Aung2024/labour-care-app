@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lab Voucher Redemption</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Laboratory vouchers</title>
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/vouchers.css">
+  <link rel="stylesheet" href="css/voucher-invoice.css">
   <script src="js/vendor/bootstrap.bundle.min.js"></script>
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
@@ -15,130 +16,131 @@
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
 </head>
-<body class="voucher-page">
-  <header class="voucher-header py-3">
-    <div class="container d-flex align-items-center justify-content-between gap-3">
-      <div>
-        <h1 class="mb-1"><i class="fas fa-qrcode me-2"></i>Lab Voucher Redemption</h1>
-        <div class="small opacity-75">Authenticated one-time voucher submission</div>
-      </div>
-      <div class="d-flex flex-wrap justify-content-end gap-2">
-        <a class="btn btn-outline-light voucher-header-action" href="home.html"><i class="fas fa-home me-1"></i>Home</a>
-        <button id="logoutBtn" class="btn btn-outline-light voucher-header-action" type="button">
-          <i class="fas fa-sign-out-alt me-1"></i>Log out
-        </button>
-      </div>
+<body class="voucher-page lab-app">
+  <div class="lab-shell">
+    <aside class="lab-nav" aria-label="Laboratory">
+      <div class="mb-3 px-2 fw-bold">Laboratory</div>
+      <button type="button" class="is-active" data-page="scan"><i class="fas fa-qrcode me-2"></i>Scan</button>
+      <button type="button" data-page="dashboard"><i class="fas fa-chart-bar me-2"></i>Dashboard</button>
+      <button type="button" data-page="settings"><i class="fas fa-cog me-2"></i>Settings</button>
+    </aside>
+
+    <div>
+      <header class="voucher-header lab-topbar">
+        <div class="container d-flex align-items-center justify-content-between gap-2">
+          <h1 class="mb-0" id="labPageTitle">Scan</h1>
+          <div class="d-flex align-items-center gap-2">
+            <button id="homeBtn" class="btn btn-outline-light voucher-header-action" type="button" aria-label="Home"><i class="fas fa-home me-1"></i>Home</button>
+            <button id="logoutBtn" class="btn btn-outline-light voucher-header-action" type="button" aria-label="Log out"><i class="fas fa-sign-out-alt me-1"></i>Log out</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="labApp" class="container voucher-main d-none">
+        <div id="pageStatus" class="status-box info" role="status">Checking laboratory access…</div>
+
+        <section id="scanPage" class="lab-page">
+          <section class="voucher-card">
+            <h2><i class="fas fa-camera me-2"></i>Scan or enter voucher</h2>
+            <div id="cameraUnsupported" class="status-box warning d-none">
+              Camera QR scanning is not supported in this browser. Enter the voucher code manually.
+            </div>
+            <div id="scanner" class="scanner-shell d-none mb-3">
+              <video id="cameraVideo" playsinline muted aria-label="QR scanner camera"></video>
+              <div class="scanner-guide" aria-hidden="true"></div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button id="startCamera" type="button" class="btn btn-outline-primary voucher-header-action">
+                <i class="fas fa-qrcode me-2"></i>Scan QR
+              </button>
+              <button id="stopCamera" type="button" class="btn btn-outline-secondary d-none">Stop camera</button>
+            </div>
+            <form id="lookupForm" class="row g-2 align-items-end">
+              <div class="col-md">
+                <label for="voucherCodeInput" class="form-label">Voucher code</label>
+                <input id="voucherCodeInput" class="form-control form-control-lg" type="text"
+                       autocomplete="off" autocapitalize="characters" spellcheck="false"
+                       placeholder="AB3K-9Q2M" required>
+              </div>
+              <div class="col-md-auto d-grid">
+                <button id="lookupButton" class="btn btn-primary btn-lg" type="submit">Look up</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="lookupResult" class="voucher-card d-none">
+            <div id="invoiceMount" class="invoice-preview mb-3"></div>
+            <div class="mb-3">
+              <h3 class="h6">Add or remove tests</h3>
+              <div id="lineEditor"></div>
+              <button id="saveLinesBtn" type="button" class="btn btn-outline-primary mt-2">Update tests</button>
+            </div>
+            <div class="mb-3">
+              <label for="cashierSelect" class="form-label">Cashier</label>
+              <select id="cashierSelect" class="form-select"></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Client signature</label>
+              <canvas id="clientPad" class="sign-pad" width="640" height="180"></canvas>
+              <button id="clearClientSign" type="button" class="btn btn-outline-secondary btn-sm mt-2">Clear signature</button>
+            </div>
+            <button id="confirmRedeem" type="button" class="btn btn-success btn-lg">Redeem invoice</button>
+          </section>
+        </section>
+
+        <section id="dashboardPage" class="lab-page d-none">
+          <section class="voucher-card">
+            <label><span class="form-label">Period</span><input id="labPeriod" type="month" class="form-control"></label>
+            <div class="info-grid mt-3" id="labStatTiles">
+              <button type="button" class="lab-stat-tile" data-status="issued" aria-label="Show issued vouchers">
+                <div class="info-label">Issued</div><div id="labIssued" class="info-value">—</div>
+              </button>
+              <button type="button" class="lab-stat-tile" data-status="redeemed" aria-label="Show redeemed vouchers">
+                <div class="info-label">Redeemed</div><div id="labRedeemed" class="info-value">—</div>
+              </button>
+              <button type="button" class="lab-stat-tile" data-status="verified" aria-label="Show verified cash incoming">
+                <div class="info-label">Verified / cash incoming</div><div id="labIncoming" class="info-value">—</div>
+              </button>
+              <button type="button" class="lab-stat-tile" data-status="paid" aria-label="Show paid money received">
+                <div class="info-label">Paid / money received</div><div id="labPaid" class="info-value">—</div>
+              </button>
+            </div>
+            <div id="labMidwives" class="mt-3"></div>
+            <div id="labHistory" class="table-responsive mt-3"></div>
+          </section>
+        </section>
+
+        <section id="settingsPage" class="lab-page d-none">
+          <section class="voucher-card">
+            <h2>Laboratory settings</h2>
+            <label class="form-label">Lab seal</label>
+            <input id="sealInput" class="form-control" type="file" accept="image/*">
+            <img id="sealPreview" class="invoice-seal mt-2 d-none" alt="Lab seal preview">
+            <div id="cashierFields" class="mt-3"></div>
+            <button id="saveSettingsBtn" type="button" class="btn btn-primary mt-3">Save settings</button>
+          </section>
+        </section>
+      </main>
+
+      <nav class="lab-bottom-nav" aria-label="Laboratory pages">
+        <button type="button" data-page="scan">Scan</button>
+        <button type="button" data-page="dashboard">Dashboard</button>
+        <button type="button" data-page="settings">Settings</button>
+      </nav>
     </div>
-  </header>
-
-  <main id="labApp" class="container voucher-main d-none">
-    <div id="pageStatus" class="status-box info" role="status">Checking laboratory access…</div>
-
-    <section class="voucher-card">
-      <h2><i class="fas fa-camera me-2"></i>Scan or enter voucher</h2>
-      <div id="cameraUnsupported" class="status-box warning d-none">
-        Camera QR scanning is not supported in this browser. Enter the voucher code manually.
-      </div>
-      <div id="scanner" class="scanner-shell d-none mb-3">
-        <video id="cameraVideo" playsinline muted aria-label="QR scanner camera"></video>
-        <div class="scanner-guide" aria-hidden="true"></div>
-      </div>
-      <div class="d-flex flex-wrap gap-2 mb-3">
-        <button id="startCamera" type="button" class="btn btn-outline-primary">
-          <i class="fas fa-camera me-2"></i>Start camera
-        </button>
-        <button id="stopCamera" type="button" class="btn btn-outline-secondary d-none">Stop camera</button>
-      </div>
-      <form id="lookupForm" class="row g-2 align-items-end">
-        <div class="col-md">
-          <label for="voucherCodeInput" class="form-label">Voucher code or redeem URL</label>
-          <input id="voucherCodeInput" class="form-control form-control-lg" type="text"
-                 autocomplete="off" autocapitalize="characters" spellcheck="false"
-                 placeholder="AB3K-9Q2M" required>
-        </div>
-        <div class="col-md-auto d-grid">
-          <button id="lookupButton" class="btn btn-primary btn-lg" type="submit">
-            <i class="fas fa-search me-2"></i>Look up
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <section id="lookupResult" class="voucher-card d-none" aria-live="polite">
-      <div class="d-flex justify-content-between align-items-start gap-3">
-        <h2><i class="fas fa-ticket-alt me-2"></i>Voucher details</h2>
-        <span id="voucherStatusBadge" class="badge rounded-pill"></span>
-      </div>
-      <div class="info-grid mb-3">
-        <div><div class="info-label">Code</div><div id="resultCode" class="info-value">—</div></div>
-        <div><div class="info-label">Patient reference</div><div id="resultPatient" class="info-value">—</div></div>
-        <div><div class="info-label">Patient name</div><div id="resultPatientName" class="info-value">—</div></div>
-        <div><div class="info-label">Phone</div><div id="resultPatientPhone" class="info-value">—</div></div>
-        <div><div class="info-label">NRC</div><div id="resultPatientNrc" class="info-value">—</div></div>
-        <div><div class="info-label">ANC visit date</div><div id="resultAncDate" class="info-value">—</div></div>
-        <div><div class="info-label">Assigned laboratory</div><div id="resultLabName" class="info-value">—</div></div>
-        <div><div class="info-label">Issued by</div><div id="resultIssuer" class="info-value">—</div></div>
-        <div><div class="info-label">Issued at</div><div id="resultIssuedAt" class="info-value">—</div></div>
-      </div>
-      <div class="table-responsive mb-3">
-        <table class="table table-bordered tests-table">
-          <thead><tr><th>Lab Test</th><th class="money">Total cost</th><th class="money">Discount price</th><th class="money">Project cost share</th></tr></thead>
-          <tbody id="resultTests"></tbody>
-        </table>
-      </div>
-      <div class="mb-3">
-        <label for="submissionReference" class="form-label">Lab submission reference (optional)</label>
-        <input id="submissionReference" class="form-control" type="text" maxlength="120">
-      </div>
-      <div id="redeemWarning" class="status-box warning">
-        Verify the patient and tests before submitting. Redemption is final and can happen only once.
-      </div>
-      <button id="confirmRedeem" type="button" class="btn btn-success btn-lg">
-        <i class="fas fa-check-circle me-2"></i>Confirm redemption and submit
-      </button>
-    </section>
-
-    <section class="voucher-card">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <h2 class="mb-0"><i class="fas fa-history me-2"></i>Submitted vouchers</h2>
-        <button id="refreshHistory" type="button" class="btn btn-outline-secondary btn-sm">
-          <i class="fas fa-sync-alt me-1"></i>Refresh
-        </button>
-      </div>
-      <form id="historyFilters" class="row g-2 my-2">
-        <div class="col-md-4">
-          <label for="historySearch" class="form-label">Code or patient reference</label>
-          <input id="historySearch" class="form-control" type="search">
-        </div>
-        <div class="col-md-3">
-          <label for="historyFrom" class="form-label">Submitted from</label>
-          <input id="historyFrom" class="form-control" type="date">
-        </div>
-        <div class="col-md-3">
-          <label for="historyTo" class="form-label">Submitted to</label>
-          <input id="historyTo" class="form-control" type="date">
-        </div>
-        <div class="col-md-2 d-grid align-items-end">
-          <button class="btn btn-outline-primary" type="submit">Apply</button>
-        </div>
-      </form>
-      <div class="table-responsive">
-        <table class="table table-hover history-table">
-          <thead><tr><th>Submitted</th><th>Code</th><th>Patient reference</th><th>Tests</th><th>Lab user</th><th>Status</th></tr></thead>
-          <tbody id="historyBody"><tr><td colspan="6" class="text-center text-muted">Loading…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+  </div>
 
   <section id="accessDenied" class="voucher-card access-denied d-none">
-    <i class="fas fa-lock fa-3x text-danger mb-3"></i>
     <h1 class="h4">Laboratory access required</h1>
     <p id="accessDeniedMessage" class="text-muted mb-3">This page is available to Lab accounts only.</p>
-    <a href="home.html" class="btn btn-primary">Return home</a>
   </section>
 
+  <script src="js/vendor/html2canvas.min.js"></script>
+  <script src="js/vendor/qrcode.min.js"></script>
+  <script src="js/role-landing.js"></script>
+  <script src="js/voucher-pricing.js"></script>
   <script src="js/voucher-service.js"></script>
+  <script src="js/voucher-invoice.js"></script>
   <script src="js/lab-vouchers.js"></script>
 </body>
 </html>

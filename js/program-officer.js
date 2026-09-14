@@ -1,963 +1,453 @@
 (function () {
   'use strict';
 
-  /*
-   * Voucher service integration contract
-   * ------------------------------------
-   * Preferred high-level window.VoucherService methods:
-   *   getServiceCatalog(), upsertService(service)
-   *   getPriceOverrides(filters), upsertPriceOverride(override)
-   *   getAllocations(filters), allocateVouchers(allocation)
-   *   getVoucherReport(filters)
-   *
-   * The current lower-level service is also supported directly:
-   *   saveCatalogService(), publishPricingVersion(), createBudget(),
-   *   allocateQuota(), queryVoucherReport(), and VoucherService.collections.
-   *
-   * For compatibility, the adapter below also accepts common aliases such as
-   * listServices/saveService, listPriceOverrides/savePriceOverride,
-   * listAllocations/saveAllocation, and listVouchers/getVouchers.
-   * Each read method may return an array, Firestore QuerySnapshot, or an object
-   * containing items/data/services/overrides/allocations/vouchers.
-   */
-
   var state = {
     currentUser: null,
-    profiles: [],
-    maternityHomes: [],
     labs: [],
-    services: [],
-    priceOverrides: [],
-    budgets: [],
+    maternityHomes: [],
     allocations: [],
-    vouchers: [],
-    reportNextCursor: null
+    queue: [],
+    selectedCodes: {},
+    currentVoucher: null,
+    poSettings: null,
+    poPad: null,
+    page: 'dashboard'
   };
 
-  var STANDARD_TESTS = [
-    ['urine-re', 'URINE_RE', 'Urine RE', 5000],
-    ['hb', 'HB', 'Hemoglobin (Hb%)', 4000],
-    ['blood-group', 'BLOOD_GROUP', 'Blood for Grouping & Matching', 8000],
-    ['hbsag', 'HBSAG', 'HBsAg', 10000],
-    ['hcv-antibody', 'HCV_ANTIBODY', 'HCV Antibody', 12000],
-    ['hiv-antibody', 'HIV_ANTIBODY', 'HIV 1&2 antibody', 12000],
-    ['vdrl', 'VDRL', 'Syphilis (VDRL)', 7000],
-    ['ultrasound', 'ULTRASOUND', 'Ultrasound', 25000],
-    ['rbs', 'RBS', 'Random Blood Glucose (RBS)', 5000],
-    ['g6pd', 'G6PD', 'G6PD', 15000],
-    ['ogtt', 'OGTT', 'OGTT (Gestational Diabetes)', 18000],
-    ['cp-auto', 'CP_AUTO', 'Blood for Complete Picture (CP auto)', 15000],
-    ['hba1c', 'HBA1C', 'HbA1C', 20000],
-    ['malaria', 'MALARIA', 'Malaria Test', 8000],
-    ['serum-bilirubin', 'SERUM_BILIRUBIN', 'Serum Bilirubin', 10000]
-  ];
-
-  var messageTimer = null;
-
-  function byId(id) {
-    return document.getElementById(id);
-  }
-
+  function byId(id) { return document.getElementById(id); }
   function escapeHtml(value) {
     return String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  function numberValue(value) { var n = Number(value); return Number.isFinite(n) ? n : 0; }
+  function formatNumber(value) { return numberValue(value).toLocaleString(); }
+  function formatMoney(value) { return formatNumber(value) + ' MMK'; }
+  function normalizeKey(value) { return String(value || '').toLowerCase().trim(); }
+  function service() { return window.VoucherService; }
+  function pricing() { return window.VoucherPricing; }
 
-  function normalizeKey(value) {
-    return String(value || '').toLowerCase().trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
-  }
-
-  function numberValue(value) {
-    var number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-  }
-
-  function formatNumber(value) {
-    return numberValue(value).toLocaleString();
-  }
-
-  function formatMoney(value, currency) {
-    return formatNumber(value) + ' ' + escapeHtml(currency || 'MMK');
-  }
-
-  function formatDate(value) {
-    if (!value) return '—';
-    var date = value;
-    if (typeof value.toDate === 'function') date = value.toDate();
-    else if (value.seconds) date = new Date(value.seconds * 1000);
-    else if (!(value instanceof Date)) date = new Date(value);
-    if (Number.isNaN(date.getTime())) return escapeHtml(value);
-    return date.toLocaleDateString();
-  }
-
-  function toDateInputValue(date) {
-    var year = date.getFullYear();
-    var month = String(date.getMonth() + 1).padStart(2, '0');
-    var day = String(date.getDate()).padStart(2, '0');
-    return year + '-' + month + '-' + day;
-  }
-
-  function showMessage(text, kind, persistent) {
+  var messageTimer = null;
+  function showMessage(text, kind) {
     var element = byId('pageMessage');
     if (!element) return;
     if (messageTimer) window.clearTimeout(messageTimer);
     element.className = 'po-message po-message--' + (kind || 'info');
     element.textContent = text;
     element.hidden = false;
-    if (!persistent) {
-      messageTimer = window.setTimeout(function () {
-        element.hidden = true;
-      }, 5000);
-    }
-  }
-
-  function errorText(error) {
-    if (!error) return 'Unknown error';
-    if (error.code === 'permission-denied') {
-      return 'Firestore denied this operation. Confirm the Program Officer rules and sign in again.';
-    }
-    return error.message || String(error);
-  }
-
-  function setBusy(button, busy, label) {
-    if (!button) return;
-    if (busy) {
-      button.dataset.originalHtml = button.innerHTML;
-      button.disabled = true;
-      button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + escapeHtml(label || 'Saving…');
-    } else {
-      button.disabled = false;
-      if (button.dataset.originalHtml) button.innerHTML = button.dataset.originalHtml;
-    }
-  }
-
-  function profileType(profile) {
-    var role = normalizeKey(profile.role);
-    var providerType = normalizeKey(profile.providerType || profile.accountType || profile.type);
-    var combined = role + ' ' + providerType;
-    if (combined.indexOf('lab') !== -1 || combined.indexOf('laboratory') !== -1) return 'lab';
-    if (
-      role === 'midwife' ||
-      combined.indexOf('maternity home') !== -1 ||
-      combined.indexOf('maternityhome') !== -1 ||
-      providerType.indexOf('midwife') !== -1
-    ) return 'maternity';
-    return '';
+    messageTimer = window.setTimeout(function () { element.hidden = true; }, 5000);
   }
 
   function profileName(profile) {
-    return profile.displayName || profile.name || profile.facilityName || profile.email || 'Unnamed provider';
+    return profile.displayName || profile.name || profile.labName || profile.organization_name || profile.email || 'Unnamed';
+  }
+  function profileType(profile) {
+    var role = normalizeKey(profile.role);
+    if (role === 'lab' || role === 'laboratory') return 'lab';
+    if (role === 'midwife' || role === '') return 'maternity';
+    return '';
+  }
+  function currentPeriod() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   }
 
-  function profileIsActive(profile) {
-    return profile.active !== false && normalizeKey(profile.status) !== 'inactive' && profile.disabled !== true;
+  function fillSelect(select, items, placeholder) {
+    select.innerHTML = '<option value="">' + escapeHtml(placeholder) + '</option>' +
+      items.map(function (item) {
+        return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(profileName(item)) + '</option>';
+      }).join('');
   }
 
-  function isProgramOfficer(profile) {
-    var role = normalizeKey(profile && profile.role);
-    return role === 'program officer' || role === 'programme officer';
-  }
-
-  function getVoucherService() {
-    return window.VoucherService || window.voucherService || null;
-  }
-
-  function findMethod(names) {
-    var service = getVoucherService();
-    if (!service) {
-      throw new Error('VoucherService is not loaded. Add js/voucher-service.js with the documented Program Officer APIs.');
-    }
-    for (var i = 0; i < names.length; i += 1) {
-      if (typeof service[names[i]] === 'function') {
-        return { service: service, fn: service[names[i]], name: names[i] };
-      }
-    }
-    throw new Error('VoucherService does not expose any supported method: ' + names.join(', ') + '.');
-  }
-
-  async function callVoucherService(names, payload) {
-    var method = findMethod(names);
-    try {
-      return await method.fn.call(method.service, payload || {});
-    } catch (error) {
-      error.message = method.name + ': ' + (error.message || String(error));
-      throw error;
-    }
-  }
-
-  function normalizeList(result, keys) {
-    if (!result) return [];
-    if (Array.isArray(result)) return result;
-    if (Array.isArray(result.docs)) {
-      return result.docs.map(function (doc) {
-        if (doc && typeof doc.data === 'function') return Object.assign({ id: doc.id }, doc.data() || {});
-        return doc;
-      });
-    }
-    if (typeof result.forEach === 'function' && typeof result.size === 'number') {
-      var snapshotItems = [];
-      result.forEach(function (doc) {
-        snapshotItems.push(Object.assign({ id: doc.id }, doc.data() || {}));
-      });
-      return snapshotItems;
-    }
-    var candidates = (keys || []).concat(['items', 'data', 'results']);
-    for (var i = 0; i < candidates.length; i += 1) {
-      if (Array.isArray(result[candidates[i]])) return result[candidates[i]];
-    }
-    return [];
-  }
-
-  async function readVoucherCollection(collectionKey, fallbackName) {
-    var service = getVoucherService();
-    var collectionName = service && service.collections && service.collections[collectionKey];
-    collectionName = collectionName || fallbackName;
-    var snapshot = await firebase.firestore().collection(collectionName).get();
-    return normalizeList(snapshot);
-  }
-
-  function serviceHasMethod(name) {
-    var service = getVoucherService();
-    return !!(service && typeof service[name] === 'function');
-  }
-
-  function renderSelect(select, items, placeholder, selectedValue) {
-    if (!select) return;
-    var html = '<option value="">' + escapeHtml(placeholder) + '</option>';
-    items.forEach(function (item) {
-      html += '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(profileName(item)) + '</option>';
+  function showPage(page) {
+    state.page = page;
+    document.querySelectorAll('.po-page').forEach(function (section) {
+      var active = section.id === page + 'Page';
+      section.hidden = !active;
+      section.classList.toggle('is-active', active);
     });
-    select.innerHTML = html;
-    if (selectedValue) select.value = selectedValue;
-  }
-
-  function renderServiceSelect(select, selectedValue) {
-    if (!select) return;
-    var html = '<option value="">Select service</option>';
-    state.services.forEach(function (service) {
-      var label = service.name || service.displayName || service.code || service.id;
-      html += '<option value="' + escapeHtml(service.id || service.code) + '">' + escapeHtml(label) + '</option>';
+    document.querySelectorAll('.po-sidenav button, #poDrawer button').forEach(function (button) {
+      button.classList.toggle('is-active', button.getAttribute('data-page') === page);
     });
-    select.innerHTML = html;
-    if (selectedValue) select.value = selectedValue;
-  }
-
-  function syncProviderSelects() {
-    renderSelect(byId('priceLab'), state.labs, 'Select laboratory');
-    renderSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
-    renderSelect(byId('reportMaternityHome'), state.maternityHomes, 'All maternity homes');
-    renderSelect(byId('reportLab'), state.labs, 'All labs');
-    renderServiceSelect(byId('priceService'));
-  }
-
-  async function requireProgramOfficer(user) {
-    var doc = await firebase.firestore().collection('users').doc(user.uid).get();
-    if (!doc.exists) throw new Error('Your Firestore user profile was not found.');
-    var profile = Object.assign({ id: doc.id }, doc.data() || {});
-    if (!isProgramOfficer(profile) || profile.active === false || profile.approved === false) {
-      throw new Error('Active Program Officer access required.');
-    }
-    return profile;
+    var titles = {
+      dashboard: 'Dashboard',
+      labs: 'Configure Lab',
+      verify: 'Verify & Paid',
+      allocations: 'Allocations & Budget',
+      settings: 'Settings'
+    };
+    byId('poPageTitle').textContent = titles[page] || 'Program Officer';
+    byId('poDrawer').hidden = true;
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'verify') loadQueue();
+    if (page === 'labs') renderLabConfig();
+    if (page === 'allocations') renderAllocations();
   }
 
   async function loadProfiles() {
-    var snapshot = await firebase.firestore().collection('users').get();
-    var profiles = [];
-    snapshot.forEach(function (doc) {
-      var profile = Object.assign({ id: doc.id }, doc.data() || {});
-      if (profileType(profile)) profiles.push(profile);
-    });
-    profiles.sort(function (a, b) { return profileName(a).localeCompare(profileName(b)); });
-    state.profiles = profiles;
-    state.maternityHomes = profiles.filter(function (profile) { return profileType(profile) === 'maternity'; });
+    var profiles = await service().listProviderProfiles();
     state.labs = profiles.filter(function (profile) { return profileType(profile) === 'lab'; });
-    renderProviders();
-    syncProviderSelects();
-    updateSummary();
+    state.maternityHomes = profiles.filter(function (profile) { return profileType(profile) === 'maternity'; });
+    fillSelect(byId('dashLab'), state.labs, 'All laboratories');
+    fillSelect(byId('dashMidwife'), state.maternityHomes, 'All midwives');
+    fillSelect(byId('configLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
   }
 
-  function renderProviders() {
-    var list = byId('providersList');
-    var typeFilter = byId('providerTypeFilter').value;
-    var search = normalizeKey(byId('providerSearch').value);
-    var profiles = state.profiles.filter(function (profile) {
-      if (typeFilter && profileType(profile) !== typeFilter) return false;
-      var haystack = normalizeKey(profileName(profile) + ' ' + (profile.email || '') + ' ' + (profile.description || ''));
-      return !search || haystack.indexOf(search) !== -1;
+  function renderConfigTests(config) {
+    var saved = {};
+    ((config && config.tests) || []).forEach(function (test) { saved[test.serviceId] = test; });
+    byId('configTests').innerHTML = '<table class="po-table"><thead><tr>' +
+      '<th></th><th>Laboratory Test</th><th>Regular Price</th><th>Lab Cost share</th><th>Client</th><th>Project</th>' +
+      '</tr></thead><tbody>' +
+      pricing().STANDARD_LAB_TESTS.map(function (test) {
+        var row = saved[test.id] || {};
+        var regular = row.regularPriceMinor != null ? row.regularPriceMinor / 100 : test.defaultRegularMinor / 100;
+        var labShare = row.labCostShareMinor != null ? row.labCostShareMinor / 100 : 0;
+        var checked = row.active !== false;
+        return '<tr data-service="' + escapeHtml(test.id) + '">' +
+          '<td><input class="form-check-input config-active" type="checkbox"' + (checked ? ' checked' : '') + '></td>' +
+          '<td>' + escapeHtml(test.name) + '</td>' +
+          '<td><input class="form-control config-regular" type="number" min="0" value="' + regular + '"></td>' +
+          '<td><input class="form-control config-labshare" type="number" min="0" value="' + labShare + '"></td>' +
+          '<td class="config-client">—</td><td class="config-project">—</td></tr>';
+      }).join('') + '</tbody></table>';
+    updateConfigPreview();
+  }
+
+  function updateConfigPreview() {
+    var clientPercent = numberValue(byId('configClientPercent').value);
+    var projectPercent = numberValue(byId('configProjectPercent').value);
+    Array.from(byId('configTests').querySelectorAll('tr[data-service]')).forEach(function (row) {
+      try {
+        var shares = pricing().computeInvoiceShares(
+          Math.round(numberValue(row.querySelector('.config-regular').value) * 100),
+          Math.round(numberValue(row.querySelector('.config-labshare').value) * 100),
+          clientPercent,
+          projectPercent
+        );
+        row.querySelector('.config-client').textContent = formatMoney(shares.clientCopayMinor / 100);
+        row.querySelector('.config-project').textContent = formatMoney(shares.projectContributionMinor / 100);
+      } catch (error) {
+        row.querySelector('.config-client').textContent = '—';
+        row.querySelector('.config-project').textContent = '—';
+      }
     });
-
-    if (!profiles.length) {
-      list.innerHTML = '<div class="po-empty">No matching Midwife / Maternity Home or Lab profiles.</div>';
-      return;
-    }
-
-    list.innerHTML = profiles.map(function (profile) {
-      var index = state.profiles.indexOf(profile);
-      var active = profileIsActive(profile);
-      var typeLabel = profileType(profile) === 'lab' ? 'Lab' : 'Midwife / Maternity Home';
-      return (
-        '<article class="po-provider-card' + (active ? '' : ' is-inactive') + '" data-profile-index="' + index + '">' +
-          '<div class="po-provider-card__head"><div>' +
-            '<h3 class="po-provider-card__name">' + escapeHtml(profileName(profile)) + '</h3>' +
-            '<div class="po-provider-card__meta">' + escapeHtml(profile.email || 'No email') + ' · ' + escapeHtml(typeLabel) + '</div>' +
-          '</div><span class="po-badge ' + (active ? 'po-badge--active' : 'po-badge--inactive') + '">' + (active ? 'Active' : 'Inactive') + '</span></div>' +
-          '<div class="po-provider-fields">' +
-            '<label><span>Display name</span><input class="form-control" data-field="displayName" maxlength="120" value="' + escapeHtml(profile.displayName || profile.name || '') + '" /></label>' +
-            '<label><span>Description</span><textarea class="form-control" data-field="description" rows="2" maxlength="500">' + escapeHtml(profile.description || '') + '</textarea></label>' +
-            '<label><span>Profile active state</span><select class="form-select" data-field="active"><option value="true"' + (active ? ' selected' : '') + '>Active</option><option value="false"' + (!active ? ' selected' : '') + '>Inactive</option></select></label>' +
-          '</div>' +
-          '<div class="po-card-actions"><button type="button" class="btn btn-primary btn-sm" data-action="save-profile"><i class="fas fa-save me-1"></i>Save profile</button></div>' +
-        '</article>'
-      );
-    }).join('');
   }
 
-  async function saveProfile(card, button) {
-    var profile = state.profiles[Number(card.dataset.profileIndex)];
-    if (!profile) return;
-    var displayName = card.querySelector('[data-field="displayName"]').value.trim();
-    var description = card.querySelector('[data-field="description"]').value.trim();
-    var active = card.querySelector('[data-field="active"]').value === 'true';
-    if (!displayName) {
-      showMessage('Display name is required.', 'error');
+  async function renderLabConfig() {
+    var labId = byId('configLab').value;
+    if (!labId) {
+      byId('configLabName').value = '';
+      byId('configLabAddress').value = '';
+      renderConfigTests(null);
       return;
     }
-    setBusy(button, true);
-    try {
-      await firebase.firestore().collection('users').doc(profile.id).update({
-        displayName: displayName,
-        description: description,
-        active: active,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedBy: state.currentUser.uid
+    var result = await service().getLabConfig(labId);
+    var profile = result.profile || {};
+    var config = result.config;
+    byId('configLabName').value = (config && config.labName) || profileName(profile);
+    byId('configLabAddress').value = (config && config.address) || profile.address || '';
+    if (config) {
+      byId('configProjectPercent').value = config.projectPercent;
+      byId('configClientPercent').value = config.clientPercent;
+    }
+    renderConfigTests(config);
+  }
+
+  async function saveLabConfig() {
+    var labId = byId('configLab').value;
+    if (!labId) throw new Error('Select a laboratory.');
+    var tests = Array.from(byId('configTests').querySelectorAll('tr[data-service]')).map(function (row) {
+      var standard = pricing().STANDARD_LAB_TESTS.find(function (item) { return item.id === row.getAttribute('data-service'); });
+      return {
+        serviceId: standard.id,
+        serviceCode: standard.code,
+        serviceName: standard.name,
+        regularPriceMinor: Math.round(numberValue(row.querySelector('.config-regular').value) * 100),
+        labCostShareMinor: Math.round(numberValue(row.querySelector('.config-labshare').value) * 100),
+        active: row.querySelector('.config-active').checked
+      };
+    });
+    await service().saveLabConfig({
+      labId: labId,
+      labName: byId('configLabName').value.trim(),
+      address: byId('configLabAddress').value.trim(),
+      projectPercent: numberValue(byId('configProjectPercent').value),
+      clientPercent: numberValue(byId('configClientPercent').value),
+      tests: tests
+    });
+    showMessage('Laboratory prices saved and published.', 'success');
+  }
+
+  function countsFromStats(rows) {
+    var counts = pricing().emptyCounts();
+    var incoming = 0;
+    var paid = 0;
+    rows.forEach(function (row) {
+      Object.keys(counts).forEach(function (key) {
+        counts[key] = Math.max(counts[key], Number((row.counts || {})[key]) || 0);
       });
-      profile.displayName = displayName;
-      profile.description = description;
-      profile.active = active;
-      renderProviders();
-      updateSummary();
-      showMessage('Provider profile saved. The Firebase Authentication account was not changed.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-      setBusy(button, false);
-    }
-  }
-
-  async function loadServices() {
-    var result;
-    if (serviceHasMethod('getServiceCatalog') || serviceHasMethod('listServices') || serviceHasMethod('getServices')) {
-      result = await callVoucherService(['getServiceCatalog', 'listServices', 'getServices']);
-      state.services = normalizeList(result, ['services', 'catalog']);
-    } else {
-      state.services = await readVoucherCollection('CATALOG', 'voucher_service_catalog');
-    }
-    renderServices();
-    renderServiceSelect(byId('priceService'));
-  }
-
-  function renderServices() {
-    var container = byId('servicesList');
-    if (!state.services.length) {
-      container.innerHTML = '<div class="po-empty">No services have been configured.</div>';
-      return;
-    }
-    var rows = state.services.map(function (service, index) {
-      var active = service.active !== false;
-      var displayedPrice = service.defaultUnitPriceMinor != null
-        ? numberValue(service.defaultUnitPriceMinor) / 100
-        : (service.defaultPrice != null ? service.defaultPrice : service.price);
-      var clientShare = numberValue(service.defaultClientCostShareMinor) / 100;
-      var projectShare = service.defaultProjectCostShareMinor != null
-        ? numberValue(service.defaultProjectCostShareMinor) / 100
-        : displayedPrice - clientShare;
-      return '<tr><td><strong>' + escapeHtml(service.name || service.serviceName || service.displayName || 'Unnamed service') + '</strong><br><small class="text-muted">' + escapeHtml(service.description || '') + '</small></td>' +
-        '<td>' + escapeHtml(service.code || service.serviceCode || '—') + '</td>' +
-        '<td>' + formatMoney(displayedPrice, service.currency || 'MMK') + '<br><small>Discount ' +
-          formatMoney(clientShare, service.currency || 'MMK') + ' · Project ' +
-          formatMoney(projectShare, service.currency || 'MMK') + '</small></td>' +
-        '<td><span class="po-badge ' + (active ? 'po-badge--active' : 'po-badge--inactive') + '">' + (active ? 'Active' : 'Inactive') + '</span></td>' +
-        '<td><button type="button" class="btn btn-outline-primary btn-sm" data-action="edit-service" data-index="' + index + '"><i class="fas fa-edit me-1"></i>Edit</button></td></tr>';
-    }).join('');
-    container.innerHTML = '<table class="po-table"><thead><tr><th>Service</th><th>Code</th><th>Total cost</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
-  }
-
-  function editService(index) {
-    var service = state.services[index];
-    if (!service) return;
-    byId('serviceId').value = service.id || '';
-    byId('serviceName').value = service.name || service.serviceName || service.displayName || '';
-    byId('serviceCode').value = service.code || service.serviceCode || '';
-    byId('servicePrice').value = service.defaultUnitPriceMinor != null
-      ? numberValue(service.defaultUnitPriceMinor) / 100
-      : (service.defaultPrice != null ? service.defaultPrice : (service.price || 0));
-    byId('serviceClientShare').value = numberValue(service.defaultClientCostShareMinor) / 100;
-    byId('serviceProjectShare').value = service.defaultProjectCostShareMinor != null
-      ? numberValue(service.defaultProjectCostShareMinor) / 100
-      : numberValue(byId('servicePrice').value) - numberValue(byId('serviceClientShare').value);
-    byId('serviceCurrency').value = service.currency || 'MMK';
-    byId('serviceDescription').value = service.description || '';
-    byId('serviceActive').value = String(service.active !== false);
-    byId('serviceFormCard').hidden = false;
-    byId('serviceName').focus();
-  }
-
-  async function saveService(event) {
-    event.preventDefault();
-    var button = event.submitter || event.currentTarget.querySelector('[type="submit"]');
-    var code = byId('serviceCode').value.trim().toUpperCase();
-    var price = numberValue(byId('servicePrice').value);
-    var clientShare = numberValue(byId('serviceClientShare').value);
-    var projectShare = numberValue(byId('serviceProjectShare').value);
-    if (Math.abs(price - clientShare - projectShare) > 0.001) {
-      showMessage('Discount price and project cost share must equal the total cost.', 'error');
-      return;
-    }
-    var payload = {
-      id: byId('serviceId').value || undefined,
-      serviceId: byId('serviceId').value || code.toLowerCase(),
-      name: byId('serviceName').value.trim(),
-      serviceName: byId('serviceName').value.trim(),
-      code: code,
-      serviceCode: code,
-      description: byId('serviceDescription').value.trim(),
-      defaultPrice: price,
-      defaultUnitPriceMinor: Math.round(price * 100),
-      defaultSubsidizedCostMinor: Math.round(price * 100),
-      defaultClientCostShareMinor: Math.round(clientShare * 100),
-      defaultProjectCostShareMinor: Math.round(projectShare * 100),
-      currency: byId('serviceCurrency').value.trim().toUpperCase(),
-      active: byId('serviceActive').value === 'true',
-      updatedBy: state.currentUser.uid
-    };
-    if (!payload.name || !payload.code) return;
-    setBusy(button, true);
-    try {
-      await callVoucherService(['saveCatalogService', 'upsertService', 'saveService', 'setService'], payload);
-      if (serviceHasMethod('publishCurrentPriceSheet')) {
-        await getVoucherService().publishCurrentPriceSheet(null);
-      }
-      closeForm('serviceFormCard');
-      await loadServices();
-      showMessage('Global service saved.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-    } finally {
-      setBusy(button, false);
-    }
-  }
-
-  async function seedStandardCatalog() {
-    var button = byId('seedCatalogBtn');
-    if (!window.confirm('Load the standard laboratory tests with a default 10% client / 90% project split? Existing matching services will be updated.')) return;
-    setBusy(button, true, 'Loading…');
-    try {
-      for (var index = 0; index < STANDARD_TESTS.length; index += 1) {
-        var row = STANDARD_TESTS[index];
-        var subsidizedMinor = row[3] * 100;
-        var clientMinor = Math.round(subsidizedMinor * 0.10);
-        await getVoucherService().saveCatalogService({
-          serviceId: row[0],
-          serviceCode: row[1],
-          serviceName: row[2],
-          description: '',
-          defaultUnitPriceMinor: subsidizedMinor,
-          defaultSubsidizedCostMinor: subsidizedMinor,
-          defaultClientCostShareMinor: clientMinor,
-          defaultProjectCostShareMinor: subsidizedMinor - clientMinor,
-          currency: 'MMK',
-          active: true
-        });
-      }
-      await getVoucherService().publishCurrentPriceSheet(null);
-      await loadServices();
-      showMessage('Standard tests loaded and the global price sheet was published.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-    } finally {
-      setBusy(button, false);
-    }
-  }
-
-  async function loadPriceOverrides() {
-    var result;
-    if (serviceHasMethod('getPriceOverrides') || serviceHasMethod('listPriceOverrides')) {
-      result = await callVoucherService(['getPriceOverrides', 'listPriceOverrides'], {});
-      state.priceOverrides = normalizeList(result, ['overrides', 'priceOverrides']);
-    } else {
-      state.priceOverrides = await readVoucherCollection('PRICING', 'voucher_pricing_versions');
-    }
-    renderPriceOverrides();
-  }
-
-  function findName(items, id) {
-    var match = items.find(function (item) { return String(item.id) === String(id); });
-    return match ? profileName(match) : (id || '—');
-  }
-
-  function findServiceName(id) {
-    var match = state.services.find(function (service) {
-      return String(service.id || service.code) === String(id);
+      incoming = Math.max(incoming, Number(row.projectVerifiedMinor) || 0);
+      paid = Math.max(paid, Number(row.projectPaidMinor) || 0);
     });
-      return match ? (match.name || match.serviceName || match.displayName || match.code || match.serviceCode) : (id || '—');
+    return { counts: counts, incoming: incoming, paid: paid };
   }
 
-  function renderPriceOverrides() {
-    var container = byId('pricesList');
-    if (!state.priceOverrides.length) {
-      container.innerHTML = '<div class="po-empty">No laboratory price overrides.</div>';
-      return;
-    }
-    var rows = state.priceOverrides.map(function (item, index) {
-      var labId = item.labId || item.laboratoryId || item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId;
-      var serviceId = item.serviceId || item.serviceCode;
-      var active = item.active !== false && normalizeKey(item.status || 'published') === 'published';
-      var displayedPrice = item.unitPriceMinor != null
-        ? numberValue(item.unitPriceMinor) / 100
-        : (item.subsidizedCostMinor != null ? numberValue(item.subsidizedCostMinor) / 100 :
-          (item.overridePrice != null ? item.overridePrice : item.price));
-      var clientShare = numberValue(item.clientCostShareMinor) / 100;
-      var projectShare = item.projectCostShareMinor != null
-        ? numberValue(item.projectCostShareMinor) / 100
-        : displayedPrice - clientShare;
-      var labLabel = findName(state.labs, labId);
-      if (labLabel === (labId || '—')) labLabel = findName(state.maternityHomes, labId);
-      return '<tr><td>' + escapeHtml(labLabel) + '</td><td>' + escapeHtml(findServiceName(serviceId)) + '</td>' +
-        '<td><strong>' + formatMoney(displayedPrice, item.currency || 'MMK') + '</strong><br><small>Discount ' +
-          formatMoney(clientShare, item.currency || 'MMK') + ' · Project ' +
-          formatMoney(projectShare, item.currency || 'MMK') + '</small></td>' +
-        '<td><span class="po-badge ' + (active ? 'po-badge--active' : 'po-badge--inactive') + '">' + escapeHtml(item.status || (active ? 'Active' : 'Inactive')) + '</span></td>' +
-        '<td><button type="button" class="btn btn-outline-primary btn-sm" data-action="edit-price" data-index="' + index + '"><i class="fas fa-copy me-1"></i>New version</button></td></tr>';
-    }).join('');
-    container.innerHTML = '<table class="po-table"><thead><tr><th>Laboratory</th><th>Service</th><th>Override price</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
-  }
-
-  function editPrice(index) {
-    var item = state.priceOverrides[index];
-    if (!item) return;
-    byId('priceOverrideId').value = '';
-    byId('priceLab').value = item.labId || item.laboratoryId || item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId || '';
-    byId('priceService').value = item.serviceId || item.serviceCode || '';
-    byId('overridePrice').value = item.unitPriceMinor != null
-      ? numberValue(item.unitPriceMinor) / 100
-      : (item.subsidizedCostMinor != null ? numberValue(item.subsidizedCostMinor) / 100 :
-        (item.overridePrice != null ? item.overridePrice : (item.price || 0)));
-    byId('overrideClientShare').value = numberValue(item.clientCostShareMinor) / 100;
-    byId('overrideProjectShare').value = item.projectCostShareMinor != null
-      ? numberValue(item.projectCostShareMinor) / 100
-      : numberValue(byId('overridePrice').value) - numberValue(byId('overrideClientShare').value);
-    byId('priceNote').value = item.note || '';
-    byId('priceFormCard').hidden = false;
-  }
-
-  async function savePriceOverride(event) {
-    event.preventDefault();
-    var button = event.submitter || event.currentTarget.querySelector('[type="submit"]');
-    var service = state.services.find(function (item) {
-      return String(item.id || item.code || item.serviceCode) === String(byId('priceService').value);
+  async function loadDashboard() {
+    var period = byId('dashPeriod').value || currentPeriod();
+    var stats = await service().getPeriodStats({
+      period: period,
+      labId: byId('dashLab').value || undefined,
+      midwifeId: byId('dashMidwife').value || undefined
     });
-    var overridePrice = numberValue(byId('overridePrice').value);
-    var overrideClient = numberValue(byId('overrideClientShare').value);
-    var overrideProject = numberValue(byId('overrideProjectShare').value);
-    if (Math.abs(overridePrice - overrideClient - overrideProject) > 0.001) {
-      showMessage('Discount price and project cost share must equal the total cost.', 'error');
+    var summary = countsFromStats(stats);
+    byId('statIssued').textContent = formatNumber(summary.counts.issued);
+    byId('statRedeemed').textContent = formatNumber(summary.counts.redeemed);
+    byId('statVerified').textContent = formatNumber(summary.counts.verified);
+    byId('statPaid').textContent = formatNumber(summary.counts.paid);
+    byId('statRejected').textContent = formatNumber(summary.counts.rejected);
+    byId('statIncoming').textContent = formatMoney(summary.incoming / 100);
+    byId('statReceived').textContent = formatMoney(summary.paid / 100);
+    var start = period + '-01';
+    var endDate = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0);
+    var report = await service().queryVoucherReport({
+      startDate: start + 'T00:00:00',
+      endDate: endDate.toISOString(),
+      labId: byId('dashLab').value,
+      midwifeId: byId('dashMidwife').value,
+      pageSize: 50
+    });
+    var rows = report.items || [];
+    byId('dashList').innerHTML = rows.length ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
+      rows.map(function (row) {
+        return '<tr><td>' + escapeHtml(row.code || row.id) + '</td><td>' + escapeHtml(row.status || '') + '</td><td>' +
+          escapeHtml(row.issuerNameSnapshot || row.midwifeId) + '</td><td>' +
+          escapeHtml(row.labNameSnapshot || row.labId) + '</td><td>' +
+          formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="po-empty">No vouchers in this period.</div>';
+  }
+
+  async function loadQueue() {
+    var status = byId('verifyQueueStatus').value || 'redeemed';
+    var result = await service().queryVouchersPaged({ status: status, pageSize: 50, dateField: 'redeemedAt' });
+    state.queue = result.items || [];
+    renderQueue();
+  }
+
+  function renderQueue() {
+    if (!state.queue.length) {
+      byId('verifyQueue').innerHTML = '<div class="po-empty">No vouchers in this queue.</div>';
       return;
     }
-    var payload = {
-      id: byId('priceOverrideId').value || undefined,
-      labId: byId('priceLab').value,
-      laboratoryId: byId('priceLab').value,
-      serviceId: byId('priceService').value,
-      overridePrice: overridePrice,
-      unitPriceMinor: Math.round(overridePrice * 100),
-      subsidizedCostMinor: Math.round(overridePrice * 100),
-      clientCostShareMinor: Math.round(overrideClient * 100),
-      projectCostShareMinor: Math.round(overrideProject * 100),
-      currency: (service && service.currency) || 'MMK',
-      note: byId('priceNote').value.trim(),
-      active: true,
-      updatedBy: state.currentUser.uid
+    byId('verifyQueue').innerHTML = state.queue.map(function (row) {
+      var code = row.code || row.id;
+      return '<label class="po-queue-item' + (state.currentVoucher && state.currentVoucher.code === code ? ' is-active' : '') + '">' +
+        '<input type="checkbox" data-code="' + escapeHtml(code) + '"' + (state.selectedCodes[code] ? ' checked' : '') + '>' +
+        '<button type="button" data-open="' + escapeHtml(code) + '"><strong>' + escapeHtml(code) + '</strong><br><small>' +
+        escapeHtml(row.patientNameSnapshot || '') + ' · ' + escapeHtml(row.status) + '</small></button></label>';
+    }).join('');
+  }
+
+  async function openVoucher(code) {
+    state.currentVoucher = await service().lookupVoucher(code);
+    var signatures = await service().getVoucherSignatures(code);
+    var settings = state.poSettings || await service().getPoSettings();
+    state.poSettings = settings;
+    var extras = {
+      lab: {
+        seal: signatures.labSeal,
+        cashierSignature: signatures.cashierSignature,
+        cashierName: state.currentVoucher.cashierNameSnapshot,
+        date: window.VoucherInvoice.formatDate(state.currentVoucher.redeemedAt)
+      },
+      client: {
+        signature: signatures.clientSignature,
+        name: state.currentVoucher.patientNameSnapshot,
+        nrc: state.currentVoucher.patientNrcSnapshot,
+        phone: state.currentVoucher.patientPhoneSnapshot,
+        address: state.currentVoucher.patientAddressSnapshot,
+        date: window.VoucherInvoice.formatDate(state.currentVoucher.redeemedAt)
+      },
+      project: state.currentVoucher.status === 'verified' || state.currentVoucher.status === 'paid' ? {
+        signature: signatures.poSignature || settings.signature,
+        name: state.currentVoucher.poNameSnapshot || settings.name,
+        designation: state.currentVoucher.poDesignationSnapshot || settings.designation,
+        date: window.VoucherInvoice.formatDate(state.currentVoucher.verifiedAt)
+      } : {}
     };
-    setBusy(button, true);
-    try {
-      await callVoucherService(['savePriceOverride', 'upsertPriceOverride', 'setPriceOverride'], payload);
-      if (serviceHasMethod('publishCurrentPriceSheet')) {
-        await getVoucherService().publishCurrentPriceSheet(payload.labId);
+    window.VoucherInvoice.render(byId('verifyInvoice'), window.VoucherInvoice.modelFromVoucher(state.currentVoucher, extras));
+    byId('verifyOneBtn').disabled = state.currentVoucher.status !== 'redeemed';
+    byId('rejectOneBtn').disabled = state.currentVoucher.status !== 'redeemed';
+    renderQueue();
+  }
+
+  async function review(action, codes) {
+    var list = codes || [];
+    if (!list.length) throw new Error('Select at least one voucher.');
+    for (var index = 0; index < list.length; index += 1) {
+      await service().setVoucherReviewStatus(list[index], action, {
+        poName: (state.poSettings && state.poSettings.name) || byId('poName').value,
+        poDesignation: (state.poSettings && state.poSettings.designation) || byId('poDesignation').value,
+        rejectReason: byId('rejectReason').value.trim()
+      });
+      if (action === 'verify' && state.poSettings && state.poSettings.signature) {
+        await service().saveVoucherSignatures(list[index], { poSignature: state.poSettings.signature });
       }
-      closeForm('priceFormCard');
-      await loadPriceOverrides();
-      showMessage('Laboratory price override saved.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-    } finally {
-      setBusy(button, false);
     }
+    showMessage('Voucher status updated.', 'success');
+    await loadQueue();
+    if (state.currentVoucher) await openVoucher(state.currentVoucher.code);
+    if (state.page === 'dashboard') await loadDashboard();
   }
 
   async function loadAllocations() {
-    var result;
-    if (serviceHasMethod('getAllocations') || serviceHasMethod('listAllocations')) {
-      result = await callVoucherService(['getAllocations', 'listAllocations'], {});
-      state.allocations = normalizeList(result, ['allocations']);
-    } else {
-      var directResults = await Promise.all([
-        readVoucherCollection('QUOTAS', 'voucher_quotas'),
-        readVoucherCollection('BUDGETS', 'voucher_budgets')
-      ]);
-      state.allocations = directResults[0];
-      state.budgets = directResults[1];
-    }
+    state.allocations = await service().getAllocations();
     renderAllocations();
-    updateSummary();
-  }
-
-  function allocationValues(item) {
-    var allocated = numberValue(item.allocatedUnits != null ? item.allocatedUnits : (item.allocatedCount != null ? item.allocatedCount : (item.voucherCount != null ? item.voucherCount : item.count)));
-    var used = numberValue(item.usedCount != null ? item.usedCount : (item.redeemedCount != null ? item.redeemedCount : item.used));
-    var remaining = item.remainingUnits != null
-      ? numberValue(item.remainingUnits)
-      : (item.remainingCount != null ? numberValue(item.remainingCount) : Math.max(0, allocated - used));
-    if (item.usedCount == null && item.redeemedCount == null && item.used == null) used = Math.max(0, allocated - remaining);
-    return { allocated: allocated, used: used, remaining: remaining };
   }
 
   function renderAllocations() {
-    var container = byId('allocationsList');
     if (!state.allocations.length) {
-      container.innerHTML = '<div class="po-empty">No voucher allocations have been recorded.</div>';
+      byId('allocationsList').innerHTML = '<div class="po-empty">No allocations yet.</div>';
       return;
     }
-    container.innerHTML = state.allocations.map(function (item) {
-      var values = allocationValues(item);
-      var percent = values.allocated ? Math.min(100, Math.round((values.used / values.allocated) * 100)) : 0;
-      var homeId = item.maternityHomeId || item.midwifeId || item.providerId || item.facilityId;
-      var budgetRecord = state.budgets.find(function (budgetItem) { return budgetItem.id === item.budgetId; }) || {};
-      var budget = item.budget && item.budget.totalMinor != null
-        ? numberValue(item.budget.totalMinor) / 100
-        : item.poBudget != null
-        ? item.poBudget
-        : (budgetRecord.totalMinor != null ? numberValue(budgetRecord.totalMinor) / 100 : (item.budget != null ? item.budget : item.amount));
-      return '<article class="po-allocation"><div><div class="po-allocation__name">' + escapeHtml(findName(state.maternityHomes, homeId)) + '</div>' +
-        '<div class="po-allocation__meta">' + escapeHtml(item.note || 'Allocated ' + formatDate(item.createdAt || item.allocatedAt)) + '</div></div>' +
-        '<div class="po-metric"><span>Allocated</span><strong>' + formatNumber(values.allocated) + '</strong></div>' +
-        '<div class="po-metric"><span>Used quota</span><strong>' + formatNumber(values.used) + '</strong></div>' +
-        '<div class="po-metric"><span>Remaining quota</span><strong>' + formatNumber(values.remaining) + '</strong><div class="po-progress" title="' + percent + '% used"><span style="width:' + percent + '%"></span></div></div>' +
-        '<div class="po-metric"><span>PO-only budget</span><strong>' + formatMoney(budget, item.currency || 'MMK') + '</strong></div></article>';
+    byId('allocationsList').innerHTML = state.allocations.map(function (item) {
+      var home = state.maternityHomes.find(function (row) { return row.id === item.midwifeId; });
+      return '<article class="po-allocation"><div><div class="po-allocation__name">' +
+        escapeHtml(home ? profileName(home) : item.midwifeId) + '</div></div>' +
+        '<div class="po-metric"><span>Allocated</span><strong>' + formatNumber(item.allocatedUnits) + '</strong></div>' +
+        '<div class="po-metric"><span>Remaining</span><strong>' + formatNumber(item.remainingUnits) + '</strong></div>' +
+        '<div class="po-metric"><span>PO-only budget</span><strong>' +
+        formatMoney(((item.budget && item.budget.totalMinor) || 0) / 100) + '</strong></div></article>';
     }).join('');
   }
 
   async function saveAllocation(event) {
     event.preventDefault();
-    var button = event.submitter || event.currentTarget.querySelector('[type="submit"]');
-    var payload = {
-      maternityHomeId: byId('allocationMaternityHome').value,
+    await service().allocateVouchers({
       midwifeId: byId('allocationMaternityHome').value,
-      serviceId: byId('allocationService').value,
-      voucherCount: Math.floor(numberValue(byId('allocationCount').value)),
       allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
-      poBudget: numberValue(byId('allocationBudget').value),
       totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
       currency: byId('allocationCurrency').value.trim() || 'MMK',
-      note: byId('allocationNote').value.trim(),
-      allocatedBy: state.currentUser.uid
-    };
-    setBusy(button, true);
-    try {
-      if (serviceHasMethod('allocateVouchers')) {
-        await callVoucherService(['allocateVouchers'], payload);
-      } else if (serviceHasMethod('createBudget') && serviceHasMethod('allocateQuota')) {
-        var pricing = state.priceOverrides.filter(function (item) {
-          return item.serviceId === payload.serviceId &&
-            (item.midwifeId === payload.midwifeId || item.midwifeId == null) &&
-            normalizeKey(item.status || 'published') === 'published';
-        }).sort(function (a, b) {
-          var aTime = a.publishedAt && a.publishedAt.seconds ? a.publishedAt.seconds : 0;
-          var bTime = b.publishedAt && b.publishedAt.seconds ? b.publishedAt.seconds : 0;
-          if ((a.midwifeId === payload.midwifeId) !== (b.midwifeId === payload.midwifeId)) {
-            return a.midwifeId === payload.midwifeId ? -1 : 1;
-          }
-          return bTime - aTime;
-        })[0];
-        if (!pricing) throw new Error('Publish a price for this service and maternity home before allocating quota.');
-        var budgetId = await callVoucherService(['createBudget'], {
-          programId: 'PO-VOUCHER-PROGRAM',
-          serviceId: payload.serviceId,
-          currency: payload.currency.toUpperCase(),
-          totalMinor: payload.totalMinor
-        });
-        await callVoucherService(['allocateQuota'], {
-          budgetId: budgetId,
-          pricingVersionId: pricing.id,
-          midwifeId: payload.midwifeId,
-          allocatedUnits: payload.allocatedUnits
-        });
-      } else {
-        await callVoucherService(['allocateVouchers', 'saveAllocation', 'createAllocation'], payload);
-      }
-      closeForm('allocationFormCard');
-      await loadAllocations();
-      showMessage('Voucher quota and PO-only budget allocated.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-    } finally {
-      setBusy(button, false);
-    }
-  }
-
-  function reportFilters() {
-    var from = byId('reportFrom').value;
-    var to = byId('reportTo').value;
-    return {
-      from: from,
-      to: to,
-      startDate: from + 'T00:00:00',
-      endDate: to + 'T23:59:59',
-      status: byId('reportStatus').value,
-      maternityHomeId: byId('reportMaternityHome').value,
-      midwifeId: byId('reportMaternityHome').value,
-      labId: byId('reportLab').value
-    };
-  }
-
-  async function runReport(event, append) {
-    if (event) event.preventDefault();
-    var button = byId('reportFilters').querySelector('[type="submit"]');
-    var filters = reportFilters();
-    filters.pageSize = 100;
-    if (append && state.reportNextCursor) filters.startAfterIssuedAt = state.reportNextCursor;
-    if (filters.from > filters.to) {
-      showMessage('The report start date must be on or before the end date.', 'error');
-      return;
-    }
-    setBusy(button, true, 'Running…');
-    byId('reportsList').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i> Loading vouchers…</div>';
-    try {
-      var result = await callVoucherService(['queryVoucherReport', 'getVoucherReport', 'listVouchers', 'getVouchers'], filters);
-      var page = normalizeList(result, ['vouchers', 'report']);
-      state.vouchers = append ? state.vouchers.concat(page) : page;
-      state.reportNextCursor = result && result.nextCursor ? result.nextCursor : null;
-      byId('loadMoreReports').hidden = !state.reportNextCursor;
-      if (filters.labId) {
-        state.vouchers = state.vouchers.filter(function (voucher) {
-          return String(voucher.labId || voucher.laboratoryId || voucher.redeemedBy || '') === String(filters.labId);
-        });
-      }
-      renderReport();
-    } catch (error) {
-      byId('reportsList').innerHTML = '<div class="po-error">' + escapeHtml(errorText(error)) + '</div>';
-    } finally {
-      setBusy(button, false);
-    }
-  }
-
-  function renderReport() {
-    var container = byId('reportsList');
-    var summary = byId('reportSummary');
-    var counts = {};
-    state.vouchers.forEach(function (voucher) {
-      var status = normalizeKey(voucher.status || 'unknown');
-      counts[status] = (counts[status] || 0) + 1;
+      note: byId('allocationNote').value.trim()
     });
-    summary.hidden = false;
-    summary.innerHTML = '<span>Total: ' + formatNumber(state.vouchers.length) + '</span>' +
-      Object.keys(counts).sort().map(function (status) {
-        return '<span>' + escapeHtml(status || 'Unknown') + ': ' + formatNumber(counts[status]) + '</span>';
-      }).join('');
-    if (!state.vouchers.length) {
-      container.innerHTML = '<div class="po-empty">No vouchers matched these filters.</div>';
-      return;
-    }
-    var rows = state.vouchers.map(function (voucher) {
-      var status = normalizeKey(voucher.status || 'unknown');
-      var statusClass = ['issued', 'redeemed', 'expired', 'cancelled'].indexOf(status) !== -1 ? status : 'neutral';
-      var homeId = voucher.maternityHomeId || voucher.midwifeId || voucher.providerId || voucher.facilityId;
-      var labId = voucher.labId || voucher.laboratoryId || voucher.redeemedBy;
-      var displayedAmount = voucher.unitPriceMinorSnapshot != null
-        ? numberValue(voucher.unitPriceMinorSnapshot) / 100
-        : (voucher.amount != null ? voucher.amount : voucher.price);
-      return '<tr><td><strong>' + escapeHtml(voucher.code || voucher.voucherCode || voucher.id || '—') + '</strong></td>' +
-        '<td>' + formatDate(voucher.issuedAt || voucher.createdAt || voucher.date) + '</td>' +
-        '<td><span class="po-badge po-badge--' + statusClass + '">' + escapeHtml(status || 'Unknown') + '</span></td>' +
-        '<td>' + escapeHtml(findName(state.maternityHomes, homeId)) + '</td>' +
-        '<td>' + escapeHtml(findName(state.labs, labId)) + '</td>' +
-        '<td>' + escapeHtml((voucher.tests || []).map(function (test) {
-          return test.name || findServiceName(test.id);
-        }).join(', ') || voucher.serviceNameSnapshot || '—') + '</td>' +
-        '<td>' + formatMoney(displayedAmount, voucher.currencySnapshot || voucher.currency || 'MMK') + '</td></tr>';
-    }).join('');
-    container.innerHTML = '<table class="po-table"><thead><tr><th>Voucher</th><th>Date</th><th>Status</th><th>Maternity home</th><th>Lab</th><th>Service</th><th>Amount</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    byId('allocationFormCard').hidden = true;
+    await loadAllocations();
+    showMessage('Allocation saved.', 'success');
   }
 
-  function updateSummary() {
-    byId('activeMaternityCount').textContent = formatNumber(state.maternityHomes.filter(profileIsActive).length);
-    byId('activeLabCount').textContent = formatNumber(state.labs.filter(profileIsActive).length);
-    var totals = state.allocations.reduce(function (sum, item) {
-      var values = allocationValues(item);
-      sum.used += values.used;
-      sum.remaining += values.remaining;
-      return sum;
-    }, { used: 0, remaining: 0 });
-    byId('remainingQuotaTotal').textContent = formatNumber(totals.remaining);
-    byId('usedQuotaTotal').textContent = formatNumber(totals.used);
-  }
-
-  function openForm(id) {
-    var form = byId(id);
-    if (!form) return;
-    form.reset();
-    form.querySelectorAll('input[type="hidden"]').forEach(function (input) { input.value = ''; });
-    form.hidden = false;
-    if (id === 'priceFormCard') syncProviderSelects();
-    if (id === 'allocationFormCard') {
-      renderSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
-      byId('allocationCurrency').value = 'MMK';
-    }
-  }
-
-  function closeForm(id) {
-    var form = byId(id);
-    if (!form) return;
-    form.reset();
-    form.querySelectorAll('input[type="hidden"]').forEach(function (input) { input.value = ''; });
-    form.hidden = true;
-  }
-
-  function showPanel(panelId) {
-    document.querySelectorAll('.po-panel').forEach(function (panel) {
-      var active = panel.id === panelId;
-      panel.hidden = !active;
-      panel.classList.toggle('is-active', active);
+  async function savePoSettings() {
+    var signature = state.poPad && !state.poPad.isEmpty() ? await window.VoucherInvoice.compressImage(state.poPad.toDataUrl(), 320, 140) : (state.poSettings && state.poSettings.signature) || '';
+    state.poSettings = await service().savePoSettings({
+      name: byId('poName').value.trim(),
+      designation: byId('poDesignation').value.trim(),
+      signature: signature
     });
-    document.querySelectorAll('.po-tab').forEach(function (tab) {
-      tab.classList.toggle('is-active', tab.dataset.panel === panelId);
-    });
-  }
-
-  function renderLoadFailure(containerId, error) {
-    var container = byId(containerId);
-    if (container) container.innerHTML = '<div class="po-error">' + escapeHtml(errorText(error)) + '</div>';
-  }
-
-  async function refreshVoucherData() {
-    var results = await Promise.allSettled([
-      loadServices(),
-      loadPriceOverrides(),
-      loadAllocations()
-    ]);
-    if (results[0].status === 'rejected') renderLoadFailure('servicesList', results[0].reason);
-    if (results[1].status === 'rejected') renderLoadFailure('pricesList', results[1].reason);
-    if (results[2].status === 'rejected') renderLoadFailure('allocationsList', results[2].reason);
-    if (results[0].status === 'fulfilled') {
-      renderPriceOverrides();
-      renderAllocations();
-      syncProviderSelects();
-    }
-  }
-
-  async function refreshAll() {
-    var button = byId('refreshAllBtn');
-    setBusy(button, true, 'Refreshing…');
-    try {
-      await loadProfiles();
-      await refreshVoucherData();
-      await runReport();
-      showMessage('Program data refreshed.', 'success');
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-    } finally {
-      setBusy(button, false);
-    }
-  }
-
-  function setDefaultReportDates() {
-    var today = new Date();
-    var from = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
-    byId('reportFrom').value = toDateInputValue(from);
-    byId('reportTo').value = toDateInputValue(today);
+    showMessage('Program Officer settings saved.', 'success');
   }
 
   async function logout() {
-    var button = byId('logoutBtn');
-    setBusy(button, true, 'Logging out…');
-    try {
-      await firebase.auth().signOut();
-      sessionStorage.clear();
-      ['role', 'userEmail', 'userId', 'providerType', 'userTownship', 'userRegion'].forEach(function (key) {
-        localStorage.removeItem(key);
-      });
-      window.location.replace('login.html');
-    } catch (error) {
-      showMessage('Could not log out: ' + errorText(error), 'error', true);
-      setBusy(button, false);
-    }
+    await firebase.auth().signOut();
+    sessionStorage.clear();
+    ['role', 'userEmail', 'userId'].forEach(function (key) { localStorage.removeItem(key); });
+    window.location.replace('login.html');
+  }
+
+  function selectedQueueCodes() {
+    return Array.from(document.querySelectorAll('#verifyQueue input[type="checkbox"]:checked'))
+      .map(function (input) { return input.getAttribute('data-code'); });
   }
 
   function bindEvents() {
-    document.querySelectorAll('.po-tab').forEach(function (tab) {
-      tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
+    document.querySelectorAll('[data-page]').forEach(function (button) {
+      button.addEventListener('click', function () { showPage(button.getAttribute('data-page')); });
     });
-    document.querySelectorAll('[data-open-form]').forEach(function (button) {
-      button.addEventListener('click', function () { openForm(button.dataset.openForm); });
+    byId('poMenuBtn').addEventListener('click', function () {
+      byId('poDrawer').hidden = !byId('poDrawer').hidden;
     });
-    document.querySelectorAll('[data-close-form]').forEach(function (button) {
-      button.addEventListener('click', function () { closeForm(button.dataset.closeForm); });
-    });
-    byId('providerTypeFilter').addEventListener('change', renderProviders);
-    byId('providerSearch').addEventListener('input', renderProviders);
-    byId('providersList').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-action="save-profile"]');
-      if (button) saveProfile(button.closest('.po-provider-card'), button);
-    });
-    byId('servicesList').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-action="edit-service"]');
-      if (button) editService(Number(button.dataset.index));
-    });
-    byId('pricesList').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-action="edit-price"]');
-      if (button) editPrice(Number(button.dataset.index));
-    });
-    byId('serviceFormCard').addEventListener('submit', saveService);
-    byId('priceFormCard').addEventListener('submit', savePriceOverride);
-    byId('allocationFormCard').addEventListener('submit', saveAllocation);
-    byId('reportFilters').addEventListener('submit', runReport);
-    byId('loadMoreReports').addEventListener('click', function () { runReport(null, true); });
+    byId('homeBtn').addEventListener('click', function () { showPage('dashboard'); });
     byId('refreshAllBtn').addEventListener('click', refreshAll);
-    byId('seedCatalogBtn').addEventListener('click', seedStandardCatalog);
     byId('logoutBtn').addEventListener('click', logout);
+    byId('dashPeriod').addEventListener('change', loadDashboard);
+    byId('dashLab').addEventListener('change', loadDashboard);
+    byId('dashMidwife').addEventListener('change', loadDashboard);
+    byId('configLab').addEventListener('change', function () {
+      renderLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('configProjectPercent').addEventListener('input', updateConfigPreview);
+    byId('configClientPercent').addEventListener('input', updateConfigPreview);
+    byId('configTests').addEventListener('input', updateConfigPreview);
+    byId('saveLabConfigBtn').addEventListener('click', function () {
+      saveLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('verifyQueueStatus').addEventListener('change', loadQueue);
+    byId('verifyQueue').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-open]');
+      if (button) openVoucher(button.getAttribute('data-open')).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('verifyQueue').addEventListener('change', function (event) {
+      if (event.target.matches('input[type="checkbox"]')) {
+        state.selectedCodes[event.target.getAttribute('data-code')] = event.target.checked;
+      }
+    });
+    byId('verifyOneBtn').addEventListener('click', function () {
+      if (!state.currentVoucher) return;
+      review('verify', [state.currentVoucher.code]).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('rejectOneBtn').addEventListener('click', function () {
+      if (!state.currentVoucher) return;
+      review('reject', [state.currentVoucher.code]).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('bulkVerifyBtn').addEventListener('click', function () {
+      review('verify', selectedQueueCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('bulkPayBtn').addEventListener('click', function () {
+      review('pay', selectedQueueCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('openAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = false; });
+    byId('cancelAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = true; });
+    byId('allocationFormCard').addEventListener('submit', function (event) {
+      saveAllocation(event).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('clearPoSignBtn').addEventListener('click', function () { if (state.poPad) state.poPad.clear(); });
+    byId('savePoSettingsBtn').addEventListener('click', function () {
+      savePoSettings().catch(function (error) { showMessage(error.message, 'error'); });
+    });
   }
 
-  async function initializeForUser(user) {
+  async function refreshAll() {
+    await loadProfiles();
+    await loadAllocations();
+    state.poSettings = await service().getPoSettings();
+    byId('poName').value = state.poSettings.name || '';
+    byId('poDesignation').value = state.poSettings.designation || '';
+    if (state.page === 'dashboard') await loadDashboard();
+    if (state.page === 'verify') await loadQueue();
+    showMessage('Program data refreshed.', 'success');
+  }
+
+  async function initialize(user) {
     state.currentUser = user;
-    try {
-      var officerProfile = await requireProgramOfficer(user);
-      byId('signedInUser').textContent = profileName(officerProfile);
-      await loadProfiles();
-      await refreshVoucherData();
-      await runReport();
-    } catch (error) {
-      showMessage(errorText(error), 'error', true);
-      document.querySelectorAll('button, input, select, textarea').forEach(function (element) {
-        if (element.id !== 'refreshAllBtn') element.disabled = true;
-      });
-      if (/access required|profile was not found/i.test(error.message || '')) {
-        window.setTimeout(function () { window.location.replace('home.html'); }, 1800);
-      }
+    var profile = await firebase.firestore().collection('users').doc(user.uid).get();
+    if (!profile.exists || normalizeKey(profile.data().role) !== 'program officer') {
+      throw new Error('Active Program Officer access required.');
     }
+    byId('signedInUser').textContent = profileName(Object.assign({ id: profile.id }, profile.data()));
+    byId('dashPeriod').value = currentPeriod();
+    state.poPad = window.VoucherInvoice.bindSignaturePad(byId('poSignaturePad'));
+    await refreshAll();
+    showPage('dashboard');
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     bindEvents();
-    setDefaultReportDates();
     firebase.auth().onAuthStateChanged(function (user) {
-      user = window.resolvePilotAuthUser ? window.resolvePilotAuthUser(user) : user;
       if (!user) {
-        window.location.replace('login.html?redirect=' + encodeURIComponent('program-officer.html'));
+        window.location.replace('login.html');
         return;
       }
-      initializeForUser(user);
+      initialize(user).catch(function (error) {
+        showMessage(error.message || 'Could not open Program Officer.', 'error');
+      });
     });
   });
 })();

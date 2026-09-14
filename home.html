@@ -42,6 +42,15 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <!-- Auth guard will handle authentication check -->
+  <script src="js/role-landing.js"></script>
+  <script>
+    (function () {
+      if (!window.RoleLanding) return;
+      if (RoleLanding.isVoucherOnlyRole(RoleLanding.cachedRole())) {
+        window.location.replace(RoleLanding.cachedLandingPage());
+      }
+    })();
+  </script>
   <script src="js/auth-guard.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/page-performance.js"></script>
@@ -773,6 +782,11 @@
     }
 
     function showHomeInitRetry(message) {
+      const cachedRole = window.RoleLanding ? RoleLanding.cachedRole() : '';
+      if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(cachedRole)) {
+        window.location.replace(RoleLanding.landingPageForRole(cachedRole));
+        return;
+      }
       const banner = document.getElementById('homeInitBanner');
       const textEl = document.getElementById('homeInitBannerText');
       if (textEl && message) textEl.textContent = message;
@@ -866,11 +880,15 @@
       if (pageInitialized) return;
 
       currentUser = user;
-      document.body.classList.add('auth-verified');
       hideHomeInitBanner();
 
       try {
-        if (window.ConsentManager) {
+        const cachedRole = window.RoleLanding ? RoleLanding.cachedRole() : (localStorage.getItem('role') || '');
+        if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(cachedRole)) {
+          window.location.replace(RoleLanding.landingPageForRole(cachedRole));
+          return;
+        }
+        if (window.ConsentManager && !(window.RoleLanding && RoleLanding.isVoucherOnlyRole(cachedRole))) {
           const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
           const uncertainConsentState = !!(consentCheck && consentCheck.uncertain);
           if (!uncertainConsentState && (!consentCheck.hasConsent || consentCheck.needsReconsent)) {
@@ -895,6 +913,11 @@
     }
 
     function recoverHomeFromCache() {
+      const cachedRole = window.RoleLanding ? RoleLanding.cachedRole() : (localStorage.getItem('role') || '');
+      if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(cachedRole)) {
+        window.location.replace(RoleLanding.landingPageForRole(cachedRole));
+        return;
+      }
       document.body.classList.add('auth-verified');
       setHomeInteractionEnabled(true);
       hideHomeInitBanner();
@@ -997,16 +1020,13 @@
           document.getElementById("userEmail").textContent = currentUser.email;
           updateHomeUserRoleLabel();
 
-          // Voucher-only roles use dedicated dashboards and never see clinical cards.
+          if (window.RoleLanding) RoleLanding.rememberRole(userRole);
           const voucherAccountActive = userData.active !== false && userData.approved !== false;
-          if (userRole === 'Program Officer' && voucherAccountActive) {
-            window.location.replace('program-officer.html');
+          if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(userRole) && voucherAccountActive) {
+            window.location.replace(RoleLanding.landingPageForRole(userRole));
             return;
           }
-          if (userRole === 'Lab' && voucherAccountActive) {
-            window.location.replace('lab-vouchers.html');
-            return;
-          }
+          document.body.classList.add('auth-verified');
           
           // Super Admin accounts do not use frontline patient workflow cards on Home.
           const isSupervisoryRole = userRole === 'TMO' || (
@@ -1069,9 +1089,12 @@
             loadPendingTransferCount();
             refreshHomeFollowUpBadges();
           }, 500);
+        } else {
+          document.body.classList.add('auth-verified');
         }
       } catch (error) {
         console.warn('Error loading user data:', error);
+        document.body.classList.add('auth-verified');
         // Still show the page even if user data fails
         document.getElementById("userEmail").textContent = currentUser.email || 'User';
         document.getElementById("userRole").textContent = 'Loading...';

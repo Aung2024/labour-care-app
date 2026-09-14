@@ -98,12 +98,9 @@ After deployment:
 
 1. Bootstrap one Program Officer account manually.
 2. Sign in as the Program Officer.
-3. Create the global laboratory-service catalog.
-   - The **Load standard tests** button can seed the approved starter list with a 10% client / 90% project split.
-4. Review all three cost columns and publish the resulting immutable price sheet.
-5. Add maternity-home overrides only where needed.
-6. Allocate voucher counts and record the internal budget separately.
-7. Verify the Midwife sees voucher counts but never the budget.
+3. Open **Configure Lab**, select one laboratory, set name, address, the lab-wide project/client split, Regular Price, and Lab Cost share, then save. This publishes that lab’s immutable price sheet.
+4. Allocate voucher counts and record the internal budget on **Allocations & Budget**.
+5. Verify the Midwife sees remaining/allocated counts but never the budget.
 
 ## Role-based acceptance tests
 
@@ -112,12 +109,10 @@ Run the roles in this order because each stage creates data required by the next
 ### Program Officer
 
 - Sign-in redirects to `program-officer.html`; clinical home cards are not shown.
-- Load the standard tests, then review Total cost, Discount price, and Project cost share.
-- Confirm each row satisfies Total cost = Discount price + Project cost share.
-- Add any laboratory override and verify a new immutable price sheet is published for that lab.
+- Configure one lab’s prices using Regular Price, Lab Cost share, and the lab-wide percent split.
+- Confirm `S = R - L` and `C + P = S` on the live preview.
 - Allocate voucher count and budget to the test Midwife.
-- Edit a provider display name, description, and active state.
-- Confirm role, email, and password cannot be changed from the page.
+- Verify a redeemed invoice, then mark it paid. Rejected vouchers stay rejected.
 - Confirm budgets are visible here only.
 
 ### Midwife
@@ -126,23 +121,23 @@ Run the roles in this order because each stage creates data required by the next
 - Register or select a test patient with phone and optional NRC.
 - Open **Tests & Results → Use Voucher**.
 - Confirm patient phone uses the patient `phone` field, not emergency or community-health-worker phone.
-- Confirm discount prices are read-only and come from the selected laboratory’s Program Officer configuration.
-- Select the destination laboratory, then select tests and issue one voucher.
+- Confirm remaining/allocated quota is visible (for example 20/30).
+- Confirm invoice columns and the downloaded PNG match the on-screen invoice.
+- Select the destination laboratory, add/edit patient address, select tests and issue one voucher.
 - NRC is optional and patient phone prefill uses `phone`.
 - Voucher creation fails offline.
 - One issued voucher decrements remaining quota exactly once.
 - The QR payload contains only a short voucher code.
-- A5 PNG shows the human-readable voucher details, including Discount price and the selected lab.
 - Exhaust the test quota and confirm an additional voucher is rejected.
 
 ### Lab
 
 - Sign-in redirects to `lab-vouchers.html`; clinical home cards are not shown.
-- QR scan and manual code entry locate an issued voucher. Typed codes can omit the hyphen.
-- The Lab sees voucher details only after authentication.
-- Redeeming once submits it to Program Officers.
+- Scan QR and manual code entry locate an issued voucher. Typed codes can omit the hyphen.
+- The Lab can add or remove only tests already priced for that lab.
+- Redeeming requires a client signature and sends the invoice to Program Officers with the Project block still empty.
 - Reusing the QR or racing two Labs cannot redeem it twice.
-- History shows only vouchers redeemed by that Lab.
+- Dashboard shows status and verified/paid money by period.
 - A disabled Lab account cannot look up or redeem vouchers.
 
 ### Final Program Officer reconciliation
@@ -173,17 +168,20 @@ After UAT, verify these collections in `labourcare-2481a`:
 
 - `users`
 - `voucher_service_catalog`
-- `voucher_price_overrides`
+- `voucher_lab_configs`
 - `voucher_price_sheets`
 - `voucher_price_assignments`
 - `voucher_account_quotas`
 - `voucher_account_budgets`
+- `voucher_period_stats`
+- `lab_settings`
+- `po_settings`
 - `vouchers`
 
 For the test voucher, confirm:
 
 - The document ID is a short code such as `AB3K-9Q2M`, or a legacy 22-character code.
-- Status changed only from `issued` to `redeemed`.
+- Status moved `issued` → `redeemed` → `verified` or `rejected`, and `verified` → `paid` only.
 - `selectedServiceIds`, `labId`, and `priceSheetId` are present.
 - `redeemedBy` and `redeemedAt` identify the Lab submission.
 - No budget value exists in the quota or voucher document.

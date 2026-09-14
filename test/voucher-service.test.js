@@ -6,11 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function loadService() {
-  const source = fs.readFileSync(
-    path.join(__dirname, '..', 'js', 'voucher-service.js'),
-    'utf8'
-  );
+function loadGlobals() {
   const context = {
     Buffer,
     Uint8Array,
@@ -18,8 +14,25 @@ function loadService() {
     globalThis: {}
   };
   context.globalThis = context;
-  vm.runInNewContext(source, context, { filename: 'voucher-service.js' });
-  return context.VoucherService;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'voucher-pricing.js'), 'utf8'),
+    context,
+    { filename: 'voucher-pricing.js' }
+  );
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'voucher-service.js'), 'utf8'),
+    context,
+    { filename: 'voucher-service.js' }
+  );
+  return context;
+}
+
+function loadService() {
+  return loadGlobals().VoucherService;
+}
+
+function loadPricing() {
+  return loadGlobals().VoucherPricing;
 }
 
 test('generates a 128-bit base64url opaque identifier', () => {
@@ -100,4 +113,49 @@ test('requires discount price and project share to equal total cost', () => {
     () => service.validateCostShares(500000, 50000, 400000),
     /must equal/
   );
+});
+
+test('computes hidden subsidized cost and 90/10 client project split', () => {
+  const pricing = loadPricing();
+  const shares = pricing.computeInvoiceShares(500000, 50000, 10, 90);
+
+  assert.equal(shares.subsidizedCostMinor, 450000);
+  assert.equal(shares.clientCopayMinor, 45000);
+  assert.equal(shares.projectContributionMinor, 405000);
+  assert.equal(shares.clientCopayMinor + shares.projectContributionMinor, shares.subsidizedCostMinor);
+});
+
+test('puts rounding remainder on the project contribution', () => {
+  const pricing = loadPricing();
+  const shares = pricing.computeInvoiceShares(100, 0, 10, 90);
+  assert.equal(shares.clientCopayMinor + shares.projectContributionMinor, 100);
+  assert.equal(shares.clientCopayMinor, 10);
+  assert.equal(shares.projectContributionMinor, 90);
+});
+
+test('rejects percent pairs that do not add up to 100', () => {
+  const pricing = loadPricing();
+  assert.throws(() => pricing.normalizePercentPair(80, 10), /100/);
+});
+
+test('uses computed client and project shares when regular and lab share exist', () => {
+  const pricing = loadPricing();
+  const item = pricing.lineItemFromSheetService({
+    serviceId: 'urine-re',
+    serviceCode: 'URINE_RE',
+    serviceName: 'Urine RE',
+    regularPriceMinor: 500000,
+    labCostShareMinor: 50000,
+    clientCostShareMinor: 1,
+    projectCostShareMinor: 2
+  }, { clientPercent: 10, projectPercent: 90 });
+  assert.equal(item.clientCopayMinor, 45000);
+  assert.equal(item.projectContributionMinor, 405000);
+});
+
+test('includes the 16 Excel laboratory tests', () => {
+  const pricing = loadPricing();
+  assert.equal(pricing.STANDARD_LAB_TESTS.length, 16);
+  assert.equal(pricing.STANDARD_LAB_TESTS[15].name, 'Chest X-ray (with Opinion)');
+  assert.equal(pricing.STANDARD_LAB_TESTS[12].name, 'HBA1C');
 });
