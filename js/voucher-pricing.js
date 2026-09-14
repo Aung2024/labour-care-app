@@ -75,12 +75,20 @@
     };
   }
 
+  function asMoneyMinor(value) {
+    var amount = Number(value);
+    if (!Number.isFinite(amount)) return null;
+    return Math.round(amount);
+  }
+
   function lineItemFromSheetService(service, percents) {
     var row = service || {};
-    if (Number.isSafeInteger(row.regularPriceMinor) && Number.isSafeInteger(row.labCostShareMinor)) {
+    var regular = asMoneyMinor(row.regularPriceMinor);
+    var labShare = asMoneyMinor(row.labCostShareMinor);
+    if (regular != null) {
       var computed = computeInvoiceShares(
-        row.regularPriceMinor,
-        row.labCostShareMinor,
+        regular,
+        labShare == null ? 0 : labShare,
         percents && percents.clientPercent,
         percents && percents.projectPercent
       );
@@ -95,18 +103,19 @@
         projectContributionMinor: computed.projectContributionMinor
       };
     }
-    var client = Number.isSafeInteger(row.clientCostShareMinor) ? row.clientCostShareMinor : 0;
-    var project = Number.isSafeInteger(row.projectCostShareMinor) ? row.projectCostShareMinor : 0;
-    var subsidized = Number.isSafeInteger(row.subsidizedCostMinor) ? row.subsidizedCostMinor : (client + project);
+    var client = asMoneyMinor(row.clientCostShareMinor);
+    var project = asMoneyMinor(row.projectCostShareMinor);
+    var subsidized = asMoneyMinor(row.subsidizedCostMinor);
+    if (subsidized == null) subsidized = (client || 0) + (project || 0);
     return {
       serviceId: row.serviceId,
       serviceCode: row.serviceCode || '',
       serviceName: row.serviceName || '',
       regularPriceMinor: subsidized,
-      labCostShareMinor: 0,
+      labCostShareMinor: labShare == null ? 0 : labShare,
       subsidizedCostMinor: subsidized,
-      clientCopayMinor: client,
-      projectContributionMinor: project
+      clientCopayMinor: client == null ? 0 : client,
+      projectContributionMinor: project == null ? 0 : project
     };
   }
 

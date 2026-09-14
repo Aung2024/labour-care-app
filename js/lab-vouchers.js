@@ -14,7 +14,12 @@
     page: 'scan',
     dashStatus: '',
     lineBusy: false,
-    toastTimer: null
+    toastTimer: null,
+    loggingOut: false,
+    previewSignatures: {},
+    invoiceDate: '',
+    patientNrc: '',
+    patientAddress: ''
   };
 
   function el(id) { return document.getElementById(id); }
@@ -29,6 +34,17 @@
   }
   function service() { return window.VoucherService; }
 
+  function todayInputValue() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+  }
+
+  function formatInputDate(value) {
+    if (!value) return window.VoucherInvoice.formatDate(new Date());
+    return window.VoucherInvoice.formatDate(value);
+  }
+
   function showToast(message, kind) {
     var toast = el('labToast');
     if (!toast) return;
@@ -42,13 +58,18 @@
     }, 3200);
   }
 
-  function setStatus(message, kind) {
+  function setStatus(message, kind, options) {
+    var opts = options || {};
     var box = el('pageStatus');
-    box.textContent = message;
-    box.className = 'status-box lab-status-compact ' + (kind || 'info');
-    if (kind === 'success' || kind === 'error' || kind === 'warning') {
-      showToast(message, kind);
+    var mode = kind || 'info';
+    if (opts.toastOnly || mode === 'success' || mode === 'error' || mode === 'warning') {
+      box.textContent = '';
+      box.className = 'status-box lab-status-compact is-quiet';
+      if (!state.loggingOut) showToast(message, mode === 'info' ? 'info' : mode);
+      return;
     }
+    box.textContent = message;
+    box.className = 'status-box lab-status-compact ' + mode;
   }
 
   function showPage(page) {
@@ -61,7 +82,9 @@
     });
     el('labPageTitle').textContent = page === 'scan' ? 'Scan' : (page === 'dashboard' ? 'Dashboard' : 'Settings');
     document.body.classList.toggle('lab-has-floating', page === 'settings' || (page === 'scan' && !!state.voucher));
-    if (page === 'dashboard') loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
+    if (page === 'dashboard') loadDashboard().catch(function (error) {
+      if (!state.loggingOut) setStatus(error.message, 'error');
+    });
     if (page === 'settings') renderSettings();
   }
 
@@ -124,33 +147,60 @@
     }).join('') || '<option value="0">Cashier 1</option>';
   }
 
+  function syncPatientFields(voucher) {
+    state.patientNrc = voucher.patientNrcSnapshot || '';
+    state.patientAddress = voucher.patientAddressSnapshot || '';
+    el('patientNrcInput').value = state.patientNrc;
+    el('patientAddressInput').value = state.patientAddress;
+    el('patientNrcInput').disabled = voucher.status !== 'issued';
+    el('patientAddressInput').disabled = voucher.status !== 'issued';
+    el('invoiceDateInput').disabled = false;
+    if (!state.invoiceDate) {
+      state.invoiceDate = todayInputValue();
+      el('invoiceDateInput').value = state.invoiceDate;
+    }
+  }
+
   function extrasForVoucher(voucher, signatures) {
     var cashierIndex = Number(el('cashierSelect').value || 0);
     var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+    var invoiceDate = formatInputDate(state.invoiceDate || el('invoiceDateInput').value || todayInputValue());
+    var nrc = state.patientNrc || voucher.patientNrcSnapshot || '';
+    var address = state.patientAddress || voucher.patientAddressSnapshot || '';
+    var signs = Object.assign({}, signatures || {}, state.previewSignatures || {});
     return {
       lab: {
-        seal: (signatures && signatures.labSeal) || (state.settings && state.settings.seal) || '',
-        cashierSignature: (signatures && signatures.cashierSignature) || cashier.signature || '',
+        seal: signs.labSeal || (state.settings && state.settings.seal) || '',
+        cashierSignature: signs.cashierSignature || cashier.signature || '',
         cashierName: voucher.cashierNameSnapshot || cashier.name || '',
-        date: voucher.status === 'issued' ? '' : window.VoucherInvoice.formatDate(voucher.redeemedAt || new Date())
+        date: invoiceDate
       },
       client: {
-        signature: signatures && signatures.clientSignature,
+        signature: signs.clientSignature || '',
         name: voucher.patientNameSnapshot,
-        nrc: voucher.patientNrcSnapshot,
+        nrc: nrc,
         phone: voucher.patientPhoneSnapshot,
-        address: voucher.patientAddressSnapshot,
-        date: voucher.status === 'issued' ? '' : window.VoucherInvoice.formatDate(voucher.redeemedAt || new Date())
+        address: address,
+        date: invoiceDate
       },
       project: {}
     };
   }
 
   function renderInvoice(voucher, signatures) {
-    window.VoucherInvoice.render(
-      el('invoiceMount'),
-      window.VoucherInvoice.modelFromVoucher(voucher, extrasForVoucher(voucher, signatures))
-    );
+    var model = window.VoucherInvoice.modelFromVoucher(voucher, extrasForVoucher(voucher, signatures));
+    model.date = formatInputDate(state.invoiceDate || el('invoiceDateInput').value || voucher.issuedAt);
+    model.nrc = state.patientNrc || voucher.patientNrcSnapshot || '';
+    model.address = state.patientAddress || voucher.patientAddressSnapshot || '';
+    window.VoucherInvoice.render(el('invoiceMount'), model);
+  }
+
+  async function refreshInvoicePreview() {
+    if (!state.voucher) return;
+    var signatures = state.voucher.status === 'issued'
+      ? state.previewSignatures
+      : Object.assign({}, await service().getVoucherSignatures(state.voucher.code), state.previewSignatures);
+    renderInvoice(state.voucher, signatures);
   }
 
   async function lookup(event) {
@@ -172,17 +222,28 @@
       }
       attachCatalog(voucher, catalogTests);
       state.voucher = voucher;
+      state.previewSignatures = {};
+      state.invoiceDate = todayInputValue();
+      el('invoiceDateInput').value = state.invoiceDate;
       el('voucherCodeInput').value = voucher.code;
       renderLineEditor(voucher);
       cashierOptions();
-      var signatures = voucher.status === 'issued' ? {} : await service().getVoucherSignatures(voucher.code);
-      renderInvoice(voucher, signatures);
+      syncPatientFields(voucher);
+      if (voucher.status === 'issued') {
+        renderInvoice(voucher, {
+          labSeal: (state.settings && state.settings.seal) || '',
+          cashierSignature: (((state.settings && state.settings.cashiers) || [])[0] || {}).signature || ''
+        });
+      } else {
+        var signatures = await service().getVoucherSignatures(voucher.code);
+        renderInvoice(voucher, signatures);
+      }
       el('lookupResult').classList.remove('d-none');
       el('confirmRedeem').disabled = voucher.status !== 'issued';
       document.body.classList.toggle('lab-has-floating', state.page === 'scan');
       setStatus(
         voucher.status === 'issued'
-          ? 'Invoice loaded. Toggle tests as needed, then collect the client signature.'
+          ? 'Invoice loaded. Toggle tests, add NRC/address if needed, then apply the client signature.'
           : 'Voucher status: ' + voucher.status + '.',
         'success'
       );
@@ -214,7 +275,7 @@
       state.voucher = await service().updateIssuedLineItems(state.voucher.code, ids);
       attachCatalog(state.voucher, catalogTests);
       renderLineEditor(state.voucher);
-      renderInvoice(state.voucher, {});
+      await refreshInvoicePreview();
       setStatus('Invoice tests updated.', 'success');
     } catch (error) {
       checkbox.checked = !checkbox.checked;
@@ -226,9 +287,49 @@
     }
   }
 
+  async function savePatientDetailsIfNeeded() {
+    if (!state.voucher || state.voucher.status !== 'issued') return;
+    var nrc = el('patientNrcInput').value.trim();
+    var address = el('patientAddressInput').value.trim();
+    var prevNrc = state.voucher.patientNrcSnapshot || '';
+    var prevAddress = state.voucher.patientAddressSnapshot || '';
+    if (nrc === prevNrc && address === prevAddress) {
+      state.patientNrc = nrc;
+      state.patientAddress = address;
+      return;
+    }
+    state.voucher = await service().updateIssuedPatientDetails(state.voucher.code, {
+      nrc: nrc,
+      address: address
+    });
+    state.patientNrc = state.voucher.patientNrcSnapshot || nrc;
+    state.patientAddress = state.voucher.patientAddressSnapshot || address;
+  }
+
+  async function applyClientSignature() {
+    if (!state.voucher) throw new Error('Look up a voucher first.');
+    if (!state.clientPad || state.clientPad.isEmpty()) {
+      throw new Error('Ask the patient to sign before applying it to the invoice.');
+    }
+    assertOnline();
+    await savePatientDetailsIfNeeded();
+    var clientSignature = await window.VoucherInvoice.compressImage(state.clientPad.toDataUrl(), 320, 140);
+    var cashierIndex = Number(el('cashierSelect').value || 0);
+    var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+    state.previewSignatures = {
+      clientSignature: clientSignature,
+      cashierSignature: cashier.signature || '',
+      labSeal: (state.settings && state.settings.seal) || ''
+    };
+    await refreshInvoicePreview();
+    setStatus('Client signature added to the invoice preview.', 'success');
+  }
+
   async function redeem() {
     if (!state.voucher) throw new Error('Look up a voucher first.');
     if (!state.clientPad || state.clientPad.isEmpty()) throw new Error('Ask the patient to sign before redeeming.');
+    assertOnline();
+    await savePatientDetailsIfNeeded();
     var cashierIndex = Number(el('cashierSelect').value || 0);
     var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
     var clientSignature = await window.VoucherInvoice.compressImage(state.clientPad.toDataUrl(), 320, 140);
@@ -245,7 +346,9 @@
       labSealAttached: !!(state.settings && state.settings.seal),
       clientSigned: true
     });
+    state.previewSignatures = {};
     renderLineEditor(state.voucher);
+    syncPatientFields(state.voucher);
     renderInvoice(state.voucher, await service().getVoucherSignatures(state.voucher.code));
     el('confirmRedeem').disabled = true;
     setStatus('Voucher redeemed. Payment Made By (Project) is still empty for the Program Officer.', 'success');
@@ -300,11 +403,6 @@
     el('stopCamera').classList.add('d-none');
   }
 
-  function currentPeriod() {
-    var now = new Date();
-    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  }
-
   function fillPeriodOptions() {
     var select = el('labPeriod');
     var current = select.value || 'all';
@@ -335,6 +433,16 @@
   function projectAmountMajor(item) {
     if (item && item.totals && item.totals.projectContributionMinor != null) {
       return Number(item.totals.projectContributionMinor || 0) / 100;
+    }
+    if (item && item.lineItems && item.lineItems.length) {
+      return item.lineItems.reduce(function (sum, row) {
+        return sum + (Number(row.projectContributionMinor) || 0);
+      }, 0) / 100;
+    }
+    if (item && item.tests && item.tests.length) {
+      return item.tests.reduce(function (sum, row) {
+        return sum + (Number(row.projectCostShare) || 0);
+      }, 0);
     }
     if (item && item.projectContributionMinor != null) {
       return Number(item.projectContributionMinor || 0) / 100;
@@ -452,14 +560,18 @@
   }
 
   async function logout() {
+    state.loggingOut = true;
     stopCamera();
-    await firebase.auth().signOut();
+    try {
+      await firebase.auth().signOut();
+    } catch (error) {}
     sessionStorage.clear();
     ['role', 'userEmail', 'userId'].forEach(function (key) { localStorage.removeItem(key); });
     window.location.replace('login.html');
   }
 
   async function initialize(user) {
+    if (state.loggingOut) return;
     assertOnline();
     state.user = user;
     var profileDoc = await firebase.firestore().collection('users').doc(user.uid).get();
@@ -474,6 +586,8 @@
     state.clientPad = window.VoucherInvoice.bindSignaturePad(el('clientPad'));
     fillPeriodOptions();
     el('labPeriod').value = 'all';
+    el('invoiceDateInput').value = todayInputValue();
+    state.invoiceDate = el('invoiceDateInput').value;
     el('labApp').classList.remove('d-none');
     if (!('BarcodeDetector' in window)) el('cameraUnsupported').classList.remove('d-none');
     showPage('scan');
@@ -481,8 +595,9 @@
     if (initialCode) {
       el('voucherCodeInput').value = initialCode;
       await lookup();
+    } else {
+      setStatus('Authenticated as ' + (state.profile.displayName || user.email) + '.', 'info');
     }
-    setStatus('Authenticated as ' + (state.profile.displayName || user.email) + '.', 'success');
   }
 
   document.querySelectorAll('[data-page]').forEach(function (button) {
@@ -496,9 +611,37 @@
     toggleLineItem(input);
   });
   el('confirmRedeem').addEventListener('click', function () {
-    redeem().catch(function (error) { setStatus(error.message, 'error'); });
+    redeem().catch(function (error) { if (!state.loggingOut) setStatus(error.message, 'error'); });
   });
-  el('clearClientSign').addEventListener('click', function () { if (state.clientPad) state.clientPad.clear(); });
+  el('applyClientSign').addEventListener('click', function () {
+    applyClientSignature().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('clearClientSign').addEventListener('click', function () {
+    if (state.clientPad) state.clientPad.clear();
+    if (state.previewSignatures) delete state.previewSignatures.clientSignature;
+    refreshInvoicePreview().catch(function () {});
+  });
+  el('cashierSelect').addEventListener('change', function () {
+    var cashierIndex = Number(el('cashierSelect').value || 0);
+    var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+    state.previewSignatures = Object.assign({}, state.previewSignatures, {
+      cashierSignature: cashier.signature || '',
+      labSeal: (state.settings && state.settings.seal) || ''
+    });
+    refreshInvoicePreview().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  el('invoiceDateInput').addEventListener('change', function () {
+    state.invoiceDate = el('invoiceDateInput').value || todayInputValue();
+    refreshInvoicePreview().catch(function () {});
+  });
+  el('patientNrcInput').addEventListener('change', function () {
+    state.patientNrc = el('patientNrcInput').value.trim();
+    refreshInvoicePreview().catch(function () {});
+  });
+  el('patientAddressInput').addEventListener('change', function () {
+    state.patientAddress = el('patientAddressInput').value.trim();
+    refreshInvoicePreview().catch(function () {});
+  });
   el('startCamera').addEventListener('click', function () {
     startCamera().catch(function (error) { setStatus(error.message, 'warning'); });
   });
@@ -531,15 +674,22 @@
       setStatus(error.message || 'Could not preview seal.', 'error');
     });
   });
-  el('logoutBtn').addEventListener('click', logout);
+  el('logoutBtn').addEventListener('click', function () {
+    logout().catch(function () { window.location.replace('login.html'); });
+  });
   window.addEventListener('beforeunload', stopCamera);
 
   firebase.auth().onAuthStateChanged(function (user) {
+    if (state.loggingOut) {
+      window.location.replace('login.html');
+      return;
+    }
     if (!user) {
       window.location.replace('login.html');
       return;
     }
     initialize(user).catch(function (error) {
+      if (state.loggingOut) return;
       el('labApp').classList.remove('d-none');
       setStatus(error.message || 'Could not initialize laboratory vouchers.', 'error');
     });

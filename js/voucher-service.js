@@ -992,8 +992,25 @@
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId).get().then(function (voucherSnapshot) {
       if (!voucherSnapshot.exists) throw new Error('Voucher was not found.');
       var voucher = Object.assign({ id: voucherSnapshot.id }, voucherSnapshot.data());
-      return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get().then(function (sheetSnapshot) {
-        hydrateVoucherTests(voucher, sheetSnapshot.exists ? sheetSnapshot.data() : null);
+      var sheetPromise = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get();
+      // Issued vouchers may still be open when PO republishes prices — prefer the
+      // currently assigned lab sheet so Lab Cost share and amounts stay current.
+      var assignedPromise = voucher.status === 'issued' && voucher.labId
+        ? context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(voucher.labId).get()
+          .then(function (assignmentSnap) {
+            if (!assignmentSnap.exists || !assignmentSnap.data().priceSheetId) return null;
+            return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(assignmentSnap.data().priceSheetId).get();
+          })
+          .catch(function () { return null; })
+        : Promise.resolve(null);
+      return Promise.all([sheetPromise, assignedPromise]).then(function (results) {
+        var issuedSheet = results[0] && results[0].exists ? results[0].data() : null;
+        var assignedSheetSnap = results[1];
+        var sheet = issuedSheet;
+        if (voucher.status === 'issued' && assignedSheetSnap && assignedSheetSnap.exists) {
+          sheet = assignedSheetSnap.data();
+        }
+        hydrateVoucherTests(voucher, sheet);
         voucher.patientReference = voucher.patientId;
         voucher.generatedByName = voucher.issuerNameSnapshot;
         voucher.labName = voucher.labNameSnapshot || '';
@@ -1251,10 +1268,14 @@
 
   function lineItemsFromSelection(sheet, selectedServiceIds) {
     var percents = { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent };
+    var priceMap = sheet.pricesByServiceId || {};
     return selectedServiceIds.map(function (serviceId) {
       var service = (sheet.services || []).find(function (row) { return row.serviceId === serviceId; });
-      if (!service) throw new Error('A selected service is not on the assigned price sheet.');
-      return pricingApi().lineItemFromSheetService(service, percents);
+      var mapped = priceMap[serviceId] || {};
+      if (!service && !mapped.regularPriceMinor && mapped.regularPriceMinor !== 0) {
+        throw new Error('A selected service is not on the assigned price sheet.');
+      }
+      return pricingApi().lineItemFromSheetService(Object.assign({}, mapped, service || { serviceId: serviceId }), percents);
     });
   }
 
@@ -1284,6 +1305,25 @@
         });
       });
     }).then(function () { return lookupVoucher(voucherId); });
+  }
+
+  function updateIssuedPatientDetails(voucherCode, input) {
+    var data = requireObject(input, 'Patient details');
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
+    var nrc = typeof data.nrc === 'string' ? data.nrc.trim().slice(0, 80) : '';
+    var address = typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '';
+    return voucherRef.get().then(function (snapshot) {
+      if (!snapshot.exists) throw new Error('Voucher was not found.');
+      var voucher = snapshot.data();
+      if (voucher.status !== 'issued') throw new Error('Only issued vouchers can be edited.');
+      if (voucher.labId !== context.user.uid) throw new Error('This voucher is assigned to another laboratory.');
+      return voucherRef.update({
+        patientNrcSnapshot: nrc,
+        patientAddressSnapshot: address
+      }).then(function () { return lookupVoucher(voucherId); });
+    });
   }
 
   function setVoucherReviewStatus(voucherCode, action, details) {
@@ -1544,10 +1584,27 @@
     }
     query = query.orderBy(dateField, 'desc').limit(pageSize);
     return query.get().then(function (snapshot) {
-      return {
-        items: snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); }),
-        nextCursor: snapshot.size === pageSize ? snapshot.docs[snapshot.docs.length - 1].id : null
-      };
+      var rows = snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); });
+      var sheetIds = Array.from(new Set(rows.map(function (row) { return row.priceSheetId; }).filter(Boolean)));
+      return Promise.all(sheetIds.map(function (sheetId) {
+        return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId).get();
+      })).then(function (sheetSnapshots) {
+        var sheets = {};
+        sheetSnapshots.forEach(function (sheet) {
+          if (sheet.exists) sheets[sheet.id] = sheet.data();
+        });
+        var items = rows.map(function (row) {
+          hydrateVoucherTests(row, sheets[row.priceSheetId] || null);
+          if (!row.totals || row.totals.projectContributionMinor == null) {
+            row.totals = pricingApi().sumLineItems(row.lineItems || []);
+          }
+          return row;
+        });
+        return {
+          items: items,
+          nextCursor: snapshot.size === pageSize ? snapshot.docs[snapshot.docs.length - 1].id : null
+        };
+      });
     });
   }
 
@@ -1667,6 +1724,7 @@
     saveLabConfig: saveLabConfig,
     getLabConfig: getLabConfig,
     updateIssuedLineItems: updateIssuedLineItems,
+    updateIssuedPatientDetails: updateIssuedPatientDetails,
     setVoucherReviewStatus: setVoucherReviewStatus,
     saveLabSettings: saveLabSettings,
     getLabSettings: getLabSettings,
