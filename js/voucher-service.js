@@ -773,6 +773,9 @@
   }
 
   function writePeriodStats(transaction, context, snapshot, ref, identity, fromStatus, toStatus, projectMinor) {
+    if (!identity || !identity.scope || !identity.period) return;
+    if (identity.scope === 'lab' && !identity.labId) return;
+    if (identity.scope === 'midwife' && !identity.midwifeId) return;
     var current = snapshot.exists ? snapshot.data() : {
       counts: pricingApi().emptyCounts(),
       projectVerifiedMinor: 0,
@@ -792,8 +795,8 @@
     transaction.set(ref, {
       scope: identity.scope,
       period: identity.period,
-      labId: identity.labId || '',
-      midwifeId: identity.scope === 'midwife' ? (identity.midwifeId || '') : '',
+      labId: identity.scope === 'lab' ? String(identity.labId) : '',
+      midwifeId: identity.scope === 'midwife' ? String(identity.midwifeId) : '',
       lastVoucherId: identity.voucherId || '',
       lastStatus: toStatus || '',
       counts: next.counts,
@@ -1122,11 +1125,13 @@
             scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId
           }, 'issued', 'redeemed', projectMinor);
           writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, {
-            scope: 'lab', period: period, labId: voucher.labId || context.user.uid, midwifeId: voucher.midwifeId, voucherId: voucherId
+            scope: 'lab', period: period, labId: voucher.labId || context.user.uid, midwifeId: voucher.midwifeId || '', voucherId: voucherId
           }, 'issued', 'redeemed', projectMinor);
-          writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
-            scope: 'midwife', period: period, labId: voucher.labId || '', midwifeId: voucher.midwifeId, voucherId: voucherId
-          }, 'issued', 'redeemed', projectMinor);
+          if (voucher.midwifeId) {
+            writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
+              scope: 'midwife', period: period, labId: '', midwifeId: voucher.midwifeId, voucherId: voucherId
+            }, 'issued', 'redeemed', projectMinor);
+          }
           return voucherId;
         });
       });
@@ -1208,10 +1213,15 @@
           updatedBy: context.user.uid
         });
       }).then(function () {
+        var nextLabName = requireString(data.labName, 'Lab name', 160);
+        var nextAddress = typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '';
         return labRef.update({
-          displayName: requireString(data.labName, 'Lab name', 160),
-          name: requireString(data.labName, 'Lab name', 160),
-          address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+          displayName: nextLabName,
+          name: nextLabName,
+          labName: nextLabName,
+          organization_name: nextLabName,
+          address: nextAddress,
+          organization_address: nextAddress,
           updatedAt: now,
           updatedBy: context.user.uid
         });
@@ -1339,11 +1349,17 @@
           var projectMinor = projectAmountFromVoucher(voucher, statSnapshots[3] && statSnapshots[3].exists ? statSnapshots[3].data() : null);
           var fromStatus = voucher.status;
           var identityGlobal = { scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId };
-          var identityLab = { scope: 'lab', period: period, labId: voucher.labId, midwifeId: voucher.midwifeId, voucherId: voucherId };
-          var identityMidwife = { scope: 'midwife', period: period, labId: voucher.labId, midwifeId: voucher.midwifeId, voucherId: voucherId };
           writePeriodStats(transaction, context, statSnapshots[0], globalStatsRef, identityGlobal, fromStatus, nextStatus, projectMinor);
-          writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, identityLab, fromStatus, nextStatus, projectMinor);
-          writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, identityMidwife, fromStatus, nextStatus, projectMinor);
+          if (voucher.labId) {
+            writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, {
+              scope: 'lab', period: period, labId: voucher.labId, midwifeId: voucher.midwifeId || '', voucherId: voucherId
+            }, fromStatus, nextStatus, projectMinor);
+          }
+          if (voucher.midwifeId) {
+            writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
+              scope: 'midwife', period: period, labId: '', midwifeId: voucher.midwifeId, voucherId: voucherId
+            }, fromStatus, nextStatus, projectMinor);
+          }
           return voucherId;
         });
       });
@@ -1421,16 +1437,24 @@
     var context = firebaseContext();
     var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
     var record = {
-      clientSignature: clampImage(data.clientSignature || '', 'Client signature'),
-      cashierSignature: clampImage(data.cashierSignature || '', 'Cashier signature'),
-      labSeal: clampImage(data.labSeal || '', 'Lab seal'),
-      poSignature: clampImage(data.poSignature || '', 'Program Officer signature'),
       updatedAt: serverTimestamp(context),
       updatedBy: context.user.uid
     };
+    if (Object.prototype.hasOwnProperty.call(data, 'clientSignature')) {
+      record.clientSignature = clampImage(data.clientSignature || '', 'Client signature');
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'cashierSignature')) {
+      record.cashierSignature = clampImage(data.cashierSignature || '', 'Cashier signature');
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'labSeal')) {
+      record.labSeal = clampImage(data.labSeal || '', 'Lab seal');
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'poSignature')) {
+      record.poSignature = clampImage(data.poSignature || '', 'Program Officer signature');
+    }
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId)
       .collection('artifacts').doc('signatures').set(record, { merge: true })
-      .then(function () { return record; });
+      .then(function () { return getVoucherSignatures(voucherId); });
   }
 
   function getVoucherSignatures(voucherCode) {
@@ -1449,6 +1473,36 @@
     var input = filters || {};
     var context = firebaseContext();
     var period = input.period || pricingApi().calendarPeriod(new Date());
+    if (period === 'all') {
+      var query = context.db.collection(COLLECTIONS.PERIOD_STATS);
+      if (input.midwifeId) {
+        query = query.where('scope', '==', 'midwife').where('midwifeId', '==', input.midwifeId);
+      } else if (input.labId) {
+        query = query.where('scope', '==', 'lab').where('labId', '==', input.labId);
+      } else {
+        query = query.where('scope', '==', 'global');
+      }
+      return query.get().then(function (snapshot) {
+        var merged = {
+          id: 'all',
+          period: 'all',
+          counts: pricingApi().emptyCounts(),
+          projectVerifiedMinor: 0,
+          projectPaidMinor: 0,
+          midwives: {}
+        };
+        snapshot.docs.forEach(function (doc) {
+          var row = doc.data() || {};
+          var counts = row.counts || {};
+          Object.keys(merged.counts).forEach(function (key) {
+            merged.counts[key] += Number(counts[key]) || 0;
+          });
+          merged.projectVerifiedMinor += Number(row.projectVerifiedMinor) || 0;
+          merged.projectPaidMinor += Number(row.projectPaidMinor) || 0;
+        });
+        return [merged];
+      });
+    }
     var refs = [];
     if (input.midwifeId) {
       refs.push(context.db.collection(COLLECTIONS.PERIOD_STATS).doc(pricingApi().periodStatsId('midwife', input.midwifeId, period)));

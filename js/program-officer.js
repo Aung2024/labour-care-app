@@ -8,10 +8,12 @@
     allocations: [],
     queue: [],
     selectedCodes: {},
-    currentVoucher: null,
+    dashStatusFilter: null,
     poSettings: null,
     poPad: null,
-    page: 'dashboard'
+    editingSignature: false,
+    page: 'dashboard',
+    navCollapsed: false
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -19,22 +21,33 @@
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-  function numberValue(value) { var n = Number(value); return Number.isFinite(n) ? n : 0; }
+  function numberValue(value) {
+    if (value === '' || value == null) return 0;
+    var n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
   function formatNumber(value) { return numberValue(value).toLocaleString(); }
   function formatMoney(value) { return formatNumber(value) + ' MMK'; }
   function normalizeKey(value) { return String(value || '').toLowerCase().trim(); }
   function service() { return window.VoucherService; }
   function pricing() { return window.VoucherPricing; }
 
-  var messageTimer = null;
+  var toastTimer = null;
   function showMessage(text, kind) {
-    var element = byId('pageMessage');
-    if (!element) return;
-    if (messageTimer) window.clearTimeout(messageTimer);
-    element.className = 'po-message po-message--' + (kind || 'info');
-    element.textContent = text;
-    element.hidden = false;
-    messageTimer = window.setTimeout(function () { element.hidden = true; }, 5000);
+    var host = byId('poToastHost');
+    if (!host) return;
+    if (toastTimer) window.clearTimeout(toastTimer);
+    var toast = document.createElement('div');
+    toast.className = 'po-toast po-toast--' + (kind || 'info');
+    toast.setAttribute('role', 'status');
+    toast.textContent = text;
+    host.innerHTML = '';
+    host.appendChild(toast);
+    host.hidden = false;
+    toastTimer = window.setTimeout(function () {
+      host.hidden = true;
+      host.innerHTML = '';
+    }, 4500);
   }
 
   function profileName(profile) {
@@ -51,11 +64,58 @@
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   }
 
+  function fillPeriodSelect(select, selected) {
+    var value = selected || 'all';
+    var options = ['<option value="all">All time</option>'];
+    var now = new Date();
+    for (var i = 0; i < 24; i += 1) {
+      var date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+      var label = date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+      options.push('<option value="' + key + '">' + escapeHtml(label) + '</option>');
+    }
+    select.innerHTML = options.join('');
+    select.value = value;
+    if (select.value !== value) select.value = 'all';
+  }
+
   function fillSelect(select, items, placeholder) {
+    var previous = select.value;
     select.innerHTML = '<option value="">' + escapeHtml(placeholder) + '</option>' +
       items.map(function (item) {
         return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(profileName(item)) + '</option>';
       }).join('');
+    if (previous && Array.from(select.options).some(function (opt) { return opt.value === previous; })) {
+      select.value = previous;
+    }
+  }
+
+  function periodDateRange(period) {
+    if (!period || period === 'all') return null;
+    var year = Number(period.slice(0, 4));
+    var month = Number(period.slice(5, 7));
+    if (!year || !month) return null;
+    var start = new Date(year, month - 1, 1);
+    var end = new Date(year, month, 0, 23, 59, 59, 999);
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+  }
+
+  function dateFieldForStatus(status) {
+    if (status === 'redeemed' || status === 'verified' || status === 'paid' || status === 'rejected') {
+      return 'redeemedAt';
+    }
+    return 'issuedAt';
+  }
+
+  function moneyInputValue(minorOrMajor) {
+    var value = numberValue(minorOrMajor);
+    return value === 0 ? '' : String(value);
+  }
+
+  function statusBadge(status) {
+    var key = normalizeKey(status);
+    return '<span class="po-badge po-badge--' + escapeHtml(key || 'neutral') + '">' +
+      escapeHtml(status || '—') + '</span>';
   }
 
   function showPage(page) {
@@ -65,7 +125,7 @@
       section.hidden = !active;
       section.classList.toggle('is-active', active);
     });
-    document.querySelectorAll('.po-sidenav button, #poDrawer button').forEach(function (button) {
+    document.querySelectorAll('.po-sidenav button[data-page], #poDrawer button[data-page]').forEach(function (button) {
       button.classList.toggle('is-active', button.getAttribute('data-page') === page);
     });
     var titles = {
@@ -77,10 +137,27 @@
     };
     byId('poPageTitle').textContent = titles[page] || 'Program Officer';
     byId('poDrawer').hidden = true;
-    if (page === 'dashboard') loadDashboard();
-    if (page === 'verify') loadQueue();
+    if (page === 'dashboard') loadDashboardStats();
+    if (page === 'verify') loadVerifyQueue();
     if (page === 'labs') renderLabConfig();
     if (page === 'allocations') renderAllocations();
+    if (page === 'settings') renderPoSettingsUi();
+  }
+
+  function setNavCollapsed(collapsed) {
+    state.navCollapsed = !!collapsed;
+    var sidenav = byId('poSidenav');
+    var layout = document.querySelector('.po-layout');
+    if (sidenav) sidenav.classList.toggle('is-collapsed', state.navCollapsed);
+    if (layout) layout.classList.toggle('po-layout--nav-collapsed', state.navCollapsed);
+    var btn = byId('poNavCollapseBtn');
+    if (btn) {
+      btn.setAttribute('aria-label', state.navCollapsed ? 'Expand menu' : 'Collapse menu');
+      btn.title = state.navCollapsed ? 'Expand menu' : 'Collapse menu';
+      btn.innerHTML = state.navCollapsed
+        ? '<i class="fas fa-angles-right" aria-hidden="true"></i>'
+        : '<i class="fas fa-angles-left" aria-hidden="true"></i>';
+    }
   }
 
   async function loadProfiles() {
@@ -90,6 +167,7 @@
     fillSelect(byId('dashLab'), state.labs, 'All laboratories');
     fillSelect(byId('dashMidwife'), state.maternityHomes, 'All midwives');
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
   }
 
@@ -105,10 +183,14 @@
         var labShare = row.labCostShareMinor != null ? row.labCostShareMinor / 100 : 0;
         var checked = row.active !== false;
         return '<tr data-service="' + escapeHtml(test.id) + '">' +
-          '<td><input class="form-check-input config-active" type="checkbox"' + (checked ? ' checked' : '') + '></td>' +
+          '<td><input class="form-check-input config-active" type="checkbox"' + (checked ? ' checked' : '') +
+          ' aria-label="Enable ' + escapeHtml(test.name) + '"></td>' +
           '<td>' + escapeHtml(test.name) + '</td>' +
-          '<td><input class="form-control config-regular" type="number" min="0" value="' + regular + '"></td>' +
-          '<td><input class="form-control config-labshare" type="number" min="0" value="' + labShare + '"></td>' +
+          '<td><input class="form-control config-regular" type="number" min="0" step="1" value="' +
+          escapeHtml(String(regular)) + '" aria-label="Regular price for ' + escapeHtml(test.name) + '"></td>' +
+          '<td><input class="form-control config-labshare" type="number" min="0" step="1" value="' +
+          escapeHtml(moneyInputValue(labShare)) + '" placeholder="0" aria-label="Lab cost share for ' +
+          escapeHtml(test.name) + '"></td>' +
           '<td class="config-client">—</td><td class="config-project">—</td></tr>';
       }).join('') + '</tbody></table>';
     updateConfigPreview();
@@ -168,14 +250,27 @@
         active: row.querySelector('.config-active').checked
       };
     });
+    var labName = byId('configLabName').value.trim();
     await service().saveLabConfig({
       labId: labId,
-      labName: byId('configLabName').value.trim(),
+      labName: labName,
       address: byId('configLabAddress').value.trim(),
       projectPercent: numberValue(byId('configProjectPercent').value),
       clientPercent: numberValue(byId('configClientPercent').value),
       tests: tests
     });
+    var lab = state.labs.find(function (row) { return row.id === labId; });
+    if (lab) {
+      lab.displayName = labName;
+      lab.name = labName;
+      lab.labName = labName;
+      lab.organization_name = labName;
+      lab.address = byId('configLabAddress').value.trim();
+    }
+    fillSelect(byId('dashLab'), state.labs, 'All laboratories');
+    fillSelect(byId('configLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
+    byId('configLab').value = labId;
     showMessage('Laboratory prices saved and published.', 'success');
   }
 
@@ -185,16 +280,23 @@
     var paid = 0;
     rows.forEach(function (row) {
       Object.keys(counts).forEach(function (key) {
-        counts[key] = Math.max(counts[key], Number((row.counts || {})[key]) || 0);
+        counts[key] += Number((row.counts || {})[key]) || 0;
       });
-      incoming = Math.max(incoming, Number(row.projectVerifiedMinor) || 0);
-      paid = Math.max(paid, Number(row.projectPaidMinor) || 0);
+      incoming += Number(row.projectVerifiedMinor) || 0;
+      paid += Number(row.projectPaidMinor) || 0;
     });
     return { counts: counts, incoming: incoming, paid: paid };
   }
 
-  async function loadDashboard() {
-    var period = byId('dashPeriod').value || currentPeriod();
+  function clearDashListHint() {
+    byId('dashList').innerHTML = '<div class="po-empty">Tap a status card to list vouchers</div>';
+    document.querySelectorAll('.po-stat--filter').forEach(function (card) {
+      card.classList.remove('is-active');
+    });
+  }
+
+  async function loadDashboardStats() {
+    var period = byId('dashPeriod').value || 'all';
     var stats = await service().getPeriodStats({
       period: period,
       labId: byId('dashLab').value || undefined,
@@ -208,82 +310,177 @@
     byId('statRejected').textContent = formatNumber(summary.counts.rejected);
     byId('statIncoming').textContent = formatMoney(summary.incoming / 100);
     byId('statReceived').textContent = formatMoney(summary.paid / 100);
-    var start = period + '-01';
-    var endDate = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0);
-    var report = await service().queryVoucherReport({
-      startDate: start + 'T00:00:00',
-      endDate: endDate.toISOString(),
-      labId: byId('dashLab').value,
-      midwifeId: byId('dashMidwife').value,
-      pageSize: 50
+    if (state.dashStatusFilter) {
+      await loadDashboardList(state.dashStatusFilter);
+    } else {
+      clearDashListHint();
+    }
+  }
+
+  async function loadDashboardList(status) {
+    state.dashStatusFilter = status;
+    document.querySelectorAll('.po-stat--filter').forEach(function (card) {
+      card.classList.toggle('is-active', card.getAttribute('data-dash-status') === status);
     });
+    byId('dashList').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
+    var period = byId('dashPeriod').value || 'all';
+    var range = periodDateRange(period);
+    var query = {
+      status: status,
+      labId: byId('dashLab').value || undefined,
+      midwifeId: byId('dashMidwife').value || undefined,
+      pageSize: 50,
+      dateField: dateFieldForStatus(status)
+    };
+    if (range) {
+      query.startDate = range.startDate;
+      query.endDate = range.endDate;
+    }
+    var report = await service().queryVouchersPaged(query);
     var rows = report.items || [];
-    byId('dashList').innerHTML = rows.length ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
-      rows.map(function (row) {
-        return '<tr><td>' + escapeHtml(row.code || row.id) + '</td><td>' + escapeHtml(row.status || '') + '</td><td>' +
-          escapeHtml(row.issuerNameSnapshot || row.midwifeId) + '</td><td>' +
-          escapeHtml(row.labNameSnapshot || row.labId) + '</td><td>' +
-          formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
-      }).join('') + '</tbody></table>' : '<div class="po-empty">No vouchers in this period.</div>';
+    byId('dashList').innerHTML = rows.length
+      ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
+        rows.map(function (row) {
+          return '<tr><td>' + escapeHtml(row.code || row.id) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
+            escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td><td>' +
+            escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td><td>' +
+            formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<div class="po-empty">No ' + escapeHtml(status) + ' vouchers for this filter.</div>';
   }
 
-  async function loadQueue() {
-    var status = byId('verifyQueueStatus').value || 'redeemed';
-    var result = await service().queryVouchersPaged({ status: status, pageSize: 50, dateField: 'redeemedAt' });
+  async function loadVerifyQueue() {
+    var status = byId('verifyStatus').value || 'redeemed';
+    var period = byId('verifyPeriod').value || 'all';
+    var range = periodDateRange(period);
+    var query = {
+      status: status,
+      labId: byId('verifyLab').value || undefined,
+      pageSize: 50,
+      dateField: dateFieldForStatus(status)
+    };
+    if (range) {
+      query.startDate = range.startDate;
+      query.endDate = range.endDate;
+    }
+    byId('verifyTable').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
+    var result = await service().queryVouchersPaged(query);
     state.queue = result.items || [];
-    renderQueue();
+    Object.keys(state.selectedCodes).forEach(function (code) {
+      if (!state.queue.some(function (row) { return (row.code || row.id) === code; })) {
+        delete state.selectedCodes[code];
+      }
+    });
+    renderVerifyTable();
   }
 
-  function renderQueue() {
+  function renderVerifyTable() {
     if (!state.queue.length) {
-      byId('verifyQueue').innerHTML = '<div class="po-empty">No vouchers in this queue.</div>';
+      byId('verifyTable').innerHTML = '<div class="po-empty">No vouchers match these filters.</div>';
       return;
     }
-    byId('verifyQueue').innerHTML = state.queue.map(function (row) {
-      var code = row.code || row.id;
-      return '<label class="po-queue-item' + (state.currentVoucher && state.currentVoucher.code === code ? ' is-active' : '') + '">' +
-        '<input type="checkbox" data-code="' + escapeHtml(code) + '"' + (state.selectedCodes[code] ? ' checked' : '') + '>' +
-        '<button type="button" data-open="' + escapeHtml(code) + '"><strong>' + escapeHtml(code) + '</strong><br><small>' +
-        escapeHtml(row.patientNameSnapshot || '') + ' · ' + escapeHtml(row.status) + '</small></button></label>';
-    }).join('');
+    byId('verifyTable').innerHTML =
+      '<table class="po-table po-table--verify"><thead><tr>' +
+      '<th><span class="visually-hidden">Select</span></th>' +
+      '<th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Amount</th><th>Status</th><th></th>' +
+      '</tr></thead><tbody>' +
+      state.queue.map(function (row) {
+        var code = row.code || row.id;
+        var amount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
+        return '<tr data-code="' + escapeHtml(code) + '">' +
+          '<td><input type="checkbox" class="form-check-input verify-check" data-code="' + escapeHtml(code) + '"' +
+          (state.selectedCodes[code] ? ' checked' : '') + ' aria-label="Select ' + escapeHtml(code) + '"></td>' +
+          '<td><strong>' + escapeHtml(code) + '</strong></td>' +
+          '<td>' + escapeHtml(row.patientNameSnapshot || '—') + '</td>' +
+          '<td>' + escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td>' +
+          '<td>' + escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td>' +
+          '<td>' + formatMoney(amount) + '</td>' +
+          '<td>' + statusBadge(row.status) + '</td>' +
+          '<td><button type="button" class="btn btn-outline-primary btn-sm" data-preview="' +
+          escapeHtml(code) + '">Preview</button></td></tr>';
+      }).join('') + '</tbody></table>';
   }
 
-  async function openVoucher(code) {
-    state.currentVoucher = await service().lookupVoucher(code);
-    var signatures = await service().getVoucherSignatures(code);
-    var settings = state.poSettings || await service().getPoSettings();
-    state.poSettings = settings;
-    var extras = {
+  function selectedVerifyCodes() {
+    return Array.from(document.querySelectorAll('#verifyTable .verify-check:checked'))
+      .map(function (input) { return input.getAttribute('data-code'); })
+      .filter(Boolean);
+  }
+
+  async function buildInvoiceExtras(voucher, signatures, settings) {
+    var seal = (signatures && signatures.labSeal) || '';
+    if (!seal && voucher.labId) {
+      try {
+        var labSettings = await service().getLabSettings(voucher.labId);
+        seal = (labSettings && labSettings.seal) || '';
+      } catch (error) {
+        seal = '';
+      }
+    }
+    return {
       lab: {
-        seal: signatures.labSeal,
-        cashierSignature: signatures.cashierSignature,
-        cashierName: state.currentVoucher.cashierNameSnapshot,
-        date: window.VoucherInvoice.formatDate(state.currentVoucher.redeemedAt)
+        seal: seal,
+        cashierSignature: (signatures && signatures.cashierSignature) || '',
+        cashierName: voucher.cashierNameSnapshot,
+        date: window.VoucherInvoice.formatDate(voucher.redeemedAt)
       },
       client: {
-        signature: signatures.clientSignature,
-        name: state.currentVoucher.patientNameSnapshot,
-        nrc: state.currentVoucher.patientNrcSnapshot,
-        phone: state.currentVoucher.patientPhoneSnapshot,
-        address: state.currentVoucher.patientAddressSnapshot,
-        date: window.VoucherInvoice.formatDate(state.currentVoucher.redeemedAt)
+        signature: (signatures && signatures.clientSignature) || '',
+        name: voucher.patientNameSnapshot,
+        nrc: voucher.patientNrcSnapshot,
+        phone: voucher.patientPhoneSnapshot,
+        address: voucher.patientAddressSnapshot,
+        date: window.VoucherInvoice.formatDate(voucher.redeemedAt)
       },
-      project: state.currentVoucher.status === 'verified' || state.currentVoucher.status === 'paid' ? {
-        signature: signatures.poSignature || settings.signature,
-        name: state.currentVoucher.poNameSnapshot || settings.name,
-        designation: state.currentVoucher.poDesignationSnapshot || settings.designation,
-        date: window.VoucherInvoice.formatDate(state.currentVoucher.verifiedAt)
+      project: voucher.status === 'verified' || voucher.status === 'paid' ? {
+        signature: (signatures && signatures.poSignature) || (settings && settings.signature) || '',
+        name: voucher.poNameSnapshot || (settings && settings.name) || '',
+        designation: voucher.poDesignationSnapshot || (settings && settings.designation) || '',
+        date: window.VoucherInvoice.formatDate(voucher.verifiedAt)
       } : {}
     };
-    window.VoucherInvoice.render(byId('verifyInvoice'), window.VoucherInvoice.modelFromVoucher(state.currentVoucher, extras));
-    byId('verifyOneBtn').disabled = state.currentVoucher.status !== 'redeemed';
-    byId('rejectOneBtn').disabled = state.currentVoucher.status !== 'redeemed';
-    renderQueue();
+  }
+
+  async function openPreviewModal(codes) {
+    var list = (codes || []).filter(Boolean);
+    if (!list.length) throw new Error('Select or open at least one voucher to preview.');
+    var settings = state.poSettings || await service().getPoSettings();
+    state.poSettings = settings;
+    var body = byId('previewModalBody');
+    body.innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading invoices…</div>';
+    byId('previewModal').hidden = false;
+    document.body.classList.add('po-modal-open');
+
+    var mounts = [];
+    for (var index = 0; index < list.length; index += 1) {
+      var voucher = await service().lookupVoucher(list[index]);
+      var signatures = await service().getVoucherSignatures(list[index]);
+      var extras = await buildInvoiceExtras(voucher, signatures, settings);
+      var wrap = document.createElement('div');
+      wrap.className = 'po-preview-stack';
+      wrap.innerHTML = '<div class="po-preview-stack__title">' + escapeHtml(voucher.code || list[index]) +
+        ' · ' + escapeHtml(voucher.status || '') + '</div><div class="invoice-preview"></div>';
+      mounts.push({ voucher: voucher, extras: extras, mount: wrap.querySelector('.invoice-preview'), wrap: wrap });
+    }
+    body.innerHTML = '';
+    mounts.forEach(function (item) {
+      body.appendChild(item.wrap);
+      window.VoucherInvoice.render(item.mount, window.VoucherInvoice.modelFromVoucher(item.voucher, item.extras));
+    });
+  }
+
+  function closePreviewModal() {
+    byId('previewModal').hidden = true;
+    byId('previewModalBody').innerHTML = '';
+    document.body.classList.remove('po-modal-open');
   }
 
   async function review(action, codes) {
     var list = codes || [];
     if (!list.length) throw new Error('Select at least one voucher.');
+    if (action === 'reject' && !byId('rejectReason').value.trim()) {
+      throw new Error('Enter a reject reason.');
+    }
     for (var index = 0; index < list.length; index += 1) {
       await service().setVoucherReviewStatus(list[index], action, {
         poName: (state.poSettings && state.poSettings.name) || byId('poName').value,
@@ -295,9 +492,9 @@
       }
     }
     showMessage('Voucher status updated.', 'success');
-    await loadQueue();
-    if (state.currentVoucher) await openVoucher(state.currentVoucher.code);
-    if (state.page === 'dashboard') await loadDashboard();
+    state.selectedCodes = {};
+    await loadVerifyQueue();
+    if (state.page === 'dashboard') await loadDashboardStats();
   }
 
   async function loadAllocations() {
@@ -335,13 +532,50 @@
     showMessage('Allocation saved.', 'success');
   }
 
+  function ensurePoPad() {
+    var canvas = byId('poSignaturePad');
+    if (!canvas) return null;
+    if (!state.poPad) state.poPad = window.VoucherInvoice.bindSignaturePad(canvas);
+    return state.poPad;
+  }
+
+  function setSignatureEditMode(editing) {
+    state.editingSignature = !!editing;
+    var hasSaved = !!(state.poSettings && state.poSettings.signature);
+    byId('poSignaturePreviewWrap').hidden = !(hasSaved && !state.editingSignature);
+    byId('poSignaturePadWrap').hidden = !state.editingSignature;
+    byId('poSignatureEmpty').hidden = hasSaved || state.editingSignature;
+    if (state.editingSignature) ensurePoPad();
+  }
+
+  function renderPoSettingsUi() {
+    byId('poName').value = (state.poSettings && state.poSettings.name) || '';
+    byId('poDesignation').value = (state.poSettings && state.poSettings.designation) || '';
+    var preview = byId('poSignaturePreview');
+    if (state.poSettings && state.poSettings.signature) {
+      preview.src = state.poSettings.signature;
+      setSignatureEditMode(false);
+    } else {
+      preview.removeAttribute('src');
+      setSignatureEditMode(false);
+    }
+  }
+
   async function savePoSettings() {
-    var signature = state.poPad && !state.poPad.isEmpty() ? await window.VoucherInvoice.compressImage(state.poPad.toDataUrl(), 320, 140) : (state.poSettings && state.poSettings.signature) || '';
+    var existing = (state.poSettings && state.poSettings.signature) || '';
+    var signature = existing;
+    if (state.editingSignature && state.poPad && !state.poPad.isEmpty()) {
+      signature = await window.VoucherInvoice.compressImage(state.poPad.toDataUrl(), 320, 140);
+    } else if (state.editingSignature && (!state.poPad || state.poPad.isEmpty()) && !existing) {
+      throw new Error('Draw a signature before saving.');
+    }
     state.poSettings = await service().savePoSettings({
       name: byId('poName').value.trim(),
       designation: byId('poDesignation').value.trim(),
       signature: signature
     });
+    if (state.poPad) state.poPad.clear();
+    renderPoSettingsUi();
     showMessage('Program Officer settings saved.', 'success');
   }
 
@@ -352,11 +586,6 @@
     window.location.replace('login.html');
   }
 
-  function selectedQueueCodes() {
-    return Array.from(document.querySelectorAll('#verifyQueue input[type="checkbox"]:checked'))
-      .map(function (input) { return input.getAttribute('data-code'); });
-  }
-
   function bindEvents() {
     document.querySelectorAll('[data-page]').forEach(function (button) {
       button.addEventListener('click', function () { showPage(button.getAttribute('data-page')); });
@@ -364,12 +593,38 @@
     byId('poMenuBtn').addEventListener('click', function () {
       byId('poDrawer').hidden = !byId('poDrawer').hidden;
     });
+    byId('poNavCollapseBtn').addEventListener('click', function () {
+      setNavCollapsed(!state.navCollapsed);
+    });
     byId('homeBtn').addEventListener('click', function () { showPage('dashboard'); });
     byId('refreshAllBtn').addEventListener('click', refreshAll);
     byId('logoutBtn').addEventListener('click', logout);
-    byId('dashPeriod').addEventListener('change', loadDashboard);
-    byId('dashLab').addEventListener('change', loadDashboard);
-    byId('dashMidwife').addEventListener('change', loadDashboard);
+
+    byId('dashPeriod').addEventListener('change', function () {
+      state.dashStatusFilter = null;
+      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('dashLab').addEventListener('change', function () {
+      state.dashStatusFilter = null;
+      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('dashMidwife').addEventListener('change', function () {
+      state.dashStatusFilter = null;
+      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    document.querySelectorAll('.po-stat--filter').forEach(function (card) {
+      card.addEventListener('click', function () {
+        var status = card.getAttribute('data-dash-status');
+        loadDashboardList(status).catch(function (error) { showMessage(error.message, 'error'); });
+      });
+      card.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          card.click();
+        }
+      });
+    });
+
     byId('configLab').addEventListener('change', function () {
       renderLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
     });
@@ -379,34 +634,78 @@
     byId('saveLabConfigBtn').addEventListener('click', function () {
       saveLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
     });
-    byId('verifyQueueStatus').addEventListener('change', loadQueue);
-    byId('verifyQueue').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-open]');
-      if (button) openVoucher(button.getAttribute('data-open')).catch(function (error) { showMessage(error.message, 'error'); });
+
+    byId('verifyLab').addEventListener('change', function () {
+      loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
     });
-    byId('verifyQueue').addEventListener('change', function (event) {
-      if (event.target.matches('input[type="checkbox"]')) {
+    byId('verifyPeriod').addEventListener('change', function () {
+      loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('verifyStatus').addEventListener('change', function () {
+      loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('verifyTable').addEventListener('change', function (event) {
+      if (event.target.matches('.verify-check')) {
         state.selectedCodes[event.target.getAttribute('data-code')] = event.target.checked;
       }
     });
-    byId('verifyOneBtn').addEventListener('click', function () {
-      if (!state.currentVoucher) return;
-      review('verify', [state.currentVoucher.code]).catch(function (error) { showMessage(error.message, 'error'); });
+    byId('verifyTable').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-preview]');
+      if (!button) return;
+      var code = button.getAttribute('data-preview');
+      var selected = selectedVerifyCodes();
+      var codes = selected.length && selected.indexOf(code) !== -1 ? selected : [code];
+      openPreviewModal(codes).catch(function (error) { showMessage(error.message, 'error'); });
     });
-    byId('rejectOneBtn').addEventListener('click', function () {
-      if (!state.currentVoucher) return;
-      review('reject', [state.currentVoucher.code]).catch(function (error) { showMessage(error.message, 'error'); });
+    byId('verifyOneBtn').addEventListener('click', function () {
+      var codes = selectedVerifyCodes();
+      if (codes.length !== 1) {
+        showMessage('Select exactly one voucher to verify.', 'error');
+        return;
+      }
+      review('verify', codes).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('bulkVerifyBtn').addEventListener('click', function () {
-      review('verify', selectedQueueCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+      review('verify', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('payOneBtn').addEventListener('click', function () {
+      var codes = selectedVerifyCodes();
+      if (codes.length !== 1) {
+        showMessage('Select exactly one voucher to mark paid.', 'error');
+        return;
+      }
+      review('pay', codes).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('bulkPayBtn').addEventListener('click', function () {
-      review('pay', selectedQueueCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+      review('pay', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
+    byId('rejectOneBtn').addEventListener('click', function () {
+      review('reject', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    document.querySelectorAll('[data-close-preview]').forEach(function (el) {
+      el.addEventListener('click', closePreviewModal);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !byId('previewModal').hidden) closePreviewModal();
+    });
+
     byId('openAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = false; });
     byId('cancelAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = true; });
     byId('allocationFormCard').addEventListener('submit', function (event) {
       saveAllocation(event).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+
+    byId('editPoSignBtn').addEventListener('click', function () {
+      setSignatureEditMode(true);
+      if (state.poPad) state.poPad.clear();
+    });
+    byId('addPoSignBtn').addEventListener('click', function () {
+      setSignatureEditMode(true);
+      if (state.poPad) state.poPad.clear();
+    });
+    byId('cancelPoSignEditBtn').addEventListener('click', function () {
+      if (state.poPad) state.poPad.clear();
+      setSignatureEditMode(false);
     });
     byId('clearPoSignBtn').addEventListener('click', function () { if (state.poPad) state.poPad.clear(); });
     byId('savePoSettingsBtn').addEventListener('click', function () {
@@ -414,15 +713,15 @@
     });
   }
 
-  async function refreshAll() {
+  async function refreshAll(options) {
     await loadProfiles();
     await loadAllocations();
     state.poSettings = await service().getPoSettings();
-    byId('poName').value = state.poSettings.name || '';
-    byId('poDesignation').value = state.poSettings.designation || '';
-    if (state.page === 'dashboard') await loadDashboard();
-    if (state.page === 'verify') await loadQueue();
-    showMessage('Program data refreshed.', 'success');
+    renderPoSettingsUi();
+    if (state.page === 'dashboard') await loadDashboardStats();
+    if (state.page === 'verify') await loadVerifyQueue();
+    if (state.page === 'labs') await renderLabConfig();
+    if (!(options && options.silent)) showMessage('Program data refreshed.', 'success');
   }
 
   async function initialize(user) {
@@ -432,9 +731,11 @@
       throw new Error('Active Program Officer access required.');
     }
     byId('signedInUser').textContent = profileName(Object.assign({ id: profile.id }, profile.data()));
-    byId('dashPeriod').value = currentPeriod();
-    state.poPad = window.VoucherInvoice.bindSignaturePad(byId('poSignaturePad'));
-    await refreshAll();
+    fillPeriodSelect(byId('dashPeriod'), 'all');
+    fillPeriodSelect(byId('verifyPeriod'), 'all');
+    byId('verifyStatus').value = 'redeemed';
+    setNavCollapsed(false);
+    await refreshAll({ silent: true });
     showPage('dashboard');
   }
 

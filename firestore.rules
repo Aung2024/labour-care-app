@@ -863,7 +863,8 @@ service cloud.firestore {
               isLab()
               && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.labId == request.auth.uid
               && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.status == "issued"
-              && request.resource.data.poSignature == (resource == null ? "" : resource.data.get("poSignature", ""))
+              && request.resource.data.get("poSignature", "")
+                == (resource == null ? "" : resource.data.get("poSignature", ""))
             )
             || (
               isVoucherAdministrator()
@@ -915,6 +916,8 @@ service cloud.firestore {
         && periodSubjectMatchesVoucher()
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time
+        && request.resource.data.scope in ["global", "lab", "midwife"]
+        && request.resource.data.period is string
         && (
           (
             isMidwife()
@@ -931,6 +934,7 @@ service cloud.firestore {
           || (
             isVoucherAdministrator()
             && request.resource.data.lastStatus in ["verified", "paid", "rejected"]
+            && request.resource.data.counts is map
           )
         );
       allow delete: if false;

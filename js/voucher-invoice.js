@@ -46,20 +46,41 @@
     return '';
   }
 
-  function renderRows(model) {
-    var selected = {};
-    (model.selectedServiceIds || []).forEach(function (id) { selected[id] = true; });
+  function selectedItems(model) {
     var byId = itemsById(model);
-    return tests().map(function (standard, index) {
-      var item = byId[standard.id];
-      var filled = selected[standard.id] || (item && (model.selectedServiceIds || []).length === 0 && (item.clientCopayMinor || item.clientCostShare));
-      var regular = filled ? money(majorOf(item, 'regularPriceMinor', 'regularPrice'), true) : '';
-      var labShare = filled ? money(majorOf(item, 'labCostShareMinor', 'labCostShare'), true) : '';
-      var client = filled ? money(majorOf(item, 'clientCopayMinor', 'clientCostShare'), true) : '';
-      var project = filled ? money(majorOf(item, 'projectContributionMinor', 'projectCostShare'), true) : '';
+    var ids = model.selectedServiceIds || [];
+    if (ids.length) {
+      return ids.map(function (id, index) {
+        var item = byId[id];
+        var standard = tests().find(function (row) { return row.id === id; });
+        return {
+          index: index + 1,
+          id: id,
+          name: (item && (item.serviceName || item.name)) || (standard && standard.name) || id,
+          item: item || null
+        };
+      });
+    }
+    return (model.lineItems || model.tests || []).map(function (item, index) {
+      return {
+        index: index + 1,
+        id: item.serviceId || item.id,
+        name: item.serviceName || item.name || '',
+        item: item
+      };
+    });
+  }
+
+  function renderRows(model) {
+    return selectedItems(model).map(function (row) {
+      var item = row.item;
+      var regular = money(majorOf(item, 'regularPriceMinor', 'regularPrice'), true);
+      var labShare = money(majorOf(item, 'labCostShareMinor', 'labCostShare'), true);
+      var client = money(majorOf(item, 'clientCopayMinor', 'clientCostShare'), true);
+      var project = money(majorOf(item, 'projectContributionMinor', 'projectCostShare'), true);
       return '<tr>' +
-        '<td class="inv-no">' + (index + 1) + '</td>' +
-        '<td class="inv-name">' + escapeHtml(standard.name) + '</td>' +
+        '<td class="inv-no">' + row.index + '</td>' +
+        '<td class="inv-name">' + escapeHtml(row.name) + '</td>' +
         '<td class="inv-money">' + escapeHtml(regular) + '</td>' +
         '<td class="inv-money">' + escapeHtml(labShare) + '</td>' +
         '<td class="inv-money">' + escapeHtml(client) + '</td>' +
@@ -98,8 +119,15 @@
       '<article class="invoice-sheet" id="invoiceSheet">' +
         (rejected ? '<div class="invoice-rejected">Rejected' + (data.rejectReason ? ': ' + escapeHtml(data.rejectReason) : '') + '</div>' : '') +
         '<div class="invoice-seal-row">' +
-          '<div class="invoice-seal-label">Lab Seal :</div>' +
-          (lab.seal ? '<img class="invoice-seal" src="' + escapeHtml(lab.seal) + '" alt="Lab seal">' : '<div class="invoice-seal-box"></div>') +
+          '<div class="invoice-seal-left">' +
+            '<div class="invoice-seal-label">Lab Seal :</div>' +
+            (lab.seal ? '<img class="invoice-seal" src="' + escapeHtml(lab.seal) + '" alt="Lab seal">' : '<div class="invoice-seal-box"></div>') +
+          '</div>' +
+          '<div class="invoice-seal-right">' +
+            '<div class="invoice-qr" id="invoiceQr" aria-label="Voucher QR code"></div>' +
+            '<div class="invoice-code-wrap"><span>Voucher Code :</span> <strong class="invoice-code">' +
+              escapeHtml(text(data.voucherCode)) + '</strong></div>' +
+          '</div>' +
         '</div>' +
         '<h1 class="invoice-title">Invoice for Laboratory Charges</h1>' +
         '<div class="invoice-meta">' +
@@ -109,10 +137,6 @@
             '<div><span>Phone number :</span> <strong>' + escapeHtml(text(data.phone)) + '</strong></div>' +
           '</div>' +
           '<div class="invoice-meta-right">' +
-            '<div class="invoice-code-row">' +
-              '<div><span>Voucher Code :</span> <strong class="invoice-code">' + escapeHtml(text(data.voucherCode)) + '</strong></div>' +
-              '<div class="invoice-qr" id="invoiceQr" aria-label="Voucher QR code"></div>' +
-            '</div>' +
             '<div><span>Date :</span> <strong>' + escapeHtml(text(data.date || formatDate(data.issuedAt))) + '</strong></div>' +
           '</div>' +
         '</div>' +
