@@ -13,7 +13,8 @@
     poPad: null,
     editingSignature: false,
     page: 'dashboard',
-    navCollapsed: false
+    navCollapsed: false,
+    loggingOut: false
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -34,6 +35,7 @@
 
   var toastTimer = null;
   function showMessage(text, kind) {
+    if (state.loggingOut) return;
     var host = byId('poToastHost');
     if (!host) return;
     if (toastTimer) window.clearTimeout(toastTimer);
@@ -513,9 +515,52 @@
     if (state.page === 'dashboard') await loadDashboardStats();
   }
 
+  async function resetScorecards() {
+    var confirmed = window.confirm(
+      'Reset all dashboard scorecards to zero? Use this after deleting vouchers for a clean test slate.'
+    );
+    if (!confirmed) return;
+    var result = await service().resetPeriodStats();
+    byId('dashList').innerHTML = '<div class="po-empty">Tap a status card to list vouchers</div>';
+    state.dashStatusFilter = null;
+    await loadDashboardStats();
+    showMessage('Scorecards reset (' + (result.deleted || 0) + ' period records cleared).', 'success');
+  }
+
   async function loadAllocations() {
     state.allocations = await service().getAllocations();
     renderAllocations();
+  }
+
+  function openAllocationCreate() {
+    byId('allocationMode').value = 'create';
+    byId('allocationMaternityHome').disabled = false;
+    byId('allocationMaternityHome').value = '';
+    byId('allocationCount').value = '';
+    byId('allocationRemaining').value = '';
+    byId('allocationRemaining').closest('label').hidden = true;
+    byId('allocationBudget').value = '';
+    byId('allocationCurrency').value = 'MMK';
+    byId('allocationNote').value = '';
+    byId('allocationSubmitBtn').textContent = 'Allocate';
+    byId('allocationFormCard').hidden = false;
+  }
+
+  function openAllocationEdit(midwifeId) {
+    var item = state.allocations.find(function (row) { return row.midwifeId === midwifeId || row.id === midwifeId; });
+    if (!item) throw new Error('Allocation was not found.');
+    byId('allocationMode').value = 'edit';
+    byId('allocationMaternityHome').disabled = false;
+    byId('allocationMaternityHome').value = item.midwifeId || item.id;
+    byId('allocationMaternityHome').disabled = true;
+    byId('allocationCount').value = String(item.allocatedUnits || 0);
+    byId('allocationRemaining').value = String(item.remainingUnits || 0);
+    byId('allocationRemaining').closest('label').hidden = false;
+    byId('allocationBudget').value = String(((item.budget && item.budget.totalMinor) || 0) / 100);
+    byId('allocationCurrency').value = (item.budget && item.budget.currency) || 'MMK';
+    byId('allocationNote').value = (item.budget && item.budget.note) || '';
+    byId('allocationSubmitBtn').textContent = 'Save changes';
+    byId('allocationFormCard').hidden = false;
   }
 
   function renderAllocations() {
@@ -525,27 +570,49 @@
     }
     byId('allocationsList').innerHTML = state.allocations.map(function (item) {
       var home = state.maternityHomes.find(function (row) { return row.id === item.midwifeId; });
+      var midwifeId = item.midwifeId || item.id;
       return '<article class="po-allocation"><div><div class="po-allocation__name">' +
-        escapeHtml(home ? profileName(home) : item.midwifeId) + '</div></div>' +
+        escapeHtml(home ? profileName(home) : midwifeId) + '</div></div>' +
         '<div class="po-metric"><span>Allocated</span><strong>' + formatNumber(item.allocatedUnits) + '</strong></div>' +
         '<div class="po-metric"><span>Remaining</span><strong>' + formatNumber(item.remainingUnits) + '</strong></div>' +
         '<div class="po-metric"><span>PO-only budget</span><strong>' +
-        formatMoney(((item.budget && item.budget.totalMinor) || 0) / 100) + '</strong></div></article>';
+        formatMoney(((item.budget && item.budget.totalMinor) || 0) / 100) + '</strong></div>' +
+        '<div class="po-allocation__actions">' +
+        '<button type="button" class="btn btn-outline-primary btn-sm" data-edit-allocation="' +
+        escapeHtml(midwifeId) + '">Edit</button>' +
+        '<button type="button" class="btn btn-outline-secondary btn-sm" data-reset-allocation="' +
+        escapeHtml(midwifeId) + '">Reset remaining</button>' +
+        '</div></article>';
     }).join('');
   }
 
   async function saveAllocation(event) {
     event.preventDefault();
-    await service().allocateVouchers({
-      midwifeId: byId('allocationMaternityHome').value,
-      allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
-      totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
-      currency: byId('allocationCurrency').value.trim() || 'MMK',
-      note: byId('allocationNote').value.trim()
-    });
+    var mode = byId('allocationMode').value || 'create';
+    var midwifeId = byId('allocationMaternityHome').value;
+    if (mode === 'edit') {
+      await service().updateAllocation({
+        midwifeId: midwifeId,
+        allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
+        remainingUnits: Math.floor(numberValue(byId('allocationRemaining').value)),
+        totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
+        currency: byId('allocationCurrency').value.trim() || 'MMK',
+        note: byId('allocationNote').value.trim()
+      });
+      showMessage('Allocation updated.', 'success');
+    } else {
+      await service().allocateVouchers({
+        midwifeId: midwifeId,
+        allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
+        totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
+        currency: byId('allocationCurrency').value.trim() || 'MMK',
+        note: byId('allocationNote').value.trim()
+      });
+      showMessage('Allocation saved.', 'success');
+    }
     byId('allocationFormCard').hidden = true;
+    byId('allocationMaternityHome').disabled = false;
     await loadAllocations();
-    showMessage('Allocation saved.', 'success');
   }
 
   function ensurePoPad() {
@@ -596,7 +663,10 @@
   }
 
   async function logout() {
-    await firebase.auth().signOut();
+    state.loggingOut = true;
+    try {
+      await firebase.auth().signOut();
+    } catch (error) {}
     sessionStorage.clear();
     ['role', 'userEmail', 'userId'].forEach(function (key) { localStorage.removeItem(key); });
     window.location.replace('login.html');
@@ -716,10 +786,35 @@
       if (event.key === 'Escape' && !byId('previewModal').hidden) closePreviewModal();
     });
 
-    byId('openAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = false; });
-    byId('cancelAllocationBtn').addEventListener('click', function () { byId('allocationFormCard').hidden = true; });
+    byId('openAllocationBtn').addEventListener('click', function () { openAllocationCreate(); });
+    byId('cancelAllocationBtn').addEventListener('click', function () {
+      byId('allocationFormCard').hidden = true;
+      byId('allocationMaternityHome').disabled = false;
+    });
     byId('allocationFormCard').addEventListener('submit', function (event) {
       saveAllocation(event).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('allocationsList').addEventListener('click', function (event) {
+      var editBtn = event.target.closest('[data-edit-allocation]');
+      if (editBtn) {
+        openAllocationEdit(editBtn.getAttribute('data-edit-allocation'));
+        return;
+      }
+      var resetBtn = event.target.closest('[data-reset-allocation]');
+      if (!resetBtn) return;
+      var midwifeId = resetBtn.getAttribute('data-reset-allocation');
+      var confirmed = window.confirm('Reset remaining vouchers back to the allocated count for this midwife?');
+      if (!confirmed) return;
+      service().resetAllocation(midwifeId).then(function () {
+        return loadAllocations();
+      }).then(function () {
+        showMessage('Remaining vouchers reset.', 'success');
+      }).catch(function (error) {
+        showMessage(error.message, 'error');
+      });
+    });
+    byId('resetScorecardsBtn').addEventListener('click', function () {
+      resetScorecards().catch(function (error) { showMessage(error.message, 'error'); });
     });
 
     byId('editPoSignBtn').addEventListener('click', function () {
@@ -769,11 +864,16 @@
   document.addEventListener('DOMContentLoaded', function () {
     bindEvents();
     firebase.auth().onAuthStateChanged(function (user) {
+      if (state.loggingOut) {
+        window.location.replace('login.html');
+        return;
+      }
       if (!user) {
         window.location.replace('login.html');
         return;
       }
       initialize(user).catch(function (error) {
+        if (state.loggingOut) return;
         showMessage(error.message || 'Could not open Program Officer.', 'error');
       });
     });

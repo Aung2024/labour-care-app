@@ -183,6 +183,15 @@
     if (fromStatus === 'verified' && toStatus === 'rejected') {
       next.projectVerifiedMinor = Math.max(0, next.projectVerifiedMinor - project);
     }
+    // Deletion / unwind: remove money that belonged to the removed status.
+    if (fromStatus && !toStatus) {
+      if (fromStatus === 'verified') {
+        next.projectVerifiedMinor = Math.max(0, next.projectVerifiedMinor - project);
+      }
+      if (fromStatus === 'paid') {
+        next.projectPaidMinor = Math.max(0, next.projectPaidMinor - project);
+      }
+    }
     return next;
   }
 

@@ -511,21 +511,37 @@
     var settings = state.settings || {
       cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
     };
+    if (!state.editingCashiers) state.editingCashiers = {};
     updateSealPreview(settings.seal || '');
     el('cashierFields').innerHTML = [0, 1, 2].map(function (index) {
       var cashier = (settings.cashiers || [])[index] || { name: '', signature: '' };
-      return '<div class="lab-cashier-card">' +
+      var editing = !!state.editingCashiers[index] || !cashier.signature;
+      return '<div class="lab-cashier-card" data-cashier-card="' + index + '">' +
         '<label class="form-label" for="cashierName' + index + '">Cashier ' + (index + 1) + ' name</label>' +
         '<input id="cashierName' + index + '" class="form-control form-control-lg cashier-name" data-index="' + index +
         '" value="' + escapeHtml(cashier.name || '') + '" autocomplete="name">' +
         '<label class="form-label mt-2">Signature</label>' +
-        '<canvas class="sign-pad cashier-pad" data-index="' + index + '" width="640" height="180" aria-label="Cashier ' +
-        (index + 1) + ' signature"></canvas>' +
-        '<button type="button" class="btn btn-outline-secondary voucher-header-action mt-2 clear-cashier" data-index="' +
-        index + '">Clear</button></div>';
+        (cashier.signature && !editing
+          ? '<div class="lab-cashier-preview-wrap">' +
+            '<img class="lab-cashier-preview" src="' + escapeHtml(cashier.signature) + '" alt="Cashier ' + (index + 1) + ' signature">' +
+            '<button type="button" class="btn btn-outline-primary voucher-header-action mt-2 edit-cashier" data-index="' +
+            index + '"><i class="fas fa-pen me-1" aria-hidden="true"></i>Edit signature</button></div>'
+          : '<canvas class="sign-pad cashier-pad" data-index="' + index + '" width="640" height="180" aria-label="Cashier ' +
+            (index + 1) + ' signature"></canvas>' +
+            '<div class="lab-sign-actions mt-2">' +
+            '<button type="button" class="btn btn-outline-secondary voucher-header-action clear-cashier" data-index="' +
+            index + '">Clear</button>' +
+            (cashier.signature
+              ? '<button type="button" class="btn btn-outline-secondary voucher-header-action cancel-cashier-edit" data-index="' +
+                index + '">Cancel</button>'
+              : '') +
+            '</div>') +
+        '</div>';
     }).join('');
-    state.cashierPads = Array.from(document.querySelectorAll('.cashier-pad')).map(function (canvas) {
-      return window.VoucherInvoice.bindSignaturePad(canvas);
+    state.cashierPads = [];
+    Array.from(document.querySelectorAll('.cashier-pad')).forEach(function (canvas) {
+      var index = Number(canvas.getAttribute('data-index'));
+      state.cashierPads[index] = window.VoucherInvoice.bindSignaturePad(canvas);
     });
   }
 
@@ -555,7 +571,9 @@
       seal: seal,
       cashiers: cashiers
     });
+    state.editingCashiers = {};
     updateSealPreview(state.settings.seal || seal || '');
+    renderSettings();
     setStatus('Laboratory settings saved.', 'success');
   }
 
@@ -670,6 +688,21 @@
     loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
   });
   el('cashierFields').addEventListener('click', function (event) {
+    var editBtn = event.target.closest('.edit-cashier');
+    if (editBtn) {
+      var editIndex = Number(editBtn.getAttribute('data-index'));
+      state.editingCashiers = state.editingCashiers || {};
+      state.editingCashiers[editIndex] = true;
+      renderSettings();
+      return;
+    }
+    var cancelBtn = event.target.closest('.cancel-cashier-edit');
+    if (cancelBtn) {
+      var cancelIndex = Number(cancelBtn.getAttribute('data-index'));
+      if (state.editingCashiers) delete state.editingCashiers[cancelIndex];
+      renderSettings();
+      return;
+    }
     var button = event.target.closest('.clear-cashier');
     if (!button) return;
     var pad = state.cashierPads[Number(button.getAttribute('data-index'))];

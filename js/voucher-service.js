@@ -768,6 +768,74 @@
     });
   }
 
+  function updateAllocation(input) {
+    var data = requireObject(input, 'Allocation update');
+    var context = firebaseContext();
+    var midwifeId = requireString(data.midwifeId || data.maternityHomeId, 'Midwife ID', 128);
+    var allocatedUnits = requireInteger(data.allocatedUnits, 'Allocated units', 0);
+    var remainingUnits = data.remainingUnits == null ? allocatedUnits :
+      requireInteger(data.remainingUnits, 'Remaining units', 0);
+    if (remainingUnits > allocatedUnits) {
+      throw new Error('Remaining vouchers cannot exceed allocated vouchers.');
+    }
+    var budgetMinor = requireInteger(data.totalMinor, 'Budget total', 0);
+    var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(midwifeId);
+    var budgetRef = context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(midwifeId);
+    var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
+    return context.db.runTransaction(function (transaction) {
+      return Promise.all([
+        transaction.get(quotaRef),
+        transaction.get(globalAssignmentRef)
+      ]).then(function (snapshots) {
+        if (!snapshots[0].exists) throw new Error('Allocation was not found.');
+        var existing = snapshots[0].data();
+        var assignment = snapshots[1].exists ? snapshots[1].data() : null;
+        var priceSheetId = existing.priceSheetId || (assignment && assignment.priceSheetId) || '';
+        if (!priceSheetId) throw new Error('Configure at least one laboratory before editing allocations.');
+        var now = serverTimestamp(context);
+        transaction.set(quotaRef, {
+          midwifeId: midwifeId,
+          allocatedUnits: allocatedUnits,
+          remainingUnits: remainingUnits,
+          priceSheetId: priceSheetId,
+          status: 'active',
+          lastVoucherId: existing.lastVoucherId || '',
+          updatedAt: now,
+          updatedBy: context.user.uid
+        });
+        transaction.set(budgetRef, {
+          midwifeId: midwifeId,
+          totalMinor: budgetMinor,
+          currency: validateCurrency(data.currency || 'MMK'),
+          note: typeof data.note === 'string' ? data.note.trim().slice(0, 500) : '',
+          updatedAt: now,
+          updatedBy: context.user.uid
+        }, { merge: true });
+        return midwifeId;
+      });
+    });
+  }
+
+  function resetAllocation(midwifeId) {
+    var context = firebaseContext();
+    var id = requireString(midwifeId, 'Midwife ID', 128);
+    var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(id);
+    var budgetRef = context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(id);
+    return Promise.all([quotaRef.get(), budgetRef.get()]).then(function (snapshots) {
+      if (!snapshots[0].exists) throw new Error('Allocation was not found.');
+      var existing = snapshots[0].data();
+      var budget = snapshots[1].exists ? snapshots[1].data() : {};
+      return updateAllocation({
+        midwifeId: id,
+        allocatedUnits: existing.allocatedUnits || 0,
+        remainingUnits: existing.allocatedUnits || 0,
+        totalMinor: Number(budget.totalMinor) || 0,
+        currency: budget.currency || 'MMK',
+        note: typeof budget.note === 'string' ? budget.note : ''
+      });
+    });
+  }
+
   function emptyMidwifeMap() {
     return {};
   }
@@ -992,10 +1060,10 @@
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId).get().then(function (voucherSnapshot) {
       if (!voucherSnapshot.exists) throw new Error('Voucher was not found.');
       var voucher = Object.assign({ id: voucherSnapshot.id }, voucherSnapshot.data());
-      var sheetPromise = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get();
-      // Issued vouchers may still be open when PO republishes prices — prefer the
-      // currently assigned lab sheet so Lab Cost share and amounts stay current.
-      var assignedPromise = voucher.status === 'issued' && voucher.labId
+      var sheetPromise = voucher.priceSheetId
+        ? context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get()
+        : Promise.resolve({ exists: false, data: function () { return null; } });
+      var assignedPromise = voucher.labId
         ? context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(voucher.labId).get()
           .then(function (assignmentSnap) {
             if (!assignmentSnap.exists || !assignmentSnap.data().priceSheetId) return null;
@@ -1005,10 +1073,19 @@
         : Promise.resolve(null);
       return Promise.all([sheetPromise, assignedPromise]).then(function (results) {
         var issuedSheet = results[0] && results[0].exists ? results[0].data() : null;
-        var assignedSheetSnap = results[1];
+        var assignedSheet = results[1] && results[1].exists ? results[1].data() : null;
         var sheet = issuedSheet;
-        if (voucher.status === 'issued' && assignedSheetSnap && assignedSheetSnap.exists) {
-          sheet = assignedSheetSnap.data();
+        var sheetLabTotal = function (candidate) {
+          return ((candidate && candidate.services) || []).reduce(function (sum, row) {
+            return sum + (Number(row.labCostShareMinor) || 0);
+          }, 0);
+        };
+        if (voucher.status === 'issued' && assignedSheet) {
+          sheet = assignedSheet;
+        } else if (assignedSheet && sheetLabTotal(issuedSheet) === 0 && sheetLabTotal(assignedSheet) > 0) {
+          // Older vouchers were issued before Lab Cost share was configured.
+          // Use the current lab sheet so PO/Lab previews show the configured L values.
+          sheet = assignedSheet;
         }
         hydrateVoucherTests(voucher, sheet);
         voucher.patientReference = voucher.patientId;
@@ -1526,6 +1603,29 @@
     });
   }
 
+  function resetPeriodStats() {
+    var context = firebaseContext();
+    return context.db.collection(COLLECTIONS.PERIOD_STATS).get().then(function (snapshot) {
+      if (!snapshot.size) return { deleted: 0 };
+      var batches = [];
+      var batch = context.db.batch();
+      var opCount = 0;
+      snapshot.docs.forEach(function (doc) {
+        batch.delete(doc.ref);
+        opCount += 1;
+        if (opCount >= 400) {
+          batches.push(batch.commit());
+          batch = context.db.batch();
+          opCount = 0;
+        }
+      });
+      if (opCount) batches.push(batch.commit());
+      return Promise.all(batches).then(function () {
+        return { deleted: snapshot.size };
+      });
+    });
+  }
+
   function getPeriodStats(filters) {
     var input = filters || {};
     var context = firebaseContext();
@@ -1735,6 +1835,8 @@
     setBudgetStatus: setBudgetStatus,
     allocateQuota: allocateQuota,
     allocateVouchers: allocateVouchers,
+    updateAllocation: updateAllocation,
+    resetAllocation: resetAllocation,
     getAllocations: getAllocations,
     getAccountQuota: getAccountQuota,
     listProviderProfiles: listProviderProfiles,
@@ -1750,6 +1852,7 @@
     saveVoucherSignatures: saveVoucherSignatures,
     getVoucherSignatures: getVoucherSignatures,
     deleteVoucher: deleteVoucher,
+    resetPeriodStats: resetPeriodStats,
     getPeriodStats: getPeriodStats,
     queryVouchersPaged: queryVouchersPaged,
     issueSingleServiceVoucher: issueVoucher,
