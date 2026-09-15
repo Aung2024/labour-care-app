@@ -109,6 +109,12 @@
     return 'issuedAt';
   }
 
+  function normalizeVerifyStatus(value) {
+    var status = String(value || '').trim().toLowerCase();
+    if (!status || status === 'all') return '';
+    return status;
+  }
+
   function moneyInputValue(minorOrMajor) {
     var value = numberValue(minorOrMajor);
     return value === 0 ? '' : String(value);
@@ -352,15 +358,15 @@
   }
 
   async function loadVerifyQueue() {
-    var status = byId('verifyStatus').value || 'redeemed';
+    var status = normalizeVerifyStatus(byId('verifyStatus').value);
     var period = byId('verifyPeriod').value || 'all';
     var range = periodDateRange(period);
     var query = {
-      status: status,
       labId: byId('verifyLab').value || undefined,
       pageSize: 50,
-      dateField: dateFieldForStatus(status)
+      dateField: dateFieldForStatus(status || 'all')
     };
+    if (status) query.status = status;
     if (range) {
       query.startDate = range.startDate;
       query.endDate = range.endDate;
@@ -475,6 +481,37 @@
     byId('previewModal').hidden = true;
     byId('previewModalBody').innerHTML = '';
     document.body.classList.remove('po-modal-open');
+  }
+
+  async function printSelectedVouchers(codes) {
+    var list = (codes || []).filter(Boolean);
+    if (!list.length) throw new Error('Select at least one voucher to print.');
+    var settings = state.poSettings || await service().getPoSettings();
+    state.poSettings = settings;
+    var host = document.createElement('div');
+    host.className = 'invoice-print-root';
+    host.setAttribute('aria-hidden', 'true');
+    host.style.position = 'fixed';
+    host.style.left = '-10000px';
+    host.style.top = '0';
+    document.body.appendChild(host);
+
+    try {
+      for (var index = 0; index < list.length; index += 1) {
+        var voucher = await service().lookupVoucher(list[index]);
+        var signatures = await service().getVoucherSignatures(list[index]);
+        var extras = await buildInvoiceExtras(voucher, signatures, settings);
+        var mount = document.createElement('div');
+        mount.className = 'invoice-preview';
+        host.appendChild(mount);
+        window.VoucherInvoice.render(mount, window.VoucherInvoice.modelFromVoucher(voucher, extras));
+      }
+      var sheets = Array.from(host.querySelectorAll('.invoice-sheet'));
+      if (!sheets.length) throw new Error('Could not build invoice sheets to print.');
+      await window.VoucherInvoice.printA4(sheets.length === 1 ? sheets[0] : sheets);
+    } finally {
+      if (host.parentNode) host.parentNode.removeChild(host);
+    }
   }
 
   async function review(action, codes) {
@@ -764,6 +801,17 @@
     });
     byId('bulkPayBtn').addEventListener('click', function () {
       review('pay', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('printOneBtn').addEventListener('click', function () {
+      var codes = selectedVerifyCodes();
+      if (codes.length !== 1) {
+        showMessage('Select exactly one voucher to print.', 'error');
+        return;
+      }
+      printSelectedVouchers(codes).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('bulkPrintBtn').addEventListener('click', function () {
+      printSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('rejectOneBtn').addEventListener('click', function () {
       review('reject', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });

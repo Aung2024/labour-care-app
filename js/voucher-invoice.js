@@ -221,13 +221,25 @@
     });
   }
 
-  function printA4(element) {
-    if (!element) throw new Error('Invoice sheet is required.');
-    return waitForReady(element).then(function () {
+  function printA4(elementOrElements) {
+    var elements = Array.isArray(elementOrElements)
+      ? elementOrElements.filter(Boolean)
+      : (elementOrElements ? [elementOrElements] : []);
+    if (!elements.length) throw new Error('Invoice sheet is required.');
+    return Promise.all(elements.map(function (element) {
+      return waitForReady(element);
+    })).then(function () {
       var host = document.createElement('div');
       host.className = 'invoice-print-root';
       host.setAttribute('aria-hidden', 'true');
-      host.appendChild(element.cloneNode(true));
+      elements.forEach(function (element, index) {
+        var clone = element.cloneNode(true);
+        if (index < elements.length - 1) {
+          clone.style.pageBreakAfter = 'always';
+          clone.style.breakAfter = 'page';
+        }
+        host.appendChild(clone);
+      });
       document.body.appendChild(host);
       document.body.classList.add('invoice-printing');
       var cleanup = function () {
