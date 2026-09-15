@@ -329,29 +329,66 @@
     if (!state.voucher) throw new Error('Look up a voucher first.');
     if (!state.clientPad || state.clientPad.isEmpty()) throw new Error('Ask the patient to sign before redeeming.');
     assertOnline();
-    await savePatientDetailsIfNeeded();
-    var cashierIndex = Number(el('cashierSelect').value || 0);
-    var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
-    var clientSignature = await window.VoucherInvoice.compressImage(state.clientPad.toDataUrl(), 320, 140);
-    await service().saveVoucherSignatures(state.voucher.code, {
-      clientSignature: clientSignature,
-      cashierSignature: cashier.signature || '',
-      labSeal: (state.settings && state.settings.seal) || ''
-    });
-    state.voucher = await service().redeemVoucher(state.voucher.code, {
-      labDisplayName: state.profile.displayName || state.profile.name || state.user.email,
-      submissionReference: '',
-      cashierIndex: cashierIndex,
-      cashierName: cashier.name || '',
-      labSealAttached: !!(state.settings && state.settings.seal),
-      clientSigned: true
-    });
+    setRedeemBusy(true);
+    try {
+      await savePatientDetailsIfNeeded();
+      var cashierIndex = Number(el('cashierSelect').value || 0);
+      var cashier = ((state.settings && state.settings.cashiers) || [])[cashierIndex] || {};
+      var clientSignature = await window.VoucherInvoice.compressImage(state.clientPad.toDataUrl(), 320, 140);
+      await service().saveVoucherSignatures(state.voucher.code, {
+        clientSignature: clientSignature,
+        cashierSignature: cashier.signature || '',
+        labSeal: (state.settings && state.settings.seal) || ''
+      });
+      await service().redeemVoucher(state.voucher.code, {
+        labDisplayName: state.profile.displayName || state.profile.name || state.user.email,
+        submissionReference: '',
+        cashierIndex: cashierIndex,
+        cashierName: cashier.name || '',
+        labSealAttached: !!(state.settings && state.settings.seal),
+        clientSigned: true
+      });
+      resetScanPage();
+      setStatus('Voucher redeemed. Ready for the next scan or lookup.', 'success');
+    } finally {
+      setRedeemBusy(false);
+    }
+  }
+
+  function setRedeemBusy(busy) {
+    var button = el('confirmRedeem');
+    if (!button) return;
+    button.classList.toggle('is-busy', !!busy);
+    button.disabled = !!busy || !(state.voucher && state.voucher.status === 'issued');
+    var idle = button.querySelector('.lab-redeem-idle');
+    var working = button.querySelector('.lab-redeem-busy');
+    if (idle) idle.classList.toggle('d-none', !!busy);
+    if (working) {
+      working.classList.toggle('d-none', !busy);
+      working.setAttribute('aria-hidden', busy ? 'false' : 'true');
+    }
+    if (busy) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+  }
+
+  function resetScanPage() {
+    stopCamera();
+    state.voucher = null;
     state.previewSignatures = {};
-    renderLineEditor(state.voucher);
-    syncPatientFields(state.voucher);
-    renderInvoice(state.voucher, await service().getVoucherSignatures(state.voucher.code));
+    state.patientNrc = '';
+    state.patientAddress = '';
+    state.invoiceDate = todayInputValue();
+    el('voucherCodeInput').value = '';
+    el('invoiceDateInput').value = state.invoiceDate;
+    el('patientNrcInput').value = '';
+    el('patientAddressInput').value = '';
+    el('invoiceMount').innerHTML = '';
+    el('lineEditor').innerHTML = '';
+    if (state.clientPad) state.clientPad.clear();
+    el('lookupResult').classList.add('d-none');
     el('confirmRedeem').disabled = true;
-    setStatus('Voucher redeemed. Payment Made By (Project) is still empty for the Program Officer.', 'success');
+    document.body.classList.remove('lab-has-floating');
+    el('voucherCodeInput').focus();
   }
 
   async function scanLoop() {
@@ -453,14 +490,45 @@
   async function loadDashboard() {
     var period = el('labPeriod').value || 'all';
     var stats = await service().getPeriodStats({ period: period, labId: state.user.uid });
-    var row = stats[0] || { counts: {}, projectVerifiedMinor: 0, projectPaidMinor: 0 };
+    var row = stats[0] || {
+      counts: {},
+      projectRedeemedMinor: 0,
+      projectVerifiedMinor: 0,
+      projectPaidMinor: 0
+    };
     var counts = row.counts || {};
     el('labIssued').textContent = counts.issued || 0;
     el('labRedeemed').textContent = counts.redeemed || 0;
+    el('labRedeemedMoney').textContent = money((row.projectRedeemedMinor || 0) / 100);
     el('labIncomingCount').textContent = counts.verified || 0;
     el('labIncoming').textContent = money((row.projectVerifiedMinor || 0) / 100);
     el('labPaidCount').textContent = counts.paid || 0;
     el('labPaid').textContent = money((row.projectPaidMinor || 0) / 100);
+
+    // Backfill redeemed MMK for older stats docs that predate projectRedeemedMinor.
+    if (!(row.projectRedeemedMinor > 0) && (counts.redeemed > 0)) {
+      try {
+        var redeemedQuery = {
+          labId: state.user.uid,
+          status: 'redeemed',
+          pageSize: 50
+        };
+        var redeemedRange = periodDateRange(period);
+        if (redeemedRange) {
+          redeemedQuery.startDate = redeemedRange.startDate;
+          redeemedQuery.endDate = redeemedRange.endDate;
+          redeemedQuery.dateField = 'issuedAt';
+        }
+        var redeemedRows = await service().queryVouchersPaged(redeemedQuery);
+        var redeemedMinor = (redeemedRows.items || []).reduce(function (sum, item) {
+          return sum + Math.round(projectAmountMajor(item) * 100);
+        }, 0);
+        el('labRedeemedMoney').textContent = money(redeemedMinor / 100);
+      } catch (error) {
+        el('labRedeemedMoney').textContent = money(0);
+      }
+    }
+
     document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
       tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
     });

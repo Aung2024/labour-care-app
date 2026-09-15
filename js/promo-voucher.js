@@ -16,7 +16,7 @@
   function el(id) { return document.getElementById(id); }
   function requireEl(id) {
     var node = el(id);
-    if (!node) throw new Error('Voucher page is out of date. Refresh once, then generate again.');
+    if (!node) throw new Error('QR page is out of date. Refresh once, then generate again.');
     return node;
   }
   function text(value) { return value === undefined || value === null || value === '' ? '—' : String(value); }
@@ -26,16 +26,13 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
   function normalizedRole(role) { return String(role || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-  function money(value) {
-    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
-  }
   function setStatus(message, kind) {
     var box = el('pageStatus');
     box.textContent = message;
     box.className = 'status-box ' + (kind || 'info');
   }
   function assertOnline() {
-    if (navigator.onLine === false) throw new Error('Voucher generation is online-only. Please reconnect and try again.');
+    if (navigator.onLine === false) throw new Error('QR generation is online-only. Please reconnect and try again.');
   }
   function service() { return window.VoucherService || null; }
 
@@ -134,20 +131,14 @@
     state.labId = el('selectedLab').value;
     if (!state.labId) {
       state.tests = [];
-      el('testsBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Select a laboratory to load its prices.</td></tr>';
-      updateTotals();
+      el('testsBody').innerHTML = '<p class="text-muted mb-0">Select a laboratory to load its tests.</p>';
       return;
     }
     var result = await service().getTestCatalog(state.labId);
     state.tests = (result.tests || []).map(function (row, index) {
       return {
         id: String(row.id || ('test-' + index)),
-        name: row.name,
-        regularPrice: Number(row.regularPrice || 0),
-        labCostShare: Number(row.labCostShare || 0),
-        subsidizedCost: Number(row.subsidizedCost || 0),
-        clientCostShare: Number(row.clientCostShare || 0),
-        projectCostShare: Number(row.projectCostShare || 0)
+        name: row.name
       };
     });
     renderTests();
@@ -155,58 +146,43 @@
 
   function renderTests() {
     if (!state.tests.length) {
-      el('testsBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Select a laboratory to load its prices.</td></tr>';
-      updateTotals();
+      el('testsBody').innerHTML = '<p class="text-muted mb-0">Select a laboratory to load its tests.</p>';
       return;
     }
     el('testsBody').innerHTML = state.tests.map(function (test, index) {
-      return '<tr data-index="' + index + '">' +
-        '<td><input class="form-check-input test-select" type="checkbox" aria-label="Select ' + escapeHtml(test.name) + '"></td>' +
-        '<td class="fw-semibold">' + escapeHtml(test.name) + '</td>' +
-        '<td class="money">' + money(test.regularPrice) + '</td>' +
-        '<td class="money">' + money(test.labCostShare) + '</td>' +
-        '<td class="money">' + money(test.clientCostShare) + '</td>' +
-        '<td class="money">' + money(test.projectCostShare) + '</td>' +
-      '</tr>';
+      return '<label class="mw-test-chip">' +
+        '<input class="test-select" type="checkbox" data-index="' + index + '" aria-label="Select ' +
+        escapeHtml(test.name) + '">' +
+        '<span>' + escapeHtml(test.name) + '</span></label>';
     }).join('');
-    updateTotals();
   }
 
   function selectedTests() {
-    return Array.from(el('testsBody').querySelectorAll('tr')).filter(function (row) {
-      var box = row.querySelector('.test-select');
-      return box && box.checked;
-    }).map(function (row) {
-      return state.tests[Number(row.dataset.index)];
+    return Array.from(el('testsBody').querySelectorAll('.test-select:checked')).map(function (box) {
+      return state.tests[Number(box.getAttribute('data-index'))];
     }).filter(Boolean);
   }
 
-  function updateTotals() {
-    var totals = selectedTests().reduce(function (sum, row) {
-      sum.regular += Number(row.regularPrice) || 0;
-      sum.lab += Number(row.labCostShare) || 0;
-      sum.client += Number(row.clientCostShare) || 0;
-      sum.project += Number(row.projectCostShare) || 0;
-      return sum;
-    }, { regular: 0, lab: 0, client: 0, project: 0 });
-    el('totalRegular').textContent = money(totals.regular);
-    el('totalLabShare').textContent = money(totals.lab);
-    el('totalClient').textContent = money(totals.client);
-    el('totalProject').textContent = money(totals.project);
-  }
-
-  function renderInvoice(voucher) {
-    var model = window.VoucherInvoice.modelFromVoucher(voucher, {
-      client: {
-        name: patientName(state.patient),
-        nrc: el('patientNrc').value.trim(),
-        phone: state.patient.phone || '',
-        address: el('patientAddress').value.trim()
-      }
+  function renderQrCard(voucher) {
+    var code = voucher.code || voucher.id;
+    if (!code) throw new Error('Voucher service did not return a voucher code.');
+    var qrPayload = voucher.qrPayload || service().buildQrPayload(code);
+    var codeNode = requireEl('voucherCode');
+    var qrNode = requireEl('voucherQr');
+    var resultNode = requireEl('voucherResult');
+    codeNode.textContent = code;
+    qrNode.innerHTML = '';
+    if (typeof window.QRCode !== 'function') {
+      throw new Error('QR library did not load. Check the internet connection and try again.');
+    }
+    new window.QRCode(qrNode, {
+      text: qrPayload,
+      width: 240,
+      height: 240,
+      correctLevel: window.QRCode.CorrectLevel.M
     });
-    window.VoucherInvoice.render(requireEl('invoiceMount'), model);
-    requireEl('voucherResult').classList.add('show');
-    requireEl('voucherResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    resultNode.classList.add('show');
+    resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function savePatientAddress(address) {
@@ -225,12 +201,12 @@
       var tests = selectedTests();
       if (!tests.length) throw new Error('Select at least one lab test.');
       if (!el('ancVisitDate').value) throw new Error('Enter the latest ANC visit date.');
-      if (!el('selectedLab').value) throw new Error('Select the laboratory that will receive this voucher.');
+      if (!el('selectedLab').value) throw new Error('Select the laboratory that will receive this QR.');
       if (!state.quota || Number(state.quota.remainingUnits || 0) < 1) {
         throw new Error('No remaining voucher allocation is available.');
       }
       button.disabled = true;
-      setStatus('Generating voucher securely…', 'info');
+      setStatus('Generating QR securely…', 'info');
       var address = el('patientAddress').value.trim();
       if (address) await savePatientAddress(address);
       var result = await service().issueVoucher({
@@ -243,47 +219,54 @@
         issuerName: issuerDisplayName(state.profile, state.user),
         expiresAt: new Date(Date.now() + (90 * 24 * 60 * 60 * 1000))
       });
-      state.voucher = Object.assign({}, result, {
-        patientNameSnapshot: patientName(state.patient),
-        patientAgeSnapshot: patientAge(state.patient),
-        patientPhoneSnapshot: state.patient.phone || '',
-        patientNrcSnapshot: el('patientNrc').value.trim(),
-        patientAddressSnapshot: address,
-        selectedServiceIds: tests.map(function (test) { return test.id; }),
-        lineItems: result.lineItems || tests.map(function (test) {
-          return {
-            serviceId: test.id,
-            serviceName: test.name,
-            regularPriceMinor: Math.round(test.regularPrice * 100),
-            labCostShareMinor: Math.round(test.labCostShare * 100),
-            clientCopayMinor: Math.round(test.clientCostShare * 100),
-            projectContributionMinor: Math.round(test.projectCostShare * 100)
-          };
-        }),
-        totals: result.totals,
-        issuedAt: new Date()
-      });
-      renderInvoice(state.voucher);
+      state.voucher = result;
+      renderQrCard(state.voucher);
       await loadQuota();
-      setStatus('Voucher generated successfully.', 'success');
+      setStatus('QR generated successfully. Preview below, then download if needed.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
-      setStatus(error.message || 'Unable to generate voucher.', 'error');
+      setStatus(error.message || 'Unable to generate QR.', 'error');
     } finally {
       button.disabled = Number(state.quota && state.quota.remainingUnits) < 1;
     }
+  }
+
+  function waitForVoucherImages() {
+    var images = Array.from(el('a5Voucher').querySelectorAll('img'));
+    return Promise.all(images.map(function (image) {
+      if (image.complete && image.naturalWidth) return Promise.resolve();
+      return new Promise(function (resolve) {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    })).then(function () {
+      return new Promise(function (resolve) { requestAnimationFrame(function () { resolve(); }); });
+    });
   }
 
   async function downloadPng() {
     var button = el('downloadButton');
     try {
       assertOnline();
+      if (typeof window.html2canvas !== 'function') throw new Error('PNG export library is unavailable.');
+      if (!state.voucher) throw new Error('Generate a QR before downloading it.');
       button.disabled = true;
-      var sheet = document.getElementById('invoiceSheet');
-      if (!sheet) throw new Error('Generate a voucher before downloading it.');
-      await window.VoucherInvoice.downloadPng(sheet, 'laboratory-invoice-' + (state.voucher && state.voucher.code || 'voucher') + '.png');
+      await waitForVoucherImages();
+      var canvas = await window.html2canvas(el('a5Voucher'), {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width: 559,
+        height: 794
+      });
+      var link = document.createElement('a');
+      link.download = 'promo-voucher-' + String(el('voucherCode').textContent || 'qr').replace(/[^A-Za-z0-9_-]/g, '_') + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      setStatus('QR PNG downloaded.', 'success');
     } catch (error) {
-      setStatus(error.message || 'Could not download voucher.', 'error');
+      setStatus(error.message || 'Could not download QR.', 'error');
     } finally {
       button.disabled = false;
     }
@@ -323,18 +306,16 @@
       await loadLabs();
       await loadTestCatalog();
       el('voucherForm').classList.remove('d-none');
-      setStatus('Select a laboratory, then generate an online voucher.', 'success');
+      setStatus('Select a laboratory and tests, then generate the QR.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
-      setStatus(error.message || 'Unable to load voucher page.', 'error');
+      setStatus(error.message || 'Unable to load QR page.', 'error');
     }
   }
 
-  el('testsBody').addEventListener('input', updateTotals);
-  el('testsBody').addEventListener('change', updateTotals);
   el('selectedLab').addEventListener('change', function () {
     loadTestCatalog().catch(function (error) {
-      setStatus(error.message || 'Could not load laboratory prices.', 'error');
+      setStatus(error.message || 'Could not load laboratory tests.', 'error');
     });
   });
   el('voucherForm').addEventListener('submit', generate);
@@ -344,10 +325,9 @@
     var shouldSelect = boxes.some(function (box) { return !box.checked; });
     boxes.forEach(function (box) { box.checked = shouldSelect; });
     this.textContent = shouldSelect ? 'Clear all' : 'Select all';
-    updateTotals();
   });
   window.addEventListener('offline', function () {
-    setStatus('Voucher generation is online-only. Reconnect before continuing.', 'warning');
+    setStatus('QR generation is online-only. Reconnect before continuing.', 'warning');
     el('generateButton').disabled = true;
   });
   window.addEventListener('online', function () {

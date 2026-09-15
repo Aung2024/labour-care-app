@@ -165,6 +165,7 @@
   function applyStatusDelta(stats, fromStatus, toStatus, projectMinor) {
     var next = {
       counts: Object.assign(emptyCounts(), (stats && stats.counts) || {}),
+      projectRedeemedMinor: Number(stats && stats.projectRedeemedMinor) || 0,
       projectVerifiedMinor: Number(stats && stats.projectVerifiedMinor) || 0,
       projectPaidMinor: Number(stats && stats.projectPaidMinor) || 0
     };
@@ -175,6 +176,10 @@
       next.counts[toStatus] += 1;
     }
     var project = Number(projectMinor) || 0;
+    if (toStatus === 'redeemed') next.projectRedeemedMinor += project;
+    if (fromStatus === 'redeemed' && (toStatus === 'verified' || toStatus === 'rejected')) {
+      next.projectRedeemedMinor = Math.max(0, next.projectRedeemedMinor - project);
+    }
     if (toStatus === 'verified') next.projectVerifiedMinor += project;
     if (fromStatus === 'verified' && toStatus === 'paid') {
       next.projectVerifiedMinor = Math.max(0, next.projectVerifiedMinor - project);
@@ -185,6 +190,9 @@
     }
     // Deletion / unwind: remove money that belonged to the removed status.
     if (fromStatus && !toStatus) {
+      if (fromStatus === 'redeemed') {
+        next.projectRedeemedMinor = Math.max(0, next.projectRedeemedMinor - project);
+      }
       if (fromStatus === 'verified') {
         next.projectVerifiedMinor = Math.max(0, next.projectVerifiedMinor - project);
       }

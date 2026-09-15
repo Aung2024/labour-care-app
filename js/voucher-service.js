@@ -846,6 +846,7 @@
     if (identity.scope === 'midwife' && !identity.midwifeId) return;
     var current = snapshot.exists ? snapshot.data() : {
       counts: pricingApi().emptyCounts(),
+      projectRedeemedMinor: 0,
       projectVerifiedMinor: 0,
       projectPaidMinor: 0,
       midwives: emptyMidwifeMap()
@@ -854,7 +855,12 @@
     var midwives = Object.assign({}, current.midwives || {});
     if (identity.scope === 'lab' && identity.midwifeId) {
       midwives[identity.midwifeId] = pricingApi().applyStatusDelta(
-        midwives[identity.midwifeId] || { counts: pricingApi().emptyCounts(), projectVerifiedMinor: 0, projectPaidMinor: 0 },
+        midwives[identity.midwifeId] || {
+          counts: pricingApi().emptyCounts(),
+          projectRedeemedMinor: 0,
+          projectVerifiedMinor: 0,
+          projectPaidMinor: 0
+        },
         fromStatus,
         toStatus,
         projectMinor
@@ -868,6 +874,7 @@
       lastVoucherId: identity.voucherId || '',
       lastStatus: toStatus || '',
       counts: next.counts,
+      projectRedeemedMinor: next.projectRedeemedMinor,
       projectVerifiedMinor: next.projectVerifiedMinor,
       projectPaidMinor: next.projectPaidMinor,
       midwives: midwives,
@@ -1644,6 +1651,7 @@
           id: 'all',
           period: 'all',
           counts: pricingApi().emptyCounts(),
+          projectRedeemedMinor: 0,
           projectVerifiedMinor: 0,
           projectPaidMinor: 0,
           midwives: {}
@@ -1654,6 +1662,7 @@
           Object.keys(merged.counts).forEach(function (key) {
             merged.counts[key] += Number(counts[key]) || 0;
           });
+          merged.projectRedeemedMinor += Number(row.projectRedeemedMinor) || 0;
           merged.projectVerifiedMinor += Number(row.projectVerifiedMinor) || 0;
           merged.projectPaidMinor += Number(row.projectPaidMinor) || 0;
         });
@@ -1674,6 +1683,7 @@
           id: snapshot.id,
           period: period,
           counts: pricingApi().emptyCounts(),
+          projectRedeemedMinor: 0,
           projectVerifiedMinor: 0,
           projectPaidMinor: 0,
           midwives: {}
