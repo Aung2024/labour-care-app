@@ -850,7 +850,7 @@ service cloud.firestore {
         && request.resource.data.selectedServiceIds.hasOnly(
           get(/databases/$(database)/documents/voucher_price_sheets/$(resource.data.priceSheetId)).data.serviceIds
         );
-      allow delete: if false;
+      allow delete: if isVoucherAdministrator();
 
       match /artifacts/{artifactId} {
         allow get: if isVoucherAdministrator()
@@ -882,7 +882,7 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.status in ["redeemed", "verified"]
             )
           );
-        allow delete: if false;
+        allow delete: if isVoucherAdministrator();
       }
     }
 
@@ -915,13 +915,15 @@ service cloud.firestore {
     }
 
     match /voucher_period_stats/{statId} {
-      allow read: if isVoucherAdministrator()
-        || (isLab() && (resource == null || (
-          resource.data.scope == "lab" && resource.data.labId == request.auth.uid
-        )))
-        || (isMidwife() && (resource == null || (
-          resource.data.scope == "midwife" && resource.data.midwifeId == request.auth.uid
-        )));
+      // Lab/Midwife redeem and issue transactions must get() global and
+      // cross-scope stats docs that already exist; list stays role-scoped.
+      allow get: if isVoucherAdministrator()
+        || isLab()
+        || isMidwife()
+        || (resource == null);
+      allow list: if isVoucherAdministrator()
+        || (isLab() && resource.data.scope == "lab" && resource.data.labId == request.auth.uid)
+        || (isMidwife() && resource.data.scope == "midwife" && resource.data.midwifeId == request.auth.uid);
       allow create, update: if periodStatsCoupled()
         && statId == expectedPeriodStatId()
         && periodSubjectMatchesVoucher()

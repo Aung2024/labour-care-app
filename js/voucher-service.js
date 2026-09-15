@@ -1509,6 +1509,23 @@
       });
   }
 
+  function deleteVoucher(voucherCode) {
+    var context = firebaseContext();
+    var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
+    var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
+    var signaturesRef = voucherRef.collection('artifacts').doc('signatures');
+    return voucherRef.get().then(function (snapshot) {
+      if (!snapshot.exists) throw new Error('Voucher was not found.');
+      return signaturesRef.delete().catch(function () {
+        return null;
+      }).then(function () {
+        return voucherRef.delete();
+      }).then(function () {
+        return { id: voucherId, deleted: true };
+      });
+    });
+  }
+
   function getPeriodStats(filters) {
     var input = filters || {};
     var context = firebaseContext();
@@ -1732,6 +1749,7 @@
     getPoSettings: getPoSettings,
     saveVoucherSignatures: saveVoucherSignatures,
     getVoucherSignatures: getVoucherSignatures,
+    deleteVoucher: deleteVoucher,
     getPeriodStats: getPeriodStats,
     queryVouchersPaged: queryVouchersPaged,
     issueSingleServiceVoucher: issueVoucher,

@@ -613,6 +613,16 @@
   el('confirmRedeem').addEventListener('click', function () {
     redeem().catch(function (error) { if (!state.loggingOut) setStatus(error.message, 'error'); });
   });
+  el('printInvoiceBtn').addEventListener('click', function () {
+    var sheet = el('invoiceMount') && el('invoiceMount').querySelector('.invoice-sheet');
+    if (!sheet) {
+      setStatus('Load an invoice before printing.', 'warning');
+      return;
+    }
+    window.VoucherInvoice.printA4(sheet).catch(function (error) {
+      setStatus(error.message || 'Could not print invoice.', 'error');
+    });
+  });
   el('applyClientSign').addEventListener('click', function () {
     applyClientSignature().catch(function (error) { setStatus(error.message, 'error'); });
   });

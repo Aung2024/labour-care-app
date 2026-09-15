@@ -497,6 +497,22 @@
     if (state.page === 'dashboard') await loadDashboardStats();
   }
 
+  async function deleteSelectedVouchers(codes) {
+    var list = codes || selectedVerifyCodes();
+    if (!list.length) throw new Error('Select at least one voucher to delete.');
+    var confirmed = window.confirm(
+      'Delete ' + list.length + ' voucher(s)? This cannot be undone and is intended for test cleanup.'
+    );
+    if (!confirmed) return;
+    for (var index = 0; index < list.length; index += 1) {
+      await service().deleteVoucher(list[index]);
+      delete state.selectedCodes[list[index]];
+    }
+    showMessage('Deleted ' + list.length + ' voucher(s).', 'success');
+    await loadVerifyQueue();
+    if (state.page === 'dashboard') await loadDashboardStats();
+  }
+
   async function loadAllocations() {
     state.allocations = await service().getAllocations();
     renderAllocations();
@@ -681,6 +697,17 @@
     });
     byId('rejectOneBtn').addEventListener('click', function () {
       review('reject', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('deleteOneBtn').addEventListener('click', function () {
+      var codes = selectedVerifyCodes();
+      if (codes.length !== 1) {
+        showMessage('Select exactly one voucher to delete.', 'error');
+        return;
+      }
+      deleteSelectedVouchers(codes).catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('bulkDeleteBtn').addEventListener('click', function () {
+      deleteSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     document.querySelectorAll('[data-close-preview]').forEach(function (el) {
       el.addEventListener('click', closePreviewModal);
