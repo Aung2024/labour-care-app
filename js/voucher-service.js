@@ -1460,6 +1460,7 @@
           labId: labId,
           labName: requireString(data.labName, 'Lab name', 160),
           address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+          phone: typeof data.phone === 'string' ? data.phone.trim().slice(0, 40) : '',
           projectPercent: percents.projectPercent,
           clientPercent: percents.clientPercent,
           tests: tests,
@@ -1469,16 +1470,29 @@
       }).then(function () {
         var nextLabName = requireString(data.labName, 'Lab name', 160);
         var nextAddress = typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '';
-        return labRef.update({
-          displayName: nextLabName,
-          name: nextLabName,
-          labName: nextLabName,
-          organization_name: nextLabName,
-          address: nextAddress,
-          organization_address: nextAddress,
-          updatedAt: now,
-          updatedBy: context.user.uid
-        });
+        var nextPhone = typeof data.phone === 'string' ? data.phone.trim().slice(0, 40) : '';
+        var settingsRef = context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(labId);
+        return Promise.all([
+          labRef.update({
+            displayName: nextLabName,
+            name: nextLabName,
+            labName: nextLabName,
+            organization_name: nextLabName,
+            address: nextAddress,
+            organization_address: nextAddress,
+            phone: nextPhone,
+            labPhone: nextPhone,
+            updatedAt: now,
+            updatedBy: context.user.uid
+          }),
+          settingsRef.set({
+            labName: nextLabName,
+            address: nextAddress,
+            phone: nextPhone,
+            updatedAt: now,
+            updatedBy: context.user.uid
+          }, { merge: true })
+        ]);
       }).then(function () {
         return publishCurrentPriceSheet(labId);
       }).then(function (sheetId) {
@@ -1665,24 +1679,64 @@
       };
     });
     while (cashiers.length < 3) cashiers.push({ name: '', signature: '' });
+    var labName = typeof data.labName === 'string' ? data.labName.trim().slice(0, 160) : '';
+    var address = typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '';
+    var phone = typeof data.phone === 'string' ? data.phone.trim().slice(0, 40) : '';
+    var now = serverTimestamp(context);
     var record = {
-      labName: typeof data.labName === 'string' ? data.labName.trim().slice(0, 160) : '',
-      address: typeof data.address === 'string' ? data.address.trim().slice(0, 240) : '',
+      labName: labName,
+      address: address,
+      phone: phone,
       seal: clampImage(data.seal || '', 'Lab seal'),
       cashiers: cashiers,
-      updatedAt: serverTimestamp(context),
+      updatedAt: now,
       updatedBy: context.user.uid
     };
-    return context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(context.user.uid).set(record, { merge: true })
-      .then(function () { return record; });
+    var settingsRef = context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(context.user.uid);
+    var userRef = context.db.collection('users').doc(context.user.uid);
+    var configRef = context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(context.user.uid);
+    return settingsRef.set(record, { merge: true }).then(function () {
+      return Promise.all([
+        userRef.set({
+          address: address,
+          organization_address: address,
+          phone: phone,
+          labPhone: phone,
+          updatedAt: now,
+          updatedBy: context.user.uid
+        }, { merge: true }),
+        configRef.set({
+          address: address,
+          phone: phone,
+          labName: labName || undefined,
+          updatedAt: now,
+          updatedBy: context.user.uid
+        }, { merge: true }).catch(function () {
+          // Config may not exist until PO configures prices; contact fields still save on settings/profile.
+          return null;
+        })
+      ]);
+    }).then(function () { return record; });
   }
 
   function getLabSettings(labId) {
     var context = firebaseContext();
     var id = labId || context.user.uid;
-    return context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(id).get().then(function (snapshot) {
-      return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : {
-        id: id, labName: '', address: '', seal: '', cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
+    return Promise.all([
+      context.db.collection(COLLECTIONS.LAB_SETTINGS).doc(id).get(),
+      context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(id).get(),
+      context.db.collection('users').doc(id).get()
+    ]).then(function (snapshots) {
+      var settings = snapshots[0].exists ? snapshots[0].data() : {};
+      var config = snapshots[1].exists ? snapshots[1].data() : {};
+      var profile = snapshots[2].exists ? snapshots[2].data() : {};
+      return {
+        id: id,
+        labName: settings.labName || config.labName || profile.displayName || profile.name || profile.labName || '',
+        address: settings.address || config.address || profile.address || profile.organization_address || '',
+        phone: settings.phone || config.phone || profile.phone || profile.labPhone || '',
+        seal: settings.seal || '',
+        cashiers: settings.cashiers || [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
       };
     });
   }

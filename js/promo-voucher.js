@@ -270,8 +270,8 @@
     }
     new window.QRCode(qrNode, {
       text: qrPayload,
-      width: 220,
-      height: 220,
+      width: 180,
+      height: 180,
       correctLevel: window.QRCode.CorrectLevel.M
     });
     resultNode.classList.add('show');
@@ -345,13 +345,14 @@
       if (!state.voucher) throw new Error('Generate a QR before downloading it.');
       button.disabled = true;
       await waitForVoucherImages();
-      var canvas = await window.html2canvas(el('a5Voucher'), {
+      var sheet = el('a5Voucher');
+      var canvas = await window.html2canvas(sheet, {
         backgroundColor: '#ffffff',
         scale: 2,
         useCORS: true,
         logging: false,
-        width: 559,
-        height: 794
+        width: sheet.offsetWidth,
+        height: sheet.offsetHeight
       });
       var link = document.createElement('a');
       link.download = 'promo-voucher-' + String(el('voucherCode').textContent || 'qr').replace(/[^A-Za-z0-9_-]/g, '_') + '.png';

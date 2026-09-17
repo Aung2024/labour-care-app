@@ -19,7 +19,8 @@
     previewSignatures: {},
     invoiceDate: '',
     patientNrc: '',
-    patientAddress: ''
+    patientAddress: '',
+    clearSealImage: false
   };
 
   function el(id) { return document.getElementById(id); }
@@ -168,9 +169,13 @@
     var nrc = state.patientNrc || voucher.patientNrcSnapshot || '';
     var address = state.patientAddress || voucher.patientAddressSnapshot || '';
     var signs = Object.assign({}, signatures || {}, state.previewSignatures || {});
+    var settings = state.settings || {};
     return {
       lab: {
-        seal: signs.labSeal || (state.settings && state.settings.seal) || '',
+        seal: signs.labSeal || settings.seal || '',
+        name: settings.labName || voucher.labNameSnapshot || '',
+        address: settings.address || '',
+        phone: settings.phone || '',
         cashierSignature: signs.cashierSignature || cashier.signature || '',
         cashierName: voucher.cashierNameSnapshot || cashier.name || '',
         date: invoiceDate
@@ -185,6 +190,11 @@
       },
       project: {}
     };
+  }
+
+  function hasLabSeal() {
+    var settings = state.settings || {};
+    return !!(settings.seal || settings.labName || settings.address || settings.phone);
   }
 
   function renderInvoice(voucher, signatures) {
@@ -345,7 +355,7 @@
         submissionReference: '',
         cashierIndex: cashierIndex,
         cashierName: cashier.name || '',
-        labSealAttached: !!(state.settings && state.settings.seal),
+        labSealAttached: hasLabSeal(),
         clientSigned: true
       });
       resetScanPage();
@@ -563,14 +573,35 @@
 
   function updateSealPreview(dataUrl) {
     var preview = el('sealPreview');
+    var textPreview = el('sealTextPreview');
     var empty = el('sealPreviewEmpty');
+    var settings = state.settings || {};
+    var name = settings.labName || (state.profile && (state.profile.displayName || state.profile.name)) || '';
+    var address = (el('labSettingsAddress') && el('labSettingsAddress').value.trim()) || settings.address || '';
+    var phone = (el('labSettingsPhone') && el('labSettingsPhone').value.trim()) || settings.phone || '';
     if (dataUrl) {
       preview.src = dataUrl;
       preview.classList.remove('d-none');
+      if (textPreview) textPreview.classList.add('d-none');
+      empty.classList.add('d-none');
+      return;
+    }
+    preview.removeAttribute('src');
+    preview.classList.add('d-none');
+    if (name || address || phone) {
+      if (textPreview) {
+        textPreview.innerHTML =
+          (name ? '<div class="invoice-seal-card__name">' + escapeHtml(name) + '</div>' : '') +
+          (address ? '<div class="invoice-seal-card__line">' + escapeHtml(address) + '</div>' : '') +
+          (phone ? '<div class="invoice-seal-card__line">' + escapeHtml(phone) + '</div>' : '');
+        textPreview.classList.remove('d-none');
+      }
       empty.classList.add('d-none');
     } else {
-      preview.removeAttribute('src');
-      preview.classList.add('d-none');
+      if (textPreview) {
+        textPreview.innerHTML = '';
+        textPreview.classList.add('d-none');
+      }
       empty.classList.remove('d-none');
     }
   }
@@ -580,6 +611,12 @@
       cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
     };
     if (!state.editingCashiers) state.editingCashiers = {};
+    if (el('labSettingsAddress')) {
+      el('labSettingsAddress').value = settings.address || (state.profile && state.profile.address) || '';
+    }
+    if (el('labSettingsPhone')) {
+      el('labSettingsPhone').value = settings.phone || (state.profile && (state.profile.phone || state.profile.labPhone)) || '';
+    }
     updateSealPreview(settings.seal || '');
     el('cashierFields').innerHTML = [0, 1, 2].map(function (index) {
       var cashier = (settings.cashiers || [])[index] || { name: '', signature: '' };
@@ -615,9 +652,10 @@
 
   async function saveSettings() {
     var sealFile = el('sealInput').files[0];
-    var seal = state.settings && state.settings.seal || '';
+    var seal = state.clearSealImage ? '' : ((state.settings && state.settings.seal) || '');
     if (sealFile) {
       seal = await window.VoucherInvoice.compressImage(await window.VoucherInvoice.fileToDataUrl(sealFile), 240, 240);
+      state.clearSealImage = false;
     }
     var cashiers = [0, 1, 2].map(function (index) {
       var nameInput = document.querySelector('.cashier-name[data-index="' + index + '"]');
@@ -633,14 +671,24 @@
         cashiers[index].signature = await window.VoucherInvoice.compressImage(cashiers[index].signature, 320, 140);
       }
     }
+    var address = el('labSettingsAddress') ? el('labSettingsAddress').value.trim() : '';
+    var phone = el('labSettingsPhone') ? el('labSettingsPhone').value.trim() : '';
     state.settings = await service().saveLabSettings({
-      labName: state.profile.displayName || state.profile.name || '',
-      address: state.profile.address || '',
+      labName: state.profile.displayName || state.profile.name || state.profile.labName || '',
+      address: address,
+      phone: phone,
       seal: seal,
       cashiers: cashiers
     });
+    if (state.profile) {
+      state.profile.address = address;
+      state.profile.phone = phone;
+      state.profile.labPhone = phone;
+    }
+    state.clearSealImage = false;
+    if (el('sealInput')) el('sealInput').value = '';
     state.editingCashiers = {};
-    updateSealPreview(state.settings.seal || seal || '');
+    updateSealPreview(state.settings.seal || '');
     renderSettings();
     setStatus('Laboratory settings saved.', 'success');
   }
@@ -744,6 +792,21 @@
   el('stopCamera').addEventListener('click', stopCamera);
   el('saveSettingsBtn').addEventListener('click', function () {
     saveSettings().catch(function (error) { setStatus(error.message, 'error'); });
+  });
+  if (el('clearSealBtn')) {
+    el('clearSealBtn').addEventListener('click', function () {
+      state.clearSealImage = true;
+      if (el('sealInput')) el('sealInput').value = '';
+      if (state.settings) state.settings.seal = '';
+      updateSealPreview('');
+      setStatus('Seal image cleared. Save settings to keep the text seal.', 'info');
+    });
+  }
+  ['labSettingsAddress', 'labSettingsPhone'].forEach(function (id) {
+    if (!el(id)) return;
+    el(id).addEventListener('input', function () {
+      updateSealPreview((state.settings && state.settings.seal) || '');
+    });
   });
   el('labPeriod').addEventListener('change', function () {
     loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });

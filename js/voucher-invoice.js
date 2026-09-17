@@ -107,6 +107,24 @@
     return '<span class="inv-line" aria-hidden="true"></span>';
   }
 
+  function renderLabSeal(lab) {
+    var data = lab || {};
+    if (data.seal) {
+      return '<img class="invoice-seal" src="' + escapeHtml(data.seal) + '" alt="Lab seal">';
+    }
+    var name = text(data.name || data.labName);
+    var address = text(data.address);
+    var phone = text(data.phone);
+    if (!name && !address && !phone) {
+      return '<div class="invoice-seal-box" aria-hidden="true"></div>';
+    }
+    return '<div class="invoice-seal-card" role="img" aria-label="Lab seal">' +
+      (name ? '<div class="invoice-seal-card__name">' + escapeHtml(name) + '</div>' : '') +
+      (address ? '<div class="invoice-seal-card__line">' + escapeHtml(address) + '</div>' : '') +
+      (phone ? '<div class="invoice-seal-card__line">' + escapeHtml(phone) + '</div>' : '') +
+      '</div>';
+  }
+
   function render(container, model) {
     if (!container) throw new Error('Invoice container is required.');
     var data = model || {};
@@ -121,7 +139,7 @@
         '<div class="invoice-seal-row">' +
           '<div class="invoice-seal-left">' +
             '<div class="invoice-seal-label">Lab Seal :</div>' +
-            (lab.seal ? '<img class="invoice-seal" src="' + escapeHtml(lab.seal) + '" alt="Lab seal">' : '<div class="invoice-seal-box"></div>') +
+            renderLabSeal(lab) +
           '</div>' +
           '<div class="invoice-seal-right">' +
             '<div class="invoice-qr" id="invoiceQr" aria-label="Voucher QR code"></div>' +

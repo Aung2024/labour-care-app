@@ -165,6 +165,7 @@ service cloud.firestore {
           "name", "displayName", "midwife_name", "midwifeName", "organization_name",
           "facilityName", "maternityHomeName", "labName", "description", "active",
           "address", "labAddress", "organization_address",
+          "phone", "labPhone",
           "updatedAt", "updatedBy"
         ])
         && request.resource.data.role == resource.data.role
@@ -901,6 +902,13 @@ service cloud.firestore {
         && request.resource.data.clientPercent is int
         && request.resource.data.projectPercent + request.resource.data.clientPercent == 100
         && request.resource.data.updatedBy == request.auth.uid;
+      // Lab may keep shared contact fields in sync with settings.
+      allow update: if isLab()
+        && request.auth.uid == labId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "address", "phone", "labName", "updatedAt", "updatedBy"
+        ])
+        && request.resource.data.updatedBy == request.auth.uid;
       allow delete: if false;
     }
 
@@ -917,8 +925,10 @@ service cloud.firestore {
 
     match /lab_settings/{labId} {
       allow read: if isVoucherAdministrator() || (isLab() && request.auth.uid == labId);
-      allow create, update: if isLab()
-        && request.auth.uid == labId
+      allow create, update: if (
+          (isLab() && request.auth.uid == labId)
+          || (isVoucherAdministrator() && isLabUser(labId))
+        )
         && request.resource.data.updatedBy == request.auth.uid;
       allow delete: if false;
     }

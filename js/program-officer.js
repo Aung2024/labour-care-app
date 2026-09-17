@@ -246,6 +246,7 @@
     if (!labId) {
       byId('configLabName').value = '';
       byId('configLabAddress').value = '';
+      byId('configLabPhone').value = '';
       renderConfigTests(null);
       return;
     }
@@ -254,6 +255,7 @@
     var config = result.config;
     byId('configLabName').value = (config && config.labName) || profileName(profile);
     byId('configLabAddress').value = (config && config.address) || profile.address || '';
+    byId('configLabPhone').value = (config && config.phone) || profile.phone || profile.labPhone || '';
     if (config) {
       byId('configProjectPercent').value = config.projectPercent;
       byId('configClientPercent').value = config.clientPercent;
@@ -280,6 +282,7 @@
       labId: labId,
       labName: labName,
       address: byId('configLabAddress').value.trim(),
+      phone: byId('configLabPhone').value.trim(),
       projectPercent: numberValue(byId('configProjectPercent').value),
       clientPercent: numberValue(byId('configClientPercent').value),
       projectCeilingMinor: Math.round(numberValue(byId('configProjectCeiling').value) * 100),
@@ -292,6 +295,7 @@
       lab.labName = labName;
       lab.organization_name = labName;
       lab.address = byId('configLabAddress').value.trim();
+      lab.phone = byId('configLabPhone').value.trim();
     }
     fillSelect(byId('dashLab'), state.labs, 'All laboratories');
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
@@ -435,17 +439,26 @@
 
   async function buildInvoiceExtras(voucher, signatures, settings) {
     var seal = (signatures && signatures.labSeal) || '';
-    if (!seal && voucher.labId) {
+    var labName = voucher.labNameSnapshot || '';
+    var labAddress = '';
+    var labPhone = '';
+    if (voucher.labId) {
       try {
         var labSettings = await service().getLabSettings(voucher.labId);
-        seal = (labSettings && labSettings.seal) || '';
+        if (!seal) seal = (labSettings && labSettings.seal) || '';
+        labName = (labSettings && labSettings.labName) || labName;
+        labAddress = (labSettings && labSettings.address) || '';
+        labPhone = (labSettings && labSettings.phone) || '';
       } catch (error) {
-        seal = '';
+        /* keep voucher snapshot values */
       }
     }
     return {
       lab: {
         seal: seal,
+        name: labName,
+        address: labAddress,
+        phone: labPhone,
         cashierSignature: (signatures && signatures.cashierSignature) || '',
         cashierName: voucher.cashierNameSnapshot,
         date: window.VoucherInvoice.formatDate(voucher.redeemedAt)
