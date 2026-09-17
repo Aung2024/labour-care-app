@@ -21,7 +21,8 @@
     LAB_CONFIGS: 'voucher_lab_configs',
     LAB_SETTINGS: 'lab_settings',
     PO_SETTINGS: 'po_settings',
-    PERIOD_STATS: 'voucher_period_stats'
+    PERIOD_STATS: 'voucher_period_stats',
+    PROGRAM_SETTINGS: 'voucher_program_settings'
   });
   var VOUCHER_STATUSES = Object.freeze(['issued', 'redeemed', 'verified', 'paid', 'rejected']);
   var MAX_IMAGE_CHARS = 180000;
@@ -484,6 +485,9 @@
       serviceIds: serviceIds,
       services: services,
       pricesByServiceId: pricesByServiceId,
+      projectCeilingMinor: data.projectCeilingMinor == null
+        ? 0
+        : requireInteger(data.projectCeilingMinor, 'Project ceiling', 0),
       publishedAt: serverTimestamp(context),
       publishedBy: context.user.uid
     };
@@ -549,8 +553,9 @@
     var configPromise = labId ?
       context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(labId).get() :
       Promise.resolve({ exists: false, data: function () { return null; } });
-    return Promise.all([catalogPromise, overridePromise, configPromise]).then(function (snapshots) {
+    return Promise.all([catalogPromise, overridePromise, configPromise, getProgramSettings()]).then(function (snapshots) {
       var config = snapshots[2].exists ? snapshots[2].data() : null;
+      var ceilingMinor = resolveProjectCeilingMinor(null, snapshots[3]);
       if (config && Array.isArray(config.tests) && config.tests.length) {
         var percents = pricingApi().normalizePercentPair(
           config.projectPercent == null ? 90 : config.projectPercent,
@@ -583,7 +588,8 @@
           currency: 'MMK',
           services: services,
           clientPercent: percents.clientPercent,
-          projectPercent: percents.projectPercent
+          projectPercent: percents.projectPercent,
+          projectCeilingMinor: ceilingMinor
         });
       }
       var overrideByService = {};
@@ -606,7 +612,12 @@
             catalog.defaultProjectCostShareMinor : override.projectCostShareMinor
         };
       });
-      return publishPriceSheet({ labId: labId || null, currency: 'MMK', services: fallbackServices });
+      return publishPriceSheet({
+        labId: labId || null,
+        currency: 'MMK',
+        services: fallbackServices,
+        projectCeilingMinor: ceilingMinor
+      });
     });
   }
 
@@ -653,6 +664,52 @@
     });
   }
 
+  function getProgramSettings() {
+    var context = firebaseContext();
+    return context.db.collection(COLLECTIONS.PROGRAM_SETTINGS).doc('global').get().then(function (snapshot) {
+      if (!snapshot.exists) {
+        return { projectCeilingMinor: 0 };
+      }
+      var data = snapshot.data() || {};
+      return {
+        projectCeilingMinor: Number(data.projectCeilingMinor) || 0,
+        updatedAt: data.updatedAt || null,
+        updatedBy: data.updatedBy || null
+      };
+    });
+  }
+
+  function saveProgramSettings(input) {
+    var data = requireObject(input, 'Program settings');
+    var context = firebaseContext();
+    var ceilingMinor = requireInteger(
+      data.projectCeilingMinor == null ? 0 : data.projectCeilingMinor,
+      'Project ceiling',
+      0
+    );
+    return context.db.collection(COLLECTIONS.PROGRAM_SETTINGS).doc('global').set({
+      projectCeilingMinor: ceilingMinor,
+      updatedAt: serverTimestamp(context),
+      updatedBy: context.user.uid
+    }, { merge: true }).then(function () {
+      return { projectCeilingMinor: ceilingMinor };
+    });
+  }
+
+  function resolveProjectCeilingMinor(sheet, settings) {
+    if (sheet && sheet.projectCeilingMinor != null && Number.isFinite(Number(sheet.projectCeilingMinor))) {
+      return Math.max(0, Math.round(Number(sheet.projectCeilingMinor)));
+    }
+    if (settings && settings.projectCeilingMinor != null) {
+      return Math.max(0, Math.round(Number(settings.projectCeilingMinor)));
+    }
+    return 0;
+  }
+
+  function withProjectCeiling(lineItems, ceilingMinor) {
+    return pricingApi().applyProjectCeiling(lineItems, ceilingMinor);
+  }
+
   function listLabs() {
     var context = firebaseContext();
     return context.db.collection(COLLECTIONS.LAB_CONFIGS).get().then(function (snapshot) {
@@ -672,11 +729,13 @@
       clientPercent: sheet.clientPercent,
       projectPercent: sheet.projectPercent
     };
+    var ceilingMinor = resolveProjectCeilingMinor(sheet, null);
     return {
       priceSheetId: sheet.id,
       labId: sheet.labId || null,
       clientPercent: sheet.clientPercent,
       projectPercent: sheet.projectPercent,
+      projectCeilingMinor: ceilingMinor,
       tests: (sheet.services || []).map(function (service) {
         var item = pricingApi().lineItemFromSheetService(service, percents);
         return {
@@ -704,8 +763,21 @@
       if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
         throw new Error('No voucher allocation is available for this account.');
       }
-      return getAssignedPriceSheet(selectedLabId);
-    }).then(catalogFromSheet);
+      return Promise.all([
+        getAssignedPriceSheet(selectedLabId),
+        getProgramSettings()
+      ]);
+    }).then(function (results) {
+      var sheet = results[0];
+      var settings = results[1];
+      if (sheet && (sheet.projectCeilingMinor == null || sheet.projectCeilingMinor === 0) && settings.projectCeilingMinor) {
+        sheet = Object.assign({}, sheet, { projectCeilingMinor: settings.projectCeilingMinor });
+      } else if (sheet && settings.projectCeilingMinor) {
+        // Prefer live program ceiling so Configure Lab changes apply immediately.
+        sheet = Object.assign({}, sheet, { projectCeilingMinor: settings.projectCeilingMinor });
+      }
+      return catalogFromSheet(sheet);
+    });
   }
 
   function allocateVouchers(input) {
@@ -762,9 +834,65 @@
     ]).then(function (snapshots) {
       var budgets = {};
       snapshots[1].docs.forEach(function (doc) { budgets[doc.id] = doc.data(); });
-      return snapshots[0].docs.map(function (doc) {
+      var rows = snapshots[0].docs.map(function (doc) {
         return Object.assign({ id: doc.id, budget: budgets[doc.id] || null }, doc.data());
       });
+      return Promise.all(rows.map(function (row) {
+        return summarizeMidwifeRedemptions(row.midwifeId || row.id).then(function (usage) {
+          var budgetTotal = Number((row.budget && row.budget.totalMinor) || 0);
+          return Object.assign({}, row, {
+            redeemedCount: usage.redeemedCount,
+            redeemedProjectMinor: usage.redeemedProjectMinor,
+            remainingBudgetMinor: Math.max(0, budgetTotal - usage.redeemedProjectMinor)
+          });
+        });
+      }));
+    });
+  }
+
+  function summarizeMidwifeRedemptions(midwifeId) {
+    var context = firebaseContext();
+    var id = requireString(midwifeId, 'Midwife ID', 128);
+    var statuses = ['redeemed', 'verified', 'paid'];
+    return Promise.all(statuses.map(function (status) {
+      return context.db.collection(COLLECTIONS.VOUCHERS)
+        .where('midwifeId', '==', id)
+        .where('status', '==', status)
+        .get();
+    })).then(function (snapshots) {
+      var redeemedCount = 0;
+      var redeemedProjectMinor = 0;
+      snapshots.forEach(function (snapshot) {
+        snapshot.docs.forEach(function (doc) {
+          var row = doc.data() || {};
+          redeemedCount += 1;
+          redeemedProjectMinor += Number((row.totals && row.totals.projectContributionMinor) || 0);
+        });
+      });
+      return { redeemedCount: redeemedCount, redeemedProjectMinor: redeemedProjectMinor };
+    });
+  }
+
+  function getMidwifeBudgetSummary(midwifeId) {
+    var context = firebaseContext();
+    var id = midwifeId || context.user.uid;
+    return Promise.all([
+      context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(id).get(),
+      context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(id).get(),
+      summarizeMidwifeRedemptions(id)
+    ]).then(function (results) {
+      var quota = results[0].exists ? Object.assign({ id: results[0].id }, results[0].data()) : null;
+      var budget = results[1].exists ? results[1].data() : null;
+      var usage = results[2];
+      var totalMinor = Number((budget && budget.totalMinor) || 0);
+      return {
+        quota: quota,
+        budgetTotalMinor: totalMinor,
+        redeemedCount: usage.redeemedCount,
+        redeemedProjectMinor: usage.redeemedProjectMinor,
+        remainingBudgetMinor: Math.max(0, totalMinor - usage.redeemedProjectMinor),
+        currency: (budget && budget.currency) || 'MMK'
+      };
     });
   }
 
@@ -895,10 +1023,14 @@
 
   function hydrateVoucherTests(voucher, sheet) {
     var percents = sheet ? { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent } : null;
+    var ceilingMinor = resolveProjectCeilingMinor(sheet, null);
     if (sheet && Array.isArray(voucher.selectedServiceIds) && voucher.selectedServiceIds.length) {
-      var lineItems = lineItemsFromSelection(sheet, voucher.selectedServiceIds);
+      var capped = withProjectCeiling(lineItemsFromSelection(sheet, voucher.selectedServiceIds), ceilingMinor);
+      var lineItems = capped.lineItems;
       voucher.lineItems = lineItems;
-      voucher.totals = pricingApi().sumLineItems(lineItems);
+      voucher.totals = capped.totals;
+      voucher.projectCeilingMinor = ceilingMinor;
+      voucher.ceilingAppliedMinor = capped.ceilingAppliedMinor;
       voucher.tests = lineItems.map(function (item) {
         return {
           id: item.serviceId,
@@ -913,8 +1045,13 @@
       return voucher;
     }
     if (Array.isArray(voucher.lineItems) && voucher.lineItems.length) {
-      voucher.tests = voucher.lineItems.map(function (item) {
-        var derived = pricingApi().lineItemFromSheetService(item, percents);
+      var derivedItems = voucher.lineItems.map(function (item) {
+        return pricingApi().lineItemFromSheetService(item, percents);
+      });
+      var stored = withProjectCeiling(derivedItems, ceilingMinor);
+      voucher.lineItems = stored.lineItems;
+      voucher.totals = stored.totals;
+      voucher.tests = stored.lineItems.map(function (derived) {
         return {
           id: derived.serviceId,
           name: derived.serviceName,
@@ -946,6 +1083,7 @@
     var labRef = context.db.collection('users').doc(labId);
     var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
     var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
+    var settingsRef = context.db.collection(COLLECTIONS.PROGRAM_SETTINGS).doc('global');
 
     return context.db.runTransaction(function (transaction) {
       return Promise.all([
@@ -954,12 +1092,14 @@
         transaction.get(labRef),
         transaction.get(labAssignmentRef),
         transaction.get(globalAssignmentRef),
-        transaction.get(voucherRef)
+        transaction.get(voucherRef),
+        transaction.get(settingsRef)
       ]).then(function (snapshots) {
         if (snapshots[5].exists) throw new Error('Voucher code collision.');
         var quotaSnapshot = snapshots[0];
         var patientSnapshot = snapshots[1];
         var labSnapshot = snapshots[2];
+        var programSettings = snapshots[6].exists ? snapshots[6].data() : { projectCeilingMinor: 0 };
         if (!quotaSnapshot.exists || !patientSnapshot.exists) throw new Error('Quota or patient was not found.');
         if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
           throw new Error('Select an active laboratory.');
@@ -985,12 +1125,15 @@
             if (sheet.serviceIds.indexOf(serviceId) === -1) throw new Error('A selected service is not on the assigned price sheet.');
           });
           var percents = { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent };
-          var lineItems = selectedServiceIds.map(function (serviceId) {
+          var rawLineItems = selectedServiceIds.map(function (serviceId) {
             var service = (sheet.services || []).find(function (row) { return row.serviceId === serviceId; });
             if (!service) throw new Error('A selected service is not on the assigned price sheet.');
             return pricingApi().lineItemFromSheetService(service, percents);
           });
-          var totals = pricingApi().sumLineItems(lineItems);
+          var ceilingMinor = resolveProjectCeilingMinor(sheet, programSettings);
+          var capped = withProjectCeiling(rawLineItems, ceilingMinor);
+          var lineItems = capped.lineItems;
+          var totals = capped.totals;
           var period = pricingApi().calendarPeriod(new Date());
           var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
             pricingApi().periodStatsId('global', null, period)
@@ -1036,6 +1179,8 @@
               selectedServiceIds: selectedServiceIds,
               lineItems: lineItems,
               totals: totals,
+              projectCeilingMinor: ceilingMinor,
+              ceilingAppliedMinor: capped.ceilingAppliedMinor || 0,
               currencySnapshot: 'MMK',
               issuedAt: now,
               expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
@@ -1183,8 +1328,8 @@
         var now = serverTimestamp(context);
         var cashierIndex = submission.cashierIndex == null ? 0 : requireInteger(submission.cashierIndex, 'Cashier', 0);
         if (cashierIndex > 2) throw new Error('Choose one of the three saved cashiers.');
-        var period = pricingApi().calendarPeriod(voucher.issuedAt && voucher.issuedAt.toDate ?
-          voucher.issuedAt.toDate() : new Date());
+        // Period scorecards follow the lab invoice / redeem date, not issue date.
+        var period = pricingApi().calendarPeriod(new Date());
         var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
           pricingApi().periodStatsId('global', null, period)
         );
@@ -1260,6 +1405,9 @@
       data.projectPercent == null ? 90 : data.projectPercent,
       data.clientPercent == null ? 10 : data.clientPercent
     );
+    var ceilingMinor = data.projectCeilingMinor == null
+      ? null
+      : requireInteger(data.projectCeilingMinor, 'Project ceiling', 0);
     var tests = (data.tests || []).map(function (test) {
       var row = requireObject(test, 'Lab test');
       var computed = pricingApi().computeInvoiceShares(
@@ -1281,7 +1429,12 @@
     var now = serverTimestamp(context);
     var labRef = context.db.collection('users').doc(labId);
     var configRef = context.db.collection(COLLECTIONS.LAB_CONFIGS).doc(labId);
-    return labRef.get().then(function (labSnapshot) {
+    var ceilingPromise = ceilingMinor == null
+      ? Promise.resolve(null)
+      : saveProgramSettings({ projectCeilingMinor: ceilingMinor });
+    return ceilingPromise.then(function () {
+      return labRef.get();
+    }).then(function (labSnapshot) {
       if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
         throw new Error('Select an active laboratory account.');
       }
@@ -1433,8 +1586,10 @@
           throw new Error('Only verified vouchers can be marked paid.');
         }
         var now = serverTimestamp(context);
-        var period = pricingApi().calendarPeriod(voucher.issuedAt && voucher.issuedAt.toDate ?
-          voucher.issuedAt.toDate() : new Date());
+        // Keep verify/pay/reject money in the same invoice-month bucket as redeem.
+        var period = pricingApi().calendarPeriod(
+          voucher.redeemedAt && voucher.redeemedAt.toDate ? voucher.redeemedAt.toDate() : new Date()
+        );
         var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
           pricingApi().periodStatsId('global', null, period)
         );
@@ -1692,10 +1847,17 @@
     });
   }
 
-  function queryVouchersPaged(input) {
-    var filters = input || {};
+  function voucherSortMillis(row, dateField) {
+    var value = row && row[dateField || 'issuedAt'];
+    if (!value) return 0;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    if (typeof value.toDate === 'function') return value.toDate().getTime();
+    var parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function queryVouchersPagedSingle(filters, pageSize) {
     var context = firebaseContext();
-    var pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 50));
     var query = context.db.collection(COLLECTIONS.VOUCHERS);
     if (filters.labId) query = query.where('labId', '==', filters.labId);
     if (filters.midwifeId) query = query.where('midwifeId', '==', filters.midwifeId);
@@ -1733,6 +1895,46 @@
         };
       });
     });
+  }
+
+  function queryVouchersPaged(input) {
+    var filters = input || {};
+    var pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 50));
+    var statusValue = filters.status == null ? '' : String(filters.status).trim().toLowerCase();
+    var wantAllStatuses = !statusValue || statusValue === 'all';
+
+    // "All statuses" must not rely on an unconstrained collection query: Firestore
+    // security rules with role OR resource filters can reject or empty that path.
+    // Query each known status (same indexes as the working single-status filters)
+    // and merge client-side.
+    if (wantAllStatuses) {
+      var statuses = ['issued', 'redeemed', 'verified', 'paid', 'rejected'];
+      var dateField = filters.dateField === 'redeemedAt' ? 'redeemedAt' : 'issuedAt';
+      return Promise.all(statuses.map(function (status) {
+        return queryVouchersPagedSingle(Object.assign({}, filters, {
+          status: status,
+          dateField: dateField,
+          pageSize: pageSize
+        }), pageSize);
+      })).then(function (pages) {
+        var byId = {};
+        pages.forEach(function (page) {
+          (page.items || []).forEach(function (row) {
+            byId[row.code || row.id] = row;
+          });
+        });
+        var items = Object.keys(byId).map(function (key) { return byId[key]; });
+        items.sort(function (a, b) {
+          return voucherSortMillis(b, dateField) - voucherSortMillis(a, dateField);
+        });
+        return {
+          items: items.slice(0, pageSize),
+          nextCursor: items.length > pageSize ? (items[pageSize - 1].code || items[pageSize - 1].id) : null
+        };
+      });
+    }
+
+    return queryVouchersPagedSingle(filters, pageSize);
   }
 
   function listSubmittedVouchers(input) {
@@ -1848,10 +2050,13 @@
     updateAllocation: updateAllocation,
     resetAllocation: resetAllocation,
     getAllocations: getAllocations,
+    getMidwifeBudgetSummary: getMidwifeBudgetSummary,
     getAccountQuota: getAccountQuota,
     listProviderProfiles: listProviderProfiles,
     saveLabConfig: saveLabConfig,
     getLabConfig: getLabConfig,
+    getProgramSettings: getProgramSettings,
+    saveProgramSettings: saveProgramSettings,
     updateIssuedLineItems: updateIssuedLineItems,
     updateIssuedPatientDetails: updateIssuedPatientDetails,
     setVoucherReviewStatus: setVoucherReviewStatus,

@@ -134,6 +134,41 @@
     });
   }
 
+  /**
+   * Cap total project contribution. Any excess is moved onto client co-payment,
+   * taken first from the highest project line items.
+   */
+  function applyProjectCeiling(lineItems, ceilingMinor) {
+    var items = (lineItems || []).map(function (item) {
+      return Object.assign({}, item);
+    });
+    var totals = sumLineItems(items);
+    if (ceilingMinor == null || ceilingMinor === '' || !Number.isFinite(Number(ceilingMinor))) {
+      return { lineItems: items, totals: totals, ceilingAppliedMinor: 0 };
+    }
+    var ceiling = Math.max(0, Math.round(Number(ceilingMinor)));
+    if (ceiling <= 0 || totals.projectContributionMinor <= ceiling) {
+      return { lineItems: items, totals: totals, ceilingAppliedMinor: 0 };
+    }
+    var excess = totals.projectContributionMinor - ceiling;
+    var remaining = excess;
+    items.slice().sort(function (a, b) {
+      return (Number(b.projectContributionMinor) || 0) - (Number(a.projectContributionMinor) || 0);
+    }).forEach(function (item) {
+      if (remaining <= 0) return;
+      var project = Number(item.projectContributionMinor) || 0;
+      var move = Math.min(project, remaining);
+      item.projectContributionMinor = project - move;
+      item.clientCopayMinor = (Number(item.clientCopayMinor) || 0) + move;
+      remaining -= move;
+    });
+    return {
+      lineItems: items,
+      totals: sumLineItems(items),
+      ceilingAppliedMinor: excess - remaining
+    };
+  }
+
   function minorToMajor(value) {
     return (Number(value) || 0) / 100;
   }
@@ -210,6 +245,7 @@
     computeInvoiceShares: computeInvoiceShares,
     lineItemFromSheetService: lineItemFromSheetService,
     sumLineItems: sumLineItems,
+    applyProjectCeiling: applyProjectCeiling,
     minorToMajor: minorToMajor,
     majorToMinor: majorToMinor,
     formatMajor: formatMajor,

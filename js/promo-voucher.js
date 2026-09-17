@@ -10,7 +10,9 @@
     labs: [],
     labId: '',
     voucher: null,
-    quota: null
+    quota: null,
+    budgetSummary: null,
+    projectCeilingMinor: 0
   };
 
   function el(id) { return document.getElementById(id); }
@@ -25,6 +27,9 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
+  function formatMoney(value) {
+    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' MMK';
+  }
   function normalizedRole(role) { return String(role || '').trim().toLowerCase().replace(/\s+/g, ' '); }
   function setStatus(message, kind) {
     var box = el('pageStatus');
@@ -35,6 +40,7 @@
     if (navigator.onLine === false) throw new Error('QR generation is online-only. Please reconnect and try again.');
   }
   function service() { return window.VoucherService || null; }
+  function pricing() { return window.VoucherPricing; }
 
   function resolvePatientId() {
     var params = new URLSearchParams(window.location.search);
@@ -67,6 +73,9 @@
     var value = visit.visitDate || visit.visit_date || visit.timestamp || visit.createdAt;
     var date = value && value.toDate ? value.toDate() : new Date(value || 0);
     return isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+  function ancHubHref() {
+    return 'patient-care-hub.html?patient=' + encodeURIComponent(state.patientId || '');
   }
 
   async function latestAncDate(db) {
@@ -102,13 +111,24 @@
       return;
     }
     chip.classList.remove('is-empty');
-    chip.textContent = 'Allocation ' + Number(state.quota.remainingUnits || 0) + ' / ' + Number(state.quota.allocatedUnits || 0);
+    var remainingBudget = state.budgetSummary
+      ? formatMoney((state.budgetSummary.remainingBudgetMinor || 0) / 100)
+      : '—';
+    chip.innerHTML =
+      '<span>Allocation ' + Number(state.quota.remainingUnits || 0) + ' / ' +
+      Number(state.quota.allocatedUnits || 0) + '</span>' +
+      '<span class="quota-chip__budget">Remaining budget ' + escapeHtml(remainingBudget) + '</span>';
     var generate = el('generateButton');
-    if (generate) generate.disabled = Number(state.quota.remainingUnits || 0) < 1;
+    if (generate && !generate.classList.contains('d-none')) {
+      generate.disabled = Number(state.quota.remainingUnits || 0) < 1;
+    }
   }
 
   async function loadQuota() {
-    state.quota = await service().getAccountQuota(state.user.uid);
+    state.budgetSummary = await service().getMidwifeBudgetSummary(state.user.uid);
+    state.quota = state.budgetSummary && state.budgetSummary.quota
+      ? state.budgetSummary.quota
+      : await service().getAccountQuota(state.user.uid);
     renderQuota();
     if (!state.quota || state.quota.status !== 'active') {
       throw new Error('No voucher allocation is available for this account.');
@@ -131,17 +151,23 @@
     state.labId = el('selectedLab').value;
     if (!state.labId) {
       state.tests = [];
+      state.projectCeilingMinor = 0;
       el('testsBody').innerHTML = '<p class="text-muted mb-0">Select a laboratory to load its tests.</p>';
+      updatePriceSummary();
       return;
     }
     var result = await service().getTestCatalog(state.labId);
+    state.projectCeilingMinor = Number(result.projectCeilingMinor) || 0;
     state.tests = (result.tests || []).map(function (row, index) {
       return {
         id: String(row.id || ('test-' + index)),
-        name: row.name
+        name: row.name,
+        clientCopayMinor: Number(row.clientCopayMinor) || 0,
+        projectContributionMinor: Number(row.projectContributionMinor) || 0
       };
     });
     renderTests();
+    updatePriceSummary();
   }
 
   function renderTests() {
@@ -153,7 +179,11 @@
       return '<label class="mw-test-chip">' +
         '<input class="test-select" type="checkbox" data-index="' + index + '" aria-label="Select ' +
         escapeHtml(test.name) + '">' +
-        '<span>' + escapeHtml(test.name) + '</span></label>';
+        '<span class="mw-test-chip__body">' +
+        '<span class="mw-test-chip__name">' + escapeHtml(test.name) + '</span>' +
+        '<span class="mw-test-chip__meta">P ' + escapeHtml(formatMoney(test.projectContributionMinor / 100)) +
+        ' · C ' + escapeHtml(formatMoney(test.clientCopayMinor / 100)) + '</span>' +
+        '</span></label>';
     }).join('');
   }
 
@@ -161,6 +191,69 @@
     return Array.from(el('testsBody').querySelectorAll('.test-select:checked')).map(function (box) {
       return state.tests[Number(box.getAttribute('data-index'))];
     }).filter(Boolean);
+  }
+
+  function updatePriceSummary() {
+    var summary = el('priceSummary');
+    var rows = el('priceSummaryRows');
+    var ceilingNote = el('ceilingNote');
+    var selected = selectedTests();
+    if (!summary || !rows) return;
+    if (!selected.length) {
+      summary.hidden = true;
+      rows.innerHTML = '';
+      if (ceilingNote) ceilingNote.hidden = true;
+      return;
+    }
+    var lineItems = selected.map(function (test) {
+      return {
+        serviceId: test.id,
+        serviceName: test.name,
+        regularPriceMinor: 0,
+        labCostShareMinor: 0,
+        subsidizedCostMinor: (test.projectContributionMinor || 0) + (test.clientCopayMinor || 0),
+        clientCopayMinor: test.clientCopayMinor || 0,
+        projectContributionMinor: test.projectContributionMinor || 0
+      };
+    });
+    var capped = pricing().applyProjectCeiling(lineItems, state.projectCeilingMinor);
+    rows.innerHTML = capped.lineItems.map(function (item) {
+      return '<div class="mw-price-summary__row">' +
+        '<span>' + escapeHtml(item.serviceName) + '</span>' +
+        '<span>Project ' + escapeHtml(formatMoney(item.projectContributionMinor / 100)) + '</span>' +
+        '<span>Client ' + escapeHtml(formatMoney(item.clientCopayMinor / 100)) + '</span>' +
+        '</div>';
+    }).join('');
+    el('totalProject').textContent = formatMoney(capped.totals.projectContributionMinor / 100);
+    el('totalClient').textContent = formatMoney(capped.totals.clientCopayMinor / 100);
+    if (ceilingNote) {
+      if (capped.ceilingAppliedMinor > 0) {
+        ceilingNote.hidden = false;
+        ceilingNote.textContent = 'Project ceiling applied (' +
+          formatMoney(state.projectCeilingMinor / 100) +
+          '). Excess moved to client co-payment.';
+      } else {
+        ceilingNote.hidden = true;
+        ceilingNote.textContent = '';
+      }
+    }
+    summary.hidden = false;
+  }
+
+  function setPostGenerateMode(active) {
+    var generate = el('generateButton');
+    var back = el('afterGenerateBack');
+    if (!generate || !back) return;
+    if (active) {
+      generate.classList.add('d-none');
+      generate.disabled = true;
+      back.classList.remove('d-none');
+      back.href = ancHubHref();
+    } else {
+      generate.classList.remove('d-none');
+      back.classList.add('d-none');
+      generate.disabled = Number(state.quota && state.quota.remainingUnits) < 1;
+    }
   }
 
   function renderQrCard(voucher) {
@@ -177,8 +270,8 @@
     }
     new window.QRCode(qrNode, {
       text: qrPayload,
-      width: 240,
-      height: 240,
+      width: 220,
+      height: 220,
       correctLevel: window.QRCode.CorrectLevel.M
     });
     resultNode.classList.add('show');
@@ -222,12 +315,12 @@
       state.voucher = result;
       renderQrCard(state.voucher);
       await loadQuota();
-      setStatus('QR generated successfully. Preview below, then download if needed.', 'success');
+      setPostGenerateMode(true);
+      setStatus('QR generated successfully. Use Back to ANC when finished.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
       setStatus(error.message || 'Unable to generate QR.', 'error');
-    } finally {
-      button.disabled = Number(state.quota && state.quota.remainingUnits) < 1;
+      setPostGenerateMode(false);
     }
   }
 
@@ -278,7 +371,8 @@
       state.user = user;
       state.patientId = resolvePatientId();
       if (!state.patientId) throw new Error('No patient selected. Open this page from a selected patient or add ?patientId=…');
-      el('backLink').href = 'patient-care-hub.html?patient=' + encodeURIComponent(state.patientId);
+      el('backLink').href = ancHubHref();
+      el('afterGenerateBack').href = ancHubHref();
 
       var db = firebase.firestore();
       var results = await Promise.all([
@@ -306,6 +400,7 @@
       await loadLabs();
       await loadTestCatalog();
       el('voucherForm').classList.remove('d-none');
+      setPostGenerateMode(false);
       setStatus('Select a laboratory and tests, then generate the QR.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
@@ -318,6 +413,9 @@
       setStatus(error.message || 'Could not load laboratory tests.', 'error');
     });
   });
+  el('testsBody').addEventListener('change', function (event) {
+    if (event.target && event.target.classList.contains('test-select')) updatePriceSummary();
+  });
   el('voucherForm').addEventListener('submit', generate);
   el('downloadButton').addEventListener('click', downloadPng);
   el('selectAllTests').addEventListener('click', function () {
@@ -325,6 +423,7 @@
     var shouldSelect = boxes.some(function (box) { return !box.checked; });
     boxes.forEach(function (box) { box.checked = shouldSelect; });
     this.textContent = shouldSelect ? 'Clear all' : 'Select all';
+    updatePriceSummary();
   });
   window.addEventListener('offline', function () {
     setStatus('QR generation is online-only. Reconnect before continuing.', 'warning');

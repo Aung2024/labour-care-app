@@ -103,10 +103,17 @@
   }
 
   function dateFieldForStatus(status) {
+    // Issued (and "all") sort/filter by issue date. Redeemed+ use lab invoice date.
     if (status === 'redeemed' || status === 'verified' || status === 'paid' || status === 'rejected') {
       return 'redeemedAt';
     }
     return 'issuedAt';
+  }
+
+  function dashboardDateField(status) {
+    // PO/Lab dashboard period filters use invoice/redeem date except for Issued.
+    if (status === 'issued') return 'issuedAt';
+    return 'redeemedAt';
   }
 
   function normalizeVerifyStatus(value) {
@@ -145,9 +152,15 @@
     };
     byId('poPageTitle').textContent = titles[page] || 'Program Officer';
     byId('poDrawer').hidden = true;
-    if (page === 'dashboard') loadDashboardStats();
-    if (page === 'verify') loadVerifyQueue();
-    if (page === 'labs') renderLabConfig();
+    if (page === 'dashboard') {
+      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    }
+    if (page === 'verify') {
+      loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
+    }
+    if (page === 'labs') {
+      renderLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
+    }
     if (page === 'allocations') renderAllocations();
     if (page === 'settings') renderPoSettingsUi();
   }
@@ -225,6 +238,10 @@
   }
 
   async function renderLabConfig() {
+    var settings = await service().getProgramSettings();
+    byId('configProjectCeiling').value = settings.projectCeilingMinor
+      ? String(settings.projectCeilingMinor / 100)
+      : '';
     var labId = byId('configLab').value;
     if (!labId) {
       byId('configLabName').value = '';
@@ -265,6 +282,7 @@
       address: byId('configLabAddress').value.trim(),
       projectPercent: numberValue(byId('configProjectPercent').value),
       clientPercent: numberValue(byId('configClientPercent').value),
+      projectCeilingMinor: Math.round(numberValue(byId('configProjectCeiling').value) * 100),
       tests: tests
     });
     var lab = state.labs.find(function (row) { return row.id === labId; });
@@ -338,7 +356,7 @@
       labId: byId('dashLab').value || undefined,
       midwifeId: byId('dashMidwife').value || undefined,
       pageSize: 50,
-      dateField: dateFieldForStatus(status)
+      dateField: dashboardDateField(status)
     };
     if (range) {
       query.startDate = range.startDate;
@@ -608,12 +626,17 @@
     byId('allocationsList').innerHTML = state.allocations.map(function (item) {
       var home = state.maternityHomes.find(function (row) { return row.id === item.midwifeId; });
       var midwifeId = item.midwifeId || item.id;
+      var budgetTotal = ((item.budget && item.budget.totalMinor) || 0) / 100;
+      var remainingBudget = (item.remainingBudgetMinor != null
+        ? item.remainingBudgetMinor
+        : Math.max(0, ((item.budget && item.budget.totalMinor) || 0) - (item.redeemedProjectMinor || 0))) / 100;
       return '<article class="po-allocation"><div><div class="po-allocation__name">' +
         escapeHtml(home ? profileName(home) : midwifeId) + '</div></div>' +
         '<div class="po-metric"><span>Allocated</span><strong>' + formatNumber(item.allocatedUnits) + '</strong></div>' +
         '<div class="po-metric"><span>Remaining</span><strong>' + formatNumber(item.remainingUnits) + '</strong></div>' +
-        '<div class="po-metric"><span>PO-only budget</span><strong>' +
-        formatMoney(((item.budget && item.budget.totalMinor) || 0) / 100) + '</strong></div>' +
+        '<div class="po-metric"><span>Redeemed</span><strong>' + formatNumber(item.redeemedCount || 0) + '</strong></div>' +
+        '<div class="po-metric"><span>PO-only budget</span><strong>' + formatMoney(budgetTotal) + '</strong></div>' +
+        '<div class="po-metric"><span>Remaining budget</span><strong>' + formatMoney(remainingBudget) + '</strong></div>' +
         '<div class="po-allocation__actions">' +
         '<button type="button" class="btn btn-outline-primary btn-sm" data-edit-allocation="' +
         escapeHtml(midwifeId) + '">Edit</button>' +

@@ -628,7 +628,8 @@ service cloud.firestore {
         && isOpaqueVoucherId(sheetId)
         && request.resource.data.keys().hasOnly([
           "labId", "midwifeId", "currency", "status", "serviceIds", "services",
-          "pricesByServiceId", "clientPercent", "projectPercent", "publishedAt", "publishedBy"
+          "pricesByServiceId", "clientPercent", "projectPercent", "projectCeilingMinor",
+          "publishedAt", "publishedBy"
         ])
         && request.resource.data.status == "published"
         && isCurrency(request.resource.data.currency)
@@ -680,9 +681,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Budget values are never readable by Midwives or Labs.
+    // Budget totals are PO-managed. Midwives may read their own remaining budget.
     match /voucher_account_budgets/{midwifeId} {
-      allow read: if isVoucherAdministrator();
+      allow read: if isVoucherAdministrator()
+        || (isMidwife() && request.auth.uid == midwifeId);
       allow create, update: if isVoucherAdministrator()
         && request.resource.data.keys().hasOnly([
           "midwifeId", "totalMinor", "currency", "note", "updatedAt", "updatedBy"
@@ -752,6 +754,7 @@ service cloud.firestore {
           "ancVisitDate", "midwifeId",
           "issuerNameSnapshot", "labId", "labNameSnapshot", "priceSheetId",
           "selectedServiceIds", "lineItems", "totals", "currencySnapshot",
+          "projectCeilingMinor", "ceilingAppliedMinor",
           "issuedAt", "expiresAt"
         ])
         && request.resource.data.code == voucherId
@@ -781,8 +784,11 @@ service cloud.firestore {
           || (
             request.resource.data.lineItems is list
             && request.resource.data.lineItems.size() == request.resource.data.selectedServiceIds.size()
-            && request.resource.data.lineItems[0].projectContributionMinor
-              == sheetPrices(request.resource.data.priceSheetId)[request.resource.data.lineItems[0].serviceId].projectCostShareMinor
+            && request.resource.data.totals is map
+            && request.resource.data.totals.projectContributionMinor is int
+            && request.resource.data.totals.clientCopayMinor is int
+            && request.resource.data.totals.projectContributionMinor >= 0
+            && request.resource.data.totals.clientCopayMinor >= 0
           )
         )
         && request.resource.data.issuedAt == request.time
@@ -895,6 +901,17 @@ service cloud.firestore {
         && request.resource.data.clientPercent is int
         && request.resource.data.projectPercent + request.resource.data.clientPercent == 100
         && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /voucher_program_settings/{settingsId} {
+      allow read: if signedIn();
+      allow create, update: if isVoucherAdministrator()
+        && settingsId == "global"
+        && request.resource.data.projectCeilingMinor is int
+        && request.resource.data.projectCeilingMinor >= 0
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
 

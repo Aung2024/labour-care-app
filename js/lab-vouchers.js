@@ -12,7 +12,7 @@
     clientPad: null,
     cashierPads: [],
     page: 'scan',
-    dashStatus: '',
+    dashStatus: 'redeemed',
     lineBusy: false,
     toastTimer: null,
     loggingOut: false,
@@ -497,7 +497,6 @@
       projectPaidMinor: 0
     };
     var counts = row.counts || {};
-    el('labIssued').textContent = counts.issued || 0;
     el('labRedeemed').textContent = counts.redeemed || 0;
     el('labRedeemedMoney').textContent = money((row.projectRedeemedMinor || 0) / 100);
     el('labIncomingCount').textContent = counts.verified || 0;
@@ -517,7 +516,7 @@
         if (redeemedRange) {
           redeemedQuery.startDate = redeemedRange.startDate;
           redeemedQuery.endDate = redeemedRange.endDate;
-          redeemedQuery.dateField = 'issuedAt';
+          redeemedQuery.dateField = 'redeemedAt';
         }
         var redeemedRows = await service().queryVouchersPaged(redeemedQuery);
         var redeemedMinor = (redeemedRows.items || []).reduce(function (sum, item) {
@@ -529,19 +528,20 @@
       }
     }
 
+    if (!state.dashStatus || state.dashStatus === 'issued') state.dashStatus = 'redeemed';
     document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
       tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
     });
     var query = {
       labId: state.user.uid,
-      status: state.dashStatus || undefined,
-      pageSize: 50
+      status: state.dashStatus || 'redeemed',
+      pageSize: 50,
+      dateField: 'redeemedAt'
     };
     var range = periodDateRange(period);
     if (range) {
       query.startDate = range.startDate;
       query.endDate = range.endDate;
-      query.dateField = 'issuedAt';
     }
     var history = await service().queryVouchersPaged(query);
     el('labHistory').innerHTML =
