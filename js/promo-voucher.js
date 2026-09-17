@@ -179,11 +179,7 @@
       return '<label class="mw-test-chip">' +
         '<input class="test-select" type="checkbox" data-index="' + index + '" aria-label="Select ' +
         escapeHtml(test.name) + '">' +
-        '<span class="mw-test-chip__body">' +
-        '<span class="mw-test-chip__name">' + escapeHtml(test.name) + '</span>' +
-        '<span class="mw-test-chip__meta">P ' + escapeHtml(formatMoney(test.projectContributionMinor / 100)) +
-        ' · C ' + escapeHtml(formatMoney(test.clientCopayMinor / 100)) + '</span>' +
-        '</span></label>';
+        '<span class="mw-test-chip__name">' + escapeHtml(test.name) + '</span></label>';
     }).join('');
   }
 
@@ -270,8 +266,8 @@
     }
     new window.QRCode(qrNode, {
       text: qrPayload,
-      width: 180,
-      height: 180,
+      width: 156,
+      height: 156,
       correctLevel: window.QRCode.CorrectLevel.M
     });
     resultNode.classList.add('show');

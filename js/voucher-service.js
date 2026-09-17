@@ -1438,21 +1438,21 @@
       if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
         throw new Error('Select an active laboratory account.');
       }
-      var catalogWrites = pricingApi().STANDARD_LAB_TESTS.map(function (standard) {
+      var catalogWrites = tests.map(function (test) {
         var catalogShares = pricingApi().computeInvoiceShares(
-          standard.defaultRegularMinor, 0, percents.clientPercent, percents.projectPercent
+          test.regularPriceMinor, test.labCostShareMinor, percents.clientPercent, percents.projectPercent
         );
         return saveCatalogService({
-          serviceId: standard.id,
-          serviceCode: standard.code,
-          serviceName: standard.name,
+          serviceId: test.serviceId,
+          serviceCode: test.serviceCode,
+          serviceName: test.serviceName,
           description: '',
-          defaultUnitPriceMinor: standard.defaultRegularMinor,
+          defaultUnitPriceMinor: test.regularPriceMinor,
           defaultSubsidizedCostMinor: catalogShares.subsidizedCostMinor,
           defaultClientCostShareMinor: catalogShares.clientCopayMinor,
           defaultProjectCostShareMinor: catalogShares.projectContributionMinor,
           currency: 'MMK',
-          active: true
+          active: test.active !== false
         });
       });
       return Promise.all(catalogWrites).then(function () {

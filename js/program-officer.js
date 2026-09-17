@@ -192,29 +192,108 @@
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
   }
 
+  function slugServiceId(name) {
+    var base = String(name || 'test').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 36);
+    return (base || 'test') + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function serviceCodeFromId(serviceId) {
+    return String(serviceId || 'TEST').toUpperCase().replace(/[^A-Z0-9_-]/g, '_').slice(0, 32);
+  }
+
+  function configTestRowHtml(test) {
+    var id = test.serviceId || test.id;
+    var name = test.serviceName || test.name || '';
+    var code = test.serviceCode || serviceCodeFromId(id);
+    var regular = test.regularPriceMinor != null ? test.regularPriceMinor / 100 : (test.defaultRegularMinor || 0) / 100;
+    var labShare = test.labCostShareMinor != null ? test.labCostShareMinor / 100 : 0;
+    var checked = test.active !== false;
+    return '<tr data-service="' + escapeHtml(id) + '" data-service-code="' + escapeHtml(code) + '">' +
+      '<td><input class="form-check-input config-active" type="checkbox"' + (checked ? ' checked' : '') +
+      ' aria-label="Enable ' + escapeHtml(name || 'test') + '"></td>' +
+      '<td><input class="form-control config-name" type="text" maxlength="120" value="' +
+      escapeHtml(name) + '" aria-label="Test name" placeholder="Test name"></td>' +
+      '<td><input class="form-control config-regular" type="number" min="0" step="1" value="' +
+      escapeHtml(String(regular || '')) + '" aria-label="Regular price for ' + escapeHtml(name || 'test') + '"></td>' +
+      '<td><input class="form-control config-labshare" type="number" min="0" step="1" value="' +
+      escapeHtml(moneyInputValue(labShare)) + '" placeholder="0" aria-label="Lab cost share for ' +
+      escapeHtml(name || 'test') + '"></td>' +
+      '<td class="config-client">—</td><td class="config-project">—</td>' +
+      '<td><button type="button" class="btn btn-outline-danger btn-sm config-remove-test" aria-label="Remove ' +
+      escapeHtml(name || 'test') + '"><i class="fas fa-trash" aria-hidden="true"></i></button></td></tr>';
+  }
+
   function renderConfigTests(config) {
-    var saved = {};
-    ((config && config.tests) || []).forEach(function (test) { saved[test.serviceId] = test; });
-    byId('configTests').innerHTML = '<table class="po-table"><thead><tr>' +
-      '<th></th><th>Laboratory Test</th><th>Regular Price</th><th>Lab Cost share</th><th>Client</th><th>Project</th>' +
-      '</tr></thead><tbody>' +
-      pricing().STANDARD_LAB_TESTS.map(function (test) {
-        var row = saved[test.id] || {};
-        var regular = row.regularPriceMinor != null ? row.regularPriceMinor / 100 : test.defaultRegularMinor / 100;
-        var labShare = row.labCostShareMinor != null ? row.labCostShareMinor / 100 : 0;
-        var checked = row.active !== false;
-        return '<tr data-service="' + escapeHtml(test.id) + '">' +
-          '<td><input class="form-check-input config-active" type="checkbox"' + (checked ? ' checked' : '') +
-          ' aria-label="Enable ' + escapeHtml(test.name) + '"></td>' +
-          '<td>' + escapeHtml(test.name) + '</td>' +
-          '<td><input class="form-control config-regular" type="number" min="0" step="1" value="' +
-          escapeHtml(String(regular)) + '" aria-label="Regular price for ' + escapeHtml(test.name) + '"></td>' +
-          '<td><input class="form-control config-labshare" type="number" min="0" step="1" value="' +
-          escapeHtml(moneyInputValue(labShare)) + '" placeholder="0" aria-label="Lab cost share for ' +
-          escapeHtml(test.name) + '"></td>' +
-          '<td class="config-client">—</td><td class="config-project">—</td></tr>';
-      }).join('') + '</tbody></table>';
+    var rows = [];
+    if (config && Array.isArray(config.tests) && config.tests.length) {
+      config.tests.forEach(function (test) {
+        rows.push(configTestRowHtml({
+          serviceId: test.serviceId,
+          serviceCode: test.serviceCode || serviceCodeFromId(test.serviceId),
+          serviceName: test.serviceName || test.serviceId,
+          regularPriceMinor: test.regularPriceMinor || 0,
+          labCostShareMinor: test.labCostShareMinor || 0,
+          active: test.active !== false
+        }));
+      });
+    } else {
+      pricing().STANDARD_LAB_TESTS.forEach(function (test) {
+        rows.push(configTestRowHtml({
+          serviceId: test.id,
+          serviceCode: test.code,
+          serviceName: test.name,
+          regularPriceMinor: test.defaultRegularMinor,
+          labCostShareMinor: 0,
+          active: true
+        }));
+      });
+    }
+    byId('configTests').innerHTML = '<table class="po-table po-table--config-tests"><thead><tr>' +
+      '<th></th><th>Laboratory Test</th><th>Regular Price</th><th>Lab Cost share</th><th>Client</th><th>Project</th><th></th>' +
+      '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
     updateConfigPreview();
+  }
+
+  function handleAddConfigTest() {
+    var body = byId('configTests').querySelector('tbody');
+    if (!body) {
+      renderConfigTests({ tests: [] });
+      body = byId('configTests').querySelector('tbody');
+    }
+    if (!body) return;
+    var serviceId = slugServiceId('custom-test');
+    body.insertAdjacentHTML('beforeend', configTestRowHtml({
+      serviceId: serviceId,
+      serviceCode: serviceCodeFromId(serviceId),
+      serviceName: '',
+      regularPriceMinor: 0,
+      labCostShareMinor: 0,
+      active: true
+    }));
+    var nameInput = body.querySelector('tr[data-service="' + serviceId + '"] .config-name');
+    if (nameInput) nameInput.focus();
+    updateConfigPreview();
+  }
+
+  function collectConfigTests() {
+    return Array.from(byId('configTests').querySelectorAll('tr[data-service]')).map(function (row) {
+      var serviceId = row.getAttribute('data-service');
+      var name = (row.querySelector('.config-name') && row.querySelector('.config-name').value.trim()) || '';
+      if (!name) throw new Error('Every laboratory test needs a name.');
+      return {
+        serviceId: serviceId,
+        serviceCode: row.getAttribute('data-service-code') || serviceCodeFromId(serviceId),
+        serviceName: name,
+        regularPriceMinor: Math.round(numberValue(row.querySelector('.config-regular').value) * 100),
+        labCostShareMinor: Math.round(numberValue(row.querySelector('.config-labshare').value) * 100),
+        active: row.querySelector('.config-active').checked
+      };
+    }).filter(function (test) {
+      return test.active || test.regularPriceMinor >= 0;
+    });
   }
 
   function updateConfigPreview() {
@@ -266,17 +345,10 @@
   async function saveLabConfig() {
     var labId = byId('configLab').value;
     if (!labId) throw new Error('Select a laboratory.');
-    var tests = Array.from(byId('configTests').querySelectorAll('tr[data-service]')).map(function (row) {
-      var standard = pricing().STANDARD_LAB_TESTS.find(function (item) { return item.id === row.getAttribute('data-service'); });
-      return {
-        serviceId: standard.id,
-        serviceCode: standard.code,
-        serviceName: standard.name,
-        regularPriceMinor: Math.round(numberValue(row.querySelector('.config-regular').value) * 100),
-        labCostShareMinor: Math.round(numberValue(row.querySelector('.config-labshare').value) * 100),
-        active: row.querySelector('.config-active').checked
-      };
-    });
+    var tests = collectConfigTests();
+    if (!tests.some(function (test) { return test.active; })) {
+      throw new Error('Enable at least one laboratory test.');
+    }
     var labName = byId('configLabName').value.trim();
     await service().saveLabConfig({
       labId: labId,
@@ -790,6 +862,20 @@
     byId('configProjectPercent').addEventListener('input', updateConfigPreview);
     byId('configClientPercent').addEventListener('input', updateConfigPreview);
     byId('configTests').addEventListener('input', updateConfigPreview);
+    byId('configTests').addEventListener('click', function (event) {
+      var removeBtn = event.target.closest('.config-remove-test');
+      if (!removeBtn) return;
+      var row = removeBtn.closest('tr[data-service]');
+      if (!row) return;
+      var remaining = byId('configTests').querySelectorAll('tr[data-service]').length;
+      if (remaining <= 1) {
+        showMessage('Keep at least one laboratory test.', 'error');
+        return;
+      }
+      row.remove();
+      updateConfigPreview();
+    });
+    byId('addConfigTestBtn').addEventListener('click', handleAddConfigTest);
     byId('saveLabConfigBtn').addEventListener('click', function () {
       saveLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
     });
