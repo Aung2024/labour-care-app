@@ -1019,7 +1019,8 @@
   async function initialize(user) {
     state.currentUser = user;
     var profile = await firebase.firestore().collection('users').doc(user.uid).get();
-    if (!profile.exists || normalizeKey(profile.data().role) !== 'program officer') {
+    var poRole = normalizeKey(profile.exists ? profile.data().role : '');
+    if (!profile.exists || (poRole !== 'program officer' && poRole !== 'programme officer')) {
       throw new Error('Active Program Officer access required.');
     }
     byId('signedInUser').textContent = profileName(Object.assign({ id: profile.id }, profile.data()));

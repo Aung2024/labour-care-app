@@ -177,10 +177,40 @@ test('Program Officer can edit labels but cannot assign roles', async () => {
   }));
 });
 
-test('Midwife can read quota but cannot read hidden budget', async () => {
+test('Midwife can read own quota and remaining budget', async () => {
   const db = env.authenticatedContext('mw').firestore();
   await assertSucceeds(getDoc(doc(db, 'voucher_account_quotas/mw')));
-  await assertFails(getDoc(doc(db, 'voucher_account_budgets/mw')));
+  await assertSucceeds(getDoc(doc(db, 'voucher_account_budgets/mw')));
+  await assertFails(getDoc(doc(db, 'voucher_account_budgets/hla')));
+});
+
+test('laboratory role alias can look up vouchers', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users/lab-alias'), {
+      role: 'laboratory',
+      active: true,
+      status: 'approved',
+      displayName: 'Lab Alias'
+    });
+  });
+  await issueVoucher();
+  const labDb = env.authenticatedContext('lab-alias').firestore();
+  await assertSucceeds(getDoc(doc(labDb, `vouchers/${VOUCHER_ID}`)));
+});
+
+test('Program Officer with status approved can read allocations', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users/po-status'), {
+      role: 'programme officer',
+      active: true,
+      approved: false,
+      status: 'approved',
+      displayName: 'PO Status'
+    });
+  });
+  const poDb = env.authenticatedContext('po-status').firestore();
+  await assertSucceeds(getDocs(collection(poDb, 'voucher_account_quotas')));
+  await assertSucceeds(getDocs(collection(poDb, 'voucher_account_budgets')));
 });
 
 test('legacy blank-role Midwife retains clinical workflow access', async () => {

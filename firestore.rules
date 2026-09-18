@@ -9,20 +9,39 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    // Login accepts approved == true OR status == "approved". Rules must match
+    // that, and role checks must tolerate aliases used by the app UI.
+    // Keep these helpers small: voucher update rules OR many branches and
+    // Firestore caps evaluation at 1000 expressions.
+    function accountReady(data) {
+      return data.get("active", true) == true
+        && (
+          data.get("approved", true) == true
+          || data.get("status", "") == "approved"
+        );
+    }
+
     function hasRole(role) {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && currentUser().get("active", true) == true
-        && currentUser().get("approved", true) == true
+        && accountReady(currentUser())
         && currentUser().role == role;
     }
 
     function isSuperAdmin() {
-      return hasRole("Super Admin");
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && accountReady(currentUser())
+        && currentUser().role in ["Super Admin", "super admin"];
     }
 
     function isProgramOfficer() {
-      return hasRole("Program Officer");
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && accountReady(currentUser())
+        && currentUser().role in [
+          "Program Officer", "program officer", "Programme Officer", "programme officer"
+        ];
     }
 
     function isVoucherAdministrator() {
@@ -30,23 +49,22 @@ service cloud.firestore {
     }
 
     function isLab() {
-      return hasRole("Lab");
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && accountReady(currentUser())
+        && currentUser().role in ["Lab", "lab", "Laboratory", "laboratory"];
     }
 
     function isMidwife() {
-      return hasRole("Midwife")
-        || hasRole("midwife")
-        // Legacy clinical accounts predate the role field. The existing app
-        // treats an absent/blank role as Midwife for backward compatibility.
-        || (
-          signedIn()
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && currentUser().get("active", true) == true
-          && currentUser().get("approved", true) == true
-          && (
-            !("role" in currentUser())
-            || currentUser().role == ""
-          )
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && accountReady(currentUser())
+        && (
+          currentUser().role in ["Midwife", "midwife"]
+          // Legacy clinical accounts predate the role field. The existing app
+          // treats an absent/blank role as Midwife for backward compatibility.
+          || !("role" in currentUser())
+          || currentUser().role == ""
         );
     }
 
@@ -65,10 +83,10 @@ service cloud.firestore {
     }
 
     function isLabUser(userId) {
+      let labProfile = get(/databases/$(database)/documents/users/$(userId)).data;
       return exists(/databases/$(database)/documents/users/$(userId))
-        && get(/databases/$(database)/documents/users/$(userId)).data.role in ["Lab", "lab"]
-        && get(/databases/$(database)/documents/users/$(userId)).data.get("active", true) == true
-        && get(/databases/$(database)/documents/users/$(userId)).data.get("approved", true) == true;
+        && labProfile.role in ["Lab", "lab", "Laboratory", "laboratory"]
+        && accountReady(labProfile);
     }
 
     function assignedPriceSheetId(labId) {

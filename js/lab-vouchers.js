@@ -711,7 +711,9 @@
     var profileDoc = await firebase.firestore().collection('users').doc(user.uid).get();
     if (!profileDoc.exists) throw new Error('Lab account profile not found.');
     state.profile = profileDoc.data() || {};
-    if (normalizedRole(state.profile.role) !== 'lab' || state.profile.active === false || state.profile.approved === false) {
+    var labRole = normalizedRole(state.profile.role);
+    var labApproved = state.profile.approved === true || state.profile.status === 'approved';
+    if ((labRole !== 'lab' && labRole !== 'laboratory') || state.profile.active === false || !labApproved) {
       el('accessDeniedMessage').textContent = 'A Lab account is required.';
       el('accessDenied').classList.remove('d-none');
       return;

@@ -1394,7 +1394,7 @@
   }
 
   function listProviderProfiles() {
-    return listUsersByRoles(['Lab', 'laboratory', 'Midwife', 'midwife']);
+    return listUsersByRoles(['Lab', 'lab', 'laboratory', 'Midwife', 'midwife']);
   }
 
   function saveLabConfig(input) {
