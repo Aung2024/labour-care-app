@@ -402,6 +402,20 @@ test('fails incomplete ANC documentation on existing fields only', () => {
     lmp: '2026-04-01',
     lmpStatus: 'known'
   }), false);
+  assert.equal(evaluateAncIndicator('anc_early', {
+    visitDate: '2026-03-25',
+    lmp: '2026-01-01',
+    lmpStatus: 'known'
+  }), true);
+  assert.equal(evaluateAncIndicator('anc_early', {
+    visitDate: '2026-03-26',
+    lmp: '2026-01-01',
+    lmpStatus: 'known'
+  }), false);
+  assert.equal(evaluateAncIndicator('anc_early', {
+    early_anc_visit: true,
+    early_anc_gestational_age_weeks: 13
+  }), false);
 });
 
 test('all-time ANC scoring uses the first dated visit and test', () => {

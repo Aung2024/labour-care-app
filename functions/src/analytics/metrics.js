@@ -1,6 +1,6 @@
 'use strict';
 
-const ANALYTICS_SCHEMA_VERSION = 'analytics-v1';
+const ANALYTICS_SCHEMA_VERSION = 'analytics-v2';
 const ANALYTICS_TIME_ZONE = 'Asia/Yangon';
 const YANGON_OFFSET_MS = 6.5 * 60 * 60 * 1000;
 
@@ -301,11 +301,11 @@ function isEarlyAnc(patient, visits) {
     const lmpDate = parseDateValue(lmp);
     if (lmpDate) {
       const days = Math.floor((firstDate - lmpDate) / 86400000);
-      if (days >= 0) return days < 98;
+      if (days >= 0) return days < 84;
     }
   }
   const ga = parseFloat(first.gestationalAge ?? first.gestational_age ?? first.ga_weeks ?? first.manualGestationalAge);
-  return Number.isFinite(ga) && ga > 0 && ga < 14;
+  return Number.isFinite(ga) && ga > 0 && ga < 12;
 }
 
 function latestVisit(visits) {

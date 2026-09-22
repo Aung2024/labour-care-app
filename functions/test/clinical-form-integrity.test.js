@@ -243,6 +243,33 @@ test('antenatal forms load QI target reminders without changing newborn sources'
   assert.match(testForm, /source: 'anc_test'/);
 });
 
+test('ANC visit workflow keeps revised optional fields and completion rules aligned', () => {
+  const form = readAppFile('antenatal-form.html');
+  const sharedOtherVisits = readAppFile('js/other-facility-visits-ui.js');
+  const tdStart = form.indexOf('id="tetanusToxoid"');
+  const tdEnd = form.indexOf('</select>', tdStart);
+  const tdSource = form.slice(tdStart, tdEnd);
+
+  assert.match(form, /data-en="Tuberculosis present \/ absent" data-mm="တီဘီရောဂါ ရှိ\/မရှိ"/);
+  assert.doesNotMatch(form, /coinfectionNotesGroup/);
+  assert.match(form, /type="hidden" id="coinfectionNotes"/);
+  assert.doesNotMatch(tdSource, /Prescribed/);
+  assert.doesNotMatch(tdSource, /Not Prescribed/);
+  assert.doesNotMatch(tdSource, /Already Prescribed/);
+  assert.match(form, /id="lastPregnancyOutcome"/);
+  assert.match(form, /id="lastPregnancyDate"/);
+  assert.match(form, /lastPregnancyOutcome: getValue\('lastPregnancyOutcome'\) \|\| ''/);
+  assert.match(form, /lastPregnancyDate: getValue\('lastPregnancyDate'\) \|\| null/);
+  assert.match(form, /includeVisitNumber: false/);
+  assert.match(sharedOtherVisits, /options\.includeVisitNumber !== false/);
+  assert.match(form, /setRequiredState\(document\.getElementById\('coinfectionNotes'\), false\)/);
+  assert.match(form, /'cleanDeliveryKitDate', 'lastPregnancyOutcome', 'lastPregnancyDate'/);
+  assert.match(form, /const EARLY_ANC_MAX_WEEKS = 12/);
+  assert.match(form, /နောက်စေ့ ရှေ့ဘက်အနေအထား \(OA\)/);
+  assert.match(form, /နောက်စေ့ နောက်ဘက်အနေအထား \(OP\)/);
+  assert.match(form, /သန္ဓေသား ကန့်လန့်အနေအထား \(Transverse Lie\)/);
+});
+
 test('transfer hub hides deleted patients and returns from overall report', () => {
   const hubView = readAppFile('js/sent-transfer-hrt-view.js');
   const report = readAppFile('overall-patient-report.html');
@@ -260,7 +287,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v314-moh/);
+  assert.match(sw, /mch-care-v315-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {

@@ -202,8 +202,8 @@
       domain: 'antenatal',
       source: 'anc_visit',
       formHighlight: 'earlyAncSection',
-      en: 'Early ANC visit (before 14 weeks)',
-      mm: 'ကိုယ်ဝန် (၁၄)ပတ်အတွင်း ပထမဆုံး ANC ပြသခြင်း',
+      en: 'Early ANC visit (before 12 weeks)',
+      mm: 'ကိုယ်ဝန် (၁၂)ပတ်မတိုင်မီ ပထမဆုံး ANC ပြသခြင်း',
       shortEn: 'Early ANC',
       shortMm: 'စောစီးစွာ ANC',
       defaultTarget: 80,
@@ -698,20 +698,32 @@
 
   function isEarlyAncVisit(visit, patient) {
     if (!visit) return false;
-    if (visit.early_anc_visit === true || isAffirmative(visit.early_anc_visit)) return true;
-    if (visit.early_anc_visit === false) return false;
-    var visitDate = dateFromFields(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at']);
+    var visitDate = dateFromFields(visit, [
+      'first_anc_visit_date', 'visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at'
+    ]);
     var profile = patient || {};
     var lmp = visit.lmp || profile.lmp || (profile.profile && profile.profile.lmp);
     if (lmp && visit.lmpStatus !== 'unknown' && visitDate) {
       var lmpDate = timestampToDate(lmp);
       if (lmpDate) {
         var days = Math.floor((visitDate.getTime() - lmpDate.getTime()) / 86400000);
-        if (days >= 0) return days < 98;
+        if (days >= 0) return days < 84;
       }
     }
-    var ga = parseFloat(visit.gestationalAge != null ? visit.gestationalAge : visit.gestational_age != null ? visit.gestational_age : visit.ga_weeks != null ? visit.ga_weeks : visit.manualGestationalAge);
-    return Number.isFinite(ga) && ga > 0 && ga < 14;
+    var ga = parseFloat(
+      visit.early_anc_gestational_age_weeks != null
+        ? visit.early_anc_gestational_age_weeks
+        : visit.gestationalAge != null
+          ? visit.gestationalAge
+          : visit.gestational_age != null
+            ? visit.gestational_age
+            : visit.ga_weeks != null
+              ? visit.ga_weeks
+              : visit.manualGestationalAge
+    );
+    if (Number.isFinite(ga) && ga > 0) return ga < 12;
+    if (visit.early_anc_visit === true || isAffirmative(visit.early_anc_visit)) return true;
+    return false;
   }
 
   function hasHighRiskDocumented(visit) {

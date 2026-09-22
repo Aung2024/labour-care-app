@@ -13,6 +13,7 @@ const {
   isPilotFacilityCode,
   firstPncDays,
   pncTimingBucket,
+  isEarlyAnc,
   aggregateAccountActivity,
   aggregate,
 } = require('./export-facility-application-data');
@@ -20,6 +21,20 @@ const {
 function entry(id, data) {
   return { id, path: `test/${id}`, data };
 }
+
+test('facility export uses a strict before-12-weeks Early ANC boundary', () => {
+  const patient = { lmp: '2026-01-01', lmpStatus: 'known' };
+  assert.equal(isEarlyAnc(patient, [entry('anc-1', {
+    visitDate: '2026-03-25',
+    lmp: '2026-01-01',
+    lmpStatus: 'known'
+  })]), true);
+  assert.equal(isEarlyAnc(patient, [entry('anc-2', {
+    visitDate: '2026-03-26',
+    lmp: '2026-01-01',
+    lmpStatus: 'known'
+  })]), false);
+});
 
 test('canonical newborn helpers count twins once across repeated records', () => {
   const records = [

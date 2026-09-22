@@ -37,7 +37,8 @@ const EXTRACT_DATE_LABEL = '20 September 2026';
 const EXTRACT_DATE_ISO = '2026-09-20';
 const PILOT_TOWNSHIPS = ['Pyinmana', 'Tatkon'];
 const DEFAULT_WORKBOOK = path.join(ROOT, 'docs', `Application data by facility - ${EXTRACT_DATE_ISO}.xlsx`);
-const EARLY_ANC_MAX_DAYS = 14 * 7;
+const EARLY_ANC_MAX_WEEKS = 12;
+const EARLY_ANC_MAX_DAYS = EARLY_ANC_MAX_WEEKS * 7;
 const LOW_BIRTH_WEIGHT_GRAM = 2000;
 const PRETERM_DAYS_BEFORE_EDD = 21;
 
@@ -447,7 +448,7 @@ function isEarlyAnc(patient, visits) {
     'ga_weeks',
     'manualGestationalAge',
   ]);
-  return gestationalAge !== null && gestationalAge < 14;
+  return gestationalAge !== null && gestationalAge > 0 && gestationalAge < EARLY_ANC_MAX_WEEKS;
 }
 
 function latestHemoglobin(tests, visits) {
@@ -1969,6 +1970,7 @@ module.exports = {
   deliveryDateFromNotes,
   firstPncDays,
   pncTimingBucket,
+  isEarlyAnc,
   serviceEventDate,
   serviceEventSortKey,
   aggregateAccountActivity,

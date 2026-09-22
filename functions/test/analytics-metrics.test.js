@@ -49,6 +49,28 @@ test('exports a versioned registry and complete empty metric shape', () => {
   assert.equal(metrics.pncTimingGroups['Not recorded'], 0);
 });
 
+test('Early ANC uses a strict before-12-weeks boundary', () => {
+  const atElevenWeeksSixDays = calculatePatientMetrics({
+    profile: { status: 'antenatal' },
+    antenatalVisits: [wrapped({
+      visitDate: '2026-03-25',
+      lmp: '2026-01-01',
+      lmpStatus: 'known'
+    })]
+  });
+  const atTwelveWeeks = calculatePatientMetrics({
+    profile: { status: 'antenatal' },
+    antenatalVisits: [wrapped({
+      visitDate: '2026-03-26',
+      lmp: '2026-01-01',
+      lmpStatus: 'known'
+    })]
+  });
+
+  assert.equal(atElevenWeeksSixDays.earlyAnc, 1);
+  assert.equal(atTwelveWeeks.earlyAnc, 0);
+});
+
 test('builds deterministic Asia/Yangon all, month, quarter, and year periods', () => {
   assert.deepEqual(periodForKey('all'), { key: 'all', start: null, end: null });
   assert.equal(periodKeyForDate('2026-08-01T00:15:00+06:30', 'month'), '2026-08');

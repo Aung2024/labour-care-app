@@ -43,20 +43,25 @@
     options = options || {};
     var normalizeDate = options.normalizeDate || defaultNormalizeDate;
     var onRemove = options.onRemove || "this.closest('.other-visit-row').remove();";
+    var includeVisitNumber = options.includeVisitNumber !== false;
     var visitNum = data.visitNumber ? escapeHtmlAttr(data.visitNumber) : '';
     var visitDate = data.visitDate ? escapeHtmlAttr(normalizeDate(data.visitDate)) : '';
     var facilityName = data.facilityName ? escapeHtmlAttr(data.facilityName) : '';
+    var fieldColumnClass = includeVisitNumber ? 'col-6 col-md-3' : 'col-12 col-md-3';
+    var visitNumberHtml = includeVisitNumber
+      ? '<div class="col-6 col-md-2">' +
+          '<label class="form-label small lang-text" data-en="Facility Visit #" data-mm="ပြသသည့်အကြိမ်">Facility Visit #</label>' +
+          '<input type="number" min="1" class="form-control other-visit-number" value="' + visitNum + '">' +
+        '</div>'
+      : '';
 
     return '' +
-      '<div class="col-6 col-md-2">' +
-        '<label class="form-label small lang-text" data-en="Facility Visit #" data-mm="ပြသသည့်အကြိမ်">Facility Visit #</label>' +
-        '<input type="number" min="1" class="form-control other-visit-number" value="' + visitNum + '">' +
-      '</div>' +
-      '<div class="col-6 col-md-3">' +
+      visitNumberHtml +
+      '<div class="' + fieldColumnClass + '">' +
         '<label class="form-label small lang-text" data-en="Visit Date" data-mm="ပြသသည့်နေ့">Visit Date</label>' +
         '<input type="date" class="form-control other-visit-date" value="' + visitDate + '">' +
       '</div>' +
-      '<div class="col-6 col-md-3">' +
+      '<div class="' + fieldColumnClass + '">' +
         '<label class="form-label small lang-text" data-en="Facility Type" data-mm="ပြသသည့်နေရာ">Facility Type</label>' +
         '<select class="form-select other-visit-facility-type">' +
           '<option value="" class="lang-text" data-en="Select" data-mm="ရွေးချယ်ပါ">Select</option>' +
@@ -64,7 +69,7 @@
           '<option value="Public" data-en="Public" data-mm="ပြည်သူ့ ကျန်းမာရေးဌာန">Public</option>' +
         '</select>' +
       '</div>' +
-      '<div class="col-6 col-md-3">' +
+      '<div class="' + fieldColumnClass + '">' +
         '<label class="form-label small lang-text" data-en="Facility Name" data-mm="ကျန်းမာရေးဌာန အမည်">Facility Name</label>' +
         '<input type="text" class="form-control other-visit-facility-name" value="' + facilityName + '">' +
       '</div>' +
