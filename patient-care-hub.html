@@ -2216,20 +2216,22 @@
         loadedDeliveryNotes = notes;
 
         if (notes) {
-          document.getElementById('thirdStageOxytocin').checked = notes.thirdStage.oxytocinGiven === true;
-          document.getElementById('thirdStageCCT').checked = notes.thirdStage.controlledCordTraction === true;
+          document.getElementById('thirdStageOxytocin').value = notes.thirdStage.oxytocinGiven === true ? 'yes' : 'no';
+          document.getElementById('thirdStageCCT').value = notes.thirdStage.controlledCordTraction === true ? 'yes' : 'no';
           document.getElementById('deliveryPregnancyType').value = notes.deliveryDetails.pregnancyType || 'single';
           document.getElementById('deliveryBirthProvider').value = mapDeliveryBirthProvider(notes.deliveryDetails.birthProvider);
           document.getElementById('deliveryMode').value = mapDeliveryMode(notes.deliveryDetails.modeOfDelivery);
           document.getElementById('deliveryBirthPlace').value = mapDeliveryBirthPlace(notes.deliveryDetails.birthPlace);
+          document.getElementById('deliveryMaternalCondition').value = notes.deliveryDetails.maternalCondition || '';
           renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
         } else {
-          document.getElementById('thirdStageOxytocin').checked = false;
-          document.getElementById('thirdStageCCT').checked = false;
+          document.getElementById('thirdStageOxytocin').value = '';
+          document.getElementById('thirdStageCCT').value = '';
           document.getElementById('deliveryPregnancyType').value = 'single';
           document.getElementById('deliveryBirthProvider').value = '';
           document.getElementById('deliveryMode').value = '';
           document.getElementById('deliveryBirthPlace').value = '';
+          document.getElementById('deliveryMaternalCondition').value = '';
           renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         }
         await applyDeliveryGestationalWeek(
@@ -2239,9 +2241,10 @@
         applyDeliveryNotesFormState();
       } catch (error) {
         console.error('Error loading delivery notes:', error);
-        document.getElementById('thirdStageOxytocin').checked = false;
-        document.getElementById('thirdStageCCT').checked = false;
+        document.getElementById('thirdStageOxytocin').value = '';
+        document.getElementById('thirdStageCCT').value = '';
         document.getElementById('deliveryPregnancyType').value = 'single';
+        document.getElementById('deliveryMaternalCondition').value = '';
         renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         try {
           await applyDeliveryGestationalWeek(selectedPatient.id, '');
@@ -2447,7 +2450,7 @@
             <div class="delivery-grid">
               <div class="delivery-field">
                 <label class="lang-text" data-en="Outcome *" data-mm="ကလေးအခြေအနေ *">Outcome *</label>
-                <select data-field="outcome" required>
+                <select data-field="outcome" required onchange="handleDeliveryOutcomeChange(this)">
                   <option value="">-</option>
                   <option value="alive" class="lang-text" data-en="Alive" data-mm="ရှင်" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
                   <option value="death" class="lang-text" data-en="Death" data-mm="သေ" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
@@ -2478,6 +2481,10 @@
                 <label class="lang-text" data-en="Birth time *" data-mm="မွေးချိန် *">Birth time *</label>
                 <input type="datetime-local" data-field="birthTime" value="${DeliveryNotesUtils.toDatetimeLocal(baby.birthTime) || ''}" required>
               </div>
+              <div class="delivery-field" data-cause-of-death-wrap style="${baby.outcome === 'death' || baby.outcome === 'stillbirth' ? '' : 'display:none;'}">
+                <label class="lang-text" data-en="Cause of death *" data-mm="သေဆုံးရသည့် အကြောင်းရင်း *">Cause of death *</label>
+                <input type="text" data-field="causeOfDeath" value="${escapeHtmlHub(baby.causeOfDeath || '')}" ${baby.outcome === 'death' || baby.outcome === 'stillbirth' ? 'required' : ''}>
+              </div>
             </div>
           </div>
         `;
@@ -2497,6 +2504,19 @@
       if (addBtn) addBtn.style.display = type === 'twins' ? 'inline-flex' : 'none';
     }
 
+    function handleDeliveryOutcomeChange(selectEl) {
+      const row = selectEl ? selectEl.closest('[data-baby-row]') : null;
+      if (!row) return;
+      const wrap = row.querySelector('[data-cause-of-death-wrap]');
+      const input = row.querySelector('[data-field="causeOfDeath"]');
+      const needsCause = selectEl.value === 'death' || selectEl.value === 'stillbirth';
+      if (wrap) wrap.style.display = needsCause ? '' : 'none';
+      if (input) {
+        input.required = needsCause;
+        if (!needsCause) input.value = '';
+      }
+    }
+
     function collectDeliveryBabies() {
       return Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]')).map((row, index) => ({
         babyIndex: index + 1,
@@ -2506,7 +2526,8 @@
         birthWeightGram: row.querySelector('[data-field="birthWeightKg"]').value
           ? Math.round(parseFloat(row.querySelector('[data-field="birthWeightKg"]').value) * 1000)
           : null,
-        birthTime: row.querySelector('[data-field="birthTime"]').value || ''
+        birthTime: row.querySelector('[data-field="birthTime"]').value || '',
+        causeOfDeath: row.querySelector('[data-field="causeOfDeath"]').value.trim()
       }));
     }
 
@@ -2523,6 +2544,20 @@
       const providerEl = document.getElementById('deliveryBirthProvider');
       const modeEl = document.getElementById('deliveryMode');
       const placeEl = document.getElementById('deliveryBirthPlace');
+      const maternalConditionEl = document.getElementById('deliveryMaternalCondition');
+      const oxytocinEl = document.getElementById('thirdStageOxytocin');
+      const cctEl = document.getElementById('thirdStageCCT');
+
+      if (!oxytocinEl || !oxytocinEl.value) {
+        alert(isMm ? 'Oxytocin ထိုးခြင်း ရှိ/မရှိ ရွေးချယ်ပါ။' : 'Select Yes or No for oxytocin use.');
+        focusDeliveryField(oxytocinEl);
+        return false;
+      }
+      if (!cctEl || !cctEl.value) {
+        alert(isMm ? 'ချက်ကြိုးဆွဲ၍ အချင်းချခြင်း ရှိ/မရှိ ရွေးချယ်ပါ။' : 'Select Yes or No for controlled cord traction.');
+        focusDeliveryField(cctEl);
+        return false;
+      }
 
       if (!pregnancyType || !pregnancyType.value) {
         alert(isMm ? 'ကိုယ်ဝန်အမျိုးအစား ရွေးချယ်ပါ။' : 'Please select pregnancy type.');
@@ -2551,6 +2586,11 @@
         focusDeliveryField(placeEl);
         return false;
       }
+      if (!maternalConditionEl || !maternalConditionEl.value) {
+        alert(isMm ? 'မိခင်အခြေအနေ ရွေးချယ်ပါ။' : 'Please select maternal condition.');
+        focusDeliveryField(maternalConditionEl);
+        return false;
+      }
 
       const babyRows = Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]'));
       const minBabies = pregnancyType.value === 'twins' ? 2 : 1;
@@ -2567,6 +2607,7 @@
         const anusEl = row.querySelector('[data-field="anusPresent"]');
         const weightEl = row.querySelector('[data-field="birthWeightKg"]');
         const timeEl = row.querySelector('[data-field="birthTime"]');
+        const causeOfDeathEl = row.querySelector('[data-field="causeOfDeath"]');
         const weight = weightEl ? parseFloat(weightEl.value) : NaN;
 
         if (!outcomeEl || !outcomeEl.value) {
@@ -2602,6 +2643,14 @@
             ? ('ကလေး ' + babyNo + ' အတွက် မွေးချိန် ထည့်ပါ။')
             : ('Please enter birth time for baby ' + babyNo + '.'));
           focusDeliveryField(timeEl);
+          return false;
+        }
+        if ((outcomeEl.value === 'death' || outcomeEl.value === 'stillbirth') &&
+            (!causeOfDeathEl || !causeOfDeathEl.value.trim())) {
+          alert(isMm
+            ? ('ကလေး ' + babyNo + ' အတွက် သေဆုံးရသည့် အကြောင်းရင်း ထည့်ပါ။')
+            : ('Please enter cause of death for baby ' + babyNo + '.'));
+          focusDeliveryField(causeOfDeathEl);
           return false;
         }
       }
@@ -2662,8 +2711,8 @@
           return;
         }
 
-        const oxytocinGiven = document.getElementById('thirdStageOxytocin').checked;
-        const controlledCordTraction = document.getElementById('thirdStageCCT').checked;
+        const oxytocinGiven = document.getElementById('thirdStageOxytocin').value === 'yes';
+        const controlledCordTraction = document.getElementById('thirdStageCCT').value === 'yes';
         let correctionApproval = null;
         if (isDeliveryEditMode) {
           if (!deliveryEditApprovalId || !window.JointCareUtils) {
@@ -2692,6 +2741,7 @@
             birthProvider: document.getElementById('deliveryBirthProvider').value,
             modeOfDelivery: document.getElementById('deliveryMode').value,
             birthPlace: document.getElementById('deliveryBirthPlace').value,
+            maternalCondition: document.getElementById('deliveryMaternalCondition').value,
             babies: collectDeliveryBabies()
           }
         };
@@ -2810,21 +2860,29 @@
         </div>
         <section class="delivery-section">
           <h5 class="delivery-section-title"><i class="fas fa-clipboard-check"></i><span class="lang-text" data-en="Management of Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Management of Labour Third Stage</span></h5>
-          <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" id="thirdStageOxytocin" name="thirdStageOxytocin">
-            <label class="form-check-label lang-text" for="thirdStageOxytocin" 
+          <div class="delivery-field mb-3">
+            <label class="lang-text" for="thirdStageOxytocin"
               data-en="Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded."
               data-mm="ကလေးမွေးပြီးပြီးချင်း၊ ဗိုက်ထဲတွင် နောက်ထပ်ကလေး မကျန်ကြောင်း သေချာလျှင် Oxytocin10 units IM အသားဆေးကို ကလေးမွေးပြီး တစ်မိနစ်အတွင်း ထိုးခြင်း။">
               Use of Oxytocin 10 IU IM within 1 min of birth after second baby is excluded.
             </label>
+            <select id="thirdStageOxytocin" name="thirdStageOxytocin" required>
+              <option value="">-</option>
+              <option value="yes" class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</option>
+              <option value="no" class="lang-text" data-en="No" data-mm="မရှိ">No</option>
+            </select>
           </div>
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="thirdStageCCT" name="thirdStageCCT">
-            <label class="form-check-label lang-text" for="thirdStageCCT"
+          <div class="delivery-field mb-0">
+            <label class="lang-text" for="thirdStageCCT"
               data-en="Placenta delivery by Controlled cord traction method."
               data-mm="သားအိမ်ကို ထိန်းပြီး ချက်ကြိုးကိုဆွဲ၍ အချင်းချခြင်း။">
               Placenta delivery by Controlled cord traction method.
             </label>
+            <select id="thirdStageCCT" name="thirdStageCCT" required>
+              <option value="">-</option>
+              <option value="yes" class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</option>
+              <option value="no" class="lang-text" data-en="No" data-mm="မရှိ">No</option>
+            </select>
           </div>
         </section>
 
@@ -2882,6 +2940,14 @@
                 <option value="private_facility" class="lang-text" data-en="Private Facility" data-mm="ပုဂ္ဂလိက">Private Facility</option>
                 <option value="home" class="lang-text" data-en="Home Delivery" data-mm="အိမ်မွေး">Home Delivery</option>
                 <option value="other" class="lang-text" data-en="Other" data-mm="အခြား">Other</option>
+              </select>
+            </div>
+            <div class="delivery-field">
+              <label for="deliveryMaternalCondition" class="lang-text" data-en="Maternal condition *" data-mm="မိခင်အခြေအနေ *">Maternal condition *</label>
+              <select id="deliveryMaternalCondition" required>
+                <option value="">-</option>
+                <option value="alive" class="lang-text" data-en="Alive" data-mm="အသက်ရှင်">Alive</option>
+                <option value="dead" class="lang-text" data-en="Dead" data-mm="သေဆုံး">Dead</option>
               </select>
             </div>
           </div>

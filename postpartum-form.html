@@ -708,21 +708,23 @@
             </div>
             <div class="col-md-6 col-sm-6">
               <label for="pncBirthPlace" class="form-label lang-text" data-en="Birth place" data-mm="မွေးဖွားရာနေရာ">Birth place</label>
-              <select class="form-control" id="pncBirthPlace" data-choice>
+              <select class="form-control" id="pncBirthPlace" data-choice required>
                 <option value="">-</option>
-                <option value="public_facility" class="lang-text" data-en="Public Facility" data-mm="အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာန">Public Facility</option>
+                <option value="government_hospital" class="lang-text" data-en="Government Hospital" data-mm="အစိုးရဆေးရုံ">Government Hospital</option>
+                <option value="health_facility_subfacility" class="lang-text" data-en="RHC/SRHC" data-mm="ကျန်းမာရေးဌာန/ဌာနခွဲ">RHC/SRHC</option>
                 <option value="private_facility" class="lang-text" data-en="Private Facility" data-mm="ပုဂ္ဂလိက">Private Facility</option>
                 <option value="home" class="lang-text" data-en="Home Delivery" data-mm="အိမ်မွေး">Home Delivery</option>
-                <option value="other" class="lang-text" data-en="Others" data-mm="အခြား">Others</option>
+                <option value="other" class="lang-text" data-en="Other" data-mm="အခြား">Other</option>
               </select>
             </div>
             <div class="col-md-6 col-sm-6">
               <label for="pncModeOfDelivery" class="form-label lang-text" data-en="Mode of delivery" data-mm="မွေးဖွားနည်း">Mode of delivery</label>
-              <select class="form-control" id="pncModeOfDelivery" data-choice>
+              <select class="form-control" id="pncModeOfDelivery" data-choice required>
                 <option value="">-</option>
-                <option value="normal_vaginal">Normal vaginal delivery</option>
-                <option value="assisted_vaginal">Assisted delivery</option>
-                <option value="caesarean_section">C-section</option>
+                <option value="normal" class="lang-text" data-en="Normal vaginal delivery" data-mm="ရိုးရိုးမွေး">Normal vaginal delivery</option>
+                <option value="assisted" class="lang-text" data-en="Assisted delivery" data-mm="ကူညီမွေး">Assisted delivery</option>
+                <option value="elective_c_section" class="lang-text" data-en="Elective C-section" data-mm="စီစဉ်ထားသော ဗိုက်ခွဲ">Elective C-section</option>
+                <option value="emergency_c_section" class="lang-text" data-en="Emergency C-section" data-mm="အရေးပေါ် ဗိုက်ခွဲ">Emergency C-section</option>
               </select>
             </div>
             <div class="col-md-6 col-sm-6">
@@ -1375,27 +1377,32 @@
       const modeEl = document.getElementById('pncModeOfDelivery');
       [placeEl, modeEl].forEach(function (el) {
         if (!el) return;
-        // Keep delivery-note identity editable only when no locked delivery anchor exists yet.
-        el.disabled = shouldLock && !!el.value;
-        el.classList.toggle('next-visit-readonly', shouldLock && !!el.value);
+        const sourceLocked = el.dataset.deliverySourceLocked === 'true';
+        el.disabled = sourceLocked || (shouldLock && !!el.value);
+        el.classList.toggle('next-visit-readonly', sourceLocked || (shouldLock && !!el.value));
       });
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
-    function applyPncDeliveryIdentityFields(source) {
+    function applyPncDeliveryIdentityFields(source, lockFromDeliveryNotes) {
       source = source || {};
       const placeEl = document.getElementById('pncBirthPlace');
       const modeEl = document.getElementById('pncModeOfDelivery');
-      if (placeEl && !placeEl.value && source.birthplace) {
+      if (placeEl && source.birthplace) {
         placeEl.value = window.DeliveryNotesUtils
-          ? (DeliveryNotesUtils.normalizeBirthPlaceForNewborn(source.birthplace) || source.birthplace)
+          ? (DeliveryNotesUtils.normalizeBirthPlaceForForm(source.birthplace) || source.birthplace)
           : source.birthplace;
       }
-      if (modeEl && !modeEl.value && source.mode_of_delivery) {
+      if (modeEl && source.mode_of_delivery) {
         modeEl.value = window.DeliveryNotesUtils
-          ? (DeliveryNotesUtils.normalizeDeliveryModeForNewborn(source.mode_of_delivery) || source.mode_of_delivery)
+          ? (DeliveryNotesUtils.normalizeDeliveryModeForForm(source.mode_of_delivery) || source.mode_of_delivery)
           : source.mode_of_delivery;
       }
+      [placeEl, modeEl].forEach(function (el) {
+        if (!el) return;
+        el.dataset.deliverySourceLocked = lockFromDeliveryNotes ? 'true' : 'false';
+      });
+      applyDeliveryDateTimeLock();
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
@@ -1410,9 +1417,12 @@
           });
           return null;
         }
-        const legacy = DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
-        applyPncDeliveryIdentityFields(legacy || {});
-        return legacy;
+        const source = {
+          birthplace: notes.deliveryDetails && notes.deliveryDetails.birthPlace,
+          mode_of_delivery: notes.deliveryDetails && notes.deliveryDetails.modeOfDelivery
+        };
+        applyPncDeliveryIdentityFields(source, true);
+        return DeliveryNotesUtils.legacyFieldsFromDelivery(notes);
       } catch (e) {
         console.warn('Could not load delivery notes into PNC form:', e);
         return null;
@@ -1811,19 +1821,19 @@
       if (data.visitDate) document.getElementById('visitDate').value = normalizeDateInput(data.visitDate);
       if (data.visitNumber) document.getElementById('visitNumber').value = data.visitNumber;
       if (data.deliveredDateTime) document.getElementById('deliveredDateTime').value = data.deliveredDateTime;
-      if (data.birthplace || data.birthPlace) {
+      if ((data.birthplace || data.birthPlace) && document.getElementById('pncBirthPlace')?.dataset.deliverySourceLocked !== 'true') {
         const placeEl = document.getElementById('pncBirthPlace');
         if (placeEl) {
           placeEl.value = window.DeliveryNotesUtils
-            ? (DeliveryNotesUtils.normalizeBirthPlaceForNewborn(data.birthplace || data.birthPlace) || '')
+            ? (DeliveryNotesUtils.normalizeBirthPlaceForForm(data.birthplace || data.birthPlace) || '')
             : (data.birthplace || data.birthPlace || '');
         }
       }
-      if (data.mode_of_delivery || data.modeOfDelivery) {
+      if ((data.mode_of_delivery || data.modeOfDelivery) && document.getElementById('pncModeOfDelivery')?.dataset.deliverySourceLocked !== 'true') {
         const modeEl = document.getElementById('pncModeOfDelivery');
         if (modeEl) {
           modeEl.value = window.DeliveryNotesUtils
-            ? (DeliveryNotesUtils.normalizeDeliveryModeForNewborn(data.mode_of_delivery || data.modeOfDelivery) || '')
+            ? (DeliveryNotesUtils.normalizeDeliveryModeForForm(data.mode_of_delivery || data.modeOfDelivery) || '')
             : (data.mode_of_delivery || data.modeOfDelivery || '');
         }
       }

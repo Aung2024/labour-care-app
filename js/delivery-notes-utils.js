@@ -36,6 +36,19 @@
     return v === 'male' || v === 'female' ? v : '';
   }
 
+  function normalizeMaternalCondition(value) {
+    var v = String(value || '').toLowerCase().trim();
+    if (v === 'alive' || v === 'live' || v === 'အသက်ရှင်') return 'alive';
+    if (v === 'dead' || v === 'death' || v === 'deceased' || v === 'သေဆုံး') return 'dead';
+    return '';
+  }
+
+  function normalizeBooleanDecision(value) {
+    if (value === true || value === false) return value;
+    var v = String(value == null ? '' : value).toLowerCase().trim();
+    return v === 'yes' || v === 'true' || v === '1';
+  }
+
   function normalizeDeliveryModeForNewborn(value) {
     var v = String(value || '').toLowerCase();
     if (!v) return '';
@@ -128,6 +141,16 @@
     return value || '';
   }
 
+  function deliveryModeLabel(value, language) {
+    var key = normalizeDeliveryModeForForm(value);
+    var mm = language === 'mm';
+    if (key === 'normal') return mm ? 'ရိုးရိုးမွေး' : 'Normal vaginal delivery';
+    if (key === 'assisted') return mm ? 'ကူညီမွေး' : 'Assisted delivery';
+    if (key === 'elective_c_section') return mm ? 'စီစဉ်ထားသော ဗိုက်ခွဲ' : 'Elective C-section';
+    if (key === 'emergency_c_section') return mm ? 'အရေးပေါ် ဗိုက်ခွဲ' : 'Emergency C-section';
+    return value || '';
+  }
+
   function myanmarDigits(value) {
     return String(value == null ? '' : value).replace(/\d/g, function (digit) {
       return '၀၁၂၃၄၅၆၇၈၉'[digit];
@@ -164,6 +187,39 @@
     }
     return parts.weeks + (parts.weeks === 1 ? ' week ' : ' weeks ') +
       parts.days + (parts.days === 1 ? ' day' : ' days');
+  }
+
+  function toDateValue(value) {
+    if (!value) return null;
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+    if (typeof value.toDate === 'function') return value.toDate();
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  function calculateBabyAge(birthTime, referenceTime) {
+    var birth = toDateValue(birthTime);
+    var reference = toDateValue(referenceTime) || new Date();
+    if (!birth || reference.getTime() < birth.getTime()) return null;
+    var totalMinutes = Math.floor((reference.getTime() - birth.getTime()) / 60000);
+    return {
+      totalMinutes: totalMinutes,
+      hours: Math.floor(totalMinutes / 60),
+      days: Math.floor(totalMinutes / 1440)
+    };
+  }
+
+  function formatBabyAge(birthTime, referenceTime, language) {
+    var age = calculateBabyAge(birthTime, referenceTime);
+    if (!age) return '';
+    var mm = language === 'mm';
+    if (age.totalMinutes < 60) {
+      return (mm ? myanmarDigits(age.totalMinutes) : age.totalMinutes) + (mm ? ' မိနစ်' : ' minutes');
+    }
+    if (age.hours < 48) {
+      return (mm ? myanmarDigits(age.hours) : age.hours) + (mm ? ' နာရီ' : ' hours');
+    }
+    return (mm ? myanmarDigits(age.days) : age.days) + (mm ? ' ရက်' : ' days');
   }
 
   function normalizeBirthProvider(value) {
@@ -307,16 +363,22 @@
     });
     return {
       thirdStage: {
-        oxytocinGiven: !!firstOf(data.thirdStage && data.thirdStage.oxytocinGiven, data.oxytocinGiven),
-        controlledCordTraction: !!firstOf(data.thirdStage && data.thirdStage.controlledCordTraction, data.controlledCordTraction)
+        oxytocinGiven: normalizeBooleanDecision(firstOf(data.thirdStage && data.thirdStage.oxytocinGiven, data.oxytocinGiven)),
+        controlledCordTraction: normalizeBooleanDecision(firstOf(data.thirdStage && data.thirdStage.controlledCordTraction, data.controlledCordTraction))
       },
       deliveryDetails: {
         pregnancyType: pregnancyType,
         gestationalWeek: toNumber(firstOf(details.gestationalWeek, details.gestational_week, data.gestationalWeek)),
         anusPresent: firstOf(details.anusPresent, details.anus_present, data.anusPresent),
         birthProvider: normalizeBirthProvider(firstOf(details.birthProvider, details.birth_provider, data.birthProvider)),
-        modeOfDelivery: firstOf(details.modeOfDelivery, details.mode_of_delivery),
-        birthPlace: firstOf(details.birthPlace, details.birthplace),
+        modeOfDelivery: normalizeDeliveryModeForForm(firstOf(details.modeOfDelivery, details.mode_of_delivery)),
+        birthPlace: normalizeBirthPlaceForForm(firstOf(details.birthPlace, details.birthplace)),
+        maternalCondition: normalizeMaternalCondition(firstOf(
+          details.maternalCondition,
+          details.maternal_condition,
+          data.maternalCondition,
+          data.maternal_condition
+        )),
         babies: babies
       },
       updatedAt: data.updatedAt || data.timestamp || null,
@@ -343,6 +405,7 @@
       cause_of_death: firstBaby.causeOfDeath || null,
       mode_of_delivery: normalizeDeliveryModeForNewborn(notes.deliveryDetails.modeOfDelivery) || null,
       birthplace: normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || null,
+      maternal_condition: notes.deliveryDetails.maternalCondition || null,
       gestational_week: notes.deliveryDetails.gestationalWeek,
       anus_present: firstBaby.anusPresent || notes.deliveryDetails.anusPresent || null,
       birth_provider: notes.deliveryDetails.birthProvider || null
@@ -359,6 +422,7 @@
         pregnancyType: pregnancyType,
         modeOfDelivery: firstOf(data.mode_of_delivery, data.modeOfDelivery),
         birthPlace: firstOf(data.birthplace, data.birthPlace),
+        maternalCondition: firstOf(data.maternal_condition, data.maternalCondition),
         babies: babies
       }
     });
@@ -433,6 +497,7 @@
     }
     if (legacy.birthplace) updates.birthplace = legacy.birthplace;
     if (legacy.mode_of_delivery) updates.mode_of_delivery = legacy.mode_of_delivery;
+    if (legacy.maternal_condition) updates.maternal_condition = legacy.maternal_condition;
     if (legacy.pregnancy_type) updates.pregnancy_type = legacy.pregnancy_type;
     await firebase.firestore().collection('patients').doc(patientId).set(updates, { merge: true });
   }
@@ -518,16 +583,20 @@
     syncDeliverySummaryToPatient: syncDeliverySummaryToPatient,
     defaultBabies: defaultBabies,
     normalizeBaby: normalizeBaby,
+    normalizeMaternalCondition: normalizeMaternalCondition,
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
     normalizeDeliveryModeForForm: normalizeDeliveryModeForForm,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
     normalizeBirthPlaceForForm: normalizeBirthPlaceForForm,
     normalizeBirthProvider: normalizeBirthProvider,
     birthPlaceLabel: birthPlaceLabel,
+    deliveryModeLabel: deliveryModeLabel,
     birthProviderLabel: birthProviderLabel,
     splitGestationalAge: splitGestationalAge,
     combineGestationalAge: combineGestationalAge,
     formatGestationalAgeWeeksDays: formatGestationalAgeWeeksDays,
+    calculateBabyAge: calculateBabyAge,
+    formatBabyAge: formatBabyAge,
     promptDeliveryNotesRequired: promptDeliveryNotesRequired,
     toDatetimeLocal: toDatetimeLocal,
     gramsToKilograms: gramsToKilograms

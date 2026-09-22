@@ -24,6 +24,21 @@ function loadKmcUtils() {
   return context.window.KmcUtils;
 }
 
+function loadReportFacility() {
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '../../js/facility-config.js'), 'utf8'),
+    context
+  );
+  context.FacilityConfig = context.window.FacilityConfig;
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '../../js/report-facility.js'), 'utf8'),
+    context
+  );
+  return context.window.ReportFacility;
+}
+
 test('normalizes new delivery place and C-section subtype values', () => {
   const utils = loadUtils();
   assert.equal(utils.normalizeBirthPlaceForNewborn('government_hospital'), 'government_hospital');
@@ -78,6 +93,38 @@ test('maps legacy delivery options without exposing them as new choices', () => 
   assert.equal(utils.normalizeBirthProvider('tba_other'), 'tba');
   assert.equal(utils.birthProviderLabel('tba', 'en'), 'အရပ်လက်သည်');
   assert.equal(utils.birthProviderLabel('skilled_birth_attendant', 'en'), 'Skilled Birth Attendance');
+});
+
+test('normalizes maternal condition and persists it into legacy summaries', () => {
+  const utils = loadUtils();
+  const notes = utils.normalizeDeliveryNotes({
+    deliveryDetails: {
+      maternal_condition: 'deceased',
+      birthPlace: 'public_facility',
+      modeOfDelivery: 'caesarean_section'
+    }
+  });
+  assert.equal(notes.deliveryDetails.maternalCondition, 'dead');
+  assert.equal(notes.deliveryDetails.birthPlace, 'health_facility_subfacility');
+  assert.equal(notes.deliveryDetails.modeOfDelivery, 'emergency_c_section');
+  assert.equal(utils.legacyFieldsFromDelivery(notes).maternal_condition, 'dead');
+});
+
+test('calculates and formats baby age from the Delivery Notes birth time', () => {
+  const utils = loadUtils();
+  const birthTime = '2026-09-20T10:00:00Z';
+  const referenceTime = '2026-09-22T14:30:00Z';
+  assert.equal(utils.calculateBabyAge(birthTime, referenceTime).days, 2);
+  assert.equal(utils.formatBabyAge(birthTime, referenceTime, 'en'), '2 days');
+  assert.equal(utils.formatBabyAge(birthTime, referenceTime, 'mm'), '၂ ရက်');
+  assert.equal(utils.calculateBabyAge(referenceTime, birthTime), null);
+});
+
+test('resolves bilingual report facility names from patient or user codes', () => {
+  const reportFacility = loadReportFacility();
+  assert.equal(reportFacility.getFacilityName({ facility_code: '006' }, {}, 'en'), 'Pyinmana Township Public Health Department');
+  assert.equal(reportFacility.getFacilityName({ facility_code: 6 }, {}, 'mm'), 'ပျဉ်းမနားမြို့နယ်ပြည်သူ့ကျန်းမာရေးဉီးစီးဌာန');
+  assert.equal(reportFacility.getFacilityName({}, { facilityCode: '023' }, 'en'), 'Tatkon Township Hospital (100 Bedded)');
 });
 
 test('converts delivery-note grams to newborn-form kilograms', () => {

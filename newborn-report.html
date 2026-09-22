@@ -12,6 +12,8 @@
   <script src="js/firebase.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/facility-config.js"></script>
+  <script src="js/report-facility.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <style>
@@ -484,6 +486,7 @@
             <div><strong class="lang-text" data-en="Age:" data-mm="အသက်:">Age:</strong> <span id="motherDetailAge">-</span></div>
             <div><strong class="lang-text" data-en="Phone:" data-mm="ဖုန်း:">Phone:</strong> <span id="motherDetailPhone">-</span></div>
             <div><strong class="lang-text" data-en="Township:" data-mm="မြို့နယ်:">Township:</strong> <span id="motherDetailTownship">-</span></div>
+            <div><strong class="lang-text" data-en="Facility:" data-mm="ကျန်းမာရေးဌာန:">Facility:</strong> <span id="motherDetailFacility">-</span></div>
           </div>
           <div class="summary-card">
             <h6 class="lang-text" data-en="Baby Details" data-mm="ကလေး အသေးစိတ်">Baby Details</h6>
@@ -1011,16 +1014,28 @@
         document.getElementById('motherDetailAge').textContent = motherAge;
         document.getElementById('motherDetailPhone').textContent = motherPhone || t('notRecorded');
         document.getElementById('motherDetailTownship').textContent = motherTownship || t('notRecorded');
+        if (window.ReportFacility) {
+          const facilityEl = document.getElementById('motherDetailFacility');
+          facilityEl.textContent = ReportFacility.getFacilityName(mother, currentUser, getReportLang()) || t('notRecorded');
+          ReportFacility.resolveFacilityName(mother, currentUser, getReportLang(), reportDb).then(function (name) {
+            facilityEl.textContent = name || t('notRecorded');
+          });
+        }
       }
 
       const birthWeightGram = getBestBirthWeightGram();
       document.getElementById('birthWeight').textContent = formatWeightKg(birthWeightGram);
       document.getElementById('birthLength').textContent = formatMeasurementCm(getMeasurementFromVisits('birth_length_cm'));
       document.getElementById('headCircumference').textContent = formatMeasurementCm(getMeasurementFromVisits('head_circumference_cm'));
-      document.getElementById('birthPlaceDetail').textContent = (window.DeliveryNotesUtils && visit1.birthplace)
-        ? (DeliveryNotesUtils.birthPlaceLabel(visit1.birthplace, getReportLang()) || t('notRecorded'))
-        : (visit1.birthplace || t('notRecorded'));
-      document.getElementById('birthModeDetail').textContent = formatDeliveryMode(visit1.mode_of_delivery);
+      const deliverySource = deliveryNoteAsVisit() || {};
+      const birthPlace = deliverySource.birthplace || visit1.birthplace;
+      const deliveryMode = deliverySource.mode_of_delivery || visit1.mode_of_delivery;
+      document.getElementById('birthPlaceDetail').textContent = (window.DeliveryNotesUtils && birthPlace)
+        ? (DeliveryNotesUtils.birthPlaceLabel(birthPlace, getReportLang()) || t('notRecorded'))
+        : (birthPlace || t('notRecorded'));
+      document.getElementById('birthModeDetail').textContent = (window.DeliveryNotesUtils && deliveryMode)
+        ? (DeliveryNotesUtils.deliveryModeLabel(deliveryMode, getReportLang()) || t('notRecorded'))
+        : formatDeliveryMode(deliveryMode);
     }
 
     function procedureDone(value) {

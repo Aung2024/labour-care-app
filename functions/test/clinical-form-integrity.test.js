@@ -72,6 +72,11 @@ test('delivery notes lock after save and reuse ANC gestational age', () => {
   assert.doesNotMatch(source, /C-section \(legacy/);
   assert.doesNotMatch(source, /Public Facility \(legacy\)/);
   assert.doesNotMatch(source, /နောက်ဆုံး ANC မှ ယူထားပြီး ကိုယ်ဝန်ပတ် ထပ်မထည့်နိုင်အောင် ပိတ်ထားသည်/);
+  assert.match(source, /id="deliveryMaternalCondition" required/);
+  assert.match(source, /maternalCondition: document\.getElementById\('deliveryMaternalCondition'\)\.value/);
+  assert.match(source, /id="thirdStageOxytocin"[^>]*required/);
+  assert.match(source, /id="thirdStageCCT"[^>]*required/);
+  assert.match(source, /data-field="causeOfDeath"/);
   const utils = readAppFile('js/baby-patient-utils.js');
   assert.match(utils, /copyMotherScopeFields/);
   assert.match(utils, /fetchLatestAncContext/);
@@ -258,6 +263,7 @@ test('ANC visit workflow keeps revised optional fields and completion rules alig
   assert.doesNotMatch(tdSource, /Already Prescribed/);
   assert.match(form, /id="lastPregnancyOutcome"/);
   assert.match(form, /id="lastPregnancyDate"/);
+  assert.doesNotMatch(form, /မဖြည့်လည်းရသည်/);
   assert.match(form, /lastPregnancyOutcome: getValue\('lastPregnancyOutcome'\) \|\| ''/);
   assert.match(form, /lastPregnancyDate: getValue\('lastPregnancyDate'\) \|\| null/);
   assert.match(form, /includeVisitNumber: false/);
@@ -287,7 +293,54 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v315-moh/);
+  assert.match(sw, /mch-care-v316-moh/);
+});
+
+test('new newborn and PNC visits require canonical Delivery Notes identity', () => {
+  const newborn = readAppFile('newborn-care-page.html');
+  const pnc = readAppFile('postpartum-form.html');
+  const report = readAppFile('newborn-report.html');
+
+  assert.match(newborn, /data-en="Visit Info" data-mm="ပြသမှု အချက်အလက်များ"/);
+  assert.match(newborn, /id="baby_age" readonly/);
+  assert.match(newborn, /DeliveryNotesUtils\.formatBabyAge/);
+  assert.match(newborn, /if \(isEditMode\) return true/);
+  assert.match(newborn, /if \(deliveryNotesDoc\.exists\) return true/);
+  assert.doesNotMatch(newborn, /deliveryNotesDoc\.exists \|\|/);
+  assert.match(newborn, /option value="elective_c_section"/);
+  assert.doesNotMatch(newborn, /option value="caesarean_section"/);
+  assert.doesNotMatch(newborn, /option value="public_facility"/);
+
+  assert.match(pnc, /id="pncBirthPlace"[^>]*required/);
+  assert.match(pnc, /id="pncModeOfDelivery"[^>]*required/);
+  assert.match(pnc, /normalizeBirthPlaceForForm/);
+  assert.match(pnc, /normalizeDeliveryModeForForm/);
+  assert.match(pnc, /dataset\.deliverySourceLocked/);
+  assert.match(pnc, /!isEditMode && !\(await ensureDeliveryNotesBeforePnc/);
+
+  assert.match(report, /const deliverySource = deliveryNoteAsVisit\(\) \|\| \{\}/);
+  assert.match(report, /deliverySource\.birthplace \|\| visit1\.birthplace/);
+  assert.match(report, /deliverySource\.mode_of_delivery \|\| visit1\.mode_of_delivery/);
+});
+
+test('ANC, newborn, and PNC reports show resolved facility names', () => {
+  const anc = readAppFile('antenatal-report.html');
+  const newborn = readAppFile('newborn-report.html');
+  const pnc = readAppFile('postpartum-report.html');
+  const helper = readAppFile('js/report-facility.js');
+  const sw = readAppFile('service-worker.js');
+
+  [anc, newborn, pnc].forEach(function (source) {
+    assert.match(source, /js\/facility-config\.js/);
+    assert.match(source, /js\/report-facility\.js/);
+    assert.match(source, /ReportFacility\.resolveFacilityName/);
+  });
+  assert.match(anc, /id="patientFacility"/);
+  assert.match(pnc, /id="patientFacility"/);
+  assert.match(newborn, /id="motherDetailFacility"/);
+  assert.match(helper, /patient\.facility_code/);
+  assert.match(helper, /user\.facility_code/);
+  assert.match(sw, /\.\/js\/report-facility\.js/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
