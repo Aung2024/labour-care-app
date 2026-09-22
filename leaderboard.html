@@ -617,7 +617,7 @@
     <div class="leaderboard-card">
       <div class="lb-card-head">
         <div>
-          <h2 class="leaderboard-title">Midwife rankings</h2>
+          <h2 class="leaderboard-title">Facility Ranking</h2>
           <p id="leaderboardFreshness" class="lb-freshness" aria-live="polite"></p>
         </div>
         <button type="button" class="lb-info-btn" onclick="openScoreInfoModal()">
@@ -691,7 +691,7 @@
       <div id="emptyState" class="empty-state" style="display: none;">
         <i class="fas fa-trophy"></i>
         <p>
-          No midwives found
+          No facilities found
         </p>
       </div>
 
@@ -702,7 +702,7 @@
             <thead>
               <tr>
                 <th class="rank-cell">Rank</th>
-                <th>Midwife</th>
+                <th>Facility</th>
                 <th class="text-center">Role</th>
                 <th class="text-center">Township</th>
                 <th class="text-center">Patients</th>
@@ -1005,17 +1005,15 @@
 
     function facilityTypeLabel(value) {
       return {
-        township_public_health_department: 'Township PHD',
-        regional_public_health_department: 'Regional PHD',
+        township_public_health_department: 'TPHD',
+        regional_public_health_department: 'RPHD',
         station_health_unit: 'SHU',
         township_hospital: 'Township Hospital',
         district_hospital: 'District Hospital',
         station_hospital: 'Station Hospital',
-        maternity_home: 'Maternity Home',
         mch: 'MCH',
         rhc: 'RHC',
-        srhc: 'SRHC',
-        other: 'Other'
+        srhc: 'SRHC'
       }[value] || value;
     }
 
@@ -1168,7 +1166,8 @@
       return (userData && userData.provider_type) || 'midwife';
     }
 
-    function providerLevelLabel(providerType) {
+    function providerLevelLabel(providerType, facilityType) {
+      if (facilityType && facilityType !== 'other') return facilityTypeLabel(facilityType);
       if (window.RoleDisplay) return RoleDisplay.getProviderTypeLabel(providerType, 'en', 'Midwife');
       return providerType || 'Midwife';
     }
@@ -1242,6 +1241,9 @@
 
     function mapLeaderboardSummary(doc) {
       const data = doc.data ? (doc.data() || {}) : (doc || {});
+      const taxonomy = window.FacilityConfig
+        ? FacilityConfig.getFacilityTaxonomy(data.facilityCode || '')
+        : null;
       return {
         id: data.providerId || doc.id || '',
         name: data.providerName || 'Unknown',
@@ -1249,8 +1251,8 @@
         region: data.region || '',
         providerType: data.providerType || 'midwife',
         facilityCode: data.facilityCode || '',
-        department: data.department || 'other',
-        facilityType: data.facilityType || 'other',
+        department: taxonomy && taxonomy.department || data.department || 'other',
+        facilityType: taxonomy && taxonomy.facilityType || data.facilityType || 'other',
         score: Number(data.score || 0),
         patientCount: data.activePatientCount == null
           ? null
@@ -1631,7 +1633,7 @@
         const row = document.createElement('tr');
         const rankClass = rank <= 3 ? ' rank-' + rank : '';
         const initials = midwife.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'MW';
-        const providerLabel = providerLevelLabel(midwife.providerType);
+        const providerLabel = providerLevelLabel(midwife.providerType, midwife.facilityType);
         const safeInitials = escapeLeaderboardHtml(initials);
         const safeName = escapeLeaderboardHtml(midwife.name);
         const safeProviderLabel = escapeLeaderboardHtml(providerLabel);

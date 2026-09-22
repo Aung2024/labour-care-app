@@ -9,7 +9,7 @@ const FACILITY_TAXONOMY = Object.freeze({
   '004': ['other', 'maternity_home'],
   '005': ['doph', 'regional_public_health_department'],
   '006': ['doph', 'township_public_health_department'],
-  '007': ['doms', 'township_hospital'],
+  '007': ['doph', 'township_hospital'],
   '008': ['doph', 'mch'],
   '009': ['doph', 'srhc'],
   '010': ['doph', 'srhc'],
@@ -25,8 +25,8 @@ const FACILITY_TAXONOMY = Object.freeze({
   '020': ['doph', 'srhc'],
   '021': ['doph', 'srhc'],
   '022': ['doph', 'srhc'],
-  '023': ['doms', 'township_hospital'],
-  '024': ['doms', 'station_hospital'],
+  '023': ['doph', 'township_hospital'],
+  '024': ['doph', 'station_hospital'],
   '025': ['doph', 'station_health_unit'],
   '026': ['doph', 'srhc'],
   '027': ['doph', 'srhc'],
@@ -61,7 +61,8 @@ function facilityTaxonomy(code) {
 function facilityTypes(department) {
   return Array.from(new Set(Object.values(FACILITY_TAXONOMY)
     .filter((value) => !department || value[0] === department)
-    .map((value) => value[1]))).sort();
+    .map((value) => value[1])
+    .filter((value) => value !== 'maternity_home' && value !== 'other'))).sort();
 }
 
 module.exports = {

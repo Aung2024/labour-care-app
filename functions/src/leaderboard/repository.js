@@ -144,12 +144,13 @@ async function loadProvider(db, providerId) {
   const data = snapshot.data() || {};
   const providerTypeKey = String(data.provider_type || '').toLowerCase().trim();
   const taxonomy = facilityTaxonomy(data.facility_code);
+  const providerType = taxonomy.facilityType !== 'other'
+    ? taxonomy.facilityType
+    : (MIDWIFE_PROVIDER_TYPES.has(providerTypeKey) ? providerTypeKey : 'midwife');
   return {
     providerId,
     providerName: data.name || data.email || 'Unknown',
-    providerType: MIDWIFE_PROVIDER_TYPES.has(providerTypeKey)
-      ? providerTypeKey
-      : 'midwife',
+    providerType,
     township: data.township || '',
     region: data.region || '',
     phone: data.phone || '',

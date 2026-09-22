@@ -7,7 +7,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {
   FACILITY_TAXONOMY,
-  facilityTaxonomy
+  facilityTaxonomy,
+  facilityTypes
 } = require('../src/shared/facility-taxonomy');
 const {
   normalizeOutcome,
@@ -40,6 +41,15 @@ test('unknown facilities use safe reporting taxonomy', () => {
     department: 'other',
     facilityType: 'other'
   });
+});
+
+test('facility filters use the revised DOPH and DOMS taxonomy', () => {
+  assert.equal(facilityTaxonomy('007').department, 'doph');
+  assert.equal(facilityTaxonomy('023').department, 'doph');
+  assert.equal(facilityTaxonomy('024').department, 'doph');
+  assert.deepEqual(facilityTypes('doms'), ['district_hospital']);
+  assert.equal(facilityTypes().includes('maternity_home'), false);
+  assert.equal(facilityTypes().includes('other'), false);
 });
 
 test('normalizes clinical outcomes and infection results', () => {

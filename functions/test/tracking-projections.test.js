@@ -8,7 +8,10 @@ const {
   addCalendarMonths,
   resolvePatientAge
 } = require('../src/analytics/projections');
-const { projectionHash } = require('../src/analytics/tracking-repository');
+const {
+  projectionHash,
+  projectionScopeWithProvider
+} = require('../src/analytics/tracking-repository');
 
 function facts(overrides) {
   return {
@@ -65,6 +68,38 @@ test('HRT row includes scope and manual next visit is authoritative', () => {
   assert.equal(row.department, 'doph');
   assert.equal(row.facilityType, 'rhc');
   assert.equal(row.status, 'on_track');
+});
+
+test('tracking scope keeps the patient facility when provider facility is unclassified', () => {
+  const scope = projectionScopeWithProvider({
+    facilityCode: '006',
+    department: 'doph',
+    facilityType: 'township_public_health_department',
+    township: 'Pyinmana'
+  }, {
+    providerName: 'Provider One',
+    facilityCode: '003',
+    department: 'other',
+    facilityType: 'other'
+  });
+  assert.equal(scope.facilityCode, '006');
+  assert.equal(scope.department, 'doph');
+  assert.equal(scope.facilityType, 'township_public_health_department');
+});
+
+test('tracking scope uses a classified provider facility when available', () => {
+  const scope = projectionScopeWithProvider({
+    facilityCode: '006',
+    department: 'doph',
+    facilityType: 'township_public_health_department'
+  }, {
+    facilityCode: '001',
+    department: 'doms',
+    facilityType: 'district_hospital'
+  });
+  assert.equal(scope.facilityCode, '001');
+  assert.equal(scope.department, 'doms');
+  assert.equal(scope.facilityType, 'district_hospital');
 });
 
 test('HRT patient age accepts numeric strings', () => {

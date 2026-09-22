@@ -62,7 +62,7 @@
     '004': { department: 'other', facilityType: 'maternity_home' },
     '005': { department: 'doph', facilityType: 'regional_public_health_department' },
     '006': { department: 'doph', facilityType: 'township_public_health_department' },
-    '007': { department: 'doms', facilityType: 'township_hospital' },
+    '007': { department: 'doph', facilityType: 'township_hospital' },
     '008': { department: 'doph', facilityType: 'mch' },
     '009': { department: 'doph', facilityType: 'srhc' },
     '010': { department: 'doph', facilityType: 'srhc' },
@@ -78,8 +78,8 @@
     '020': { department: 'doph', facilityType: 'srhc' },
     '021': { department: 'doph', facilityType: 'srhc' },
     '022': { department: 'doph', facilityType: 'srhc' },
-    '023': { department: 'doms', facilityType: 'township_hospital' },
-    '024': { department: 'doms', facilityType: 'station_hospital' },
+    '023': { department: 'doph', facilityType: 'township_hospital' },
+    '024': { department: 'doph', facilityType: 'station_hospital' },
     '025': { department: 'doph', facilityType: 'station_health_unit' },
     '026': { department: 'doph', facilityType: 'srhc' },
     '027': { department: 'doph', facilityType: 'srhc' },
@@ -139,6 +139,9 @@
   function getFacilityTypes(department) {
     return PILOT_FACILITIES.reduce(function (types, facility) {
       if (department && facility.department !== department) return types;
+      if (facility.facilityType === 'maternity_home' || facility.facilityType === 'other') {
+        return types;
+      }
       if (types.indexOf(facility.facilityType) === -1) types.push(facility.facilityType);
       return types;
     }, []).sort();

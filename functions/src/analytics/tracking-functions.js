@@ -4,7 +4,10 @@ const admin = require('firebase-admin');
 const { FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { facilityTypes } = require('../shared/facility-taxonomy');
+const {
+  facilityTaxonomy,
+  facilityTypes
+} = require('../shared/facility-taxonomy');
 const {
   HRT_COLLECTION,
   KMC_COLLECTION,
@@ -408,7 +411,14 @@ async function processActiveTrackingReconciliation(
         state[completeKey] = true;
       } else {
         const patientIds = Array.from(new Set(snapshot.docs
-          .filter((row) => row.get('status') !== 'complete')
+          .filter((row) => {
+            if (row.get('status') !== 'complete' || row.get('department') === 'other') {
+              return true;
+            }
+            const taxonomy = facilityTaxonomy(row.get('facilityCode'));
+            return taxonomy.department !== row.get('department') ||
+              taxonomy.facilityType !== row.get('facilityType');
+          })
           .map((row) => row.get('patientId') || row.id)));
         for (let offset = 0; offset < patientIds.length; offset += 5) {
           await Promise.all(patientIds.slice(offset, offset + 5).map((patientId) =>

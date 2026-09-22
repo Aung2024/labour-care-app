@@ -78,6 +78,30 @@ async function savePatientProjections(database, facts, options) {
   return { patientId, hrt: !!hrt, kmc: kmc.length, writes };
 }
 
+function projectionScopeWithProvider(scope, provider) {
+  const patientScope = scope || {};
+  const providerScope = provider || {};
+  const providerFacilityIsClassified =
+    providerScope.department && providerScope.department !== 'other' &&
+    providerScope.facilityType && providerScope.facilityType !== 'other';
+  return {
+    ...patientScope,
+    providerName: providerScope.providerName || patientScope.providerName,
+    providerPhone: providerScope.phone || '',
+    township: providerScope.township || patientScope.township,
+    region: providerScope.region || patientScope.region,
+    facilityCode: providerFacilityIsClassified
+      ? providerScope.facilityCode
+      : patientScope.facilityCode,
+    department: providerFacilityIsClassified
+      ? providerScope.department
+      : patientScope.department,
+    facilityType: providerFacilityIsClassified
+      ? providerScope.facilityType
+      : patientScope.facilityType
+  };
+}
+
 async function recomputePatientProjections(database, patientId, options) {
   const facts = await loadClinicalFacts(database, patientId);
   if (!facts) {
@@ -92,16 +116,7 @@ async function recomputePatientProjections(database, patientId, options) {
   }
   if (facts.scope && facts.scope.providerId) {
     const provider = await loadProvider(database, facts.scope.providerId);
-    facts.scope = {
-      ...facts.scope,
-      providerName: provider.providerName || facts.scope.providerName,
-      providerPhone: provider.phone || '',
-      township: provider.township || facts.scope.township,
-      region: provider.region || facts.scope.region,
-      facilityCode: provider.facilityCode || facts.scope.facilityCode,
-      department: provider.department || facts.scope.department,
-      facilityType: provider.facilityType || facts.scope.facilityType
-    };
+    facts.scope = projectionScopeWithProvider(facts.scope, provider);
   }
   const existingFlags = facts.profile && facts.profile.infection_flags || {};
   if (JSON.stringify(stableValue(existingFlags)) !==
@@ -118,5 +133,6 @@ module.exports = {
   projectionHash,
   writeIfChanged,
   savePatientProjections,
-  recomputePatientProjections
+  recomputePatientProjections,
+  projectionScopeWithProvider
 };

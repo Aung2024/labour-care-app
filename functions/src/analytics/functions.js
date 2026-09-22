@@ -185,7 +185,7 @@ const dashboardV2ReconciliationWorker = onSchedule({
 });
 
 const combinedAnalyticsReconciliation = onSchedule({
-  schedule: 'every 72 hours',
+  schedule: 'every 24 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
@@ -194,7 +194,7 @@ const combinedAnalyticsReconciliation = onSchedule({
   const jobRef = db().collection(JOB_COLLECTION).doc(JOB_ID);
   const snapshot = await jobRef.get();
   if (!snapshot.exists || snapshot.data().status !== 'running') {
-    await startDashboardJob('72-hour-scheduler');
+    await startDashboardJob('24-hour-scheduler');
   }
   return processActiveDashboardBatch();
 });

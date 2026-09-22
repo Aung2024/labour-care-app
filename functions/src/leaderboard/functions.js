@@ -349,7 +349,7 @@ const getLeaderboardCustomRange = onCall({
 }, queryLeaderboardRange);
 
 const leaderboardNightlyReconciliation = onSchedule({
-  schedule: 'every 72 hours',
+  schedule: 'every 24 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
@@ -363,7 +363,7 @@ const leaderboardNightlyReconciliation = onSchedule({
   // Dashboard V2's combined reconciliation now loads every patient's
   // clinical facts once and refreshes both analytics products. Keep this
   // schedule only as a safe continuation path for an already-running legacy
-  // leaderboard job so the two 72-hour schedules never duplicate full scans.
+  // leaderboard job so the daily schedules never duplicate full scans.
   return { status: 'idle', owner: 'combinedAnalyticsReconciliation' };
 });
 

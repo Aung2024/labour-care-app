@@ -5,7 +5,6 @@
   var TIMEOUT_MS = 55000;
   var FACILITY_TYPE_LABELS = {
     district_hospital: 'District hospital',
-    maternity_home: 'Maternity home',
     regional_public_health_department: 'Regional public health department',
     township_public_health_department: 'Township public health department',
     township_hospital: 'Township hospital',
@@ -13,8 +12,7 @@
     station_health_unit: 'Station health unit',
     mch: 'MCH',
     rhc: 'RHC',
-    srhc: 'Sub-RHC',
-    other: 'Other'
+    srhc: 'Sub-RHC'
   };
 
   function normalizeRole(value) {
@@ -108,9 +106,9 @@
     }).join('');
   }
 
-  function typeCheckboxes(selected) {
+  function typeCheckboxes(selected, department) {
     var selectedSet = new Set(selected || []);
-    var types = global.FacilityConfig ? FacilityConfig.getFacilityTypes() :
+    var types = global.FacilityConfig ? FacilityConfig.getFacilityTypes(department || null) :
       Object.keys(FACILITY_TYPE_LABELS);
     return types.map(function (type) {
       return '<label><input type="checkbox" name="facilityTypes" value="' +
@@ -137,14 +135,11 @@
       '.tracking-filter label,.tracking-types-label{margin:0;font-size:.75rem;font-weight:700;color:#334155}' +
       '.tracking-filter select{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:.48rem .65rem;font-size:.82rem;color:#172033}' +
       '.tracking-apply-wrap{grid-column:1/-1}' +
-      '.tracking-apply,.tracking-reset,.tracking-repair{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer}' +
+      '.tracking-apply,.tracking-reset{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer}' +
       '.tracking-apply{width:100%;border:0;color:#fff;background:#059669}' +
       '.tracking-filters-wrap[data-theme="hrt"] .tracking-apply{background:linear-gradient(135deg,#a51f1f,#6f3c98)}' +
       '.tracking-filter-actions{display:flex;flex-wrap:wrap;gap:.45rem}' +
       '.tracking-reset{border:1px solid #cbd5e1;color:#475569;background:#fff}' +
-      '.tracking-repair{border:1px solid #d8c9e7;color:#64358e;background:#f8f4fb}' +
-      '.tracking-repair:disabled{opacity:.65;cursor:wait}' +
-      '.tracking-repair-status{font-size:.75rem;color:#475569}' +
       '.tracking-type-chips{display:flex;flex-wrap:wrap;gap:.4rem}' +
       '.tracking-type-chips label{display:inline-flex;align-items:center;gap:.4rem;min-height:44px;padding:.3rem .7rem;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#334155;font-size:.78rem;font-weight:600;cursor:pointer}' +
       '.tracking-type-chips input{width:16px;height:16px;margin:0;accent-color:#059669}' +
@@ -170,7 +165,10 @@
     if ((level === 'central' || level === 'regional') && form.elements.township) {
       parts.push(form.elements.township.value || 'All townships');
     }
-    if (level !== 'provider') parts.push('All facilities');
+    if (level !== 'provider') {
+      var department = form.elements.department && form.elements.department.value;
+      parts.push(department ? department.toUpperCase() : 'All facilities');
+    }
     var types = form.querySelectorAll('input[name="facilityTypes"]:checked');
     if (types.length) {
       parts[parts.length - 1] = types.length + ' facility type' + (types.length === 1 ? '' : 's');
@@ -212,7 +210,6 @@
         option('', 'All departments', !values.department) +
         option('doph', 'DOPH', values.department === 'doph') +
         option('doms', 'DOMS', values.department === 'doms') +
-        option('other', 'Other / unclassified', values.department === 'other') +
         '</select></div>';
     }
     wrap.innerHTML =
@@ -231,17 +228,11 @@
         (scopeHtml ? '<div class="tracking-filter-row tracking-scope-row">' + scopeHtml + '</div>' : '') +
         (level !== 'provider'
           ? '<div><p class="tracking-types-label">Facility types</p><div class="tracking-type-chips">' +
-            typeCheckboxes(values.facilityTypes) + '</div></div>'
+            typeCheckboxes(values.facilityTypes, values.department) + '</div></div>'
           : '') +
         '<div class="tracking-filter-actions">' +
           '<button class="tracking-reset" type="button" data-reset>Reset</button>' +
-          (normalizeRole(config.role) === 'super admin'
-            ? '<button class="tracking-repair" type="button" data-repair><i class="fas fa-rotate"></i> Rebuild data</button>'
-            : '') +
         '</div>' +
-        (normalizeRole(config.role) === 'super admin'
-          ? '<div class="tracking-repair-status" data-repair-status aria-live="polite"></div>'
-          : '') +
       '</form>';
     var host = wrap.querySelector('form');
     var toggle = wrap.querySelector('.tracking-filters-toggle');
@@ -286,10 +277,25 @@
       });
     }
     if (host.elements.township) host.elements.township.addEventListener('change', refreshSummary);
-    if (host.elements.department) host.elements.department.addEventListener('change', refreshSummary);
-    host.querySelectorAll('input[name="facilityTypes"]').forEach(function (input) {
-      input.addEventListener('change', refreshSummary);
-    });
+    function bindTypeChanges() {
+      host.querySelectorAll('input[name="facilityTypes"]').forEach(function (input) {
+        input.addEventListener('change', refreshSummary);
+      });
+    }
+    if (host.elements.department) {
+      host.elements.department.addEventListener('change', function () {
+        var selectedTypes = Array.from(
+          host.querySelectorAll('input[name="facilityTypes"]:checked')
+        ).map(function (input) { return input.value; });
+        var chips = host.querySelector('.tracking-type-chips');
+        if (chips) {
+          chips.innerHTML = typeCheckboxes(selectedTypes, host.elements.department.value);
+          bindTypeChanges();
+        }
+        refreshSummary();
+      });
+    }
+    bindTypeChanges();
     host.addEventListener('submit', function (event) {
       event.preventDefault();
       refreshSummary();
@@ -303,24 +309,6 @@
       wrap.remove();
       config.onReset();
     });
-    var repairButton = host.querySelector('[data-repair]');
-    if (repairButton) {
-      repairButton.addEventListener('click', async function () {
-        var status = host.querySelector('[data-repair-status]');
-        if (!global.confirm('Rebuild HRT and KMC tracking data for all patients? This runs safely in background batches.')) return;
-        repairButton.disabled = true;
-        status.textContent = 'Starting the background rebuild…';
-        try {
-          var result = await call('startTrackingProjectionRepair', {});
-          status.textContent = result.alreadyRunning
-            ? 'A tracking-data rebuild is already running.'
-            : 'Tracking-data rebuild started. You may leave this page.';
-        } catch (error) {
-          status.textContent = 'Could not start rebuild: ' + (error.message || error);
-          repairButton.disabled = false;
-        }
-      });
-    }
     return { element: wrap, filters: readFilters(host, level), level: level };
   }
 
