@@ -135,11 +135,9 @@
       '.tracking-filter label,.tracking-types-label{margin:0;font-size:.75rem;font-weight:700;color:#334155}' +
       '.tracking-filter select{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:.48rem .65rem;font-size:.82rem;color:#172033}' +
       '.tracking-apply-wrap{grid-column:1/-1}' +
-      '.tracking-apply,.tracking-reset{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer}' +
+      '.tracking-apply{min-height:44px;border-radius:10px;padding:.48rem .9rem;font-size:.8rem;font-weight:800;touch-action:manipulation;cursor:pointer}' +
       '.tracking-apply{width:100%;border:0;color:#fff;background:#059669}' +
       '.tracking-filters-wrap[data-theme="hrt"] .tracking-apply{background:linear-gradient(135deg,#a51f1f,#6f3c98)}' +
-      '.tracking-filter-actions{display:flex;flex-wrap:wrap;gap:.45rem}' +
-      '.tracking-reset{border:1px solid #cbd5e1;color:#475569;background:#fff}' +
       '.tracking-type-chips{display:flex;flex-wrap:wrap;gap:.4rem}' +
       '.tracking-type-chips label{display:inline-flex;align-items:center;gap:.4rem;min-height:44px;padding:.3rem .7rem;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#334155;font-size:.78rem;font-weight:600;cursor:pointer}' +
       '.tracking-type-chips input{width:16px;height:16px;margin:0;accent-color:#059669}' +
@@ -230,9 +228,6 @@
           ? '<div><p class="tracking-types-label">Facility types</p><div class="tracking-type-chips">' +
             typeCheckboxes(values.facilityTypes, values.department) + '</div></div>'
           : '') +
-        '<div class="tracking-filter-actions">' +
-          '<button class="tracking-reset" type="button" data-reset>Reset</button>' +
-        '</div>' +
       '</form>';
     var host = wrap.querySelector('form');
     var toggle = wrap.querySelector('.tracking-filters-toggle');
@@ -301,13 +296,6 @@
       refreshSummary();
       setOpen(false);
       config.onApply(readFilters(host, level));
-    });
-    host.querySelector('[data-reset]').addEventListener('click', function () {
-      var url = new URL(location.href);
-      url.search = '';
-      history.replaceState({}, '', url);
-      wrap.remove();
-      config.onReset();
     });
     return { element: wrap, filters: readFilters(host, level), level: level };
   }

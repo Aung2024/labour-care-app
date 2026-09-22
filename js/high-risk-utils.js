@@ -118,12 +118,31 @@
     return [];
   }
 
+  function getPatientDisplayRiskFactorsFromANC(patient) {
+    var latest = getLatestHighRiskAncVisitData(patient);
+    if (!latest) return [];
+    if (latest.risk_factors && Array.isArray(latest.risk_factors)) {
+      var otherMedicalConditionName = String(
+        latest.otherMedicalConditionName || latest.other_medical_condition_name || ''
+      ).trim();
+      return latest.risk_factors.map(function (factor) {
+        var normalized = String(factor || '').trim().toLowerCase().replace(/_/g, ' ');
+        if (normalized !== 'other medical conditions') return factor;
+        return otherMedicalConditionName
+          ? 'Other Medical Conditions: ' + otherMedicalConditionName
+          : 'Other Medical Conditions';
+      });
+    }
+    return [];
+  }
+
   global.HighRiskUtils = {
     visitRawData: visitRawData,
     isVisitHighRiskData: isVisitHighRiskData,
     isPatientHighRisk: isPatientHighRisk,
     getAutoDetectedRiskReasons: getAutoDetectedRiskReasons,
     getPatientRiskFactorsFromANC: getPatientRiskFactorsFromANC,
+    getPatientDisplayRiskFactorsFromANC: getPatientDisplayRiskFactorsFromANC,
     getLatestHighRiskAncVisitData: getLatestHighRiskAncVisitData,
     parseVisitDateMs: parseVisitDateMs,
     getLatestAncVisitTimeMs: getLatestAncVisitTimeMs,

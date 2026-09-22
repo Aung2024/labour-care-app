@@ -182,11 +182,24 @@ function highRiskDetails(facts) {
   const activeFrom = highRiskVisits.map((entry) => firstDate(unwrap(entry), [
     'visitDate', 'visit_date', 'recordedAt', 'createdAt'
   ])).filter(Boolean).sort((a, b) => a - b)[0] || null;
+  const otherMedicalConditionName = String(
+    visit && (visit.otherMedicalConditionName || visit.other_medical_condition_name) || ''
+  ).trim();
+  const riskFactors = visit && Array.isArray(visit.risk_factors)
+    ? visit.risk_factors
+    : [];
+  const displayRiskFactors = riskFactors.map((factor) => {
+        const normalized = String(factor || '').trim().toLowerCase().replace(/_/g, ' ');
+        if (normalized !== 'other medical conditions') return factor;
+        return otherMedicalConditionName
+          ? `Other Medical Conditions: ${otherMedicalConditionName}`
+          : 'Other Medical Conditions';
+      });
   return {
     eligible: !!visit,
     visit,
-    riskFactors: visit && Array.isArray(visit.risk_factors)
-      ? visit.risk_factors : [],
+    riskFactors,
+    displayRiskFactors,
     activeFrom
   };
 }
@@ -232,6 +245,7 @@ function buildHrtProjection(facts, options) {
     ...scopeFields(facts),
     eligible: true,
     riskFactors: highRisk.riskFactors,
+    riskFactorDisplay: highRisk.displayRiskFactors,
     visitCount,
     dueDate: isoDate(dueDate),
     dueDateSource: manualDue ? 'manual_next_visit' :

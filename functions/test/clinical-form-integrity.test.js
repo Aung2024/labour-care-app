@@ -260,7 +260,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v310-moh/);
+  assert.match(sw, /mch-care-v313-moh/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {
@@ -291,6 +291,11 @@ test('HRT SMS lets midwives choose templates, write custom text, and save a phon
   assert.match(source, /id="hrtSmsCustomToggle"/);
   assert.match(source, /templateKeys: templateKeys/);
   assert.match(source, /customMessage: customMessage/);
+});
+
+test('HRT completion reasons exclude risk resolved', () => {
+  const source = readAppFile('high-risk-tracking.html');
+  assert.doesNotMatch(source, /<option value="risk_resolved">/);
 });
 
 test('patient registration requires patient phone and allows reused numbers', () => {

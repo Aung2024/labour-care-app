@@ -70,6 +70,37 @@ test('HRT row includes scope and manual next visit is authoritative', () => {
   assert.equal(row.status, 'on_track');
 });
 
+test('HRT shows the entered other medical condition with a legacy fallback', () => {
+  const detailed = buildHrtProjection(facts({
+    antenatalVisits: [{
+      data: {
+        visitNumber: 1,
+        visitDate: '2026-04-01',
+        high_risk: 'yes',
+        risk_factors: ['Other Medical Conditions'],
+        otherMedicalConditionName: 'Thyroid disorder'
+      }
+    }]
+  }), { asOf: '2026-05-10' });
+  assert.deepEqual(detailed.riskFactors, ['Other Medical Conditions']);
+  assert.deepEqual(detailed.riskFactorDisplay, [
+    'Other Medical Conditions: Thyroid disorder'
+  ]);
+
+  const legacy = buildHrtProjection(facts({
+    antenatalVisits: [{
+      data: {
+        visitNumber: 1,
+        visitDate: '2026-04-01',
+        high_risk: 'yes',
+        risk_factors: ['Other Medical Conditions']
+      }
+    }]
+  }), { asOf: '2026-05-10' });
+  assert.deepEqual(legacy.riskFactors, ['Other Medical Conditions']);
+  assert.deepEqual(legacy.riskFactorDisplay, ['Other Medical Conditions']);
+});
+
 test('tracking scope keeps the patient facility when provider facility is unclassified', () => {
   const scope = projectionScopeWithProvider({
     facilityCode: '006',

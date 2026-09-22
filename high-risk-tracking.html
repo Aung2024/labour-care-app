@@ -1425,7 +1425,6 @@
             <select class="form-select" id="completionReasonSelect" style="border-radius:10px;" onchange="updateHrtCompletionFields()">
               <option value="delivered_safely">Delivered</option>
               <option value="transferred">Transferred</option>
-              <option value="risk_resolved">Risk resolved</option>
               <option value="loss_of_contact">Loss of contact</option>
               <option value="abortion">Abortion/pregnancy loss</option>
               <option value="death">Maternal death</option>
@@ -2421,7 +2420,7 @@
 
     function compactRiskListHtml(risks) {
       if (!risks || !risks.length) return '<span class="text-muted">\u2014</span>';
-      return risks.slice(0, 4).map(function (r) {
+      return risks.map(function (r) {
         return '<span class="hrt-pill hrt-pill--anc">' + escapeHtml(humanizeRiskLabel(r)) + '</span>';
       }).join(' ');
     }
@@ -2524,9 +2523,11 @@
     function communicationContactHtml(patient, row) {
       if (_hrtRoleLevel !== 'provider' && patient._trackingProjection) {
         var provider = patient._trackingProjection;
+        var township = String(provider.township || '').trim();
         return '<div class="tracking-facility"><strong>' +
           escapeHtml(provider.providerName || '—') + '</strong><br>' +
-          phoneCellHtml({ phone: provider.providerPhone || '' }) + '</div>';
+          phoneCellHtml({ phone: provider.providerPhone || '' }) +
+          (township ? ' · ' + escapeHtml(township) : '') + '</div>';
       }
       var patientId = (patient && patient.id) || (row && (row.patientId || row.id)) || '';
       var canSms = !(row && isCompleted(row));
@@ -3232,7 +3233,7 @@
       return Object.assign({}, row, {
         _projection: true,
         patient: patient,
-        factorsUnique: row.riskFactors || [],
+        factorsUnique: row.riskFactorDisplay || row.riskFactors || [],
         ancVisitCount: row.visitCount || 0,
         daysSince: row.daysLate,
         latestAnc: null,
@@ -3410,7 +3411,9 @@
             console.warn('HRT actions fetch', p.id, e);
           }
 
-          var factors = window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
+          var factors = window.HighRiskUtils.getPatientDisplayRiskFactorsFromANC
+            ? window.HighRiskUtils.getPatientDisplayRiskFactorsFromANC(bundle)
+            : window.HighRiskUtils.getPatientRiskFactorsFromANC(bundle);
           var factorsUnique = uniqueStrings(factors);
           var lastMs = window.HighRiskUtils.getLatestAncVisitTimeMs(bundle);
           var latestAnc = window.HighRiskUtils.getLatestAncVisitData(bundle);
