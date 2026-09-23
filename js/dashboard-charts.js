@@ -120,7 +120,7 @@
       '<div class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</div>' +
       (detail ? '<div class="dashboard-kpi-detail">' + detail + '</div>' : '') +
       '<button class="dashboard-info-button" type="button" data-indicator-key="' +
-      escapeHtml(definition.key) + '" aria-label="View definition for ' +
+      escapeHtml(definition.key) + '" aria-label="View calculation for ' +
       escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>' +
       '</article>'
   }
@@ -142,8 +142,14 @@
   }
 
   function chartCard(definition) {
+    var infoButton = definition.key === 'overview_service_comparison'
+      ? ''
+      : '<button class="dashboard-info-button dashboard-chart-info-button" type="button" data-indicator-key="' +
+        escapeHtml(definition.key) + '" aria-label="View calculation for ' +
+        escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>'
     return '<article class="dashboard-chart-card">' +
       '<h3 class="dashboard-chart-title">' + escapeHtml(definition.label) + '</h3>' +
+      infoButton +
       '<div id="' + chartId(definition) + '" class="dashboard-chart" role="img" aria-label="' +
       escapeHtml(definition.label) + ' chart"></div>' +
       '</article>'
@@ -265,15 +271,33 @@
       return item.key === key
     })
     if (!definition) return
-    document.getElementById('dashboardDefinitionTitle').textContent = definition.label
-    var numerator = number(definition.numerator)
+    document.getElementById('dashboardDefinitionTitle').textContent =
+      definition.label + ' calculation'
+    var rawNumerator = DashboardMetricsConfig.valueAtPath(
+      currentMetrics,
+      definition.numerator
+    )
+    var numerator = definition.format === 'map'
+      ? Object.keys(rawNumerator || {}).reduce(function (total, item) {
+        return total + Number(rawNumerator[item] || 0)
+      }, 0)
+      : number(definition.numerator)
     var denominator = definition.denominator ? number(definition.denominator) : null
+    var result = definition.format === 'map'
+      ? numerator.toLocaleString()
+      : numeratorDisplay(definition)
     document.getElementById('dashboardDefinitionBody').innerHTML =
-      '<p>' + escapeHtml(definition.definition || 'Calculated from the normalized clinical records for the selected reporting period and authorized scope.') + '</p>' +
+      '<p>' + escapeHtml(definition.definition) + '</p>' +
       '<dl class="row mb-0">' +
-      '<dt class="col-5">Workbook row</dt><dd class="col-7">' + definition.row + '</dd>' +
-      '<dt class="col-5">Numerator</dt><dd class="col-7">' + numerator.toLocaleString() + '</dd>' +
-      (denominator == null ? '' : '<dt class="col-5">Denominator</dt><dd class="col-7">' + denominator.toLocaleString() + '</dd>') +
+      '<dt class="col-5">Counted as</dt><dd class="col-7">' +
+      escapeHtml(definition.countedAs) + '</dd>' +
+      '<dt class="col-5">' + escapeHtml(definition.numeratorLabel) +
+      '</dt><dd class="col-7">' + numerator.toLocaleString() + '</dd>' +
+      (denominator == null ? '' : '<dt class="col-5">' +
+        escapeHtml(definition.denominatorLabel) + '</dt><dd class="col-7">' +
+        denominator.toLocaleString() + '</dd>') +
+      '<dt class="col-5">Displayed result</dt><dd class="col-7"><strong>' +
+      escapeHtml(result) + '</strong></dd>' +
       '</dl>'
     if (global.bootstrap && bootstrap.Modal) {
       bootstrap.Modal.getOrCreateInstance(

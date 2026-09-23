@@ -295,7 +295,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v320-moh/);
+  assert.match(sw, /mch-care-v323-moh/);
 });
 
 test('tracking calls use same-origin Netlify proxies instead of browser Cloud Run transport', () => {

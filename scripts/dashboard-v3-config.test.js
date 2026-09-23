@@ -2,6 +2,8 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
 require('../js/dashboard-metrics-config.js')
 require('../js/dashboard-data.js')
@@ -13,6 +15,22 @@ test('dashboard frontend exposes all 54 workbook indicators', () => {
     indicators.map((indicator) => indicator.row),
     Array.from({ length: 54 }, (_, index) => index + 1)
   )
+})
+
+test('every dashboard indicator explains its clinical calculation', () => {
+  global.DashboardMetricsConfig.indicators.forEach((indicator) => {
+    assert.ok(indicator.definition.length >= 40, indicator.key)
+    assert.ok(indicator.countedAs, indicator.key)
+    assert.ok(indicator.numeratorLabel, indicator.key)
+    if (indicator.denominator) {
+      assert.ok(indicator.denominatorLabel, indicator.key)
+    }
+  })
+  const chartSource = fs.readFileSync(
+    path.join(__dirname, '..', 'js', 'dashboard-charts.js'),
+    'utf8'
+  )
+  assert.doesNotMatch(chartSource, /Workbook row/)
 })
 
 test('dashboard scope ids match the analytics-v3 backend contract', () => {
