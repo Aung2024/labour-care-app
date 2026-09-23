@@ -9,6 +9,8 @@ const {
 } = require('../src/analytics/refresh-queue-functions')
 const {
   RECONCILIATION_INTERVAL_MS,
+  RECONCILIATION_BATCH_SIZE,
+  RECONCILIATION_CONCURRENCY,
   shouldStartReconciliation,
   mapWithConcurrency
 } = require('../src/analytics/v3-functions')
@@ -61,6 +63,11 @@ test('reconciliation starts only when due and never overlaps a running generatio
     status: 'complete',
     lastCompletedAtMillis: now - RECONCILIATION_INTERVAL_MS
   }, now), true)
+})
+
+test('reconciliation bounds shared-summary transaction contention', () => {
+  assert.equal(RECONCILIATION_BATCH_SIZE, 25)
+  assert.equal(RECONCILIATION_CONCURRENCY, 1)
 })
 
 test('reconciliation concurrency helper processes scalable chunks', async () => {

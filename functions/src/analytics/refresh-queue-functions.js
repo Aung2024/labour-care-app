@@ -159,6 +159,16 @@ const deletePatientProjections = async (db, patientId) => {
   await writer.close()
 }
 
+const normalizeLoadedClinicalFacts = async (db, patientId, loaded) => {
+  let facts = normalizeClinicalFacts(patientId, loaded)
+  if (facts) facts = await mergeLinkedNewbornVisits(db, facts)
+  if (facts && facts.scope && facts.scope.providerId) {
+    const provider = await loadProvider(db, facts.scope.providerId)
+    facts.scope = projectionScopeWithProvider(facts.scope, provider)
+  }
+  return facts
+}
+
 const refreshLoadedClinicalProducts = async (
   db,
   patientId,
@@ -175,12 +185,7 @@ const refreshLoadedClinicalProducts = async (
     if (month) periodsWithAllTime([month]).forEach((period) => periods.add(period))
   })
 
-  let facts = normalizeClinicalFacts(patientId, loaded)
-  if (facts) facts = await mergeLinkedNewbornVisits(db, facts)
-  if (facts && facts.scope && facts.scope.providerId) {
-    const provider = await loadProvider(db, facts.scope.providerId)
-    facts.scope = projectionScopeWithProvider(facts.scope, provider)
-  }
+  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
 
   if (facts) {
     await savePatientProjections(db, facts, { asOf: now || new Date() })
@@ -219,6 +224,20 @@ const refreshLoadedClinicalProducts = async (
     periods: Array.from(periods),
     deleted: !facts
   }
+}
+
+const refreshPatientAnalyticsV3Only = async (
+  database,
+  patientId,
+  options
+) => {
+  const db = database || admin.firestore()
+  const loaded = await loadPatientActivity(db, patientId)
+  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
+  return refreshPatientAnalyticsV3(db, facts, {
+    patientId,
+    generation: options && options.generation || 'reconciliation'
+  })
 }
 
 const refreshClinicalPatient = async (database, patientId, now, options) => {
@@ -318,7 +337,9 @@ module.exports = {
   readUnifiedQueueBatch,
   acquireWorkerLease,
   releaseWorkerLease,
+  normalizeLoadedClinicalFacts,
   refreshLoadedClinicalProducts,
+  refreshPatientAnalyticsV3Only,
   refreshClinicalPatient,
   processUnifiedRefreshQueue,
   processTrackingRefreshBatch,

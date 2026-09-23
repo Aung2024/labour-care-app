@@ -5,14 +5,16 @@ const { FieldPath, FieldValue } = require('firebase-admin/firestore')
 const { onCall, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler')
 const { logger } = require('firebase-functions')
-const { refreshClinicalPatient } = require('./refresh-queue-functions')
+const {
+  refreshPatientAnalyticsV3Only
+} = require('./refresh-queue-functions')
 
 const REGION = 'us-central1'
 const RECONCILIATION_JOB_COLLECTION = 'analytics_v3_jobs'
 const RECONCILIATION_JOB_ID = 'dashboard-summary-reconciliation'
 const RECONCILIATION_INTERVAL_MS = 48 * 60 * 60 * 1000
-const RECONCILIATION_BATCH_SIZE = 100
-const RECONCILIATION_CONCURRENCY = 10
+const RECONCILIATION_BATCH_SIZE = 25
+const RECONCILIATION_CONCURRENCY = 1
 
 const db = () => admin.firestore()
 
@@ -149,10 +151,9 @@ const processAnalyticsV3ReconciliationBatch = async (
     concurrency,
     async (patient) => {
       try {
-        await refreshClinicalPatient(
+        await refreshPatientAnalyticsV3Only(
           firestore,
           patient.id,
-          now || new Date(),
           { generation: `reconciliation-${job.generation}` }
         )
         return { patientId: patient.id, success: true }
@@ -236,7 +237,7 @@ const dashboardV3ReconciliationWorker = onSchedule({
   schedule: 'every 5 minutes',
   timeZone: 'Asia/Yangon',
   region: REGION,
-  timeoutSeconds: 540,
+  timeoutSeconds: 900,
   memory: '1GiB',
   maxInstances: 1,
   concurrency: 1
@@ -253,7 +254,12 @@ const dashboardV3ReconciliationWorker = onSchedule({
       false
     )
   }
-  return processAnalyticsV3ReconciliationUntilDeadline(firestore, new Date())
+  const result = await processAnalyticsV3ReconciliationUntilDeadline(
+    firestore,
+    new Date()
+  )
+  logger.info('Analytics-v3 reconciliation worker finished', result)
+  return result
 })
 
 module.exports = {
