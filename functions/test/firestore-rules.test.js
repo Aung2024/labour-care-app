@@ -85,6 +85,26 @@ async function seed() {
         Object.assign({ period: 'all', metrics: { total: 1 } }, scope)
       );
     }
+    const analyticsV3Scopes = [
+      ['national', { geographyType: 'national', geographyId: 'all', region: '', township: '', providerId: '' }],
+      ['region', { geographyType: 'region', geographyId: 'North', region: 'North', township: '', providerId: '' }],
+      ['township-alpha', { geographyType: 'township', geographyId: 'Alpha', region: 'North', township: 'Alpha', providerId: '' }],
+      ['township-beta', { geographyType: 'township', geographyId: 'Beta', region: 'North', township: 'Beta', providerId: '' }],
+      ['facility-alpha', { geographyType: 'facility', geographyId: '001', facilityCode: '001', region: 'North', township: 'Alpha', providerId: '' }],
+      ['facility-beta', { geographyType: 'facility', geographyId: '002', facilityCode: '002', region: 'North', township: 'Beta', providerId: '' }],
+      ['provider-a', { geographyType: 'provider', geographyId: 'midwife-a', region: 'North', township: 'Alpha', providerId: 'midwife-a' }],
+      ['provider-b', { geographyType: 'provider', geographyId: 'midwife-b', region: 'North', township: 'Beta', providerId: 'midwife-b' }]
+    ];
+    for (const [scopeId, scope] of analyticsV3Scopes) {
+      await setDoc(
+        doc(database, 'analytics_v3_periods', 'all', 'scopes', scopeId),
+        Object.assign({
+          period: 'all',
+          schemaVersion: 'analytics-v3.0.0',
+          metrics: { registration: { total: 1 } }
+        }, scope)
+      );
+    }
     await setDoc(doc(database, 'tracking_v2_hrt', 'patient-a'), {
       patientId: 'patient-a', providerId: 'midwife-a', township: 'Alpha',
       region: 'North', status: 'on_track'
@@ -299,6 +319,72 @@ test('Dashboard V2 metadata queries must be constrained to the caller scope', as
   )));
 });
 
+function analyticsV3ScopeRef(uid, scopeId) {
+  return doc(
+    environment.authenticatedContext(uid).firestore(),
+    'analytics_v3_periods',
+    'all',
+    'scopes',
+    scopeId
+  );
+}
+
+test('Dashboard V3 geography scopes enforce each healthcare role boundary', async () => {
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('midwife-a', 'provider-a')));
+  await assertFails(getDoc(analyticsV3ScopeRef('midwife-a', 'township-alpha')));
+  await assertFails(getDoc(analyticsV3ScopeRef('midwife-a', 'provider-b')));
+
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('tmo-a', 'township-alpha')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('tmo-a', 'facility-alpha')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('tmo-a', 'provider-a')));
+  await assertFails(getDoc(analyticsV3ScopeRef('tmo-a', 'facility-beta')));
+
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('regional', 'region')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('regional', 'township-beta')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('regional', 'facility-beta')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('central', 'national')));
+  await assertSucceeds(getDoc(analyticsV3ScopeRef('super', 'national')));
+});
+
+test('Dashboard V3 contribution and job documents remain server-only', async () => {
+  const database = environment.authenticatedContext('super').firestore();
+  await assertFails(getDoc(doc(
+    database,
+    'analytics_v3_contributions',
+    'all_patient-a'
+  )));
+  await assertFails(getDoc(doc(
+    database,
+    'analytics_v3_jobs',
+    'dashboard-summary-reconciliation'
+  )));
+  await assertFails(setDoc(
+    doc(database, 'analytics_v3_periods', 'all', 'scopes', 'national'),
+    { metrics: { registration: { total: 999 } } },
+    { merge: true }
+  ));
+});
+
+test('Dashboard V3 facility metadata queries require the caller geography', async () => {
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  const regionalDb = environment.authenticatedContext('regional').firestore();
+  const scopesPath = ['analytics_v3_periods', 'all', 'scopes'];
+  await assertSucceeds(getDocs(query(
+    collection(tmoDb, ...scopesPath),
+    where('geographyType', '==', 'facility'),
+    where('township', '==', 'Alpha')
+  )));
+  await assertFails(getDocs(query(
+    collection(tmoDb, ...scopesPath),
+    where('geographyType', '==', 'facility')
+  )));
+  await assertSucceeds(getDocs(query(
+    collection(regionalDb, ...scopesPath),
+    where('geographyType', '==', 'facility'),
+    where('region', '==', 'North')
+  )));
+});
+
 test('rules fixture is initialized', () => {
   assert.ok(environment);
 });
@@ -339,6 +425,11 @@ test('authenticated clients can enqueue only their own refresh requests', async 
     doc(database, 'leaderboard_v3_refresh_queue', 'patient-a'),
     payload
   ));
+  await assertSucceeds(setDoc(
+    doc(database, 'clinical_refresh_v1_queue', 'patient-a'),
+    payload
+  ));
+  await assertFails(getDoc(doc(database, 'clinical_refresh_v1_queue', 'patient-a')));
   await assertFails(getDoc(doc(database, 'tracking_v2_refresh_queue', 'patient-a')));
   await assertFails(setDoc(
     doc(database, 'tracking_v2_refresh_queue', 'patient-b'),

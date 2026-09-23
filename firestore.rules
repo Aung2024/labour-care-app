@@ -116,18 +116,27 @@ service cloud.firestore {
           currentUserData().role in ["Super Admin", "Central", "admin"]
           || (
             currentUserData().role in ["Midwife", "midwife"]
-            && resource.data.scopeType == "provider"
+            && (
+              resource.data.get("scopeType", "") == "provider"
+              || resource.data.get("geographyType", "") == "provider"
+            )
             && resource.data.providerId == request.auth.uid
           )
           || (
             currentUserData().role == "TMO"
             && (
               (
-                resource.data.scopeType == "township"
+                (
+                  resource.data.get("scopeType", "") in ["township", "facility"]
+                  || resource.data.get("geographyType", "") in ["township", "facility"]
+                )
                 && resource.data.township == currentUserData().township
               )
               || (
-                resource.data.scopeType == "provider"
+                (
+                  resource.data.get("scopeType", "") == "provider"
+                  || resource.data.get("geographyType", "") == "provider"
+                )
                 && resource.data.township == currentUserData().township
               )
             )
@@ -135,7 +144,10 @@ service cloud.firestore {
           || (
             currentUserData().role == "Regional Officer"
             && resource.data.region == currentUserData().region
-            && resource.data.scopeType in ["region", "township", "provider"]
+            && (
+              resource.data.get("scopeType", "") in ["region", "township", "facility", "provider"]
+              || resource.data.get("geographyType", "") in ["region", "township", "facility", "provider"]
+            )
           )
         );
     }
@@ -479,6 +491,37 @@ service cloud.firestore {
 
     match /analytics_v2_jobs/{jobId} {
       allow read, write: if false;
+    }
+
+    // Analytics V3 is populated only by Cloud Functions. Browser clients read
+    // one pre-aggregated scope document selected by their authorized role and
+    // report filters; patient-level contributions and job state stay private.
+    match /analytics_v3_periods/{period} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /scopes/{scopeId} {
+        allow read: if canReadAnalyticsScope();
+        allow write: if false;
+      }
+    }
+
+    match /analytics_v3_contributions/{contributionId} {
+      allow read, write: if false;
+    }
+
+    match /analytics_v3_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /clinical_refresh_v1_queue/{patientId} {
+      allow create, update: if signedIn()
+        && request.resource.data.patientId == patientId
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'patientId', 'requestedBy', 'reason', 'updatedAt'
+        ]);
+      allow read, delete: if false;
     }
 
     // Offline-safe refresh queues. They contain patient IDs and refresh

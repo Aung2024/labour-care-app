@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v317-moh';
+const CACHE_NAME = 'mch-care-v320-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -67,10 +67,12 @@ const FILES_TO_CACHE = [
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
+  './css/dashboard-v3.css',
   './css/webfonts/fa-solid-900.woff2',
   './css/webfonts/fa-regular-400.woff2',
   './css/webfonts/fa-brands-400.woff2',
   './js/vendor/bootstrap.bundle.min.js',
+  './js/vendor/apexcharts.min.js',
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
@@ -112,6 +114,10 @@ const FILES_TO_CACHE = [
   './js/anc-workflow-utils.js',
   './js/infection-alerts.js',
   './js/analytics-refresh-queue.js',
+  './js/dashboard-metrics-config.js',
+  './js/dashboard-data.js',
+  './js/dashboard-charts.js',
+  './js/dashboard-v3.js',
   './js/home-followup-badges.js',
   './js/choice-controls.js',
   './js/status-manager.js',

@@ -306,10 +306,17 @@ exports.trackingWeeklyReconciliation =
 const smsFunctions = require('./src/sms/functions');
 exports.sendHrtSms = smsFunctions.sendHrtSms;
 
-// Incremental queues used because asia-southeast3 cannot host Firestore
-// document triggers. Clinical clients enqueue only patient IDs.
+// One incremental worker drains the unified queue and both migration queues.
+// Clinical and offline-sync clients enqueue only a patient id after saves.
+// The scheduled full reconciliation repairs any missed client request.
 const refreshQueueFunctions = require('./src/analytics/refresh-queue-functions');
-exports.trackingRefreshQueueWorker =
-  refreshQueueFunctions.trackingRefreshQueueWorker;
-exports.leaderboardDailyRefreshWorker =
-  refreshQueueFunctions.leaderboardDailyRefreshWorker;
+exports.unifiedClinicalRefreshWorker =
+  refreshQueueFunctions.unifiedClinicalRefreshWorker;
+
+// Dashboard V3 is isolated from analytics_v2 so the previous contract remains
+// available for rollback during the summary-dashboard migration.
+const analyticsV3Functions = require('./src/analytics/v3-functions');
+exports.startDashboardV3Reconciliation =
+  analyticsV3Functions.startDashboardV3Reconciliation;
+exports.dashboardV3ReconciliationWorker =
+  analyticsV3Functions.dashboardV3ReconciliationWorker;

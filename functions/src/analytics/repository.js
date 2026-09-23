@@ -100,7 +100,8 @@ async function loadClinicalFacts(db, patientId) {
 function normalizeClinicalFacts(patientId, loaded) {
   if (!loaded.patient) return null;
   const activity = loaded.activity || {};
-  const taxonomy = facilityTaxonomy(loaded.patient.facility_code);
+  const facilityCode = loaded.patient.facility_code || loaded.patient.facilityCode || '';
+  const taxonomy = facilityTaxonomy(facilityCode);
   const facts = {
     id: patientId,
     profile: loaded.patient,
@@ -130,6 +131,8 @@ function normalizeClinicalFacts(patientId, loaded) {
       township: loaded.patient.township || '',
       region: loaded.patient.region || '',
       facilityCode: taxonomy.facilityCode,
+      facilityName: loaded.patient.facility_name || loaded.patient.facilityName ||
+        loaded.patient.facility || loaded.patient.healthFacility || '',
       department: taxonomy.department,
       facilityType: taxonomy.facilityType
     },
@@ -150,6 +153,7 @@ function normalizeClinicalFacts(patientId, loaded) {
 
 module.exports = {
   loadClinicalFacts,
+  mergeLinkedNewbornVisits,
   normalizeClinicalFacts,
   collectionEntries,
   entryRecord

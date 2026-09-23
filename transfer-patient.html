@@ -22,6 +22,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/choice-controls.js"></script>
+  <script src="js/facility-config.js"></script>
   <script src="js/analytics-refresh-queue.js"></script>
   <style>
     :root {
@@ -499,6 +500,17 @@
               <div class="col-12">
                 <label for="referralFacility" class="form-label lang-text" id="referralFacilityLabel" data-en="Referral facility" data-mm="လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန">Referral facility</label>
                 <input type="text" id="referralFacility" class="form-control" placeholder="" />
+              </div>
+              <div id="externalReferralTypeGroup" class="col-12 col-md-6" hidden>
+                <label for="referralFacilityType" class="form-label required-mark lang-text"
+                  data-en="Referral facility type"
+                  data-mm="လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန အမျိုးအစား">Referral facility type</label>
+                <select id="referralFacilityType" class="form-select" data-choice>
+                  <option value="" data-en="Select facility type" data-mm="အမျိုးအစား ရွေးချယ်ပါ">Select facility type</option>
+                  <option value="station_hospital" data-en="Station Hospital" data-mm="တိုက်နယ်ဆေးရုံ">Station Hospital</option>
+                  <option value="township_hospital" data-en="Township Hospital" data-mm="မြို့နယ်ဆေးရုံ">Township Hospital</option>
+                  <option value="other" data-en="Other / Unknown" data-mm="အခြား / မသိရှိ">Other / Unknown</option>
+                </select>
               </div>
               <div class="col-12">
                 <label for="mainSymptoms" class="form-label lang-text"
@@ -1209,7 +1221,14 @@
       const external = isExternalTransfer();
       const section = document.getElementById('internalMidwifeSection');
       const facilityLabel = document.getElementById('referralFacilityLabel');
+      const typeGroup = document.getElementById('externalReferralTypeGroup');
+      const typeSelect = document.getElementById('referralFacilityType');
       if (section) section.style.display = external ? 'none' : '';
+      if (typeGroup) typeGroup.hidden = !external;
+      if (typeSelect) {
+        typeSelect.required = external;
+        if (!external) typeSelect.value = '';
+      }
       if (facilityLabel) {
         facilityLabel.classList.toggle('required-mark', external);
       }
@@ -1221,13 +1240,16 @@
       const ids = getSelectedEligibleMidwifeIds();
       const referralTime = (document.getElementById('referralTime').value || '').trim();
       const referralFacility = (document.getElementById('referralFacility').value || '').trim();
+      const referralFacilityType = (document.getElementById('referralFacilityType').value || '').trim();
       const btn = document.getElementById('submitBtn');
-      const valid = selectedPatientId && referralTime && (external ? referralFacility : ids.length > 0);
+      const valid = selectedPatientId && referralTime &&
+        (external ? referralFacility && referralFacilityType : ids.length > 0);
       btn.disabled = !valid;
     }
 
     document.getElementById('referralTime').addEventListener('input', refreshSubmitState);
     document.getElementById('referralFacility').addEventListener('input', refreshSubmitState);
+    document.getElementById('referralFacilityType').addEventListener('change', refreshSubmitState);
 
     function getReferralFormData() {
       const getValue = (id) => {
@@ -1240,6 +1262,7 @@
         referralFacility: getValue('referralFacility'),
         transferDestination: getTransferDestination(),
         externalFacility: isExternalTransfer() ? getValue('referralFacility') : null,
+        referralFacilityType: isExternalTransfer() ? getValue('referralFacilityType') : null,
         mainSymptoms: getValue('mainSymptoms'),
         treatmentBeforeReferral: getValue('treatmentBeforeReferral'),
         medications: getValue('medications'),
@@ -1315,6 +1338,14 @@
         if (!(referralData.referralFacility || '').trim()) {
           return AppDialog.alert(t('externalFacility'), { title: t('transferTitle') });
         }
+        if (!referralData.referralFacilityType) {
+          return AppDialog.alert(
+            currentLanguage === 'mm'
+              ? 'လွှဲပြောင်းမည့် ဆေးရုံ/ကျန်းမာရေးဌာန အမျိုးအစားကို ရွေးချယ်ပါ။'
+              : 'Please select the referral facility type.',
+            { title: t('transferTitle') }
+          );
+        }
       } else if (ids.length !== 1) {
         return AppDialog.alert(t('selectMidwife'), { title: t('transferTitle') });
       }
@@ -1326,12 +1357,23 @@
         uid: u.id,
         name: u.name || u.email || 'Midwife',
         region: u.region || null,
-        township: u.township || null
+        township: u.township || null,
+        facilityCode: u.facilityCode || u.facility_code || null,
+        facilityName: u.facilityName || u.facility || u.healthFacility || null
       }));
       if (!external && recipients.length !== ids.length) {
         selectedMidwifeIds.clear();
         renderMidwives();
         return AppDialog.alert(t('selectMidwife'), { title: t('transferTitle') });
+      }
+      if (!external && recipients.length === 1) {
+        const recipient = recipients[0];
+        const taxonomy = window.FacilityConfig && recipient.facilityCode
+          ? FacilityConfig.getFacilityTaxonomy(recipient.facilityCode)
+          : null;
+        referralData.destinationFacilityCode = recipient.facilityCode;
+        referralData.referralFacility = recipient.facilityName || referralData.referralFacility;
+        referralData.referralFacilityType = taxonomy && taxonomy.facilityType || null;
       }
 
       const btn = document.getElementById('submitBtn');

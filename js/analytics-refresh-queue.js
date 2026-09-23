@@ -16,10 +16,7 @@
     if (!patientId || !global.firebase || !firebase.firestore) return false;
     var user = firebase.auth && firebase.auth().currentUser;
     if (!user) return false;
-    await Promise.all([
-      enqueue('tracking_v2_refresh_queue', patientId, reason, user.uid),
-      enqueue('leaderboard_v3_refresh_queue', patientId, reason, user.uid)
-    ]);
+    await enqueue('clinical_refresh_v1_queue', patientId, reason, user.uid);
     return true;
   }
 
