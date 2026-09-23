@@ -89,7 +89,7 @@ test('maps legacy delivery options without exposing them as new choices', () => 
   assert.equal(utils.normalizeBirthPlaceForForm('public_facility'), 'health_facility_subfacility');
   assert.equal(utils.birthPlaceLabel('health_facility_subfacility', 'en'), 'RHC/SRHC');
   assert.equal(utils.birthPlaceLabel('health_facility_subfacility', 'mm'), 'ကျန်းမာရေးဌာန/ဌာနခွဲ');
-  assert.equal(utils.normalizeDeliveryModeForForm('c_section'), 'emergency_c_section');
+  assert.equal(utils.normalizeDeliveryModeForForm('c_section'), 'elective_c_section');
   assert.equal(utils.normalizeBirthProvider('tba_other'), 'tba');
   assert.equal(utils.birthProviderLabel('tba', 'en'), 'အရပ်လက်သည်');
   assert.equal(utils.birthProviderLabel('skilled_birth_attendant', 'en'), 'Skilled Birth Attendance');
@@ -106,7 +106,7 @@ test('normalizes maternal condition and persists it into legacy summaries', () =
   });
   assert.equal(notes.deliveryDetails.maternalCondition, 'dead');
   assert.equal(notes.deliveryDetails.birthPlace, 'health_facility_subfacility');
-  assert.equal(notes.deliveryDetails.modeOfDelivery, 'emergency_c_section');
+  assert.equal(notes.deliveryDetails.modeOfDelivery, 'elective_c_section');
   assert.equal(utils.legacyFieldsFromDelivery(notes).maternal_condition, 'dead');
 });
 

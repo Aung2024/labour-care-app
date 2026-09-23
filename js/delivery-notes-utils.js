@@ -253,7 +253,7 @@
     if (v === 'assisted' || v === 'assisted_vaginal') return 'assisted';
     if (v === 'elective_c_section' || v === 'elective_caesarean_section') return 'elective_c_section';
     if (v === 'emergency_c_section' || v === 'emergency_caesarean_section') return 'emergency_c_section';
-    if (v === 'c_section' || v === 'caesarean_section' || v === 'cesarean_section') return 'emergency_c_section';
+    if (v === 'c_section' || v === 'caesarean_section' || v === 'cesarean_section') return 'elective_c_section';
     return v;
   }
 

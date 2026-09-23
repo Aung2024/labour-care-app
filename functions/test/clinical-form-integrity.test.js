@@ -293,7 +293,21 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v316-moh/);
+  assert.match(sw, /mch-care-v317-moh/);
+});
+
+test('tracking calls use same-origin Netlify proxies instead of browser Cloud Run transport', () => {
+  const runtimeConfig = JSON.parse(readAppFile('firebase.runtime-config.json'));
+  const netlify = readAppFile('netlify.toml');
+
+  assert.equal(runtimeConfig.functionUrls.queryHrtTracking, '/api/query-hrt-tracking');
+  assert.equal(runtimeConfig.functionUrls.queryKmcTracking, '/api/query-kmc-tracking');
+  assert.equal(runtimeConfig.functionUrls.sendHrtSms, '/api/send-hrt-sms');
+  assert.match(netlify, /from = "\/api\/query-hrt-tracking"/);
+  assert.match(netlify, /to = "https:\/\/queryhrttracking-houbbz2mta-uc\.a\.run\.app"/);
+  assert.match(netlify, /from = "\/api\/query-kmc-tracking"/);
+  assert.match(netlify, /to = "https:\/\/querykmctracking-houbbz2mta-uc\.a\.run\.app"/);
+  assert.match(netlify, /from = "\/api\/send-hrt-sms"/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {
