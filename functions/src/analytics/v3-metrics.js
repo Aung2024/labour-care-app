@@ -50,7 +50,8 @@ const emptyV3Metrics = () => ({
     earlyBreastfeeding: 0, birthWeightMeasured: 0, lowBirthWeight: 0,
     careWithin2Days: 0, kmcEligible: 0, kmcReceived: 0,
     canonicalClients: 0, canonicalBabies: 0, kmcYes: 0,
-    preterm: 0, under2Kg: 0, pretermAndUnder2Kg: 0
+    preterm: 0, under2Kg: 0, pretermAndUnder2Kg: 0,
+    immediateClients: 0
   },
   pnc: {
     clients: 0, new: 0, old: 0, visits: 0, atLeast4: 0,
@@ -308,6 +309,8 @@ const isMother = (profile) => {
   return !age || age >= 12
 }
 
+const isRegisteredBaby = (profile) => !isMother(profile || {})
+
 const maternalAgeGroup = (profile) => {
   const age = Number.parseInt(profile && profile.age, 10)
   if (!Number.isFinite(age) || age <= 0 || age >= 120) return 'Unknown'
@@ -460,11 +463,213 @@ const kmcReceivedForBaby = (facts, babyIndex) => sortedRecords(
   return babyIndex === 1 && String(visit.kmc_selected || '').toLowerCase() === 'yes'
 })
 
+const registeredBabyIndex = (facts) => numeric(
+  facts && facts.newbornFacts && facts.newbornFacts.birthOrder
+) || numeric(
+  String(facts && facts.id || '')
+    .match(/_baby_(?:(?:\d{8}|unknown)_)?(\d+)$/)?.[1]
+) || 1
+
+const indexedBabyFromRecord = (record, babyIndex) => {
+  const data = unwrap(record) || {}
+  const collections = [data.babies, data.kmc_babies]
+  for (const babies of collections) {
+    if (!Array.isArray(babies)) continue
+    const match = babies.find((baby, index) =>
+      babyIndexOf(baby, index + 1) === babyIndex
+    )
+    if (match) return match
+  }
+  return null
+}
+
+const recordAppliesToRegisteredBaby = (facts, record) => {
+  const data = unwrap(record) || {}
+  const babyIndex = registeredBabyIndex(facts)
+  if (data._newbornSourcePatientId === facts.id) return true
+  if (numeric(data._kmcSourceBabyIndex)) {
+    return numeric(data._kmcSourceBabyIndex) === babyIndex
+  }
+  const indexedBaby = indexedBabyFromRecord(data, babyIndex)
+  if (indexedBaby) return true
+  const hasIndexedBabies = [data.babies, data.kmc_babies].some((babies) =>
+    Array.isArray(babies) && babies.length
+  )
+  if (hasIndexedBabies) return false
+  if (data._newbornSourcePatientId) return babyIndex === 1
+  return true
+}
+
+const babyWeightGram = (facts, relevantVisits) => {
+  const profile = facts && facts.profile || {}
+  const newbornFacts = facts && facts.newbornFacts || {}
+  const babyIndex = registeredBabyIndex(facts)
+  const candidates = [
+    profile.birth_weight_gram,
+    profile.birthWeightGram,
+    newbornFacts.birthWeightGram
+  ]
+  ;(relevantVisits || []).forEach((visit) => {
+    const data = unwrap(visit) || {}
+    const baby = indexedBabyFromRecord(data, babyIndex) || {}
+    candidates.push(
+      baby.birthWeightGram,
+      baby.birth_weight_gram,
+      baby.body_weight_gram,
+      data.birthWeightGram,
+      data.birth_weight_gram,
+      data.body_weight_gram
+    )
+  })
+  const value = candidates.map(numeric).find((weight) => weight > 0)
+  if (!value) return null
+  return value < 30 ? Math.round(value * 1000) : Math.round(value)
+}
+
+const registeredBabyBirthDate = (facts, relevantVisits) => {
+  const profile = facts && facts.profile || {}
+  const newbornFacts = facts && facts.newbornFacts || {}
+  const babyIndex = registeredBabyIndex(facts)
+  const profileDate = firstDate(profile, [
+    'date_of_birth', 'dateOfBirth', 'birth_time', 'birthTime', 'birthDate'
+  ]) || firstDate(newbornFacts, ['birthDate'])
+  if (profileDate) return profileDate
+  for (const visit of relevantVisits || []) {
+    const data = unwrap(visit) || {}
+    const baby = indexedBabyFromRecord(data, babyIndex)
+    const date = firstDate(baby || data, [
+      'birthTime', 'birth_time', 'birthDate', 'birth_date', 'date_of_birth'
+    ])
+    if (date) return date
+  }
+  return null
+}
+
+const registeredBabyIsPreterm = (facts, birthDate, relevantVisits) => {
+  const profile = facts && facts.profile || {}
+  const newbornFacts = facts && facts.newbornFacts || {}
+  const babyIndex = registeredBabyIndex(facts)
+  const weeks = [
+    profile.gestational_age_at_birth,
+    profile.gestationalAgeAtBirth,
+    newbornFacts.gestationalAgeAtBirth,
+    ...(relevantVisits || []).map((visit) => {
+      const data = unwrap(visit) || {}
+      const baby = indexedBabyFromRecord(data, babyIndex) || data
+      return baby.gestationalWeek || baby.gestational_week ||
+        baby.gestationalAge || baby.gestational_age
+    })
+  ].map(numeric).find((value) => value > 0)
+  if (weeks && weeks < 37) return true
+  const edd = firstDate(profile, [
+    'maternal_edd', 'edd', 'EDD', 'manualEdd', 'manual_edd'
+  ]) || firstDate(newbornFacts, ['maternalEdd'])
+  return Boolean(
+    birthDate && edd &&
+    Math.floor((edd.getTime() - birthDate.getTime()) / DAY_MS) >=
+      PRETERM_DAYS_BEFORE_EDD
+  )
+}
+
+const registeredBabyHasKmcYes = (facts, visits) => {
+  const babyIndex = registeredBabyIndex(facts)
+  return (visits || []).some((visit) => {
+    const data = unwrap(visit) || {}
+    const baby = Array.isArray(data.kmc_babies)
+      ? data.kmc_babies.find((item, index) =>
+        babyIndexOf(item, index + 1) === babyIndex
+      )
+      : null
+    if (baby && affirmative(baby.kmc_selected ?? baby.kmcSelected)) return true
+    return recordAppliesToRegisteredBaby(facts, data) &&
+      affirmative(data.kmc_selected ?? data.kmcSelected)
+  })
+}
+
+const applyRegisteredBabyMetrics = (metrics, facts, period) => {
+  const resetKeys = [
+    'clients', 'new', 'old', 'birthWeightMeasured', 'lowBirthWeight',
+    'careWithin2Days', 'kmcEligible', 'kmcReceived', 'canonicalClients',
+    'canonicalBabies', 'kmcYes', 'preterm', 'under2Kg',
+    'pretermAndUnder2Kg', 'immediateClients'
+  ]
+  resetKeys.forEach((key) => { metrics.newborn[key] = 0 })
+  if (!isRegisteredBaby(facts.profile || facts.registration || {})) return
+
+  const newbornFields = [
+    'visitDate', 'visit_date', 'recordedAt', 'timestamp', 'createdAt'
+  ]
+  const allRelevantVisits = sortedRecords(
+    facts.newbornVisits || [],
+    newbornFields
+  ).filter((visit) => recordAppliesToRegisteredBaby(facts, visit))
+  const relevantVisits = allRelevantVisits.filter((visit) => {
+    if (period.key === 'all') return true
+    const date = recordDate(visit, newbornFields)
+    return date && isDateInPeriod(date, period)
+  })
+  const immediate = sortedRecords(
+    facts.immediateNewbornCare || [],
+    newbornFields
+  ).filter((record) =>
+    recordAppliesToRegisteredBaby(facts, record) &&
+    (period.key === 'all' || (
+      recordDate(record, newbornFields) &&
+      isDateInPeriod(recordDate(record, newbornFields), period)
+    ))
+  )
+  const included = metrics.registration.babies === 1
+  if (!included) return
+
+  metrics.newborn.canonicalBabies = 1
+  if (relevantVisits.length) {
+    metrics.newborn.clients = 1
+    metrics.newborn.canonicalClients = 1
+    const classification = firstServiceClassification(
+      allRelevantVisits,
+      relevantVisits,
+      newbornFields,
+      period
+    )
+    if (classification) metrics.newborn[classification] = 1
+  }
+  if (immediate.length) metrics.newborn.immediateClients = 1
+
+  const weight = babyWeightGram(facts, allRelevantVisits)
+  if (weight) {
+    metrics.newborn.birthWeightMeasured = 1
+    if (weight < 2500) metrics.newborn.lowBirthWeight = 1
+    if (weight < KMC_WEIGHT_GRAM) metrics.newborn.under2Kg = 1
+  }
+  const birthDate = registeredBabyBirthDate(facts, allRelevantVisits)
+  if (registeredBabyIsPreterm(facts, birthDate, allRelevantVisits)) {
+    metrics.newborn.preterm = 1
+  }
+  if (metrics.newborn.preterm && metrics.newborn.under2Kg) {
+    metrics.newborn.pretermAndUnder2Kg = 1
+  }
+  if (metrics.newborn.preterm || metrics.newborn.under2Kg) {
+    metrics.newborn.kmcEligible = 1
+  }
+  if (birthDate && allRelevantVisits.some((visit) => {
+    const date = recordDate(visit, newbornFields)
+    const difference = date ? (date - birthDate) / DAY_MS : Infinity
+    return difference >= 0 && difference <= 2
+  })) {
+    metrics.newborn.careWithin2Days = 1
+  }
+  if (registeredBabyHasKmcYes(facts, relevantVisits)) {
+    metrics.newborn.kmcYes = 1
+    metrics.newborn.kmcReceived = 1
+  }
+}
+
 const calculateV3Metrics = (facts, periodDescriptor, options) => {
   const metrics = emptyV3Metrics()
   if (!facts || !facts.id) return metrics
   const period = normalizePeriod(periodDescriptor)
   const corrected = Boolean(options && options.corrected)
+  const registeredBabyTruth = Boolean(options && options.registeredBabyTruth)
   const profile = facts.profile || facts.registration || {}
   const registrationDate = firstDate(profile, [
     'createdAt', 'created_at', 'registrationDate', 'registration_date', 'timestamp'
@@ -748,6 +953,10 @@ const calculateV3Metrics = (facts, periodDescriptor, options) => {
     }
   }
 
+  if (registeredBabyTruth) {
+    applyRegisteredBabyMetrics(metrics, facts, period)
+  }
+
   return metrics
 }
 
@@ -839,6 +1048,11 @@ module.exports = {
   canonicalNewbornOwner,
   canonicalNewbornBabies,
   kmcEligibility,
+  recordAppliesToRegisteredBaby,
+  babyWeightGram,
+  registeredBabyBirthDate,
+  registeredBabyIsPreterm,
+  applyRegisteredBabyMetrics,
   referralDestination,
   calculateV3Metrics,
   reportingPeriodsForFacts,

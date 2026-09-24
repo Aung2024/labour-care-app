@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const {
   ANALYTICS_V3_SCHEMA_VERSION,
   ANALYTICS_V31_SCHEMA_VERSION,
+  ANALYTICS_V32_SCHEMA_VERSION,
   INDICATOR_REGISTRY_V3,
   SUPPLEMENTAL_INDICATORS_V31
 } = require('../src/analytics/v3-registry')
@@ -535,4 +536,122 @@ test('v3.1 aligns KMC eligibility, KMC Yes, and active Joint Care', () => {
     jointCareFacts: { activeProviderIds: [] }
   }), 'all', { corrected: true })
   assert.equal(ownerOnly.jointCare.clients, 0)
+})
+
+test('v3.2 counts newborn measures once per registered baby client', () => {
+  assert.equal(ANALYTICS_V32_SCHEMA_VERSION, 'analytics-v3.2.0')
+  const metrics = calculateV3Metrics(baseFacts({
+    id: 'baby-2',
+    profile: {
+      created_at: '2026-08-10',
+      patient_type: 'baby',
+      birth_order: 2,
+      date_of_birth: '2026-08-10',
+      birth_weight_gram: 2400,
+      gestational_age_at_birth: 35
+    },
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1',
+      birthOrder: 2,
+      birthDate: '2026-08-10',
+      birthWeightGram: 2400,
+      gestationalAgeAtBirth: 35
+    },
+    newbornVisits: [
+      wrapped({
+        _newbornSourcePatientId: 'mother-1',
+        visitDate: '2026-08-11',
+        babies: [
+          { babyIndex: 1, birthWeightGram: 3000 },
+          { babyIndex: 2, birthWeightGram: 2400 }
+        ],
+        kmc_babies: [
+          { babyIndex: 1, kmc_selected: 'no' },
+          { babyIndex: 2, kmc_selected: 'yes' }
+        ]
+      }),
+      wrapped({
+        _newbornSourcePatientId: 'mother-1',
+        visitDate: '2026-08-12',
+        babies: [{ babyIndex: 2, current_weight_gram: 2450 }]
+      })
+    ],
+    immediateNewbornCare: [wrapped({
+      _newbornSourcePatientId: 'baby-2',
+      timestamp: '2026-08-10T10:00:00Z',
+      thorough_drying: true
+    })]
+  }), '2026-08', {
+    corrected: true,
+    registeredBabyTruth: true
+  })
+
+  assert.equal(metrics.registration.babies, 1)
+  assert.equal(metrics.newborn.canonicalBabies, 1)
+  assert.equal(metrics.newborn.clients, 1)
+  assert.equal(metrics.newborn.immediateClients, 1)
+  assert.equal(metrics.newborn.birthWeightMeasured, 1)
+  assert.equal(metrics.newborn.lowBirthWeight, 1)
+  assert.equal(metrics.newborn.preterm, 1)
+  assert.equal(metrics.newborn.careWithin2Days, 1)
+  assert.equal(metrics.newborn.kmcYes, 1)
+})
+
+test('v3.2 isolates twins and excludes delivery-note babies without profiles', () => {
+  const sharedVisit = wrapped({
+    _newbornSourcePatientId: 'mother-1',
+    visitDate: '2026-08-11',
+    babies: [
+      { babyIndex: 1, birthWeightGram: 3000 },
+      { babyIndex: 2, birthWeightGram: 2200 }
+    ],
+    kmc_babies: [
+      { babyIndex: 1, kmc_selected: 'no' },
+      { babyIndex: 2, kmc_selected: 'yes' }
+    ]
+  })
+  const babyMetrics = (birthOrder) => calculateV3Metrics(baseFacts({
+    id: `registered-baby-${birthOrder}`,
+    profile: {
+      created_at: '2026-08-10',
+      patient_type: 'baby',
+      birth_order: birthOrder,
+      date_of_birth: '2026-08-10'
+    },
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1',
+      birthOrder,
+      birthDate: '2026-08-10'
+    },
+    newbornVisits: [sharedVisit]
+  }), 'all', {
+    corrected: true,
+    registeredBabyTruth: true
+  })
+  assert.equal(babyMetrics(1).newborn.kmcYes, 0)
+  assert.equal(babyMetrics(1).newborn.lowBirthWeight, 0)
+  assert.equal(babyMetrics(2).newborn.kmcYes, 1)
+  assert.equal(babyMetrics(2).newborn.lowBirthWeight, 1)
+
+  const mother = calculateV3Metrics(baseFacts({
+    id: 'mother-1',
+    profile: { created_at: '2026-08-01', patient_type: 'mother' },
+    deliveryNotes: wrapped({
+      deliveryDetails: {
+        babies: [
+          { birthTime: '2026-08-10', outcome: 'alive', birthWeightGram: 3000 },
+          { birthTime: '2026-08-10', outcome: 'alive', birthWeightGram: 2200 }
+        ]
+      }
+    })
+  }), 'all', {
+    corrected: true,
+    registeredBabyTruth: true
+  })
+  assert.equal(mother.delivery.actualNotes, 1)
+  assert.equal(mother.newborn.births, 2)
+  assert.equal(mother.newborn.canonicalBabies, 0)
+  assert.equal(mother.newborn.birthWeightMeasured, 0)
 })

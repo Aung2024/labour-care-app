@@ -4,6 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
   ANALYTICS_V31_CONTRACT,
+  ANALYTICS_V32_CONTRACT,
   scopeDocIdV3,
   scopeDescriptorsV3,
   summaryAfterContributionChange,
@@ -187,4 +188,34 @@ test('v3.1 contributions use parallel collections and active Joint Care scopes',
   ).map((scope) => scope.providerId).sort()
   assert.deepEqual(providerIds, ['provider-1', 'provider-2'])
   assert.equal(contribution.metrics.registration.total, 1)
+})
+
+test('v3.2 contributions use the registered-baby truth contract', () => {
+  const babyFacts = facts()
+  babyFacts.id = 'baby-1'
+  babyFacts.profile = {
+    created_at: '2026-08-01',
+    patient_type: 'baby',
+    birth_weight_gram: 2300
+  }
+  babyFacts.newbornFacts = {
+    patientType: 'baby',
+    birthOrder: 1,
+    birthDate: '2026-08-01',
+    birthWeightGram: 2300
+  }
+  const contribution = buildContribution(
+    babyFacts,
+    'all',
+    'v32-test',
+    ANALYTICS_V32_CONTRACT
+  )
+  assert.equal(contribution.schemaVersion, 'analytics-v3.2.0')
+  assert.equal(ANALYTICS_V32_CONTRACT.contributionCollection,
+    'analytics_v32_contributions')
+  assert.equal(ANALYTICS_V32_CONTRACT.periodCollection,
+    'analytics_v32_periods')
+  assert.equal(contribution.metrics.registration.babies, 1)
+  assert.equal(contribution.metrics.newborn.canonicalBabies, 1)
+  assert.equal(contribution.metrics.newborn.lowBirthWeight, 1)
 })

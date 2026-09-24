@@ -30,7 +30,8 @@ const {
 } = require('./tracking-repository')
 const {
   refreshPatientAnalyticsV3,
-  refreshPatientAnalyticsV31
+  refreshPatientAnalyticsV31,
+  refreshPatientAnalyticsV32
 } = require('./v3-service')
 const {
   JOINT_CARE_INDEX_COLLECTION
@@ -242,6 +243,10 @@ const refreshLoadedClinicalProducts = async (
     patientId,
     generation: options && options.generation || 'live'
   })
+  await refreshPatientAnalyticsV32(db, facts, {
+    patientId,
+    generation: options && options.generation || 'live'
+  })
   return {
     patientId,
     periods: Array.from(periods),
@@ -272,6 +277,20 @@ const refreshPatientAnalyticsV31Only = async (
   const loaded = await loadPatientActivity(db, patientId)
   const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
   return refreshPatientAnalyticsV31(db, facts, {
+    patientId,
+    generation: options && options.generation || 'reconciliation'
+  })
+}
+
+const refreshPatientAnalyticsV32Only = async (
+  database,
+  patientId,
+  options
+) => {
+  const db = database || admin.firestore()
+  const loaded = await loadPatientActivity(db, patientId)
+  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
+  return refreshPatientAnalyticsV32(db, facts, {
     patientId,
     generation: options && options.generation || 'reconciliation'
   })
@@ -378,6 +397,7 @@ module.exports = {
   refreshLoadedClinicalProducts,
   refreshPatientAnalyticsV3Only,
   refreshPatientAnalyticsV31Only,
+  refreshPatientAnalyticsV32Only,
   refreshClinicalPatient,
   processUnifiedRefreshQueue,
   processTrackingRefreshBatch,

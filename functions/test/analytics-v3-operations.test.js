@@ -18,6 +18,10 @@ const {
   RECONCILIATION_JOB_COLLECTION_V31,
   shouldStartReconciliationV31
 } = require('../src/analytics/v31-functions')
+const {
+  RECONCILIATION_JOB_COLLECTION_V32,
+  shouldStartReconciliationV32
+} = require('../src/analytics/v32-functions')
 
 const queuedDoc = (id, patientId) => ({
   id,
@@ -96,6 +100,17 @@ test('v3.1 reconciliation uses an independent 48-hour generation', () => {
   assert.equal(shouldStartReconciliationV31(null, now), true)
   assert.equal(shouldStartReconciliationV31({ status: 'running' }, now), false)
   assert.equal(shouldStartReconciliationV31({
+    status: 'complete',
+    lastCompletedAtMillis: now - RECONCILIATION_INTERVAL_MS
+  }, now), true)
+})
+
+test('v3.2 reconciliation uses an independent 48-hour generation', () => {
+  const now = Date.parse('2026-09-24T00:00:00Z')
+  assert.equal(RECONCILIATION_JOB_COLLECTION_V32, 'analytics_v32_jobs')
+  assert.equal(shouldStartReconciliationV32(null, now), true)
+  assert.equal(shouldStartReconciliationV32({ status: 'running' }, now), false)
+  assert.equal(shouldStartReconciliationV32({
     status: 'complete',
     lastCompletedAtMillis: now - RECONCILIATION_INTERVAL_MS
   }, now), true)

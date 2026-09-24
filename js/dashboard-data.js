@@ -1,8 +1,8 @@
 (function (global) {
   'use strict'
 
-  var SUMMARY_COLLECTION = 'analytics_v31_periods'
-  var SCHEMA_PREFIX = 'analytics-v3.1'
+  var SUMMARY_COLLECTION = 'analytics_v32_periods'
+  var SCHEMA_PREFIX = 'analytics-v3.2'
   var DEFAULT_FACILITY_TYPES = [
     'district_hospital',
     'regional_public_health_department',
@@ -81,15 +81,15 @@
     for (var value = currentYear; value >= currentYear - 7; value -= 1) {
       years.push({ value: String(value), label: String(value) })
     }
-    replaceOptions(year, years, 'All time', String(currentYear))
+    replaceOptions(year, years, 'All time', '')
     var monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ]
     replaceOptions(month, monthNames.map(function (name, index) {
       return { value: String(index + 1).padStart(2, '0'), label: name }
-    }), 'All months', String((now || new Date()).getMonth() + 1).padStart(2, '0'))
-    month.disabled = false
+    }), 'All months', '')
+    month.disabled = true
   }
 
   function initializeRegions(profile) {
@@ -450,6 +450,7 @@
     selectedFacilityTypes: selectedFacilityTypes,
     loadSummary: loadSummary,
     periodKey: periodKey,
+    initializePeriodOptions: initializePeriodOptions,
     resolveGeography: resolveGeography,
     scopeDocId: scopeDocId,
     scopeLabel: scopeLabel,

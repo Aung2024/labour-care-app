@@ -136,8 +136,12 @@
       panel.className = 'dashboard-section' + (index === 0 ? ' is-active' : '')
       panel.setAttribute('role', 'tabpanel')
       panel.setAttribute('aria-labelledby', tab.id)
+      var sectionNote = DashboardMetricsConfig.sectionNotes[section]
       panel.innerHTML =
         '<h2 class="dashboard-section-heading">' + escapeHtml(section) + '</h2>' +
+        (sectionNote
+          ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
+          : '') +
         '<div class="dashboard-kpi-grid"></div>' +
         '<div class="dashboard-chart-grid"></div>'
       sections.appendChild(panel)
@@ -204,8 +208,25 @@
     return details.join(' · ')
   }
 
+  function scorecardStatus(definition, metrics) {
+    if (!definition.denominator || definition.format === 'average') return null
+    var source = metrics || currentMetrics
+    var denominator = DashboardMetricsConfig.numberAtPath(source, definition.denominator)
+    if (denominator <= 0) return null
+    var numerator = DashboardMetricsConfig.numberAtPath(source, definition.numerator)
+    var percentage = (numerator / denominator) * 100
+    if (percentage < 20) {
+      return { className: 'is-status-low', label: 'Below 20%' }
+    }
+    if (percentage <= 60) {
+      return { className: 'is-status-medium', label: '20–60%' }
+    }
+    return { className: 'is-status-high', label: 'Above 60%' }
+  }
+
   function renderKpi(definition) {
     var detail = detailText(definition)
+    var status = scorecardStatus(definition)
     var supplementalClass = definition.supplemental ? ' is-supplemental' : ''
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
@@ -214,7 +235,15 @@
       supplementalBadge +
       '<p class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</p>' +
       '<div class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</div>' +
-      (detail ? '<div class="dashboard-kpi-detail">' + detail + '</div>' : '') +
+      (detail
+        ? '<div class="dashboard-kpi-detail' +
+          (status ? ' has-status ' + status.className : '') + '">' + detail +
+          (status
+            ? ' <span class="dashboard-kpi-status" aria-label="Percentage range: ' +
+              escapeHtml(status.label) + '">' + escapeHtml(status.label) + '</span>'
+            : '') +
+          '</div>'
+        : '') +
       '<button class="dashboard-info-button" type="button" data-indicator-key="' +
       escapeHtml(definition.key) + '" aria-label="View calculation for ' +
       escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>' +
@@ -274,11 +303,10 @@
   }
 
   function chartCard(definition) {
-    var infoButton = definition.key === 'overview_service_comparison'
-      ? ''
-      : '<button class="dashboard-info-button dashboard-chart-info-button" type="button" data-indicator-key="' +
-        escapeHtml(definition.key) + '" aria-label="View calculation for ' +
-        escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>'
+    var infoButton =
+      '<button class="dashboard-info-button dashboard-chart-info-button" type="button" data-indicator-key="' +
+      escapeHtml(definition.key) + '" aria-label="View calculation for ' +
+      escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>'
     var supplementalClass = definition.supplemental ? ' is-supplemental' : ''
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
@@ -286,43 +314,23 @@
     return '<article class="dashboard-chart-card' + supplementalClass + '">' +
       supplementalBadge +
       '<h3 class="dashboard-chart-title">' + escapeHtml(definition.label) + '</h3>' +
+      (definition.helperText
+        ? '<p class="dashboard-chart-note">' + escapeHtml(definition.helperText) + '</p>'
+        : '') +
       infoButton +
       '<div id="' + chartId(definition) + '" class="dashboard-chart" role="img" aria-label="' +
       escapeHtml(definition.label) + ' chart"></div>' +
       '</article>'
   }
 
-  function overviewChartDefinition() {
-    return {
-      key: 'overview_service_comparison',
-      label: 'Service Headcount',
-      chart: 'bar',
-      detailMap: '__overview'
-    }
-  }
-
-  function overviewMap() {
-    return {
-      'Registered Mothers': number('registration.mothers'),
-      'Registered Babies': number('registration.babies'),
-      ANC: number('anc.clients'),
-      'High Risk': number('highRisk.clients'),
-      'Delivery Notes': number('delivery.actualNotes'),
-      PNC: number('pnc.clients'),
-      'NBC Clients': number('newborn.canonicalClients'),
-      Referral: number('referral.total'),
-      'Joint Care': number('jointCare.clients')
-    }
-  }
-
   function baseChartOptions(definition, entries) {
     var labels = entries.map(function (item) { return item[0] })
     var values = entries.map(function (item) { return item[1] })
     var donut = definition.chart === 'donut'
-    return {
+    var options = {
       chart: {
         type: donut ? 'donut' : 'bar',
-        height: 290,
+        height: 270,
         fontFamily: 'inherit',
         toolbar: { show: false },
         animations: {
@@ -331,30 +339,6 @@
         }
       },
       series: donut ? values : [{ name: definition.label, data: values }],
-      labels: donut ? labels : undefined,
-      xaxis: donut ? undefined : {
-        categories: labels,
-        labels: {
-          rotate: labels.length > 5 ? -35 : 0,
-          trim: true,
-          style: { colors: '#64748b', fontSize: '11px' }
-        }
-      },
-      yaxis: donut ? undefined : {
-        min: 0,
-        forceNiceScale: true,
-        labels: { formatter: function (value) { return Math.round(value).toLocaleString() } }
-      },
-      plotOptions: donut ? {
-        pie: { donut: { size: '62%' } }
-      } : {
-        bar: {
-          borderRadius: 6,
-          columnWidth: '54%',
-          horizontal: labels.some(function (label) { return label.length > 20 })
-        }
-      },
-      dataLabels: { enabled: donut, formatter: function (value) { return value.toFixed(1) + '%' } },
       colors: donut
         ? ['#047857', '#0f766e', '#2563eb', '#d97706', '#7c3aed', '#dc2626', '#0891b2']
         : ['#047857'],
@@ -371,17 +355,65 @@
       responsive: [{
         breakpoint: 480,
         options: {
-          chart: { height: 270 },
+          chart: { height: 250 },
           legend: { position: 'bottom' }
         }
       }]
     }
+
+    if (donut) {
+      options.labels = labels
+      options.plotOptions = {
+        pie: {
+          donut: {
+            size: '62%',
+            labels: {
+              show: true,
+              total: {
+                show: true,
+                label: 'Total',
+                formatter: function (context) {
+                  return context.globals.seriesTotals.reduce(function (total, value) {
+                    return total + Number(value || 0)
+                  }, 0).toLocaleString()
+                }
+              }
+            }
+          }
+        }
+      }
+      options.dataLabels = {
+        enabled: true,
+        formatter: function (value) { return value.toFixed(1) + '%' }
+      }
+      return options
+    }
+
+    options.xaxis = {
+      categories: labels,
+      labels: {
+        rotate: labels.length > 5 ? -35 : 0,
+        trim: true,
+        style: { colors: '#64748b', fontSize: '11px' }
+      }
+    }
+    options.yaxis = {
+      min: 0,
+      forceNiceScale: true,
+      labels: { formatter: function (value) { return Math.round(value).toLocaleString() } }
+    }
+    options.plotOptions = {
+      bar: {
+        borderRadius: 6,
+        columnWidth: '54%',
+        horizontal: labels.some(function (label) { return label.length > 20 })
+      }
+    }
+    options.dataLabels = { enabled: false }
+    return options
   }
 
   function chartEntries(definition) {
-    if (definition.detailMap === '__overview') {
-      return sortedMapEntries(overviewMap())
-    }
     return entriesForDefinition(definition, currentMetrics)
   }
 
@@ -546,7 +578,6 @@
         definition.detailMap ||
         definition.chartOnly
     })
-    if (section === 'Overview') charts.push(overviewChartDefinition())
     unobserveCharts(panel)
     panel.querySelector('.dashboard-kpi-grid').innerHTML = kpis.map(renderKpi).join('')
     panel.querySelector('.dashboard-chart-grid').innerHTML = charts.map(chartCard).join('')
@@ -589,6 +620,8 @@
     renderSection: renderSection,
     showDefinition: showDefinition,
     entriesForDefinition: entriesForDefinition,
-    emptyTextForDefinition: emptyTextForDefinition
+    emptyTextForDefinition: emptyTextForDefinition,
+    optionsForDefinition: baseChartOptions,
+    scorecardStatus: scorecardStatus
   })
 })(typeof window !== 'undefined' ? window : globalThis)

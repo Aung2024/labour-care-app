@@ -43,10 +43,13 @@ function linkedBabyIndex(patientId) {
   return match ? (parseInt(match[1], 10) || null) : null;
 }
 
-function withVisitSource(data, patientId) {
-  const babyIndex = linkedBabyIndex(patientId);
-  if (!babyIndex) return data || {};
-  return { ...(data || {}), _kmcSourceBabyIndex: babyIndex };
+function withVisitSource(data, patientId, explicitBabyIndex) {
+  const babyIndex = explicitBabyIndex || linkedBabyIndex(patientId);
+  return {
+    ...(data || {}),
+    _newbornSourcePatientId: patientId || '',
+    ...(babyIndex ? { _kmcSourceBabyIndex: babyIndex } : {})
+  };
 }
 
 function visitDateKey(data) {
@@ -81,35 +84,56 @@ function linkedVisitKey(data) {
   ].join('::');
 }
 
-async function readNewbornCare(db, patientId) {
+async function readNewbornCare(db, patientId, babyIndex) {
   const ref = db.collection('patients').doc(patientId).collection('newborn_care');
   try {
     const snap = await ref.orderBy('visit_number').get();
-    return snap.docs.map((doc) => withVisitSource(doc.data(), patientId));
+    return snap.docs.map((doc) =>
+      withVisitSource(doc.data(), patientId, babyIndex)
+    );
   } catch (error) {
     const snap = await ref.get();
-    return snap.docs.map((doc) => withVisitSource(doc.data(), patientId));
+    return snap.docs.map((doc) =>
+      withVisitSource(doc.data(), patientId, babyIndex)
+    );
   }
+}
+
+async function readImmediateNewbornCare(db, patientId, babyIndex) {
+  const ref = db.collection('patients').doc(patientId)
+    .collection('immediate_newborn_care');
+  const snap = await ref.get();
+  return snap.docs.map((doc) =>
+    withVisitSource(doc.data(), patientId, babyIndex)
+  );
 }
 
 async function mergeLinkedNewbornVisits(db, facts) {
   if (!db || !facts || !facts.id) return facts;
-  const extraIds = [];
+  const extraSources = [];
   const type = String((facts.newbornFacts && facts.newbornFacts.patientType) || '').toLowerCase();
   if (type === 'baby' && facts.newbornFacts.motherPatientId) {
-    extraIds.push(facts.newbornFacts.motherPatientId);
-  } else {
-    ((facts.newbornFacts && facts.newbornFacts.babyPatientIds) || []).forEach((id) => {
-      if (id && id !== facts.id) extraIds.push(id);
+    extraSources.push({
+      patientId: facts.newbornFacts.motherPatientId,
+      babyIndex: facts.newbornFacts.birthOrder || null
     });
-    extraIds.push(facts.id + '_baby_1');
-    extraIds.push(facts.id + '_baby_2');
+  } else {
+    ((facts.newbornFacts && facts.newbornFacts.babyPatientIds) || []).forEach((id, index) => {
+      if (id && id !== facts.id) {
+        extraSources.push({ patientId: id, babyIndex: index + 1 });
+      }
+    });
+    extraSources.push({ patientId: facts.id + '_baby_1', babyIndex: 1 });
+    extraSources.push({ patientId: facts.id + '_baby_2', babyIndex: 2 });
   }
-  const unique = Array.from(new Set(extraIds.filter((id) => id && id !== facts.id)));
+  const unique = Array.from(new Map(extraSources
+    .filter((source) => source.patientId && source.patientId !== facts.id)
+    .map((source) => [source.patientId, source])).values());
   if (!unique.length) return facts;
-  const extras = (await Promise.all(unique.map((id) => readNewbornCare(db, id).catch(() => []))))
+  const extras = (await Promise.all(unique.map((source) =>
+    readNewbornCare(db, source.patientId, source.babyIndex).catch(() => [])
+  )))
     .reduce((all, rows) => all.concat(rows), []);
-  if (!extras.length) return facts;
   const seen = new Set();
   const merged = [];
   const addVisit = (entry) => {
@@ -136,6 +160,29 @@ async function mergeLinkedNewbornVisits(db, facts) {
       Number(aData._kmcSourceBabyIndex || 0) - Number(bData._kmcSourceBabyIndex || 0);
   });
   facts.newbornVisits = merged;
+
+  const immediateExtras = (await Promise.all(unique.map((source) =>
+    readImmediateNewbornCare(
+      db,
+      source.patientId,
+      source.babyIndex
+    ).catch(() => [])
+  ))).reduce((all, rows) => all.concat(rows), []);
+  const immediateSeen = new Set();
+  const immediateMerged = [];
+  const addImmediate = (entry) => {
+    const data = unwrapVisit(entry);
+    const key = linkedVisitKey(data);
+    if (immediateSeen.has(key)) return;
+    immediateSeen.add(key);
+    immediateMerged.push(entry);
+  };
+  (facts.immediateNewbornCare || []).forEach(addImmediate);
+  immediateExtras.forEach((data, index) => addImmediate({
+    id: `linked-immediate-${index}`,
+    data
+  }));
+  facts.immediateNewbornCare = immediateMerged;
   return facts;
 }
 
@@ -167,9 +214,17 @@ function normalizeClinicalFacts(patientId, loaded) {
     endTreatment: entryRecord(activity.endTreatment, 'endTreatment'),
     outcomeRecord: entryRecord(activity.outcomeRecord, 'outcomeRecord'),
     deliveryNotes: entryRecord(activity.deliveryNotes, 'deliveryNotes'),
-    newbornVisits: collectionEntries(activity.newbornCare),
+    newbornVisits: collectionEntries(
+      (activity.newbornCare || []).map((record) =>
+        withVisitSource(record, patientId, loaded.patient.birth_order)
+      )
+    ),
     newbornCare: latestEntry(activity.newbornCare),
-    immediateNewbornCare: latestEntry(activity.immediateNewbornCare),
+    immediateNewbornCare: collectionEntries(
+      (activity.immediateNewbornCare || []).map((record) =>
+        withVisitSource(record, patientId, loaded.patient.birth_order)
+      )
+    ),
     hrtActions: collectionEntries(activity.hrtActions),
     kmcActions: collectionEntries(activity.kmcActions),
     scope: {
@@ -189,9 +244,14 @@ function normalizeClinicalFacts(patientId, loaded) {
       patientType: loaded.patient.patient_type || '',
       motherPatientId: loaded.patient.mother_patient_id || '',
       babyPatientIds: loaded.patient.baby_patient_ids || [],
+      birthOrder: Number(loaded.patient.birth_order || 0) || null,
       birthDate: loaded.patient.date_of_birth || loaded.patient.birth_time || null,
       birthWeightGram: loaded.patient.birth_weight_gram || null,
       maternalEdd: loaded.patient.maternal_edd || loaded.patient.edd || null,
+      gestationalAgeAtBirth:
+        loaded.patient.gestational_age_at_birth ||
+        loaded.patient.gestationalAgeAtBirth ||
+        null,
       outcome: loaded.patient.birth_outcome || null
     }
   };
@@ -204,6 +264,8 @@ module.exports = {
   loadClinicalFacts,
   mergeLinkedNewbornVisits,
   normalizeClinicalFacts,
+  readNewbornCare,
+  readImmediateNewbornCare,
   collectionEntries,
   entryRecord
 };

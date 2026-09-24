@@ -327,6 +327,12 @@ exports.startDashboardV31Reconciliation =
 exports.dashboardV31ReconciliationWorker =
   analyticsV31Functions.dashboardV31ReconciliationWorker;
 
+const analyticsV32Functions = require('./src/analytics/v32-functions');
+exports.startDashboardV32Reconciliation =
+  analyticsV32Functions.startDashboardV32Reconciliation;
+exports.dashboardV32ReconciliationWorker =
+  analyticsV32Functions.dashboardV32ReconciliationWorker;
+
 const jointCareIndexFunctions = require('./src/analytics/joint-care-index');
 exports.jointCareIndexRefreshWorker =
   jointCareIndexFunctions.jointCareIndexRefreshWorker;

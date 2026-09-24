@@ -151,14 +151,14 @@
         icon.classList.toggle('fa-chevron-up', expanded)
       }
     }
-    setFilterExpanded(global.innerWidth > 768)
+    setFilterExpanded(false)
     filterToggle.addEventListener('click', function () {
       setFilterExpanded(!filterPanel.classList.contains('is-expanded'))
     })
 
     element('dashboardFilterForm').addEventListener('submit', function (event) {
       event.preventDefault()
-      if (global.innerWidth <= 768) setFilterExpanded(false)
+      setFilterExpanded(false)
       loadDashboard()
     })
 

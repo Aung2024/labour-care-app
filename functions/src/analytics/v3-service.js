@@ -3,7 +3,8 @@
 const { FieldValue } = require('firebase-admin/firestore')
 const {
   ANALYTICS_V3_SCHEMA_VERSION,
-  ANALYTICS_V31_SCHEMA_VERSION
+  ANALYTICS_V31_SCHEMA_VERSION,
+  ANALYTICS_V32_SCHEMA_VERSION
 } = require('./v3-registry')
 const {
   emptyV3Metrics,
@@ -18,6 +19,8 @@ const CONTRIBUTION_COLLECTION_V3 = 'analytics_v3_contributions'
 const PERIOD_COLLECTION_V3 = 'analytics_v3_periods'
 const CONTRIBUTION_COLLECTION_V31 = 'analytics_v31_contributions'
 const PERIOD_COLLECTION_V31 = 'analytics_v31_periods'
+const CONTRIBUTION_COLLECTION_V32 = 'analytics_v32_contributions'
+const PERIOD_COLLECTION_V32 = 'analytics_v32_periods'
 
 const ANALYTICS_V3_CONTRACT = Object.freeze({
   schemaVersion: ANALYTICS_V3_SCHEMA_VERSION,
@@ -33,9 +36,25 @@ const ANALYTICS_V31_CONTRACT = Object.freeze({
   corrected: true
 })
 
-const analyticsContract = (value) => value && value.corrected
-  ? ANALYTICS_V31_CONTRACT
-  : ANALYTICS_V3_CONTRACT
+const ANALYTICS_V32_CONTRACT = Object.freeze({
+  schemaVersion: ANALYTICS_V32_SCHEMA_VERSION,
+  contributionCollection: CONTRIBUTION_COLLECTION_V32,
+  periodCollection: PERIOD_COLLECTION_V32,
+  corrected: true,
+  registeredBabyTruth: true
+})
+
+const analyticsContract = (value) => {
+  if (value && value.schemaVersion === ANALYTICS_V32_SCHEMA_VERSION) {
+    return ANALYTICS_V32_CONTRACT
+  }
+  if (value && value.schemaVersion === ANALYTICS_V31_SCHEMA_VERSION) {
+    return ANALYTICS_V31_CONTRACT
+  }
+  return value && value.corrected
+    ? ANALYTICS_V31_CONTRACT
+    : ANALYTICS_V3_CONTRACT
+}
 
 const clean = (value, fallback = 'unknown') => {
   const text = String(value || '').trim()
@@ -217,7 +236,10 @@ const buildContribution = (facts, periodKey, generation, contractValue) => {
   const metrics = calculateV3Metrics(
     facts,
     periodForKey(periodKey),
-    { corrected: contract.corrected }
+    {
+      corrected: contract.corrected,
+      registeredBabyTruth: contract.registeredBabyTruth
+    }
   )
   if (!hasNumericValue(metrics)) return null
   return {
@@ -338,13 +360,22 @@ const refreshPatientAnalyticsV31 = (db, facts, options) =>
     contract: ANALYTICS_V31_CONTRACT
   })
 
+const refreshPatientAnalyticsV32 = (db, facts, options) =>
+  refreshPatientAnalyticsV3(db, facts, {
+    ...(options || {}),
+    contract: ANALYTICS_V32_CONTRACT
+  })
+
 module.exports = {
   CONTRIBUTION_COLLECTION_V3,
   PERIOD_COLLECTION_V3,
   CONTRIBUTION_COLLECTION_V31,
   PERIOD_COLLECTION_V31,
+  CONTRIBUTION_COLLECTION_V32,
+  PERIOD_COLLECTION_V32,
   ANALYTICS_V3_CONTRACT,
   ANALYTICS_V31_CONTRACT,
+  ANALYTICS_V32_CONTRACT,
   analyticsContract,
   scopeDocIdV3,
   geographyDescriptors,
@@ -357,5 +388,6 @@ module.exports = {
   buildContribution,
   applyPatientPeriodContribution,
   refreshPatientAnalyticsV3,
-  refreshPatientAnalyticsV31
+  refreshPatientAnalyticsV31,
+  refreshPatientAnalyticsV32
 }
