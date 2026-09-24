@@ -14,6 +14,10 @@ const {
   shouldStartReconciliation,
   mapWithConcurrency
 } = require('../src/analytics/v3-functions')
+const {
+  RECONCILIATION_JOB_COLLECTION_V31,
+  shouldStartReconciliationV31
+} = require('../src/analytics/v31-functions')
 
 const queuedDoc = (id, patientId) => ({
   id,
@@ -84,4 +88,15 @@ test('reconciliation concurrency helper processes scalable chunks', async () => 
   assert.equal(results.length, 27)
   assert.equal(maximumActive, 10)
   assert.equal(results[26], 52)
+})
+
+test('v3.1 reconciliation uses an independent 48-hour generation', () => {
+  const now = Date.parse('2026-09-24T00:00:00Z')
+  assert.equal(RECONCILIATION_JOB_COLLECTION_V31, 'analytics_v31_jobs')
+  assert.equal(shouldStartReconciliationV31(null, now), true)
+  assert.equal(shouldStartReconciliationV31({ status: 'running' }, now), false)
+  assert.equal(shouldStartReconciliationV31({
+    status: 'complete',
+    lastCompletedAtMillis: now - RECONCILIATION_INTERVAL_MS
+  }, now), true)
 })

@@ -36,18 +36,59 @@ function visitNumberOf(data) {
   return Number((data && (data.visit_number || data.visitNumber)) || 0);
 }
 
-function visitHasFollowUpWeight(data) {
-  return !!(data && (data.current_weight_gram || data.currentWeightGram || data.visit_weight_gram));
+function linkedBabyIndex(patientId) {
+  const match = String(patientId || '').match(
+    /_baby_(?:(?:\d{8}|unknown)_)?(\d+)$/
+  );
+  return match ? (parseInt(match[1], 10) || null) : null;
+}
+
+function withVisitSource(data, patientId) {
+  const babyIndex = linkedBabyIndex(patientId);
+  if (!babyIndex) return data || {};
+  return { ...(data || {}), _kmcSourceBabyIndex: babyIndex };
+}
+
+function visitDateKey(data) {
+  const value = data && (
+    data.visitDate || data.visit_date || data.recordedAt || data.recorded_at ||
+    data.timestamp || data.createdAt || data.birth_time
+  );
+  if (!value) return '';
+  const date = value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : String(value);
+}
+
+function visitWeightKey(data) {
+  const babies = Array.isArray(data && data.babies) ? data.babies.map((baby) => [
+    baby.babyIndex || baby.baby_index || '',
+    baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram || '',
+    baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram || ''
+  ]) : [];
+  return JSON.stringify([
+    data && (data.current_weight_gram || data.currentWeightGram || data.visit_weight_gram || ''),
+    data && (data.body_weight_gram || data.birth_weight_gram || data.birthWeightGram || ''),
+    babies
+  ]);
+}
+
+function linkedVisitKey(data) {
+  return [
+    data && data._kmcSourceBabyIndex || '',
+    visitNumberOf(data) || '',
+    visitDateKey(data),
+    visitWeightKey(data)
+  ].join('::');
 }
 
 async function readNewbornCare(db, patientId) {
   const ref = db.collection('patients').doc(patientId).collection('newborn_care');
   try {
-    const snap = await ref.orderBy('visit_number').limit(20).get();
-    return snap.docs.map((doc) => doc.data() || {});
+    const snap = await ref.orderBy('visit_number').get();
+    return snap.docs.map((doc) => withVisitSource(doc.data(), patientId));
   } catch (error) {
-    const snap = await ref.limit(20).get();
-    return snap.docs.map((doc) => doc.data() || {});
+    const snap = await ref.get();
+    return snap.docs.map((doc) => withVisitSource(doc.data(), patientId));
   }
 }
 
@@ -69,24 +110,32 @@ async function mergeLinkedNewbornVisits(db, facts) {
   const extras = (await Promise.all(unique.map((id) => readNewbornCare(db, id).catch(() => []))))
     .reduce((all, rows) => all.concat(rows), []);
   if (!extras.length) return facts;
-  const byVisit = new Map();
-  (facts.newbornVisits || []).forEach((entry, index) => {
+  const seen = new Set();
+  const merged = [];
+  const addVisit = (entry) => {
     const data = unwrapVisit(entry);
-    const n = visitNumberOf(data) || (index + 1);
-    byVisit.set(n, entry);
+    const key = linkedVisitKey(data);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(entry);
+  };
+  (facts.newbornVisits || []).forEach(addVisit);
+  extras.forEach((data, index) => addVisit({
+    id: `linked-${index}`,
+    data
+  }));
+  merged.sort((a, b) => {
+    const aData = unwrapVisit(a);
+    const bData = unwrapVisit(b);
+    const aNumber = visitNumberOf(aData);
+    const bNumber = visitNumberOf(bData);
+    if (aNumber === 1 && bNumber !== 1) return -1;
+    if (bNumber === 1 && aNumber !== 1) return 1;
+    const dateDiff = visitDateKey(aData).localeCompare(visitDateKey(bData));
+    return dateDiff || aNumber - bNumber ||
+      Number(aData._kmcSourceBabyIndex || 0) - Number(bData._kmcSourceBabyIndex || 0);
   });
-  extras.forEach((data) => {
-    const n = visitNumberOf(data);
-    if (!n) return;
-    const current = byVisit.get(n);
-    const currentData = unwrapVisit(current);
-    if (!current || (visitHasFollowUpWeight(data) && !visitHasFollowUpWeight(currentData))) {
-      byVisit.set(n, { id: String(n), data });
-    }
-  });
-  facts.newbornVisits = Array.from(byVisit.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map((item) => item[1]);
+  facts.newbornVisits = merged;
   return facts;
 }
 

@@ -295,6 +295,139 @@
     return String(motherId || '') + '_baby_' + (parseInt(birthOrder, 10) || 1);
   }
 
+  function normalizedDateOnly(value) {
+    if (!value) return '';
+    var match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().slice(0, 10);
+  }
+
+  function canonicalBabyIdentity(motherId, baby, birthOrder, groupId) {
+    baby = baby || {};
+    var order = parseInt(
+      firstOf(baby.birth_order, baby.babyIndex, baby.baby_index, birthOrder),
+      10
+    ) || 1;
+    var birthDate = normalizedDateOnly(firstOf(
+      baby.date_of_birth,
+      baby.birthTime,
+      baby.birth_time,
+      baby.birthDate,
+      baby.birth_date
+    ));
+    var group = String(firstOf(
+      baby.birth_group_id,
+      baby.birthGroupId,
+      groupId
+    ) || '').trim();
+    var identity = [
+      String(motherId || '').trim(),
+      group || birthDate || 'unknown-date',
+      order
+    ].join('|');
+    return {
+      key: identity,
+      documentId: encodeURIComponent(identity),
+      motherId: String(motherId || '').trim(),
+      birthDate: birthDate,
+      birthGroupId: group,
+      birthOrder: order
+    };
+  }
+
+  function babyMatchesIdentity(data, identity) {
+    data = data || {};
+    if (!identity || !identity.motherId) return false;
+    var linkedMother = String(firstOf(
+      data.mother_patient_id,
+      data.motherPatientId
+    ) || '').trim();
+    if (linkedMother !== identity.motherId) return false;
+    var order = parseInt(firstOf(
+      data.birth_order,
+      data.babyIndex,
+      data.baby_index
+    ), 10) || 1;
+    if (order !== identity.birthOrder) return false;
+    var group = String(firstOf(
+      data.birth_group_id,
+      data.birthGroupId
+    ) || '').trim();
+    if (identity.birthGroupId && group) {
+      return group === identity.birthGroupId;
+    }
+    var date = normalizedDateOnly(firstOf(
+      data.date_of_birth,
+      data.birth_time,
+      data.birthTime,
+      data.birthDate
+    ));
+    return Boolean(identity.birthDate && date === identity.birthDate);
+  }
+
+  async function findMatchingBabyPatient(db, motherId, baby, birthOrder, groupId) {
+    if (!db || !motherId) return null;
+    var identity = canonicalBabyIdentity(motherId, baby, birthOrder, groupId);
+    var identityRef = db.collection('newborn_identity_keys').doc(identity.documentId);
+    try {
+      var identitySnapshot = await identityRef.get();
+      if (identitySnapshot.exists) {
+        var mappedId = String(identitySnapshot.data().babyPatientId || '');
+        if (mappedId) {
+          var mapped = await db.collection('patients').doc(mappedId).get();
+          if (mapped.exists) return { id: mapped.id, data: mapped.data(), identity: identity };
+        }
+      }
+    } catch (identityError) {
+      console.warn('Baby identity lookup failed:', identityError);
+    }
+
+    var deterministicId = babyDocId(motherId, identity.birthOrder);
+    var deterministic = await db.collection('patients').doc(deterministicId).get();
+    if (deterministic.exists &&
+        babyMatchesIdentity(deterministic.data(), identity)) {
+      return {
+        id: deterministic.id,
+        data: deterministic.data(),
+        identity: identity
+      };
+    }
+
+    var candidates = await db.collection('patients')
+      .where('mother_patient_id', '==', motherId)
+      .limit(20)
+      .get();
+    var match = candidates.docs.find(function (doc) {
+      return babyMatchesIdentity(doc.data() || {}, identity);
+    });
+    return match
+      ? { id: match.id, data: match.data(), identity: identity }
+      : null;
+  }
+
+  async function reserveBabyIdentity(db, identity, babyPatientId) {
+    var ref = db.collection('newborn_identity_keys').doc(identity.documentId);
+    return db.runTransaction(async function (transaction) {
+      var snapshot = await transaction.get(ref);
+      if (snapshot.exists && snapshot.data().babyPatientId) {
+        return String(snapshot.data().babyPatientId);
+      }
+      transaction.set(ref, {
+        identityKey: identity.key,
+        motherPatientId: identity.motherId,
+        birthDate: identity.birthDate || null,
+        birthGroupId: identity.birthGroupId || null,
+        birthOrder: identity.birthOrder,
+        babyPatientId: String(babyPatientId),
+        createdAt: nowServer(),
+        updatedAt: nowServer()
+      }, { merge: false });
+      return String(babyPatientId);
+    });
+  }
+
   function babyUniqueIdFromMother(mother, birthOrder) {
     mother = mother || {};
     var order = parseInt(birthOrder, 10) || 1;
@@ -341,11 +474,39 @@
     var groupId = birthGroupId(motherId, { deliveryDetails: { babies: babies } });
     var ancContext = await fetchLatestAncContext(db, motherId);
     var ids = [];
-    var batch = db.batch();
 
     for (var i = 0; i < babies.length; i++) {
       var birthOrder = parseInt(babies[i].babyIndex, 10) || (i + 1);
-      var babyId = babyDocId(motherId, birthOrder);
+      var identity = canonicalBabyIdentity(
+        motherId,
+        babies[i],
+        birthOrder,
+        groupId
+      );
+      var matching = await findMatchingBabyPatient(
+        db,
+        motherId,
+        babies[i],
+        birthOrder,
+        groupId
+      );
+      var proposedId = matching && matching.id;
+      if (!proposedId) {
+        var legacyId = babyDocId(motherId, birthOrder);
+        var legacySnapshot = await db.collection('patients').doc(legacyId).get();
+        if (!legacySnapshot.exists ||
+            babyMatchesIdentity(legacySnapshot.data(), identity)) {
+          proposedId = legacyId;
+        } else {
+          proposedId = [
+            String(motherId),
+            'baby',
+            identity.birthDate.replace(/-/g, '') || 'unknown',
+            identity.birthOrder
+          ].join('_');
+        }
+      }
+      var babyId = await reserveBabyIdentity(db, identity, proposedId);
       var babyRef = db.collection('patients').doc(babyId);
       var existing = await babyRef.get();
       var payload = babyPayload(motherId, mother, babies[i], birthOrder, groupId, ancContext, userId, totalBabies);
@@ -356,6 +517,9 @@
           delete payload.created_by;
           delete payload.createdBy;
         }
+        if (existingData.patient_unique_id || existingData.patientUniqueId) {
+          delete payload.patient_unique_id;
+        }
         if (userId && firebase.firestore.FieldValue) {
           payload.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
         }
@@ -363,21 +527,20 @@
         payload.created_at = nowServer();
         payload.createdAt = nowServer();
       }
-      batch.set(babyRef, payload, { merge: true });
+      await babyRef.set(payload, { merge: true });
       ids.push(babyId);
     }
 
     var motherUpdate = {
       patient_type: PATIENT_TYPE_MOTHER,
-      baby_patient_ids: ids,
+      baby_patient_ids: firebase.firestore.FieldValue.arrayUnion.apply(null, ids),
       updated_at: nowServer(),
       updated_by: userId || null
     };
     if (userId) {
       motherUpdate.care_team_midwife_ids = firebase.firestore.FieldValue.arrayUnion(userId);
     }
-    batch.set(motherRef, motherUpdate, { merge: true });
-    await batch.commit();
+    await motherRef.set(motherUpdate, { merge: true });
     return ids;
   }
 
@@ -513,6 +676,92 @@
     return results;
   }
 
+  function babyCandidateRichness(data) {
+    return [
+      'patient_unique_id', 'birth_group_id', 'date_of_birth',
+      'birth_time', 'birth_weight_gram', 'sex', 'gender',
+      'hasConsent', 'linked_from_delivery_notes'
+    ].reduce(function (score, key) {
+      return score + (data && data[key] != null && data[key] !== '' ? 1 : 0);
+    }, 0);
+  }
+
+  function duplicateBabyCandidateGroups(entries) {
+    var groups = {};
+    (entries || []).forEach(function (entry) {
+      var data = entry.data || {};
+      var motherId = String(firstOf(
+        data.mother_patient_id,
+        data.motherPatientId
+      ) || '').trim();
+      if (!motherId) return;
+      var identity = canonicalBabyIdentity(
+        motherId,
+        data,
+        data.birth_order || data.babyIndex || data.baby_index,
+        data.birth_group_id || data.birthGroupId
+      );
+      if (!groups[identity.key]) groups[identity.key] = [];
+      groups[identity.key].push({
+        id: entry.id,
+        data: data,
+        richness: babyCandidateRichness(data)
+      });
+    });
+    return Object.keys(groups).map(function (key) {
+      var candidates = groups[key];
+      candidates.sort(function (left, right) {
+        var leftDeterministic = /_baby_\d+$/.test(left.id) ? 1 : 0;
+        var rightDeterministic = /_baby_\d+$/.test(right.id) ? 1 : 0;
+        return rightDeterministic - leftDeterministic ||
+          right.richness - left.richness ||
+          left.id.localeCompare(right.id);
+      });
+      return {
+        identityKey: key,
+        canonicalPatientId: candidates[0].id,
+        candidatePatientIds: candidates.map(function (candidate) {
+          return candidate.id;
+        }),
+        duplicateCount: candidates.length - 1
+      };
+    }).filter(function (group) {
+      return group.duplicateCount > 0;
+    });
+  }
+
+  async function deduplicateBabyPatients(options) {
+    options = options || {};
+    if (!global.firebase) throw new Error('Firebase is required');
+    var db = firebase.firestore();
+    var limit = Math.max(1, Math.min(500, parseInt(options.limit, 10) || 50));
+    var query = db.collection('patients');
+    if (options.motherId) {
+      query = query.where('mother_patient_id', '==', String(options.motherId));
+    } else {
+      query = query.where('patient_type', '==', PATIENT_TYPE_BABY);
+    }
+    var snapshot = await query.limit(limit).get();
+    var entries = snapshot.docs.map(function (doc) {
+      return { id: doc.id, data: doc.data() || {} };
+    });
+    var groups = duplicateBabyCandidateGroups(entries);
+    return {
+      reviewOnly: true,
+      dryRun: true,
+      writeBlocked: options.dryRun === false,
+      scannedBabyRecords: entries.length,
+      duplicateGroups: groups.length,
+      excessRecords: groups.reduce(function (total, group) {
+        return total + group.duplicateCount;
+      }, 0),
+      groups: groups,
+      message: options.dryRun === false
+        ? 'No records were changed. Clinical duplicate merges require supervised review.'
+        : 'Review candidate groups before any supervised merge.'
+    };
+  }
+
   global.BabyPatientUtils = {
     PATIENT_TYPE_MOTHER: PATIENT_TYPE_MOTHER,
     PATIENT_TYPE_BABY: PATIENT_TYPE_BABY,
@@ -521,9 +770,15 @@
     isMotherPatient: isMotherPatient,
     babyDisplayName: babyDisplayName,
     generateBabyPatientUniqueId: generateBabyPatientUniqueId,
+    canonicalBabyIdentity: canonicalBabyIdentity,
+    babyMatchesIdentity: babyMatchesIdentity,
+    findMatchingBabyPatient: findMatchingBabyPatient,
+    reserveBabyIdentity: reserveBabyIdentity,
     createOrUpdateBabiesFromDeliveryNotes: createOrUpdateBabiesFromDeliveryNotes,
     copyLegacyBabyCareToBabyPatients: copyLegacyBabyCareToBabyPatients,
     backfillExistingBabyPatients: backfillExistingBabyPatients,
+    duplicateBabyCandidateGroups: duplicateBabyCandidateGroups,
+    deduplicateBabyPatients: deduplicateBabyPatients,
     dateFromBirthTime: dateFromBirthTime,
     ageInYears: ageInYears,
     formatBabyAgeDisplay: formatBabyAgeDisplay,

@@ -184,6 +184,20 @@ service cloud.firestore {
     match /patient_counters/{counterId} {
       allow read, write: if request.auth != null;
     }
+
+    // Idempotency keys prevent manual registration and Delivery Notes from
+    // creating two patient documents for the same linked birth.
+    match /newborn_identity_keys/{identityId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.motherPatientId is string
+        && request.resource.data.babyPatientId is string;
+      allow update: if signedIn()
+        && request.resource.data.motherPatientId == resource.data.motherPatientId
+        && request.resource.data.birthOrder == resource.data.birthOrder
+        && request.resource.data.babyPatientId is string;
+      allow delete: if false;
+    }
     
     // Patients collection
     // Mother and baby patients both live here. Baby records use
@@ -511,6 +525,30 @@ service cloud.firestore {
     }
 
     match /analytics_v3_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    // Analytics V3.1 is rebuilt in parallel and cut over only after its
+    // deterministic patient contributions reconcile with the raw audit.
+    match /analytics_v31_periods/{period} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /scopes/{scopeId} {
+        allow read: if canReadAnalyticsScope();
+        allow write: if false;
+      }
+    }
+
+    match /analytics_v31_contributions/{contributionId} {
+      allow read, write: if false;
+    }
+
+    match /analytics_v31_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /joint_care_patient_index/{patientId} {
       allow read, write: if false;
     }
 

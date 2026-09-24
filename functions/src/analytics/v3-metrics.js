@@ -16,9 +16,23 @@ const {
 } = require('./metrics')
 
 const DAY_MS = 86400000
+const KMC_WEIGHT_GRAM = 2000
+const PRETERM_DAYS_BEFORE_EDD = 21
 
 const emptyV3Metrics = () => ({
-  registration: { total: 0, new: 0, old: 0, mothers: 0 },
+  registration: {
+    total: 0,
+    new: 0,
+    old: 0,
+    mothers: 0,
+    babies: 0,
+    ageGroups: {
+      'Under 18': 0,
+      '18 to 35': 0,
+      'Over 35': 0,
+      Unknown: 0
+    }
+  },
   anc: {
     clients: 0, new: 0, old: 0, services: 0, atLeast4: 0, atLeast8: 0,
     early: 0, ironFolate: 0, vitaminB1: 0, deworming: 0, gbv: 0,
@@ -28,12 +42,15 @@ const emptyV3Metrics = () => ({
   delivery: {
     completedNotes: 0, homeSkilled: 0, institutionalSkilled: 0,
     uterotonic: 0, lcgUsed: 0, modes: {}, places: {},
-    maternalOutcomes: {}, newbornOutcomes: {}
+    maternalOutcomes: {}, newbornOutcomes: {},
+    actualNotes: 0, legacyDerived: 0, babiesInNotes: 0
   },
   newborn: {
     clients: 0, new: 0, old: 0, births: 0, liveBirths: 0,
     earlyBreastfeeding: 0, birthWeightMeasured: 0, lowBirthWeight: 0,
-    careWithin2Days: 0, kmcEligible: 0, kmcReceived: 0
+    careWithin2Days: 0, kmcEligible: 0, kmcReceived: 0,
+    canonicalClients: 0, canonicalBabies: 0, kmcYes: 0,
+    preterm: 0, under2Kg: 0, pretermAndUnder2Kg: 0
   },
   pnc: {
     clients: 0, new: 0, old: 0, visits: 0, atLeast4: 0,
@@ -174,7 +191,8 @@ const deliveryFacts = (facts) => {
       maternalOutcome: normalizeOutcome(
         details.maternalCondition || details.maternal_condition
       ) || 'unknown',
-      babies: babies.map((baby) => ({
+      babies: babies.map((baby, index) => ({
+        babyIndex: numeric(baby.babyIndex || baby.baby_index) || index + 1,
         outcome: normalizeOutcome(baby.outcome) || 'unknown',
         weightGram: numeric(
           baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram
@@ -212,7 +230,8 @@ const deliveryFacts = (facts) => {
     maternalOutcome: normalizeOutcome(
       newborn.maternal_condition || birth.maternalOutcome
     ) || 'unknown',
-    babies: babies.map((baby) => ({
+    babies: babies.map((baby, index) => ({
+      babyIndex: numeric(baby.babyIndex || baby.baby_index) || index + 1,
       outcome: normalizeOutcome(baby.outcome || baby.baby_outcome ||
         birth.newbornOutcome) || 'unknown',
       weightGram: numeric(
@@ -289,6 +308,124 @@ const isMother = (profile) => {
   return !age || age >= 12
 }
 
+const maternalAgeGroup = (profile) => {
+  const age = Number.parseInt(profile && profile.age, 10)
+  if (!Number.isFinite(age) || age <= 0 || age >= 120) return 'Unknown'
+  if (age < 18) return 'Under 18'
+  if (age <= 35) return '18 to 35'
+  return 'Over 35'
+}
+
+const canonicalNewbornOwner = (facts) => {
+  const newbornFacts = facts && facts.newbornFacts || {}
+  return String(
+    newbornFacts.canonicalOwnerId ||
+    newbornFacts.motherPatientId ||
+    facts && facts.id ||
+    ''
+  )
+}
+
+const isCanonicalNewbornOwner = (facts) =>
+  Boolean(facts && facts.id && canonicalNewbornOwner(facts) === String(facts.id))
+
+const babyIndexOf = (baby, fallback) =>
+  numeric(baby && (baby.babyIndex || baby.baby_index)) || fallback || 1
+
+const canonicalNewbornBabies = (facts, delivery) => {
+  const byIndex = new Map()
+  const merge = (baby, fallbackIndex, base) => {
+    const index = babyIndexOf(baby, fallbackIndex)
+    const previous = byIndex.get(index) || {}
+    byIndex.set(index, {
+      ...previous,
+      ...(base || {}),
+      ...(baby || {}),
+      babyIndex: index
+    })
+  }
+  sortedRecords(facts && facts.newbornVisits || [], [
+    'visitDate', 'visit_date', 'timestamp', 'createdAt'
+  ]).forEach((visit) => {
+    if (Array.isArray(visit.babies) && visit.babies.length) {
+      visit.babies.forEach((baby, index) => merge(baby, index + 1, visit))
+    } else {
+      merge(visit, babyIndexOf(visit, 1))
+    }
+    if (Array.isArray(visit.kmc_babies)) {
+      visit.kmc_babies.forEach((baby, index) => merge(baby, index + 1))
+    }
+  })
+  return Array.from(byIndex.values()).sort((left, right) =>
+    left.babyIndex - right.babyIndex
+  )
+}
+
+const effectiveEdd = (facts) => {
+  const profile = facts && facts.profile || {}
+  const visits = sortedRecords(facts && facts.antenatalVisits || [], [
+    'visitDate', 'visit_date', 'recordedAt', 'timestamp', 'createdAt'
+  ])
+  const latest = visits[visits.length - 1] || {}
+  return firstDate(profile, [
+    'edd', 'EDD', 'maternal_edd', 'manualEdd', 'manual_edd'
+  ]) || firstDate(latest, ['edd', 'EDD', 'manualEdd', 'manual_edd'])
+}
+
+const babyBirthDate = (baby, delivery) =>
+  firstDate(baby || {}, [
+    'birthTime', 'birth_time', 'birthDate', 'birth_date', 'date_of_birth'
+  ]) || delivery && delivery.date || null
+
+const babyGestationalWeek = (baby) => {
+  const week = numeric(baby && (
+    baby.gestationalWeek || baby.gestational_week ||
+    baby.gestationalAge || baby.gestational_age
+  ))
+  return week > 0 ? week : null
+}
+
+const kmcEligibility = (facts, baby, delivery) => {
+  const weight = birthWeightForBaby({
+    weightGram: baby && (
+      baby.weightGram || baby.birthWeightGram ||
+      baby.birth_weight_gram || baby.body_weight_gram
+    )
+  })
+  const birth = babyBirthDate(baby, delivery)
+  const edd = effectiveEdd(facts)
+  const gestationalWeek = babyGestationalWeek(baby)
+  const under2Kg = Boolean(weight && weight < KMC_WEIGHT_GRAM)
+  const pretermByWeek = Boolean(gestationalWeek && gestationalWeek < 37)
+  const pretermByEdd = Boolean(
+    birth && edd &&
+    Math.floor((edd.getTime() - birth.getTime()) / DAY_MS) >=
+      PRETERM_DAYS_BEFORE_EDD
+  )
+  return {
+    under2Kg,
+    preterm: pretermByWeek || pretermByEdd
+  }
+}
+
+const kmcYesForBaby = (facts, babyIndex, period) => sortedRecords(
+  facts.newbornVisits || [],
+  ['visitDate', 'visit_date', 'timestamp', 'createdAt']
+).some((visit) => {
+  const visitDate = recordDate(visit, [
+    'visitDate', 'visit_date', 'timestamp', 'createdAt'
+  ])
+  if (period.key !== 'all' && (!visitDate || !isDateInPeriod(visitDate, period))) {
+    return false
+  }
+  if (Array.isArray(visit.kmc_babies)) {
+    const baby = visit.kmc_babies.find((item, index) =>
+      babyIndexOf(item, index + 1) === babyIndex)
+    return baby && affirmative(baby.kmc_selected ?? baby.kmcSelected)
+  }
+  return babyIndex === 1 && affirmative(visit.kmc_selected ?? visit.kmcSelected)
+})
+
 const newbornCareWithinDays = (facts, birthDate, days) => {
   if (!birthDate) return false
   return sortedRecords(facts.newbornVisits || [], [
@@ -323,10 +460,11 @@ const kmcReceivedForBaby = (facts, babyIndex) => sortedRecords(
   return babyIndex === 1 && String(visit.kmc_selected || '').toLowerCase() === 'yes'
 })
 
-const calculateV3Metrics = (facts, periodDescriptor) => {
+const calculateV3Metrics = (facts, periodDescriptor, options) => {
   const metrics = emptyV3Metrics()
   if (!facts || !facts.id) return metrics
   const period = normalizePeriod(periodDescriptor)
+  const corrected = Boolean(options && options.corrected)
   const profile = facts.profile || facts.registration || {}
   const registrationDate = firstDate(profile, [
     'createdAt', 'created_at', 'registrationDate', 'registration_date', 'timestamp'
@@ -343,12 +481,26 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
   const delivery = deliveryFacts(facts)
   const deliveryInPeriod = delivery.completed && delivery.date &&
     isDateInPeriod(delivery.date, period)
+  const actualNotePresent = delivery.completed && delivery.source === 'delivery_notes'
+  const actualNoteInPeriod = actualNotePresent && (
+    period.key === 'all' ||
+    (delivery.date && isDateInPeriod(delivery.date, period))
+  )
+  const legacyDeliveryInPeriod = delivery.completed &&
+    delivery.source === 'legacy_fallback' && (
+      period.key === 'all' ||
+      (delivery.date && isDateInPeriod(delivery.date, period))
+    )
+  const countedDeliveryInPeriod = corrected
+    ? actualNoteInPeriod && isCanonicalNewbornOwner(facts)
+    : deliveryInPeriod
   const referral = unwrap(facts.transferRecord) || null
   const referralDate = referral && firstDate(referral, [
     'referralTime', 'transferDate', 'timestamp', 'createdAt', 'recordedAt'
   ])
   const referralInPeriod = referralDate && isDateInPeriod(referralDate, period)
   const anyActivity = Boolean(
+    (corrected && period.key === 'all') ||
     (registrationDate && isDateInPeriod(registrationDate, period)) ||
     anc.length || pnc.length || newbornVisits.length || deliveryInPeriod || referralInPeriod
   )
@@ -357,7 +509,12 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
     metrics.registration.total = 1
     metrics.registration[registrationDate && isDateInPeriod(registrationDate, period)
       ? 'new' : 'old'] = 1
-    if (isMother(profile)) metrics.registration.mothers = 1
+    if (isMother(profile)) {
+      metrics.registration.mothers = 1
+      if (corrected) bump(metrics.registration.ageGroups, maternalAgeGroup(profile))
+    } else if (corrected) {
+      metrics.registration.babies = 1
+    }
   }
 
   if (anc.length) {
@@ -398,7 +555,11 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
       metrics.highRisk.clients = 1
       const factors = new Set()
       allRiskVisits.forEach((visit) => {
-        ;(visit.risk_factors || visit.riskFactors || []).forEach((factor) => {
+        const rawFactors = visit.risk_factors || visit.riskFactors || []
+        const factorList = Array.isArray(rawFactors)
+          ? rawFactors
+          : String(rawFactors).split(',').map((factor) => factor.trim())
+        factorList.forEach((factor) => {
           const value = String(factor || '').trim()
           if (value) factors.add(value)
         })
@@ -424,7 +585,16 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
     if (hivResults.includes('positive')) metrics.anc.pmtctReactive = 1
   }
 
-  if (deliveryInPeriod) {
+  if (corrected) {
+    if (actualNoteInPeriod) {
+      metrics.delivery.actualNotes = 1
+      metrics.delivery.babiesInNotes = delivery.babies.length
+    } else if (legacyDeliveryInPeriod) {
+      metrics.delivery.legacyDerived = 1
+    }
+  }
+
+  if (countedDeliveryInPeriod) {
     metrics.delivery.completedNotes = 1
     const skilled = ['skilled_birth_attendant', 'amw'].includes(delivery.provider)
     if (skilled && delivery.place === 'Home') metrics.delivery.homeSkilled = 1
@@ -472,18 +642,45 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
       if (newbornCareWithinDays(facts, baby.birthDate || delivery.date, 2)) {
         metrics.newborn.careWithin2Days += 1
       }
-      const weight = birthWeightForBaby(baby)
-      const eligible = (weight && weight < 2000) ||
-        (baby.gestationalWeek && baby.gestationalWeek < 37)
-      if (eligible) {
-        metrics.newborn.kmcEligible += 1
-        if (kmcReceivedForBaby(facts, index + 1)) metrics.newborn.kmcReceived += 1
+      if (!corrected) {
+        const weight = birthWeightForBaby(baby)
+        const eligible = (weight && weight < 2000) ||
+          (baby.gestationalWeek && baby.gestationalWeek < 37)
+        if (eligible) {
+          metrics.newborn.kmcEligible += 1
+          if (kmcReceivedForBaby(facts, index + 1)) metrics.newborn.kmcReceived += 1
+        }
       }
     })
   }
 
-  if (newbornVisits.length) {
+  if (corrected && isCanonicalNewbornOwner(facts)) {
+    const babies = canonicalNewbornBabies(facts, delivery)
+    babies.forEach((baby) => {
+      const birth = babyBirthDate(baby, delivery)
+      const birthInPeriod = period.key === 'all' ||
+        (birth && isDateInPeriod(birth, period))
+      const eligibility = kmcEligibility(facts, baby, delivery)
+      const kmcYes = kmcYesForBaby(facts, baby.babyIndex, period)
+      if (birthInPeriod) {
+        metrics.newborn.canonicalBabies += 1
+        if (eligibility.preterm) metrics.newborn.preterm += 1
+        if (eligibility.under2Kg) metrics.newborn.under2Kg += 1
+        if (eligibility.preterm && eligibility.under2Kg) {
+          metrics.newborn.pretermAndUnder2Kg += 1
+        }
+        if (eligibility.preterm || eligibility.under2Kg) {
+          metrics.newborn.kmcEligible += 1
+          if (kmcYes) metrics.newborn.kmcReceived += 1
+        }
+      }
+      if (kmcYes) metrics.newborn.kmcYes += 1
+    })
+  }
+
+  if (newbornVisits.length && (!corrected || isCanonicalNewbornOwner(facts))) {
     metrics.newborn.clients = 1
+    if (corrected) metrics.newborn.canonicalClients = 1
     metrics.newborn[firstServiceClassification(
       allNewborn, newbornVisits, newbornFields, period
     )] = 1
@@ -526,7 +723,13 @@ const calculateV3Metrics = (facts, periodDescriptor) => {
   const jointCareIds = Array.isArray(facts.scope && facts.scope.careTeamProviderIds)
     ? facts.scope.careTeamProviderIds.filter(Boolean)
     : []
-  if (jointCareIds.length && anyActivity) {
+  const activeJointCareIds = Array.isArray(
+    facts.jointCareFacts && facts.jointCareFacts.activeProviderIds
+  ) ? facts.jointCareFacts.activeProviderIds.filter(Boolean) : []
+  const hasJointCare = corrected
+    ? activeJointCareIds.length > 0
+    : jointCareIds.length > 0
+  if (hasJointCare && anyActivity) {
     metrics.jointCare.clients = 1
     if (anc.length) bump(metrics.jointCare.byStatus, 'ANC')
     if (deliveryInPeriod) bump(metrics.jointCare.byStatus, 'Delivery')
@@ -632,6 +835,10 @@ module.exports = {
   normalizeBirthProvider,
   normalizeDeliveryMode,
   deliveryFacts,
+  maternalAgeGroup,
+  canonicalNewbornOwner,
+  canonicalNewbornBabies,
+  kmcEligibility,
   referralDestination,
   calculateV3Metrics,
   reportingPeriodsForFacts,

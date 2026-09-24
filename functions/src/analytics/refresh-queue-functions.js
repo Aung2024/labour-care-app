@@ -28,7 +28,13 @@ const {
   projectionScopeWithProvider,
   projectionHash
 } = require('./tracking-repository')
-const { refreshPatientAnalyticsV3 } = require('./v3-service')
+const {
+  refreshPatientAnalyticsV3,
+  refreshPatientAnalyticsV31
+} = require('./v3-service')
+const {
+  JOINT_CARE_INDEX_COLLECTION
+} = require('./joint-care-index')
 
 const REGION = 'us-central1'
 const UNIFIED_QUEUE = 'clinical_refresh_v1_queue'
@@ -162,6 +168,19 @@ const deletePatientProjections = async (db, patientId) => {
 const normalizeLoadedClinicalFacts = async (db, patientId, loaded) => {
   let facts = normalizeClinicalFacts(patientId, loaded)
   if (facts) facts = await mergeLinkedNewbornVisits(db, facts)
+  if (facts) {
+    const jointCareSnapshot = await db.collection(JOINT_CARE_INDEX_COLLECTION)
+      .doc(patientId)
+      .get()
+    const activeProviderIds = jointCareSnapshot.exists
+      ? jointCareSnapshot.get('activeProviderIds') || []
+      : []
+    facts.jointCareFacts = {
+      activeProviderIds: Array.from(new Set(activeProviderIds.filter(Boolean)))
+    }
+    facts.scope.activeJointCareProviderIds =
+      facts.jointCareFacts.activeProviderIds
+  }
   if (facts && facts.scope && facts.scope.providerId) {
     const provider = await loadProvider(db, facts.scope.providerId)
     facts.scope = projectionScopeWithProvider(facts.scope, provider)
@@ -219,6 +238,10 @@ const refreshLoadedClinicalProducts = async (
     patientId,
     generation: options && options.generation || 'live'
   })
+  await refreshPatientAnalyticsV31(db, facts, {
+    patientId,
+    generation: options && options.generation || 'live'
+  })
   return {
     patientId,
     periods: Array.from(periods),
@@ -235,6 +258,20 @@ const refreshPatientAnalyticsV3Only = async (
   const loaded = await loadPatientActivity(db, patientId)
   const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
   return refreshPatientAnalyticsV3(db, facts, {
+    patientId,
+    generation: options && options.generation || 'reconciliation'
+  })
+}
+
+const refreshPatientAnalyticsV31Only = async (
+  database,
+  patientId,
+  options
+) => {
+  const db = database || admin.firestore()
+  const loaded = await loadPatientActivity(db, patientId)
+  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
+  return refreshPatientAnalyticsV31(db, facts, {
     patientId,
     generation: options && options.generation || 'reconciliation'
   })
@@ -340,6 +377,7 @@ module.exports = {
   normalizeLoadedClinicalFacts,
   refreshLoadedClinicalProducts,
   refreshPatientAnalyticsV3Only,
+  refreshPatientAnalyticsV31Only,
   refreshClinicalPatient,
   processUnifiedRefreshQueue,
   processTrackingRefreshBatch,

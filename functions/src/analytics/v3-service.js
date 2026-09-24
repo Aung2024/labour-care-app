@@ -1,7 +1,10 @@
 'use strict'
 
 const { FieldValue } = require('firebase-admin/firestore')
-const { ANALYTICS_V3_SCHEMA_VERSION } = require('./v3-registry')
+const {
+  ANALYTICS_V3_SCHEMA_VERSION,
+  ANALYTICS_V31_SCHEMA_VERSION
+} = require('./v3-registry')
 const {
   emptyV3Metrics,
   calculateV3Metrics,
@@ -13,6 +16,26 @@ const { periodForKey } = require('./metrics')
 
 const CONTRIBUTION_COLLECTION_V3 = 'analytics_v3_contributions'
 const PERIOD_COLLECTION_V3 = 'analytics_v3_periods'
+const CONTRIBUTION_COLLECTION_V31 = 'analytics_v31_contributions'
+const PERIOD_COLLECTION_V31 = 'analytics_v31_periods'
+
+const ANALYTICS_V3_CONTRACT = Object.freeze({
+  schemaVersion: ANALYTICS_V3_SCHEMA_VERSION,
+  contributionCollection: CONTRIBUTION_COLLECTION_V3,
+  periodCollection: PERIOD_COLLECTION_V3,
+  corrected: false
+})
+
+const ANALYTICS_V31_CONTRACT = Object.freeze({
+  schemaVersion: ANALYTICS_V31_SCHEMA_VERSION,
+  contributionCollection: CONTRIBUTION_COLLECTION_V31,
+  periodCollection: PERIOD_COLLECTION_V31,
+  corrected: true
+})
+
+const analyticsContract = (value) => value && value.corrected
+  ? ANALYTICS_V31_CONTRACT
+  : ANALYTICS_V3_CONTRACT
 
 const clean = (value, fallback = 'unknown') => {
   const text = String(value || '').trim()
@@ -28,7 +51,7 @@ const scopeDocIdV3 = (descriptor) => {
   return encodeURIComponent(parts.join('|'))
 }
 
-const geographyDescriptors = (facts) => {
+const geographyDescriptors = (facts, contractValue) => {
   const scope = facts && facts.scope || {}
   const result = [{
     geographyType: 'national',
@@ -69,9 +92,13 @@ const geographyDescriptors = (facts) => {
       providerId: ''
     })
   }
+  const contract = analyticsContract(contractValue)
+  const sharedProviderIds = contract.corrected
+    ? (scope.activeJointCareProviderIds || [])
+    : (scope.careTeamProviderIds || [])
   const providerIds = Array.from(new Set([
     scope.providerId,
-    ...(Array.isArray(scope.careTeamProviderIds) ? scope.careTeamProviderIds : [])
+    ...(Array.isArray(sharedProviderIds) ? sharedProviderIds : [])
   ].filter(Boolean)))
   providerIds.forEach((providerId) => {
     result.push({
@@ -94,7 +121,7 @@ const geographyDescriptors = (facts) => {
   }))
 }
 
-const scopeDescriptorsV3 = (facts) => {
+const scopeDescriptorsV3 = (facts, contractValue) => {
   const scope = facts && facts.scope || {}
   const department = clean(scope.department, 'other')
   const facilityType = clean(scope.facilityType, 'other')
@@ -105,7 +132,7 @@ const scopeDescriptorsV3 = (facts) => {
     { department, facilityType }
   ]
   const unique = new Map()
-  geographyDescriptors(facts).forEach((geography) => {
+  geographyDescriptors(facts, contractValue).forEach((geography) => {
     dimensions.forEach((dimension) => {
       const descriptor = {
         ...geography,
@@ -123,12 +150,12 @@ const scopeDescriptorsV3 = (facts) => {
 const contributionDocIdV3 = (period, patientId) =>
   `${encodeURIComponent(period)}_${encodeURIComponent(patientId)}`
 
-const contributionRefV3 = (db, period, patientId) => db
-  .collection(CONTRIBUTION_COLLECTION_V3)
+const contributionRefV3 = (db, period, patientId, contractValue) => db
+  .collection(analyticsContract(contractValue).contributionCollection)
   .doc(contributionDocIdV3(period, patientId))
 
-const summaryRefV3 = (db, period, scopeId) => db
-  .collection(PERIOD_COLLECTION_V3)
+const summaryRefV3 = (db, period, scopeId, contractValue) => db
+  .collection(analyticsContract(contractValue).periodCollection)
   .doc(period)
   .collection('scopes')
   .doc(scopeId)
@@ -151,8 +178,10 @@ const summaryAfterContributionChange = (
   oldContribution,
   nextContribution,
   descriptor,
-  period
+  period,
+  contractValue
 ) => {
+  const contract = analyticsContract(contractValue)
   const oldScopes = scopeMap(oldContribution)
   const nextScopes = scopeMap(nextContribution)
   const scopeId = descriptor.scopeDocId || scopeDocIdV3(descriptor)
@@ -168,7 +197,7 @@ const summaryAfterContributionChange = (
   return {
     ...descriptor,
     period,
-    schemaVersion: ANALYTICS_V3_SCHEMA_VERSION,
+    schemaVersion: contract.schemaVersion,
     patientContributionCount: Math.max(
       0,
       Number(current && current.patientContributionCount || 0) +
@@ -182,16 +211,21 @@ const summaryAfterContributionChange = (
   }
 }
 
-const buildContribution = (facts, periodKey, generation) => {
+const buildContribution = (facts, periodKey, generation, contractValue) => {
   if (!facts || !facts.id) return null
-  const metrics = calculateV3Metrics(facts, periodForKey(periodKey))
+  const contract = analyticsContract(contractValue)
+  const metrics = calculateV3Metrics(
+    facts,
+    periodForKey(periodKey),
+    { corrected: contract.corrected }
+  )
   if (!hasNumericValue(metrics)) return null
   return {
     patientId: facts.id,
     period: periodKey,
-    schemaVersion: ANALYTICS_V3_SCHEMA_VERSION,
+    schemaVersion: contract.schemaVersion,
     generation: generation || 'live',
-    scopes: scopeDescriptorsV3(facts),
+    scopes: scopeDescriptorsV3(facts, contract),
     metrics
   }
 }
@@ -200,9 +234,16 @@ const applyPatientPeriodContribution = async (
   db,
   patientId,
   periodKey,
-  nextContribution
+  nextContribution,
+  contractValue
 ) => {
-  const contributionRef = contributionRefV3(db, periodKey, patientId)
+  const contract = analyticsContract(contractValue)
+  const contributionRef = contributionRefV3(
+    db,
+    periodKey,
+    patientId,
+    contract
+  )
   return db.runTransaction(async (transaction) => {
     const previousSnapshot = await transaction.get(contributionRef)
     const previous = previousSnapshot.exists ? previousSnapshot.data() : null
@@ -212,7 +253,9 @@ const applyPatientPeriodContribution = async (
       ...previousScopes.keys(),
       ...nextScopes.keys()
     ])).sort()
-    const references = scopeIds.map((id) => summaryRefV3(db, periodKey, id))
+    const references = scopeIds.map((id) =>
+      summaryRefV3(db, periodKey, id, contract)
+    )
     const summarySnapshots = references.length
       ? await transaction.getAll(...references)
       : []
@@ -228,9 +271,10 @@ const applyPatientPeriodContribution = async (
         previous,
         nextContribution,
         descriptor,
-        periodKey
+        periodKey,
+        contract
       )
-      const reference = summaryRefV3(db, periodKey, scopeId)
+      const reference = summaryRefV3(db, periodKey, scopeId, contract)
       if (summary.patientContributionCount === 0 && !hasNumericValue(summary.metrics)) {
         transaction.delete(reference)
       } else {
@@ -261,30 +305,47 @@ const applyPatientPeriodContribution = async (
 const refreshPatientAnalyticsV3 = async (db, facts, options) => {
   const patientId = facts && facts.id || options && options.patientId
   if (!patientId) throw new Error('A patient id is required for analytics-v3 refresh')
-  const existing = await db.collection(CONTRIBUTION_COLLECTION_V3)
+  const contract = analyticsContract(options && options.contract)
+  const existing = await db.collection(contract.contributionCollection)
     .where('patientId', '==', patientId)
     .get()
   const previousPeriods = existing.docs.map((doc) => doc.get('period')).filter(Boolean)
   const currentPeriods = facts ? reportingPeriodsForFacts(facts) : []
   const periods = Array.from(new Set([...previousPeriods, ...currentPeriods])).sort()
-  const results = []
-  for (const period of periods) {
+  const results = await Promise.all(periods.map(async (period) => {
     const next = facts && currentPeriods.includes(period)
-      ? buildContribution(facts, period, options && options.generation)
+      ? buildContribution(
+        facts,
+        period,
+        options && options.generation,
+        contract
+      )
       : null
-    results.push(await applyPatientPeriodContribution(
+    return applyPatientPeriodContribution(
       db,
       patientId,
       period,
-      next
-    ))
-  }
+      next,
+      contract
+    )
+  }))
   return { patientId, periods: results }
 }
+
+const refreshPatientAnalyticsV31 = (db, facts, options) =>
+  refreshPatientAnalyticsV3(db, facts, {
+    ...(options || {}),
+    contract: ANALYTICS_V31_CONTRACT
+  })
 
 module.exports = {
   CONTRIBUTION_COLLECTION_V3,
   PERIOD_COLLECTION_V3,
+  CONTRIBUTION_COLLECTION_V31,
+  PERIOD_COLLECTION_V31,
+  ANALYTICS_V3_CONTRACT,
+  ANALYTICS_V31_CONTRACT,
+  analyticsContract,
   scopeDocIdV3,
   geographyDescriptors,
   scopeDescriptorsV3,
@@ -295,5 +356,6 @@ module.exports = {
   summaryAfterContributionChange,
   buildContribution,
   applyPatientPeriodContribution,
-  refreshPatientAnalyticsV3
+  refreshPatientAnalyticsV3,
+  refreshPatientAnalyticsV31
 }

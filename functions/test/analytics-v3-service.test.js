@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  ANALYTICS_V31_CONTRACT,
   scopeDocIdV3,
   scopeDescriptorsV3,
   summaryAfterContributionChange,
@@ -161,4 +162,29 @@ test('non-negative delta application protects summaries after retries', () => {
   const next = applyDeltaNonNegative(current, delta)
   assert.equal(next.anc.clients, 0)
   assert.equal(next.highRisk.factors.Hypertension, 0)
+})
+
+test('v3.1 contributions use parallel collections and active Joint Care scopes', () => {
+  const correctedFacts = facts({
+    careTeamProviderIds: ['owner-only-history'],
+    activeJointCareProviderIds: ['provider-2']
+  })
+  const contribution = buildContribution(
+    correctedFacts,
+    'all',
+    'v31-test',
+    ANALYTICS_V31_CONTRACT
+  )
+  assert.equal(contribution.schemaVersion, 'analytics-v3.1.0')
+  assert.equal(ANALYTICS_V31_CONTRACT.contributionCollection,
+    'analytics_v31_contributions')
+  assert.equal(ANALYTICS_V31_CONTRACT.periodCollection,
+    'analytics_v31_periods')
+  const providerIds = contribution.scopes.filter((scope) =>
+    scope.geographyType === 'provider' &&
+    !scope.department &&
+    !scope.facilityType
+  ).map((scope) => scope.providerId).sort()
+  assert.deepEqual(providerIds, ['provider-1', 'provider-2'])
+  assert.equal(contribution.metrics.registration.total, 1)
 })

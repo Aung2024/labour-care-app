@@ -12,6 +12,9 @@ const {
   projectionHash,
   projectionScopeWithProvider
 } = require('../src/analytics/tracking-repository');
+const {
+  mergeLinkedNewbornVisits
+} = require('../src/analytics/repository');
 
 function facts(overrides) {
   return {
@@ -44,6 +47,37 @@ function facts(overrides) {
     hrtActions: [],
     kmcActions: [],
     ...overrides
+  };
+}
+
+function newbornVisitDb(recordsByPatient) {
+  return {
+    collection() {
+      return {
+        doc(patientId) {
+          return {
+            collection() {
+              const query = {
+                orderBy() {
+                  return query;
+                },
+                limit() {
+                  return query;
+                },
+                async get() {
+                  return {
+                    docs: (recordsByPatient[patientId] || []).map((data) => ({
+                      data: () => ({ ...data })
+                    }))
+                  };
+                }
+              };
+              return query;
+            }
+          };
+        }
+      };
+    }
   };
 }
 
@@ -295,6 +329,43 @@ test('KMC baby-patient facts emit only that baby and keep the mother id', () => 
   assert.equal(rows[0].babyName, 'Baby B');
 });
 
+test('KMC date-based baby ids preserve baby 2 weight history', () => {
+  const [row] = buildKmcProjections(facts({
+    id: 'mother-1_baby_20260501_2',
+    profile: {
+      name: 'Baby B',
+      patient_type: 'baby',
+      birth_order: 2
+    },
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1'
+    },
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-05-01',
+          body_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-05-08',
+          current_weight_gram: 1950,
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  }), { asOf: '2026-05-09' });
+
+  assert.equal(row.babyIndex, 2);
+  assert.equal(row.motherPatientId, 'mother-1');
+  assert.deepEqual(row.weightHistory.map((item) => item.grams), [1800, 1950]);
+});
+
 test('KMC birth weight treats kg-scale values as kilograms', () => {
   const [row] = buildKmcProjections(facts({
     newbornVisits: [{
@@ -389,6 +460,137 @@ test('KMC latest weight uses visit current weight even when babies[] only has bi
   assert.equal(row.latestWeightGram, 3000);
   assert.equal(row.weightHistory.length, 4);
   assert.deepEqual(row.weightHistory.map((item) => item.grams), [2910, 2920, 2936, 3000]);
+});
+
+test('KMC linked records preserve repeated and missing visit weights in date order', async () => {
+  const linkedFacts = facts({
+    newbornFacts: {
+      patientType: 'mother',
+      babyPatientIds: ['mother-1_baby_1']
+    },
+    newbornVisits: [
+      {
+        id: 'mother-v1',
+        data: {
+          visit_number: 1,
+          visitDate: '2026-06-01',
+          body_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        id: 'mother-v2',
+        data: {
+          visit_number: 2,
+          visitDate: '2026-06-08',
+          current_weight_gram: 1900,
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  });
+  await mergeLinkedNewbornVisits(newbornVisitDb({
+    'mother-1_baby_1': [
+      {
+        visit_number: 2,
+        visitDate: '2026-06-15',
+        currentWeightGram: 2000,
+        kmc_selected: 'yes'
+      },
+      {
+        visitDate: '2026-06-22',
+        visit_weight_gram: 2100,
+        kmc_selected: 'yes'
+      }
+    ]
+  }), linkedFacts);
+
+  const [row] = buildKmcProjections(linkedFacts, { asOf: '2026-06-23' });
+  assert.equal(linkedFacts.newbornVisits.length, 4);
+  assert.deepEqual(
+    row.weightHistory.map((item) => item.grams),
+    [1800, 1900, 2000, 2100]
+  );
+  assert.deepEqual(
+    row.weightHistory.map((item) => item.date),
+    ['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-22']
+  );
+});
+
+test('KMC twin histories keep baby 2 identity and weight source', () => {
+  const rows = buildKmcProjections(facts({
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-06-01',
+          babies: [
+            { babyIndex: 1, birthWeightGram: 1800 },
+            { babyIndex: 2, birthWeightGram: 1900 }
+          ],
+          kmc_babies: [
+            { babyIndex: 1, kmc_selected: 'yes' },
+            { babyIndex: 2, kmc_selected: 'yes' }
+          ]
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-06-08',
+          current_weight_gram: 2000,
+          _kmcSourceBabyIndex: 1
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-06-08',
+          current_weight_gram: 2100,
+          _kmcSourceBabyIndex: 2
+        }
+      }
+    ]
+  }), { asOf: '2026-06-09' });
+
+  assert.equal(rows[1].babyIndex, 2);
+  assert.equal(rows[1].birthWeightGram, 1900);
+  assert.equal(rows[1].latestWeightGram, 2100);
+  assert.deepEqual(rows[1].weightHistory.map((item) => item.grams), [1900, 2100]);
+});
+
+test('KMC uses guarded legacy body weight only for explicit follow-up visits', () => {
+  const [row] = buildKmcProjections(facts({
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-06-01',
+          body_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-06-08',
+          body_weight_gram: 1950,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 3,
+          visitDate: '2026-06-15',
+          body_weight_gram: 1800,
+          birth_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  }), { asOf: '2026-06-16' });
+
+  assert.deepEqual(row.weightHistory.map((item) => item.grams), [1800, 1950]);
 });
 
 test('KMC derives completion at birth plus two calendar months', () => {

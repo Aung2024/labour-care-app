@@ -910,38 +910,96 @@
       }) || {};
     }
 
+    function positiveVisitNumber(visit) {
+      var value = parseInt(visit && (visit.visit_number || visit.visitNumber), 10);
+      return value > 0 ? value : null;
+    }
+
     function visitRecordWeightGrams(visit, babyIndex) {
       if (!visit) return null;
-      var n = parseInt(visit.visit_number || visit.visitNumber, 10) || 1;
-      var baby = visitBabyForIndex(visit, babyIndex || 1);
-      if (n > 1) {
+      babyIndex = parseInt(babyIndex, 10) || 1;
+      var n = positiveVisitNumber(visit);
+      var baby = visitBabyForIndex(visit, babyIndex);
+      var sourceBabyIndex = parseInt(visit._kmcSourceBabyIndex, 10) || null;
+      var topLevelApplies = sourceBabyIndex
+        ? sourceBabyIndex === babyIndex
+        : babyIndex === 1;
+      var hasCurrentWeight = !!(
+        baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram ||
+        (topLevelApplies && (
+          visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram
+        ))
+      );
+      if ((n && n > 1) || (!n && hasCurrentWeight)) {
         return normalizeWeightToGrams(
-          visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram ||
-          baby.current_weight_gram || baby.currentWeightGram
+          baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram ||
+          (topLevelApplies && (
+            visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram
+          )) ||
+          (topLevelApplies && (!Array.isArray(visit.babies) || !visit.babies.length) &&
+            !visit.birth_weight_gram && !visit.birthWeightGram && visit.body_weight_gram)
         );
       }
       return normalizeWeightToGrams(
         baby.birthWeightGram || baby.birth_weight_gram ||
-        visit.body_weight_gram || visit.birthWeightGram || baby.body_weight_gram
+        baby.body_weight_gram ||
+        (topLevelApplies && (
+          visit.body_weight_gram || visit.birth_weight_gram || visit.birthWeightGram
+        ))
       );
     }
 
+    function visitDateDetails(visit) {
+      var raw = visit && (
+        visit.visitDate || visit.visit_date || visit.recordedAt || visit.recorded_at ||
+        visit.timestamp || visit.createdAt || visit.birth_time
+      );
+      if (!raw) return { date: '', ms: null };
+      var parsed = raw && typeof raw.toDate === 'function' ? raw.toDate() : new Date(raw);
+      if (!parsed || isNaN(parsed.getTime())) return { date: String(raw), ms: null };
+      return { date: parsed.toISOString().slice(0, 10), ms: parsed.getTime() };
+    }
+
     function buildWeightHistoryFromVisits(visits, babyIndex) {
-      var byVisit = new Map();
-      (visits || []).forEach(function (visit) {
-        var n = parseInt(visit.visit_number || visit.visitNumber, 10) || 1;
+      var seen = new Set();
+      var observations = [];
+      (visits || []).forEach(function (visit, sourceOrder) {
+        var n = positiveVisitNumber(visit);
         var grams = visitRecordWeightGrams(visit, babyIndex);
         if (!grams) return;
-        var existing = byVisit.get(n);
-        if (!existing || (n > 1 && grams !== existing.weight)) {
-          byVisit.set(n, {
-            visit: n,
-            weight: grams,
-            date: visit.visitDate || visit.visit_date || ''
-          });
-        }
+        var dateDetails = visitDateDetails(visit);
+        var key = String(n || '') + '::' + dateDetails.date + '::' + String(grams);
+        if (seen.has(key)) return;
+        seen.add(key);
+        observations.push({
+          recordedVisit: n,
+          weight: grams,
+          date: dateDetails.date,
+          dateMs: dateDetails.ms,
+          sourceOrder: sourceOrder
+        });
       });
-      return Array.from(byVisit.values()).sort(function (a, b) { return a.visit - b.visit; });
+      observations.sort(function (a, b) {
+        var aBirth = a.recordedVisit === 1 ? 0 : 1;
+        var bBirth = b.recordedVisit === 1 ? 0 : 1;
+        if (aBirth !== bBirth) return aBirth - bBirth;
+        var aHasDate = a.dateMs != null ? 0 : 1;
+        var bHasDate = b.dateMs != null ? 0 : 1;
+        if (aHasDate !== bHasDate) return aHasDate - bHasDate;
+        if (a.dateMs != null && b.dateMs != null && a.dateMs !== b.dateMs) {
+          return a.dateMs - b.dateMs;
+        }
+        return (a.recordedVisit || Number.MAX_SAFE_INTEGER) -
+          (b.recordedVisit || Number.MAX_SAFE_INTEGER) ||
+          a.weight - b.weight || a.sourceOrder - b.sourceOrder;
+      });
+      return observations.map(function (point, index) {
+        return {
+          visit: point.recordedVisit || (index + 1),
+          weight: point.weight,
+          date: point.date
+        };
+      });
     }
 
     function historyLooksFlat(points) {
@@ -952,7 +1010,7 @@
     function getBestBirthWeightGram(row) {
       var visits = row && row.newbornCareVisits ? row.newbornCareVisits : [];
       var visitOne = visits.find(function (v) {
-        return (parseInt(v.visit_number || v.visitNumber, 10) || 1) === 1;
+        return positiveVisitNumber(v) === 1;
       });
       var babyIndex = parseInt(row && row.babyIndex, 10) || 1;
       return visitRecordWeightGrams(visitOne, babyIndex) ||
@@ -1515,16 +1573,21 @@
       return snap.docs[0].data() || null;
     }
 
-    async function fetchNewbornCareVisitsForDoc(db, patientId) {
+    async function fetchNewbornCareVisitsForDoc(db, patientId, explicitBabyIndex) {
       try {
         var ref = db.collection('patients').doc(patientId).collection('newborn_care');
+        var sourceMatch = String(patientId || '').match(
+          /_baby_(?:(?:\d{8}|unknown)_)?(\d+)$/
+        );
+        var sourceBabyIndex = parseInt(explicitBabyIndex, 10) ||
+          (sourceMatch ? (parseInt(sourceMatch[1], 10) || null) : null);
         var snap;
         try { snap = await ref.orderBy('visit_number', 'asc').get(); }
         catch (e) { snap = await ref.get(); }
         var visits = [];
         snap.forEach(function (d) {
           var data = d.data() || {};
-          if (!data.visit_number) data.visit_number = 1;
+          if (sourceBabyIndex) data._kmcSourceBabyIndex = sourceBabyIndex;
           visits.push(data);
         });
         visits.sort(function (a, b) {
@@ -1539,22 +1602,46 @@
       }
     }
 
+    function newbornVisitMergeKey(visit) {
+      var dateDetails = visitDateDetails(visit);
+      var babies = Array.isArray(visit && visit.babies) ? visit.babies.map(function (baby, index) {
+        return [
+          parseInt(baby.babyIndex || baby.baby_index, 10) || (index + 1),
+          baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram || '',
+          baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram || ''
+        ];
+      }) : [];
+      return [
+        visit && visit._kmcSourceBabyIndex || '',
+        positiveVisitNumber(visit) || '',
+        dateDetails.date,
+        visit && (visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram || ''),
+        visit && (visit.body_weight_gram || visit.birth_weight_gram || visit.birthWeightGram || ''),
+        JSON.stringify(babies)
+      ].join('::');
+    }
+
     function mergeNewbornVisitRecords(primary, secondary) {
       var merged = (primary || []).slice();
-      var seen = new Set(merged.map(function (v) {
-        return String(v.visit_number || v.visitNumber || '') + '::' + String(v.visitDate || v.birth_time || v.timestamp || '');
-      }));
+      var seen = new Set(merged.map(newbornVisitMergeKey));
       (secondary || []).forEach(function (v) {
-        var key = String(v.visit_number || v.visitNumber || '') + '::' + String(v.visitDate || v.birth_time || v.timestamp || '');
+        var key = newbornVisitMergeKey(v);
         if (seen.has(key)) return;
         seen.add(key);
         merged.push(v);
       });
       merged.sort(function (a, b) {
-        var av = parseInt(a.visit_number || a.visitNumber, 10) || 1;
-        var bv = parseInt(b.visit_number || b.visitNumber, 10) || 1;
-        if (av !== bv) return av - bv;
-        return String(a.visitDate || a.birth_time || '').localeCompare(String(b.visitDate || b.birth_time || ''));
+        var av = positiveVisitNumber(a);
+        var bv = positiveVisitNumber(b);
+        if (av === 1 && bv !== 1) return -1;
+        if (bv === 1 && av !== 1) return 1;
+        var ad = visitDateDetails(a);
+        var bd = visitDateDetails(b);
+        if (ad.ms != null && bd.ms != null && ad.ms !== bd.ms) return ad.ms - bd.ms;
+        if (ad.ms != null && bd.ms == null) return -1;
+        if (ad.ms == null && bd.ms != null) return 1;
+        return (av || Number.MAX_SAFE_INTEGER) - (bv || Number.MAX_SAFE_INTEGER) ||
+          newbornVisitMergeKey(a).localeCompare(newbornVisitMergeKey(b));
       });
       return merged;
     }
@@ -1562,7 +1649,14 @@
     async function fetchNewbornCareVisits(db, patient) {
       var patientId = typeof patient === 'string' ? patient : (patient && patient.id);
       if (!patientId) return [];
-      var visits = await fetchNewbornCareVisitsForDoc(db, patientId);
+      var ownBabyIndex = patient && String(patient.patient_type || '').toLowerCase() === 'baby'
+        ? parseInt(
+          patient.birth_order || patient.birthOrder ||
+          patient.baby_index || patient.babyIndex,
+          10
+        ) || null
+        : null;
+      var visits = await fetchNewbornCareVisitsForDoc(db, patientId, ownBabyIndex);
       var motherId = patient && patient.mother_patient_id;
       if (motherId && motherId !== patientId) {
         visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, motherId));
@@ -1738,7 +1832,9 @@
       var idx = parseInt(row && row.babyIndex, 10) || 1;
       var ids = [];
       if (id) ids.push(id);
-      if (/_baby_\d+$/.test(id)) ids.push(id.replace(/_baby_\d+$/, ''));
+      if (/_baby_(?:(?:\d{8}|unknown)_)?\d+$/.test(id)) {
+        ids.push(id.replace(/_baby_(?:(?:\d{8}|unknown)_)?\d+$/, ''));
+      }
       else if (id) ids.push(id + '_baby_' + idx);
       return ids.filter(function (value, index, all) {
         return value && all.indexOf(value) === index;
@@ -1750,10 +1846,6 @@
       var db = firebase.firestore();
       var pending = (rows || []).filter(function (row) {
         if (!row || row._weightsEnriched) return false;
-        if (row._projection && Array.isArray(row.weightHistory) && row.weightHistory.length) {
-          row._weightsEnriched = true;
-          return false;
-        }
         return true;
       });
       var concurrency = 6;
@@ -1764,17 +1856,33 @@
           var visits = Array.isArray(row.newbornCareVisits) ? row.newbornCareVisits.slice() : [];
           var ids = relatedNewbornPatientIds(row);
           for (var v = 0; v < ids.length; v++) {
-            visits = mergeNewbornVisitRecords(visits, await fetchNewbornCareVisitsForDoc(db, ids[v]));
+            var linkedSourceIndex = row.motherPatientId &&
+              ids[v] === row.patientId &&
+              row.patientId !== row.motherPatientId
+              ? babyIndex
+              : null;
+            visits = mergeNewbornVisitRecords(
+              visits,
+              await fetchNewbornCareVisitsForDoc(db, ids[v], linkedSourceIndex)
+            );
           }
           row.newbornCareVisits = visits;
           var history = buildWeightHistoryFromVisits(visits, babyIndex);
           if (history.length) {
-            row.weightHistory = history.map(function (point) {
+            var fetchedHistory = history.map(function (point) {
               return { visitNumber: point.visit, grams: point.weight, date: point.date || '' };
             });
-            var birth = history.find(function (point) { return point.visit === 1; }) || history[0];
-            row.birthWeightGram = birth.weight;
-            row.latestWeightGram = history[history.length - 1].weight;
+            row.weightHistory = window.KmcUtils && KmcUtils.mergeKmcRow
+              ? KmcUtils.mergeKmcRow(
+                { weightHistory: row.weightHistory || [] },
+                { weightHistory: fetchedHistory }
+              ).weightHistory
+              : fetchedHistory;
+            var birth = row.weightHistory.find(function (point) {
+              return point.visitNumber === 1;
+            }) || row.weightHistory[0];
+            row.birthWeightGram = birth.grams;
+            row.latestWeightGram = row.weightHistory[row.weightHistory.length - 1].grams;
           }
           row._weightsEnriched = true;
         }));
@@ -1841,7 +1949,7 @@
         if (result.schemaVersion !== 'tracking-kmc-v1' || !Array.isArray(result.rows)) {
           throw new Error('Unexpected KMC tracking response.');
         }
-        var mapped = result.rows.map(projectionKmcRow);
+        var mapped = await enrichKmcRowWeights(result.rows.map(projectionKmcRow));
         window._kmcRows = dedupeKmcRows(append ? (window._kmcRows || []).concat(mapped) : mapped);
         _kmcNextPageToken = result.nextPageToken || null;
         if (!append) {

@@ -4,7 +4,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
   ANALYTICS_V3_SCHEMA_VERSION,
-  INDICATOR_REGISTRY_V3
+  ANALYTICS_V31_SCHEMA_VERSION,
+  INDICATOR_REGISTRY_V3,
+  SUPPLEMENTAL_INDICATORS_V31
 } = require('../src/analytics/v3-registry')
 const {
   emptyV3Metrics,
@@ -402,4 +404,135 @@ test('PNC medicines and structured referral destinations use the workbook source
   assert.equal(metrics.pnc.ironFolate, 1)
   assert.equal(metrics.pnc.vitaminB1, 1)
   assert.equal(metrics.referral.byDestination['Township Hospital'], 1)
+})
+
+test('analytics-v3.1 registry exposes the supplemental corrected indicators', () => {
+  assert.equal(ANALYTICS_V31_SCHEMA_VERSION, 'analytics-v3.1.0')
+  assert.deepEqual(
+    SUPPLEMENTAL_INDICATORS_V31.map((indicator) => indicator.row),
+    Array.from({ length: 14 }, (_, index) => index + 55)
+  )
+  const metrics = emptyV3Metrics()
+  SUPPLEMENTAL_INDICATORS_V31.forEach((indicator) => {
+    const value = indicator.numeratorKey.split('.').reduce(
+      (current, key) => current && current[key],
+      metrics
+    )
+    assert.notEqual(value, undefined, indicator.key)
+    assert.equal(indicator.definitionVersion, ANALYTICS_V31_SCHEMA_VERSION)
+  })
+})
+
+test('v3.1 all-time registration includes undated mothers and babies', () => {
+  const mother = calculateV3Metrics(baseFacts({
+    profile: { age: 17, patient_type: 'mother' }
+  }), 'all', { corrected: true })
+  assert.equal(mother.registration.total, 1)
+  assert.equal(mother.registration.mothers, 1)
+  assert.equal(mother.registration.babies, 0)
+  assert.equal(mother.registration.ageGroups['Under 18'], 1)
+
+  const baby = calculateV3Metrics(baseFacts({
+    id: 'baby-1',
+    profile: { age: 0, patient_type: 'baby' },
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1'
+    }
+  }), 'all', { corrected: true })
+  assert.equal(baby.registration.total, 1)
+  assert.equal(baby.registration.mothers, 0)
+  assert.equal(baby.registration.babies, 1)
+})
+
+test('v3.1 counts linked newborn care only on its canonical mother', () => {
+  const visit = wrapped({
+    visitDate: '2026-08-11',
+    visit_number: 1,
+    body_weight_gram: 1800
+  })
+  const mother = calculateV3Metrics(baseFacts({
+    id: 'mother-1',
+    newbornFacts: { patientType: 'mother', motherPatientId: '' },
+    newbornVisits: [visit]
+  }), 'all', { corrected: true })
+  const baby = calculateV3Metrics(baseFacts({
+    id: 'baby-1',
+    profile: { patient_type: 'baby' },
+    newbornFacts: {
+      patientType: 'baby',
+      motherPatientId: 'mother-1'
+    },
+    newbornVisits: [visit]
+  }), 'all', { corrected: true })
+  assert.equal(mother.newborn.clients, 1)
+  assert.equal(mother.newborn.canonicalClients, 1)
+  assert.equal(baby.newborn.clients, 0)
+  assert.equal(baby.newborn.canonicalClients, 0)
+})
+
+test('v3.1 separates actual Delivery Notes from legacy delivery evidence', () => {
+  const noteFacts = baseFacts({
+    deliveryNotes: wrapped({
+      deliveryDetails: {
+        babies: [
+          { birthTime: '2026-08-10', outcome: 'alive', birthWeightGram: 3000 },
+          { birthTime: '2026-08-10', outcome: 'alive', birthWeightGram: 2900 }
+        ]
+      }
+    })
+  })
+  const notes = calculateV3Metrics(noteFacts, 'all', { corrected: true })
+  assert.equal(notes.delivery.completedNotes, 1)
+  assert.equal(notes.delivery.actualNotes, 1)
+  assert.equal(notes.delivery.babiesInNotes, 2)
+  assert.equal(notes.delivery.legacyDerived, 0)
+
+  const legacy = calculateV3Metrics(baseFacts({
+    birthRecord: wrapped({ deliveryDate: '2026-08-10' }),
+    newbornVisits: [wrapped({
+      visitDate: '2026-08-11',
+      birth_time: '2026-08-10',
+      outcome: 'alive'
+    })]
+  }), 'all', { corrected: true })
+  assert.equal(legacy.delivery.completedNotes, 0)
+  assert.equal(legacy.delivery.actualNotes, 0)
+  assert.equal(legacy.delivery.legacyDerived, 1)
+})
+
+test('v3.1 aligns KMC eligibility, KMC Yes, and active Joint Care', () => {
+  const metrics = calculateV3Metrics(baseFacts({
+    profile: {
+      age: 25,
+      patient_type: 'mother',
+      edd: '2026-09-15'
+    },
+    newbornFacts: { patientType: 'mother' },
+    jointCareFacts: { activeProviderIds: ['provider-2'] },
+    newbornVisits: [wrapped({
+      visitDate: '2026-08-11',
+      visit_number: 1,
+      babies: [{
+        babyIndex: 1,
+        birthTime: '2026-08-10',
+        birthWeightGram: 1800
+      }],
+      kmc_babies: [{ babyIndex: 1, kmc_selected: 'yes' }]
+    })]
+  }), 'all', { corrected: true })
+  assert.equal(metrics.newborn.canonicalBabies, 1)
+  assert.equal(metrics.newborn.preterm, 1)
+  assert.equal(metrics.newborn.under2Kg, 1)
+  assert.equal(metrics.newborn.pretermAndUnder2Kg, 1)
+  assert.equal(metrics.newborn.kmcEligible, 1)
+  assert.equal(metrics.newborn.kmcYes, 1)
+  assert.equal(metrics.newborn.kmcReceived, 1)
+  assert.equal(metrics.jointCare.clients, 1)
+
+  const ownerOnly = calculateV3Metrics(baseFacts({
+    scope: { careTeamProviderIds: ['provider-1'] },
+    jointCareFacts: { activeProviderIds: [] }
+  }), 'all', { corrected: true })
+  assert.equal(ownerOnly.jointCare.clients, 0)
 })

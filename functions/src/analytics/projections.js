@@ -294,11 +294,13 @@ function parseWeightGram(value) {
 
 function kmcIdentity(facts) {
   const id = String((facts && facts.id) || '');
-  const babyMatch = id.match(/_baby_(\d+)$/);
+  const babyMatch = id.match(/_baby_(?:(?:\d{8}|unknown)_)?(\d+)$/);
   const motherFromFacts = facts && facts.newbornFacts && facts.newbornFacts.motherPatientId;
   if (babyMatch) {
     return {
-      motherPatientId: String(motherFromFacts || id.replace(/_baby_\d+$/, '')),
+      motherPatientId: String(
+        motherFromFacts || id.replace(/_baby_(?:(?:\d{8}|unknown)_)?\d+$/, '')
+      ),
       ownBabyIndex: parseInt(babyMatch[1], 10) || 1
     };
   }
@@ -307,7 +309,10 @@ function kmcIdentity(facts) {
     const profile = (facts && facts.profile) || {};
     return {
       motherPatientId: String(motherFromFacts || id),
-      ownBabyIndex: Number(profile.baby_index || profile.babyIndex || 1) || 1
+      ownBabyIndex: Number(
+        profile.birth_order || profile.birthOrder ||
+        profile.baby_index || profile.babyIndex || 1
+      ) || 1
     };
   }
   return { motherPatientId: id, ownBabyIndex: null };
@@ -316,6 +321,7 @@ function kmcIdentity(facts) {
 function babiesForKmc(facts) {
   const care = firstNewbornVisit(facts);
   const profile = facts.profile || {};
+  const identity = kmcIdentity(facts);
   const byIndex = new Map();
   newbornVisitData(facts).sort((a, b) => {
     const visitDiff = Number(b.visit_number || b.visitNumber || 0) -
@@ -340,7 +346,6 @@ function babiesForKmc(facts) {
     });
   });
   if (!byIndex.size) byIndex.set(1, care);
-  const identity = kmcIdentity(facts);
   let entries = Array.from(byIndex.entries()).sort((a, b) => a[0] - b[0]);
   if (identity.ownBabyIndex) {
     const own = entries.filter((item) => item[0] === identity.ownBabyIndex);
@@ -351,12 +356,14 @@ function babiesForKmc(facts) {
     babyIndex,
     babyName: baby.babyName || baby.baby_name || care.baby_name ||
       (profile.name ? `Baby ${profile.name}` : 'Baby'),
-    birthWeightGram: parseWeightGram(care.birthWeightGram) ||
-      parseWeightGram(care.birth_weight_gram) ||
-      parseWeightGram(care.body_weight_gram) ||
-      parseWeightGram(baby.birthWeightGram) ||
+    birthWeightGram: parseWeightGram(baby.birthWeightGram) ||
       parseWeightGram(baby.birth_weight_gram) ||
       parseWeightGram(baby.body_weight_gram) ||
+      ((babyIndex === 1 || identity.ownBabyIndex === babyIndex) && (
+        parseWeightGram(care.birthWeightGram) ||
+        parseWeightGram(care.birth_weight_gram) ||
+        parseWeightGram(care.body_weight_gram)
+      )) ||
       null,
     latestWeightGram: null,
     birthDate: firstDate(baby, [
@@ -390,41 +397,96 @@ function kmcVisits(facts, babyIndex) {
       (firstDate(b, ['visitDate', 'visit_date']) || 0));
 }
 
-function visitWeightSource(visit, babyIndex) {
-  const n = Number(visit.visit_number || visit.visitNumber || 1);
+function positiveVisitNumber(visit) {
+  const value = Number(visit && (visit.visit_number || visit.visitNumber));
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function visitSourceBabyIndex(visit) {
+  const value = Number(visit && visit._kmcSourceBabyIndex);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function visitWeightSource(visit, babyIndex, ownBabyIndex) {
+  const n = positiveVisitNumber(visit);
   let baby = null;
   if (Array.isArray(visit.babies)) {
     baby = visit.babies.find((item) =>
       Number(item.babyIndex || item.baby_index || 1) === babyIndex) || null;
   }
   baby = baby || {};
-  if (n > 1) {
+  const sourceBabyIndex = visitSourceBabyIndex(visit) || ownBabyIndex || null;
+  const topLevelApplies = sourceBabyIndex
+    ? sourceBabyIndex === babyIndex
+    : babyIndex === 1;
+  const hasCurrentWeight = !!(
+    baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram ||
+    (topLevelApplies && (
+      visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram
+    ))
+  );
+  if ((n && n > 1) || (!n && hasCurrentWeight)) {
     return parseWeightGram(
-      visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram ||
-      baby.current_weight_gram || baby.currentWeightGram
+      baby.current_weight_gram || baby.currentWeightGram || baby.visit_weight_gram ||
+      (topLevelApplies && (
+        visit.current_weight_gram || visit.currentWeightGram || visit.visit_weight_gram
+      )) ||
+      (topLevelApplies && (!Array.isArray(visit.babies) || !visit.babies.length) &&
+        !visit.birth_weight_gram && !visit.birthWeightGram && visit.body_weight_gram)
     );
   }
   return parseWeightGram(
     baby.birthWeightGram || baby.birth_weight_gram ||
-    visit.body_weight_gram || visit.birthWeightGram || baby.body_weight_gram
+    baby.body_weight_gram ||
+    (topLevelApplies && (
+      visit.body_weight_gram || visit.birth_weight_gram || visit.birthWeightGram
+    ))
   );
 }
 
 function visitWeightHistory(facts, babyIndex) {
-  const byVisit = new Map();
-  newbornVisitData(facts).forEach((visit) => {
-    const n = Number(visit.visit_number || visit.visitNumber || 1);
-    const grams = visitWeightSource(visit, babyIndex);
+  const identity = kmcIdentity(facts);
+  const seen = new Set();
+  const observations = [];
+  newbornVisitData(facts).forEach((visit, sourceOrder) => {
+    const recordedVisitNumber = positiveVisitNumber(visit);
+    const grams = visitWeightSource(visit, babyIndex, identity.ownBabyIndex);
     if (!grams) return;
-    const next = {
-      visitNumber: n,
+    const dateValue = firstDate(visit, [
+      'visitDate', 'visit_date', 'recordedAt', 'recorded_at',
+      'timestamp', 'createdAt', 'birth_time'
+    ]);
+    const date = isoDate(dateValue);
+    const dedupeKey = `${recordedVisitNumber || ''}::${date || ''}::${grams}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    observations.push({
+      recordedVisitNumber,
       grams,
-      date: isoDate(firstDate(visit, ['visitDate', 'visit_date', 'recordedAt']))
-    };
-    const existing = byVisit.get(n);
-    if (!existing || (n > 1 && next.grams !== existing.grams)) byVisit.set(n, next);
+      date,
+      dateMs: dateValue ? dateValue.getTime() : null,
+      sourceOrder
+    });
   });
-  return Array.from(byVisit.values()).sort((a, b) => a.visitNumber - b.visitNumber);
+  observations.sort((a, b) => {
+    const aBirth = a.recordedVisitNumber === 1 ? 0 : 1;
+    const bBirth = b.recordedVisitNumber === 1 ? 0 : 1;
+    if (aBirth !== bBirth) return aBirth - bBirth;
+    const aHasDate = a.dateMs != null ? 0 : 1;
+    const bHasDate = b.dateMs != null ? 0 : 1;
+    if (aHasDate !== bHasDate) return aHasDate - bHasDate;
+    if (a.dateMs != null && b.dateMs != null && a.dateMs !== b.dateMs) {
+      return a.dateMs - b.dateMs;
+    }
+    const aVisit = a.recordedVisitNumber || Number.MAX_SAFE_INTEGER;
+    const bVisit = b.recordedVisitNumber || Number.MAX_SAFE_INTEGER;
+    return aVisit - bVisit || a.grams - b.grams || a.sourceOrder - b.sourceOrder;
+  });
+  return observations.map((item, index) => ({
+    visitNumber: item.recordedVisitNumber || index + 1,
+    grams: item.grams,
+    date: item.date
+  }));
 }
 
 function kmcCompletion(actions, babyIndex) {

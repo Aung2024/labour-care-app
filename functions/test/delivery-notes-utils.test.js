@@ -24,6 +24,17 @@ function loadKmcUtils() {
   return context.window.KmcUtils;
 }
 
+function loadBabyUtils() {
+  const context = { window: {} };
+  vm.createContext(context);
+  const source = fs.readFileSync(
+    path.join(__dirname, '../../js/baby-patient-utils.js'),
+    'utf8'
+  );
+  vm.runInContext(source, context);
+  return context.window.BabyPatientUtils;
+}
+
 function loadReportFacility() {
   const context = { window: {} };
   vm.createContext(context);
@@ -209,13 +220,38 @@ test('dedupes mother and baby-patient KMC rows without collapsing twins', () => 
   const rows = utils.dedupeKmcRows([
     { rowId: 'abc_1', patientId: 'abc', babyIndex: 1, babyName: 'Baby Aye', motherPatientId: 'abc' },
     { rowId: 'abc_baby_1_1', patientId: 'abc_baby_1', babyIndex: 1, babyName: 'Baby Aye' },
-    { rowId: 'abc_2', patientId: 'abc', babyIndex: 2, babyName: 'Baby Aye', motherPatientId: 'abc' },
-    { rowId: 'abc_baby_2_1', patientId: 'abc_baby_2', babyIndex: 1, babyName: 'Baby Aye' }
+    {
+      rowId: 'abc_2',
+      patientId: 'abc',
+      babyIndex: 2,
+      babyName: 'Baby Aye',
+      motherPatientId: 'abc',
+      weightHistory: [
+        { visitNumber: 1, grams: 1700, date: '2026-06-01' },
+        { visitNumber: 2, grams: 1800, date: '2026-06-08' }
+      ]
+    },
+    {
+      rowId: 'abc_baby_2_1',
+      patientId: 'abc_baby_2',
+      babyIndex: 1,
+      babyName: 'Baby Aye',
+      weightHistory: [
+        { visitNumber: 2, grams: 1900, date: '2026-06-15' },
+        { grams: 2000, date: '2026-06-22' }
+      ]
+    }
   ]);
   assert.equal(rows.length, 2);
   const keys = new Set(rows.map((row) => utils.canonicalKmcKey(row)));
   assert.equal(keys.has('pid:abc:1'), true);
   assert.equal(keys.has('pid:abc:2'), true);
+  const babyTwo = rows.find((row) => utils.canonicalKmcKey(row) === 'pid:abc:2');
+  assert.equal(babyTwo.babyIndex, 2);
+  assert.deepEqual(
+    Array.from(babyTwo.weightHistory, (point) => point.grams),
+    [1700, 1800, 1900, 2000]
+  );
 });
 
 test('inherits KMC enrolment independently for each baby', () => {
@@ -229,4 +265,58 @@ test('inherits KMC enrolment independently for each baby', () => {
   }];
   assert.equal(utils.babyHasKmcYesInVisits(visits, 1), false);
   assert.equal(utils.babyHasKmcYesInVisits(visits, 2), true);
+});
+
+test('baby identity is stable across manual and Delivery Note field names', () => {
+  const utils = loadBabyUtils();
+  const fromDelivery = utils.canonicalBabyIdentity(
+    'mother-1',
+    { babyIndex: 2, birthTime: '2026-09-20T10:00:00+06:30' },
+    2,
+    ''
+  );
+  const fromRegistration = utils.canonicalBabyIdentity(
+    'mother-1',
+    { birth_order: 2, date_of_birth: '2026-09-20' },
+    2,
+    ''
+  );
+  assert.equal(fromDelivery.key, fromRegistration.key);
+  assert.equal(
+    utils.babyMatchesIdentity({
+      mother_patient_id: 'mother-1',
+      birth_order: 2,
+      date_of_birth: '2026-09-20'
+    }, fromDelivery),
+    true
+  );
+});
+
+test('duplicate baby review prefers deterministic rich records without writing', () => {
+  const utils = loadBabyUtils();
+  const groups = utils.duplicateBabyCandidateGroups([
+    {
+      id: 'random-baby',
+      data: {
+        patient_type: 'baby',
+        mother_patient_id: 'mother-1',
+        birth_order: 1,
+        date_of_birth: '2026-09-20'
+      }
+    },
+    {
+      id: 'mother-1_baby_1',
+      data: {
+        patient_type: 'baby',
+        mother_patient_id: 'mother-1',
+        birth_order: 1,
+        date_of_birth: '2026-09-20',
+        linked_from_delivery_notes: true,
+        patient_unique_id: 'MOTHER-B1'
+      }
+    }
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].canonicalPatientId, 'mother-1_baby_1');
+  assert.equal(groups[0].duplicateCount, 1);
 });

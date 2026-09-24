@@ -9,9 +9,8 @@
  * - metrics grouped by the creating midwife's facility_code
  * - Total Registered counts mothers and babies
  * - ANC / PNC / delivery notes stay mother-centric
- * - Total KMC matches the KMC tracker "Total KMC patients" card: KMC Yes
- *   on any linked newborn visit, or completed (including auto-complete
- *   two calendar months after birth for LBW/preterm babies)
+ * - Total KMC counts each canonical baby with KMC explicitly recorded Yes,
+ *   regardless of whether follow-up is active or complete
  * - preterm-LBW also reads linked mother or baby newborn visits
  *
  * Authentication uses the existing Firebase CLI login. No service-account key
@@ -382,10 +381,12 @@ async function loadData(db) {
     const snapshot = await db.collection('joint_care_links')
       .doc(midwifeId)
       .collection('patients')
-      .where('status', '==', 'active')
       .get();
-    jointCareCounts.set(midwifeId, snapshot.size);
-    jointCarePatientIds.set(midwifeId, new Set(snapshot.docs.map((doc) => doc.id)));
+    const activeLinks = snapshot.docs.filter((doc) =>
+      String((doc.data() || {}).status || '').toLowerCase() === 'active'
+    );
+    jointCareCounts.set(midwifeId, activeLinks.length);
+    jointCarePatientIds.set(midwifeId, new Set(activeLinks.map((doc) => doc.id)));
   }));
 
   return {
@@ -1059,8 +1060,6 @@ function aggregateAccountActivity(data) {
     if (!linkedNewborn.length) return;
     const latestAnc = getLatestAncData(data.antenatalVisits.get(patientId) || []);
     const babies = canonicalNewbornBabies(linkedNewborn);
-    const actions = collectKmcActions(data, patientId);
-    const asOf = kmcExtractAsOf(data);
     const participatingAccounts = new Set();
     linkedNewborn.forEach((entry) => {
       const creatorId = recordCreatorId(entry.data);
@@ -1074,14 +1073,9 @@ function aggregateAccountActivity(data) {
         if (babyIsPretermOrLbw(patient.data, baby, latestAnc)) {
           metrics.pretermLbwBabies++;
         }
-        if (babyIsTotalKmcPatient(
-          patient.data,
-          baby,
-          latestAnc,
-          linkedNewborn,
-          actions,
-          asOf,
-        )) metrics.kmcYesBabies++;
+        if (babyHasKmcYes(linkedNewborn, baby.babyIndex)) {
+          metrics.kmcYesBabies++;
+        }
       });
     });
   });
@@ -1153,20 +1147,11 @@ function aggregate(data) {
     if (canonicalNbcIds.has(patientId) && linkedNewborn.length) {
       const babies = canonicalNewbornBabies(linkedNewborn);
       const latestAnc = getLatestAncData(anc);
-      const actions = collectKmcActions(data, patientId);
-      const asOf = kmcExtractAsOf(data);
       facility.pretermLbw += babies.filter(
         (baby) => babyIsPretermOrLbw(profile, baby, latestAnc),
       ).length;
       facility.kmc += babies.filter(
-        (baby) => babyIsTotalKmcPatient(
-          profile,
-          baby,
-          latestAnc,
-          linkedNewborn,
-          actions,
-          asOf,
-        ),
+        (baby) => babyHasKmcYes(linkedNewborn, baby.babyIndex),
       ).length;
     }
     if (canonicalNbcIds.has(patientId) && immediate.length) {
@@ -1527,7 +1512,7 @@ function addDefinitionsSheet(workbook) {
     ['Total Immediate NBC headcount', 'Unique canonical mother/baby care cases with at least one immediate_newborn_care record; twins in one case count once.'],
     ['Total Transferred Patients', 'Unique patients with a current records/transferRecord document, attributed to the recording account’s facility. The data model stores one current transfer record per patient.'],
     ['Total Patients Joint Cared', 'Distinct patients with active Joint Care links, deduplicated within each facility. Account activity shows active links for each account.'],
-    ['Total KMC', 'Same as the KMC tracker “Total KMC patients” card: a baby counts if any linked newborn visit recorded KMC Yes, or the baby is completed. Completion includes an explicit KMC complete action or automatic completion two calendar months after birth for LBW/preterm or potential-KMC babies. Active and completed babies are both included. This is not limited to current follow-up.'],
+    ['Total KMC', 'Unique canonical babies with KMC explicitly recorded Yes on any linked newborn visit. Active and completed follow-up cases remain included; automatic completion alone does not add a baby.'],
   ];
   definitions.forEach((values, index) => {
     values.forEach((value, offset) => {

@@ -597,6 +597,48 @@
       return canvas.toDataURL('image/png');
     }
 
+    async function redirectToExistingBabyIfMatched() {
+      if (!patientData || patientData.patient_type !== 'baby') return false;
+      if (!patientData.mother_patient_id || !window.BabyPatientUtils) return false;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+      const match = await BabyPatientUtils.findMatchingBabyPatient(
+        firebase.firestore(),
+        patientData.mother_patient_id,
+        patientData,
+        patientData.birth_order || patientData.babyIndex || 1,
+        patientData.birth_group_id || null
+      );
+      if (!match) return false;
+      const existing = Object.assign({ id: match.id }, match.data || {});
+      sessionStorage.setItem('selectedPatientId', match.id);
+      sessionStorage.setItem('selectedPatientData', JSON.stringify(existing));
+      sessionStorage.removeItem('pendingPatientData');
+      alert(
+        'This baby is already registered for the selected mother and birth. ' +
+        'The existing baby record will be opened instead.'
+      );
+      window.location.href = 'patient-care-hub.html';
+      return true;
+    }
+
+    async function reserveManualBabyPatientId(proposedPatientId) {
+      if (!patientData || patientData.patient_type !== 'baby') return proposedPatientId;
+      if (!patientData.mother_patient_id || !window.BabyPatientUtils) return proposedPatientId;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return proposedPatientId;
+      const identity = BabyPatientUtils.canonicalBabyIdentity(
+        patientData.mother_patient_id,
+        patientData,
+        patientData.birth_order || patientData.babyIndex || 1,
+        patientData.birth_group_id || null
+      );
+      if (!identity.birthDate && !identity.birthGroupId) return proposedPatientId;
+      return BabyPatientUtils.reserveBabyIdentity(
+        firebase.firestore(),
+        identity,
+        proposedPatientId
+      );
+    }
+
     async function acceptConsent() {
       if (!currentUser || !patientData) {
         alert('Error: Missing user or patient data');
@@ -683,10 +725,12 @@
         let patientId = patientData.id || null;
         
         if (!patientId) {
+          if (await redirectToExistingBabyIfMatched()) return;
           const userDataPt = userDocData || {};
           const userTownship = userDataPt.township || '';
 
           patientId = firebase.firestore().collection('patients').doc().id;
+          patientId = await reserveManualBabyPatientId(patientId);
 
           const firestorePayload = Object.assign({}, patientData, {
             created_by: currentUser.uid,
@@ -842,7 +886,9 @@
         userData = userData || {};
         const userTownship = userData.township || '';
 
-        const newPid = firebase.firestore().collection('patients').doc().id;
+        if (await redirectToExistingBabyIfMatched()) return;
+        let newPid = firebase.firestore().collection('patients').doc().id;
+        newPid = await reserveManualBabyPatientId(newPid);
         const firestorePayloadRef = Object.assign({}, patientData, {
           created_by: currentUser.uid,
           created_at: firebase.firestore.FieldValue.serverTimestamp(),

@@ -1,6 +1,7 @@
 'use strict'
 
 const ANALYTICS_V3_SCHEMA_VERSION = 'analytics-v3.0.0'
+const ANALYTICS_V31_SCHEMA_VERSION = 'analytics-v3.1.0'
 
 const indicator = (
   row,
@@ -83,9 +84,48 @@ const indicatorByKey = Object.freeze(Object.fromEntries(
   INDICATOR_REGISTRY_V3.map((item) => [item.key, item])
 ))
 
+const supplementalIndicator = (
+  row,
+  section,
+  key,
+  displayName,
+  numeratorKey,
+  denominatorKey,
+  output = 'counter'
+) => Object.freeze({
+  row,
+  section,
+  key,
+  displayName,
+  definitionVersion: ANALYTICS_V31_SCHEMA_VERSION,
+  numeratorKey,
+  denominatorKey: denominatorKey || null,
+  output,
+  aggregation: output === 'map' ? 'sum-by-key' : 'sum'
+})
+
+const SUPPLEMENTAL_INDICATORS_V31 = Object.freeze([
+  supplementalIndicator(55, 'Overview', 'registered_mothers', 'Registered Mothers', 'registration.mothers'),
+  supplementalIndicator(56, 'Overview', 'registered_babies', 'Registered Babies', 'registration.babies'),
+  supplementalIndicator(57, 'Overview', 'maternal_age_groups', 'Maternal Age Groups', 'registration.ageGroups', null, 'map'),
+  supplementalIndicator(58, 'Delivery', 'actual_delivery_notes', 'Delivery Notes', 'delivery.actualNotes'),
+  supplementalIndicator(59, 'Delivery', 'babies_in_delivery_notes', 'Babies in Delivery Notes', 'delivery.babiesInNotes'),
+  supplementalIndicator(60, 'Delivery', 'legacy_delivery_cases', 'Legacy-derived Delivery Cases', 'delivery.legacyDerived'),
+  supplementalIndicator(61, 'Newborn', 'canonical_nbc_clients', 'Unique NBC Clients', 'newborn.canonicalClients'),
+  supplementalIndicator(62, 'Newborn', 'canonical_newborns', 'Canonical Newborns', 'newborn.canonicalBabies'),
+  supplementalIndicator(63, 'Newborn', 'total_kmc_yes', 'Total KMC (Yes)', 'newborn.kmcYes'),
+  supplementalIndicator(64, 'Newborn', 'preterm_babies', 'Preterm Babies', 'newborn.preterm'),
+  supplementalIndicator(65, 'Newborn', 'under_2kg_babies', 'Babies Under 2 kg', 'newborn.under2Kg'),
+  supplementalIndicator(66, 'Newborn', 'preterm_under_2kg_babies', 'Preterm and Under 2 kg', 'newborn.pretermAndUnder2Kg'),
+  supplementalIndicator(67, 'Newborn', 'kmc_eligible_union', 'Preterm / Under 2 kg', 'newborn.kmcEligible'),
+  supplementalIndicator(68, 'Joint Care', 'active_joint_care_patients', 'Active Joint Care', 'jointCare.clients')
+])
+
 module.exports = {
   ANALYTICS_V3_SCHEMA_VERSION,
+  ANALYTICS_V31_SCHEMA_VERSION,
   INDICATOR_REGISTRY_V3,
+  SUPPLEMENTAL_INDICATORS_V31,
   indicatorRegistryV3: INDICATOR_REGISTRY_V3,
   indicatorByKey
 }

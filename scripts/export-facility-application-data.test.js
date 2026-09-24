@@ -128,7 +128,7 @@ test('KMC Yes reads later visits on the linked baby chart', () => {
   assert.equal(facilities.get('006').nbcHeadcount, 1);
 });
 
-test('Total KMC includes completed LBW/preterm babies without KMC Yes', () => {
+test('Total KMC excludes completed LBW/preterm babies without KMC Yes', () => {
   const midwives = new Map([
     ['mw-a', { id: 'mw-a', name: 'A', facilityCode: '006' }],
   ]);
@@ -164,8 +164,8 @@ test('Total KMC includes completed LBW/preterm babies without KMC Yes', () => {
     kmcActions: new Map(),
   };
 
-  assert.equal(aggregate(data).get('006').kmc, 1);
-  assert.equal(aggregateAccountActivity(data).get('mw-a').kmcYesBabies, 1);
+  assert.equal(aggregate(data).get('006').kmc, 0);
+  assert.equal(aggregateAccountActivity(data).get('mw-a').kmcYesBabies, 0);
 
   data.asOf = '2026-02-15';
   data.newbornCare.get('mother-2')[0].data.birth_time = '2026-09-01';

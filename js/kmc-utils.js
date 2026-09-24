@@ -475,11 +475,21 @@
     return String((row && (row.patientId || (row.patient && row.patient.id))) || '');
   }
 
+  function linkedBabyIdParts(patientId) {
+    var match = String(patientId || '').match(
+      /^(.*)_baby_(?:(?:\d{8}|unknown)_)?(\d+)$/
+    );
+    return match
+      ? { motherId: match[1], babyIndex: parseInt(match[2], 10) || 1 }
+      : null;
+  }
+
   function kmcMotherPatientId(row) {
     if (!row) return '';
     if (row.motherPatientId) return String(row.motherPatientId);
     var rawId = kmcPatientId(row);
-    if (/_baby_\d+$/.test(rawId)) return rawId.replace(/_baby_\d+$/, '');
+    var linkedBaby = linkedBabyIdParts(rawId);
+    if (linkedBaby) return linkedBaby.motherId;
     var rowId = String(row.rowId || '');
     var fromRow = rowId.match(/^(.*)_baby_(\d+)_(\d+)$/);
     if (fromRow) return fromRow[1];
@@ -488,12 +498,14 @@
 
   function kmcBabyIndex(row) {
     var rawId = kmcPatientId(row);
-    var fromId = rawId.match(/_baby_(\d+)$/);
-    if (fromId) return parseInt(fromId[1], 10) || 1;
+    var linkedBaby = linkedBabyIdParts(rawId);
+    if (linkedBaby) return linkedBaby.babyIndex;
+    var explicitIndex = parseInt(row && row.babyIndex, 10);
+    if (explicitIndex > 0) return explicitIndex;
     var rowId = String((row && row.rowId) || '');
     var fromBabyRow = rowId.match(/_baby_(\d+)_\d+$/);
     if (fromBabyRow) return parseInt(fromBabyRow[1], 10) || 1;
-    return parseInt(row && row.babyIndex, 10) || 1;
+    return 1;
   }
 
   function canonicalKmcKey(row) {
@@ -513,13 +525,57 @@
       (row && (row.birthWeightGram || row.latestWeightGram) ? 1 : 0);
   }
 
+  function mergeKmcWeightHistories(primary, secondary) {
+    var seen = {};
+    var merged = [];
+    (primary || []).concat(secondary || []).forEach(function (point, sourceOrder) {
+      point = point || {};
+      var grams = normalizeWeightToGrams(point.grams != null ? point.grams : point.weight);
+      if (!grams) return;
+      var visitNumber = parseInt(point.visitNumber || point.visit, 10);
+      visitNumber = visitNumber > 0 ? visitNumber : null;
+      var dateValue = point.date || '';
+      var date = parseDateOnlyLocal(dateValue);
+      var dateKey = date ? formatDateInput(date) : String(dateValue || '');
+      var key = String(visitNumber || '') + '::' + dateKey + '::' + String(grams);
+      if (seen[key]) return;
+      seen[key] = true;
+      merged.push({
+        visitNumber: visitNumber,
+        grams: grams,
+        date: dateKey,
+        _sourceOrder: sourceOrder,
+        _dateMs: date ? date.getTime() : null
+      });
+    });
+    merged.sort(function (a, b) {
+      var aBirth = a.visitNumber === 1 ? 0 : 1;
+      var bBirth = b.visitNumber === 1 ? 0 : 1;
+      if (aBirth !== bBirth) return aBirth - bBirth;
+      var aHasDate = a._dateMs != null ? 0 : 1;
+      var bHasDate = b._dateMs != null ? 0 : 1;
+      if (aHasDate !== bHasDate) return aHasDate - bHasDate;
+      if (a._dateMs != null && b._dateMs != null && a._dateMs !== b._dateMs) {
+        return a._dateMs - b._dateMs;
+      }
+      return (a.visitNumber || Number.MAX_SAFE_INTEGER) -
+        (b.visitNumber || Number.MAX_SAFE_INTEGER) ||
+        a.grams - b.grams || a._sourceOrder - b._sourceOrder;
+    });
+    return merged.map(function (point, index) {
+      return {
+        visitNumber: point.visitNumber || index + 1,
+        grams: point.grams,
+        date: point.date
+      };
+    });
+  }
+
   function mergeKmcRow(keep, extra) {
     if (!keep) return extra;
     if (!extra) return keep;
     if (kmcRowRichness(extra) > kmcRowRichness(keep)) return mergeKmcRow(extra, keep);
-    if ((!keep.weightHistory || !keep.weightHistory.length) && extra.weightHistory && extra.weightHistory.length) {
-      keep.weightHistory = extra.weightHistory;
-    }
+    keep.weightHistory = mergeKmcWeightHistories(keep.weightHistory, extra.weightHistory);
     if ((!keep.newbornCareVisits || !keep.newbornCareVisits.length) && extra.newbornCareVisits && extra.newbornCareVisits.length) {
       keep.newbornCareVisits = extra.newbornCareVisits;
     }
@@ -531,7 +587,7 @@
     if (!keep.motherPatientId && extra.motherPatientId) keep.motherPatientId = extra.motherPatientId;
     var extraId = kmcPatientId(extra);
     var keepId = kmcPatientId(keep);
-    if (/_baby_\d+$/.test(extraId) && !/_baby_\d+$/.test(keepId)) {
+    if (linkedBabyIdParts(extraId) && !linkedBabyIdParts(keepId)) {
       keep.patientId = extraId;
       if (keep.patient) keep.patient.id = extraId;
     }
@@ -543,7 +599,7 @@
     var id = kmcPatientId(row);
     var idx = kmcBabyIndex(row);
     row.motherPatientId = kmcMotherPatientId(row);
-    row.babyIndex = /_baby_\d+$/.test(id) ? 1 : idx;
+    row.babyIndex = idx;
     return row;
   }
 

@@ -1,8 +1,8 @@
 (function (global) {
   'use strict'
 
-  var SUMMARY_COLLECTION = 'analytics_v3_periods'
-  var SCHEMA_PREFIX = 'analytics-v3'
+  var SUMMARY_COLLECTION = 'analytics_v31_periods'
+  var SCHEMA_PREFIX = 'analytics-v3.1'
   var DEFAULT_FACILITY_TYPES = [
     'district_hospital',
     'regional_public_health_department',

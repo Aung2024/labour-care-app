@@ -1,13 +1,13 @@
 (function (global) {
   'use strict'
 
-  var SCHEMA_VERSION = 'analytics-v3.0.0'
+  var SCHEMA_VERSION = 'analytics-v3.1.0'
 
   var CALCULATION_DETAILS = {
     registration_clients: {
-      definition: 'Counts each registered client once when they have registration, ANC, delivery, PNC, newborn-care, or referral activity in the selected period, including clients registered earlier. This is an active-client headcount, not a count of services.',
+      definition: 'All Time counts every registered patient document once, including records without a usable registration date. Month and year filters count each patient once when registration or clinical activity falls in the selected period. This is a client headcount, not a service count.',
       countedAs: 'Unique client records',
-      numeratorLabel: 'Active registered clients'
+      numeratorLabel: 'Registered clients'
     },
     overview_anc_clients: {
       definition: 'Counts each patient once when they received at least one ANC visit in the selected period. Multiple ANC visits for the same patient do not increase this headcount.',
@@ -37,9 +37,9 @@
       numeratorLabel: 'Patients with ≥1 PNC visit'
     },
     overview_newborn_clients: {
-      definition: 'Counts each client record once when at least one newborn-care visit occurred in the selected period. It is a newborn-care headcount, not the number of visits.',
-      countedAs: 'Unique newborn-care clients',
-      numeratorLabel: 'Clients with ≥1 newborn-care visit'
+      definition: 'Counts each client record once when at least one canonical newborn-care visit occurred in the selected period. Repeated newborn-care visits for that client do not increase the headcount.',
+      countedAs: 'Unique canonical newborn-care clients',
+      numeratorLabel: 'Canonical clients with ≥1 newborn-care visit'
     },
     overview_maternal_referrals: {
       definition: 'Counts each patient once when their maternal referral record is dated in the selected period.',
@@ -47,9 +47,9 @@
       numeratorLabel: 'Patients referred'
     },
     overview_joint_care: {
-      definition: 'Counts each active patient once when more than one provider is recorded in the care team. ANC, delivery, PNC, newborn, and KMC status are shown separately.',
+      definition: 'Counts each distinct patient once when the patient has at least one active Joint Care link in the selected reporting scope. Historical care-team arrays and inactive links are not counted.',
       countedAs: 'Unique joint-care patients',
-      numeratorLabel: 'Patients with a joint-care team'
+      numeratorLabel: 'Patients with ≥1 active Joint Care link'
     },
     anc_clients: {
       definition: 'Counts each patient once when they received at least one ANC visit in the selected period. Use ANC Services to see the total number of visits delivered.',
@@ -271,16 +271,18 @@
       denominatorLabel: 'Recorded live births'
     },
     kmc_eligible: {
-      definition: 'Counts recorded live-born babies with birth weight below 2,000 grams or gestational age below 37 weeks. Live birth includes outcomes recorded as alive or born alive then died; stillbirth is excluded.',
+      definition: 'Counts canonical newborns who are preterm, under 2,000 grams, or both. The union counts each newborn once.',
       countedAs: 'Live-born babies',
-      numeratorLabel: 'Live births eligible for KMC',
-      denominatorLabel: 'Recorded live births'
+      numeratorLabel: 'Newborns eligible for KMC',
+      denominatorLabel: 'Recorded live births',
+      formula: 'KMC eligible union = preterm + under 2 kg − both preterm and under 2 kg'
     },
     kmc_received: {
-      definition: 'KMC coverage = KMC-eligible babies with KMC selected as received ÷ all KMC-eligible babies.',
+      definition: 'The main count includes eligible canonical newborns with KMC recorded as Yes. Coverage = eligible KMC Yes ÷ the preterm-or-under-2-kg eligibility union × 100. The detail shows all canonical newborns with KMC Yes, including babies outside that eligibility union.',
       countedAs: 'KMC-eligible babies',
-      numeratorLabel: 'Eligible babies receiving KMC',
-      denominatorLabel: 'KMC-eligible babies'
+      numeratorLabel: 'Eligible newborns with KMC Yes',
+      denominatorLabel: 'KMC-eligible newborns',
+      formula: 'KMC coverage = eligible KMC Yes ÷ KMC eligible union × 100; Total KMC Yes is shown separately'
     },
     maternal_referrals: {
       definition: 'Counts each patient once when their maternal referral record is dated in the selected period.',
@@ -304,9 +306,9 @@
       numeratorLabel: 'Referrals categorized by destination'
     },
     joint_care_patients: {
-      definition: 'Counts each active patient once when more than one provider is recorded in the care team. The chart can count that patient once in each applicable service status: ANC, Delivery, PNC, Newborn, and KMC.',
+      definition: 'Counts each distinct patient once when at least one active Joint Care link exists. The chart can show that patient once in each applicable service status: ANC, Delivery, PNC, Newborn, and KMC.',
       countedAs: 'Unique joint-care patients',
-      numeratorLabel: 'Patients with a joint-care team'
+      numeratorLabel: 'Patients with ≥1 active Joint Care link'
     }
   }
 
@@ -323,7 +325,8 @@
       definition: '',
       countedAs: 'Clinical records',
       numeratorLabel: 'Included records',
-      denominatorLabel: 'Eligible records'
+      denominatorLabel: 'Eligible records',
+      formula: ''
     }, options || {}, CALCULATION_DETAILS[key] || {}))
   }
 
@@ -352,7 +355,11 @@
     metric(22, 'ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
     metric(23, 'High-Risk', 'high_risk_clients', 'High-Risk Pregnancy', 'highRisk.clients'),
     metric(24, 'High-Risk', 'high_risk_factors', 'High-Risk Factors', 'highRisk.factors', '', { format: 'map', chart: 'bar' }),
-    metric(25, 'High-Risk', 'high_risk_other_diseases', 'Other Medical Diseases', 'highRisk.otherMedicalDiseases', '', { format: 'map', chart: 'bar' }),
+    metric(25, 'High-Risk', 'high_risk_other_diseases', 'Other Medical Diseases', 'highRisk.otherMedicalDiseases', '', {
+      format: 'map',
+      chart: 'bar',
+      emptyText: 'No recorded historical names'
+    }),
     metric(26, 'Delivery', 'home_delivery_skilled', 'Home Delivery by SBA', 'delivery.homeSkilled', 'delivery.completedNotes'),
     metric(27, 'Delivery', 'institutional_delivery_skilled', 'Institutional Delivery', 'delivery.institutionalSkilled', 'delivery.completedNotes'),
     metric(28, 'Delivery', 'uterotonic_use', 'Uterotonic Use', 'delivery.uterotonic', 'delivery.completedNotes'),
@@ -376,12 +383,141 @@
     metric(46, 'Newborn', 'low_birth_weight', 'Low Birth Weight', 'newborn.lowBirthWeight', 'newborn.liveBirths', { definition: 'Live birth weight below 2500 g.' }),
     metric(47, 'Newborn', 'newborn_care_2_days', 'NBC ≤2 days', 'newborn.careWithin2Days', 'newborn.liveBirths'),
     metric(48, 'Newborn', 'kmc_eligible', 'KMC Eligible', 'newborn.kmcEligible', 'newborn.liveBirths', { definition: 'Birth weight below 2000 g or preterm.' }),
-    metric(49, 'Newborn', 'kmc_received', 'KMC Cases and Coverage', 'newborn.kmcReceived', 'newborn.kmcEligible'),
+    metric(49, 'Newborn', 'kmc_received', 'KMC Cases and Coverage', 'newborn.kmcReceived', 'newborn.kmcEligible', { detailPaths: ['newborn.kmcYes'], detailLabels: ['All KMC Yes'] }),
     metric(50, 'Referral', 'maternal_referrals', 'Total Maternal Referral', 'referral.total'),
     metric(51, 'Referral', 'maternal_referral_rate', 'Maternal Referral Rate', 'referral.total', 'registration.mothers', { format: 'percent' }),
     metric(52, 'Referral', 'referral_stage', 'Referral by Stage', 'referral.byStage', '', { format: 'map', chart: 'bar' }),
     metric(53, 'Referral', 'referral_destination', 'Referral Destination', 'referral.byDestination', '', { format: 'map', chart: 'donut' }),
     metric(54, 'Joint Care', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', { detailMap: 'jointCare.byStatus', chart: 'bar' })
+  ]
+
+  function supplemental(section, key, label, numerator, options) {
+    return metric(null, section, key, label, numerator, '', Object.assign({
+      supplemental: true,
+      sourceLabel: 'Supplemental',
+      format: 'count',
+      chart: 'kpi'
+    }, options || {}))
+  }
+
+  var supplementalDefinitions = [
+    supplemental('Overview', 'supplemental_registered_mothers', 'Registered Mothers', 'registration.mothers', {
+      definition: 'All Time counts every registered mother document once. Month and year filters count each mother once when registration or clinical activity falls in the selected reporting period and scope.',
+      countedAs: 'Unique registered mothers',
+      numeratorLabel: 'Registered mothers',
+      formula: 'Registered mothers = registration.mothers'
+    }),
+    supplemental('Overview', 'supplemental_registered_babies', 'Registered Babies', 'registration.babies', {
+      definition: 'All Time counts every registered baby or child patient document once. Month and year filters count each baby or child once when registration or clinical activity falls in the selected reporting period and scope.',
+      countedAs: 'Unique registered babies',
+      numeratorLabel: 'Registered babies',
+      formula: 'Registered babies = registration.babies'
+    }),
+    supplemental('Overview', 'supplemental_maternal_age_groups', 'Registered Mothers by Age Band', 'registration.ageGroups', {
+      definition: 'Assigns each registered mother included by the selected period to one profile-age band: Under 18; 18–35 inclusive; Over 35; or Unknown when age is missing, non-numeric, not positive, or 120 or above.',
+      countedAs: 'Unique registered mothers per age band',
+      numeratorLabel: 'Mothers assigned to age bands',
+      formula: 'Registered mothers by age = Under 18 + 18–35 + Over 35 + Unknown',
+      format: 'map',
+      chart: 'bar',
+      chartOnly: true,
+      mapCategories: [
+        { label: 'Under 18', paths: ['registration.ageGroups.Under 18'] },
+        { label: '18–35', paths: ['registration.ageGroups.18–35', 'registration.ageGroups.18-35', 'registration.ageGroups.18 to 35'] },
+        { label: 'Over 35', paths: ['registration.ageGroups.Over 35'] },
+        { label: 'Unknown', paths: ['registration.ageGroups.Unknown'] }
+      ]
+    }),
+    supplemental('Delivery', 'supplemental_actual_delivery_notes', 'Actual Delivery Notes', 'delivery.actualNotes', {
+      definition: 'Counts actual Delivery Notes in the selected reporting period and scope. Legacy-derived delivery cases are excluded.',
+      countedAs: 'Actual Delivery Note records',
+      numeratorLabel: 'Actual Delivery Notes',
+      formula: 'Actual Delivery Notes = delivery.actualNotes'
+    }),
+    supplemental('Delivery', 'supplemental_babies_in_delivery_notes', 'Babies Recorded in Delivery Notes', 'delivery.babiesInNotes', {
+      definition: 'Counts every baby entry recorded inside actual Delivery Notes. Each baby in a multiple birth contributes one.',
+      countedAs: 'Baby entries in actual Delivery Notes',
+      numeratorLabel: 'Babies recorded in notes',
+      formula: 'Babies recorded in notes = delivery.babiesInNotes'
+    }),
+    supplemental('Delivery', 'supplemental_legacy_delivery_cases', 'Legacy Delivery Cases (Derived)', 'delivery.legacyDerived', {
+      definition: 'Counts delivery cases derived from legacy birth or newborn data only when an actual Delivery Note is absent. These are labelled separately from actual Delivery Notes.',
+      countedAs: 'Legacy-derived delivery cases',
+      numeratorLabel: 'Legacy delivery cases',
+      formula: 'Legacy delivery cases = delivery.legacyDerived'
+    }),
+    supplemental('Delivery', 'supplemental_delivery_recording', 'Delivery Notes, Babies, and Legacy Cases', 'delivery.actualNotes', {
+      definition: 'Shows actual Delivery Notes, baby entries recorded in those notes, and separately labelled legacy-derived delivery cases without combining them into one total.',
+      countedAs: 'Separately labelled delivery record counts',
+      numeratorLabel: 'Actual Delivery Notes',
+      formula: 'Series = delivery.actualNotes; delivery.babiesInNotes; delivery.legacyDerived',
+      format: 'series',
+      chart: 'bar',
+      chartOnly: true,
+      chartValues: [
+        { label: 'Actual Delivery Notes', path: 'delivery.actualNotes' },
+        { label: 'Babies in Notes', path: 'delivery.babiesInNotes' },
+        { label: 'Legacy Cases (Derived)', path: 'delivery.legacyDerived' }
+      ]
+    }),
+    supplemental('Newborn', 'supplemental_canonical_nbc_clients', 'Canonical NBC Clients', 'newborn.canonicalClients', {
+      definition: 'Counts unique client records represented in the canonical newborn-care dataset for the selected reporting period and scope.',
+      countedAs: 'Unique canonical newborn-care clients',
+      numeratorLabel: 'Canonical NBC clients',
+      formula: 'Canonical NBC clients = newborn.canonicalClients'
+    }),
+    supplemental('Newborn', 'supplemental_canonical_newborns', 'Canonical Newborns', 'newborn.canonicalBabies', {
+      definition: 'Counts deduplicated newborn identities represented in canonical newborn-care data. Multiple visits for one newborn count once.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'Canonical newborns',
+      formula: 'Canonical newborns = newborn.canonicalBabies'
+    }),
+    supplemental('Newborn', 'supplemental_kmc_yes', 'KMC Yes', 'newborn.kmcYes', {
+      definition: 'Counts canonical newborns when any linked newborn-care visit records KMC as Yes. A newborn contributes at most once.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'Newborns with KMC Yes',
+      formula: 'KMC Yes = newborn.kmcYes'
+    }),
+    supplemental('Newborn', 'supplemental_preterm', 'Preterm Newborns', 'newborn.preterm', {
+      definition: 'Counts canonical newborns classified as preterm by gestational age below 37 completed weeks or birth at least 21 calendar days before the effective EDD.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'Preterm newborns',
+      formula: 'Preterm = gestational age <37 weeks OR birth ≥21 days before effective EDD'
+    }),
+    supplemental('Newborn', 'supplemental_under_2kg', 'Newborns Under 2 kg', 'newborn.under2Kg', {
+      definition: 'Counts canonical newborns with a recorded birth weight below 2,000 grams.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'Newborns under 2 kg',
+      formula: 'Under 2 kg = newborn.under2Kg'
+    }),
+    supplemental('Newborn', 'supplemental_preterm_and_under_2kg', 'Preterm and Under 2 kg', 'newborn.pretermAndUnder2Kg', {
+      definition: 'Counts canonical newborns who meet the preterm rule and have birth weight below 2,000 grams. This is the intersection, not an additional eligibility group.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'Preterm newborns under 2 kg',
+      formula: 'Both = newborn.pretermAndUnder2Kg'
+    }),
+    supplemental('Newborn', 'supplemental_kmc_eligible_union', 'KMC Eligible (Preterm or Under 2 kg)', 'newborn.kmcEligible', {
+      definition: 'Counts the union of canonical newborns who are preterm or below 2,000 grams. Newborns meeting both conditions count once.',
+      countedAs: 'Unique canonical newborns',
+      numeratorLabel: 'KMC-eligible newborns',
+      formula: 'KMC eligible union = preterm + under 2 kg − both'
+    }),
+    supplemental('Newborn', 'supplemental_kmc_breakdown', 'KMC and Eligibility Breakdown', 'newborn.kmcEligible', {
+      definition: 'Shows KMC Yes and the preterm, under-2-kg, intersection, and eligibility-union counts as separately labelled series.',
+      countedAs: 'Unique canonical newborns per labelled group',
+      numeratorLabel: 'KMC-eligible newborns',
+      formula: 'KMC eligible union = preterm + under 2 kg − both; KMC Yes is reported separately',
+      format: 'series',
+      chart: 'bar',
+      chartOnly: true,
+      chartValues: [
+        { label: 'KMC Yes', path: 'newborn.kmcYes' },
+        { label: 'Preterm', path: 'newborn.preterm' },
+        { label: 'Under 2 kg', path: 'newborn.under2Kg' },
+        { label: 'Both', path: 'newborn.pretermAndUnder2Kg' },
+        { label: 'Eligible Union', path: 'newborn.kmcEligible' }
+      ]
+    })
   ]
 
   function valueAtPath(source, path) {
@@ -403,7 +539,7 @@
 
   function displayValue(definition, metrics) {
     var numerator = numberAtPath(metrics, definition.numerator)
-    if (!definition.denominator || definition.format === 'count') {
+    if (!definition.denominator || definition.format === 'count' || definition.format === 'ratio') {
       return numerator.toLocaleString()
     }
     var denominator = numberAtPath(metrics, definition.denominator)
@@ -419,14 +555,45 @@
     })
   }
 
+  function supplementalForSection(section) {
+    return supplementalDefinitions.filter(function (item) {
+      return item.section === section
+    })
+  }
+
+  function definitionsForSection(section) {
+    return indicatorsForSection(section).concat(supplementalForSection(section))
+  }
+
+  function formulaForDefinition(definition) {
+    if (definition.formula) return definition.formula
+    if (definition.format === 'percent') {
+      return definition.numeratorLabel + ' ÷ ' + definition.denominatorLabel + ' × 100'
+    }
+    if (definition.format === 'average') {
+      return definition.numeratorLabel + ' ÷ ' + definition.denominatorLabel
+    }
+    if (definition.format === 'map') {
+      return 'Sum each named category in ' + definition.numerator
+    }
+    return definition.numeratorLabel + ' = ' + definition.numerator
+  }
+
+  var allDefinitions = indicators.concat(supplementalDefinitions)
+
   global.DashboardMetricsConfig = Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     indicators: Object.freeze(indicators.slice()),
+    supplementalDefinitions: Object.freeze(supplementalDefinitions.slice()),
+    allDefinitions: Object.freeze(allDefinitions.slice()),
     sections: Object.freeze(['Overview', 'ANC', 'High-Risk', 'Delivery', 'Newborn', 'PNC', 'Referral', 'Joint Care']),
     valueAtPath: valueAtPath,
     numberAtPath: numberAtPath,
     ratio: ratio,
     displayValue: displayValue,
-    indicatorsForSection: indicatorsForSection
+    indicatorsForSection: indicatorsForSection,
+    supplementalForSection: supplementalForSection,
+    definitionsForSection: definitionsForSection,
+    formulaForDefinition: formulaForDefinition
   })
 })(typeof window !== 'undefined' ? window : globalThis)

@@ -320,3 +320,13 @@ exports.startDashboardV3Reconciliation =
   analyticsV3Functions.startDashboardV3Reconciliation;
 exports.dashboardV3ReconciliationWorker =
   analyticsV3Functions.dashboardV3ReconciliationWorker;
+
+const analyticsV31Functions = require('./src/analytics/v31-functions');
+exports.startDashboardV31Reconciliation =
+  analyticsV31Functions.startDashboardV31Reconciliation;
+exports.dashboardV31ReconciliationWorker =
+  analyticsV31Functions.dashboardV31ReconciliationWorker;
+
+const jointCareIndexFunctions = require('./src/analytics/joint-care-index');
+exports.jointCareIndexRefreshWorker =
+  jointCareIndexFunctions.jointCareIndexRefreshWorker;

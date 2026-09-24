@@ -104,6 +104,14 @@ async function seed() {
           metrics: { registration: { total: 1 } }
         }, scope)
       );
+      await setDoc(
+        doc(database, 'analytics_v31_periods', 'all', 'scopes', scopeId),
+        Object.assign({
+          period: 'all',
+          schemaVersion: 'analytics-v3.1.0',
+          metrics: { registration: { total: 1 } }
+        }, scope)
+      );
     }
     await setDoc(doc(database, 'tracking_v2_hrt', 'patient-a'), {
       patientId: 'patient-a', providerId: 'midwife-a', township: 'Alpha',
@@ -360,6 +368,41 @@ test('Dashboard V3 contribution and job documents remain server-only', async () 
   )));
   await assertFails(setDoc(
     doc(database, 'analytics_v3_periods', 'all', 'scopes', 'national'),
+    { metrics: { registration: { total: 999 } } },
+    { merge: true }
+  ));
+});
+
+test('Dashboard V3.1 preserves scope boundaries and server-only internals', async () => {
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  const tmoDb = environment.authenticatedContext('tmo-a').firestore();
+  const superDb = environment.authenticatedContext('super').firestore();
+  await assertSucceeds(getDoc(doc(
+    midwifeDb,
+    'analytics_v31_periods', 'all', 'scopes', 'provider-a'
+  )));
+  await assertFails(getDoc(doc(
+    midwifeDb,
+    'analytics_v31_periods', 'all', 'scopes', 'township-alpha'
+  )));
+  await assertSucceeds(getDoc(doc(
+    tmoDb,
+    'analytics_v31_periods', 'all', 'scopes', 'township-alpha'
+  )));
+  await assertFails(getDoc(doc(
+    superDb,
+    'analytics_v31_contributions', 'all_patient-a'
+  )));
+  await assertFails(getDoc(doc(
+    superDb,
+    'analytics_v31_jobs', 'dashboard-summary-reconciliation'
+  )));
+  await assertFails(getDoc(doc(
+    superDb,
+    'joint_care_patient_index', 'patient-a'
+  )));
+  await assertFails(setDoc(
+    doc(superDb, 'analytics_v31_periods', 'all', 'scopes', 'national'),
     { metrics: { registration: { total: 999 } } },
     { merge: true }
   ));
