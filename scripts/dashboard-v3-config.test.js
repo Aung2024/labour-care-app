@@ -168,6 +168,15 @@ test('chart options omit incompatible axes and add donut center totals', () => {
   assert.ok(bar.xaxis)
   assert.ok(bar.yaxis)
   assert.equal(Object.hasOwn(bar, 'labels'), false)
+  assert.equal(bar.yaxis.labels.formatter('Hypertension'), 'Hypertension')
+
+  const horizontal = charts.optionsForDefinition(
+    { label: 'Factors', chart: 'bar' },
+    [['Very long high-risk factor name', 12], ['Another long clinical factor', 4]]
+  )
+  assert.equal(horizontal.plotOptions.bar.horizontal, true)
+  assert.equal(horizontal.yaxis.labels.formatter('Hypertension'), 'Hypertension')
+  assert.equal(horizontal.xaxis.labels.formatter(12), '12')
 
   const donut = charts.optionsForDefinition(
     { label: 'Donut', chart: 'donut' },

@@ -237,12 +237,8 @@
       '<div class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</div>' +
       (detail
         ? '<div class="dashboard-kpi-detail' +
-          (status ? ' has-status ' + status.className : '') + '">' + detail +
-          (status
-            ? ' <span class="dashboard-kpi-status" aria-label="Percentage range: ' +
-              escapeHtml(status.label) + '">' + escapeHtml(status.label) + '</span>'
-            : '') +
-          '</div>'
+          (status ? ' has-status ' + status.className + '" aria-label="Percentage range: ' +
+            escapeHtml(status.label) : '') + '">' + detail + '</div>'
         : '') +
       '<button class="dashboard-info-button" type="button" data-indicator-key="' +
       escapeHtml(definition.key) + '" aria-label="View calculation for ' +
@@ -389,26 +385,39 @@
       return options
     }
 
+    var horizontal = labels.some(function (label) { return String(label).length > 20 })
+    var formatAxisLabel = function (value) {
+      if (typeof value === 'string' && value.trim() && Number.isNaN(Number(value))) return value
+      var number = Number(value)
+      return Number.isFinite(number) ? Math.round(number).toLocaleString() : (value == null ? '' : String(value))
+    }
     options.xaxis = {
       categories: labels,
       labels: {
-        rotate: labels.length > 5 ? -35 : 0,
+        rotate: horizontal || labels.length <= 5 ? 0 : -35,
         trim: true,
-        style: { colors: '#64748b', fontSize: '11px' }
+        style: { colors: '#64748b', fontSize: '11px' },
+        formatter: formatAxisLabel
       }
     }
     options.yaxis = {
-      min: 0,
-      forceNiceScale: true,
-      labels: { formatter: function (value) { return Math.round(value).toLocaleString() } }
+      labels: {
+        style: { colors: '#64748b', fontSize: '11px' },
+        formatter: formatAxisLabel
+      }
+    }
+    if (!horizontal) {
+      options.yaxis.min = 0
+      options.yaxis.forceNiceScale = true
     }
     options.plotOptions = {
       bar: {
         borderRadius: 6,
         columnWidth: '54%',
-        horizontal: labels.some(function (label) { return label.length > 20 })
+        horizontal: horizontal
       }
     }
+    if (horizontal) options.chart.height = Math.max(270, labels.length * 34)
     options.dataLabels = { enabled: false }
     return options
   }
