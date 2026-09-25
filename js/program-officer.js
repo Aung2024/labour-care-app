@@ -678,6 +678,8 @@
     byId('allocationMaternityHome').value = '';
     byId('allocationCount').value = '';
     byId('allocationRemaining').value = '';
+    byId('allocationRemaining').required = false;
+    byId('allocationRemaining').disabled = true;
     byId('allocationRemaining').closest('label').hidden = true;
     byId('allocationBudget').value = '';
     byId('allocationCurrency').value = 'MMK';
@@ -694,6 +696,8 @@
     byId('allocationMaternityHome').value = item.midwifeId || item.id;
     byId('allocationMaternityHome').disabled = true;
     byId('allocationCount').value = String(item.allocatedUnits || 0);
+    byId('allocationRemaining').disabled = false;
+    byId('allocationRemaining').required = true;
     byId('allocationRemaining').value = String(item.remainingUnits || 0);
     byId('allocationRemaining').closest('label').hidden = false;
     byId('allocationBudget').value = String(((item.budget && item.budget.totalMinor) || 0) / 100);
