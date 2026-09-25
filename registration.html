@@ -1230,7 +1230,9 @@
           facility_code: data.facility || "003", // Default to "003" (Other) if not provided
           phone: data.phone,
           email: data.email,
-          approved: false, // Use 'approved' field to match existing login logic
+          approved: false,
+          active: false,
+          status: 'pending',
           createdAt: new Date().toISOString()
         };
         if (data.role === 'Midwife') {
@@ -1291,6 +1293,19 @@
         console.error("Registration error:", err);
         let errorMessage = err.message;
         let alertClass = 'alert-danger';
+
+        // Auth may have succeeded while the Firestore profile write failed.
+        // Remove the orphan Auth user so they can register again cleanly.
+        try {
+          var orphan = firebase.auth().currentUser;
+          if (orphan && err && (err.code === 'permission-denied' || String(err.message || '').indexOf('insufficient permissions') !== -1)) {
+            await orphan.delete();
+            errorMessage = 'Could not save your profile (permission error). Please try registering again. If it keeps failing, contact the administrator.';
+          }
+        } catch (cleanupErr) {
+          console.warn('Could not clean up Auth user after failed registration:', cleanupErr);
+          errorMessage = 'Account login was created but the profile could not be saved. Please contact a Super Admin, or try logging in once so your pending profile can be recovered.';
+        }
         
         if (err.code === 'auth/email-already-in-use') {
           errorMessage = "An account with this email already exists.";

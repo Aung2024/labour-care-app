@@ -364,7 +364,7 @@
       }
 
       wrap.innerHTML = rows.map(function(m, index) {
-        const approved = m.approved !== false;
+        const approved = m.approved === true || m.status === 'approved';
         const typeLabel = getUserDisplayLabel(m);
         const badge = approved
           ? '<span class="badge badge-approved">Approved</span>'
@@ -403,9 +403,17 @@
 
     async function quickApprove(id) {
       try {
-        await firebase.firestore().collection('users').doc(id).update({ approved: true });
+        await firebase.firestore().collection('users').doc(id).update({
+          approved: true,
+          active: true,
+          status: 'approved'
+        });
         const idx = allUsers.findIndex(function(x) { return x.id === id; });
-        if (idx !== -1) allUsers[idx].approved = true;
+        if (idx !== -1) {
+          allUsers[idx].approved = true;
+          allUsers[idx].active = true;
+          allUsers[idx].status = 'approved';
+        }
         renderList();
         await AppDialog.alert('User approved.', { title: 'Approved' });
       } catch (e) {
@@ -647,6 +655,8 @@
           region: region || null,
           township: normalizeRoleKey(role) === 'regional officer' ? '' : (township || null),
           approved: approved,
+          active: approved,
+          status: approved ? 'approved' : 'pending',
           role: role,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: firebase.auth().currentUser.uid

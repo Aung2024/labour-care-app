@@ -177,6 +177,35 @@ test('Program Officer can edit labels but cannot assign roles', async () => {
   }));
 });
 
+test('new Midwife can self-register only while pending', async () => {
+  const okDb = env.authenticatedContext('new-mw').firestore();
+  await assertSucceeds(setDoc(doc(okDb, 'users/new-mw'), {
+    name: 'Daw New Midwife',
+    role: 'Midwife',
+    email: 'new-mw@example.com',
+    approved: false,
+    active: false,
+    status: 'pending',
+    region: 'Mandalay Region',
+    township: 'Mahaaungmyay'
+  }));
+
+  const approvedDb = env.authenticatedContext('new-mw-approved').firestore();
+  await assertFails(setDoc(doc(approvedDb, 'users/new-mw-approved'), {
+    name: 'Should Fail',
+    role: 'Midwife',
+    approved: true,
+    active: true
+  }));
+
+  const missingActiveDb = env.authenticatedContext('new-mw-no-active').firestore();
+  await assertFails(setDoc(doc(missingActiveDb, 'users/new-mw-no-active'), {
+    name: 'Missing active',
+    role: 'Midwife',
+    approved: false
+  }));
+});
+
 test('Midwife can read own quota and remaining budget', async () => {
   const db = env.authenticatedContext('mw').firestore();
   await assertSucceeds(getDoc(doc(db, 'voucher_account_quotas/mw')));

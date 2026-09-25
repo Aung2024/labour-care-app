@@ -727,42 +727,56 @@
             userData = userDoc.data();
             console.log('User data from Firestore:', userData);
           } else {
-            console.log('User document not found, creating default profile...');
-            // Create a default user profile if document doesn't exist
+            console.log('User document not found — creating pending profile for Super Admin approval...');
+            // Orphan Auth accounts (registration wrote Auth but failed Firestore).
+            // Create a pending profile so Super Admin can see and approve them.
+            // Do NOT auto-approve.
             userData = {
-              role: 'Midwife', // Default role
-              approved: true,   // Default to approved for testing
+              name: (email.split('@')[0] || 'New user').trim(),
+              role: 'Midwife',
               email: email,
-              createdAt: new Date().toISOString()
+              approved: false,
+              active: false,
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+              registrationIncomplete: true
             };
             
-            // Try to save the default profile
             try {
               await db.collection("users").doc(userCred.user.uid).set(userData);
-              console.log('Default user profile created successfully');
+              console.log('Pending user profile created for approval');
             } catch (saveError) {
-              console.warn('Could not save default profile:', saveError);
+              console.warn('Could not save pending profile:', saveError);
+              await firebase.auth().signOut();
+              const message = document.getElementById('message');
+              message.innerHTML = `
+                <div class="alert alert-danger">
+                  <strong>Profile missing:</strong> Your login exists but no user profile was saved.
+                  Please contact a Super Admin, or try registering again after the issue is fixed.
+                </div>
+              `;
+              message.className = "mt-3";
+              submitButton.innerHTML = originalButtonText;
+              submitButton.disabled = false;
+              isLoggingIn = false;
+              return;
             }
           }
         } catch (firestoreError) {
-          console.warn('Firestore access failed, using default profile:', firestoreError);
-          
-          // Show helpful message about Firestore rules
+          console.warn('Firestore access failed:', firestoreError);
+          await firebase.auth().signOut();
           const message = document.getElementById('message');
           message.innerHTML = `
             <div class="alert alert-warning">
               <strong>Firestore Access Issue:</strong> Cannot read user profile due to security rules.<br>
-              <small>Please update Firestore rules or contact administrator.</small>
+              <small>Please contact an administrator.</small>
             </div>
           `;
-          
-          // Use default profile if Firestore access fails
-          userData = {
-            role: 'Midwife',
-            approved: true,
-            email: email,
-            createdAt: new Date().toISOString()
-          };
+          message.className = "mt-3";
+          submitButton.innerHTML = originalButtonText;
+          submitButton.disabled = false;
+          isLoggingIn = false;
+          return;
         }
         
         // Check if user is approved (support both 'approved' and 'status' fields)
