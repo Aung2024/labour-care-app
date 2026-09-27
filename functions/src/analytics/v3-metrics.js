@@ -60,7 +60,32 @@ const emptyV3Metrics = () => ({
     ironFolate: 0, vitaminB1: 0
   },
   referral: { total: 0, byStage: {}, byDestination: {} },
-  jointCare: { clients: 0, byStatus: {} }
+  jointCare: { clients: 0, byStatus: {} },
+  hmis: {
+    newAncUnder24Months: 0,
+    publicSkilledDeliveries: 0,
+    privateSkilledDeliveries: 0,
+    ironThreePlusDelivered: 0,
+    pncB1Day43To84: 0,
+    pncVitaminAWithin42: 0,
+    newAncHemoglobin: 0,
+    ancAnemia: 0,
+    notBreathing: 0,
+    bagMask: 0,
+    bagMaskSurvived: 0,
+    aliveMale: 0, aliveFemale: 0, deadMale: 0, deadFemale: 0,
+    publicAliveMale: 0, publicAliveFemale: 0, publicDeadMale: 0, publicDeadFemale: 0,
+    privateAliveMale: 0, privateAliveFemale: 0, privateDeadMale: 0, privateDeadFemale: 0,
+    skilledAliveMale: 0, skilledAliveFemale: 0, skilledDeadMale: 0, skilledDeadFemale: 0,
+    pretermAliveMale: 0, pretermAliveFemale: 0,
+    lbwAliveMale: 0, lbwAliveFemale: 0, lbwDeadMale: 0, lbwDeadFemale: 0,
+    abortion: 0,
+    newbornDeathUnder7: 0,
+    newbornDeath7To28: 0,
+    maternalDeathPregnancy: 0,
+    maternalDeathOther: 0,
+    maternalDeathInjury: 0
+  }
 })
 
 const numeric = (value) => {
@@ -201,7 +226,8 @@ const deliveryFacts = (facts) => {
         birthDate: firstDate(baby, ['birthTime', 'birth_time']),
         gestationalWeek: numeric(
           baby.gestationalWeek || baby.gestational_week || details.gestationalWeek
-        ) || null
+        ) || null,
+        gender: baby.gender || baby.sex || ''
       })),
       uterotonic: affirmative(
         (notes.thirdStage || {}).oxytocinGiven ?? notes.oxytocinGiven
@@ -586,6 +612,137 @@ const registeredBabyHasKmcYes = (facts, visits) => {
   })
 }
 
+const babySex = (baby) => {
+  const value = String((baby && (baby.gender || baby.sex)) || '').trim().toLowerCase()
+  if (['m', 'male', 'boy', 'ကျား'].includes(value)) return 'Male'
+  if (['f', 'female', 'girl', 'မ'].includes(value)) return 'Female'
+  return ''
+}
+
+const hmisDeathGroup = (value) => {
+  const text = String(value || '').toLowerCase()
+  if (!text) return ''
+  if (/accident|suicide|murder|injury|homicide|ထိခိုက်/.test(text)) return 'Injury'
+  if (/other|incidental|non-obstetric|အခြား/.test(text)) return 'Other'
+  if (/pregnan|obstetric|maternal|သားဖွား/.test(text)) return 'Pregnancy'
+  return ''
+}
+
+const applyHmisMetrics = (metrics, facts, period, context) => {
+  const profile = facts.profile || {}
+  const anc = context.anc || []
+  const delivery = context.delivery
+  const youngestMonths = numeric(profile.youngest_child_age_years) * 12 +
+    numeric(profile.youngest_child_age_months)
+  const youngestKnown = profile.youngest_child_age_years != null ||
+    profile.youngest_child_age_months != null
+  if (metrics.anc.new && youngestKnown && youngestMonths < 24) {
+    metrics.hmis.newAncUnder24Months = 1
+  }
+  if (context.actualNoteInPeriod && delivery) {
+    const skilled = ['skilled_birth_attendant', 'amw', 'self'].includes(delivery.provider)
+    if (skilled && delivery.place === 'Public Health Facility') {
+      metrics.hmis.publicSkilledDeliveries = 1
+    }
+    if (skilled && delivery.place === 'Private Facility') {
+      metrics.hmis.privateSkilledDeliveries = 1
+    }
+    const ironVisits = sortedRecords(facts.antenatalVisits || [], [
+      'visitDate', 'visit_date', 'recordedAt', 'timestamp', 'createdAt'
+    ]).filter((visit) => medicineReceived(visit.ironFolicAcid) ||
+      medicineReceived(visit.micronutrientsTablet)).length
+    if (ironVisits >= 3) metrics.hmis.ironThreePlusDelivered = 1
+    delivery.babies.forEach((baby) => {
+      const sex = babySex(baby)
+      if (!sex) return
+      const alive = baby.outcome === 'alive'
+      const dead = ['death', 'stillbirth'].includes(baby.outcome)
+      const weight = birthWeightForBaby(baby)
+      const preterm = numeric(baby.gestationalWeek) > 0 && numeric(baby.gestationalWeek) < 37
+      const key = (alive ? 'alive' : dead ? 'dead' : '') + sex
+      if (alive) metrics.hmis['alive' + sex] += 1
+      if (dead) metrics.hmis['dead' + sex] += 1
+      if (delivery.place === 'Public Health Facility' && key) {
+        metrics.hmis['public' + (alive ? 'Alive' : 'Dead') + sex] += alive || dead ? 1 : 0
+      }
+      if (delivery.place === 'Private Facility' && (alive || dead)) {
+        metrics.hmis['private' + (alive ? 'Alive' : 'Dead') + sex] += 1
+      }
+      if (skilled && alive) metrics.hmis['skilledAlive' + sex] += 1
+      if (skilled && dead) metrics.hmis['skilledDead' + sex] += 1
+      if (preterm && alive) metrics.hmis['pretermAlive' + sex] += 1
+      if (weight && weight < 2500 && alive) metrics.hmis['lbwAlive' + sex] += 1
+      if (weight && weight < 2500 && dead) metrics.hmis['lbwDead' + sex] += 1
+      if (baby.outcome === 'death' && baby.birthDate) {
+        const deathDate = firstDate(baby, ['deathTime', 'deathDate', 'diedAt']) || delivery.date
+        const age = deathDate ? (deathDate - baby.birthDate) / DAY_MS : null
+        if (age != null && age >= 0 && age < 7) metrics.hmis.newbornDeathUnder7 += 1
+        if (age != null && age >= 7 && age <= 28) metrics.hmis.newbornDeath7To28 += 1
+      }
+    })
+  }
+  const birthDate = delivery && delivery.date
+  sortedRecords(facts.postpartumVisits || [], [
+    'visitDate', 'visit_date', 'timestamp', 'createdAt'
+  ]).forEach((visit) => {
+    const date = recordDate(visit, ['visitDate', 'visit_date', 'timestamp', 'createdAt'])
+    if (!date || !isDateInPeriod(date, period)) return
+    const days = pncDays(visit, birthDate)
+    if (days != null && days >= 43 && days <= 84 &&
+      (visit.vitaminBComplex === true || medicineReceived(visit.vitaminB1))) {
+      metrics.hmis.pncB1Day43To84 = 1
+    }
+    if (days != null && days <= 42 && affirmative(visit.vitaminA)) {
+      metrics.hmis.pncVitaminAWithin42 = 1
+    }
+    const death = String(visit.maternalOutcome || visit.maternal_outcome || '').toLowerCase()
+    if (death === 'dead' || death === 'death') {
+      const group = hmisDeathGroup(visit.maternalDeathType || visit.maternal_death_type)
+      if (group === 'Pregnancy') metrics.hmis.maternalDeathPregnancy = 1
+      if (group === 'Other') metrics.hmis.maternalDeathOther = 1
+      if (group === 'Injury') metrics.hmis.maternalDeathInjury = 1
+    }
+  })
+  if (metrics.anc.new) {
+    const tested = recordsInPeriod(facts.testRecords || [], period, [
+      'testDate', 'visitDate', 'recordedAt', 'timestamp', 'createdAt'
+    ]).some((test) => numeric(test.hemoglobinResult || test.hemoglobin || test.hb) > 0)
+    if (tested) metrics.hmis.newAncHemoglobin = 1
+  }
+  const anemic = recordsInPeriod(facts.testRecords || [], period, [
+    'testDate', 'visitDate', 'recordedAt', 'timestamp', 'createdAt'
+  ]).some((test) => {
+    const hb = numeric(test.hemoglobinResult || test.hemoglobin || test.hb)
+    return hb > 0 && hb < 11
+  })
+  if (anc.length && anemic) metrics.hmis.ancAnemia = 1
+  sortedRecords(facts.immediateNewbornCare || [], [
+    'recordedAt', 'timestamp', 'createdAt', 'visitDate'
+  ]).forEach((care) => {
+    const date = recordDate(care, ['recordedAt', 'timestamp', 'createdAt', 'visitDate']) ||
+      (delivery && delivery.date)
+    if (period.key !== 'all' && (!date || !isDateInPeriod(date, period))) return
+    if (affirmative(care.gasping_or_no_breathing)) metrics.hmis.notBreathing = 1
+    if (affirmative(care.bag_and_mask)) metrics.hmis.bagMask = 1
+    const outcome = String(care.resuscitation_outcome || '').toLowerCase()
+    if (affirmative(care.bag_and_mask) && (outcome === 'alive' || outcome === 'referred')) {
+      metrics.hmis.bagMaskSurvived = 1
+    }
+  })
+  const abortionSources = [
+    facts.endTreatment, facts.outcomeRecord, ...(facts.hrtActions || [])
+  ]
+  const aborted = abortionSources.some((record) => {
+    const data = unwrap(record) || {}
+    const date = recordDate(data, ['recordedAt', 'timestamp', 'createdAt', 'completedAt'])
+    if (period.key !== 'all' && (!date || !isDateInPeriod(date, period))) return false
+    const text = String(data.completionReason || data.reason || data.outcome || data.maternalOutcome || '').toLowerCase()
+    const weeks = numeric(data.gestationalWeek || data.gestationalAge || data.gestational_age)
+    return /abortion|miscarriage|pregnancy_loss/.test(text) && (!weeks || weeks < 22)
+  })
+  if (aborted) metrics.hmis.abortion = 1
+}
+
 const applyRegisteredBabyMetrics = (metrics, facts, period) => {
   const resetKeys = [
     'clients', 'new', 'old', 'birthWeightMeasured', 'lowBirthWeight',
@@ -955,6 +1112,9 @@ const calculateV3Metrics = (facts, periodDescriptor, options) => {
 
   if (registeredBabyTruth) {
     applyRegisteredBabyMetrics(metrics, facts, period)
+    applyHmisMetrics(metrics, facts, period, {
+      anc, delivery, actualNoteInPeriod
+    })
   }
 
   return metrics

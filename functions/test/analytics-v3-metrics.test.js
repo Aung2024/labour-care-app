@@ -598,6 +598,66 @@ test('v3.2 counts newborn measures once per registered baby client', () => {
   assert.equal(metrics.newborn.kmcYes, 1)
 })
 
+test('v3.2 HMIS counters cover monthly-report rows without changing dashboard totals', () => {
+  const metrics = calculateV3Metrics(baseFacts({
+    profile: {
+      created_at: '2026-09-02',
+      age: 24,
+      patient_type: 'mother',
+      youngest_child_age_years: 1,
+      youngest_child_age_months: 6
+    },
+    antenatalVisits: [1, 2, 3].map((visitNumber) => wrapped({
+      visitDate: '2026-09-0' + visitNumber,
+      visitNumber,
+      gestationalAge: visitNumber === 1 ? 10 : 20,
+      ironFolicAcid: 'Given'
+    })),
+    testRecords: [wrapped({
+      testDate: '2026-09-02',
+      hemoglobinResult: 9.5
+    })],
+    deliveryNotes: wrapped({
+      deliveryDetails: {
+        birthProvider: 'skilled_birth_attendant',
+        birthPlace: 'government_hospital',
+        maternalCondition: 'alive',
+        babies: [{
+          birthTime: '2026-09-20',
+          outcome: 'alive',
+          gender: 'female',
+          gestationalWeek: 36,
+          birthWeightGram: 2400
+        }]
+      }
+    }),
+    immediateNewbornCare: [wrapped({
+      timestamp: '2026-09-20',
+      gasping_or_no_breathing: true,
+      bag_and_mask: true,
+      resuscitation_outcome: 'alive'
+    })],
+    postpartumVisits: [wrapped({
+      visitDate: '2026-09-21',
+      vitaminA: true,
+      vitaminBComplex: true
+    })]
+  }), '2026-09', { corrected: true, registeredBabyTruth: true })
+  assert.equal(metrics.anc.new, 1)
+  assert.equal(metrics.hmis.newAncUnder24Months, 1)
+  assert.equal(metrics.hmis.newAncHemoglobin, 1)
+  assert.equal(metrics.hmis.ancAnemia, 1)
+  assert.equal(metrics.hmis.publicSkilledDeliveries, 1)
+  assert.equal(metrics.hmis.ironThreePlusDelivered, 1)
+  assert.equal(metrics.hmis.aliveFemale, 1)
+  assert.equal(metrics.hmis.pretermAliveFemale, 1)
+  assert.equal(metrics.hmis.lbwAliveFemale, 1)
+  assert.equal(metrics.hmis.notBreathing, 1)
+  assert.equal(metrics.hmis.bagMaskSurvived, 1)
+  assert.equal(metrics.hmis.pncVitaminAWithin42, 1)
+  assert.equal(metrics.registration.total, 1)
+})
+
 test('v3.2 isolates twins and excludes delivery-note babies without profiles', () => {
   const sharedVisit = wrapped({
     _newbornSourcePatientId: 'mother-1',

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>လချုပ်</title>
+  <link rel="stylesheet" href="css/monthly-report.css">
+</head>
+<body class="monthly-page">
+  <header class="monthly-bar">
+    <h1>လချုပ်</h1>
+    <label>လ <input id="monthlyMonth" type="month"></label>
+    <button id="monthlyLoad" type="button">ပြရန်</button>
+    <button id="monthlyPrint" type="button">ပုံနှိပ်ရန်</button>
+    <a href="home.html">ပင်မ</a>
+    <p id="monthlyStatus" class="no-print">ပြင်ဆင်နေသည်…</p>
+  </header>
+  <div id="monthlyHeader" class="monthly-sheet"></div>
+  <nav id="monthlyTabs" class="monthly-tabs" aria-label="လချုပ်ပုံစံများ"></nav>
+  <main id="monthlyForms" class="monthly-sheet"></main>
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/dashboard-data.js"></script>
+  <script src="js/monthly-report.js"></script>
+  <script>
+    (function () {
+      var profile = null
+      var metrics = {}
+      var monthInput = document.getElementById('monthlyMonth')
+      var now = new Date()
+      monthInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+
+      function showForm(id) {
+        document.querySelectorAll('.monthly-form').forEach(function (form) {
+          form.classList.toggle('is-active', form.id === id)
+        })
+        document.querySelectorAll('#monthlyTabs button').forEach(function (button) {
+          button.setAttribute('aria-selected', button.getAttribute('data-form') === id ? 'true' : 'false')
+        })
+      }
+
+      function paint() {
+        var facility = (profile && (profile.facility_name || profile.facilityName)) || 'ဌာန'
+        document.getElementById('monthlyHeader').textContent =
+          monthInput.value + ' · ' + (profile.township || '') + ' · ' + facility + ' · ' + (profile.name || '')
+        document.getElementById('monthlyForms').innerHTML =
+          MonthlyReport.renderForms(metrics, facility)
+        var tabs = document.getElementById('monthlyTabs')
+        tabs.innerHTML = MonthlyReport.forms.map(function (form, index) {
+          return '<button type="button" data-form="' + form.id + '" aria-selected="' +
+            (index === 0 ? 'true' : 'false') + '">' + form.title + '</button>'
+        }).join('')
+        tabs.querySelectorAll('button').forEach(function (button) {
+          button.addEventListener('click', function () { showForm(button.getAttribute('data-form')) })
+        })
+        showForm('form-1')
+      }
+
+      async function loadReport() {
+        var status = document.getElementById('monthlyStatus')
+        status.textContent = 'ဖတ်နေသည်…'
+        var period = monthInput.value
+        var scopeId = DashboardData.scopeDocId({ type: 'provider', id: profile.uid }, '', '')
+        var snapshot = await firebase.firestore().collection('analytics_v32_periods')
+          .doc(period).collection('scopes').doc(scopeId).get()
+        metrics = snapshot.exists ? (snapshot.data().metrics || {}) : {}
+        status.textContent = snapshot.exists ? 'အဆင်သင့်' : 'ဤလအတွက် အချက်အလက် မရှိသေးပါ'
+        paint()
+      }
+
+      firebase.auth().onAuthStateChanged(async function (user) {
+        if (!user) return
+        var doc = await firebase.firestore().collection('users').doc(user.uid).get()
+        profile = Object.assign({ uid: user.uid }, doc.data() || {})
+        var role = String(profile.role || '').toLowerCase()
+        if (role !== 'midwife') {
+          window.location.href = 'home.html'
+          return
+        }
+        document.getElementById('monthlyLoad').addEventListener('click', function () {
+          loadReport().catch(function (error) {
+            document.getElementById('monthlyStatus').textContent = error.message || 'မအောင်မြင်ပါ'
+          })
+        })
+        document.getElementById('monthlyPrint').addEventListener('click', function () { window.print() })
+        loadReport().catch(function (error) {
+          document.getElementById('monthlyStatus').textContent = error.message || 'မအောင်မြင်ပါ'
+        })
+      })
+    })()
+  </script>
+  <script src="js/register-sw.js"></script>
+</body>
+</html>
