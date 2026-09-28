@@ -3,21 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#047857">
   <title>လချုပ်</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css">
+  <link rel="stylesheet" href="css/dashboard-v3.css">
   <link rel="stylesheet" href="css/monthly-report.css">
 </head>
-<body class="monthly-page">
-  <header class="monthly-bar">
-    <h1>လချုပ်</h1>
-    <label>လ <input id="monthlyMonth" type="month"></label>
-    <button id="monthlyLoad" type="button">ပြရန်</button>
-    <button id="monthlyPrint" type="button">ပုံနှိပ်ရန်</button>
-    <a href="home.html">ပင်မ</a>
-    <p id="monthlyStatus" class="no-print">ပြင်ဆင်နေသည်…</p>
-  </header>
-  <div id="monthlyHeader" class="monthly-sheet"></div>
-  <nav id="monthlyTabs" class="monthly-tabs" aria-label="လချုပ်ပုံစံများ"></nav>
-  <main id="monthlyForms" class="monthly-sheet"></main>
+<body class="dashboard-page monthly-page">
+  <main class="dashboard-shell">
+    <header class="dashboard-appbar">
+      <div class="dashboard-appbar-inner">
+        <div class="dashboard-title-row">
+          <span class="dashboard-title-icon" aria-hidden="true"><i class="fas fa-file-alt"></i></span>
+          <div>
+            <h1 class="dashboard-heading">လချုပ်</h1>
+            <p class="dashboard-subtitle">ကျန်းမာရေးဌာန/ဌာနခွဲ လချုပ်အစီရင်ခံစာ</p>
+          </div>
+        </div>
+        <div class="dashboard-header-actions">
+          <button id="monthlyPrint" class="dashboard-icon-button" type="button" aria-label="ပုံနှိပ်ရန်">
+            <i class="fas fa-print" aria-hidden="true"></i>
+          </button>
+          <a class="dashboard-icon-button" href="home.html" aria-label="ပင်မစာမျက်နှာ">
+            <i class="fas fa-home" aria-hidden="true"></i>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <section class="monthly-controls no-print">
+      <label for="monthlyMonth">အစီရင်ခံလ<select id="monthlyMonth"></select></label>
+      <label for="monthlyYear">ခုနှစ်<select id="monthlyYear"></select></label>
+      <label for="monthlyPreparedOn">လချုပ်ပြုလုပ်သည့် ရက်စွဲ<input id="monthlyPreparedOn" type="date"></label>
+    </section>
+
+    <nav id="monthlyTabs" class="dashboard-tabs no-print" aria-label="လချုပ်စာမျက်နှာများ"></nav>
+    <main id="monthlyForms"></main>
+  </main>
+
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
@@ -29,45 +54,77 @@
     (function () {
       var profile = null
       var metrics = {}
-      var monthInput = document.getElementById('monthlyMonth')
+      var monthSelect = document.getElementById('monthlyMonth')
+      var yearSelect = document.getElementById('monthlyYear')
+      var dateInput = document.getElementById('monthlyPreparedOn')
       var now = new Date()
-      monthInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+      var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+      months.forEach(function (name, index) {
+        var option = document.createElement('option')
+        option.value = String(index + 1).padStart(2, '0')
+        option.textContent = name + ' ' + (index + 1)
+        monthSelect.appendChild(option)
+      })
+      monthSelect.value = String(now.getMonth() + 1).padStart(2, '0')
+      for (var year = now.getFullYear(); year >= now.getFullYear() - 2; year -= 1) {
+        var yearOption = document.createElement('option')
+        yearOption.value = String(year)
+        yearOption.textContent = String(year)
+        yearSelect.appendChild(yearOption)
+      }
+      dateInput.value = now.toISOString().slice(0, 10)
 
-      function showForm(id) {
+      function facilityName() {
+        return profile.facility_name || profile.facilityName || profile.name || ''
+      }
+
+      function paperHead() {
+        var prepared = dateInput.value ? new Date(dateInput.value + 'T00:00:00') : now
+        var preparedText = prepared.toLocaleDateString('en-GB')
+        return '<p class="monthly-kicker">စီမံချက်ဆန်းစစ်ပုံစံ လချုပ် (၁)</p>' +
+          '<p>စီမံခန့်ခွဲမှုအထောက်အကူပြု ကျန်းမာရေးသတင်းစနစ်</p>' +
+          '<h2>ကျန်းမာရေးဌာန/ဌာနခွဲ လချုပ်အစီရင်ခံစာ</h2>' +
+          '<dl class="monthly-meta">' +
+          '<div><dt>ဌာန / ဌာနခွဲ</dt><dd>' + facilityName() + '</dd></div>' +
+          '<div><dt>မြို့နယ်</dt><dd>' + (profile.township || '') + '</dd></div>' +
+          '<div><dt>တိုင်းဒေသကြီး / ပြည်နယ်</dt><dd>' + (profile.region || '') + '</dd></div>' +
+          '<div><dt>အစီရင်ခံလ</dt><dd>' + monthSelect.selectedOptions[0].textContent + '</dd></div>' +
+          '<div><dt>ခုနှစ်</dt><dd>' + yearSelect.value + '</dd></div>' +
+          '<div><dt>လချုပ်ပြုလုပ်သည့် ရက်စွဲ</dt><dd>' + preparedText + '</dd></div>' +
+          '</dl>'
+      }
+
+      function showPage(id) {
         document.querySelectorAll('.monthly-form').forEach(function (form) {
           form.classList.toggle('is-active', form.id === id)
         })
         document.querySelectorAll('#monthlyTabs button').forEach(function (button) {
-          button.setAttribute('aria-selected', button.getAttribute('data-form') === id ? 'true' : 'false')
+          button.setAttribute('aria-selected', button.getAttribute('data-page') === id ? 'true' : 'false')
         })
       }
 
       function paint() {
-        var facility = (profile && (profile.facility_name || profile.facilityName)) || 'ဌာန'
-        document.getElementById('monthlyHeader').textContent =
-          monthInput.value + ' · ' + (profile.township || '') + ' · ' + facility + ' · ' + (profile.name || '')
         document.getElementById('monthlyForms').innerHTML =
-          MonthlyReport.renderForms(metrics, facility)
+          MonthlyReport.renderPages(metrics, facilityName())
+        var head = document.querySelector('#page-1 .monthly-paper-head')
+        if (head) head.innerHTML = paperHead()
         var tabs = document.getElementById('monthlyTabs')
-        tabs.innerHTML = MonthlyReport.forms.map(function (form, index) {
-          return '<button type="button" data-form="' + form.id + '" aria-selected="' +
-            (index === 0 ? 'true' : 'false') + '">' + form.title + '</button>'
+        tabs.innerHTML = MonthlyReport.pages.map(function (page, index) {
+          return '<button class="dashboard-tab" type="button" data-page="' + page.id +
+            '" aria-selected="' + (index === 0 ? 'true' : 'false') + '">' + page.title + '</button>'
         }).join('')
         tabs.querySelectorAll('button').forEach(function (button) {
-          button.addEventListener('click', function () { showForm(button.getAttribute('data-form')) })
+          button.addEventListener('click', function () { showPage(button.getAttribute('data-page')) })
         })
-        showForm('form-1')
+        showPage('page-1')
       }
 
       async function loadReport() {
-        var status = document.getElementById('monthlyStatus')
-        status.textContent = 'ဖတ်နေသည်…'
-        var period = monthInput.value
+        var period = yearSelect.value + '-' + monthSelect.value
         var scopeId = DashboardData.scopeDocId({ type: 'provider', id: profile.uid }, '', '')
         var snapshot = await firebase.firestore().collection('analytics_v32_periods')
           .doc(period).collection('scopes').doc(scopeId).get()
         metrics = snapshot.exists ? (snapshot.data().metrics || {}) : {}
-        status.textContent = snapshot.exists ? 'အဆင်သင့်' : 'ဤလအတွက် အချက်အလက် မရှိသေးပါ'
         paint()
       }
 
@@ -75,20 +132,15 @@
         if (!user) return
         var doc = await firebase.firestore().collection('users').doc(user.uid).get()
         profile = Object.assign({ uid: user.uid }, doc.data() || {})
-        var role = String(profile.role || '').toLowerCase()
-        if (role !== 'midwife') {
+        if (String(profile.role || '').toLowerCase() !== 'midwife') {
           window.location.href = 'home.html'
           return
         }
-        document.getElementById('monthlyLoad').addEventListener('click', function () {
-          loadReport().catch(function (error) {
-            document.getElementById('monthlyStatus').textContent = error.message || 'မအောင်မြင်ပါ'
-          })
-        })
+        monthSelect.addEventListener('change', function () { loadReport() })
+        yearSelect.addEventListener('change', function () { loadReport() })
+        dateInput.addEventListener('change', paint)
         document.getElementById('monthlyPrint').addEventListener('click', function () { window.print() })
-        loadReport().catch(function (error) {
-          document.getElementById('monthlyStatus').textContent = error.message || 'မအောင်မြင်ပါ'
-        })
+        loadReport()
       })
     })()
   </script>

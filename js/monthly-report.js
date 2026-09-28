@@ -1,89 +1,116 @@
 (function (global) {
   'use strict'
 
-  var row = function (label, path) {
-    return { label: label, path: path || '' }
+  var line = function (serial, label, path) {
+    return { serial: serial, label: label, path: path || '', kind: 'line' }
   }
-  var pair = function (label, malePath, femalePath) {
-    return { label: label, malePath: malePath, femalePath: femalePath }
+  var title = function (serial, label) {
+    return { serial: serial, label: label, kind: 'title' }
   }
 
-  var FORMS = [
-    {
-      id: 'form-1',
-      title: 'လချုပ်ပုံစံ (၁)-၁',
-      rows: [
-        row('ယခုလမှတ်ပုံတင် ကိုယ်ဝန်ဆောင်အသစ်ပေါင်း', 'anc.new'),
-        row('မှတ်ပုံတင်ကိုယ်ဝန်ဆောင်အသစ်များအနက် ကိုယ်ဝန် (၁၂) ပတ်ဝန်းကျင် လာပြသူ', 'anc.early'),
-        row('ယခင်ကလေးမွေးပြီး (၂၄) လအတွင်း ယခုထပ်မံကိုယ်ဝန်ဆောင်သူ', 'hmis.newAncUnder24Months'),
-        row('စောင့်ရှောက်ပေးသည့် ကိုယ်ဝန်ဆောင် စုစုပေါင်း (အကြိမ်)', 'anc.services'),
-        row('ကျွမ်းကျင်သူက အိမ်တိုင်ရာရောက် မွေးဖွားပေးသည့် မိခင်', 'delivery.homeSkilled'),
-        row('ကျွမ်းကျင်သူက အစိုးရဆေးရုံ/ကျန်းမာရေးဌာနတွင် မွေးဖွားပေးသည့် မိခင်', 'hmis.publicSkilledDeliveries'),
-        row('ကိုယ်ဝန်စောင့်ရှောက်မှု အနည်းဆုံး (၈) ကြိမ်ရရှိသည့် အရှင်မွေးမိခင်', 'pnc.mothersWithAnc8'),
-        row('ကိုယ်ဝန်စောင့်ရှောက်မှု အနည်းဆုံး (၄) ကြိမ်ရရှိသည့် အရှင်မွေးမိခင်', 'pnc.mothersWithAnc4'),
-        row('အချင်းမကျမီ သားအိမ်ကျုံ့ဆေးရရှိသည့် မွေးပြီးမိခင်', 'delivery.uterotonic')
-      ]
-    },
-    {
-      id: 'form-2',
-      title: 'လချုပ်ပုံစံ (၁)-၂',
-      rows: [
-        row('မွေးပြီး (၄၈) နာရီအတွင်း စောင့်ရှောက်မှုရသည့် မွေးပြီးမိခင်', 'pnc.within48Hours'),
-        row('မွေးပြီးမိခင်စောင့်ရှောက်မှု အနည်းဆုံး (၄) ကြိမ်', 'pnc.atLeast4'),
-        row('အထက်အဆင့်သို့ လွှဲပြောင်းပေးသည့် မိခင်', 'referral.total'),
-        row('အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော ကိုယ်ဝန်ဆောင်အသစ်', 'highRisk.clients'),
-        row('ကိုယ်အလေးချိန်တိုင်းသည့် အရှင်မွေးကလေး', 'newborn.birthWeightMeasured'),
-        row('ကိုယ်အလေးချိန်မပြည့်သည့် အရှင်မွေးကလေး', 'newborn.lowBirthWeight'),
-        row('သန်ချဆေးရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်', 'anc.deworming'),
-        row('သံဓာတ်ဆေး (၃) ကြိမ်နှင့်အထက် ရရှိသည့် မွေးဖွားပြီးမိခင်', 'hmis.ironThreePlusDelivered'),
-        row('ဗီတာမင်ဘီဝမ်းရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်', 'anc.vitaminB1'),
-        row('ဗီတာမင်ဘီဝမ်းရရှိသည့် မွေးပြီးမိခင် (၄၂ ရက်အတွင်း)', 'pnc.vitaminB1'),
-        row('ဗီတာမင်ဘီဝမ်းရရှိသည့် နို့တိုက်မိခင် (၄၃ ရက်မှ ၈၄ ရက်)', 'hmis.pncB1Day43To84'),
-        row('ဗီတာမင်အေရရှိသည့် မွေးပြီးမိခင် (၄၂ ရက်အတွင်း)', 'hmis.pncVitaminAWithin42'),
-        row('ဟီမိုဂလိုဘင်စစ်ဆေးသော ကိုယ်ဝန်ဆောင်အသစ်', 'hmis.newAncHemoglobin'),
-        row('သွေးအားနည်းသော ကိုယ်ဝန်ဆောင်မိခင်', 'hmis.ancAnemia')
-      ]
-    },
-    {
-      id: 'form-3',
-      title: 'လချုပ်ပုံစံ (၁)-၃',
-      rows: [
-        row('မွေးပြီးတစ်နာရီအတွင်း မိခင်နို့တိုက်ကျွေးသည့် ကလေး', 'newborn.earlyBreastfeeding'),
-        row('မွေးပြီး (၂) ရက်အတွင်း စောင့်ရှောက်မှုရသော မွေးကင်းစ', 'newborn.careWithin2Days'),
-        row('မွေးပြီးပြီးချင်း အသက်မရှူသည့် ကလေး', 'hmis.notBreathing'),
-        row('လေအိတ်နှင့်မျက်နှာဖုံးဖြင့် အသက်ကယ်ပြုစုသည့် ကလေး', 'hmis.bagMask'),
-        row('အသက်ကယ်ပြုစုပြီးနောက် အသက်ရှင်/လွှဲပြောင်းသည့် ကလေး', 'hmis.bagMaskSurvived'),
-        row('၂ ကီလိုမပြည့်/လမစေ့မွေးသည့် မွေးကင်းစ', 'newborn.kmcEligible'),
-        row('မိခင်ရင်ခွင်ကပ်ပြုစုမှု (KMC) ရရှိသော ကလေး', 'newborn.kmcYes')
-      ]
-    },
-    { id: 'form-4', title: 'လချုပ်ပုံစံ (၁)-၄', rows: [], handwriting: 'စောင့်ကြပ်ကြည့်ရှုရသော ရောဂါများ' },
-    { id: 'form-5', title: 'လချုပ်ပုံစံ (၁)-၅', rows: [], handwriting: 'ငှက်ဖျား၊ သွေးတိုး/ဆီးချို နှင့် ထိခိုက်မှု' },
-    {
-      id: 'form-6',
-      title: 'လချုပ်ပုံစံ (၁)-၆',
-      sex: true,
-      rows: [
-        pair('အရှင်မွေးဦးရေ', 'hmis.aliveMale', 'hmis.aliveFemale'),
-        pair('အသေမွေးဦးရေ', 'hmis.deadMale', 'hmis.deadFemale'),
-        pair('အစိုးရဌာနတွင် အရှင်မွေး', 'hmis.publicAliveMale', 'hmis.publicAliveFemale'),
-        pair('အစိုးရဌာနတွင် အသေမွေး', 'hmis.publicDeadMale', 'hmis.publicDeadFemale'),
-        pair('ပုဂ္ဂလိကတွင် အရှင်မွေး', 'hmis.privateAliveMale', 'hmis.privateAliveFemale'),
-        pair('ပုဂ္ဂလိကတွင် အသေမွေး', 'hmis.privateDeadMale', 'hmis.privateDeadFemale'),
-        pair('ကျွမ်းကျင်သူနှင့် အရှင်မွေး', 'hmis.skilledAliveMale', 'hmis.skilledAliveFemale'),
-        pair('ကျွမ်းကျင်သူနှင့် အသေမွေး', 'hmis.skilledDeadMale', 'hmis.skilledDeadFemale'),
-        pair('လမစေ့အရှင်မွေး', 'hmis.pretermAliveMale', 'hmis.pretermAliveFemale'),
-        pair('ကိုယ်အလေးချိန်မပြည့် အရှင်မွေး', 'hmis.lbwAliveMale', 'hmis.lbwAliveFemale'),
-        pair('ကိုယ်အလေးချိန်မပြည့် အသေမွေး', 'hmis.lbwDeadMale', 'hmis.lbwDeadFemale'),
-        row('ကိုယ်ဝန်ပျက်သည့်ဦးရေ', 'hmis.abortion'),
-        row('မွေးပြီး (၇) ရက်အတွင်း သေဆုံးသူကလေး', 'hmis.newbornDeathUnder7'),
-        row('မွေးပြီး (၇) ရက်မှ (၂၈) ရက်အတွင်း သေဆုံးသူကလေး', 'hmis.newbornDeath7To28'),
-        row('သားဖွားရောဂါကြောင့် သေဆုံးသူမိခင်', 'hmis.maternalDeathPregnancy'),
-        row('အခြားရောဂါကြောင့် သေဆုံးသူမိခင်', 'hmis.maternalDeathOther'),
-        row('ထိခိုက်မှု/မတော်တဆမှုကြောင့် သေဆုံးသူမိခင်', 'hmis.maternalDeathInjury')
-      ]
-    },
-    { id: 'form-7', title: 'လချုပ်ပုံစံ (၁)-၇', rows: [], handwriting: 'ကျန်းမာရေးအသိပညာပေး' }
+  var section1 = [
+    title('၁။', 'ပဏာမကျန်းမာရေးစောင့်ရှောက်မှုလုပ်ငန်း'),
+    line('၁', 'ဆေးခန်းလာ လူနာအသစ်ပေါင်း'),
+    line('၂', 'ဆေးခန်းလာ လူနာအသစ်များအနက် အသက်(၆၀)နှစ် နှင့်အထက် ရှိသူပေါင်း'),
+    line('၃', 'အထွေအထွေဆေးခန်းလာ လူနာစုစုပေါင်း (သစ်+ဟောင်း အကြိမ်ပေါင်း)'),
+    line('၄', 'ကွင်းဆင်းသည့်အကြိမ်ပေါင်း (ရပ်ကွက်/ကျေးရွာအရေအတွက်)'),
+    line('၅', 'ကွင်းဆင်းရာတွင် ကျန်းမာရေးစောင့်ရှောက်မှုပေးသည့် လူနာစုစုပေါင်း (သစ်+ဟောင်း အကြိမ်ပေါင်း)'),
+    line('၆', 'အထက်အဆင့်များသို့ လွှဲပြောင်းပေးသော လူနာအကြိမ်ပေါင်း'),
+    line('၇', 'လူထုကျန်းမာရေးလုပ်သားများ၏လုပ်ငန်းများ ကျန်းမာရေးဝန်ထမ်းများနှင့် တွဲဖက်လုပ်ကိုင်သည့်အကြိမ်ပေါင်း')
+  ]
+  var section2to9 = [
+    title('၂။', 'မိခင်နှင့်မျိုးဆက်ပွားကျန်းမာရေးလုပ်ငန်း'),
+    line('၁', 'ယခုလမှတ်ပုံတင် ကိုယ်ဝန်ဆောင်အသစ်ပေါင်း', 'anc.new'),
+    line('၂', 'မှတ်ပုံတင်ကိုယ်ဝန်ဆောင်(အသစ်)များ အနက် ကိုယ်ဝန်(၁၂)ပတ်ဝန်းကျင် ကိုယ်ဝန်လာပြသူပေါင်း', 'anc.early'),
+    line('၃', 'မှတ်ပုံတင်ကိုယ်ဝန်ဆောင်(အသစ်)များအနက် ယခင်ကလေးမွေးပြီး (၂၄)လအတွင်း ယခုထပ်မံကိုယ်ဝန်ဆောင်သူပေါင်း', 'hmis.newAncUnder24Months'),
+    line('၄', 'စောင့်ရှောက်ပေးသည့် ကိုယ်ဝန်ဆောင်စုစုပေါင်း (သစ်+ဟောင်း အကြိမ်ပေါင်း)', 'anc.services'),
+    line('၅', 'သားဖွားခြင်းဆိုင်ရာ ကျွမ်းကျင်သော ကျန်းမာရေးဝန်ထမ်းကိုယ်တိုင် အိမ်တိုင်ရာရောက် မွေးဖွားပေးသည့် မိခင်ပေါင်း (Home Deliveries by SBA)', 'delivery.homeSkilled'),
+    line('၆', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သူကိုယ်တိုင် အစိုးရဆေးရုံနှင့် ကျန်းမာရေးဌာနများရှိ သားဖွားခန်းများတွင် မွေးဖွားပေးသည့်မိခင်ပေါင်း (Institutional Deliveries)', 'hmis.publicSkilledDeliveries'),
+    line('၇', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သူနှင့် ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှု အနည်းဆုံး(၈)ကြိမ် ရရှိခဲ့သည့် အရှင်မွေးမိခင်ပေါင်း', 'pnc.mothersWithAnc8'),
+    line('၈', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သူနှင့် ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှု အနည်းဆုံး(၄)ကြိမ် ရရှိခဲ့သည့် အရှင်မွေးမိခင်ပေါင်း', 'pnc.mothersWithAnc4'),
+    line('၉', 'ကလေးမွေးပြီး အချင်းမကျမီ သားအိမ်ကျုံ့ဆေးချက်ချင်းရရှိသည့် မွေးပြီးမိခင်ပေါင်း', 'delivery.uterotonic')
+  ]
+  var section2rest = [
+    line('၁၀', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သောကျန်းမာရေးဝန်ထမ်းကိုယ်တိုင် ကျန်းမာရေးစောင့်ရှောက်မှု ပေးသည့် မွေးပြီးမိခင်အသစ်ပေါင်း (မွေးဖွားပြီး(၄၈)နာရီအတွင်း)', 'pnc.within48Hours'),
+    line('၁၁', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သူနှင့် မွေးပြီးမိခင်စောင့်ရှောက်မှု အနည်းဆုံး (၄)ကြိမ်ရရှိခဲ့သည့် အရှင်မွေးမိခင်ပေါင်း', 'pnc.atLeast4'),
+    line('၁၂', 'အထက်အဆင့်သို့ လွှဲပြောင်းပေးသည့် မိခင်ပေါင်း (ကိုယ်ဝန်+မွေးဖွားစဉ်+မွေးပြီး)', 'referral.total'),
+    line('၁၃', 'အန္တရာယ်ဖြစ်နိုင်ခြေရှိသော ကိုယ်ဝန်ဆောင်မိခင်အသစ်ပေါင်း (High-Risk Pregnancy)', 'highRisk.clients'),
+    line('၁၄', 'အရန်သားဖွားဆရာမများ၏လုပ်ငန်းများ အရန်သားဖွားဆရာမမှ မွေးဖွားပေးသည့် မိခင်ပေါင်း'),
+    line('၁၅', 'အရန်သားဖွားဆရာမမှ အထက်အဆင့်သို့ လွှဲပြောင်းပေးသည့်မိခင်ပေါင်း (ကိုယ်ဝန်+မွေးဖွားစဉ်+မွေးပြီး)'),
+    line('၁၆', 'သားဆက်ခြားကျန်းမာရေးစောင့်ရှောက်မှုလုပ်ငန်းများ သားဆက်ခြား စားဆေးဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၁၇', '(၃)လခံထိုးဆေး (အသားဆေး)ဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၁၈', '(၃)လခံထိုးဆေး (အရေပြားအောက်ထိုးဆေး)ဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၁၉', 'လက်မောင်းအရေပြားအောက်ထည့် သားဆက်ခြားပစ္စည်းဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၂၀', 'သားအိမ်တွင်းထည့် သားဆက်ခြားပစ္စည်းဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၂၁', 'အရေးပေါ် သားဆက်ခြားစားဆေးဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း'),
+    line('၂၂', 'ကွန်ဒုံးဖြင့် စောင့်ရှောက်မှု ရရှိသူပေါင်း')
+  ]
+  var section3 = [
+    title('၃။', 'အာဟာရစောင့်ရှောက်မှုလုပ်ငန်း'),
+    line('၁', 'ကိုယ်အလေးချိန်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', 'newborn.birthWeightMeasured'),
+    line('၂', 'ကိုယ်အလေးချိန်မပြည့်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', 'newborn.lowBirthWeight'),
+    line('၃', 'သူငယ်နာဘယ်ရီဘယ်ရီဖြစ်ပွားသည့် ကလေးပေါင်း (အသစ်)'),
+    line('၄', 'သန်ချဆေးရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'anc.deworming'),
+    line('၅', 'ကိုယ်ဝန်ဆောင်စဉ် သံဓာတ်ပါဝင်သောဆေးပြား (၃)ကြိမ်နှင့်အထက် ရရှိသည့် မွေးဖွားပြီး မိခင်ပေါင်း', 'hmis.ironThreePlusDelivered'),
+    line('၆', 'ဗီတာမင်ဘီဝမ်း ဆေးပြားရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'anc.vitaminB1'),
+    line('၇', 'ဗီတာမင်ဘီဝမ်း ဆေးပြားရရှိသည့် မွေးဖွားပြီး(မီးတွင်း)မိခင်ပေါင်း(မွေးဖွားပြီး ၄၂ရက်အတွင်း)', 'pnc.vitaminB1'),
+    line('၈', 'ဗီတာမင်ဘီဝမ်း ဆေးပြားရရှိသည့်နို့တိုက်မိခင်ပေါင်း(မွေးဖွားပြီး၄၃ရက်မှ ၈၄ရက်အထိ)', 'hmis.pncB1Day43To84'),
+    line('၉', 'ဗီတာမင်အေ ရရှိသည့် မွေးဖွားပြီး(မီးတွင်း)မိခင်ပေါင်း', 'hmis.pncVitaminAWithin42'),
+    line('၁၀', 'ဟီမိုဂလိုဘင်ပမာဏစစ်ဆေးသော ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း(အသစ်)', 'hmis.newAncHemoglobin'),
+    line('၁၁', 'သွေးအားနည်းသော ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'hmis.ancAnemia')
+  ].map(function (item, index) {
+    if (index > 0) item.sex = true
+    return item
+  })
+  var section4start = [
+    title('၄။', 'ကလေးကျန်းမာရေးဖွံ့ဖြိုးရေးလုပ်ငန်း'),
+    line('၁', 'ဆေးခန်းလာလူနာအသစ်များအနက် (၅)နှစ်အောက်ကလေးလူနာပေါင်း'),
+    line('၂', 'ဝမ်းပျက်ဝမ်းလျှောဖြစ်ပွားသော (၅)နှစ်အောက်ကလေးပေါင်း(ရောဂါသစ်)'),
+    line('၃', 'အရည်(အိုအာတီ)ဖြင့် ကုသမှုခံယူသူ (၅)နှစ်အောက်ကလေးပေါင်း'),
+    line('၄', 'ဓာတ်ဆားရည်နှင့်ဇင့်ဆာလဖိတ်ဆေးပြားတို့ဖြင့် ကုသမှုခံယူသူ (၅)နှစ်အောက်ကလေးပေါင်း')
+  ]
+  var section4rest = [
+    line('၅', 'နမိုးနီးယားရောဂါ (သံသယ) ဖြစ်ပွားသော (၅)နှစ်အောက်ကလေးပေါင်း (ရောဂါသစ်)'),
+    line('၆', 'နမိုးနီးယားရောဂါ (သံသယ) အတွက် ပဋိဇီဝဆေးရရှိသည့် (၅)နှစ်အောက်ကလေးပေါင်း'),
+    line('၇', 'မွေးပြီးတစ်နာရီအတွင်း မိခင်နို့တိုက်ကျွေးသည့် မွေးကင်းစကလေးပေါင်း', 'newborn.earlyBreastfeeding'),
+    line('၈', 'မွေးပြီး(၂)ရက်အတွင်း ကျန်းမာရေးစောင့်ရှောက်မှုရရှိသော မွေးကင်းစကလေးပေါင်း', 'newborn.careWithin2Days'),
+    line('၉', 'မွေးပြီးပြီးချင်း အသက်မရှူသည့် ကလေးပေါင်း', 'hmis.notBreathing'),
+    line('၁၀', 'မွေးပြီးပြီးချင်း အသက်မရှူသည့် ကလေးများအနက် လေအိတ်နှင့်မျက်နှာဖုံးကိုအသုံးပြု၍ အသက်ကယ်ပြုစုပေးသည့် ကလေးပေါင်း', 'hmis.bagMask'),
+    line('၁၁', 'မွေးပြီးပြီးချင်း အသက်မရှူသည့် ကလေးများအနက် အသက်ကယ်ပြုစုပြီးနောက် အသက်ရှင်သည့် ကလေးပေါင်း', 'hmis.bagMaskSurvived'),
+    line('၁၂', 'ကိုယ်အလေးချိန် (၂)ကီလိုဂရမ် မပြည့်သည့်/လမစေ့မွေးဖွားသည့် မွေးကင်းစကလေးပေါင်း', 'newborn.kmcEligible'),
+    line('၁၃', 'မိခင်ရင်ခွင်ကပ်ပြုစုစောင့်ရှောက်ခြင်း (Kangaroo Mother Care) ရရှိသော မွေးကင်းစကလေးပေါင်း', 'newborn.kmcYes')
+  ]
+  var section5 = [
+    title('၅။', 'တိုးချဲ့ကာကွယ်ဆေးထိုးလုပ်ငန်း'),
+    line('၁', 'ဘီစီဂျီ ကာကွယ်ဆေး (တီဘီ) (တစ်နှစ်အောက်)'),
+    line('၂', 'အသည်းရောင်အသားဝါဘီ ကာကွယ်ဆေး (မွေးကင်းစ)'),
+    line('၃', 'ပြင်းထန်ဝမ်းပျက်ဝမ်းလျှော ကာကွယ်ဆေး (ရိုတာ) (ပထမအကြိမ်) (၂ လ)'),
+    line('၃', 'ပြင်းထန်ဝမ်းပျက်ဝမ်းလျှော ကာကွယ်ဆေး (ရိုတာ) (ဒုတိယအကြိမ်) (၄ လ)'),
+    line('၄', 'ပိုလီယို ကာကွယ်ဆေး (အစက်ချ) (ပထမအကြိမ်) (၂ လ)'),
+    line('၄', 'ပိုလီယို ကာကွယ်ဆေး (အစက်ချ) (ဒုတိယအကြိမ်) (၄ လ)'),
+    line('၄', 'ပိုလီယို ကာကွယ်ဆေး (အစက်ချ) (တတိယအကြိမ်) (၆ လ)'),
+    line('၅', 'ပိုလီယို ကာကွယ်ဆေး (ထိုးဆေး) (ပထမအကြိမ်) (၄ လ)'),
+    line('၅', 'ပိုလီယို ကာကွယ်ဆေး (ထိုးဆေး) (ဒုတိယအကြိမ်) (၉ လ)'),
+    line('၆', 'ပြင်းထန်အဆုတ်ရောင် ကာကွယ်ဆေး (ပီစီဗီ) (ပထမအကြိမ်) (၂ လ)'),
+    line('၆', 'ပြင်းထန်အဆုတ်ရောင် ကာကွယ်ဆေး (ပီစီဗီ) (ဒုတိယအကြိမ်) (၄ လ)'),
+    line('၆', 'ပြင်းထန်အဆုတ်ရောင် ကာကွယ်ဆေး (ပီစီဗီ) (တတိယအကြိမ်) (၆ လ)'),
+    line('၇', 'ငါးမျိုးစပ်ကာကွယ်ဆေး (ပထမအကြိမ်) (၂ လ)'),
+    line('၇', 'ငါးမျိုးစပ်ကာကွယ်ဆေး (ဒုတိယအကြိမ်) (၄ လ)'),
+    line('၇', 'ငါးမျိုးစပ်ကာကွယ်ဆေး (တတိယအကြိမ်) (၆ လ)'),
+    line('၇', 'ငါးမျိုးစပ်ကာကွယ်ဆေး (စတုတ္ထအကြိမ်) (၁၈ လ)'),
+    line('၈', 'ဂျပန်ဦးနှောက်ရောင် ကာကွယ်ဆေး (၉ လ)'),
+    line('၉', 'ဝက်သက်-ဂျိုက်သိုး ကာကွယ်ဆေး (ပထမအကြိမ်) (၉ လ)'),
+    line('၉', 'ဝက်သက်-ဂျိုက်သိုး ကာကွယ်ဆေး (ဒုတိယအကြိမ်) (၁၈ လ)'),
+    line('၁၀', 'ဆုံဆို့-မေးခိုင် ကာကွယ်ဆေး (၅-၇နှစ် အောက်)'),
+    line('၁၁', 'သားအိမ်ခေါင်းကင်ဆာ ကာကွယ်ဆေး (၉-၁၀နှစ်အောက် မိန်းကလေး)'),
+    line('၁၂', 'မေးခိုင်-ဆုံဆို့ ကာကွယ်ဆေး (ပထမအကြိမ်) (ကိုယ်ဝန်ဆောင်)'),
+    line('၁၂', 'မေးခိုင်-ဆုံဆို့ ကာကွယ်ဆေး (ဒုတိယအကြိမ်) (ကိုယ်ဝန်ဆောင်)')
+  ]
+
+  var PAGES = [
+    { id: 'page-1', title: 'စာမျက်နှာ ၁', header: true, rows: section1.concat(section2to9) },
+    { id: 'page-2', title: 'စာမျက်နှာ ၂', rows: section2rest.concat(section3, section4start) },
+    { id: 'page-3', title: 'စာမျက်နှာ ၃', rows: section4rest.concat(section5) }
   ]
 
   function valueAt(metrics, path) {
@@ -95,39 +122,41 @@
     return Number.isFinite(number) && number > 0 ? String(number) : ''
   }
 
-  function renderForms(metrics, facilityName) {
-    return FORMS.map(function (form) {
-      var body = form.rows.map(function (item) {
-        if (item.malePath) {
-          return '<tr><th scope="row">' + item.label + '</th>' +
-            '<td>' + valueAt(metrics, item.malePath) + '</td>' +
-            '<td>' + valueAt(metrics, item.femalePath) + '</td>' +
-            '<td></td><td class="monthly-total">' +
-            valueAt(metrics, item.malePath) + '</td><td class="monthly-total">' +
-            valueAt(metrics, item.femalePath) + '</td></tr>'
-        }
-        var shown = valueAt(metrics, item.path)
-        if (form.sex) {
-          return '<tr><th scope="row">' + item.label + '</th><td colspan="2">' + shown +
-            '</td><td></td><td colspan="2" class="monthly-total">' + shown + '</td></tr>'
-        }
-        return '<tr><th scope="row">' + item.label + '</th><td>' + shown +
-          '</td><td></td><td></td><td class="monthly-total">' + shown + '</td></tr>'
+  function cells(item, metrics) {
+    var shown = valueAt(metrics, item.path)
+    if (item.kind === 'title') {
+      return '<td class="monthly-title" colspan="4">' + item.label + '</td>'
+    }
+    if (item.sex) {
+      return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
+        '<td class="monthly-sex"><span>ကျား</span><span>မ</span><strong>' + shown + '</strong></td>' +
+        '<td class="monthly-sex monthly-total"><span>ကျား</span><span>မ</span><strong>' + shown + '</strong></td>'
+    }
+    return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
+      '<td>' + shown + '</td><td class="monthly-total">' + shown + '</td>'
+  }
+
+  function tableHead(facilityName) {
+    return '<thead><tr>' +
+      '<th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th>' +
+      '<th>အစီရင်ခံစာပေးပို့သည့် ကျန်းမာရေးဌာန/ဌာနခွဲများအမည်<br>' + facilityName + '</th>' +
+      '<th>စုစုပေါင်း</th></tr></thead>'
+  }
+
+  function renderPages(metrics, facilityName) {
+    return PAGES.map(function (page, index) {
+      var body = page.rows.map(function (item) {
+        return '<tr class="' + (item.kind === 'title' ? 'is-title' : '') + '">' + cells(item, metrics) + '</tr>'
       }).join('')
-      if (!form.rows.length) {
-        body = Array.from({ length: 8 }, function () {
-          return '<tr><th></th><td></td><td></td><td></td><td></td></tr>'
-        }).join('')
-      }
-      var head = form.sex
-        ? '<tr><th>လုပ်ဆောင်ချက်</th><th colspan="2">' + facilityName + '</th><th></th><th colspan="2">စုစုပေါင်း</th></tr>' +
-          '<tr><th></th><th>ကျား</th><th>မ</th><th></th><th>ကျား</th><th>မ</th></tr>'
-        : '<tr><th>လုပ်ဆောင်ချက်</th><th>' + facilityName + '</th><th></th><th></th><th>စုစုပေါင်း</th></tr>'
-      return '<section class="monthly-form" id="' + form.id + '"><h2>' + form.title + '</h2>' +
-        (form.handwriting ? '<p class="monthly-handwrite">' + form.handwriting + ' — လက်ဖြင့်ဖြည့်ပါ</p>' : '') +
-        '<table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></section>'
+      return '<section class="monthly-form' + (index === 0 ? ' is-active' : '') + '" id="' + page.id + '">' +
+        (page.header ? '<div class="monthly-paper-head"></div>' : '') +
+        '<table>' + tableHead(facilityName) + '<tbody>' + body + '</tbody></table></section>'
     }).join('')
   }
 
-  global.MonthlyReport = { forms: FORMS, valueAt: valueAt, renderForms: renderForms }
+  global.MonthlyReport = {
+    pages: PAGES,
+    valueAt: valueAt,
+    renderPages: renderPages
+  }
 })(typeof window !== 'undefined' ? window : globalThis)
