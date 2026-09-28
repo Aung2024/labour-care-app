@@ -652,6 +652,7 @@ test('v3.2 HMIS counters cover monthly-report rows without changing dashboard to
   assert.equal(metrics.hmis.aliveFemale, 1)
   assert.equal(metrics.hmis.pretermAliveFemale, 1)
   assert.equal(metrics.hmis.lbwAliveFemale, 1)
+  assert.equal(metrics.hmis.weightMeasuredFemale, 1)
   assert.equal(metrics.hmis.notBreathing, 1)
   assert.equal(metrics.hmis.bagMaskSurvived, 1)
   assert.equal(metrics.hmis.pncVitaminAWithin42, 1)

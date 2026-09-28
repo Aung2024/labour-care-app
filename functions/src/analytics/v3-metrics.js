@@ -78,6 +78,7 @@ const emptyV3Metrics = () => ({
     privateAliveMale: 0, privateAliveFemale: 0, privateDeadMale: 0, privateDeadFemale: 0,
     skilledAliveMale: 0, skilledAliveFemale: 0, skilledDeadMale: 0, skilledDeadFemale: 0,
     pretermAliveMale: 0, pretermAliveFemale: 0,
+    weightMeasuredMale: 0, weightMeasuredFemale: 0,
     lbwAliveMale: 0, lbwAliveFemale: 0, lbwDeadMale: 0, lbwDeadFemale: 0,
     abortion: 0,
     newbornDeathUnder7: 0,
@@ -671,6 +672,7 @@ const applyHmisMetrics = (metrics, facts, period, context) => {
       if (skilled && alive) metrics.hmis['skilledAlive' + sex] += 1
       if (skilled && dead) metrics.hmis['skilledDead' + sex] += 1
       if (preterm && alive) metrics.hmis['pretermAlive' + sex] += 1
+      if (alive && weight) metrics.hmis['weightMeasured' + sex] += 1
       if (weight && weight < 2500 && alive) metrics.hmis['lbwAlive' + sex] += 1
       if (weight && weight < 2500 && dead) metrics.hmis['lbwDead' + sex] += 1
       if (baby.outcome === 'death' && baby.birthDate) {

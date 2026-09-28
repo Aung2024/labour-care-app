@@ -1,8 +1,16 @@
 (function (global) {
   'use strict'
 
-  var line = function (serial, label, path) {
-    return { serial: serial, label: label, path: path || '', kind: 'line' }
+  var line = function (serial, label, path, malePath, femalePath) {
+    return {
+      serial: serial,
+      label: label,
+      path: path || '',
+      malePath: malePath || '',
+      femalePath: femalePath || '',
+      sex: Boolean(malePath || femalePath || (malePath === '' && arguments.length > 3)),
+      kind: 'line'
+    }
   }
   var title = function (serial, label) {
     return { serial: serial, label: label, kind: 'title' }
@@ -47,9 +55,9 @@
   ]
   var section3 = [
     title('၃။', 'အာဟာရစောင့်ရှောက်မှုလုပ်ငန်း'),
-    line('၁', 'ကိုယ်အလေးချိန်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', 'newborn.birthWeightMeasured'),
-    line('၂', 'ကိုယ်အလေးချိန်မပြည့်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', 'newborn.lowBirthWeight'),
-    line('၃', 'သူငယ်နာဘယ်ရီဘယ်ရီဖြစ်ပွားသည့် ကလေးပေါင်း (အသစ်)'),
+    line('၁', 'ကိုယ်အလေးချိန်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.weightMeasuredMale', 'hmis.weightMeasuredFemale'),
+    line('၂', 'ကိုယ်အလေးချိန်မပြည့်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.lbwAliveMale', 'hmis.lbwAliveFemale'),
+    line('၃', 'သူငယ်နာဘယ်ရီဘယ်ရီဖြစ်ပွားသည့် ကလေးပေါင်း (အသစ်)', '', '', ''),
     line('၄', 'သန်ချဆေးရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'anc.deworming'),
     line('၅', 'ကိုယ်ဝန်ဆောင်စဉ် သံဓာတ်ပါဝင်သောဆေးပြား (၃)ကြိမ်နှင့်အထက် ရရှိသည့် မွေးဖွားပြီး မိခင်ပေါင်း', 'hmis.ironThreePlusDelivered'),
     line('၆', 'ဗီတာမင်ဘီဝမ်း ဆေးပြားရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'anc.vitaminB1'),
@@ -58,10 +66,7 @@
     line('၉', 'ဗီတာမင်အေ ရရှိသည့် မွေးဖွားပြီး(မီးတွင်း)မိခင်ပေါင်း', 'hmis.pncVitaminAWithin42'),
     line('၁၀', 'ဟီမိုဂလိုဘင်ပမာဏစစ်ဆေးသော ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း(အသစ်)', 'hmis.newAncHemoglobin'),
     line('၁၁', 'သွေးအားနည်းသော ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'hmis.ancAnemia')
-  ].map(function (item, index) {
-    if (index > 0) item.sex = true
-    return item
-  })
+  ]
   var section4start = [
     title('၄။', 'ကလေးကျန်းမာရေးဖွံ့ဖြိုးရေးလုပ်ငန်း'),
     line('၁', 'ဆေးခန်းလာလူနာအသစ်များအနက် (၅)နှစ်အောက်ကလေးလူနာပေါင်း'),
@@ -122,15 +127,23 @@
     return Number.isFinite(number) && number > 0 ? String(number) : ''
   }
 
+  function sexCells(male, female, total) {
+    return '<td class="monthly-sex' + (total ? ' monthly-total' : '') + '">' +
+      '<span><small>ကျား</small>' + male + '</span>' +
+      '<span><small>မ</small>' + female + '</span></td>'
+  }
+
   function cells(item, metrics) {
     var shown = valueAt(metrics, item.path)
     if (item.kind === 'title') {
-      return '<td class="monthly-title" colspan="4">' + item.label + '</td>'
+      return '<td class="monthly-serial">' + item.serial.replace('။', '') + '</td>' +
+        '<td class="monthly-title" colspan="3">' + item.label + '</td>'
     }
     if (item.sex) {
+      var male = valueAt(metrics, item.malePath)
+      var female = valueAt(metrics, item.femalePath)
       return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
-        '<td class="monthly-sex"><span>ကျား</span><span>မ</span><strong>' + shown + '</strong></td>' +
-        '<td class="monthly-sex monthly-total"><span>ကျား</span><span>မ</span><strong>' + shown + '</strong></td>'
+        sexCells(male, female) + sexCells(male, female, true)
     }
     return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
       '<td>' + shown + '</td><td class="monthly-total">' + shown + '</td>'
