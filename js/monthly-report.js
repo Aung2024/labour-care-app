@@ -128,9 +128,11 @@
   }
 
   function sexCells(male, female, total) {
-    return '<td class="monthly-sex' + (total ? ' monthly-total' : '') + '">' +
+    return '<td class="' + (total ? 'monthly-total' : '') + '">' +
+      '<div class="monthly-sex">' +
       '<span><small>ကျား</small>' + male + '</span>' +
-      '<span><small>မ</small>' + female + '</span></td>'
+      '<span><small>မ</small>' + female + '</span>' +
+      '</div></td>'
   }
 
   function cells(item, metrics) {
@@ -153,7 +155,7 @@
     return '<thead><tr>' +
       '<th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th>' +
       '<th>အစီရင်ခံစာပေးပို့သည့် ကျန်းမာရေးဌာန/ဌာနခွဲများအမည်<br>' + facilityName + '</th>' +
-      '<th>စုစုပေါင်း</th></tr></thead>'
+      '<th class="monthly-total">စုစုပေါင်း</th></tr></thead>'
   }
 
   function renderPages(metrics, facilityName) {
