@@ -1,13 +1,14 @@
 (function (global) {
   'use strict'
 
-  var line = function (serial, label, path, malePath, femalePath) {
+  var line = function (serial, label, path, malePath, femalePath, totalPath) {
     return {
       serial: serial,
       label: label,
       path: path || '',
       malePath: malePath || '',
       femalePath: femalePath || '',
+      totalPath: totalPath || '',
       sex: Boolean(malePath || femalePath || (malePath === '' && arguments.length > 3)),
       kind: 'line'
     }
@@ -55,8 +56,8 @@
   ]
   var section3 = [
     title('၃။', 'အာဟာရစောင့်ရှောက်မှုလုပ်ငန်း'),
-    line('၁', 'ကိုယ်အလေးချိန်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.weightMeasuredMale', 'hmis.weightMeasuredFemale'),
-    line('၂', 'ကိုယ်အလေးချိန်မပြည့်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.lbwAliveMale', 'hmis.lbwAliveFemale'),
+    line('၁', 'ကိုယ်အလေးချိန်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.weightMeasuredMale', 'hmis.weightMeasuredFemale', 'newborn.birthWeightMeasured'),
+    line('၂', 'ကိုယ်အလေးချိန်မပြည့်သည့် မွေးစကလေး (အရှင်မွေး)ပေါင်း', '', 'hmis.lbwAliveMale', 'hmis.lbwAliveFemale', 'newborn.lowBirthWeight'),
     line('၃', 'သူငယ်နာဘယ်ရီဘယ်ရီဖြစ်ပွားသည့် ကလေးပေါင်း (အသစ်)', '', '', ''),
     line('၄', 'သန်ချဆေးရရှိသည့် ကိုယ်ဝန်ဆောင်မိခင်ပေါင်း', 'anc.deworming'),
     line('၅', 'ကိုယ်ဝန်ဆောင်စဉ် သံဓာတ်ပါဝင်သောဆေးပြား (၃)ကြိမ်နှင့်အထက် ရရှိသည့် မွေးဖွားပြီး မိခင်ပေါင်း', 'hmis.ironThreePlusDelivered'),
@@ -109,13 +110,18 @@
     line('၁၀', 'ဆုံဆို့-မေးခိုင် ကာကွယ်ဆေး (၅-၇နှစ် အောက်)'),
     line('၁၁', 'သားအိမ်ခေါင်းကင်ဆာ ကာကွယ်ဆေး (၉-၁၀နှစ်အောက် မိန်းကလေး)'),
     line('၁၂', 'မေးခိုင်-ဆုံဆို့ ကာကွယ်ဆေး (ပထမအကြိမ်) (ကိုယ်ဝန်ဆောင်)'),
-    line('၁၂', 'မေးခိုင်-ဆုံဆို့ ကာကွယ်ဆေး (ဒုတိယအကြိမ်) (ကိုယ်ဝန်ဆောင်)')
+    line('၁၂', 'မေးခိုင်-ဆုံဆို့ ကာကွယ်ဆေး (ဒုတိယအကြိမ်) (ကိုယ်ဝန်ဆောင်)'),
+    { kind: 'note', label: 'မှတ်ချက် - ကာကွယ်ဆေးထိုးလုပ်ငန်းအတွက် အခြားမြို့နယ်မှ ကလေးများကို မျဉ်းစောင်းဖြင့် ဖော်ပြရန်။' }
   ]
 
   var PAGES = [
     { id: 'page-1', title: 'စာမျက်နှာ ၁', header: true, rows: section1.concat(section2to9) },
     { id: 'page-2', title: 'စာမျက်နှာ ၂', rows: section2rest.concat(section3, section4start) },
-    { id: 'page-3', title: 'စာမျက်နှာ ၃', rows: section4rest.concat(section5) }
+    { id: 'page-3', title: 'စာမျက်နှာ ၃', rows: section4rest.concat(section5) },
+    { id: 'page-4', title: 'စာမျက်နှာ ၄', layout: 'disease' },
+    { id: 'page-5', title: 'စာမျက်နှာ ၅', layout: 'simple', rows: null },
+    { id: 'page-6', title: 'စာမျက်နှာ ၆', layout: 'vital' },
+    { id: 'page-7', title: 'စာမျက်နှာ ၇', layout: 'education' }
   ]
 
   function valueAt(metrics, path) {
@@ -124,7 +130,7 @@
       return current && Object.prototype.hasOwnProperty.call(current, key) ? current[key] : undefined
     }, metrics || {})
     var number = Number(value || 0)
-    return Number.isFinite(number) && number > 0 ? String(number) : ''
+    return Number.isFinite(number) ? String(number) : '0'
   }
 
   function sexCells(male, female, total) {
@@ -141,11 +147,15 @@
       return '<td class="monthly-serial">' + item.serial.replace('။', '') + '</td>' +
         '<td class="monthly-title" colspan="3">' + item.label + '</td>'
     }
+    if (item.kind === 'note') {
+      return '<td></td><td class="monthly-note" colspan="3">' + item.label + '</td>'
+    }
     if (item.sex) {
       var male = valueAt(metrics, item.malePath)
       var female = valueAt(metrics, item.femalePath)
+      var total = item.totalPath ? valueAt(metrics, item.totalPath) : ''
       return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
-        sexCells(male, female) + sexCells(male, female, true)
+        sexCells(male, female) + '<td class="monthly-total">' + total + '</td>'
     }
     return '<td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' +
       '<td>' + shown + '</td><td class="monthly-total">' + shown + '</td>'
@@ -158,14 +168,125 @@
       '<th class="monthly-total">စုစုပေါင်း</th></tr></thead>'
   }
 
+  function diseaseTable() {
+    var bands = ['< ၁', '၁-၄', '၅-၁၄', '၁၅-၄၄', '၄၅-၅၉', '၆၀+']
+    var diseases = [
+      ['၁', 'ဝမ်းပျက်ဝမ်းလျှော'],
+      ['', '(၁-၁) ဝမ်းပျက်ဝမ်းလျှော(သာမန်)'],
+      ['', '(၁-၂) ဝမ်းပျက်ဝမ်းလျှော(ပြင်းထန်)'],
+      ['၂', 'ဝမ်းကိုက်'],
+      ['၃', 'အစာအဆိပ်သင့်'],
+      ['၄', 'အူရောင်ငန်းဖျား'],
+      ['၅', 'ဝက်သက်'],
+      ['၆', 'ဆုံဆို့နာ'],
+      ['၇', 'ကြက်ညှာချောင်းဆိုး'],
+      ['၈', 'မွေးကင်းစမေးခိုင်'],
+      ['၉', 'မေးခိုင်'],
+      ['၁၀', 'ဦးနှောက်အမြှေးရောင်'],
+      ['၁၁', 'အေအာ(ရ်)အိုင် (ARI) (နမိုးနီးယား)'],
+      ['၁၂', 'အသည်းရောင်အသားဝါ'],
+      ['၁၃', 'ခွေးရူးပြန်'],
+      ['၁၄', 'ငှက်ဖျား'],
+      ['၁၅', 'မြွေကိုက်(အဆိပ်ရှိ)'],
+      ['၁၆', 'တီဘီ'],
+      ['', '(၁၆-၁) လူနာအသစ်'],
+      ['', '(၁၆-၂) ပြန်ကုလူနာ'],
+      ['၁၇', 'ထောင့်သန်း']
+    ]
+    var bandHead = bands.map(function (band) {
+      return '<th colspan="2">' + band + '</th>'
+    }).join('') + '<th colspan="2">ကျား</th><th colspan="2">မ</th><th colspan="2">စုစုပေါင်း</th>'
+    var splitHead = bands.concat(['ကျား', 'မ', 'စုစုပေါင်း']).map(function () {
+      return '<th>ဖြစ်</th><th>သေ</th>'
+    }).join('')
+    var body = diseases.map(function (item) {
+      var blanks = ''
+      for (var i = 0; i < 18; i += 1) blanks += '<td></td>'
+      return '<tr><td>' + item[0] + '</td><td class="monthly-label">' + item[1] + '</td>' + blanks + '</tr>'
+    }).join('')
+    return '<h2 class="monthly-section-title">၆။ စောင့်ကြပ်ကြည့်ရှုရသောရောဂါများနှိမ်နင်းရေးလုပ်ငန်း</h2>' +
+      '<table class="monthly-wide"><thead>' +
+      '<tr><th rowspan="2">စဉ်</th><th rowspan="2">စောင့်ကြပ်ကြည့်ရှုရသောရောဂါအမည်</th>' +
+      '<th colspan="12">အသက်အုပ်စု (ဖြစ်၊သေ)</th><th colspan="6">စုစုပေါင်း</th></tr>' +
+      '<tr>' + bandHead + '</tr><tr><th></th><th></th>' + splitHead + '</tr></thead><tbody>' +
+      body + '</tbody></table>'
+  }
+
+  function simpleRows(rows) {
+    return rows.map(function (item) {
+      if (item.kind === 'title') {
+        return '<tr><td class="monthly-serial">' + item.serial + '</td><td class="monthly-title" colspan="3">' + item.label + '</td></tr>'
+      }
+      var extra = item.pair ? '<td></td><td></td>' : '<td></td>'
+      var total = item.pair ? '<td></td><td></td>' : '<td></td>'
+      return '<tr><td>' + item.serial + '</td><td class="monthly-label">' + item.label + '</td>' + extra + total + '</tr>'
+    }).join('')
+  }
+
+  function pageFive() {
+    var malaria = ['ငှက်ဖျားပိုးစစ်ဆေးသူပေါင်း', 'ငှက်ဖျားပိုးတွေ့လူနာပေါင်း(ရောဂါသစ်)', 'ပြင်းထန်ငှက်ဖျားလူနာပေါင်း(ဦးနှောက်ငှက်ဖျားအပါအဝင်)', 'အထက်အဆင့်သို့ လွှဲပြောင်းပေးသော ငှက်ဖျားလူနာပေါင်း', 'ငှက်ဖျားအတွင်းလူနာပေါင်း(ဆေးရုံများသာဖြည့်ရန်)', 'ငှက်ဖျားရောဂါကြောင့် သေဆုံးသူအတွင်းလူနာပေါင်း(ဆေးရုံများသာဖြည့်ရန်)']
+    var ncd = ['အသက်(၄၀)နှစ်နှင့်အထက် ဆေးခန်းလာလူနာအသစ်ပေါင်း', 'အသက်(၄၀)နှစ်နှင့်အထက် သွေးတိုးလူနာပေါင်း(ရောဂါသစ်)', 'အသက်(၄၀)နှစ်နှင့်အထက် သွေးတိုးလူနာပေါင်း(ရောဂါဟောင်း)', 'အသက်(၄၀)နှစ်နှင့်အထက် ဆီးချိုသွေးချိုလူနာပေါင်း(ရောဂါသစ်)', 'အသက်(၄၀)နှစ်နှင့်အထက် ဆီးချိုသွေးချိုလူနာပေါင်း(ရောဂါဟောင်း)', 'အသက်(၄၀)နှစ်နှင့်အထက် သွေးတိုးနှင့်ဆီးချိုသွေးချိုရောဂါတွဲလျက်ရှိသောလူနာပေါင်း', 'အသက်(၄၀)နှစ်နှင့်အထက် (၁၀)နှစ်အတွင်းနှလုံးသွေးကြောရောဂါဖြစ်နိုင်ခြေ ရှိသူပေါင်း', 'သွေးပေါင်ထိန်းဆေးဖြင့် ကုသမှုရရှိသည့် သွေးတိုးရောဂါလူနာပေါင်း', 'ဆီးချိုသွေးချိုဆေးဖြင့် ကုသမှုရရှိသည့် ဆီးချိုသွေးချိုရောဂါလူနာပေါင်း', 'သွေးပေါင်ထိန်းဆေးနှင့်ဆီးချိုသွေးချိုဆေး(၂)မျိုးတွဲဖြင့် ကုသမှုရရှိသည့်လူနာပေါင်း', 'အဆီကျဆေးဖြင့် ကုသမှုရရှိသည့်လူနာပေါင်း', 'သွေးကျဲဆေးဖြင့် ကုသမှုရရှိသည့်လူနာပေါင်း']
+    var injury = ['ယာဉ်ထိခိုက်မှုကြောင့် ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'လယ်ယာလုပ်ငန်းခွင်ထိခိုက်ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'လုပ်ငန်းခွင်ထိခိုက်ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'အဆိပ်မိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'လိမ့်ကျဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', '(၅-၁) အသက်(၆၀)နှစ်နှင့်အထက် လိမ့်ကျဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'အပူလောင်ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'ရေနစ်သူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'မိမိကိုယ်ကိုသေကြောင်းကြံစည်၍ ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'ခိုက်ရန်ဖြစ်ပွား၍ ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း', 'အခြားအကြောင်းကြောင့် ဒဏ်ရာရရှိသူပေါင်းနှင့် သေဆုံးသူပေါင်း']
+    function block(serial, titleText, labels, pair) {
+      var head = '<tr><td class="monthly-serial">' + serial + '</td><td class="monthly-title" colspan="' + (pair ? 4 : 3) + '">' + titleText + '</td></tr>'
+      return head + labels.map(function (label, index) {
+        var no = label.charAt(0) === '(' ? '' : String(index + 1)
+        if (label.charAt(0) === '(') no = ''
+        var cells = pair ? '<td></td><td></td><td></td><td></td>' : '<td></td><td></td>'
+        return '<tr><td>' + (label.charAt(0) === '(' ? '' : '') + '</td><td class="monthly-label">' + (label.charAt(0) === '(' ? label : (['၁','၂','၃','၄','၅','၆','၇','၈','၉','၁၀','၁၁','၁၂'][index] || '') + ' ' + label) + '</td>' + cells + '</tr>'
+      }).join('')
+    }
+    return '<table><thead><tr><th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th><th>ဌာန</th><th>စုစုပေါင်း</th></tr></thead><tbody>' +
+      block('၇။', 'ငှက်ဖျားရောဂါတိုက်ဖျက်ရေးလုပ်ငန်း', malaria, false) +
+      block('၈။', 'သွေးတိုး၊ဆီးချိုသွေးချိုနှင့်နှလုံးသွေးကြောရောဂါကာကွယ်ထိန်းချုပ်ရေးလုပ်ငန်း', ncd, false) +
+      '<tr><td class="monthly-serial">၉။</td><td class="monthly-title" colspan="3">ထိခိုက်မှုအန္တရာယ်ကာကွယ်ရေးလုပ်ငန်း (ဖြစ်/သေ)</td></tr>' +
+      injury.map(function (label) {
+        return '<tr><td></td><td class="monthly-label">' + label + '</td><td></td><td></td></tr>'
+      }).join('') +
+      '</tbody></table>'
+  }
+
+  function pageSix() {
+    var rows = ['အရှင်မွေးဦးရေစုစုပေါင်း', 'အသေမွေးဦးရေစုစုပေါင်း', 'ဆယ်ကျော်သက်ရွယ်အသက်(၁၅-၁၉)နှစ်မိခင်မှမွေးသော အရှင်မွေးဦးရေ', 'ဆယ်ကျော်သက်ရွယ်အသက်(၁၅-၁၉)နှစ်မိခင်မှမွေးသော အသေမွေးဦးရေ', 'အစိုးရဆေးရုံ၊ဆေးခန်းနှင့်ကျန်းမာရေးဌာနများရှိ သားဖွားခန်းတွင်မွေးသော အရှင်မွေးဦးရေ', 'အစိုးရဆေးရုံ၊ဆေးခန်းနှင့်ကျန်းမာရေးဌာနများရှိ သားဖွားခန်းတွင်မွေးသော အသေမွေးဦးရေ', 'ပုဂ္ဂလိကဆေးရုံ၊ဆေးခန်း၊သားဖွားခန်းတွင်မွေးသော အရှင်မွေးဦးရေ', 'ပုဂ္ဂလိကဆေးရုံ၊ဆေးခန်း၊သားဖွားခန်းတွင်မွေးသော အသေမွေးဦးရေ', 'သားဖွားခြင်းဆိုင်ရာကျွမ်းကျင်သူများနှင့်မွေးသော အရှင်မွေးဦးရေ', 'ကျွမ်းကျင်သူနှင့်မွေးသော အသေမွေးဦးရေ', 'လမစေ့မွေးဖွားသော အရှင်မွေးကလေးစုစုပေါင်း', 'လမစေ့မွေးဖွားသော အသေမွေးကလေးစုစုပေါင်း', 'မွေးလက်မှတ် (Birth Certificate) ရရှိခဲ့သော တစ်နှစ်အောက်ကလေးဦးရေ', 'ကိုယ်ဝန်ပျက်သည့်ဦးရေ', 'သေဆုံးသူဦးရေစုစုပေါင်း', 'မွေးပြီး(၇)ရက်အတွင်း သေဆုံးသူကလေးဦးရေ', 'မွေးပြီး(၇)ရက်မှ (၂၈)ရက်အတွင်း သေဆုံးသူကလေးဦးရေ', '(၂၈)ရက်မှ (၁)နှစ်အောက် သေဆုံးသူကလေးဦးရေ', '(၁)နှစ်မှ (၅)နှစ်အောက် သေဆုံးသူကလေးဦးရေ', 'သားဖွားရောဂါကြောင့် သေဆုံးသူမိခင်ဦးရေ', 'အခြားရောဂါကြောင့် သေဆုံးသူမိခင်ဦးရေ', 'ထိခိုက်ဒဏ်ရာကြောင့် သေဆုံးသူမိခင်ဦးရေ', 'ရွှေ့ပြောင်းလူဦးရေစုစုပေါင်း', 'တစ်နှစ်အောက် ရွှေ့ပြောင်းလူဦးရေ', '(၁)နှစ်မှ (၅)နှစ်အောက် ရွှေ့ပြောင်းလူဦးရေ', '(၅-၁၄)နှစ် ရွှေ့ပြောင်းလူဦးရေ', '(၁၅-၅၉)နှစ် ရွှေ့ပြောင်းလူဦးရေ', '(၆၀)နှစ်နှင့်အထက် ရွှေ့ပြောင်းလူဦးရေ', 'ရွှေ့ပြောင်းကိုယ်ဝန်ဆောင်မိခင်ဦးရေ', 'ရွှေ့ပြောင်းမွေးပြီးမိခင်ဦးရေ', '(၁၅-၄၉)နှစ် အမျိုးသမီးရွှေ့ပြောင်းဦးရေ']
+    var body = '<tr><td class="monthly-serial">၁၀။</td><td class="monthly-title" colspan="5">ဖွားသေစာရင်းအင်း</td></tr>' +
+      rows.map(function (label, index) {
+        return '<tr><td>' + (index + 1) + '</td><td class="monthly-label">' + label + '</td><td></td><td></td><td></td><td></td></tr>'
+      }).join('')
+    return '<table><thead><tr><th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th><th colspan="2">ဌာန</th><th colspan="2">စုစုပေါင်း</th></tr>' +
+      '<tr><th></th><th></th><th>ကျား</th><th>မ</th><th>ကျား</th><th>မ</th></tr></thead><tbody>' + body + '</tbody></table>'
+  }
+
+  function pageSeven() {
+    var topics = ['မျိုးဆက်ပွားကျန်းမာရေး၊ ကိုယ်ဝန်ဆောင်၊ မိခင်ကလေးကျန်းမာရေး ပညာပေးခြင်း', 'တိုးချဲ့ကာကွယ်ဆေးထိုးလုပ်ငန်းဆိုင်ရာ ပညာပေးခြင်း', 'ကူးစက်တတ်သောရောဂါများဆိုင်ရာ ပညာပေးခြင်း', 'မကူးစက်တတ်သောရောဂါများဆိုင်ရာ ပညာပေးခြင်း', 'တစ်ကိုယ်ရေသန့်ရှင်းရေးနှင့် ပတ်ဝန်းကျင်သန့်ရှင်းရေး ဆောင်ရွက်မှု ပညာပေးခြင်း', 'အာဟာရစောင့်ရှောက်မှုလုပ်ငန်းဆိုင်ရာ ပညာပေးခြင်း', 'အခြားကျန်းမာရေးလုပ်ငန်းဆိုင်ရာ ပညာပေးခြင်း']
+    var groups = ['ပြည်သူလူထုအတွင်း ကျန်းမာရေးအသိပညာမြှင့်တင်ခြင်းဆိုင်ရာဆွေးနွေးပွဲများ', 'ပညာပေးအထောက်အကူပြုပစ္စည်းများ ရရှိဖြန့်ဝေခြင်း', 'ဆေးရုံများတွင် ကျန်းမာရေးအသိပညာမြှင့်တင်ခြင်း (နမူနာပြသင်ကြားခြင်း)']
+    var letters = ['(က)', '(ခ)', '(ဂ)', '(ဃ)', '(င)', '(စ)', '(ဆ)']
+    var body = '<tr><td class="monthly-serial">၁၁။</td><td class="monthly-title" colspan="6">ကျန်းမာရေးအသိပညာမြှင့်တင်ရေးလုပ်ငန်း</td></tr>'
+    groups.forEach(function (group, groupIndex) {
+      body += '<tr><td>' + (groupIndex + 1) + '</td><td class="monthly-label">' + group + '</td><td colspan="6"></td></tr>'
+      topics.forEach(function (topic, index) {
+        body += '<tr><td></td><td class="monthly-label">' + letters[index] + ' ' + topic + '</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
+      })
+    })
+    body += '<tr><td colspan="8" class="monthly-sign">လချုပ်ပြုစုသူလက်မှတ် &nbsp;&nbsp; အမည် ____________________ &nbsp;&nbsp; ရာထူး ____________________</td></tr>'
+    return '<table><thead><tr><th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th><th>အကြိမ်</th><th>ကျား</th><th>မ</th><th>အကြိမ်</th><th>ကျား</th><th>မ</th></tr>' +
+      '<tr><th></th><th></th><th colspan="3">ဌာန</th><th colspan="3">စုစုပေါင်း</th></tr></thead><tbody>' + body + '</tbody></table>'
+  }
+
   function renderPages(metrics, facilityName) {
     return PAGES.map(function (page, index) {
-      var body = page.rows.map(function (item) {
-        return '<tr class="' + (item.kind === 'title' ? 'is-title' : '') + '">' + cells(item, metrics) + '</tr>'
-      }).join('')
+      var inner
+      if (page.layout === 'disease') inner = diseaseTable()
+      else if (page.layout === 'simple') inner = pageFive()
+      else if (page.layout === 'vital') inner = pageSix()
+      else if (page.layout === 'education') inner = pageSeven()
+      else {
+        var body = page.rows.map(function (item) {
+          return '<tr class="' + (item.kind === 'title' ? 'is-title' : '') + '">' + cells(item, metrics) + '</tr>'
+        }).join('')
+        inner = '<table>' + tableHead(facilityName) + '<tbody>' + body + '</tbody></table>'
+      }
       return '<section class="monthly-form' + (index === 0 ? ' is-active' : '') + '" id="' + page.id + '">' +
-        (page.header ? '<div class="monthly-paper-head"></div>' : '') +
-        '<table>' + tableHead(facilityName) + '<tbody>' + body + '</tbody></table></section>'
+        (page.header ? '<div class="monthly-paper-head"></div>' : '') + inner + '</section>'
     }).join('')
   }
 
