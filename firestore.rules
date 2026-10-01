@@ -727,10 +727,15 @@ service cloud.firestore {
         || (isMidwife() && request.auth.uid == midwifeId);
       allow create, update: if isVoucherAdministrator()
         && request.resource.data.keys().hasOnly([
-          "midwifeId", "allocatedUnits", "remainingUnits", "priceSheetId",
+          "midwifeId", "labId", "labName", "allocatedUnits", "remainingUnits", "priceSheetId",
           "status", "lastVoucherId", "updatedAt", "updatedBy"
         ])
         && request.resource.data.midwifeId == midwifeId
+        && request.resource.data.labId is string
+        && isLabUser(request.resource.data.labId)
+        && request.resource.data.labName is string
+        && request.resource.data.labName.size() > 0
+        && request.resource.data.labName.size() <= 160
         && request.resource.data.allocatedUnits is int
         && request.resource.data.remainingUnits is int
         && request.resource.data.allocatedUnits >= request.resource.data.remainingUnits
@@ -785,6 +790,8 @@ service cloud.firestore {
         && request.resource.data.midwifeId == request.auth.uid
         && request.resource.data.labId is string
         && isLabUser(request.resource.data.labId)
+        && request.resource.data.labId ==
+          get(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.get("labId", request.resource.data.labId)
         && request.resource.data.labNameSnapshot is string
         && request.resource.data.patientId is string
         && exists(/databases/$(database)/documents/patients/$(request.resource.data.patientId))

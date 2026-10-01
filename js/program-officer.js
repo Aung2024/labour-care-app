@@ -190,6 +190,13 @@
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
+    fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
+  }
+
+  function labNameForId(labId) {
+    if (!labId) return '';
+    var lab = state.labs.find(function (row) { return row.id === labId; });
+    return lab ? profileName(lab) : '';
   }
 
   function slugServiceId(name) {
@@ -372,6 +379,7 @@
     fillSelect(byId('dashLab'), state.labs, 'All laboratories');
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
+    fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
     byId('configLab').value = labId;
     showMessage('Laboratory prices saved and published.', 'success');
   }
@@ -681,6 +689,7 @@
     byId('allocationRemaining').required = false;
     byId('allocationRemaining').disabled = true;
     byId('allocationRemaining').closest('label').hidden = true;
+    byId('allocationLab').value = '';
     byId('allocationBudget').value = '';
     byId('allocationCurrency').value = 'MMK';
     byId('allocationNote').value = '';
@@ -695,6 +704,7 @@
     byId('allocationMaternityHome').disabled = false;
     byId('allocationMaternityHome').value = item.midwifeId || item.id;
     byId('allocationMaternityHome').disabled = true;
+    byId('allocationLab').value = item.labId || '';
     byId('allocationCount').value = String(item.allocatedUnits || 0);
     byId('allocationRemaining').disabled = false;
     byId('allocationRemaining').required = true;
@@ -719,8 +729,10 @@
       var remainingBudget = (item.remainingBudgetMinor != null
         ? item.remainingBudgetMinor
         : Math.max(0, ((item.budget && item.budget.totalMinor) || 0) - (item.redeemedProjectMinor || 0))) / 100;
+      var assignedLab = labNameForId(item.labId) || item.labName || 'Not assigned';
       return '<article class="po-allocation"><div><div class="po-allocation__name">' +
-        escapeHtml(home ? profileName(home) : midwifeId) + '</div></div>' +
+        escapeHtml(home ? profileName(home) : midwifeId) + '</div>' +
+        '<div class="po-allocation__lab">Assigned lab · ' + escapeHtml(assignedLab) + '</div></div>' +
         '<div class="po-metric"><span>Allocated</span><strong>' + formatNumber(item.allocatedUnits) + '</strong></div>' +
         '<div class="po-metric"><span>Remaining</span><strong>' + formatNumber(item.remainingUnits) + '</strong></div>' +
         '<div class="po-metric"><span>Redeemed</span><strong>' + formatNumber(item.redeemedCount || 0) + '</strong></div>' +
@@ -739,9 +751,14 @@
     event.preventDefault();
     var mode = byId('allocationMode').value || 'create';
     var midwifeId = byId('allocationMaternityHome').value;
+    var labId = byId('allocationLab').value;
+    if (!labId) throw new Error('Assign a laboratory to this maternity home.');
+    var labName = labNameForId(labId);
     if (mode === 'edit') {
       await service().updateAllocation({
         midwifeId: midwifeId,
+        labId: labId,
+        labName: labName,
         allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
         remainingUnits: Math.floor(numberValue(byId('allocationRemaining').value)),
         totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
@@ -752,6 +769,8 @@
     } else {
       await service().allocateVouchers({
         midwifeId: midwifeId,
+        labId: labId,
+        labName: labName,
         allocatedUnits: Math.floor(numberValue(byId('allocationCount').value)),
         totalMinor: Math.round(numberValue(byId('allocationBudget').value) * 100),
         currency: byId('allocationCurrency').value.trim() || 'MMK',
@@ -907,50 +926,18 @@
       openPreviewModal(codes).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('verifyOneBtn').addEventListener('click', function () {
-      var codes = selectedVerifyCodes();
-      if (codes.length !== 1) {
-        showMessage('Select exactly one voucher to verify.', 'error');
-        return;
-      }
-      review('verify', codes).catch(function (error) { showMessage(error.message, 'error'); });
-    });
-    byId('bulkVerifyBtn').addEventListener('click', function () {
       review('verify', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('payOneBtn').addEventListener('click', function () {
-      var codes = selectedVerifyCodes();
-      if (codes.length !== 1) {
-        showMessage('Select exactly one voucher to mark paid.', 'error');
-        return;
-      }
-      review('pay', codes).catch(function (error) { showMessage(error.message, 'error'); });
-    });
-    byId('bulkPayBtn').addEventListener('click', function () {
       review('pay', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('printOneBtn').addEventListener('click', function () {
-      var codes = selectedVerifyCodes();
-      if (codes.length !== 1) {
-        showMessage('Select exactly one voucher to print.', 'error');
-        return;
-      }
-      printSelectedVouchers(codes).catch(function (error) { showMessage(error.message, 'error'); });
-    });
-    byId('bulkPrintBtn').addEventListener('click', function () {
       printSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('rejectOneBtn').addEventListener('click', function () {
       review('reject', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('deleteOneBtn').addEventListener('click', function () {
-      var codes = selectedVerifyCodes();
-      if (codes.length !== 1) {
-        showMessage('Select exactly one voucher to delete.', 'error');
-        return;
-      }
-      deleteSelectedVouchers(codes).catch(function (error) { showMessage(error.message, 'error'); });
-    });
-    byId('bulkDeleteBtn').addEventListener('click', function () {
       deleteSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     document.querySelectorAll('[data-close-preview]').forEach(function (el) {

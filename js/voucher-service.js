@@ -646,6 +646,11 @@
     return role === 'lab' || role === 'laboratory';
   }
 
+  function labDisplayName(profile) {
+    var row = profile || {};
+    return String(row.displayName || row.name || row.labName || row.organization_name || row.email || 'Lab').slice(0, 160);
+  }
+
   function listUsersByRoles(roles) {
     var context = firebaseContext();
     return Promise.all((roles || []).map(function (role) {
@@ -763,6 +768,13 @@
       if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
         throw new Error('No voucher allocation is available for this account.');
       }
+      var quota = quotaSnapshot.data() || {};
+      if (!quota.labId) {
+        throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+      }
+      if (quota.labId !== selectedLabId) {
+        throw new Error('This maternity home is assigned to another laboratory.');
+      }
       return Promise.all([
         getAssignedPriceSheet(selectedLabId),
         getProgramSettings()
@@ -784,18 +796,27 @@
     var data = requireObject(input, 'Voucher allocation');
     var context = firebaseContext();
     var midwifeId = requireString(data.midwifeId || data.maternityHomeId, 'Midwife ID', 128);
+    var labId = requireString(data.labId, 'Assigned laboratory', 128);
     var units = requireInteger(data.allocatedUnits || data.voucherCount, 'Voucher count', 1);
     var budgetMinor = requireInteger(data.totalMinor, 'Budget total', 0);
     var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(midwifeId);
     var budgetRef = context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(midwifeId);
+    var labRef = context.db.collection('users').doc(labId);
+    var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
     var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
     return context.db.runTransaction(function (transaction) {
       return Promise.all([
         transaction.get(quotaRef),
+        transaction.get(labRef),
+        transaction.get(labAssignmentRef),
         transaction.get(globalAssignmentRef)
       ]).then(function (snapshots) {
         var existing = snapshots[0].exists ? snapshots[0].data() : null;
-        var assignment = snapshots[1].exists ? snapshots[1].data() : null;
+        if (!snapshots[1].exists || !isLabProfile(snapshots[1].data())) {
+          throw new Error('Select an active laboratory.');
+        }
+        var assignment = snapshots[2].exists ? snapshots[2].data() :
+          (snapshots[3].exists ? snapshots[3].data() : null);
         var priceSheetId = (assignment && assignment.priceSheetId) || (existing && existing.priceSheetId) || '';
         if (!priceSheetId) {
           throw new Error('Configure at least one laboratory before allocating vouchers.');
@@ -805,6 +826,10 @@
         var now = serverTimestamp(context);
         transaction.set(quotaRef, {
           midwifeId: midwifeId,
+          labId: labId,
+          labName: typeof data.labName === 'string' && data.labName.trim()
+            ? data.labName.trim().slice(0, 160)
+            : labDisplayName(snapshots[1].data()),
           allocatedUnits: allocatedUnits,
           remainingUnits: remainingUnits,
           priceSheetId: priceSheetId,
@@ -900,6 +925,7 @@
     var data = requireObject(input, 'Allocation update');
     var context = firebaseContext();
     var midwifeId = requireString(data.midwifeId || data.maternityHomeId, 'Midwife ID', 128);
+    var labId = requireString(data.labId, 'Assigned laboratory', 128);
     var allocatedUnits = requireInteger(data.allocatedUnits, 'Allocated units', 0);
     var remainingUnits = data.remainingUnits == null ? allocatedUnits :
       requireInteger(data.remainingUnits, 'Remaining units', 0);
@@ -909,20 +935,32 @@
     var budgetMinor = requireInteger(data.totalMinor, 'Budget total', 0);
     var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(midwifeId);
     var budgetRef = context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(midwifeId);
+    var labRef = context.db.collection('users').doc(labId);
+    var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
     var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
     return context.db.runTransaction(function (transaction) {
       return Promise.all([
         transaction.get(quotaRef),
+        transaction.get(labRef),
+        transaction.get(labAssignmentRef),
         transaction.get(globalAssignmentRef)
       ]).then(function (snapshots) {
         if (!snapshots[0].exists) throw new Error('Allocation was not found.');
+        if (!snapshots[1].exists || !isLabProfile(snapshots[1].data())) {
+          throw new Error('Select an active laboratory.');
+        }
         var existing = snapshots[0].data();
-        var assignment = snapshots[1].exists ? snapshots[1].data() : null;
+        var assignment = snapshots[2].exists ? snapshots[2].data() :
+          (snapshots[3].exists ? snapshots[3].data() : null);
         var priceSheetId = existing.priceSheetId || (assignment && assignment.priceSheetId) || '';
         if (!priceSheetId) throw new Error('Configure at least one laboratory before editing allocations.');
         var now = serverTimestamp(context);
         transaction.set(quotaRef, {
           midwifeId: midwifeId,
+          labId: labId,
+          labName: typeof data.labName === 'string' && data.labName.trim()
+            ? data.labName.trim().slice(0, 160)
+            : labDisplayName(snapshots[1].data()),
           allocatedUnits: allocatedUnits,
           remainingUnits: remainingUnits,
           priceSheetId: priceSheetId,
@@ -952,9 +990,14 @@
     return Promise.all([quotaRef.get(), budgetRef.get()]).then(function (snapshots) {
       if (!snapshots[0].exists) throw new Error('Allocation was not found.');
       var existing = snapshots[0].data();
+      if (!existing.labId) {
+        throw new Error('Assign a laboratory to this maternity home before resetting remaining vouchers.');
+      }
       var budget = snapshots[1].exists ? snapshots[1].data() : {};
       return updateAllocation({
         midwifeId: id,
+        labId: existing.labId,
+        labName: existing.labName,
         allocatedUnits: existing.allocatedUnits || 0,
         remainingUnits: existing.allocatedUnits || 0,
         totalMinor: Number(budget.totalMinor) || 0,
@@ -1109,6 +1152,12 @@
         var lab = labSnapshot.data();
         if (quota.midwifeId !== context.user.uid || quota.status !== 'active' || quota.remainingUnits < 1) {
           throw new Error('No active voucher quota is available.');
+        }
+        if (!quota.labId) {
+          throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+        }
+        if (quota.labId !== labId) {
+          throw new Error('This maternity home is assigned to another laboratory.');
         }
         var assignment = snapshots[3].exists ? snapshots[3].data() :
           (snapshots[4].exists ? snapshots[4].data() : null);

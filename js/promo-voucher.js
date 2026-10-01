@@ -135,24 +135,43 @@
     }
   }
 
-  async function loadLabs() {
+  function assignedLabName(quota, labs) {
+    if (quota && quota.labName) return quota.labName;
+    var labId = quota && quota.labId;
+    var match = (labs || []).find(function (lab) { return lab.id === labId; });
+    return match ? (match.name || match.labName || match.displayName || labId) : (labId || '');
+  }
+
+  function renderAssignedLab() {
+    var display = el('assignedLabDisplay');
+    var hidden = el('selectedLab');
+    if (!display || !hidden) return;
+    if (!state.quota || !state.quota.labId) {
+      state.labId = '';
+      hidden.value = '';
+      display.textContent = 'No laboratory assigned. Ask the Program Officer to assign a lab.';
+      return;
+    }
+    state.labId = state.quota.labId;
+    hidden.value = state.quota.labId;
+    display.textContent = assignedLabName(state.quota, state.labs) || state.quota.labId;
+  }
+
+  async function loadAssignedLab() {
     var rows = await service().listLabs();
     state.labs = rows || [];
-    el('selectedLab').innerHTML = '<option value="">Select the laboratory</option>' +
-      state.labs.map(function (lab) {
-        return '<option value="' + escapeHtml(lab.id) + '">' + escapeHtml(lab.name) + '</option>';
-      }).join('');
-    if (!state.labs.length) {
-      throw new Error('No active laboratory accounts are available. Ask the Program Officer to configure a Lab.');
+    renderAssignedLab();
+    if (!state.quota || !state.quota.labId) {
+      throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
     }
   }
 
   async function loadTestCatalog() {
-    state.labId = el('selectedLab').value;
+    state.labId = (state.quota && state.quota.labId) || el('selectedLab').value;
     if (!state.labId) {
       state.tests = [];
       state.projectCeilingMinor = 0;
-      el('testsBody').innerHTML = '<p class="text-muted mb-0">Select a laboratory to load its tests.</p>';
+      el('testsBody').innerHTML = '<p class="text-muted mb-0">Ask the Program Officer to assign a laboratory first.</p>';
       updatePriceSummary();
       return;
     }
@@ -172,7 +191,7 @@
 
   function renderTests() {
     if (!state.tests.length) {
-      el('testsBody').innerHTML = '<p class="text-muted mb-0">Select a laboratory to load its tests.</p>';
+      el('testsBody').innerHTML = '<p class="text-muted mb-0">No tests are configured for the assigned laboratory.</p>';
       return;
     }
     el('testsBody').innerHTML = state.tests.map(function (test, index) {
@@ -290,7 +309,7 @@
       var tests = selectedTests();
       if (!tests.length) throw new Error('Select at least one lab test.');
       if (!el('ancVisitDate').value) throw new Error('Enter the latest ANC visit date.');
-      if (!el('selectedLab').value) throw new Error('Select the laboratory that will receive this QR.');
+      if (!state.labId) throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
       if (!state.quota || Number(state.quota.remainingUnits || 0) < 1) {
         throw new Error('No remaining voucher allocation is available.');
       }
@@ -300,7 +319,7 @@
       if (address) await savePatientAddress(address);
       var result = await service().issueVoucher({
         patientId: state.patientId,
-        labId: el('selectedLab').value,
+        labId: state.labId,
         selectedServiceIds: tests.map(function (test) { return test.id; }),
         nrc: el('patientNrc').value.trim(),
         address: address,
@@ -394,22 +413,17 @@
       el('issuerName').textContent = text(issuerDisplayName(state.profile, user));
       el('ancVisitDate').value = await latestAncDate(db);
       await loadQuota();
-      await loadLabs();
+      await loadAssignedLab();
       await loadTestCatalog();
       el('voucherForm').classList.remove('d-none');
       setPostGenerateMode(false);
-      setStatus('Select a laboratory and tests, then generate the QR.', 'success');
+      setStatus('Select tests for the assigned laboratory, then generate the QR.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
       setStatus(error.message || 'Unable to load QR page.', 'error');
     }
   }
 
-  el('selectedLab').addEventListener('change', function () {
-    loadTestCatalog().catch(function (error) {
-      setStatus(error.message || 'Could not load laboratory tests.', 'error');
-    });
-  });
   el('testsBody').addEventListener('change', function (event) {
     if (event.target && event.target.classList.contains('test-select')) updatePriceSummary();
   });

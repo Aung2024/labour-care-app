@@ -90,6 +90,8 @@ async function seed() {
       }),
       setDoc(doc(db, 'voucher_account_quotas/mw'), {
         midwifeId: 'mw',
+        labId: 'lab1',
+        labName: 'Lab One',
         allocatedUnits: 2,
         remainingUnits: 2,
         priceSheetId: SHEET_ID,
@@ -225,6 +227,55 @@ test('laboratory role alias can look up vouchers', async () => {
   await issueVoucher();
   const labDb = env.authenticatedContext('lab-alias').firestore();
   await assertSucceeds(getDoc(doc(labDb, `vouchers/${VOUCHER_ID}`)));
+});
+
+test('Program Officer can assign a laboratory on an allocation', async () => {
+  const db = env.authenticatedContext('po').firestore();
+  await assertSucceeds(setDoc(doc(db, 'voucher_account_quotas/hla'), {
+    midwifeId: 'hla',
+    labId: 'lab1',
+    labName: 'Lab One',
+    allocatedUnits: 5,
+    remainingUnits: 5,
+    priceSheetId: SHEET_ID,
+    status: 'active',
+    lastVoucherId: '',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'po'
+  }));
+});
+
+test('Midwife cannot issue a voucher to an unassigned laboratory', async () => {
+  const db = env.authenticatedContext('mw').firestore();
+  const quotaRef = doc(db, 'voucher_account_quotas/mw');
+  const voucherRef = doc(db, `vouchers/${VOUCHER_ID}`);
+  await assertFails(runTransaction(db, async (transaction) => {
+    const quota = await transaction.get(quotaRef);
+    transaction.update(quotaRef, {
+      remainingUnits: quota.data().remainingUnits - 1,
+      lastVoucherId: VOUCHER_ID,
+      updatedAt: serverTimestamp(),
+      updatedBy: 'mw'
+    });
+    transaction.set(voucherRef, {
+      code: VOUCHER_ID,
+      status: 'issued',
+      patientId: 'patient-1',
+      patientNameSnapshot: 'Patient One',
+      patientAgeSnapshot: 28,
+      patientPhoneSnapshot: '091234',
+      patientNrcSnapshot: '',
+      ancVisitDate: '2026-08-27',
+      midwifeId: 'mw',
+      issuerNameSnapshot: 'Maternity Home',
+      labId: 'lab2',
+      labNameSnapshot: 'Lab Two',
+      priceSheetId: SHEET_ID,
+      selectedServiceIds: ['urine-re'],
+      issuedAt: serverTimestamp(),
+      expiresAt: new Date(Date.now() + 86400000)
+    });
+  }));
 });
 
 test('Program Officer with status approved can read allocations', async () => {
