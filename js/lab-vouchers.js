@@ -12,7 +12,7 @@
     clientPad: null,
     cashierPads: [],
     page: 'scan',
-    dashStatus: 'redeemed',
+    dashStatus: 'total',
     lineBusy: false,
     toastTimer: null,
     loggingOut: false,
@@ -20,7 +20,9 @@
     invoiceDate: '',
     patientNrc: '',
     patientAddress: '',
-    clearSealImage: false
+    clearSealImage: false,
+    issuedServiceIds: [],
+    outcomeRows: []
   };
 
   function el(id) { return document.getElementById(id); }
@@ -75,15 +77,19 @@
 
   function showPage(page) {
     state.page = page;
-    ['scan', 'dashboard', 'settings'].forEach(function (name) {
+    ['scan', 'dashboard', 'outcomes', 'settings'].forEach(function (name) {
       el(name + 'Page').classList.toggle('d-none', name !== page);
     });
     document.querySelectorAll('[data-page]').forEach(function (button) {
       button.classList.toggle('is-active', button.getAttribute('data-page') === page);
     });
-    el('labPageTitle').textContent = page === 'scan' ? 'Scan' : (page === 'dashboard' ? 'Dashboard' : 'Settings');
-    document.body.classList.toggle('lab-has-floating', page === 'settings' || (page === 'scan' && !!state.voucher));
+    var titles = { scan: 'Scan', dashboard: 'Dashboard', outcomes: 'Outcome report', settings: 'Settings' };
+    el('labPageTitle').textContent = titles[page] || 'Laboratory';
+    document.body.classList.toggle('lab-has-floating', page === 'settings' || page === 'outcomes' || (page === 'scan' && !!state.voucher));
     if (page === 'dashboard') loadDashboard().catch(function (error) {
+      if (!state.loggingOut) setStatus(error.message, 'error');
+    });
+    if (page === 'outcomes') loadOutcomeReport().catch(function (error) {
       if (!state.loggingOut) setStatus(error.message, 'error');
     });
     if (page === 'settings') renderSettings();
@@ -121,15 +127,26 @@
     }
   }
 
+  function allowedVoucherTests(voucher) {
+    var allowedIds = (state.issuedServiceIds && state.issuedServiceIds.length)
+      ? state.issuedServiceIds
+      : ((voucher.issuedServiceIds && voucher.issuedServiceIds.length)
+        ? voucher.issuedServiceIds
+        : (voucher.selectedServiceIds || []));
+    var named = {};
+    ((voucher.catalogTests || []).concat(voucher.lineItems || [], voucher.tests || [])).forEach(function (test) {
+      var id = test.id || test.serviceId;
+      if (id) named[id] = test.name || test.serviceName || id;
+    });
+    return allowedIds.map(function (id) {
+      return { id: id, name: named[id] || id };
+    });
+  }
+
   function renderLineEditor(voucher) {
     var selected = {};
     (voucher.selectedServiceIds || []).forEach(function (id) { selected[id] = true; });
-    var tests = voucher.catalogTests || [];
-    if (!tests.length) {
-      tests = (voucher.tests || voucher.lineItems || []).map(function (test) {
-        return { id: test.id || test.serviceId, name: test.name || test.serviceName };
-      });
-    }
+    var tests = allowedVoucherTests(voucher);
     var editable = voucher.status === 'issued';
     el('lineEditor').innerHTML = tests.map(function (test) {
       var id = test.id || test.serviceId;
@@ -138,7 +155,7 @@
         '<input type="checkbox" value="' + escapeHtml(id) + '"' +
         (checked ? ' checked' : '') + (editable ? '' : ' disabled') + '>' +
         '<span>' + escapeHtml(test.name || test.serviceName) + '</span></label>';
-    }).join('') || '<p class="text-muted mb-0">No laboratory tests are configured for this lab.</p>';
+    }).join('') || '<p class="text-muted mb-0">No midwife-selected tests are on this voucher.</p>';
   }
 
   function cashierOptions() {
@@ -231,6 +248,9 @@
         });
       }
       attachCatalog(voucher, catalogTests);
+      state.issuedServiceIds = (voucher.issuedServiceIds && voucher.issuedServiceIds.length)
+        ? voucher.issuedServiceIds.slice()
+        : (voucher.selectedServiceIds || []).slice();
       state.voucher = voucher;
       state.previewSignatures = {};
       state.invoiceDate = todayInputValue();
@@ -388,6 +408,7 @@
     state.patientNrc = '';
     state.patientAddress = '';
     state.invoiceDate = todayInputValue();
+    state.issuedServiceIds = [];
     el('voucherCodeInput').value = '';
     el('invoiceDateInput').value = state.invoiceDate;
     el('patientNrcInput').value = '';
@@ -450,31 +471,50 @@
     el('stopCamera').classList.add('d-none');
   }
 
-  function fillPeriodOptions() {
-    var select = el('labPeriod');
-    var current = select.value || 'all';
-    var options = ['<option value="all">All time</option>'];
+  function fillYearOptions(select, includeAll) {
+    var previous = select.value;
     var now = new Date();
-    for (var i = 0; i < 18; i += 1) {
-      var date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      var value = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
-      var label = date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
-      options.push('<option value="' + value + '">' + escapeHtml(label) + '</option>');
+    var options = includeAll ? ['<option value="all">All years</option>'] : [];
+    for (var year = now.getFullYear(); year >= now.getFullYear() - 5; year -= 1) {
+      options.push('<option value="' + year + '">' + year + '</option>');
     }
     select.innerHTML = options.join('');
-    select.value = current;
-    if (!select.value) select.value = 'all';
+    if (previous && Array.from(select.options).some(function (opt) { return opt.value === previous; })) {
+      select.value = previous;
+    } else if (!includeAll) {
+      select.value = String(now.getFullYear());
+    }
   }
 
-  function periodDateRange(period) {
-    if (!period || period === 'all') return null;
-    var parts = String(period).split('-');
-    var year = Number(parts[0]);
-    var month = Number(parts[1]);
-    if (!year || !month) return null;
-    var start = new Date(year, month - 1, 1, 0, 0, 0, 0);
-    var end = new Date(year, month, 0, 23, 59, 59, 999);
-    return { startDate: start, endDate: end };
+  function fillMonthOptions(select, includeAll) {
+    var previous = select.value;
+    var options = includeAll ? ['<option value="all">All months</option>'] : [];
+    for (var month = 1; month <= 12; month += 1) {
+      var label = window.VoucherPricing.monthLabel(month);
+      options.push('<option value="' + month + '">' + escapeHtml(label) + '</option>');
+    }
+    select.innerHTML = options.join('');
+    if (previous && Array.from(select.options).some(function (opt) { return opt.value === previous; })) {
+      select.value = previous;
+    } else if (!includeAll) {
+      select.value = String(new Date().getMonth() + 1);
+    }
+  }
+
+  function selectedBillingRange(yearSelect, monthSelect) {
+    var year = yearSelect && yearSelect.value;
+    var month = monthSelect && monthSelect.value;
+    if (!year || year === 'all') return null;
+    if (!month || month === 'all') return window.VoucherPricing.billingYearRange(year);
+    return window.VoucherPricing.billingPeriodRange(year, month);
+  }
+
+  function periodHint(range) {
+    if (!range) return 'Showing all redeemed dates.';
+    var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    if (!range.month) return range.year + ' is ' + start + ' to ' + end + '.';
+    return window.VoucherPricing.monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
   }
 
   function projectAmountMajor(item) {
@@ -497,78 +537,142 @@
     return 0;
   }
 
+  function breakdownText(bucket) {
+    var client = (bucket && bucket.clientMinor || 0) / 100;
+    var project = (bucket && bucket.projectMinor || 0) / 100;
+    return 'Total is ' + money(client + project) + ' = Client ' + money(client) +
+      ' + Project ' + money(project);
+  }
+
+  function voucherTotalMajor(item) {
+    var totals = (item && item.totals) || {};
+    var client = Number(totals.clientCopayMinor);
+    var project = Number(totals.projectContributionMinor);
+    if (Number.isFinite(client) && Number.isFinite(project)) return (client + project) / 100;
+    return projectAmountMajor(item);
+  }
+
   async function loadDashboard() {
-    var period = el('labPeriod').value || 'all';
-    var stats = await service().getPeriodStats({ period: period, labId: state.user.uid });
-    var row = stats[0] || {
-      counts: {},
-      projectRedeemedMinor: 0,
-      projectVerifiedMinor: 0,
-      projectPaidMinor: 0
-    };
-    var counts = row.counts || {};
-    el('labRedeemed').textContent = counts.redeemed || 0;
-    el('labRedeemedMoney').textContent = money((row.projectRedeemedMinor || 0) / 100);
-    el('labIncomingCount').textContent = counts.verified || 0;
-    el('labIncoming').textContent = money((row.projectVerifiedMinor || 0) / 100);
-    el('labPaidCount').textContent = counts.paid || 0;
-    el('labPaid').textContent = money((row.projectPaidMinor || 0) / 100);
-
-    // Backfill redeemed MMK for older stats docs that predate projectRedeemedMinor.
-    if (!(row.projectRedeemedMinor > 0) && (counts.redeemed > 0)) {
-      try {
-        var redeemedQuery = {
-          labId: state.user.uid,
-          status: 'redeemed',
-          pageSize: 50
-        };
-        var redeemedRange = periodDateRange(period);
-        if (redeemedRange) {
-          redeemedQuery.startDate = redeemedRange.startDate;
-          redeemedQuery.endDate = redeemedRange.endDate;
-          redeemedQuery.dateField = 'redeemedAt';
-        }
-        var redeemedRows = await service().queryVouchersPaged(redeemedQuery);
-        var redeemedMinor = (redeemedRows.items || []).reduce(function (sum, item) {
-          return sum + Math.round(projectAmountMajor(item) * 100);
-        }, 0);
-        el('labRedeemedMoney').textContent = money(redeemedMinor / 100);
-      } catch (error) {
-        el('labRedeemedMoney').textContent = money(0);
-      }
-    }
-
-    if (!state.dashStatus || state.dashStatus === 'issued') state.dashStatus = 'redeemed';
-    document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
-      tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
-    });
-    var query = {
-      labId: state.user.uid,
-      status: state.dashStatus || 'redeemed',
-      pageSize: 50,
-      dateField: 'redeemedAt'
-    };
-    var range = periodDateRange(period);
+    var range = selectedBillingRange(el('labYear'), el('labMonth'));
+    var query = { labId: state.user.uid };
     if (range) {
       query.startDate = range.startDate;
       query.endDate = range.endDate;
     }
-    var history = await service().queryVouchersPaged(query);
+    var summary = await service().queryRedeemedLabVouchers(query);
+    var byStatus = summary.byStatus || {};
+    var redeemed = byStatus.redeemed || { count: 0, clientMinor: 0, projectMinor: 0 };
+    var verified = byStatus.verified || { count: 0, clientMinor: 0, projectMinor: 0 };
+    var paid = byStatus.paid || { count: 0, clientMinor: 0, projectMinor: 0 };
+    var totalCount = redeemed.count + verified.count + paid.count;
+    el('labTotalCount').textContent = totalCount;
+    el('labRedeemed').textContent = redeemed.count;
+    el('labRedeemedMoney').textContent = money((redeemed.projectMinor + redeemed.clientMinor) / 100);
+    el('labIncomingCount').textContent = verified.count;
+    el('labIncoming').textContent = money((verified.clientMinor + verified.projectMinor) / 100);
+    el('labIncomingBreak').textContent = breakdownText(verified);
+    el('labPaidCount').textContent = paid.count;
+    el('labPaid').textContent = money((paid.clientMinor + paid.projectMinor) / 100);
+    el('labPaidBreak').textContent = breakdownText(paid);
+
+    if (!state.dashStatus) state.dashStatus = 'total';
+    document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
+      tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
+    });
+    var items = summary.items || [];
+    if (state.dashStatus && state.dashStatus !== 'total') {
+      items = items.filter(function (item) { return item.status === state.dashStatus; });
+    }
     el('labHistory').innerHTML =
       '<table class="table history-table lab-history-table">' +
       '<thead><tr><th>Code</th><th>Status</th><th>Midwife</th><th>Patient</th><th class="money">Amount</th></tr></thead><tbody>' +
-      ((history.items || []).length
-        ? (history.items || []).map(function (item) {
+      (items.length
+        ? items.map(function (item) {
           return '<tr>' +
             '<td>' + escapeHtml(item.code || item.id) + '</td>' +
             '<td>' + escapeHtml(item.status || '') + '</td>' +
             '<td>' + escapeHtml(item.issuerNameSnapshot || '') + '</td>' +
             '<td>' + escapeHtml(item.patientNameSnapshot || '') + '</td>' +
-            '<td class="money">' + escapeHtml(money(projectAmountMajor(item))) + '</td>' +
+            '<td class="money">' + escapeHtml(money(voucherTotalMajor(item))) + '</td>' +
             '</tr>';
         }).join('')
         : '<tr><td colspan="5" class="text-muted">No vouchers for this filter.</td></tr>') +
       '</tbody></table>';
+  }
+
+  function renderOutcomeTable(rows, submitted) {
+    if (!rows.length) {
+      el('outcomeTable').innerHTML = '<p class="text-muted mb-0">No redeemed tests in this period yet.</p>';
+      return;
+    }
+    el('outcomeTable').innerHTML =
+      '<table class="table history-table lab-history-table">' +
+      '<thead><tr><th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
+      rows.map(function (row, index) {
+        return '<tr>' +
+          '<td>' + escapeHtml(row.serviceName) + '</td>' +
+          '<td>' + escapeHtml(String(row.testCount || 0)) + '</td>' +
+          '<td><input class="form-control outcome-input" data-index="' + index +
+          '" type="number" min="0" step="1" inputmode="numeric" value="' +
+          escapeHtml(String(row.outcomeCount || 0)) + '" aria-label="Outcome for ' +
+          escapeHtml(row.serviceName) + '"' + (submitted ? '' : '') + '></td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  async function loadOutcomeReport() {
+    var range = selectedBillingRange(el('outcomeYear'), el('outcomeMonth'));
+    if (!range) {
+      fillYearOptions(el('outcomeYear'), false);
+      fillMonthOptions(el('outcomeMonth'), false);
+      range = selectedBillingRange(el('outcomeYear'), el('outcomeMonth'));
+    }
+    el('outcomePeriodHint').textContent = periodHint(range);
+    var query = { labId: state.user.uid };
+    if (range) {
+      query.startDate = range.startDate;
+      query.endDate = range.endDate;
+    }
+    var summary = await service().queryRedeemedLabVouchers(query);
+    var counted = service().countRedeemedTests(summary.items || []);
+    var saved = range ? await service().getLabOutcomeReport(state.user.uid, range.period) : null;
+    var savedById = {};
+    ((saved && saved.rows) || []).forEach(function (row) { savedById[row.serviceId] = row; });
+    state.outcomeRows = counted.map(function (row) {
+      var previous = savedById[row.serviceId] || {};
+      return {
+        serviceId: row.serviceId,
+        serviceName: row.serviceName,
+        testCount: row.testCount,
+        outcomeCount: previous.outcomeCount != null ? previous.outcomeCount : 0
+      };
+    });
+    renderOutcomeTable(state.outcomeRows, saved && saved.status === 'submitted');
+    el('outcomeStatusNote').textContent = saved && saved.status === 'submitted'
+      ? 'Submitted for this month. You can update the numbers and submit again, or move to another month.'
+      : 'Enter outcome numbers, then submit this month.';
+  }
+
+  async function saveOutcomeReport() {
+    var range = selectedBillingRange(el('outcomeYear'), el('outcomeMonth'));
+    if (!range) throw new Error('Select a year and month for the outcome report.');
+    var rows = state.outcomeRows.map(function (row, index) {
+      var input = document.querySelector('.outcome-input[data-index="' + index + '"]');
+      return {
+        serviceId: row.serviceId,
+        serviceName: row.serviceName,
+        testCount: Number(row.testCount) || 0,
+        outcomeCount: Math.max(0, Math.floor(Number(input && input.value) || 0))
+      };
+    });
+    if (!rows.length) throw new Error('There are no redeemed tests to report for this month.');
+    await service().saveLabOutcomeReport({
+      labId: state.user.uid,
+      period: range.period,
+      rows: rows,
+      submitted: true
+    });
+    await loadOutcomeReport();
+    setStatus('Outcome report submitted for ' + window.VoucherPricing.monthLabel(range.month) + '.', 'success');
   }
 
   function updateSealPreview(dataUrl) {
@@ -720,8 +824,12 @@
     }
     state.settings = await service().getLabSettings(user.uid);
     state.clientPad = window.VoucherInvoice.bindSignaturePad(el('clientPad'));
-    fillPeriodOptions();
-    el('labPeriod').value = 'all';
+    fillYearOptions(el('labYear'), true);
+    fillMonthOptions(el('labMonth'), true);
+    el('labYear').value = 'all';
+    el('labMonth').value = 'all';
+    fillYearOptions(el('outcomeYear'), false);
+    fillMonthOptions(el('outcomeMonth'), false);
     el('invoiceDateInput').value = todayInputValue();
     state.invoiceDate = el('invoiceDateInput').value;
     el('labApp').classList.remove('d-none');
@@ -810,14 +918,24 @@
       updateSealPreview((state.settings && state.settings.seal) || '');
     });
   });
-  el('labPeriod').addEventListener('change', function () {
-    loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
+  function bindPeriodReload(yearId, monthId, loader) {
+    el(yearId).addEventListener('change', function () {
+      loader().catch(function (error) { setStatus(error.message, 'error'); });
+    });
+    el(monthId).addEventListener('change', function () {
+      loader().catch(function (error) { setStatus(error.message, 'error'); });
+    });
+  }
+  bindPeriodReload('labYear', 'labMonth', loadDashboard);
+  bindPeriodReload('outcomeYear', 'outcomeMonth', loadOutcomeReport);
+  el('saveOutcomeBtn').addEventListener('click', function () {
+    saveOutcomeReport().catch(function (error) { setStatus(error.message, 'error'); });
   });
   el('labStatTiles').addEventListener('click', function (event) {
     var tile = event.target.closest('[data-status]');
     if (!tile) return;
     var next = tile.getAttribute('data-status');
-    state.dashStatus = state.dashStatus === next ? '' : next;
+    state.dashStatus = next || 'total';
     loadDashboard().catch(function (error) { setStatus(error.message, 'error'); });
   });
   el('cashierFields').addEventListener('click', function (event) {

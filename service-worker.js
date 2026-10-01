@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v281-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v283-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const FILES_TO_CACHE = [
   './manage-midwives.html',
   './program-officer.html',
   './promo-voucher.html',
+  './midwife-vouchers.html',
   './lab-vouchers.html',
   './admin.html',
   './patient-consent.html',
@@ -74,6 +75,7 @@ const FILES_TO_CACHE = [
   './js/voucher-service.js',
   './js/program-officer.js',
   './js/promo-voucher.js',
+  './js/midwife-vouchers.js',
   './js/lab-vouchers.js',
   './js/auth-guard.js',
   './js/nav-back.js',

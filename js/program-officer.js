@@ -147,6 +147,7 @@
       dashboard: 'Dashboard',
       labs: 'Configure Lab',
       verify: 'Verify & Paid',
+      outcomes: 'Lab outcomes',
       allocations: 'Allocations & Budget',
       settings: 'Settings'
     };
@@ -160,6 +161,9 @@
     }
     if (page === 'labs') {
       renderLabConfig().catch(function (error) { showMessage(error.message, 'error'); });
+    }
+    if (page === 'outcomes') {
+      loadPoOutcomeReport().catch(function (error) { showMessage(error.message, 'error'); });
     }
     if (page === 'allocations') renderAllocations();
     if (page === 'settings') renderPoSettingsUi();
@@ -191,6 +195,60 @@
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
     fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('outcomeLab'), state.labs, 'Select laboratory');
+  }
+
+  function fillYearOptions(select) {
+    var now = new Date();
+    var options = [];
+    for (var year = now.getFullYear(); year >= now.getFullYear() - 5; year -= 1) {
+      options.push('<option value="' + year + '">' + year + '</option>');
+    }
+    select.innerHTML = options.join('');
+    select.value = String(now.getFullYear());
+  }
+
+  function fillMonthOptions(select) {
+    var options = [];
+    for (var month = 1; month <= 12; month += 1) {
+      options.push('<option value="' + month + '">' + escapeHtml(pricing().monthLabel(month)) + '</option>');
+    }
+    select.innerHTML = options.join('');
+    select.value = String(new Date().getMonth() + 1);
+  }
+
+  async function loadPoOutcomeReport() {
+    var labId = byId('outcomeLab').value;
+    var year = byId('outcomeYear').value;
+    var month = byId('outcomeMonth').value;
+    var range = pricing().billingPeriodRange(year, month);
+    if (range) {
+      var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      byId('outcomePeriodHint').textContent = pricing().monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
+    } else {
+      byId('outcomePeriodHint').textContent = '';
+    }
+    if (!labId || !range) {
+      byId('outcomeTable').innerHTML = '<div class="po-empty">Select a laboratory and period.</div>';
+      return;
+    }
+    var report = await service().getLabOutcomeReport(labId, range.period);
+    if (!report || report.status !== 'submitted') {
+      byId('outcomeTable').innerHTML = '<div class="po-empty">This laboratory has not submitted an outcome report for this month.</div>';
+      return;
+    }
+    var rows = report.rows || [];
+    byId('outcomeTable').innerHTML = '<table class="po-table"><thead><tr>' +
+      '<th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
+      (rows.length
+        ? rows.map(function (row) {
+          return '<tr><td>' + escapeHtml(row.serviceName || row.serviceId) + '</td><td>' +
+            escapeHtml(String(row.testCount || 0)) + '</td><td>' +
+            escapeHtml(String(row.outcomeCount || 0)) + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="3">No tests were reported.</td></tr>') +
+      '</tbody></table>';
   }
 
   function labNameForId(labId) {
@@ -380,6 +438,7 @@
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('outcomeLab'), state.labs, 'Select laboratory');
     byId('configLab').value = labId;
     showMessage('Laboratory prices saved and published.', 'success');
   }
@@ -912,6 +971,11 @@
     byId('verifyStatus').addEventListener('change', function () {
       loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
     });
+    ['outcomeLab', 'outcomeYear', 'outcomeMonth'].forEach(function (id) {
+      byId(id).addEventListener('change', function () {
+        loadPoOutcomeReport().catch(function (error) { showMessage(error.message, 'error'); });
+      });
+    });
     byId('verifyTable').addEventListener('change', function (event) {
       if (event.target.matches('.verify-check')) {
         state.selectedCodes[event.target.getAttribute('data-code')] = event.target.checked;
@@ -1004,6 +1068,7 @@
     if (state.page === 'dashboard') await loadDashboardStats();
     if (state.page === 'verify') await loadVerifyQueue();
     if (state.page === 'labs') await renderLabConfig();
+    if (state.page === 'outcomes') await loadPoOutcomeReport();
     if (!(options && options.silent)) showMessage('Program data refreshed.', 'success');
   }
 
@@ -1017,6 +1082,8 @@
     byId('signedInUser').textContent = profileName(Object.assign({ id: profile.id }, profile.data()));
     fillPeriodSelect(byId('dashPeriod'), 'all');
     fillPeriodSelect(byId('verifyPeriod'), 'all');
+    fillYearOptions(byId('outcomeYear'));
+    fillMonthOptions(byId('outcomeMonth'));
     byId('verifyStatus').value = 'redeemed';
     setNavCollapsed(false);
     await refreshAll({ silent: true });

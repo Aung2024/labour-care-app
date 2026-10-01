@@ -22,7 +22,8 @@
     LAB_SETTINGS: 'lab_settings',
     PO_SETTINGS: 'po_settings',
     PERIOD_STATS: 'voucher_period_stats',
-    PROGRAM_SETTINGS: 'voucher_program_settings'
+    PROGRAM_SETTINGS: 'voucher_program_settings',
+    LAB_OUTCOMES: 'voucher_lab_outcomes'
   });
   var VOUCHER_STATUSES = Object.freeze(['issued', 'redeemed', 'verified', 'paid', 'rejected']);
   var MAX_IMAGE_CHARS = 180000;
@@ -1226,6 +1227,7 @@
               labNameSnapshot: String(labName).slice(0, 160),
               priceSheetId: assignment.priceSheetId,
               selectedServiceIds: selectedServiceIds,
+              issuedServiceIds: selectedServiceIds,
               lineItems: lineItems,
               totals: totals,
               projectCeilingMinor: ceilingMinor,
@@ -1593,9 +1595,15 @@
         if (voucher.labId !== context.user.uid) throw new Error('This voucher is assigned to another laboratory.');
         return transaction.get(context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId)).then(function (sheetSnapshot) {
           if (!sheetSnapshot.exists) throw new Error('The assigned price sheet is unavailable.');
+          var allowedIds = Array.isArray(voucher.issuedServiceIds) && voucher.issuedServiceIds.length
+            ? voucher.issuedServiceIds
+            : (voucher.selectedServiceIds || []);
           ids.forEach(function (serviceId) {
             if ((sheetSnapshot.data().serviceIds || []).indexOf(serviceId) === -1) {
               throw new Error('A selected service is not on the assigned price sheet.');
+            }
+            if (allowedIds.indexOf(serviceId) === -1) {
+              throw new Error('Laboratories can only add back tests the midwife originally selected.');
             }
           });
           transaction.update(voucherRef, {
@@ -2002,7 +2010,7 @@
 
   function queryVouchersPaged(input) {
     var filters = input || {};
-    var pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 50));
+    var pageSize = Math.min(400, Math.max(1, Number(filters.pageSize) || 50));
     var statusValue = filters.status == null ? '' : String(filters.status).trim().toLowerCase();
     var wantAllStatuses = !statusValue || statusValue === 'all';
 
@@ -2122,6 +2130,155 @@
     });
   }
 
+  function voucherShareMinors(row) {
+    var totals = (row && row.totals) || {};
+    var clientMinor = Number(totals.clientCopayMinor);
+    var projectMinor = Number(totals.projectContributionMinor);
+    if (!Number.isFinite(clientMinor) || !Number.isFinite(projectMinor)) {
+      var items = (row && (row.lineItems || row.tests)) || [];
+      clientMinor = items.reduce(function (sum, item) {
+        return sum + (Number(item.clientCopayMinor != null ? item.clientCopayMinor : (item.clientCostShare || 0) * 100) || 0);
+      }, 0);
+      projectMinor = items.reduce(function (sum, item) {
+        return sum + (Number(item.projectContributionMinor != null ? item.projectContributionMinor : (item.projectCostShare || 0) * 100) || 0);
+      }, 0);
+    }
+    return {
+      clientMinor: Math.max(0, clientMinor || 0),
+      projectMinor: Math.max(0, projectMinor || 0)
+    };
+  }
+
+  function summarizeVoucherItems(items) {
+    var counts = pricingApi().emptyCounts();
+    var byStatus = {
+      redeemed: { count: 0, clientMinor: 0, projectMinor: 0 },
+      verified: { count: 0, clientMinor: 0, projectMinor: 0 },
+      paid: { count: 0, clientMinor: 0, projectMinor: 0 }
+    };
+    (items || []).forEach(function (row) {
+      var status = String(row.status || '');
+      if (counts[status] != null) counts[status] += 1;
+      if (!byStatus[status]) return;
+      var shares = voucherShareMinors(row);
+      byStatus[status].count += 1;
+      byStatus[status].clientMinor += shares.clientMinor;
+      byStatus[status].projectMinor += shares.projectMinor;
+    });
+    return { counts: counts, byStatus: byStatus, items: items || [] };
+  }
+
+  function queryRedeemedLabVouchers(input) {
+    var filters = input || {};
+    var statuses = ['redeemed', 'verified', 'paid'];
+    return Promise.all(statuses.map(function (status) {
+      return queryVouchersPaged(Object.assign({}, filters, {
+        status: status,
+        dateField: 'redeemedAt',
+        pageSize: 400
+      }));
+    })).then(function (pages) {
+      var items = [];
+      pages.forEach(function (page) {
+        (page.items || []).forEach(function (row) { items.push(row); });
+      });
+      items.sort(function (a, b) {
+        return voucherSortMillis(b, 'redeemedAt') - voucherSortMillis(a, 'redeemedAt');
+      });
+      return summarizeVoucherItems(items);
+    });
+  }
+
+  function outcomeReportId(labId, period) {
+    return requireString(labId, 'Lab ID', 128) + '_' + requireString(period, 'Period', 16);
+  }
+
+  function normalizeOutcomeRows(rows) {
+    return (rows || []).map(function (row) {
+      var item = requireObject(row, 'Outcome row');
+      return {
+        serviceId: requireString(item.serviceId, 'Service ID', 64),
+        serviceName: requireString(item.serviceName || item.serviceId, 'Test name', 120),
+        testCount: requireInteger(item.testCount, 'Number of tests', 0),
+        outcomeCount: requireInteger(item.outcomeCount, 'Outcome result', 0)
+      };
+    });
+  }
+
+  function getLabOutcomeReport(labId, period) {
+    var context = firebaseContext();
+    var id = outcomeReportId(labId, period);
+    return context.db.collection(COLLECTIONS.LAB_OUTCOMES).doc(id).get().then(function (snapshot) {
+      return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : null;
+    });
+  }
+
+  function saveLabOutcomeReport(input) {
+    var data = requireObject(input, 'Outcome report');
+    var context = firebaseContext();
+    var labId = requireString(data.labId || context.user.uid, 'Lab ID', 128);
+    var period = requireString(data.period, 'Period', 16);
+    if (!/^\d{4}-\d{2}$/.test(period)) throw new Error('Select a valid year and month.');
+    var rows = normalizeOutcomeRows(data.rows);
+    var submitted = data.submitted !== false;
+    var now = serverTimestamp(context);
+    var id = outcomeReportId(labId, period);
+    var record = {
+      labId: labId,
+      period: period,
+      year: Number(period.slice(0, 4)),
+      month: Number(period.slice(5, 7)),
+      rows: rows,
+      status: submitted ? 'submitted' : 'draft',
+      updatedAt: now,
+      updatedBy: context.user.uid
+    };
+    if (submitted) {
+      record.submittedAt = now;
+      record.submittedBy = context.user.uid;
+    }
+    return context.db.collection(COLLECTIONS.LAB_OUTCOMES).doc(id).set(record, { merge: true })
+      .then(function () { return getLabOutcomeReport(labId, period); });
+  }
+
+  function countRedeemedTests(items) {
+    var byId = {};
+    (items || []).forEach(function (voucher) {
+      var ids = voucher.selectedServiceIds || [];
+      var named = voucher.lineItems || voucher.tests || [];
+      if (ids.length) {
+        ids.forEach(function (serviceId) {
+          var match = named.find(function (row) {
+            return (row.serviceId || row.id) === serviceId;
+          }) || {};
+          if (!byId[serviceId]) {
+            byId[serviceId] = {
+              serviceId: serviceId,
+              serviceName: match.serviceName || match.name || serviceId,
+              testCount: 0
+            };
+          }
+          byId[serviceId].testCount += 1;
+        });
+        return;
+      }
+      named.forEach(function (row) {
+        var serviceId = row.serviceId || row.id;
+        if (!serviceId) return;
+        if (!byId[serviceId]) {
+          byId[serviceId] = {
+            serviceId: serviceId,
+            serviceName: row.serviceName || row.name || serviceId,
+            testCount: 0
+          };
+        }
+        byId[serviceId].testCount += 1;
+      });
+    });
+    return Object.keys(byId).map(function (key) { return byId[key]; })
+      .sort(function (a, b) { return String(a.serviceName).localeCompare(String(b.serviceName)); });
+  }
+
   root.VoucherService = Object.freeze({
     collections: COLLECTIONS,
     generateOpaqueId: generateOpaqueId,
@@ -2173,6 +2330,10 @@
     resetPeriodStats: resetPeriodStats,
     getPeriodStats: getPeriodStats,
     queryVouchersPaged: queryVouchersPaged,
+    queryRedeemedLabVouchers: queryRedeemedLabVouchers,
+    countRedeemedTests: countRedeemedTests,
+    getLabOutcomeReport: getLabOutcomeReport,
+    saveLabOutcomeReport: saveLabOutcomeReport,
     issueSingleServiceVoucher: issueVoucher,
     issueVoucher: issueMultiServiceVoucher,
     lookupVoucher: lookupVoucher,

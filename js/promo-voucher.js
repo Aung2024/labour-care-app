@@ -63,33 +63,14 @@
   function patientAddress(patient) {
     return patient.patient_address || patient.patientAddress || patient.address || '';
   }
-  function toDateInput(value) {
-    if (!value) return '';
-    var date = value.toDate ? value.toDate() : new Date(value);
-    if (isNaN(date.getTime())) return '';
-    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
-  }
-  function visitTime(visit) {
-    var value = visit.visitDate || visit.visit_date || visit.timestamp || visit.createdAt;
-    var date = value && value.toDate ? value.toDate() : new Date(value || 0);
-    return isNaN(date.getTime()) ? 0 : date.getTime();
-  }
   function ancHubHref() {
     return 'patient-care-hub.html?patient=' + encodeURIComponent(state.patientId || '');
   }
 
-  async function latestAncDate(db) {
-    var ref = db.collection('patients').doc(state.patientId).collection('antenatal_visits');
-    try {
-      var ordered = await ref.orderBy('visitDate', 'desc').limit(1).get();
-      if (!ordered.empty) return toDateInput(ordered.docs[0].data().visitDate);
-    } catch (error) {
-      console.warn('[PromoVoucher] Ordered ANC lookup failed; trying compatibility lookup.', error);
-    }
-    var snapshot = await ref.get();
-    var visits = snapshot.docs.map(function (doc) { return doc.data() || {}; });
-    visits.sort(function (a, b) { return visitTime(b) - visitTime(a); });
-    return visits.length ? toDateInput(visits[0].visitDate || visits[0].visit_date || visits[0].timestamp || visits[0].createdAt) : '';
+  function todayInputValue() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
   }
 
   function issuerDisplayName(profile, user) {
@@ -308,7 +289,7 @@
       assertOnline();
       var tests = selectedTests();
       if (!tests.length) throw new Error('Select at least one lab test.');
-      if (!el('ancVisitDate').value) throw new Error('Enter the latest ANC visit date.');
+      if (!el('ancVisitDate').value) throw new Error('Enter the QR issued date.');
       if (!state.labId) throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
       if (!state.quota || Number(state.quota.remainingUnits || 0) < 1) {
         throw new Error('No remaining voucher allocation is available.');
@@ -411,7 +392,7 @@
       el('patientNrc').value = state.patient.nrc || state.patient.NRC || '';
       el('patientAddress').value = patientAddress(state.patient);
       el('issuerName').textContent = text(issuerDisplayName(state.profile, user));
-      el('ancVisitDate').value = await latestAncDate(db);
+      el('ancVisitDate').value = todayInputValue();
       await loadQuota();
       await loadAssignedLab();
       await loadTestCatalog();

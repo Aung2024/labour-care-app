@@ -112,7 +112,8 @@ async function seed() {
   });
 }
 
-async function issueVoucher() {
+async function issueVoucher(selectedIds) {
+  const serviceIds = selectedIds && selectedIds.length ? selectedIds : ['urine-re'];
   const db = env.authenticatedContext('mw').firestore();
   const quotaRef = doc(db, 'voucher_account_quotas/mw');
   const voucherRef = doc(db, `vouchers/${VOUCHER_ID}`);
@@ -138,7 +139,8 @@ async function issueVoucher() {
       labId: 'lab1',
       labNameSnapshot: 'Lab One',
       priceSheetId: SHEET_ID,
-      selectedServiceIds: ['urine-re'],
+      selectedServiceIds: serviceIds,
+      issuedServiceIds: serviceIds,
       issuedAt: serverTimestamp(),
       expiresAt: new Date(Date.now() + 86400000)
     });
@@ -227,6 +229,26 @@ test('laboratory role alias can look up vouchers', async () => {
   await issueVoucher();
   const labDb = env.authenticatedContext('lab-alias').firestore();
   await assertSucceeds(getDoc(doc(labDb, `vouchers/${VOUCHER_ID}`)));
+});
+
+test('Lab can submit an outcome report and Program Officer can read it', async () => {
+  const labDb = env.authenticatedContext('lab1').firestore();
+  await assertSucceeds(setDoc(doc(labDb, 'voucher_lab_outcomes/lab1_2026-10'), {
+    labId: 'lab1',
+    period: '2026-10',
+    year: 2026,
+    month: 10,
+    rows: [{ serviceId: 'hiv-antibody', serviceName: 'HIV 1&2 antibody', testCount: 8, outcomeCount: 3 }],
+    status: 'submitted',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'lab1',
+    submittedAt: serverTimestamp(),
+    submittedBy: 'lab1'
+  }));
+  const poDb = env.authenticatedContext('po').firestore();
+  await assertSucceeds(getDoc(doc(poDb, 'voucher_lab_outcomes/lab1_2026-10')));
+  const otherLab = env.authenticatedContext('lab2').firestore();
+  await assertFails(getDoc(doc(otherLab, 'voucher_lab_outcomes/lab1_2026-10')));
 });
 
 test('Program Officer can assign a laboratory on an allocation', async () => {
@@ -388,9 +410,12 @@ test('Lab redeem requires a client signature artifact', async () => {
   await assertSucceeds(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), redeemPayload('lab1')));
 });
 
-test('Lab can add or remove catalog tests on an issued voucher', async () => {
-  await issueVoucher();
+test('Lab can remove or restore midwife-selected tests but cannot add new ones', async () => {
+  await issueVoucher(['urine-re', 'hb']);
   const db = env.authenticatedContext('lab1').firestore();
+  await assertSucceeds(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
+    selectedServiceIds: ['urine-re']
+  }));
   await assertSucceeds(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
     selectedServiceIds: ['urine-re', 'hb']
   }));
@@ -403,6 +428,14 @@ test('Lab can add or remove catalog tests on an issued voucher', async () => {
       { serviceId: 'urine-re', serviceName: 'Urine RE', regularPriceMinor: 1, labCostShareMinor: 0, clientCopayMinor: 0, projectContributionMinor: 1 }
     ],
     totals: { regularPriceMinor: 1, labCostShareMinor: 0, clientCopayMinor: 0, projectContributionMinor: 1 }
+  }));
+});
+
+test('Lab cannot add a catalog test the midwife did not select', async () => {
+  await issueVoucher(['urine-re']);
+  const db = env.authenticatedContext('lab1').firestore();
+  await assertFails(updateDoc(doc(db, `vouchers/${VOUCHER_ID}`), {
+    selectedServiceIds: ['urine-re', 'hb']
   }));
 });
 

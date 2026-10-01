@@ -781,7 +781,7 @@ service cloud.firestore {
           "patientPhoneSnapshot", "patientNrcSnapshot", "patientAddressSnapshot",
           "ancVisitDate", "midwifeId",
           "issuerNameSnapshot", "labId", "labNameSnapshot", "priceSheetId",
-          "selectedServiceIds", "lineItems", "totals", "currencySnapshot",
+          "selectedServiceIds", "issuedServiceIds", "lineItems", "totals", "currencySnapshot",
           "projectCeilingMinor", "ceilingAppliedMinor",
           "issuedAt", "expiresAt"
         ])
@@ -808,6 +808,14 @@ service cloud.firestore {
         && request.resource.data.selectedServiceIds.size() <= 30
         && request.resource.data.selectedServiceIds.hasOnly(
           get(/databases/$(database)/documents/voucher_price_sheets/$(request.resource.data.priceSheetId)).data.serviceIds
+        )
+        && (
+          !("issuedServiceIds" in request.resource.data)
+          || (
+            request.resource.data.issuedServiceIds is list
+            && request.resource.data.issuedServiceIds.size() == request.resource.data.selectedServiceIds.size()
+            && request.resource.data.issuedServiceIds.hasOnly(request.resource.data.selectedServiceIds)
+          )
         )
         && (
           !("lineItems" in request.resource.data)
@@ -885,6 +893,10 @@ service cloud.firestore {
         && request.resource.data.selectedServiceIds.size() <= 16
         && request.resource.data.selectedServiceIds.hasOnly(
           get(/databases/$(database)/documents/voucher_price_sheets/$(resource.data.priceSheetId)).data.serviceIds
+        )
+        && (
+          !("issuedServiceIds" in resource.data)
+          || request.resource.data.selectedServiceIds.hasOnly(resource.data.issuedServiceIds)
         );
       allow delete: if isVoucherAdministrator();
 
@@ -1007,6 +1019,20 @@ service cloud.firestore {
           )
         );
       allow delete: if isVoucherAdministrator();
+    }
+
+    match /voucher_lab_outcomes/{reportId} {
+      allow get: if isVoucherAdministrator()
+        || (isLab() && (resource == null || resource.data.labId == request.auth.uid));
+      allow list: if isVoucherAdministrator()
+        || (isLab() && resource.data.labId == request.auth.uid);
+      allow create, update: if isLab()
+        && request.resource.data.labId == request.auth.uid
+        && request.resource.data.period is string
+        && request.resource.data.rows is list
+        && request.resource.data.status in ["draft", "submitted"]
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
     }
   }
 }

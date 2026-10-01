@@ -192,6 +192,44 @@
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
   }
 
+  function padMonth(month) {
+    return String(month).padStart(2, '0');
+  }
+
+  function billingPeriodKey(year, month) {
+    return Number(year) + '-' + padMonth(month);
+  }
+
+  // Named month uses the 21st-to-20th window. October = 21 Sep through 20 Oct.
+  function billingPeriodRange(year, month) {
+    var y = Number(year);
+    var m = Number(month);
+    if (!y || !m || m < 1 || m > 12) return null;
+    return {
+      period: billingPeriodKey(y, m),
+      year: y,
+      month: m,
+      startDate: new Date(y, m - 2, 21, 0, 0, 0, 0),
+      endDate: new Date(y, m - 1, 20, 23, 59, 59, 999)
+    };
+  }
+
+  function billingYearRange(year) {
+    var y = Number(year);
+    if (!y) return null;
+    return {
+      period: String(y),
+      year: y,
+      month: 0,
+      startDate: new Date(y, -1, 21, 0, 0, 0, 0),
+      endDate: new Date(y, 11, 20, 23, 59, 59, 999)
+    };
+  }
+
+  function monthLabel(month) {
+    return new Date(2026, Number(month) - 1, 1).toLocaleString(undefined, { month: 'long' });
+  }
+
   function periodStatsId(scope, subjectId, period) {
     if (scope === 'global') return 'global_' + period;
     return scope + '_' + subjectId + '_' + period;
@@ -251,6 +289,10 @@
     formatMajor: formatMajor,
     emptyCounts: emptyCounts,
     calendarPeriod: calendarPeriod,
+    billingPeriodKey: billingPeriodKey,
+    billingPeriodRange: billingPeriodRange,
+    billingYearRange: billingYearRange,
+    monthLabel: monthLabel,
     periodStatsId: periodStatsId,
     applyStatusDelta: applyStatusDelta
   });
