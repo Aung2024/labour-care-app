@@ -2213,6 +2213,19 @@
     });
   }
 
+  function listLabOutcomeReports(labId) {
+    var context = firebaseContext();
+    var id = requireString(labId || context.user.uid, 'Lab ID', 128);
+    return context.db.collection(COLLECTIONS.LAB_OUTCOMES)
+      .where('labId', '==', id)
+      .get()
+      .then(function (snapshot) {
+        return snapshot.docs.map(function (doc) {
+          return Object.assign({ id: doc.id }, doc.data());
+        });
+      });
+  }
+
   function saveLabOutcomeReport(input) {
     var data = requireObject(input, 'Outcome report');
     var context = firebaseContext();
@@ -2333,6 +2346,7 @@
     queryRedeemedLabVouchers: queryRedeemedLabVouchers,
     countRedeemedTests: countRedeemedTests,
     getLabOutcomeReport: getLabOutcomeReport,
+    listLabOutcomeReports: listLabOutcomeReports,
     saveLabOutcomeReport: saveLabOutcomeReport,
     issueSingleServiceVoucher: issueVoucher,
     issueVoucher: issueMultiServiceVoucher,

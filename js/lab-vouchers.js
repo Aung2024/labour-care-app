@@ -22,7 +22,8 @@
     patientAddress: '',
     clearSealImage: false,
     issuedServiceIds: [],
-    outcomeRows: []
+    outcomeRows: [],
+    outcomeReports: []
   };
 
   function el(id) { return document.getElementById(id); }
@@ -85,7 +86,7 @@
     });
     var titles = { scan: 'Scan', dashboard: 'Dashboard', outcomes: 'Outcome report', settings: 'Settings' };
     el('labPageTitle').textContent = titles[page] || 'Laboratory';
-    document.body.classList.toggle('lab-has-floating', page === 'settings' || page === 'outcomes' || (page === 'scan' && !!state.voucher));
+    document.body.classList.toggle('lab-has-floating', page === 'settings' || (page === 'scan' && !!state.voucher));
     if (page === 'dashboard') loadDashboard().catch(function (error) {
       if (!state.loggingOut) setStatus(error.message, 'error');
     });
@@ -600,7 +601,64 @@
       '</tbody></table>';
   }
 
-  function renderOutcomeTable(rows, submitted) {
+  function formatSubmittedAt(value) {
+    if (!value) return '';
+    var date = value.toDate ? value.toDate() : new Date(value);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function submittedReportsByPeriod() {
+    var byPeriod = {};
+    (state.outcomeReports || []).forEach(function (row) {
+      if (row && row.period && row.status === 'submitted') byPeriod[row.period] = row;
+    });
+    return byPeriod;
+  }
+
+  function refreshOutcomeMonthLabels() {
+    var select = el('outcomeMonth');
+    var year = el('outcomeYear') && el('outcomeYear').value;
+    if (!select || !year) return;
+    var submitted = submittedReportsByPeriod();
+    Array.from(select.options).forEach(function (option) {
+      var month = Number(option.value);
+      if (!month) return;
+      var period = window.VoucherPricing.billingPeriodKey(year, month);
+      option.textContent = window.VoucherPricing.monthLabel(month) +
+        (submitted[period] ? ' (submitted)' : '');
+    });
+  }
+
+  function renderOutcomeStatus(range, saved, hasRows) {
+    var banner = el('outcomeStatusBanner');
+    var label = el('outcomeStatusLabel');
+    var note = el('outcomeStatusNote');
+    var button = el('saveOutcomeBtn');
+    var submitted = !!(saved && saved.status === 'submitted');
+    var monthName = range ? window.VoucherPricing.monthLabel(range.month) : 'This month';
+    var submittedOn = formatSubmittedAt(saved && (saved.submittedAt || saved.updatedAt));
+    if (banner) banner.setAttribute('data-state', submitted ? 'submitted' : 'pending');
+    if (label) label.textContent = submitted ? 'Submitted' : 'Not submitted';
+    if (note) {
+      if (submitted) {
+        note.textContent = monthName + ' is done' + (submittedOn ? ' (' + submittedOn + ')' : '') +
+          '. You can correct the numbers and submit again, or choose another month.';
+      } else if (!hasRows) {
+        note.textContent = 'No redeemed tests in ' + monthName + ' yet, so this month cannot be submitted.';
+      } else {
+        note.textContent = monthName + ' is not submitted yet. Enter outcome numbers, then submit.';
+      }
+    }
+    if (button) {
+      button.disabled = !hasRows;
+      button.innerHTML = submitted
+        ? '<i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Update ' + escapeHtml(monthName) + ' report'
+        : '<i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Submit ' + escapeHtml(monthName);
+    }
+  }
+
+  function renderOutcomeTable(rows) {
     if (!rows.length) {
       el('outcomeTable').innerHTML = '<p class="text-muted mb-0">No redeemed tests in this period yet.</p>';
       return;
@@ -615,7 +673,7 @@
           '<td><input class="form-control outcome-input" data-index="' + index +
           '" type="number" min="0" step="1" inputmode="numeric" value="' +
           escapeHtml(String(row.outcomeCount || 0)) + '" aria-label="Outcome for ' +
-          escapeHtml(row.serviceName) + '"' + (submitted ? '' : '') + '></td></tr>';
+          escapeHtml(row.serviceName) + '"></td></tr>';
       }).join('') + '</tbody></table>';
   }
 
@@ -627,6 +685,8 @@
       range = selectedBillingRange(el('outcomeYear'), el('outcomeMonth'));
     }
     el('outcomePeriodHint').textContent = periodHint(range);
+    state.outcomeReports = await service().listLabOutcomeReports(state.user.uid);
+    refreshOutcomeMonthLabels();
     var query = { labId: state.user.uid };
     if (range) {
       query.startDate = range.startDate;
@@ -634,7 +694,10 @@
     }
     var summary = await service().queryRedeemedLabVouchers(query);
     var counted = service().countRedeemedTests(summary.items || []);
-    var saved = range ? await service().getLabOutcomeReport(state.user.uid, range.period) : null;
+    var saved = range
+      ? ((state.outcomeReports || []).find(function (row) { return row.period === range.period; }) ||
+        await service().getLabOutcomeReport(state.user.uid, range.period))
+      : null;
     var savedById = {};
     ((saved && saved.rows) || []).forEach(function (row) { savedById[row.serviceId] = row; });
     state.outcomeRows = counted.map(function (row) {
@@ -646,10 +709,8 @@
         outcomeCount: previous.outcomeCount != null ? previous.outcomeCount : 0
       };
     });
-    renderOutcomeTable(state.outcomeRows, saved && saved.status === 'submitted');
-    el('outcomeStatusNote').textContent = saved && saved.status === 'submitted'
-      ? 'Submitted for this month. You can update the numbers and submit again, or move to another month.'
-      : 'Enter outcome numbers, then submit this month.';
+    renderOutcomeTable(state.outcomeRows);
+    renderOutcomeStatus(range, saved, state.outcomeRows.length > 0);
   }
 
   async function saveOutcomeReport() {
