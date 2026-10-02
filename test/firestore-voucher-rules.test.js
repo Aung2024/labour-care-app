@@ -249,6 +249,16 @@ test('Lab can submit an outcome report and Program Officer can read it', async (
   await assertSucceeds(getDoc(doc(poDb, 'voucher_lab_outcomes/lab1_2026-10')));
   const otherLab = env.authenticatedContext('lab2').firestore();
   await assertFails(getDoc(doc(otherLab, 'voucher_lab_outcomes/lab1_2026-10')));
+  await assertFails(setDoc(doc(labDb, 'voucher_lab_outcomes/lab1_2026-10'), {
+    labId: 'lab1',
+    period: '2026-10',
+    year: 2026,
+    month: 10,
+    rows: [{ serviceId: 'hiv-antibody', serviceName: 'HIV 1&2 antibody', testCount: 8, outcomeCount: 4 }],
+    status: 'submitted',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'lab1'
+  }, { merge: true }));
 });
 
 test('Program Officer can assign a laboratory on an allocation', async () => {

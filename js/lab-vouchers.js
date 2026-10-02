@@ -23,7 +23,8 @@
     clearSealImage: false,
     issuedServiceIds: [],
     outcomeRows: [],
-    outcomeReports: []
+    outcomeReports: [],
+    dashItems: []
   };
 
   function el(id) { return document.getElementById(id); }
@@ -584,21 +585,57 @@
     if (state.dashStatus && state.dashStatus !== 'total') {
       items = items.filter(function (item) { return item.status === state.dashStatus; });
     }
+    state.dashItems = items;
+    renderDashboardTable();
+  }
+
+  function dashboardSearchQuery() {
+    return String((el('labDashSearch') && el('labDashSearch').value) || '').trim().toLowerCase();
+  }
+
+  function matchesDashSearch(item, query) {
+    if (!query) return true;
+    var compactQuery = query.replace(/[-\s]/g, '');
+    var code = String(item.code || item.id || '').toLowerCase();
+    var compactCode = code.replace(/-/g, '');
+    var name = String(item.patientNameSnapshot || '').toLowerCase();
+    return code.indexOf(query) !== -1 || compactCode.indexOf(compactQuery) !== -1 ||
+      name.indexOf(query) !== -1;
+  }
+
+  function renderDashboardTable() {
+    var query = dashboardSearchQuery();
+    var items = (state.dashItems || []).filter(function (item) {
+      return matchesDashSearch(item, query);
+    });
     el('labHistory').innerHTML =
       '<table class="table history-table lab-history-table">' +
       '<thead><tr><th>Code</th><th>Status</th><th>Midwife</th><th>Patient</th><th class="money">Amount</th></tr></thead><tbody>' +
       (items.length
         ? items.map(function (item) {
-          return '<tr>' +
-            '<td>' + escapeHtml(item.code || item.id) + '</td>' +
+          var code = item.code || item.id || '';
+          return '<tr class="lab-history-row" data-code="' + escapeHtml(code) +
+            '" tabindex="0" role="link" aria-label="Open voucher ' + escapeHtml(code) + '">' +
+            '<td>' + escapeHtml(code) + '</td>' +
             '<td>' + escapeHtml(item.status || '') + '</td>' +
             '<td>' + escapeHtml(item.issuerNameSnapshot || '') + '</td>' +
             '<td>' + escapeHtml(item.patientNameSnapshot || '') + '</td>' +
             '<td class="money">' + escapeHtml(money(voucherTotalMajor(item))) + '</td>' +
             '</tr>';
         }).join('')
-        : '<tr><td colspan="5" class="text-muted">No vouchers for this filter.</td></tr>') +
+        : '<tr><td colspan="5" class="text-muted">' +
+          (query ? 'No vouchers match this search.' : 'No vouchers for this filter.') +
+          '</td></tr>') +
       '</tbody></table>';
+  }
+
+  function openDashboardVoucher(code) {
+    if (!code) return;
+    el('voucherCodeInput').value = code;
+    showPage('scan');
+    lookup().catch(function (error) {
+      if (!state.loggingOut) setStatus(error.message || 'Could not open that voucher.', 'error');
+    });
   }
 
   function formatSubmittedAt(value) {
@@ -630,6 +667,58 @@
     });
   }
 
+  function renderOutcomeProgress(range) {
+    var mount = el('outcomeMonthProgress');
+    if (!mount) return;
+    var year = range && range.year;
+    if (!year) {
+      mount.innerHTML = '';
+      return;
+    }
+    var submitted = submittedReportsByPeriod();
+    var selectedMonth = range.month;
+    var done = [];
+    var next = [];
+    for (var month = 1; month <= 12; month += 1) {
+      var period = window.VoucherPricing.billingPeriodKey(year, month);
+      var item = {
+        month: month,
+        period: period,
+        name: window.VoucherPricing.monthLabel(month),
+        report: submitted[period] || null
+      };
+      if (item.report) done.push(item);
+      else next.push(item);
+    }
+    var chip = function (item, kind) {
+      var submittedOn = item.report ? formatSubmittedAt(item.report.submittedAt || item.report.updatedAt) : '';
+      return '<button type="button" class="outcome-month-chip is-' + kind +
+        (item.month === selectedMonth ? ' is-current' : '') +
+        '" data-month="' + item.month + '" aria-label="' + escapeHtml(item.name) +
+        (item.report ? ' submitted' : ' not submitted') + '">' +
+        '<span>' + escapeHtml(item.name) + '</span>' +
+        (item.report
+          ? '<small>Done' + (submittedOn ? ' · ' + escapeHtml(submittedOn) : '') + '</small>'
+          : '<small>Open</small>') +
+        '</button>';
+    };
+    mount.innerHTML =
+      '<div class="outcome-progress__group">' +
+        '<div class="outcome-progress__title">Submitted</div>' +
+        '<div class="outcome-progress__chips">' +
+          (done.length ? done.map(function (item) { return chip(item, 'done'); }).join('')
+            : '<p class="lab-hint mb-0">No months submitted yet for ' + year + '.</p>') +
+        '</div>' +
+      '</div>' +
+      '<div class="outcome-progress__group">' +
+        '<div class="outcome-progress__title">Still open / next</div>' +
+        '<div class="outcome-progress__chips">' +
+          (next.length ? next.map(function (item) { return chip(item, 'open'); }).join('')
+            : '<p class="lab-hint mb-0">Every month in ' + year + ' is submitted.</p>') +
+        '</div>' +
+      '</div>';
+  }
+
   function renderOutcomeStatus(range, saved, hasRows) {
     var banner = el('outcomeStatusBanner');
     var label = el('outcomeStatusLabel');
@@ -639,26 +728,26 @@
     var monthName = range ? window.VoucherPricing.monthLabel(range.month) : 'This month';
     var submittedOn = formatSubmittedAt(saved && (saved.submittedAt || saved.updatedAt));
     if (banner) banner.setAttribute('data-state', submitted ? 'submitted' : 'pending');
-    if (label) label.textContent = submitted ? 'Submitted' : 'Not submitted';
+    if (label) label.textContent = submitted ? 'Submitted and locked' : 'Not submitted';
     if (note) {
       if (submitted) {
         note.textContent = monthName + ' is done' + (submittedOn ? ' (' + submittedOn + ')' : '') +
-          '. You can correct the numbers and submit again, or choose another month.';
+          ' and locked. Choose an open month to submit the next report.';
       } else if (!hasRows) {
         note.textContent = 'No redeemed tests in ' + monthName + ' yet, so this month cannot be submitted.';
       } else {
-        note.textContent = monthName + ' is not submitted yet. Enter outcome numbers, then submit.';
+        note.textContent = monthName + ' is not submitted yet. Outcome results cannot be higher than the number of tests.';
       }
     }
     if (button) {
-      button.disabled = !hasRows;
-      button.innerHTML = submitted
-        ? '<i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Update ' + escapeHtml(monthName) + ' report'
-        : '<i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Submit ' + escapeHtml(monthName);
+      button.hidden = submitted;
+      button.disabled = submitted || !hasRows;
+      button.innerHTML = '<i class="fas fa-paper-plane me-2" aria-hidden="true"></i>Submit ' +
+        escapeHtml(monthName);
     }
   }
 
-  function renderOutcomeTable(rows) {
+  function renderOutcomeTable(rows, locked) {
     if (!rows.length) {
       el('outcomeTable').innerHTML = '<p class="text-muted mb-0">No redeemed tests in this period yet.</p>';
       return;
@@ -667,13 +756,19 @@
       '<table class="table history-table lab-history-table">' +
       '<thead><tr><th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
       rows.map(function (row, index) {
+        var max = Number(row.testCount) || 0;
+        var value = Math.min(max, Math.max(0, Number(row.outcomeCount) || 0));
         return '<tr>' +
           '<td>' + escapeHtml(row.serviceName) + '</td>' +
-          '<td>' + escapeHtml(String(row.testCount || 0)) + '</td>' +
-          '<td><input class="form-control outcome-input" data-index="' + index +
-          '" type="number" min="0" step="1" inputmode="numeric" value="' +
-          escapeHtml(String(row.outcomeCount || 0)) + '" aria-label="Outcome for ' +
-          escapeHtml(row.serviceName) + '"></td></tr>';
+          '<td>' + escapeHtml(String(max)) + '</td>' +
+          '<td>' + (locked
+            ? '<span class="outcome-locked-value">' + escapeHtml(String(value)) + '</span>'
+            : '<input class="form-control outcome-input" data-index="' + index +
+              '" data-max="' + max + '" type="number" min="0" max="' + max +
+              '" step="1" inputmode="numeric" value="' + escapeHtml(String(value)) +
+              '" aria-label="Outcome for ' + escapeHtml(row.serviceName) +
+              ', maximum ' + max + '">') +
+          '</td></tr>';
       }).join('') + '</tbody></table>';
   }
 
@@ -709,31 +804,74 @@
         outcomeCount: previous.outcomeCount != null ? previous.outcomeCount : 0
       };
     });
-    renderOutcomeTable(state.outcomeRows);
+    var locked = !!(saved && saved.status === 'submitted');
+    renderOutcomeProgress(range);
+    renderOutcomeTable(state.outcomeRows, locked);
     renderOutcomeStatus(range, saved, state.outcomeRows.length > 0);
+  }
+
+  function readOutcomeRows() {
+    var errors = [];
+    var rows = state.outcomeRows.map(function (row, index) {
+      var input = document.querySelector('.outcome-input[data-index="' + index + '"]');
+      var max = Number(row.testCount) || 0;
+      var raw = input ? String(input.value || '').trim() : String(row.outcomeCount || 0);
+      var value = raw === '' ? 0 : Number(raw);
+      if (!Number.isFinite(value) || value < 0 || Math.floor(value) !== value) {
+        errors.push(row.serviceName + ' needs a whole number.');
+      } else if (value > max) {
+        errors.push(row.serviceName + ': outcome cannot be more than ' + max + ' tests.');
+      }
+      return {
+        serviceId: row.serviceId,
+        serviceName: row.serviceName,
+        testCount: max,
+        outcomeCount: Math.max(0, Math.floor(Number.isFinite(value) ? value : 0))
+      };
+    });
+    return { rows: rows, errors: errors };
+  }
+
+  function validateOutcomeInput(input) {
+    if (!input) return true;
+    var max = Number(input.getAttribute('data-max') || input.max || 0);
+    var raw = String(input.value || '').trim();
+    var value = raw === '' ? 0 : Number(raw);
+    var valid = Number.isFinite(value) && value >= 0 && Math.floor(value) === value && value <= max;
+    input.classList.toggle('is-invalid', !valid);
+    input.setAttribute('aria-invalid', valid ? 'false' : 'true');
+    return valid;
+  }
+
+  async function confirmOutcomeSubmit(monthName) {
+    var message = 'Submit the ' + monthName +
+      ' outcome report? After you confirm, this month will be locked and cannot be edited.';
+    if (window.AppDialog && typeof window.AppDialog.confirm === 'function') {
+      return window.AppDialog.confirm(message, { title: 'Confirm submission' });
+    }
+    return window.confirm(message);
   }
 
   async function saveOutcomeReport() {
     var range = selectedBillingRange(el('outcomeYear'), el('outcomeMonth'));
     if (!range) throw new Error('Select a year and month for the outcome report.');
-    var rows = state.outcomeRows.map(function (row, index) {
-      var input = document.querySelector('.outcome-input[data-index="' + index + '"]');
-      return {
-        serviceId: row.serviceId,
-        serviceName: row.serviceName,
-        testCount: Number(row.testCount) || 0,
-        outcomeCount: Math.max(0, Math.floor(Number(input && input.value) || 0))
-      };
+    var existing = (state.outcomeReports || []).find(function (row) {
+      return row.period === range.period && row.status === 'submitted';
     });
-    if (!rows.length) throw new Error('There are no redeemed tests to report for this month.');
+    if (existing) throw new Error('This month is already submitted and locked.');
+    var parsed = readOutcomeRows();
+    if (parsed.errors.length) throw new Error(parsed.errors[0]);
+    if (!parsed.rows.length) throw new Error('There are no redeemed tests to report for this month.');
+    var confirmed = await confirmOutcomeSubmit(window.VoucherPricing.monthLabel(range.month));
+    if (!confirmed) return;
     await service().saveLabOutcomeReport({
       labId: state.user.uid,
       period: range.period,
-      rows: rows,
+      rows: parsed.rows,
       submitted: true
     });
     await loadOutcomeReport();
-    setStatus('Outcome report submitted for ' + window.VoucherPricing.monthLabel(range.month) + '.', 'success');
+    setStatus('Outcome report submitted for ' + window.VoucherPricing.monthLabel(range.month) + '. This month is now locked.', 'success');
   }
 
   function updateSealPreview(dataUrl) {
@@ -989,6 +1127,33 @@
   }
   bindPeriodReload('labYear', 'labMonth', loadDashboard);
   bindPeriodReload('outcomeYear', 'outcomeMonth', loadOutcomeReport);
+  if (el('labDashSearch')) {
+    el('labDashSearch').addEventListener('input', renderDashboardTable);
+  }
+  el('labHistory').addEventListener('click', function (event) {
+    var row = event.target.closest('.lab-history-row');
+    if (!row) return;
+    openDashboardVoucher(row.getAttribute('data-code'));
+  });
+  el('labHistory').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    var row = event.target.closest('.lab-history-row');
+    if (!row) return;
+    event.preventDefault();
+    openDashboardVoucher(row.getAttribute('data-code'));
+  });
+  if (el('outcomeMonthProgress')) {
+    el('outcomeMonthProgress').addEventListener('click', function (event) {
+      var chip = event.target.closest('[data-month]');
+      if (!chip || !el('outcomeMonth')) return;
+      el('outcomeMonth').value = chip.getAttribute('data-month');
+      loadOutcomeReport().catch(function (error) { setStatus(error.message, 'error'); });
+    });
+  }
+  el('outcomeTable').addEventListener('input', function (event) {
+    if (!event.target.classList.contains('outcome-input')) return;
+    validateOutcomeInput(event.target);
+  });
   el('saveOutcomeBtn').addEventListener('click', function () {
     saveOutcomeReport().catch(function (error) { setStatus(error.message, 'error'); });
   });

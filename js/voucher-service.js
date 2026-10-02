@@ -2196,11 +2196,17 @@
   function normalizeOutcomeRows(rows) {
     return (rows || []).map(function (row) {
       var item = requireObject(row, 'Outcome row');
+      var testCount = requireInteger(item.testCount, 'Number of tests', 0);
+      var outcomeCount = requireInteger(item.outcomeCount, 'Outcome result', 0);
+      if (outcomeCount > testCount) {
+        throw new Error((item.serviceName || item.serviceId || 'A test') +
+          ': outcome cannot be more than ' + testCount + ' tests.');
+      }
       return {
         serviceId: requireString(item.serviceId, 'Service ID', 64),
         serviceName: requireString(item.serviceName || item.serviceId, 'Test name', 120),
-        testCount: requireInteger(item.testCount, 'Number of tests', 0),
-        outcomeCount: requireInteger(item.outcomeCount, 'Outcome result', 0)
+        testCount: testCount,
+        outcomeCount: outcomeCount
       };
     });
   }
@@ -2236,6 +2242,10 @@
     var submitted = data.submitted !== false;
     var now = serverTimestamp(context);
     var id = outcomeReportId(labId, period);
+    return getLabOutcomeReport(labId, period).then(function (existing) {
+      if (existing && existing.status === 'submitted') {
+        throw new Error('This month is already submitted and locked.');
+      }
     var record = {
       labId: labId,
       period: period,
@@ -2252,6 +2262,7 @@
     }
     return context.db.collection(COLLECTIONS.LAB_OUTCOMES).doc(id).set(record, { merge: true })
       .then(function () { return getLabOutcomeReport(labId, period); });
+    });
   }
 
   function countRedeemedTests(items) {
