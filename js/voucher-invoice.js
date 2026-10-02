@@ -239,6 +239,26 @@
     });
   }
 
+  function cloneForPrint(element) {
+    var clone = element.cloneNode(true);
+    var sourceCanvases = element.querySelectorAll('canvas');
+    var destCanvases = clone.querySelectorAll('canvas');
+    Array.from(sourceCanvases).forEach(function (source, index) {
+      var dest = destCanvases[index];
+      if (!dest || !dest.parentNode) return;
+      try {
+        var image = document.createElement('img');
+        image.src = source.toDataURL('image/png');
+        image.alt = source.getAttribute('aria-label') || 'QR';
+        image.width = source.width;
+        image.height = source.height;
+        image.className = source.className;
+        dest.parentNode.replaceChild(image, dest);
+      } catch (ignored) {}
+    });
+    return clone;
+  }
+
   function printA4(elementOrElements) {
     var elements = Array.isArray(elementOrElements)
       ? elementOrElements.filter(Boolean)
@@ -247,29 +267,55 @@
     return Promise.all(elements.map(function (element) {
       return waitForReady(element);
     })).then(function () {
-      var host = document.createElement('div');
-      host.className = 'invoice-print-root';
-      host.setAttribute('aria-hidden', 'true');
-      elements.forEach(function (element, index) {
-        var clone = element.cloneNode(true);
+      var iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.setAttribute('title', 'Print invoice');
+      iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+      document.body.appendChild(iframe);
+      var doc = iframe.contentDocument;
+      if (!doc) {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        throw new Error('Could not open the print window.');
+      }
+      var styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(function (node) {
+        if (node.tagName === 'LINK') return '<link rel="stylesheet" href="' + node.href + '">';
+        return node.outerHTML;
+      }).join('');
+      var sheets = elements.map(function (element, index) {
+        var clone = cloneForPrint(element);
+        clone.classList.add('invoice-sheet');
         if (index < elements.length - 1) {
           clone.style.pageBreakAfter = 'always';
           clone.style.breakAfter = 'page';
         }
-        host.appendChild(clone);
+        return clone.outerHTML;
+      }).join('');
+      doc.open();
+      doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">' + styles +
+        '<style>html,body{margin:0;background:#fff}@page{size:A4;margin:12mm}' +
+        '.invoice-sheet{width:100%;max-width:none;border:0;box-shadow:none;margin:0}</style></head>' +
+        '<body>' + sheets + '</body></html>');
+      doc.close();
+      return waitForReady(doc.body).then(function () {
+        return new Promise(function (resolve) {
+          var cleaned = false;
+          var cleanup = function () {
+            if (cleaned) return;
+            cleaned = true;
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            resolve();
+          };
+          iframe.contentWindow.addEventListener('afterprint', cleanup);
+          try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+          } catch (error) {
+            cleanup();
+            throw error;
+          }
+          window.setTimeout(cleanup, 60000);
+        });
       });
-      document.body.appendChild(host);
-      document.body.classList.add('invoice-printing');
-      var cleanup = function () {
-        document.body.classList.remove('invoice-printing');
-        if (host.parentNode) host.parentNode.removeChild(host);
-        window.removeEventListener('afterprint', cleanup);
-      };
-      window.addEventListener('afterprint', cleanup);
-      window.setTimeout(function () {
-        window.print();
-        window.setTimeout(cleanup, 1000);
-      }, 50);
     });
   }
 

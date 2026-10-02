@@ -629,12 +629,80 @@
       '</tbody></table>';
   }
 
-  function openDashboardVoucher(code) {
+  function extrasFromStoredVoucher(voucher, signatures) {
+    var settings = state.settings || {};
+    var signs = signatures || {};
+    var invoiceDate = window.VoucherInvoice.formatDate(voucher.redeemedAt || voucher.issuedAt);
+    return {
+      lab: {
+        seal: signs.labSeal || settings.seal || '',
+        name: settings.labName || voucher.labNameSnapshot || '',
+        address: settings.address || '',
+        phone: settings.phone || '',
+        cashierSignature: signs.cashierSignature || '',
+        cashierName: voucher.cashierNameSnapshot || '',
+        date: invoiceDate
+      },
+      client: {
+        signature: signs.clientSignature || '',
+        name: voucher.patientNameSnapshot,
+        nrc: voucher.patientNrcSnapshot || '',
+        phone: voucher.patientPhoneSnapshot,
+        address: voucher.patientAddressSnapshot || '',
+        date: invoiceDate
+      },
+      project: {}
+    };
+  }
+
+  function closeLabPreview() {
+    var modal = el('labPreviewModal');
+    if (modal) modal.hidden = true;
+    if (el('labPreviewBody')) el('labPreviewBody').innerHTML = '';
+    document.body.classList.remove('lab-modal-open');
+  }
+
+  async function openDashboardVoucher(code) {
     if (!code) return;
-    el('voucherCodeInput').value = code;
-    showPage('scan');
-    lookup().catch(function (error) {
-      if (!state.loggingOut) setStatus(error.message || 'Could not open that voucher.', 'error');
+    var modal = el('labPreviewModal');
+    var body = el('labPreviewBody');
+    var title = el('labPreviewTitle');
+    if (!modal || !body) return;
+    body.innerHTML = '<p class="lab-hint mb-0">Loading voucher…</p>';
+    if (title) title.textContent = code;
+    modal.hidden = false;
+    document.body.classList.add('lab-modal-open');
+    try {
+      assertOnline();
+      var voucher = await service().lookupVoucher(code);
+      if (voucher.labId && voucher.labId !== state.user.uid) {
+        throw new Error('This voucher is assigned to another laboratory.');
+      }
+      var signatures = {};
+      try {
+        signatures = await service().getVoucherSignatures(voucher.code || code);
+      } catch (error) {}
+      if (title) title.textContent = (voucher.code || code) + ' · ' + (voucher.status || '');
+      var mount = document.createElement('div');
+      mount.className = 'invoice-preview';
+      body.innerHTML = '';
+      body.appendChild(mount);
+      var model = window.VoucherInvoice.modelFromVoucher(voucher, extrasFromStoredVoucher(voucher, signatures));
+      model.date = window.VoucherInvoice.formatDate(voucher.redeemedAt || voucher.issuedAt);
+      window.VoucherInvoice.render(mount, model);
+    } catch (error) {
+      body.innerHTML = '<p class="text-muted mb-0">' + escapeHtml(error.message || 'Could not open that voucher.') + '</p>';
+    }
+  }
+
+  function printInvoiceFrom(root) {
+    var sheet = root && root.querySelector('.invoice-sheet');
+    if (!sheet) {
+      setStatus('Load an invoice before printing.', 'warning');
+      return Promise.resolve();
+    }
+    return window.VoucherInvoice.printA4(sheet).catch(function (error) {
+      setStatus(error.message || 'Could not print invoice.', 'error');
     });
   }
 
@@ -1056,15 +1124,25 @@
   el('confirmRedeem').addEventListener('click', function () {
     redeem().catch(function (error) { if (!state.loggingOut) setStatus(error.message, 'error'); });
   });
-  el('printInvoiceBtn').addEventListener('click', function () {
-    var sheet = el('invoiceMount') && el('invoiceMount').querySelector('.invoice-sheet');
-    if (!sheet) {
-      setStatus('Load an invoice before printing.', 'warning');
-      return;
-    }
-    window.VoucherInvoice.printA4(sheet).catch(function (error) {
-      setStatus(error.message || 'Could not print invoice.', 'error');
+  function handlePrintInvoice() {
+    printInvoiceFrom(el('invoiceMount'));
+  }
+  el('printInvoiceBtn').addEventListener('click', handlePrintInvoice);
+  if (el('printInvoicePreviewBtn')) {
+    el('printInvoicePreviewBtn').addEventListener('click', handlePrintInvoice);
+  }
+  if (el('labPreviewPrintBtn')) {
+    el('labPreviewPrintBtn').addEventListener('click', function () {
+      printInvoiceFrom(el('labPreviewBody'));
     });
+  }
+  document.querySelectorAll('[data-close-lab-preview]').forEach(function (node) {
+    node.addEventListener('click', closeLabPreview);
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && el('labPreviewModal') && !el('labPreviewModal').hidden) {
+      closeLabPreview();
+    }
   });
   el('applyClientSign').addEventListener('click', function () {
     applyClientSignature().catch(function (error) { setStatus(error.message, 'error'); });
