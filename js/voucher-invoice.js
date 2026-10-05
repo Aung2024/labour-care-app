@@ -21,6 +21,7 @@
 
   function formatDate(value) {
     if (!value) return '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
     var date = value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
     if (Number.isNaN(date.getTime())) return text(value);
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
@@ -511,7 +512,7 @@
       voucherCode: voucher.code || voucher.id,
       date: formatDate(voucher.redeemedAt),
       issuedAt: voucher.issuedAt,
-      issuedDate: formatDate(voucher.issuedAt) || text(voucher.ancVisitDate),
+      issuedDate: formatDate(voucher.ancVisitDate) || formatDate(voucher.issuedAt),
       issuedBy: voucher.issuerNameSnapshot || voucher.generatedByName || '',
       redeemedAt: voucher.redeemedAt,
       redeemedDate: (extra.lab && extra.lab.date) || formatDate(voucher.redeemedAt),
