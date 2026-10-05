@@ -667,17 +667,45 @@
   function selectedBillingRange(yearSelect, monthSelect) {
     var year = yearSelect && yearSelect.value;
     var month = monthSelect && monthSelect.value;
-    if (!year || year === 'all') return null;
-    if (!month || month === 'all') return window.VoucherPricing.billingYearRange(year);
-    return window.VoucherPricing.billingPeriodRange(year, month);
+    if (year && year !== 'all' && month && month !== 'all') {
+      return window.VoucherPricing.billingPeriodRange(year, month);
+    }
+    if (year && year !== 'all') return window.VoucherPricing.billingYearRange(year);
+    if (month && month !== 'all') return { monthOnly: Number(month) };
+    return null;
   }
 
   function periodHint(range) {
     if (!range) return 'Showing all redeemed dates.';
+    if (range.monthOnly) {
+      return window.VoucherPricing.monthLabel(range.monthOnly) +
+        ' is the 21st of the previous month through the 20th, for every year.';
+    }
     var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     if (!range.month) return range.year + ' is ' + start + ' to ' + end + '.';
     return window.VoucherPricing.monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
+  }
+
+  function voucherRedeemedDate(row) {
+    var value = row && row.redeemedAt;
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate();
+    var date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function itemMatchesDashRange(row, range) {
+    if (!range) return true;
+    var date = voucherRedeemedDate(row);
+    if (!date) return false;
+    if (range.startDate && range.endDate) {
+      return date.getTime() >= range.startDate.getTime() && date.getTime() <= range.endDate.getTime();
+    }
+    if (range.monthOnly) {
+      return window.VoucherPricing.billingMonthOf(date) === range.monthOnly;
+    }
+    return true;
   }
 
   function projectAmountMajor(item) {
@@ -716,12 +744,19 @@
 
   async function loadDashboard() {
     var range = selectedBillingRange(el('labYear'), el('labMonth'));
+    if (el('labPeriodHint')) el('labPeriodHint').textContent = periodHint(range);
     var query = { labId: state.user.uid };
-    if (range) {
+    if (range && range.startDate && range.endDate) {
       query.startDate = range.startDate;
       query.endDate = range.endDate;
     }
     var summary = await service().queryRedeemedLabVouchers(query);
+    var items = (summary.items || []).filter(function (row) {
+      return itemMatchesDashRange(row, range);
+    });
+    summary = service().summarizeVoucherItems
+      ? service().summarizeVoucherItems(items)
+      : summary;
     var byStatus = summary.byStatus || {};
     var redeemed = byStatus.redeemed || { count: 0, clientMinor: 0, projectMinor: 0 };
     var verified = byStatus.verified || { count: 0, clientMinor: 0, projectMinor: 0 };
@@ -742,11 +777,11 @@
     document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
       tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
     });
-    var items = summary.items || [];
+    var tableItems = summary.items || items;
     if (state.dashStatus && state.dashStatus !== 'total') {
-      items = items.filter(function (item) { return item.status === state.dashStatus; });
+      tableItems = tableItems.filter(function (item) { return item.status === state.dashStatus; });
     }
-    state.dashItems = items;
+    state.dashItems = tableItems;
     renderDashboardTable();
   }
 

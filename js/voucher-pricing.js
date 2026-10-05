@@ -230,6 +230,12 @@
     return new Date(2026, Number(month) - 1, 1).toLocaleString(undefined, { month: 'long' });
   }
 
+  function billingMonthOf(value) {
+    var date = value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+    if (Number.isNaN(date.getTime())) return 0;
+    return date.getDate() >= 21 ? ((date.getMonth() + 1) % 12) + 1 : date.getMonth() + 1;
+  }
+
   function periodStatsId(scope, subjectId, period) {
     if (scope === 'global') return 'global_' + period;
     return scope + '_' + subjectId + '_' + period;
@@ -293,6 +299,7 @@
     billingPeriodRange: billingPeriodRange,
     billingYearRange: billingYearRange,
     monthLabel: monthLabel,
+    billingMonthOf: billingMonthOf,
     periodStatsId: periodStatsId,
     applyStatusDelta: applyStatusDelta
   });

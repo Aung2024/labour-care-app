@@ -145,7 +145,7 @@
     if (!state.quota || !state.quota.labId) {
       state.labId = '';
       hidden.value = '';
-      display.textContent = 'No laboratory assigned. Ask the Program Officer to assign a lab.';
+      display.textContent = 'No laboratory assigned. Ask the Project Account to assign a lab.';
       return;
     }
     state.labId = state.quota.labId;
@@ -158,7 +158,7 @@
     state.labs = rows || [];
     renderAssignedLab();
     if (!state.quota || !state.quota.labId) {
-      throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+      throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
     }
   }
 
@@ -167,7 +167,7 @@
     if (!state.labId) {
       state.tests = [];
       state.projectCeilingMinor = 0;
-      el('testsBody').innerHTML = '<p class="text-muted mb-0">Ask the Program Officer to assign a laboratory first.</p>';
+      el('testsBody').innerHTML = '<p class="text-muted mb-0">Ask the Project Account to assign a laboratory first.</p>';
       updatePriceSummary();
       return;
     }
@@ -309,7 +309,7 @@
       var tests = selectedTests();
       if (!tests.length) throw new Error('Select at least one lab test.');
       if (!el('ancVisitDate').value) throw new Error('Enter the QR issued date.');
-      if (!state.labId) throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+      if (!state.labId) throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
       if (!state.quota || Number(state.quota.remainingUnits || 0) < 1) {
         throw new Error('No remaining voucher allocation is available.');
       }

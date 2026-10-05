@@ -195,7 +195,7 @@
             renderLabSeal(lab) +
           '</div>' +
           '<div class="invoice-seal-right">' +
-            '<div class="invoice-qr" id="invoiceQr" aria-label="Voucher QR code"></div>' +
+            '<div class="invoice-qr" aria-label="Voucher QR code"></div>' +
             '<div class="invoice-code-wrap"><span>Voucher Code :</span> <strong class="invoice-code">' +
               escapeHtml(text(data.voucherCode)) + '</strong></div>' +
             '<div class="invoice-issue-meta">' +
@@ -256,18 +256,42 @@
         renderFinance(data, project) +
       '</article>';
 
-    var qrNode = container.querySelector('#invoiceQr');
-    var payload = data.qrPayload;
-    if (qrNode && payload && typeof root.QRCode === 'function') {
-      qrNode.innerHTML = '';
-      new root.QRCode(qrNode, {
-        text: payload,
-        width: 88,
-        height: 88,
-        correctLevel: root.QRCode.CorrectLevel.M
-      });
-    }
+    var qrNode = container.querySelector('.invoice-qr');
+    renderQr(qrNode, data.qrPayload, 88);
     return container.querySelector('.invoice-sheet');
+  }
+
+  function flattenQr(node, size) {
+    if (!node) return;
+    var width = size || 88;
+    var canvas = node.querySelector('canvas');
+    var existing = node.querySelector('img');
+    var src = '';
+    try {
+      if (canvas && canvas.width) src = canvas.toDataURL('image/png');
+    } catch (error) {}
+    if (!src && existing && existing.src) src = existing.src;
+    node.innerHTML = '';
+    if (!src) return;
+    var image = document.createElement('img');
+    image.src = src;
+    image.alt = node.getAttribute('aria-label') || 'QR';
+    image.width = width;
+    image.height = width;
+    node.appendChild(image);
+  }
+
+  function renderQr(node, payload, size) {
+    if (!node || !payload || typeof root.QRCode !== 'function') return;
+    var width = size || 88;
+    node.innerHTML = '';
+    new root.QRCode(node, {
+      text: payload,
+      width: width,
+      height: width,
+      correctLevel: root.QRCode.CorrectLevel.M
+    });
+    flattenQr(node, width);
   }
 
   function waitForReady(element) {
@@ -303,20 +327,21 @@
 
   function cloneForPrint(element) {
     var clone = element.cloneNode(true);
-    var sourceCanvases = element.querySelectorAll('canvas');
-    var destCanvases = clone.querySelectorAll('canvas');
-    Array.from(sourceCanvases).forEach(function (source, index) {
-      var dest = destCanvases[index];
-      if (!dest || !dest.parentNode) return;
-      try {
-        var image = document.createElement('img');
-        image.src = source.toDataURL('image/png');
-        image.alt = source.getAttribute('aria-label') || 'QR';
-        image.width = source.width;
-        image.height = source.height;
-        image.className = source.className;
-        dest.parentNode.replaceChild(image, dest);
-      } catch (ignored) {}
+    var sourceQrs = element.querySelectorAll('.invoice-qr');
+    var destQrs = clone.querySelectorAll('.invoice-qr');
+    Array.from(sourceQrs).forEach(function (source, index) {
+      flattenQr(source, 88);
+      var dest = destQrs[index];
+      if (!dest) return;
+      dest.innerHTML = '';
+      var sourceImg = source.querySelector('img');
+      if (!sourceImg) return;
+      var image = document.createElement('img');
+      image.src = sourceImg.src;
+      image.alt = sourceImg.alt || 'QR';
+      image.width = 88;
+      image.height = 88;
+      dest.appendChild(image);
     });
     return clone;
   }

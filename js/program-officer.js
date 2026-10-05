@@ -59,7 +59,7 @@
   }
   function officerDisplayName(name) {
     var value = String(name || '').trim();
-    if (!value || /^test\s+program\s+officer$/i.test(value)) return 'Program Officer';
+    if (!value || /^(test\s+)?program(me)?\s+officer$/i.test(value)) return 'Project Account';
     return value;
   }
   function sharesOf(row) {
@@ -174,13 +174,20 @@
   function selectedBillingRange(yearSelect, monthSelect) {
     var year = yearSelect && yearSelect.value;
     var month = monthSelect && monthSelect.value;
-    if (!year || year === 'all') return null;
-    if (!month || month === 'all') return pricing().billingYearRange(year);
-    return pricing().billingPeriodRange(year, month);
+    if (year && year !== 'all' && month && month !== 'all') {
+      return pricing().billingPeriodRange(year, month);
+    }
+    if (year && year !== 'all') return pricing().billingYearRange(year);
+    if (month && month !== 'all') return { monthOnly: Number(month) };
+    return null;
   }
 
   function periodHint(range) {
     if (!range) return 'Showing all time.';
+    if (range.monthOnly) {
+      return pricing().monthLabel(range.monthOnly) +
+        ' is the 21st of the previous month through the 20th, for every year.';
+    }
     var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     if (!range.month) return range.year + ' is ' + start + ' to ' + end + '.';
@@ -246,7 +253,7 @@
       allocations: 'Allocations & Budget',
       settings: 'Settings'
     };
-    byId('poPageTitle').textContent = titles[page] || 'Program Officer';
+    byId('poPageTitle').textContent = titles[page] || 'Project Account';
     byId('poDrawer').hidden = true;
     if (page === 'dashboard') {
       loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
@@ -636,7 +643,7 @@
     ];
     var pages = await Promise.all(specs.map(function (spec) {
       var query = { status: spec.status, pageSize: 400, dateField: spec.dateField };
-      if (range) {
+      if (range && range.startDate && range.endDate) {
         query.startDate = range.startDate;
         query.endDate = range.endDate;
       }
@@ -647,7 +654,16 @@
       (page.items || []).forEach(function (row) { items.push(row); });
     });
     return items.filter(function (row) {
-      return matchesMulti(labIds, row.labId) && matchesMulti(midwifeIds, row.midwifeId);
+      if (!matchesMulti(labIds, row.labId) || !matchesMulti(midwifeIds, row.midwifeId)) return false;
+      if (!range) return true;
+      var value = row.status === 'issued' ? row.issuedAt : row.redeemedAt;
+      var date = value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+      if (!value || Number.isNaN(date.getTime())) return false;
+      if (range.startDate && range.endDate) {
+        return date.getTime() >= range.startDate.getTime() && date.getTime() <= range.endDate.getTime();
+      }
+      if (range.monthOnly) return pricing().billingMonthOf(date) === range.monthOnly;
+      return true;
     });
   }
 
@@ -898,11 +914,9 @@
     var settings = state.poSettings || await service().getPoSettings();
     state.poSettings = settings;
     var host = document.createElement('div');
-    host.className = 'invoice-print-root';
+    host.className = 'invoice-print-staging';
     host.setAttribute('aria-hidden', 'true');
-    host.style.position = 'fixed';
-    host.style.left = '-10000px';
-    host.style.top = '0';
+    host.style.cssText = 'position:fixed;left:-10000px;top:0;width:820px;';
     document.body.appendChild(host);
 
     try {
@@ -1125,7 +1139,7 @@
     });
     if (state.poPad) state.poPad.clear();
     renderPoSettingsUi();
-    showMessage('Program Officer settings saved.', 'success');
+    showMessage('Project Account settings saved.', 'success');
   }
 
   async function logout() {
@@ -1381,13 +1395,13 @@
     var profile = await firebase.firestore().collection('users').doc(user.uid).get();
     var poRole = normalizeKey(profile.exists ? profile.data().role : '');
     if (!profile.exists || (poRole !== 'program officer' && poRole !== 'programme officer')) {
-      throw new Error('Active Program Officer access required.');
+      throw new Error('Active Project Account access required.');
     }
     var profileData = profile.data() || {};
-    if (/^test\s+program\s+officer$/i.test(String(profileData.displayName || profileData.name || '').trim())) {
+    if (/^(test\s+)?program(me)?\s+officer$/i.test(String(profileData.displayName || profileData.name || '').trim())) {
       firebase.firestore().collection('users').doc(user.uid).update({
-        displayName: 'Program Officer',
-        name: 'Program Officer'
+        displayName: 'Project Account',
+        name: 'Project Account'
       }).catch(function () {});
     }
     byId('signedInUser').textContent = officerDisplayName(profileName(Object.assign({ id: profile.id }, profileData)));
@@ -1415,7 +1429,7 @@
       }
       initialize(user).catch(function (error) {
         if (state.loggingOut) return;
-        showMessage(error.message || 'Could not open Program Officer.', 'error');
+        showMessage(error.message || 'Could not open Project Account.', 'error');
       });
     });
   });

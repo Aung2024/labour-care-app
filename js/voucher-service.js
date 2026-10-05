@@ -771,7 +771,7 @@
       }
       var quota = quotaSnapshot.data() || {};
       if (!quota.labId) {
-        throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+        throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
       }
       if (quota.labId !== selectedLabId) {
         throw new Error('This maternity home is assigned to another laboratory.');
@@ -1155,7 +1155,7 @@
           throw new Error('No active voucher quota is available.');
         }
         if (!quota.labId) {
-          throw new Error('Ask the Program Officer to assign a laboratory before generating a QR.');
+          throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
         }
         if (quota.labId !== labId) {
           throw new Error('This maternity home is assigned to another laboratory.');
@@ -1802,7 +1802,7 @@
   }
 
   function savePoSettings(input) {
-    var data = requireObject(input, 'Program Officer settings');
+    var data = requireObject(input, 'Project Account settings');
     var context = firebaseContext();
     var record = {
       name: requireString(data.name, 'Name', 160),
@@ -1843,7 +1843,7 @@
       record.labSeal = clampImage(data.labSeal || '', 'Lab seal');
     }
     if (Object.prototype.hasOwnProperty.call(data, 'poSignature')) {
-      record.poSignature = clampImage(data.poSignature || '', 'Program Officer signature');
+      record.poSignature = clampImage(data.poSignature || '', 'Project Account signature');
     }
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId)
       .collection('artifacts').doc('signatures').set(record, { merge: true })
@@ -2357,6 +2357,7 @@
     queryVouchersPaged: queryVouchersPaged,
     voucherShareMinors: voucherShareMinors,
     queryRedeemedLabVouchers: queryRedeemedLabVouchers,
+    summarizeVoucherItems: summarizeVoucherItems,
     countRedeemedTests: countRedeemedTests,
     getLabOutcomeReport: getLabOutcomeReport,
     listLabOutcomeReports: listLabOutcomeReports,
