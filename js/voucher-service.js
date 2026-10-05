@@ -2221,15 +2221,13 @@
 
   function listLabOutcomeReports(labId) {
     var context = firebaseContext();
-    var id = requireString(labId || context.user.uid, 'Lab ID', 128);
-    return context.db.collection(COLLECTIONS.LAB_OUTCOMES)
-      .where('labId', '==', id)
-      .get()
-      .then(function (snapshot) {
-        return snapshot.docs.map(function (doc) {
-          return Object.assign({ id: doc.id }, doc.data());
-        });
+    var query = context.db.collection(COLLECTIONS.LAB_OUTCOMES);
+    if (labId) query = query.where('labId', '==', requireString(labId, 'Lab ID', 128));
+    return query.get().then(function (snapshot) {
+      return snapshot.docs.map(function (doc) {
+        return Object.assign({ id: doc.id }, doc.data());
       });
+    });
   }
 
   function saveLabOutcomeReport(input) {

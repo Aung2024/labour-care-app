@@ -195,53 +195,48 @@
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
     fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
-    fillSelect(byId('outcomeLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('outcomeLab'), state.labs, 'All laboratories');
   }
 
   function fillYearOptions(select) {
     var now = new Date();
-    var options = [];
+    var options = ['<option value="all">All years</option>'];
     for (var year = now.getFullYear(); year >= now.getFullYear() - 5; year -= 1) {
       options.push('<option value="' + year + '">' + year + '</option>');
     }
     select.innerHTML = options.join('');
-    select.value = String(now.getFullYear());
+    select.value = 'all';
   }
 
   function fillMonthOptions(select) {
-    var options = [];
+    var options = ['<option value="all">All months</option>'];
     for (var month = 1; month <= 12; month += 1) {
       options.push('<option value="' + month + '">' + escapeHtml(pricing().monthLabel(month)) + '</option>');
     }
     select.innerHTML = options.join('');
-    select.value = String(new Date().getMonth() + 1);
+    select.value = 'all';
   }
 
-  async function loadPoOutcomeReport() {
-    var labId = byId('outcomeLab').value;
-    var year = byId('outcomeYear').value;
-    var month = byId('outcomeMonth').value;
-    var range = pricing().billingPeriodRange(year, month);
-    if (range) {
-      var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-      var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-      byId('outcomePeriodHint').textContent = pricing().monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
-    } else {
-      byId('outcomePeriodHint').textContent = '';
-    }
-    if (!labId || !range) {
-      byId('outcomeTable').innerHTML = '<div class="po-empty">Select a laboratory and period.</div>';
-      return;
-    }
-    var report = await service().getLabOutcomeReport(labId, range.period);
-    if (!report || report.status !== 'submitted') {
-      byId('outcomeTable').innerHTML = '<div class="po-empty">This laboratory has not submitted an outcome report for this month.</div>';
-      return;
-    }
-    var rows = report.rows || [];
-    byId('outcomeTable').innerHTML = '<table class="po-table"><thead><tr>' +
+  function formatPoDate(value) {
+    if (!value) return '';
+    var date = value.toDate ? value.toDate() : new Date(value);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function outcomePeriodLabel(report) {
+    var range = pricing().billingPeriodRange(report.year, report.month);
+    var label = (pricing().monthLabel(report.month) || 'Month') + ' ' + (report.year || '');
+    if (!range) return label;
+    var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return label + ' · ' + start + ' to ' + end;
+  }
+
+  function renderPoOutcomeTable(rows) {
+    return '<table class="po-table"><thead><tr>' +
       '<th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
-      (rows.length
+      ((rows || []).length
         ? rows.map(function (row) {
           return '<tr><td>' + escapeHtml(row.serviceName || row.serviceId) + '</td><td>' +
             escapeHtml(String(row.testCount || 0)) + '</td><td>' +
@@ -249,6 +244,76 @@
         }).join('')
         : '<tr><td colspan="3">No tests were reported.</td></tr>') +
       '</tbody></table>';
+  }
+
+  function renderPoOutcomeReports(reports) {
+    if (!reports.length) {
+      byId('outcomeTable').innerHTML = '<div class="po-empty">No submitted outcome reports match these filters.</div>';
+      return;
+    }
+    var groups = [];
+    reports.forEach(function (report) {
+      var last = groups[groups.length - 1];
+      if (!last || last.labId !== report.labId) {
+        groups.push({
+          labId: report.labId,
+          name: labNameForId(report.labId) || report.labId || 'Laboratory',
+          reports: [report]
+        });
+      } else {
+        last.reports.push(report);
+      }
+    });
+    byId('outcomeTable').innerHTML = groups.map(function (group) {
+      return '<section class="po-outcome-lab">' +
+        '<h3>' + escapeHtml(group.name) + '</h3>' +
+        group.reports.map(function (report) {
+          var submittedOn = formatPoDate(report.submittedAt || report.updatedAt);
+          return '<article class="po-outcome-card">' +
+            '<div class="po-outcome-card__head">' +
+              '<strong>' + escapeHtml(outcomePeriodLabel(report)) + '</strong>' +
+              (submittedOn ? '<span>Submitted ' + escapeHtml(submittedOn) + '</span>' : '') +
+            '</div>' +
+            renderPoOutcomeTable(report.rows) +
+          '</article>';
+        }).join('') +
+      '</section>';
+    }).join('');
+  }
+
+  async function loadPoOutcomeReport() {
+    var labId = byId('outcomeLab').value;
+    var year = byId('outcomeYear').value;
+    var month = byId('outcomeMonth').value;
+    var range = (year && year !== 'all' && month && month !== 'all')
+      ? pricing().billingPeriodRange(year, month)
+      : null;
+    if (range) {
+      var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      byId('outcomePeriodHint').textContent = pricing().monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
+    } else {
+      byId('outcomePeriodHint').textContent = 'Showing submitted reports' +
+        (labId ? ' for the selected laboratory' : ' from every laboratory') +
+        (year && year !== 'all' ? ' in ' + year : '') +
+        (month && month !== 'all' ? ' for ' + pricing().monthLabel(month) : '') + '.';
+    }
+    var reports = (await service().listLabOutcomeReports(labId || '')).filter(function (row) {
+      return row && row.status === 'submitted';
+    });
+    if (year && year !== 'all') {
+      reports = reports.filter(function (row) { return Number(row.year) === Number(year); });
+    }
+    if (month && month !== 'all') {
+      reports = reports.filter(function (row) { return Number(row.month) === Number(month); });
+    }
+    reports.sort(function (a, b) {
+      var labA = labNameForId(a.labId) || a.labId || '';
+      var labB = labNameForId(b.labId) || b.labId || '';
+      if (labA !== labB) return labA.localeCompare(labB);
+      return String(b.period || '').localeCompare(String(a.period || ''));
+    });
+    renderPoOutcomeReports(reports);
   }
 
   function labNameForId(labId) {
@@ -438,7 +503,7 @@
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
-    fillSelect(byId('outcomeLab'), state.labs, 'Select laboratory');
+    fillSelect(byId('outcomeLab'), state.labs, 'All laboratories');
     byId('configLab').value = labId;
     showMessage('Laboratory prices saved and published.', 'success');
   }
