@@ -668,7 +668,7 @@
     pages.forEach(function (page) {
       (page.items || []).forEach(function (row) { items.push(row); });
     });
-    return items.filter(function (row) {
+    var filtered = items.filter(function (row) {
       if (!matchesMulti(labIds, row.labId) || !matchesMulti(midwifeIds, row.midwifeId)) return false;
       if (!range) return true;
       var value = row.status === 'issued' ? row.issuedAt : row.redeemedAt;
@@ -680,6 +680,14 @@
       if (range.monthOnly) return pricing().billingMonthOf(date) === range.monthOnly;
       return true;
     });
+    var classified = await service().attachPatientVisitKinds(filtered);
+    var visitKind = byId('dashVisitKind') && byId('dashVisitKind').value;
+    if (visitKind === 'new' || visitKind === 'old') {
+      return classified.filter(function (row) {
+        return (row.patientVisitKind || 'new') === visitKind;
+      });
+    }
+    return classified;
   }
 
   function clearDashListHint() {
@@ -723,12 +731,14 @@
     }
     var rows = state.dashItems.filter(function (row) { return row.status === status; });
     byId('dashList').innerHTML = rows.length
-      ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
+      ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>New / Old</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
         rows.map(function (row) {
           var code = row.code || row.id;
+          var visitKind = row.patientVisitKind === 'old' ? 'Old' : 'New';
           return '<tr class="po-dash-row" data-code="' + escapeHtml(code) +
             '" tabindex="0" role="button" aria-label="Preview voucher ' + escapeHtml(code) + '">' +
             '<td>' + escapeHtml(code) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
+            escapeHtml(visitKind) + '</td><td>' +
             escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td><td>' +
             escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td><td>' +
             formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
@@ -1225,7 +1235,7 @@
     byId('refreshAllBtn').addEventListener('click', refreshAll);
     byId('logoutBtn').addEventListener('click', logout);
 
-    ['dashYear', 'dashMonth'].forEach(function (id) {
+    ['dashYear', 'dashMonth', 'dashVisitKind'].forEach(function (id) {
       byId(id).addEventListener('change', function () {
         state.dashStatusFilter = null;
         loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });

@@ -841,8 +841,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "redeemedAt", "redeemedBy", "labDisplayNameSnapshot",
           "submissionReference", "redemptionAudit", "cashierIndex",
-          "cashierNameSnapshot", "labSealAttached", "clientSigned"
+          "cashierNameSnapshot", "labSealAttached", "clientSigned",
+          "patientVisitKind"
         ])
+        && (
+          !("patientVisitKind" in request.resource.data)
+          || request.resource.data.patientVisitKind in ["new", "old"]
+        )
         && request.resource.data.status == "redeemed"
         && request.resource.data.redeemedAt == request.time
         && request.resource.data.redeemedBy == request.auth.uid
@@ -1020,6 +1025,18 @@ service cloud.firestore {
           )
         );
       allow delete: if isVoucherAdministrator();
+    }
+
+    match /voucher_patient_stats/{patientId} {
+      allow get: if isVoucherAdministrator() || isLab() || isMidwife();
+      allow list: if isVoucherAdministrator();
+      allow create, update: if isLab()
+        && request.resource.data.patientId == patientId
+        && request.resource.data.redeemedCount is int
+        && request.resource.data.redeemedCount >= 1
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
 
     match /voucher_lab_outcomes/{reportId} {

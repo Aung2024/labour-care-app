@@ -88,6 +88,43 @@
     project: 'Project Contribution/ Client Received Amount (MMK)'
   });
 
+  function normalizeVisitKind(value) {
+    var kind = String(value || '').trim().toLowerCase();
+    return kind === 'new' || kind === 'old' ? kind : '';
+  }
+
+  function voucherTimeMs(value) {
+    if (!value) return 0;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    if (typeof value.toDate === 'function') return value.toDate().getTime();
+    var parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function isRedeemedVisit(row) {
+    if (!row || row.status === 'issued') return false;
+    return !!(row.redeemedAt || row.status === 'redeemed' || row.status === 'verified' ||
+      row.status === 'paid' || row.status === 'rejected');
+  }
+
+  function visitKindFromSiblings(voucher, siblings) {
+    var stored = normalizeVisitKind(voucher && voucher.patientVisitKind);
+    if (stored) return stored;
+    var id = String((voucher && (voucher.code || voucher.id)) || '');
+    var mine = voucherTimeMs(voucher && voucher.redeemedAt);
+    var prior = (siblings || []).some(function (row) {
+      var otherId = String((row && (row.code || row.id)) || '');
+      if (!otherId || otherId === id) return false;
+      if (!isRedeemedVisit(row)) return false;
+      var other = voucherTimeMs(row.redeemedAt);
+      if (!mine) return true;
+      if (!other) return false;
+      if (other < mine) return true;
+      return other === mine && otherId < id;
+    });
+    return prior ? 'old' : 'new';
+  }
+
   function normalizeOutcomeKey(value) {
     return String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
@@ -444,6 +481,8 @@
     findOutcomeTestForRow: findOutcomeTestForRow,
     buildLabOutcomeRows: buildLabOutcomeRows,
     displayLabOutcomeRows: displayLabOutcomeRows,
+    normalizeVisitKind: normalizeVisitKind,
+    visitKindFromSiblings: visitKindFromSiblings,
     normalizePercentPair: normalizePercentPair,
     computeInvoiceShares: computeInvoiceShares,
     lineItemFromSheetService: lineItemFromSheetService,

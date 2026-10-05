@@ -62,6 +62,21 @@
     return 'this application';
   }
 
+  function renderVisitKind(kind) {
+    var visit = String(kind || '').toLowerCase() === 'old' ? 'old' : 'new';
+    var box = function (value, label) {
+      var checked = visit === value;
+      return '<label class="invoice-tick' + (checked ? ' is-checked' : '') + '">' +
+        '<span class="invoice-tick__box" aria-hidden="true">' + (checked ? '✓' : '') + '</span>' +
+        '<input type="checkbox" tabindex="-1" disabled' + (checked ? ' checked' : '') +
+        ' aria-label="' + label + ' patient">' +
+        '<span>' + label + '</span></label>';
+    };
+    return '<div class="invoice-visit-kind" aria-label="Patient visit type">' +
+      box('new', 'New') + box('old', 'Old') +
+      '</div>';
+  }
+
   function renderFinance(data, project) {
     var status = String((data && data.status) || '').toLowerCase();
     if (status !== 'paid') return '';
@@ -223,6 +238,7 @@
             '<div><span>Redeemed date :</span> <strong>' +
               escapeHtml(text(data.redeemedDate || (lab && lab.date) || formatDate(data.redeemedAt))) +
               '</strong></div>' +
+            renderVisitKind(data.patientVisitKind) +
           '</div>' +
         '</div>' +
         '<table class="invoice-table">' +
@@ -499,6 +515,7 @@
       issuedBy: voucher.issuerNameSnapshot || voucher.generatedByName || '',
       redeemedAt: voucher.redeemedAt,
       redeemedDate: (extra.lab && extra.lab.date) || formatDate(voucher.redeemedAt),
+      patientVisitKind: voucher.patientVisitKind === 'old' ? 'old' : 'new',
       qrPayload: voucher.qrPayload || (root.VoucherService ? root.VoucherService.buildQrPayload(voucher.code || voucher.id) : ''),
       selectedServiceIds: voucher.selectedServiceIds || [],
       lineItems: voucher.lineItems || voucher.tests || [],

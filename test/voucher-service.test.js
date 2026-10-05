@@ -160,6 +160,19 @@ test('includes the 16 Excel laboratory tests', () => {
   assert.equal(pricing.STANDARD_LAB_TESTS[12].name, 'HBA1C');
 });
 
+test('marks the first redeemed voucher New and later ones Old', () => {
+  const pricing = loadPricing();
+  const first = { id: 'A1', patientId: 'p1', status: 'redeemed', redeemedAt: '2026-01-02' };
+  const second = { id: 'B2', patientId: 'p1', status: 'redeemed', redeemedAt: '2026-03-04' };
+  assert.equal(pricing.visitKindFromSiblings(first, [first, second]), 'new');
+  assert.equal(pricing.visitKindFromSiblings(second, [first, second]), 'old');
+  assert.equal(pricing.visitKindFromSiblings({
+    id: 'C3',
+    status: 'issued',
+    patientVisitKind: 'old'
+  }, []), 'old');
+});
+
 test('loads only the 8 outcome indicators and splits Hb%', () => {
   const pricing = loadPricing();
   assert.equal(pricing.LAB_OUTCOME_TESTS.length, 8);
