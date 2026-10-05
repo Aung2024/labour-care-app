@@ -62,6 +62,13 @@
     if (!value || /^(test\s+)?program(me)?\s+officer$/i.test(value)) return 'Project Account';
     return value;
   }
+  function officerInvoiceName(name) {
+    var value = String(name || '').trim();
+    if (!value || /^(test\s+)?program(me)?\s+officer$/i.test(value) || /^project account$/i.test(value)) {
+      return '';
+    }
+    return value;
+  }
   function sharesOf(row) {
     if (service().voucherShareMinors) return service().voucherShareMinors(row);
     var totals = (row && row.totals) || {};
@@ -851,13 +858,13 @@
       },
       project: voucher.status === 'verified' || voucher.status === 'paid' ? {
         signature: (signatures && signatures.poSignature) || (settings && settings.signature) || '',
-        name: officerDisplayName(voucher.poNameSnapshot || (settings && settings.name) || ''),
+        name: officerInvoiceName(voucher.poNameSnapshot || (settings && settings.name) || ''),
         designation: voucher.poDesignationSnapshot || (settings && settings.designation) || '',
         date: window.VoucherInvoice.formatDate(voucher.verifiedAt),
         paidAt: window.VoucherInvoice.formatDateTime
           ? window.VoucherInvoice.formatDateTime(voucher.paidAt)
           : '',
-        paidName: officerDisplayName(
+        paidName: officerInvoiceName(
           voucher.paidNameSnapshot || voucher.poNameSnapshot || (settings && settings.name) || ''
         ),
         paidDesignation: voucher.paidDesignationSnapshot || voucher.poDesignationSnapshot ||

@@ -56,13 +56,6 @@
     return project;
   }
 
-  function appLink() {
-    if (root.location && root.location.origin && /^https?:$/i.test(root.location.protocol || '')) {
-      return root.location.origin;
-    }
-    return 'this application';
-  }
-
   function renderVisitKind(kind) {
     var visit = String(kind || '').toLowerCase() === 'old' ? 'old' : 'new';
     var box = function (value, label) {
@@ -78,25 +71,13 @@
       '</div>';
   }
 
-  function renderFinance(data, project) {
-    var status = String((data && data.status) || '').toLowerCase();
-    if (status !== 'paid') return '';
-    var paidWhen = text((project && project.paidAt) || formatDateTime(data && data.paidAt));
-    var name = text((project && (project.paidName || project.name)) || '');
-    if (!paidWhen && !name) return '';
-    var href = appLink();
-    var linkHtml = /^https?:\/\//i.test(href)
-      ? '<a class="invoice-auth-note__link" href="' + escapeHtml(href) + '">' + escapeHtml(href) + '</a>'
-      : '<span class="invoice-auth-note__link">' + escapeHtml(href) + '</span>';
-    var issuedLine = name && paidWhen
-      ? 'Issued By ' + escapeHtml(name) + ' and paid at ' + escapeHtml(paidWhen) + '.'
-      : (name ? 'Issued By ' + escapeHtml(name) + '.' : 'Paid at ' + escapeHtml(paidWhen) + '.');
+  function voucherScopeNote() {
+    return 'MCGL စီမံကိန်း၏ စံသတ်မှတ်ချက်များနှင့် ကိုက်ညီမှုရှိသော ကိုယ်ဝန်ဆောင်များအတွက် စရိတ်မျှပေးခံစနစ်ဖြင့် ဓာတ်ခွဲစမ်းသပ်မှုများအတွက်သာဖြစ်သည်။';
+  }
+
+  function renderFinance() {
     return '<div class="invoice-finance invoice-auth-note">' +
-      '<p class="invoice-auth-note__source">' +
-        '<span class="invoice-auth-note__prefix">This invoice is electronically generated and authenticated through the </span>' +
-        linkHtml +
-      '</p>' +
-      '<p class="invoice-auth-note__paid">' + issuedLine + '</p>' +
+      '<p class="invoice-auth-note__source">This invoice is electronically generated and authenticated through the application.</p>' +
     '</div>';
   }
 
@@ -218,6 +199,7 @@
           '</div>' +
           '<div class="invoice-seal-right">' +
             '<div class="invoice-qr" aria-label="Voucher QR code"></div>' +
+            '<p class="invoice-qr-note">' + escapeHtml(voucherScopeNote()) + '</p>' +
             '<div class="invoice-code-wrap"><span>Voucher Code :</span> <strong class="invoice-code">' +
               escapeHtml(text(data.voucherCode)) + '</strong></div>' +
             '<div class="invoice-issue-meta">' +
@@ -276,7 +258,7 @@
             '<p>Date (ငွေလက်ခံသည့်ရက်စွဲ) <strong>' + escapeHtml(text(client.date)) + '</strong></p>' +
           '</section>' +
         '</div>' +
-        renderFinance(data, project) +
+        renderFinance() +
       '</article>';
 
     var qrNode = container.querySelector('.invoice-qr');
