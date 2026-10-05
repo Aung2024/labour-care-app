@@ -72,7 +72,7 @@
       ? 'Issued By ' + escapeHtml(name) + ' and paid at ' + escapeHtml(paidWhen) + '.'
       : (name ? 'Issued By ' + escapeHtml(name) + '.' : 'Paid at ' + escapeHtml(paidWhen) + '.');
     return '<div class="invoice-finance invoice-auth-note">' +
-      '<p class="invoice-auth-note__source">This invoice is generated from ' +
+      '<p class="invoice-auth-note__source">This invoice is electronically generated and authenticated through the ' +
         escapeHtml(appLink()) + '</p>' +
       '<p class="invoice-auth-note__paid">' + issuedLine + '</p>' +
     '</div>';
