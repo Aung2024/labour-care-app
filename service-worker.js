@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v334-moh';
+const CACHE_NAME = 'mch-care-v335-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -208,22 +208,29 @@ self.addEventListener('fetch', (event) => {
 
   if (isDocumentRequest) {
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-          }
-          return response;
-        })
-        .catch(async (error) => {
-          console.error('[Service Worker] Document fetch failed:', error);
-          const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
-          if (cachedResponse) return cachedResponse;
+      caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
+        const networkPromise = fetch(event.request)
+          .then((response) => {
+            if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
+              const responseToCache = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+            }
+            return response;
+          })
+          .catch(() => null);
+        if (cachedResponse) return cachedResponse;
+        return networkPromise.then(async (response) => {
+          if (response) return response;
           const homeFallback = await caches.match('./home.html');
           if (homeFallback) return homeFallback;
-          return caches.match('./index.html');
-        })
+          const indexFallback = await caches.match('./index.html');
+          if (indexFallback) return indexFallback;
+          return new Response(
+            '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          );
+        });
+      })
     );
     return;
   }
@@ -238,8 +245,7 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch((error) => {
-          console.error('[Service Worker] Asset fetch failed:', error);
+        .catch(() => {
           return cachedResponse || new Response('Resource temporarily unavailable', {
             status: 503,
             statusText: 'Service Unavailable',
