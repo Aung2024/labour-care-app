@@ -191,6 +191,7 @@
     var paid = status === 'paid';
     container.innerHTML =
       '<article class="invoice-sheet" id="invoiceSheet">' +
+        '<div class="invoice-sheet-main">' +
         (rejected ? '<div class="invoice-rejected">Rejected' + (data.rejectReason ? ': ' + escapeHtml(data.rejectReason) : '') + '</div>' : '') +
         (paid ? '<div class="invoice-paid-seal" aria-label="Paid">PAID</div>' : '') +
         '<div class="invoice-seal-row">' +
@@ -257,6 +258,7 @@
             '<p>Address (လိပ်စာ) <strong>' + escapeHtml(text(client.address || data.address)) + '</strong></p>' +
             '<p>Date (ငွေလက်ခံသည့်ရက်စွဲ) <strong>' + escapeHtml(text(client.date)) + '</strong></p>' +
           '</section>' +
+        '</div>' +
         '</div>' +
         renderFinance() +
       '</article>';
