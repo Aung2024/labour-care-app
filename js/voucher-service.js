@@ -1748,6 +1748,7 @@
       address: address,
       phone: phone,
       seal: clampImage(data.seal || '', 'Lab seal'),
+      paymentQr: clampImage(data.paymentQr || '', 'Payment QR'),
       cashiers: cashiers,
       updatedAt: now,
       updatedBy: context.user.uid
@@ -1796,6 +1797,7 @@
         address: settings.address || config.address || profile.address || profile.organization_address || '',
         phone: settings.phone || config.phone || profile.phone || profile.labPhone || '',
         seal: settings.seal || '',
+        paymentQr: settings.paymentQr || '',
         cashiers: settings.cashiers || [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
       };
     });

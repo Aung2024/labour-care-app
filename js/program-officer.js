@@ -878,10 +878,53 @@
   function closePayConfirm() {
     byId('payConfirmModal').hidden = true;
     state.payCodes = [];
+    if (byId('payConfirmQrHost')) byId('payConfirmQrHost').innerHTML = '';
     if (byId('previewModal').hidden) document.body.classList.remove('po-modal-open');
   }
 
-  function openPayConfirm(codes) {
+  async function renderPayConfirmQrs(rows) {
+    var host = byId('payConfirmQrHost');
+    if (!host) return;
+    var labs = [];
+    rows.forEach(function (row) {
+      var labId = row.labId || '';
+      if (!labs.some(function (item) { return item.id === labId; })) {
+        labs.push({
+          id: labId,
+          name: row.labNameSnapshot || labNameForId(labId) || 'Laboratory'
+        });
+      }
+    });
+    host.innerHTML = '<p class="text-muted mb-0">Loading payment QR…</p>';
+    var cards = await Promise.all(labs.map(function (lab) {
+      if (!lab.id) {
+        return Promise.resolve({
+          name: lab.name,
+          qr: '',
+          note: 'This voucher has no laboratory assigned.'
+        });
+      }
+      return service().getLabSettings(lab.id).then(function (settings) {
+        return {
+          name: (settings && settings.labName) || lab.name,
+          qr: (settings && settings.paymentQr) || '',
+          note: 'This laboratory has not uploaded a payment QR.'
+        };
+      }).catch(function () {
+        return { name: lab.name, qr: '', note: 'Could not load this laboratory payment QR.' };
+      });
+    }));
+    host.innerHTML = cards.map(function (card) {
+      return '<section class="po-pay-qr">' +
+        '<h3>' + escapeHtml(card.name) + '</h3>' +
+        (card.qr
+          ? '<img src="' + escapeHtml(card.qr) + '" alt="Payment QR for ' + escapeHtml(card.name) + '">'
+          : '<p>' + escapeHtml(card.note) + '</p>') +
+        '</section>';
+    }).join('');
+  }
+
+  async function openPayConfirm(codes) {
     var list = (codes || []).filter(Boolean);
     if (!list.length) throw new Error('Select at least one voucher.');
     var rows = list.map(function (code) {
@@ -906,6 +949,7 @@
     if (skipped) {
       showMessage(skipped + ' selected voucher(s) are not verified and were skipped.', 'info');
     }
+    await renderPayConfirmQrs(verified);
   }
 
   async function printSelectedVouchers(codes) {
@@ -1288,11 +1332,9 @@
       review('verify', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('payOneBtn').addEventListener('click', function () {
-      try {
-        openPayConfirm(selectedVerifyCodes());
-      } catch (error) {
+      openPayConfirm(selectedVerifyCodes()).catch(function (error) {
         showMessage(error.message, 'error');
-      }
+      });
     });
     byId('payConfirmBtn').addEventListener('click', function () {
       var codes = state.payCodes.slice();

@@ -23,6 +23,7 @@
     patientNrc: '',
     patientAddress: '',
     clearSealImage: false,
+    clearPaymentQr: false,
     issuedServiceIds: [],
     outcomeRows: [],
     outcomeReports: [],
@@ -1173,6 +1174,29 @@
     }
   }
 
+  function updatePaymentQrPreview(dataUrl) {
+    var preview = el('paymentQrPreview');
+    var empty = el('paymentQrEmpty');
+    if (!preview || !empty) return;
+    if (dataUrl) {
+      preview.src = dataUrl;
+      preview.classList.remove('d-none');
+      empty.classList.add('d-none');
+      return;
+    }
+    preview.removeAttribute('src');
+    preview.classList.add('d-none');
+    empty.classList.remove('d-none');
+  }
+
+  function assertPaymentQrFile(file) {
+    if (!file) return;
+    var type = String(file.type || '').toLowerCase();
+    if (type !== 'image/png' && type !== 'image/jpeg' && type !== 'image/jpg') {
+      throw new Error('Payment QR must be a PNG or JPG image.');
+    }
+  }
+
   function renderSettings() {
     var settings = state.settings || {
       cashiers: [{ name: '', signature: '' }, { name: '', signature: '' }, { name: '', signature: '' }]
@@ -1185,6 +1209,7 @@
       el('labSettingsPhone').value = settings.phone || (state.profile && (state.profile.phone || state.profile.labPhone)) || '';
     }
     updateSealPreview(settings.seal || '');
+    updatePaymentQrPreview(settings.paymentQr || '');
     el('cashierFields').innerHTML = [0, 1, 2].map(function (index) {
       var cashier = (settings.cashiers || [])[index] || { name: '', signature: '' };
       var editing = !!state.editingCashiers[index] || !cashier.signature;
@@ -1224,6 +1249,18 @@
       seal = await window.VoucherInvoice.compressImage(await window.VoucherInvoice.fileToDataUrl(sealFile), 240, 240);
       state.clearSealImage = false;
     }
+    var paymentQrFile = el('paymentQrInput') && el('paymentQrInput').files[0];
+    var paymentQr = state.clearPaymentQr ? '' : ((state.settings && state.settings.paymentQr) || '');
+    if (paymentQrFile) {
+      assertPaymentQrFile(paymentQrFile);
+      paymentQr = await window.VoucherInvoice.compressImage(
+        await window.VoucherInvoice.fileToDataUrl(paymentQrFile),
+        360,
+        360,
+        0.82
+      );
+      state.clearPaymentQr = false;
+    }
     var cashiers = [0, 1, 2].map(function (index) {
       var nameInput = document.querySelector('.cashier-name[data-index="' + index + '"]');
       var pad = state.cashierPads[index];
@@ -1245,6 +1282,7 @@
       address: address,
       phone: phone,
       seal: seal,
+      paymentQr: paymentQr,
       cashiers: cashiers
     });
     if (state.profile) {
@@ -1253,9 +1291,12 @@
       state.profile.labPhone = phone;
     }
     state.clearSealImage = false;
+    state.clearPaymentQr = false;
     if (el('sealInput')) el('sealInput').value = '';
+    if (el('paymentQrInput')) el('paymentQrInput').value = '';
     state.editingCashiers = {};
     updateSealPreview(state.settings.seal || '');
+    updatePaymentQrPreview(state.settings.paymentQr || '');
     renderSettings();
     setStatus('Laboratory settings saved.', 'success');
   }
@@ -1393,6 +1434,15 @@
       setStatus('Seal image cleared. Save settings to keep the text seal.', 'info');
     });
   }
+  if (el('clearPaymentQrBtn')) {
+    el('clearPaymentQrBtn').addEventListener('click', function () {
+      state.clearPaymentQr = true;
+      if (el('paymentQrInput')) el('paymentQrInput').value = '';
+      if (state.settings) state.settings.paymentQr = '';
+      updatePaymentQrPreview('');
+      setStatus('Payment QR cleared. Save settings to keep this change.', 'info');
+    });
+  }
   ['labSettingsAddress', 'labSettingsPhone'].forEach(function (id) {
     if (!el(id)) return;
     el(id).addEventListener('input', function () {
@@ -1476,6 +1526,25 @@
       setStatus(error.message || 'Could not preview seal.', 'error');
     });
   });
+  if (el('paymentQrInput')) {
+    el('paymentQrInput').addEventListener('change', function () {
+      var file = el('paymentQrInput').files[0];
+      if (!file) return;
+      try {
+        assertPaymentQrFile(file);
+      } catch (error) {
+        el('paymentQrInput').value = '';
+        setStatus(error.message, 'error');
+        return;
+      }
+      state.clearPaymentQr = false;
+      window.VoucherInvoice.fileToDataUrl(file).then(function (dataUrl) {
+        updatePaymentQrPreview(dataUrl);
+      }).catch(function (error) {
+        setStatus(error.message || 'Could not preview payment QR.', 'error');
+      });
+    });
+  }
   el('logoutBtn').addEventListener('click', function () {
     logout().catch(function () { window.location.replace('login.html'); });
   });
