@@ -55,19 +55,26 @@
     return project;
   }
 
+  function appLink() {
+    if (root.location && root.location.origin && /^https?:$/i.test(root.location.protocol || '')) {
+      return root.location.origin;
+    }
+    return 'this application';
+  }
+
   function renderFinance(data, project) {
     var status = String((data && data.status) || '').toLowerCase();
     if (status !== 'paid') return '';
     var paidWhen = text((project && project.paidAt) || formatDateTime(data && data.paidAt));
     var name = text((project && (project.paidName || project.name)) || '');
-    var designation = text((project && (project.paidDesignation || project.designation)) || '');
-    if (!paidWhen && !name && !designation) return '';
-    return '<div class="invoice-finance">' +
-      '<h2>Finance authorization</h2>' +
-      (paidWhen ? '<p><span>Marked paid:</span> <strong>' + escapeHtml(paidWhen) + '</strong></p>' : '') +
-      (name ? '<p><span>Authorized by:</span> <strong>' + escapeHtml(name) + '</strong></p>' : '') +
-      (designation ? '<p><span>Designation:</span> <strong>' + escapeHtml(designation) + '</strong></p>' : '') +
-      '<p>This printed invoice is authorized for the finance team to record the laboratory transfer.</p>' +
+    if (!paidWhen && !name) return '';
+    var issuedLine = name && paidWhen
+      ? 'Issued By ' + escapeHtml(name) + ' and paid at ' + escapeHtml(paidWhen) + '.'
+      : (name ? 'Issued By ' + escapeHtml(name) + '.' : 'Paid at ' + escapeHtml(paidWhen) + '.');
+    return '<div class="invoice-finance invoice-auth-note">' +
+      '<p class="invoice-auth-note__source">This invoice is generated from ' +
+        escapeHtml(appLink()) + '</p>' +
+      '<p class="invoice-auth-note__paid">' + issuedLine + '</p>' +
     '</div>';
   }
 
@@ -185,13 +192,18 @@
         (paid ? '<div class="invoice-paid-seal" aria-label="Paid">PAID</div>' : '') +
         '<div class="invoice-seal-row">' +
           '<div class="invoice-seal-left">' +
-            '<div class="invoice-seal-label">Lab Seal :</div>' +
             renderLabSeal(lab) +
           '</div>' +
           '<div class="invoice-seal-right">' +
             '<div class="invoice-qr" id="invoiceQr" aria-label="Voucher QR code"></div>' +
             '<div class="invoice-code-wrap"><span>Voucher Code :</span> <strong class="invoice-code">' +
               escapeHtml(text(data.voucherCode)) + '</strong></div>' +
+            '<div class="invoice-issue-meta">' +
+              '<div><span>Issued Date :</span> <strong>' +
+                escapeHtml(text(data.issuedDate || formatDate(data.issuedAt))) + '</strong></div>' +
+              '<div><span>Issued By :</span> <strong>' +
+                escapeHtml(text(data.issuedBy)) + '</strong></div>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<h1 class="invoice-title">Invoice for Laboratory Charges</h1>' +
@@ -202,7 +214,9 @@
             '<div><span>Phone number :</span> <strong>' + escapeHtml(text(data.phone)) + '</strong></div>' +
           '</div>' +
           '<div class="invoice-meta-right">' +
-            '<div><span>Date :</span> <strong>' + escapeHtml(text(data.date || formatDate(data.issuedAt))) + '</strong></div>' +
+            '<div><span>Redeemed date :</span> <strong>' +
+              escapeHtml(text(data.redeemedDate || (lab && lab.date) || formatDate(data.redeemedAt))) +
+              '</strong></div>' +
           '</div>' +
         '</div>' +
         '<table class="invoice-table">' +
@@ -448,8 +462,12 @@
       nrc: voucher.patientNrcSnapshot,
       address: voucher.patientAddressSnapshot,
       voucherCode: voucher.code || voucher.id,
-      date: formatDate(voucher.issuedAt),
+      date: formatDate(voucher.redeemedAt),
       issuedAt: voucher.issuedAt,
+      issuedDate: formatDate(voucher.issuedAt) || text(voucher.ancVisitDate),
+      issuedBy: voucher.issuerNameSnapshot || voucher.generatedByName || '',
+      redeemedAt: voucher.redeemedAt,
+      redeemedDate: (extra.lab && extra.lab.date) || formatDate(voucher.redeemedAt),
       qrPayload: voucher.qrPayload || (root.VoucherService ? root.VoucherService.buildQrPayload(voucher.code || voucher.id) : ''),
       selectedServiceIds: voucher.selectedServiceIds || [],
       lineItems: voucher.lineItems || voucher.tests || [],

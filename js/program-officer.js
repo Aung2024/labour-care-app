@@ -671,8 +671,8 @@
     byId('statRejected').textContent = formatNumber(summary.counts.rejected);
     byId('statIncoming').textContent = formatMoney(verifiedTotal);
     byId('statIncomingBreak').textContent =
-      'Client Co-payment ' + formatMoney(summary.verified.clientMinor / 100) +
-      ' · Project contribution ' + formatMoney(summary.verified.projectMinor / 100);
+      'Client = ' + formatMoney(summary.verified.clientMinor / 100) +
+      '\nProject = ' + formatMoney(summary.verified.projectMinor / 100);
     byId('statReceived').textContent = formatMoney(summary.paid.projectMinor / 100);
     if (state.dashStatusFilter) {
       await loadDashboardList(state.dashStatusFilter);

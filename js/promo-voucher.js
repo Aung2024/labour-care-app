@@ -73,14 +73,29 @@
       String(now.getDate()).padStart(2, '0');
   }
 
+  function midwifeAccountName(profile, user) {
+    return (profile && (profile.name || profile.midwife_name || profile.midwifeName || profile.displayName)) ||
+      (user && (user.displayName || user.email)) || '';
+  }
+
   function issuerDisplayName(profile, user) {
     var facility = profile.maternityHomeName || profile.maternity_home_name || profile.facilityName || profile.facility;
     if (!facility && profile.facility_code && window.FacilityConfig) {
       var record = FacilityConfig.getFacilityByCode(profile.facility_code);
       facility = record && FacilityConfig.getFacilityLabel(record, 'en');
     }
-    var account = profile.name || profile.midwife_name || profile.midwifeName || profile.displayName || user.displayName || user.email;
+    var account = midwifeAccountName(profile, user);
     return [facility, account].filter(Boolean).join(' / ');
+  }
+
+  function formatCardDate(value) {
+    if (!value) return '—';
+    if (typeof value.toDate === 'function') value = value.toDate();
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' +
+      String(date.getDate()).padStart(2, '0');
   }
 
   function renderQuota() {
@@ -270,6 +285,10 @@
       height: 156,
       correctLevel: window.QRCode.CorrectLevel.M
     });
+    var issuedDate = voucher.ancVisitDate || (el('ancVisitDate') && el('ancVisitDate').value) || voucher.issuedAt;
+    var issuedBy = midwifeAccountName(state.profile, state.user) || voucher.issuerNameSnapshot || '';
+    if (el('qrIssuedDate')) el('qrIssuedDate').textContent = formatCardDate(issuedDate);
+    if (el('qrIssuedBy')) el('qrIssuedBy').textContent = issuedBy || '—';
     resultNode.classList.add('show');
     resultNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -305,7 +324,7 @@
         nrc: el('patientNrc').value.trim(),
         address: address,
         ancVisitDate: el('ancVisitDate').value,
-        issuerName: issuerDisplayName(state.profile, state.user),
+        issuerName: midwifeAccountName(state.profile, state.user) || issuerDisplayName(state.profile, state.user),
         expiresAt: new Date(Date.now() + (90 * 24 * 60 * 60 * 1000))
       });
       state.voucher = result;

@@ -703,8 +703,7 @@
   function breakdownText(bucket) {
     var client = (bucket && bucket.clientMinor || 0) / 100;
     var project = (bucket && bucket.projectMinor || 0) / 100;
-    return 'Total is ' + money(client + project) + ' = Client ' + money(client) +
-      ' + Project ' + money(project);
+    return 'Client = ' + money(client) + '\nProject = ' + money(project);
   }
 
   function voucherTotalMajor(item) {
