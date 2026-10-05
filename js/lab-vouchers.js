@@ -1001,7 +1001,7 @@
       } else if (!hasRows) {
         note.textContent = 'No redeemed tests in ' + monthName + ' yet, so this month cannot be submitted.';
       } else {
-        note.textContent = monthName + ' is not submitted yet. Outcome results cannot be higher than the number of tests.';
+        note.textContent = monthName + ' is not submitted yet. Positive results cannot be higher than tests conducted. Hb% mild and severe anemia together cannot exceed Hb% tests. Ultrasound is count only.';
       }
     }
     if (button) {
@@ -1012,29 +1012,48 @@
     }
   }
 
-  function renderOutcomeTable(rows, locked) {
-    if (!rows.length) {
-      el('outcomeTable').innerHTML = '<p class="text-muted mb-0">No redeemed tests in this period yet.</p>';
-      return;
+  function outcomeResultCell(row, field, label, locked) {
+    var max = Number(row.testCount) || 0;
+    var value = Math.min(max, Math.max(0, Number(row[field]) || 0));
+    if (locked) {
+      return '<span class="outcome-locked-value">' + escapeHtml(String(value)) + '</span>';
     }
-    el('outcomeTable').innerHTML =
-      '<table class="table history-table lab-history-table">' +
-      '<thead><tr><th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
-      rows.map(function (row, index) {
-        var max = Number(row.testCount) || 0;
-        var value = Math.min(max, Math.max(0, Number(row.outcomeCount) || 0));
+    return '<input class="form-control outcome-input" data-service="' + escapeHtml(row.serviceId) +
+      '" data-field="' + escapeHtml(field) + '" data-max="' + max +
+      '" type="number" min="0" max="' + max + '" step="1" inputmode="numeric" value="' +
+      escapeHtml(String(value)) + '" aria-label="' + escapeHtml(label) + ', maximum ' + max + '">';
+  }
+
+  function renderOutcomeTable(rows, locked) {
+    var body = (rows || []).map(function (row) {
+      var max = Number(row.testCount) || 0;
+      if (row.resultKind === 'hb-split') {
+        var mildLabel = (row.resultLabels && row.resultLabels.mild) || 'Mild Anemia (7-11 g/dl)';
+        var severeLabel = (row.resultLabels && row.resultLabels.severe) || 'Severe Anemia (<7 g/dl)';
         return '<tr>' +
-          '<td>' + escapeHtml(row.serviceName) + '</td>' +
-          '<td>' + escapeHtml(String(max)) + '</td>' +
-          '<td>' + (locked
-            ? '<span class="outcome-locked-value">' + escapeHtml(String(value)) + '</span>'
-            : '<input class="form-control outcome-input" data-index="' + index +
-              '" data-max="' + max + '" type="number" min="0" max="' + max +
-              '" step="1" inputmode="numeric" value="' + escapeHtml(String(value)) +
-              '" aria-label="Outcome for ' + escapeHtml(row.serviceName) +
-              ', maximum ' + max + '">') +
-          '</td></tr>';
-      }).join('') + '</tbody></table>';
+          '<td>' + escapeHtml(mildLabel) + '</td>' +
+          '<td rowspan="2" class="outcome-count-cell">' + escapeHtml(String(max)) + '</td>' +
+          '<td>' + outcomeResultCell(row, 'mildAnemiaCount', mildLabel, locked) + '</td>' +
+          '</tr><tr>' +
+          '<td>' + escapeHtml(severeLabel) + '</td>' +
+          '<td>' + outcomeResultCell(row, 'severeAnemiaCount', severeLabel, locked) + '</td>' +
+          '</tr>';
+      }
+      var result = row.resultKind === 'none'
+        ? '<span class="outcome-not-recorded">—</span>'
+        : outcomeResultCell(row, 'outcomeCount', 'Positive results for ' + row.serviceName, locked);
+      return '<tr>' +
+        '<td>' + escapeHtml(row.serviceName) + '</td>' +
+        '<td class="outcome-count-cell">' + escapeHtml(String(max)) + '</td>' +
+        '<td>' + result + '</td></tr>';
+    }).join('');
+    el('outcomeTable').innerHTML =
+      '<table class="table history-table lab-history-table lab-outcome-table">' +
+      '<thead><tr>' +
+      '<th>Indicator</th>' +
+      '<th>Total No of Test Conducted</th>' +
+      '<th>No of (+)ve Test Results</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table>';
   }
 
   async function loadOutcomeReport() {
@@ -1058,34 +1077,61 @@
       ? ((state.outcomeReports || []).find(function (row) { return row.period === range.period; }) ||
         await service().getLabOutcomeReport(state.user.uid, range.period))
       : null;
-    var savedById = {};
-    ((saved && saved.rows) || []).forEach(function (row) { savedById[row.serviceId] = row; });
-    state.outcomeRows = counted.map(function (row) {
-      var previous = savedById[row.serviceId] || {};
-      return {
-        serviceId: row.serviceId,
-        serviceName: row.serviceName,
-        testCount: row.testCount,
-        outcomeCount: previous.outcomeCount != null ? previous.outcomeCount : 0
-      };
-    });
     var locked = !!(saved && saved.status === 'submitted');
+    var sourceCounts = locked && saved && saved.rows
+      ? saved.rows
+      : counted;
+    state.outcomeRows = window.VoucherPricing.buildLabOutcomeRows(sourceCounts, (saved && saved.rows) || []);
+    var hasConducted = state.outcomeRows.some(function (row) { return Number(row.testCount) > 0; });
     renderOutcomeProgress(range);
     renderOutcomeTable(state.outcomeRows, locked);
-    renderOutcomeStatus(range, saved, state.outcomeRows.length > 0);
+    renderOutcomeStatus(range, saved, hasConducted);
+  }
+
+  function readOutcomeField(row, field) {
+    var input = document.querySelector(
+      '.outcome-input[data-service="' + row.serviceId + '"][data-field="' + field + '"]'
+    );
+    var raw = input ? String(input.value || '').trim() : String(row[field] || 0);
+    if (raw === '') return 0;
+    return Number(raw);
   }
 
   function readOutcomeRows() {
     var errors = [];
-    var rows = state.outcomeRows.map(function (row, index) {
-      var input = document.querySelector('.outcome-input[data-index="' + index + '"]');
+    var rows = state.outcomeRows.map(function (row) {
       var max = Number(row.testCount) || 0;
-      var raw = input ? String(input.value || '').trim() : String(row.outcomeCount || 0);
-      var value = raw === '' ? 0 : Number(raw);
+      if (row.resultKind === 'none') {
+        return {
+          serviceId: row.serviceId,
+          serviceName: row.serviceName,
+          testCount: max,
+          outcomeCount: 0
+        };
+      }
+      if (row.resultKind === 'hb-split') {
+        var mild = readOutcomeField(row, 'mildAnemiaCount');
+        var severe = readOutcomeField(row, 'severeAnemiaCount');
+        if (!Number.isFinite(mild) || mild < 0 || Math.floor(mild) !== mild ||
+          !Number.isFinite(severe) || severe < 0 || Math.floor(severe) !== severe) {
+          errors.push('Hb% mild and severe anemia need whole numbers.');
+        } else if (mild + severe > max) {
+          errors.push('Mild and severe anemia together cannot be more than ' + max + ' Hb% tests.');
+        }
+        return {
+          serviceId: row.serviceId,
+          serviceName: row.serviceName,
+          testCount: max,
+          outcomeCount: Math.max(0, Math.floor((Number(mild) || 0) + (Number(severe) || 0))),
+          mildAnemiaCount: Math.max(0, Math.floor(Number.isFinite(mild) ? mild : 0)),
+          severeAnemiaCount: Math.max(0, Math.floor(Number.isFinite(severe) ? severe : 0))
+        };
+      }
+      var value = readOutcomeField(row, 'outcomeCount');
       if (!Number.isFinite(value) || value < 0 || Math.floor(value) !== value) {
         errors.push(row.serviceName + ' needs a whole number.');
       } else if (value > max) {
-        errors.push(row.serviceName + ': outcome cannot be more than ' + max + ' tests.');
+        errors.push(row.serviceName + ': positive results cannot be more than ' + max + ' tests.');
       }
       return {
         serviceId: row.serviceId,
@@ -1103,6 +1149,26 @@
     var raw = String(input.value || '').trim();
     var value = raw === '' ? 0 : Number(raw);
     var valid = Number.isFinite(value) && value >= 0 && Math.floor(value) === value && value <= max;
+    if (valid && (input.getAttribute('data-field') === 'mildAnemiaCount' ||
+      input.getAttribute('data-field') === 'severeAnemiaCount')) {
+      var serviceId = input.getAttribute('data-service');
+      var mild = document.querySelector(
+        '.outcome-input[data-service="' + serviceId + '"][data-field="mildAnemiaCount"]'
+      );
+      var severe = document.querySelector(
+        '.outcome-input[data-service="' + serviceId + '"][data-field="severeAnemiaCount"]'
+      );
+      var mildValue = mild ? readOutcomeField({ serviceId: serviceId }, 'mildAnemiaCount') : 0;
+      var severeValue = severe ? readOutcomeField({ serviceId: serviceId }, 'severeAnemiaCount') : 0;
+      var splitValid = Number.isFinite(mildValue) && Number.isFinite(severeValue) &&
+        mildValue + severeValue <= max;
+      [mild, severe].forEach(function (node) {
+        if (!node) return;
+        node.classList.toggle('is-invalid', !splitValid);
+        node.setAttribute('aria-invalid', splitValid ? 'false' : 'true');
+      });
+      return splitValid;
+    }
     input.classList.toggle('is-invalid', !valid);
     input.setAttribute('aria-invalid', valid ? 'false' : 'true');
     return valid;
@@ -1126,7 +1192,9 @@
     if (existing) throw new Error('This month is already submitted and locked.');
     var parsed = readOutcomeRows();
     if (parsed.errors.length) throw new Error(parsed.errors[0]);
-    if (!parsed.rows.length) throw new Error('There are no redeemed tests to report for this month.');
+    if (!parsed.rows.some(function (row) { return Number(row.testCount) > 0; })) {
+      throw new Error('There are no redeemed tests to report for this month.');
+    }
     var confirmed = await confirmOutcomeSubmit(window.VoucherPricing.monthLabel(range.month));
     if (!confirmed) return;
     await service().saveLabOutcomeReport({

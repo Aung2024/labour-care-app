@@ -68,12 +68,18 @@
     var paidWhen = text((project && project.paidAt) || formatDateTime(data && data.paidAt));
     var name = text((project && (project.paidName || project.name)) || '');
     if (!paidWhen && !name) return '';
+    var href = appLink();
+    var linkHtml = /^https?:\/\//i.test(href)
+      ? '<a class="invoice-auth-note__link" href="' + escapeHtml(href) + '">' + escapeHtml(href) + '</a>'
+      : '<span class="invoice-auth-note__link">' + escapeHtml(href) + '</span>';
     var issuedLine = name && paidWhen
       ? 'Issued By ' + escapeHtml(name) + ' and paid at ' + escapeHtml(paidWhen) + '.'
       : (name ? 'Issued By ' + escapeHtml(name) + '.' : 'Paid at ' + escapeHtml(paidWhen) + '.');
     return '<div class="invoice-finance invoice-auth-note">' +
-      '<p class="invoice-auth-note__source">This invoice is electronically generated and authenticated through the ' +
-        escapeHtml(appLink()) + '</p>' +
+      '<p class="invoice-auth-note__source">' +
+        '<span class="invoice-auth-note__prefix">This invoice is electronically generated and authenticated through the </span>' +
+        linkHtml +
+      '</p>' +
       '<p class="invoice-auth-note__paid">' + issuedLine + '</p>' +
     '</div>';
   }

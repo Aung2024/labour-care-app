@@ -159,3 +159,34 @@ test('includes the 16 Excel laboratory tests', () => {
   assert.equal(pricing.STANDARD_LAB_TESTS[15].name, 'Chest X-ray (with Opinion)');
   assert.equal(pricing.STANDARD_LAB_TESTS[12].name, 'HBA1C');
 });
+
+test('loads only the 8 outcome indicators and splits Hb%', () => {
+  const pricing = loadPricing();
+  assert.equal(pricing.LAB_OUTCOME_TESTS.length, 8);
+  assert.equal(pricing.LAB_OUTCOME_TESTS[0].resultKind, 'hb-split');
+  assert.equal(pricing.LAB_OUTCOME_TESTS[7].id, 'ultrasound');
+  const rows = pricing.buildLabOutcomeRows([
+    { serviceId: 'urine-re', serviceName: 'Urine RE', testCount: 9 },
+    { serviceId: 'hb', serviceName: 'Hb%', testCount: 10 },
+    { serviceId: 'hiv-antibody', serviceName: 'HIV 1&2 antibody', testCount: 4 },
+    { serviceId: 'ultrasound', serviceName: 'Ultrasound', testCount: 6 },
+    { serviceId: 'rbs', serviceName: 'RBS', testCount: 3 }
+  ], [
+    { serviceId: 'hb', mildAnemiaCount: 3, severeAnemiaCount: 1, outcomeCount: 4 },
+    { serviceId: 'hiv-antibody', outcomeCount: 2 }
+  ]);
+  assert.equal(rows.length, 8);
+  assert.equal(rows.some((row) => row.serviceId === 'urine-re' || row.serviceId === 'rbs'), false);
+  const hb = rows.find((row) => row.serviceId === 'hb');
+  assert.equal(hb.testCount, 10);
+  assert.equal(hb.mildAnemiaCount, 3);
+  assert.equal(hb.severeAnemiaCount, 1);
+  assert.equal(hb.outcomeCount, 4);
+  const ultrasound = rows.find((row) => row.serviceId === 'ultrasound');
+  assert.equal(ultrasound.testCount, 6);
+  assert.equal(ultrasound.outcomeCount, 0);
+  const hiv = rows.find((row) => row.serviceId === 'hiv-antibody');
+  assert.equal(hiv.serviceName, 'HIV');
+  assert.equal(hiv.testCount, 4);
+  assert.equal(hiv.outcomeCount, 2);
+});

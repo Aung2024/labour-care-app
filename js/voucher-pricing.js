@@ -26,12 +26,167 @@
     Object.freeze({ id: 'chest-xray', code: 'CHEST_XRAY', name: 'Chest X-ray (with Opinion)', defaultRegularMinor: 1500000 })
   ]);
 
+  var LAB_OUTCOME_TESTS = Object.freeze([
+    Object.freeze({
+      id: 'hb',
+      name: 'Hb%',
+      aliases: Object.freeze(['hb', 'hb%', 'hemoglobin']),
+      resultKind: 'hb-split',
+      resultLabels: Object.freeze({
+        mild: 'Mild Anemia (7-11 g/dl)',
+        severe: 'Severe Anemia (<7 g/dl)'
+      })
+    }),
+    Object.freeze({
+      id: 'hbsag',
+      name: 'HBsAg',
+      aliases: Object.freeze(['hbsag']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'hcv-antibody',
+      name: 'HCV Antibody',
+      aliases: Object.freeze(['hcv-antibody', 'hcv antibody', 'hcv']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'hiv-antibody',
+      name: 'HIV',
+      aliases: Object.freeze(['hiv-antibody', 'hiv', 'hiv 1&2 antibody', 'hiv 1&2']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'vdrl',
+      name: 'VDRL',
+      aliases: Object.freeze(['vdrl']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'malaria',
+      name: 'Malaria',
+      aliases: Object.freeze(['malaria', 'malaria test']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'tb',
+      name: 'TB',
+      aliases: Object.freeze(['tb', 'tuberculosis']),
+      resultKind: 'positive'
+    }),
+    Object.freeze({
+      id: 'ultrasound',
+      name: 'Ultrasound',
+      aliases: Object.freeze(['ultrasound']),
+      resultKind: 'none'
+    })
+  ]);
+
   var INVOICE_COLUMNS = Object.freeze({
     regular: 'Regular Price (MMK)',
     labCostShare: 'Lab Cost share (MMK)',
     client: 'Client Co- payment (MMK)',
     project: 'Project Contribution/ Client Received Amount (MMK)'
   });
+
+  function normalizeOutcomeKey(value) {
+    return String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function findOutcomeTestForRow(row) {
+    var id = normalizeOutcomeKey(row && (row.serviceId || row.id));
+    var name = normalizeOutcomeKey(row && (row.serviceName || row.name));
+    var index;
+    for (index = 0; index < LAB_OUTCOME_TESTS.length; index += 1) {
+      var test = LAB_OUTCOME_TESTS[index];
+      var keys = [test.id].concat(test.aliases || []).map(normalizeOutcomeKey);
+      if (id && keys.indexOf(id) !== -1) return test;
+    }
+    for (index = 0; index < LAB_OUTCOME_TESTS.length; index += 1) {
+      var named = LAB_OUTCOME_TESTS[index];
+      var keysByName = [named.id, named.name].concat(named.aliases || []).map(normalizeOutcomeKey);
+      if (name && keysByName.indexOf(name) !== -1) return named;
+    }
+    return null;
+  }
+
+  function outcomeInteger(value) {
+    var amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) return 0;
+    return Math.floor(amount);
+  }
+
+  function countForOutcomeTest(countedRows, test) {
+    if (!test) return 0;
+    return (countedRows || []).reduce(function (sum, row) {
+      var match = findOutcomeTestForRow(row);
+      if (!match || match.id !== test.id) return sum;
+      return sum + outcomeInteger(row.testCount);
+    }, 0);
+  }
+
+  function buildLabOutcomeRows(countedRows, savedRows) {
+    var savedById = {};
+    (savedRows || []).forEach(function (row) {
+      var match = findOutcomeTestForRow(row);
+      if (match) savedById[match.id] = row;
+      else if (row && row.serviceId) savedById[row.serviceId] = row;
+    });
+    return LAB_OUTCOME_TESTS.map(function (test) {
+      var saved = savedById[test.id] || {};
+      var testCount = countForOutcomeTest(countedRows, test);
+      var mild = outcomeInteger(saved.mildAnemiaCount);
+      var severe = outcomeInteger(saved.severeAnemiaCount);
+      if (test.resultKind === 'hb-split' && saved.mildAnemiaCount == null && saved.severeAnemiaCount == null) {
+        mild = outcomeInteger(saved.outcomeCount);
+        severe = 0;
+      }
+      var outcomeCount = test.resultKind === 'hb-split'
+        ? mild + severe
+        : (test.resultKind === 'none' ? 0 : outcomeInteger(saved.outcomeCount));
+      if (outcomeCount > testCount) outcomeCount = testCount;
+      if (test.resultKind === 'hb-split' && mild + severe > testCount) {
+        severe = Math.max(0, testCount - mild);
+        if (mild > testCount) mild = testCount;
+        outcomeCount = mild + severe;
+      }
+      return {
+        serviceId: test.id,
+        serviceName: test.name,
+        resultKind: test.resultKind,
+        resultLabels: test.resultLabels || null,
+        testCount: testCount,
+        outcomeCount: test.resultKind === 'none' ? 0 : outcomeCount,
+        mildAnemiaCount: test.resultKind === 'hb-split' ? mild : 0,
+        severeAnemiaCount: test.resultKind === 'hb-split' ? severe : 0
+      };
+    });
+  }
+
+  function displayLabOutcomeRows(savedRows) {
+    var counted = (savedRows || []).map(function (row) {
+      return {
+        serviceId: row.serviceId,
+        serviceName: row.serviceName,
+        testCount: row.testCount
+      };
+    });
+    var catalog = buildLabOutcomeRows(counted, savedRows);
+    var extras = (savedRows || []).filter(function (row) {
+      return row && row.serviceId && !findOutcomeTestForRow(row);
+    }).map(function (row) {
+      return {
+        serviceId: row.serviceId,
+        serviceName: row.serviceName || row.serviceId,
+        resultKind: 'positive',
+        resultLabels: null,
+        testCount: outcomeInteger(row.testCount),
+        outcomeCount: outcomeInteger(row.outcomeCount),
+        mildAnemiaCount: 0,
+        severeAnemiaCount: 0
+      };
+    });
+    return catalog.concat(extras);
+  }
 
   function requireInteger(value, label, minimum) {
     if (!Number.isSafeInteger(value) || value < minimum) {
@@ -284,7 +439,11 @@
 
   root.VoucherPricing = Object.freeze({
     STANDARD_LAB_TESTS: STANDARD_LAB_TESTS,
+    LAB_OUTCOME_TESTS: LAB_OUTCOME_TESTS,
     INVOICE_COLUMNS: INVOICE_COLUMNS,
+    findOutcomeTestForRow: findOutcomeTestForRow,
+    buildLabOutcomeRows: buildLabOutcomeRows,
+    displayLabOutcomeRows: displayLabOutcomeRows,
     normalizePercentPair: normalizePercentPair,
     computeInvoiceShares: computeInvoiceShares,
     lineItemFromSheetService: lineItemFromSheetService,

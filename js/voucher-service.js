@@ -2201,15 +2201,43 @@
   function normalizeOutcomeRows(rows) {
     return (rows || []).map(function (row) {
       var item = requireObject(row, 'Outcome row');
+      var test = pricing().findOutcomeTestForRow(item);
       var testCount = requireInteger(item.testCount, 'Number of tests', 0);
-      var outcomeCount = requireInteger(item.outcomeCount, 'Outcome result', 0);
+      var serviceId = test ? test.id : requireString(item.serviceId, 'Service ID', 64);
+      var serviceName = test ? test.name : requireString(item.serviceName || item.serviceId, 'Test name', 120);
+      var resultKind = (test && test.resultKind) || 'positive';
+      if (resultKind === 'none') {
+        return {
+          serviceId: serviceId,
+          serviceName: serviceName,
+          testCount: testCount,
+          outcomeCount: 0
+        };
+      }
+      if (resultKind === 'hb-split') {
+        var mild = requireInteger(item.mildAnemiaCount, 'Mild anemia', 0);
+        var severe = requireInteger(item.severeAnemiaCount, 'Severe anemia', 0);
+        if (mild + severe > testCount) {
+          throw new Error('Mild and severe anemia together cannot be more than ' +
+            testCount + ' Hb% tests.');
+        }
+        return {
+          serviceId: serviceId,
+          serviceName: serviceName,
+          testCount: testCount,
+          outcomeCount: mild + severe,
+          mildAnemiaCount: mild,
+          severeAnemiaCount: severe
+        };
+      }
+      var outcomeCount = requireInteger(item.outcomeCount, 'Positive results', 0);
       if (outcomeCount > testCount) {
-        throw new Error((item.serviceName || item.serviceId || 'A test') +
-          ': outcome cannot be more than ' + testCount + ' tests.');
+        throw new Error(serviceName + ': positive results cannot be more than ' +
+          testCount + ' tests.');
       }
       return {
-        serviceId: requireString(item.serviceId, 'Service ID', 64),
-        serviceName: requireString(item.serviceName || item.serviceId, 'Test name', 120),
+        serviceId: serviceId,
+        serviceName: serviceName,
         testCount: testCount,
         outcomeCount: outcomeCount
       };

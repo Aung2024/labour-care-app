@@ -336,13 +336,28 @@
   }
 
   function renderPoOutcomeTable(rows) {
-    return '<table class="po-table"><thead><tr>' +
-      '<th>Name of test</th><th>Number of tests</th><th>Outcome result</th></tr></thead><tbody>' +
-      ((rows || []).length
-        ? rows.map(function (row) {
+    var display = pricing().displayLabOutcomeRows(rows || []);
+    return '<table class="po-table po-outcome-table"><thead><tr>' +
+      '<th>Indicator</th>' +
+      '<th>Total No of Test Conducted</th>' +
+      '<th>No of (+)ve Test Results</th>' +
+      '</tr></thead><tbody>' +
+      (display.length
+        ? display.map(function (row) {
+          var max = Number(row.testCount) || 0;
+          if (row.resultKind === 'hb-split') {
+            var mildLabel = (row.resultLabels && row.resultLabels.mild) || 'Mild Anemia (7-11 g/dl)';
+            var severeLabel = (row.resultLabels && row.resultLabels.severe) || 'Severe Anemia (<7 g/dl)';
+            return '<tr><td>' + escapeHtml(mildLabel) + '</td>' +
+              '<td rowspan="2">' + escapeHtml(String(max)) + '</td>' +
+              '<td>' + escapeHtml(String(row.mildAnemiaCount || 0)) + '</td></tr>' +
+              '<tr><td>' + escapeHtml(severeLabel) + '</td>' +
+              '<td>' + escapeHtml(String(row.severeAnemiaCount || 0)) + '</td></tr>';
+          }
           return '<tr><td>' + escapeHtml(row.serviceName || row.serviceId) + '</td><td>' +
-            escapeHtml(String(row.testCount || 0)) + '</td><td>' +
-            escapeHtml(String(row.outcomeCount || 0)) + '</td></tr>';
+            escapeHtml(String(max)) + '</td><td>' +
+            (row.resultKind === 'none' ? '—' : escapeHtml(String(row.outcomeCount || 0))) +
+            '</td></tr>';
         }).join('')
         : '<tr><td colspan="3">No tests were reported.</td></tr>') +
       '</tbody></table>';
