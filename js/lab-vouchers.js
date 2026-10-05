@@ -731,6 +731,7 @@
     el('labTotalCount').textContent = totalCount;
     el('labRedeemed').textContent = redeemed.count;
     el('labRedeemedMoney').textContent = money((redeemed.projectMinor + redeemed.clientMinor) / 100);
+    el('labRedeemedBreak').textContent = breakdownText(redeemed);
     el('labIncomingCount').textContent = verified.count;
     el('labIncoming').textContent = money((verified.clientMinor + verified.projectMinor) / 100);
     el('labIncomingBreak').textContent = breakdownText(verified);
