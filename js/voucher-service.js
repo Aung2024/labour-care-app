@@ -2181,7 +2181,8 @@
     var byStatus = {
       redeemed: { count: 0, clientMinor: 0, projectMinor: 0 },
       verified: { count: 0, clientMinor: 0, projectMinor: 0 },
-      paid: { count: 0, clientMinor: 0, projectMinor: 0 }
+      paid: { count: 0, clientMinor: 0, projectMinor: 0 },
+      rejected: { count: 0, clientMinor: 0, projectMinor: 0 }
     };
     (items || []).forEach(function (row) {
       var status = String(row.status || '');
@@ -2197,7 +2198,7 @@
 
   function queryRedeemedLabVouchers(input) {
     var filters = input || {};
-    var statuses = ['redeemed', 'verified', 'paid'];
+    var statuses = ['redeemed', 'verified', 'paid', 'rejected'];
     return Promise.all(statuses.map(function (status) {
       return queryVouchersPaged(Object.assign({}, filters, {
         status: status,
@@ -2266,15 +2267,17 @@
     });
   }
 
-  function getPatientVisitStats(patientId) {
-    if (!patientId) return Promise.resolve(null);
-    var context = firebaseContext();
-    return context.db.collection(COLLECTIONS.PATIENT_STATS).doc(patientId).get().then(function (snapshot) {
-      return snapshot.exists ? Object.assign({ id: snapshot.id }, snapshot.data()) : null;
-    }).catch(function () { return null; });
+  function collectPatientVoucherSnapshot(snapshot, grouped) {
+    snapshot.docs.forEach(function (doc) {
+      var row = Object.assign({ id: doc.id }, doc.data());
+      var patientId = row.patientId;
+      if (!patientId) return;
+      if (!grouped[patientId]) grouped[patientId] = [];
+      grouped[patientId].push(row);
+    });
   }
 
-  function listPatientVouchersByIds(patientIds) {
+  function listPatientVouchersByIds(patientIds, labId) {
     var ids = (patientIds || []).filter(Boolean);
     var grouped = {};
     ids.forEach(function (id) { grouped[id] = []; });
@@ -2284,55 +2287,49 @@
     for (var index = 0; index < ids.length; index += 10) {
       batches.push(ids.slice(index, index + 10));
     }
+    var scopedLabId = labId || context.user.uid;
     return Promise.all(batches.map(function (batch) {
-      return context.db.collection(COLLECTIONS.VOUCHERS).where('patientId', 'in', batch).get();
-    })).then(function (snapshots) {
-      snapshots.forEach(function (snapshot) {
-        snapshot.docs.forEach(function (doc) {
-          var row = Object.assign({ id: doc.id }, doc.data());
-          var patientId = row.patientId;
-          if (!grouped[patientId]) grouped[patientId] = [];
-          grouped[patientId].push(row);
-        });
+      var openQuery = context.db.collection(COLLECTIONS.VOUCHERS).where('patientId', 'in', batch);
+      return openQuery.get().catch(function () {
+        return context.db.collection(COLLECTIONS.VOUCHERS)
+          .where('labId', '==', scopedLabId)
+          .where('patientId', 'in', batch)
+          .get();
       });
+    })).then(function (snapshots) {
+      snapshots.forEach(function (snapshot) { collectPatientVoucherSnapshot(snapshot, grouped); });
       return grouped;
     }).catch(function () { return grouped; });
   }
 
   function attachPatientVisitKinds(vouchers) {
     var list = (vouchers || []).filter(Boolean);
-    var need = [];
-    list.forEach(function (row) {
-      var stored = pricingApi().normalizeVisitKind(row.patientVisitKind);
-      if (stored) {
-        row.patientVisitKind = stored;
-        return;
-      }
-      if (row.patientId) need.push(row);
-      else row.patientVisitKind = 'new';
-    });
-    if (!need.length) return Promise.resolve(list);
-    var patientIds = Array.from(new Set(need.map(function (row) { return row.patientId; })));
-    return Promise.all(patientIds.map(getPatientVisitStats)).then(function (statsRows) {
-      var statsById = {};
-      patientIds.forEach(function (id, index) { statsById[id] = statsRows[index]; });
-      var needQuery = [];
-      need.forEach(function (row) {
-        var stats = statsById[row.patientId];
-        if (row.status === 'issued') {
-          row.patientVisitKind = (stats && Number(stats.redeemedCount) > 0) ? 'old' : 'new';
+    if (!list.length) return Promise.resolve(list);
+    var patientIds = Array.from(new Set(list.map(function (row) { return row.patientId; }).filter(Boolean)));
+    var labIds = Array.from(new Set(list.map(function (row) { return row.labId; }).filter(Boolean)));
+    var labId = labIds.length === 1 ? labIds[0] : '';
+    return listPatientVouchersByIds(patientIds, labId).then(function (grouped) {
+      list.forEach(function (row) {
+        if (!row.patientId) return;
+        if (!grouped[row.patientId]) grouped[row.patientId] = [];
+        var id = row.code || row.id;
+        if (!grouped[row.patientId].some(function (item) { return (item.code || item.id) === id; })) {
+          grouped[row.patientId].push(row);
+        }
+      });
+      list.forEach(function (row) {
+        var stored = pricingApi().normalizeVisitKind(row.patientVisitKind);
+        if (!row.patientId) {
+          row.patientVisitKind = stored || 'new';
           return;
         }
-        needQuery.push(row);
+        var computed = pricingApi().visitKindFromSiblings(
+          Object.assign({}, row, { patientVisitKind: '' }),
+          grouped[row.patientId] || []
+        );
+        row.patientVisitKind = stored === 'old' ? 'old' : computed;
       });
-      if (!needQuery.length) return list;
-      var queryIds = Array.from(new Set(needQuery.map(function (row) { return row.patientId; })));
-      return listPatientVouchersByIds(queryIds).then(function (grouped) {
-        needQuery.forEach(function (row) {
-          row.patientVisitKind = pricingApi().visitKindFromSiblings(row, grouped[row.patientId] || []);
-        });
-        return list;
-      });
+      return list;
     });
   }
 

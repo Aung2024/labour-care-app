@@ -171,6 +171,9 @@ test('marks the first redeemed voucher New and later ones Old', () => {
     status: 'issued',
     patientVisitKind: 'old'
   }, []), 'old');
+  const rejected = { id: 'A1', status: 'rejected', redeemedAt: '2026-01-02' };
+  const later = { id: 'B2', status: 'redeemed', redeemedAt: '2026-03-04' };
+  assert.equal(pricing.visitKindFromSiblings(later, [rejected, later]), 'old');
 });
 
 test('loads only the 8 outcome indicators and splits Hb%', () => {

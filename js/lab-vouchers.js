@@ -762,6 +762,7 @@
     var redeemed = byStatus.redeemed || { count: 0, clientMinor: 0, projectMinor: 0 };
     var verified = byStatus.verified || { count: 0, clientMinor: 0, projectMinor: 0 };
     var paid = byStatus.paid || { count: 0, clientMinor: 0, projectMinor: 0 };
+    var rejected = byStatus.rejected || { count: 0, clientMinor: 0, projectMinor: 0 };
     var totalCount = redeemed.count + verified.count + paid.count;
     el('labTotalCount').textContent = totalCount;
     el('labRedeemed').textContent = redeemed.count;
@@ -773,15 +774,22 @@
     el('labPaidCount').textContent = paid.count;
     el('labPaid').textContent = money((paid.clientMinor + paid.projectMinor) / 100);
     el('labPaidBreak').textContent = breakdownText(paid);
+    if (el('labRejected')) el('labRejected').textContent = rejected.count;
+    if (el('labRejectedMoney')) {
+      el('labRejectedMoney').textContent = money((rejected.projectMinor + rejected.clientMinor) / 100);
+    }
 
     if (!state.dashStatus) state.dashStatus = 'total';
     document.querySelectorAll('.lab-stat-tile').forEach(function (tile) {
       tile.classList.toggle('is-active', tile.getAttribute('data-status') === state.dashStatus);
     });
     var tableItems = summary.items || items;
-    if (state.dashStatus && state.dashStatus !== 'total') {
+    if (state.dashStatus === 'total') {
+      tableItems = tableItems.filter(function (item) { return item.status !== 'rejected'; });
+    } else if (state.dashStatus) {
       tableItems = tableItems.filter(function (item) { return item.status === state.dashStatus; });
     }
+    tableItems = await service().attachPatientVisitKinds(tableItems);
     state.dashItems = tableItems;
     renderDashboardTable();
   }
@@ -807,20 +815,22 @@
     });
     el('labHistory').innerHTML =
       '<table class="table history-table lab-history-table">' +
-      '<thead><tr><th>Code</th><th>Status</th><th>Midwife</th><th>Patient</th><th class="money">Amount</th></tr></thead><tbody>' +
+      '<thead><tr><th>Code</th><th>Status</th><th>New / Old</th><th>Midwife</th><th>Patient</th><th class="money">Amount</th></tr></thead><tbody>' +
       (items.length
         ? items.map(function (item) {
           var code = item.code || item.id || '';
+          var visitKind = item.patientVisitKind === 'old' ? 'Old' : 'New';
           return '<tr class="lab-history-row" data-code="' + escapeHtml(code) +
             '" tabindex="0" role="link" aria-label="Open voucher ' + escapeHtml(code) + '">' +
             '<td>' + escapeHtml(code) + '</td>' +
             '<td>' + escapeHtml(item.status || '') + '</td>' +
+            '<td>' + escapeHtml(visitKind) + '</td>' +
             '<td>' + escapeHtml(item.issuerNameSnapshot || '') + '</td>' +
             '<td>' + escapeHtml(item.patientNameSnapshot || '') + '</td>' +
             '<td class="money">' + escapeHtml(money(voucherTotalMajor(item))) + '</td>' +
             '</tr>';
         }).join('')
-        : '<tr><td colspan="5" class="text-muted">' +
+        : '<tr><td colspan="6" class="text-muted">' +
           (query ? 'No vouchers match this search.' : 'No vouchers for this filter.') +
           '</td></tr>') +
       '</tbody></table>';
