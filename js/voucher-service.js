@@ -2277,38 +2277,51 @@
     });
   }
 
-  function listPatientVouchersByIds(patientIds, labId) {
+  function queryPatientVoucherBatch(batch, scope) {
+    var context = firebaseContext();
+    var collection = context.db.collection(COLLECTIONS.VOUCHERS);
+    var query = collection.where('patientId', 'in', batch);
+    if (scope && scope.midwifeId) {
+      return query.where('midwifeId', '==', scope.midwifeId).get();
+    }
+    if (scope && scope.labId) {
+      return query.where('labId', '==', scope.labId).get();
+    }
+    return query.get();
+  }
+
+  function listPatientVouchersByIds(patientIds, scope) {
     var ids = (patientIds || []).filter(Boolean);
     var grouped = {};
     ids.forEach(function (id) { grouped[id] = []; });
     if (!ids.length) return Promise.resolve(grouped);
-    var context = firebaseContext();
     var batches = [];
     for (var index = 0; index < ids.length; index += 10) {
       batches.push(ids.slice(index, index + 10));
     }
-    var scopedLabId = labId || context.user.uid;
     return Promise.all(batches.map(function (batch) {
-      var openQuery = context.db.collection(COLLECTIONS.VOUCHERS).where('patientId', 'in', batch);
-      return openQuery.get().catch(function () {
-        return context.db.collection(COLLECTIONS.VOUCHERS)
-          .where('labId', '==', scopedLabId)
-          .where('patientId', 'in', batch)
-          .get();
-      });
+      return queryPatientVoucherBatch(batch, scope);
     })).then(function (snapshots) {
       snapshots.forEach(function (snapshot) { collectPatientVoucherSnapshot(snapshot, grouped); });
       return grouped;
     }).catch(function () { return grouped; });
   }
 
+  function visitKindQueryScope(vouchers) {
+    var context = firebaseContext();
+    var uid = context.user && context.user.uid;
+    var midwifeIds = Array.from(new Set((vouchers || []).map(function (row) { return row.midwifeId; }).filter(Boolean)));
+    var labIds = Array.from(new Set((vouchers || []).map(function (row) { return row.labId; }).filter(Boolean)));
+    if (uid && midwifeIds.length === 1 && midwifeIds[0] === uid) return { midwifeId: uid };
+    if (uid && labIds.length === 1 && labIds[0] === uid) return { labId: uid };
+    return {};
+  }
+
   function attachPatientVisitKinds(vouchers) {
     var list = (vouchers || []).filter(Boolean);
     if (!list.length) return Promise.resolve(list);
     var patientIds = Array.from(new Set(list.map(function (row) { return row.patientId; }).filter(Boolean)));
-    var labIds = Array.from(new Set(list.map(function (row) { return row.labId; }).filter(Boolean)));
-    var labId = labIds.length === 1 ? labIds[0] : '';
-    return listPatientVouchersByIds(patientIds, labId).then(function (grouped) {
+    return listPatientVouchersByIds(patientIds, visitKindQueryScope(list)).then(function (grouped) {
       list.forEach(function (row) {
         if (!row.patientId) return;
         if (!grouped[row.patientId]) grouped[row.patientId] = [];
@@ -2328,6 +2341,11 @@
           grouped[row.patientId] || []
         );
         row.patientVisitKind = stored === 'old' ? 'old' : computed;
+      });
+      return list;
+    }).catch(function () {
+      list.forEach(function (row) {
+        row.patientVisitKind = pricingApi().normalizeVisitKind(row.patientVisitKind) || 'new';
       });
       return list;
     });
