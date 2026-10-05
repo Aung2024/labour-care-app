@@ -472,6 +472,8 @@ test('Program Officer can verify reject and pay redeemed vouchers', async () => 
     status: 'paid',
     paidAt: serverTimestamp(),
     paidBy: 'po',
+    paidNameSnapshot: 'Program Officer',
+    paidDesignationSnapshot: 'PO',
     paymentAudit: { action: 'paid', actorId: 'po', at: serverTimestamp() }
   }));
 });

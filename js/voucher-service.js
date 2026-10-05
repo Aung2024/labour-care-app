@@ -1693,6 +1693,9 @@
           } else {
             updates.paidAt = now;
             updates.paidBy = context.user.uid;
+            updates.paidNameSnapshot = typeof submission.poName === 'string' ? submission.poName.trim().slice(0, 160) : '';
+            updates.paidDesignationSnapshot = typeof submission.poDesignation === 'string' ?
+              submission.poDesignation.trim().slice(0, 160) : '';
             updates.paymentAudit = { action: 'paid', actorId: context.user.uid, at: now };
           }
           transaction.update(voucherRef, updates);
@@ -2352,6 +2355,7 @@
     resetPeriodStats: resetPeriodStats,
     getPeriodStats: getPeriodStats,
     queryVouchersPaged: queryVouchersPaged,
+    voucherShareMinors: voucherShareMinors,
     queryRedeemedLabVouchers: queryRedeemedLabVouchers,
     countRedeemedTests: countRedeemedTests,
     getLabOutcomeReport: getLabOutcomeReport,

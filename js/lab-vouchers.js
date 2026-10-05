@@ -9,6 +9,8 @@
     stream: null,
     detector: null,
     scanFrame: null,
+    scanTimer: null,
+    scanCanvas: null,
     clientPad: null,
     cashierPads: [],
     page: 'scan',
@@ -424,53 +426,212 @@
     el('voucherCodeInput').focus();
   }
 
+  function cameraErrorMessage(error) {
+    var name = error && error.name;
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return 'Camera permission was denied. Allow Camera for Safari in Settings, or use Scan from photo.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No camera was found. Use Scan from photo or enter the voucher code.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'The camera is in use by another app. Close it and try again, or use Scan from photo.';
+    }
+    if (name === 'SecurityError' || !window.isSecureContext) {
+      return 'iPhone and iPad need https to open the live camera. Use Scan from photo or open the https site.';
+    }
+    return (error && error.message) || 'Could not open the camera. Use Scan from photo or enter the code.';
+  }
+
+  async function openCameraStream() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      throw new Error('This browser cannot open the live camera. Use Scan from photo or enter the code.');
+    }
+    if (!window.isSecureContext) {
+      throw new Error('iPhone and iPad need https to open the live camera. Use Scan from photo or open the https site.');
+    }
+    var attempts = [
+      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+      { video: { facingMode: 'environment' }, audio: false },
+      { video: true, audio: false }
+    ];
+    var lastError = null;
+    for (var index = 0; index < attempts.length; index += 1) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(attempts[index]);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Could not open the camera.');
+  }
+
+  function prepareScanCanvas(width, height) {
+    var canvas = state.scanCanvas || document.createElement('canvas');
+    state.scanCanvas = canvas;
+    canvas.width = width;
+    canvas.height = height;
+    return canvas.getContext('2d', { willReadFrequently: true });
+  }
+
+  function decodeQrFromImageData(image) {
+    if (!image || typeof window.jsQR !== 'function') return '';
+    var result = window.jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+    return result && result.data ? result.data : '';
+  }
+
+  function decodeQrFromVideo(video) {
+    var vw = video.videoWidth;
+    var vh = video.videoHeight;
+    if (!vw || !vh) return '';
+    var max = 640;
+    var scale = Math.min(1, max / Math.max(vw, vh));
+    var width = Math.max(1, Math.round(vw * scale));
+    var height = Math.max(1, Math.round(vh * scale));
+    var ctx = prepareScanCanvas(width, height);
+    ctx.drawImage(video, 0, 0, width, height);
+    return decodeQrFromImageData(ctx.getImageData(0, 0, width, height));
+  }
+
+  function decodeQrFromImage(image) {
+    var max = 1000;
+    var scale = Math.min(1, max / Math.max(image.width, image.height));
+    var width = Math.max(1, Math.round(image.width * scale));
+    var height = Math.max(1, Math.round(image.height * scale));
+    var angles = [0, 90, 180, 270];
+    for (var index = 0; index < angles.length; index += 1) {
+      var angle = angles[index];
+      var rotated = angle === 90 || angle === 270;
+      var canvasWidth = rotated ? height : width;
+      var canvasHeight = rotated ? width : height;
+      var ctx = prepareScanCanvas(canvasWidth, canvasHeight);
+      ctx.save();
+      ctx.translate(canvasWidth / 2, canvasHeight / 2);
+      ctx.rotate(angle * Math.PI / 180);
+      ctx.drawImage(image, -width / 2, -height / 2, width, height);
+      ctx.restore();
+      var raw = decodeQrFromImageData(ctx.getImageData(0, 0, canvasWidth, canvasHeight));
+      if (raw) return raw;
+    }
+    return '';
+  }
+
+  async function applyScannedValue(raw) {
+    var code = parseCode(raw);
+    if (!code) return false;
+    el('voucherCodeInput').value = code;
+    stopCamera();
+    await lookup();
+    return true;
+  }
+
   async function scanLoop() {
-    if (!state.stream || !state.detector) return;
+    if (!state.stream) return;
     try {
       var video = el('cameraVideo');
       if (video.readyState >= 2) {
-        var codes = await state.detector.detect(video);
-        if (codes && codes.length) {
-          var code = parseCode(codes[0].rawValue);
-          if (code) {
-            el('voucherCodeInput').value = code;
-            stopCamera();
-            await lookup();
-            return;
-          }
+        var raw = '';
+        if (state.detector) {
+          var codes = await state.detector.detect(video);
+          raw = codes && codes[0] ? codes[0].rawValue : '';
         }
+        if (!raw) raw = decodeQrFromVideo(video);
+        if (await applyScannedValue(raw)) return;
       }
     } catch (error) {}
-    state.scanFrame = requestAnimationFrame(scanLoop);
+    scheduleScan();
+  }
+
+  function scheduleScan() {
+    if (state.detector) {
+      state.scanFrame = requestAnimationFrame(scanLoop);
+      return;
+    }
+    state.scanTimer = window.setTimeout(scanLoop, 140);
   }
 
   async function startCamera() {
-    if (!('BarcodeDetector' in window)) {
-      el('cameraUnsupported').classList.remove('d-none');
-      return;
+    el('cameraUnsupported').classList.add('d-none');
+    stopCamera();
+    if ('BarcodeDetector' in window) {
+      try {
+        state.detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (error) {
+        state.detector = null;
+      }
+    } else {
+      state.detector = null;
     }
-    state.detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false
-    });
-    el('cameraVideo').srcObject = state.stream;
-    await el('cameraVideo').play();
+    if (!state.detector && typeof window.jsQR !== 'function') {
+      el('cameraUnsupported').classList.remove('d-none');
+      throw new Error('QR scanning is not available. Use Scan from photo or enter the voucher code.');
+    }
+    try {
+      state.stream = await openCameraStream();
+    } catch (error) {
+      el('cameraUnsupported').classList.remove('d-none');
+      throw new Error(cameraErrorMessage(error));
+    }
+    var video = el('cameraVideo');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.muted = true;
+    video.autoplay = true;
+    video.srcObject = state.stream;
+    try {
+      await video.play();
+    } catch (error) {
+      stopCamera();
+      el('cameraUnsupported').classList.remove('d-none');
+      throw new Error(cameraErrorMessage(error));
+    }
     el('scanner').classList.remove('d-none');
     el('startCamera').classList.add('d-none');
     el('stopCamera').classList.remove('d-none');
-    scanLoop();
+    scheduleScan();
   }
 
   function stopCamera() {
     if (state.scanFrame) cancelAnimationFrame(state.scanFrame);
+    if (state.scanTimer) window.clearTimeout(state.scanTimer);
     state.scanFrame = null;
+    state.scanTimer = null;
     if (state.stream) state.stream.getTracks().forEach(function (track) { track.stop(); });
     state.stream = null;
-    el('cameraVideo').srcObject = null;
+    var video = el('cameraVideo');
+    if (video) video.srcObject = null;
     el('scanner').classList.add('d-none');
     el('startCamera').classList.remove('d-none');
     el('stopCamera').classList.add('d-none');
+  }
+
+  function handleScanPhoto() {
+    var input = el('scanPhotoInput');
+    if (!input) return;
+    input.value = '';
+    input.click();
+  }
+
+  async function decodeScanPhoto(file) {
+    if (!file) return;
+    if (typeof window.jsQR !== 'function') {
+      throw new Error('QR photo scanning is not available. Enter the voucher code.');
+    }
+    var objectUrl = URL.createObjectURL(file);
+    try {
+      var image = await new Promise(function (resolve, reject) {
+        var node = new Image();
+        node.onload = function () { resolve(node); };
+        node.onerror = function () { reject(new Error('Could not read that photo.')); };
+        node.src = objectUrl;
+      });
+      var raw = decodeQrFromImage(image);
+      if (!(await applyScannedValue(raw))) {
+        throw new Error('No voucher QR was found in that photo. Try again closer to the code.');
+      }
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   }
 
   function fillYearOptions(select, includeAll) {
@@ -1100,7 +1261,6 @@
     el('invoiceDateInput').value = todayInputValue();
     state.invoiceDate = el('invoiceDateInput').value;
     el('labApp').classList.remove('d-none');
-    if (!('BarcodeDetector' in window)) el('cameraUnsupported').classList.remove('d-none');
     showPage('scan');
     var initialCode = parseCode(new URLSearchParams(window.location.search).get('code'));
     if (initialCode) {
@@ -1177,6 +1337,15 @@
     startCamera().catch(function (error) { setStatus(error.message, 'warning'); });
   });
   el('stopCamera').addEventListener('click', stopCamera);
+  if (el('scanPhotoBtn')) {
+    el('scanPhotoBtn').addEventListener('click', handleScanPhoto);
+  }
+  if (el('scanPhotoInput')) {
+    el('scanPhotoInput').addEventListener('change', function (event) {
+      var file = event.target.files && event.target.files[0];
+      decodeScanPhoto(file).catch(function (error) { setStatus(error.message, 'warning'); });
+    });
+  }
   el('saveSettingsBtn').addEventListener('click', function () {
     saveSettings().catch(function (error) { setStatus(error.message, 'error'); });
   });

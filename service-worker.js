@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v287-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v289-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -68,6 +68,7 @@ const FILES_TO_CACHE = [
   './js/vendor/firebase-firestore.js',
   './js/vendor/html2canvas.min.js',
   './js/vendor/qrcode.min.js',
+  './js/vendor/jsqr.min.js',
   './js/firebase.js',
   './js/voucher-pricing.js',
   './js/voucher-invoice.js',

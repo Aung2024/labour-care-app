@@ -26,6 +26,51 @@
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
   }
 
+  function formatDateTime(value) {
+    if (!value) return '';
+    var date = value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+    if (Number.isNaN(date.getTime())) return text(value);
+    return date.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function mergeProject(voucher, extras) {
+    var project = Object.assign({}, (extras && extras.project) || {});
+    if (!project.name && voucher.poNameSnapshot) project.name = voucher.poNameSnapshot;
+    if (!project.designation && voucher.poDesignationSnapshot) project.designation = voucher.poDesignationSnapshot;
+    if (!project.date && voucher.verifiedAt) project.date = formatDate(voucher.verifiedAt);
+    if (!project.paidAt && voucher.paidAt) project.paidAt = formatDateTime(voucher.paidAt);
+    if (!project.paidName) {
+      project.paidName = voucher.paidNameSnapshot || voucher.poNameSnapshot || project.name || '';
+    }
+    if (!project.paidDesignation) {
+      project.paidDesignation = voucher.paidDesignationSnapshot || voucher.poDesignationSnapshot ||
+        project.designation || '';
+    }
+    return project;
+  }
+
+  function renderFinance(data, project) {
+    var status = String((data && data.status) || '').toLowerCase();
+    if (status !== 'paid') return '';
+    var paidWhen = text((project && project.paidAt) || formatDateTime(data && data.paidAt));
+    var name = text((project && (project.paidName || project.name)) || '');
+    var designation = text((project && (project.paidDesignation || project.designation)) || '');
+    if (!paidWhen && !name && !designation) return '';
+    return '<div class="invoice-finance">' +
+      '<h2>Finance authorization</h2>' +
+      (paidWhen ? '<p><span>Marked paid:</span> <strong>' + escapeHtml(paidWhen) + '</strong></p>' : '') +
+      (name ? '<p><span>Authorized by:</span> <strong>' + escapeHtml(name) + '</strong></p>' : '') +
+      (designation ? '<p><span>Designation:</span> <strong>' + escapeHtml(designation) + '</strong></p>' : '') +
+      '<p>This printed invoice is authorized for the finance team to record the laboratory transfer.</p>' +
+    '</div>';
+  }
+
   function tests() {
     return (root.VoucherPricing && root.VoucherPricing.STANDARD_LAB_TESTS) || [];
   }
@@ -133,9 +178,11 @@
     var client = data.client || {};
     var status = String(data.status || '').toLowerCase();
     var rejected = status === 'rejected';
+    var paid = status === 'paid';
     container.innerHTML =
       '<article class="invoice-sheet" id="invoiceSheet">' +
         (rejected ? '<div class="invoice-rejected">Rejected' + (data.rejectReason ? ': ' + escapeHtml(data.rejectReason) : '') + '</div>' : '') +
+        (paid ? '<div class="invoice-paid-seal" aria-label="Paid">PAID</div>' : '') +
         '<div class="invoice-seal-row">' +
           '<div class="invoice-seal-left">' +
             '<div class="invoice-seal-label">Lab Seal :</div>' +
@@ -192,6 +239,7 @@
             '<p>Date (ငွေလက်ခံသည့်ရက်စွဲ) <strong>' + escapeHtml(text(client.date)) + '</strong></p>' +
           '</section>' +
         '</div>' +
+        renderFinance(data, project) +
       '</article>';
 
     var qrNode = container.querySelector('#invoiceQr');
@@ -411,8 +459,9 @@
         clientCopayMinor: totals.clientCopayMinor,
         projectContributionMinor: totals.projectContributionMinor
       },
+      paidAt: voucher.paidAt,
       lab: extra.lab || {},
-      project: extra.project || {},
+      project: mergeProject(voucher, extra),
       client: extra.client || {
         name: voucher.patientNameSnapshot,
         nrc: voucher.patientNrcSnapshot,
@@ -431,6 +480,7 @@
     fileToDataUrl: fileToDataUrl,
     bindSignaturePad: bindSignaturePad,
     modelFromVoucher: modelFromVoucher,
-    formatDate: formatDate
+    formatDate: formatDate,
+    formatDateTime: formatDateTime
   });
 })(typeof window !== 'undefined' ? window : globalThis);

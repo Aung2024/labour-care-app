@@ -8,6 +8,8 @@
     allocations: [],
     queue: [],
     selectedCodes: {},
+    dashItems: [],
+    payCodes: [],
     dashStatusFilter: null,
     poSettings: null,
     poPad: null,
@@ -55,6 +57,19 @@
   function profileName(profile) {
     return profile.displayName || profile.name || profile.labName || profile.organization_name || profile.email || 'Unnamed';
   }
+  function officerDisplayName(name) {
+    var value = String(name || '').trim();
+    if (!value || /^test\s+program\s+officer$/i.test(value)) return 'Program Officer';
+    return value;
+  }
+  function sharesOf(row) {
+    if (service().voucherShareMinors) return service().voucherShareMinors(row);
+    var totals = (row && row.totals) || {};
+    return {
+      clientMinor: Number(totals.clientCopayMinor) || 0,
+      projectMinor: Number(totals.projectContributionMinor) || 0
+    };
+  }
   function profileType(profile) {
     var role = normalizeKey(profile.role);
     if (role === 'lab' || role === 'laboratory') return 'lab';
@@ -90,6 +105,86 @@
     if (previous && Array.from(select.options).some(function (opt) { return opt.value === previous; })) {
       select.value = previous;
     }
+  }
+
+  function fillMultiSelect(root, items, allLabel) {
+    if (!root) return;
+    var selected = {};
+    Array.from(root.querySelectorAll('input[type="checkbox"]:checked')).forEach(function (box) {
+      selected[box.value] = true;
+    });
+    root.setAttribute('data-all-label', allLabel);
+    var panel = root.querySelector('.po-multi__panel');
+    if (!panel) return;
+    panel.innerHTML = items.length
+      ? items.map(function (item) {
+        return '<label class="po-multi__option">' +
+          '<input type="checkbox" value="' + escapeHtml(item.id) + '"' +
+          (selected[item.id] ? ' checked' : '') + '>' +
+          '<span>' + escapeHtml(profileName(item)) + '</span></label>';
+      }).join('')
+      : '<p class="po-multi__empty">No accounts</p>';
+    updateMultiToggle(root);
+  }
+
+  function selectedMultiIds(root) {
+    if (!root) return [];
+    var boxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+    var checked = boxes.filter(function (box) { return box.checked; }).map(function (box) {
+      return box.value;
+    });
+    if (!checked.length || checked.length === boxes.length) return [];
+    return checked;
+  }
+
+  function updateMultiToggle(root) {
+    if (!root) return;
+    var toggle = root.querySelector('.po-multi__toggle');
+    if (!toggle) return;
+    var allLabel = root.getAttribute('data-all-label') || 'All';
+    var boxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+    var checked = boxes.filter(function (box) { return box.checked; });
+    if (!checked.length || checked.length === boxes.length) {
+      toggle.textContent = allLabel;
+      return;
+    }
+    if (checked.length === 1) {
+      var label = checked[0].closest('label');
+      toggle.textContent = (label && label.textContent.trim()) || '1 selected';
+      return;
+    }
+    toggle.textContent = checked.length + ' selected';
+  }
+
+  function closeOpenMultis(except) {
+    document.querySelectorAll('.po-multi').forEach(function (root) {
+      if (except && root === except) return;
+      var panel = root.querySelector('.po-multi__panel');
+      var toggle = root.querySelector('.po-multi__toggle');
+      if (panel) panel.hidden = true;
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function matchesMulti(ids, value) {
+    if (!ids || !ids.length) return true;
+    return ids.indexOf(value) !== -1;
+  }
+
+  function selectedBillingRange(yearSelect, monthSelect) {
+    var year = yearSelect && yearSelect.value;
+    var month = monthSelect && monthSelect.value;
+    if (!year || year === 'all') return null;
+    if (!month || month === 'all') return pricing().billingYearRange(year);
+    return pricing().billingPeriodRange(year, month);
+  }
+
+  function periodHint(range) {
+    if (!range) return 'Showing all time.';
+    var start = range.startDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    var end = range.endDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    if (!range.month) return range.year + ' is ' + start + ' to ' + end + '.';
+    return pricing().monthLabel(range.month) + ' is ' + start + ' to ' + end + '.';
   }
 
   function periodDateRange(period) {
@@ -189,8 +284,8 @@
     var profiles = await service().listProviderProfiles();
     state.labs = profiles.filter(function (profile) { return profileType(profile) === 'lab'; });
     state.maternityHomes = profiles.filter(function (profile) { return profileType(profile) === 'maternity'; });
-    fillSelect(byId('dashLab'), state.labs, 'All laboratories');
-    fillSelect(byId('dashMidwife'), state.maternityHomes, 'All midwives');
+    fillMultiSelect(byId('dashLabMulti'), state.labs, 'All laboratories');
+    fillMultiSelect(byId('dashMidwifeMulti'), state.maternityHomes, 'All midwives');
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationMaternityHome'), state.maternityHomes, 'Select maternity home');
@@ -499,7 +594,7 @@
       lab.address = byId('configLabAddress').value.trim();
       lab.phone = byId('configLabPhone').value.trim();
     }
-    fillSelect(byId('dashLab'), state.labs, 'All laboratories');
+    fillMultiSelect(byId('dashLabMulti'), state.labs, 'All laboratories');
     fillSelect(byId('configLab'), state.labs, 'Select laboratory');
     fillSelect(byId('verifyLab'), state.labs, 'All laboratories');
     fillSelect(byId('allocationLab'), state.labs, 'Select laboratory');
@@ -508,18 +603,52 @@
     showMessage('Laboratory prices saved and published.', 'success');
   }
 
-  function countsFromStats(rows) {
+  function summarizeDash(items) {
     var counts = pricing().emptyCounts();
-    var incoming = 0;
-    var paid = 0;
-    rows.forEach(function (row) {
-      Object.keys(counts).forEach(function (key) {
-        counts[key] += Number((row.counts || {})[key]) || 0;
-      });
-      incoming += Number(row.projectVerifiedMinor) || 0;
-      paid += Number(row.projectPaidMinor) || 0;
+    var verified = { clientMinor: 0, projectMinor: 0 };
+    var paid = { clientMinor: 0, projectMinor: 0 };
+    (items || []).forEach(function (row) {
+      var status = row.status;
+      if (counts[status] != null) counts[status] += 1;
+      var shares = sharesOf(row);
+      if (status === 'verified') {
+        verified.clientMinor += shares.clientMinor;
+        verified.projectMinor += shares.projectMinor;
+      }
+      if (status === 'paid') {
+        paid.clientMinor += shares.clientMinor;
+        paid.projectMinor += shares.projectMinor;
+      }
     });
-    return { counts: counts, incoming: incoming, paid: paid };
+    return { counts: counts, verified: verified, paid: paid };
+  }
+
+  async function fetchDashboardVouchers() {
+    var range = selectedBillingRange(byId('dashYear'), byId('dashMonth'));
+    var labIds = selectedMultiIds(byId('dashLabMulti'));
+    var midwifeIds = selectedMultiIds(byId('dashMidwifeMulti'));
+    var specs = [
+      { status: 'issued', dateField: dashboardDateField('issued') },
+      { status: 'redeemed', dateField: dashboardDateField('redeemed') },
+      { status: 'verified', dateField: dashboardDateField('verified') },
+      { status: 'paid', dateField: dashboardDateField('paid') },
+      { status: 'rejected', dateField: dashboardDateField('rejected') }
+    ];
+    var pages = await Promise.all(specs.map(function (spec) {
+      var query = { status: spec.status, pageSize: 400, dateField: spec.dateField };
+      if (range) {
+        query.startDate = range.startDate;
+        query.endDate = range.endDate;
+      }
+      return service().queryVouchersPaged(query);
+    }));
+    var items = [];
+    pages.forEach(function (page) {
+      (page.items || []).forEach(function (row) { items.push(row); });
+    });
+    return items.filter(function (row) {
+      return matchesMulti(labIds, row.labId) && matchesMulti(midwifeIds, row.midwifeId);
+    });
   }
 
   function clearDashListHint() {
@@ -530,20 +659,21 @@
   }
 
   async function loadDashboardStats() {
-    var period = byId('dashPeriod').value || 'all';
-    var stats = await service().getPeriodStats({
-      period: period,
-      labId: byId('dashLab').value || undefined,
-      midwifeId: byId('dashMidwife').value || undefined
-    });
-    var summary = countsFromStats(stats);
+    var range = selectedBillingRange(byId('dashYear'), byId('dashMonth'));
+    byId('dashPeriodHint').textContent = periodHint(range);
+    state.dashItems = await fetchDashboardVouchers();
+    var summary = summarizeDash(state.dashItems);
+    var verifiedTotal = (summary.verified.clientMinor + summary.verified.projectMinor) / 100;
     byId('statIssued').textContent = formatNumber(summary.counts.issued);
     byId('statRedeemed').textContent = formatNumber(summary.counts.redeemed);
     byId('statVerified').textContent = formatNumber(summary.counts.verified);
     byId('statPaid').textContent = formatNumber(summary.counts.paid);
     byId('statRejected').textContent = formatNumber(summary.counts.rejected);
-    byId('statIncoming').textContent = formatMoney(summary.incoming / 100);
-    byId('statReceived').textContent = formatMoney(summary.paid / 100);
+    byId('statIncoming').textContent = formatMoney(verifiedTotal);
+    byId('statIncomingBreak').textContent =
+      'Client Co-payment ' + formatMoney(summary.verified.clientMinor / 100) +
+      ' · Project contribution ' + formatMoney(summary.verified.projectMinor / 100);
+    byId('statReceived').textContent = formatMoney(summary.paid.projectMinor / 100);
     if (state.dashStatusFilter) {
       await loadDashboardList(state.dashStatusFilter);
     } else {
@@ -556,26 +686,18 @@
     document.querySelectorAll('.po-stat--filter').forEach(function (card) {
       card.classList.toggle('is-active', card.getAttribute('data-dash-status') === status);
     });
-    byId('dashList').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
-    var period = byId('dashPeriod').value || 'all';
-    var range = periodDateRange(period);
-    var query = {
-      status: status,
-      labId: byId('dashLab').value || undefined,
-      midwifeId: byId('dashMidwife').value || undefined,
-      pageSize: 50,
-      dateField: dashboardDateField(status)
-    };
-    if (range) {
-      query.startDate = range.startDate;
-      query.endDate = range.endDate;
+    if (!state.dashItems.length) {
+      byId('dashList').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
+      state.dashItems = await fetchDashboardVouchers();
     }
-    var report = await service().queryVouchersPaged(query);
-    var rows = report.items || [];
+    var rows = state.dashItems.filter(function (row) { return row.status === status; });
     byId('dashList').innerHTML = rows.length
       ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
         rows.map(function (row) {
-          return '<tr><td>' + escapeHtml(row.code || row.id) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
+          var code = row.code || row.id;
+          return '<tr class="po-dash-row" data-code="' + escapeHtml(code) +
+            '" tabindex="0" role="button" aria-label="Preview voucher ' + escapeHtml(code) + '">' +
+            '<td>' + escapeHtml(code) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
             escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td><td>' +
             escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td><td>' +
             formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
@@ -615,7 +737,9 @@
     }
     byId('verifyTable').innerHTML =
       '<table class="po-table po-table--verify"><thead><tr>' +
-      '<th><span class="visually-hidden">Select</span></th>' +
+      '<th class="po-check-col"><label class="po-check-wrap">' +
+      '<input type="checkbox" id="verifySelectAll" aria-label="Select all vouchers">' +
+      '</label></th>' +
       '<th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Amount</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' +
       state.queue.map(function (row) {
@@ -633,6 +757,15 @@
           '<td><button type="button" class="btn btn-outline-primary btn-sm" data-preview="' +
           escapeHtml(code) + '">Preview</button></td></tr>';
       }).join('') + '</tbody></table>';
+    syncVerifySelectAll();
+  }
+
+  function syncVerifySelectAll() {
+    var master = byId('verifySelectAll');
+    if (!master) return;
+    var boxes = Array.from(document.querySelectorAll('#verifyTable .verify-check'));
+    master.checked = boxes.length > 0 && boxes.every(function (box) { return box.checked; });
+    master.indeterminate = boxes.some(function (box) { return box.checked; }) && !master.checked;
   }
 
   function selectedVerifyCodes() {
@@ -677,9 +810,17 @@
       },
       project: voucher.status === 'verified' || voucher.status === 'paid' ? {
         signature: (signatures && signatures.poSignature) || (settings && settings.signature) || '',
-        name: voucher.poNameSnapshot || (settings && settings.name) || '',
+        name: officerDisplayName(voucher.poNameSnapshot || (settings && settings.name) || ''),
         designation: voucher.poDesignationSnapshot || (settings && settings.designation) || '',
-        date: window.VoucherInvoice.formatDate(voucher.verifiedAt)
+        date: window.VoucherInvoice.formatDate(voucher.verifiedAt),
+        paidAt: window.VoucherInvoice.formatDateTime
+          ? window.VoucherInvoice.formatDateTime(voucher.paidAt)
+          : '',
+        paidName: officerDisplayName(
+          voucher.paidNameSnapshot || voucher.poNameSnapshot || (settings && settings.name) || ''
+        ),
+        paidDesignation: voucher.paidDesignationSnapshot || voucher.poDesignationSnapshot ||
+          (settings && settings.designation) || ''
       } : {}
     };
   }
@@ -715,7 +856,40 @@
   function closePreviewModal() {
     byId('previewModal').hidden = true;
     byId('previewModalBody').innerHTML = '';
-    document.body.classList.remove('po-modal-open');
+    if (byId('payConfirmModal').hidden) document.body.classList.remove('po-modal-open');
+  }
+
+  function closePayConfirm() {
+    byId('payConfirmModal').hidden = true;
+    state.payCodes = [];
+    if (byId('previewModal').hidden) document.body.classList.remove('po-modal-open');
+  }
+
+  function openPayConfirm(codes) {
+    var list = (codes || []).filter(Boolean);
+    if (!list.length) throw new Error('Select at least one voucher.');
+    var rows = list.map(function (code) {
+      return state.queue.find(function (row) { return (row.code || row.id) === code; });
+    }).filter(Boolean);
+    var verified = rows.filter(function (row) { return row.status === 'verified'; });
+    if (!verified.length) throw new Error('Select verified vouchers to mark paid.');
+    var skipped = list.length - verified.length;
+    var project = 0;
+    var client = 0;
+    verified.forEach(function (row) {
+      var shares = sharesOf(row);
+      project += shares.projectMinor;
+      client += shares.clientMinor;
+    });
+    state.payCodes = verified.map(function (row) { return row.code || row.id; });
+    byId('payConfirmCount').textContent = String(state.payCodes.length);
+    byId('payConfirmProject').textContent = formatMoney(project / 100);
+    byId('payConfirmClient').textContent = formatMoney(client / 100);
+    byId('payConfirmModal').hidden = false;
+    document.body.classList.add('po-modal-open');
+    if (skipped) {
+      showMessage(skipped + ' selected voucher(s) are not verified and were skipped.', 'info');
+    }
   }
 
   async function printSelectedVouchers(codes) {
@@ -757,7 +931,7 @@
     }
     for (var index = 0; index < list.length; index += 1) {
       await service().setVoucherReviewStatus(list[index], action, {
-        poName: (state.poSettings && state.poSettings.name) || byId('poName').value,
+        poName: officerDisplayName((state.poSettings && state.poSettings.name) || byId('poName').value),
         poDesignation: (state.poSettings && state.poSettings.designation) || byId('poDesignation').value,
         rejectReason: byId('rejectReason').value.trim()
       });
@@ -924,7 +1098,7 @@
   }
 
   function renderPoSettingsUi() {
-    byId('poName').value = (state.poSettings && state.poSettings.name) || '';
+    byId('poName').value = officerDisplayName((state.poSettings && state.poSettings.name) || '');
     byId('poDesignation').value = (state.poSettings && state.poSettings.designation) || '';
     var preview = byId('poSignaturePreview');
     if (state.poSettings && state.poSettings.signature) {
@@ -978,17 +1152,50 @@
     byId('refreshAllBtn').addEventListener('click', refreshAll);
     byId('logoutBtn').addEventListener('click', logout);
 
-    byId('dashPeriod').addEventListener('change', function () {
-      state.dashStatusFilter = null;
-      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    ['dashYear', 'dashMonth'].forEach(function (id) {
+      byId(id).addEventListener('change', function () {
+        state.dashStatusFilter = null;
+        loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+      });
     });
-    byId('dashLab').addEventListener('change', function () {
-      state.dashStatusFilter = null;
-      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    document.addEventListener('click', function (event) {
+      var multi = event.target.closest('.po-multi');
+      if (!multi) {
+        closeOpenMultis();
+        return;
+      }
+      var toggle = event.target.closest('.po-multi__toggle');
+      if (!toggle) return;
+      var panel = multi.querySelector('.po-multi__panel');
+      var open = panel && panel.hidden;
+      closeOpenMultis(open ? multi : null);
+      if (!panel) return;
+      panel.hidden = !open;
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
-    byId('dashMidwife').addEventListener('change', function () {
-      state.dashStatusFilter = null;
-      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    document.querySelectorAll('.po-multi').forEach(function (root) {
+      root.addEventListener('change', function (event) {
+        if (!event.target.matches('input[type="checkbox"]')) return;
+        updateMultiToggle(root);
+        state.dashStatusFilter = null;
+        loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+      });
+    });
+    byId('dashList').addEventListener('click', function (event) {
+      var row = event.target.closest('.po-dash-row');
+      if (!row) return;
+      openPreviewModal([row.getAttribute('data-code')]).catch(function (error) {
+        showMessage(error.message, 'error');
+      });
+    });
+    byId('dashList').addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var row = event.target.closest('.po-dash-row');
+      if (!row) return;
+      event.preventDefault();
+      openPreviewModal([row.getAttribute('data-code')]).catch(function (error) {
+        showMessage(error.message, 'error');
+      });
     });
     document.querySelectorAll('.po-stat--filter').forEach(function (card) {
       card.addEventListener('click', function () {
@@ -1042,8 +1249,17 @@
       });
     });
     byId('verifyTable').addEventListener('change', function (event) {
+      if (event.target.id === 'verifySelectAll') {
+        var checked = event.target.checked;
+        document.querySelectorAll('#verifyTable .verify-check').forEach(function (box) {
+          box.checked = checked;
+          state.selectedCodes[box.getAttribute('data-code')] = checked;
+        });
+        return;
+      }
       if (event.target.matches('.verify-check')) {
         state.selectedCodes[event.target.getAttribute('data-code')] = event.target.checked;
+        syncVerifySelectAll();
       }
     });
     byId('verifyTable').addEventListener('click', function (event) {
@@ -1058,7 +1274,25 @@
       review('verify', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('payOneBtn').addEventListener('click', function () {
-      review('pay', selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
+      try {
+        openPayConfirm(selectedVerifyCodes());
+      } catch (error) {
+        showMessage(error.message, 'error');
+      }
+    });
+    byId('payConfirmBtn').addEventListener('click', function () {
+      var codes = state.payCodes.slice();
+      byId('payConfirmBtn').disabled = true;
+      review('pay', codes).then(function () {
+        closePayConfirm();
+      }).catch(function (error) {
+        showMessage(error.message, 'error');
+      }).then(function () {
+        byId('payConfirmBtn').disabled = false;
+      });
+    });
+    document.querySelectorAll('[data-close-pay-confirm]').forEach(function (el) {
+      el.addEventListener('click', closePayConfirm);
     });
     byId('printOneBtn').addEventListener('click', function () {
       printSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
@@ -1073,7 +1307,12 @@
       el.addEventListener('click', closePreviewModal);
     });
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && !byId('previewModal').hidden) closePreviewModal();
+      if (event.key !== 'Escape') return;
+      if (!byId('payConfirmModal').hidden) {
+        closePayConfirm();
+        return;
+      }
+      if (!byId('previewModal').hidden) closePreviewModal();
     });
 
     byId('openAllocationBtn').addEventListener('click', function () { openAllocationCreate(); });
@@ -1144,8 +1383,16 @@
     if (!profile.exists || (poRole !== 'program officer' && poRole !== 'programme officer')) {
       throw new Error('Active Program Officer access required.');
     }
-    byId('signedInUser').textContent = profileName(Object.assign({ id: profile.id }, profile.data()));
-    fillPeriodSelect(byId('dashPeriod'), 'all');
+    var profileData = profile.data() || {};
+    if (/^test\s+program\s+officer$/i.test(String(profileData.displayName || profileData.name || '').trim())) {
+      firebase.firestore().collection('users').doc(user.uid).update({
+        displayName: 'Program Officer',
+        name: 'Program Officer'
+      }).catch(function () {});
+    }
+    byId('signedInUser').textContent = officerDisplayName(profileName(Object.assign({ id: profile.id }, profileData)));
+    fillYearOptions(byId('dashYear'));
+    fillMonthOptions(byId('dashMonth'));
     fillPeriodSelect(byId('verifyPeriod'), 'all');
     fillYearOptions(byId('outcomeYear'));
     fillMonthOptions(byId('outcomeMonth'));
