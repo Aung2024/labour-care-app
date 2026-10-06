@@ -80,6 +80,30 @@
     box.className = 'status-box lab-status-compact ' + mode;
   }
 
+  function labAccountName() {
+    var profile = state.profile || {};
+    var settings = state.settings || {};
+    return String(
+      settings.labName ||
+      profile.displayName ||
+      profile.name ||
+      profile.labName ||
+      profile.organization_name ||
+      (state.user && state.user.email) ||
+      ''
+    ).trim();
+  }
+
+  function renderLabHeaderName() {
+    var node = el('labSignedInName');
+    if (!node) return;
+    var name = labAccountName();
+    node.textContent = name;
+    node.hidden = !name;
+    if (name) node.setAttribute('title', name);
+    else node.removeAttribute('title');
+  }
+
   function showPage(page) {
     state.page = page;
     ['scan', 'dashboard', 'outcomes', 'settings'].forEach(function (name) {
@@ -1376,6 +1400,7 @@
     updateSealPreview(state.settings.seal || '');
     updatePaymentQrPreview(state.settings.paymentQr || '');
     renderSettings();
+    renderLabHeaderName();
     setStatus('Laboratory settings saved.', 'success');
   }
 
@@ -1417,11 +1442,13 @@
     el('labApp').classList.remove('d-none');
     showPage('scan');
     var initialCode = parseCode(new URLSearchParams(window.location.search).get('code'));
+    if (window.RoleLanding) RoleLanding.rememberRole(state.profile.role);
+    renderLabHeaderName();
+    el('pageStatus').textContent = '';
+    el('pageStatus').className = 'status-box lab-status-compact is-quiet';
     if (initialCode) {
       el('voucherCodeInput').value = initialCode;
       await lookup();
-    } else {
-      setStatus('Authenticated as ' + (state.profile.displayName || user.email) + '.', 'info');
     }
   }
 

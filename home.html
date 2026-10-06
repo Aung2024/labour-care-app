@@ -888,7 +888,16 @@
           window.location.replace(RoleLanding.landingPageForRole(cachedRole));
           return;
         }
-        if (window.ConsentManager && !(window.RoleLanding && RoleLanding.isVoucherOnlyRole(cachedRole))) {
+        if (window.RoleLanding && RoleLanding.resolveLandingPage) {
+          const landing = await RoleLanding.resolveLandingPage(user);
+          if (landing && landing !== 'home.html' && landing !== 'login.html') {
+            window.location.replace(landing);
+            return;
+          }
+        }
+        if (window.ConsentManager && !(window.RoleLanding && RoleLanding.isVoucherOnlyRole(
+          window.RoleLanding.cachedRole() || cachedRole
+        ))) {
           const consentCheck = await ConsentManager.checkProviderConsent(user.uid);
           const uncertainConsentState = !!(consentCheck && consentCheck.uncertain);
           if (!uncertainConsentState && (!consentCheck.hasConsent || consentCheck.needsReconsent)) {
@@ -898,7 +907,7 @@
         }
 
         pageInitialized = true;
-        loadUserData();
+        await loadUserData();
         applyHomeLanguage(currentLanguage);
       } catch (error) {
         console.error('Error initializing home page:', error);
@@ -908,7 +917,7 @@
             : 'Could not finish loading Home. Tap Retry.'
         );
       } finally {
-        setHomeInteractionEnabled(true);
+        if (pageInitialized) setHomeInteractionEnabled(true);
       }
     }
 
@@ -918,21 +927,20 @@
         window.location.replace(RoleLanding.landingPageForRole(cachedRole));
         return;
       }
-      document.body.classList.add('auth-verified');
-      setHomeInteractionEnabled(true);
       hideHomeInitBanner();
       navigationInProgress = false;
+      if (!pageInitialized) {
+        waitForAuthAndLoad();
+        return;
+      }
+      document.body.classList.add('auth-verified');
+      setHomeInteractionEnabled(true);
 
       const user = (window.resolvePilotAuthUser && firebase.auth)
         ? window.resolvePilotAuthUser(firebase.auth().currentUser)
         : (firebase.auth && firebase.auth().currentUser);
       const resolved = user || getPilotCachedUser();
-
-      if (!pageInitialized && resolved) {
-        initializePage(resolved);
-      } else if (!pageInitialized) {
-        waitForAuthAndLoad();
-      } else if (resolved) {
+      if (resolved) {
         loadUserData();
         loadPendingTransferCount();
         refreshHomeFollowUpBadges();
@@ -1090,10 +1098,18 @@
             refreshHomeFollowUpBadges();
           }, 500);
         } else {
+          if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(RoleLanding.cachedRole())) {
+            window.location.replace(RoleLanding.cachedLandingPage());
+            return;
+          }
           document.body.classList.add('auth-verified');
         }
       } catch (error) {
         console.warn('Error loading user data:', error);
+        if (window.RoleLanding && RoleLanding.isVoucherOnlyRole(RoleLanding.cachedRole())) {
+          window.location.replace(RoleLanding.cachedLandingPage());
+          return;
+        }
         document.body.classList.add('auth-verified');
         // Still show the page even if user data fails
         document.getElementById("userEmail").textContent = currentUser.email || 'User';
