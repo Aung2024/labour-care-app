@@ -1718,6 +1718,7 @@
             updates.paidNameSnapshot = typeof submission.poName === 'string' ? submission.poName.trim().slice(0, 160) : '';
             updates.paidDesignationSnapshot = typeof submission.poDesignation === 'string' ?
               submission.poDesignation.trim().slice(0, 160) : '';
+            updates.paymentProofAttached = submission.paymentProofAttached === true;
             updates.paymentAudit = { action: 'paid', actorId: context.user.uid, at: now };
           }
           transaction.update(voucherRef, updates);
@@ -1869,6 +1870,9 @@
     if (Object.prototype.hasOwnProperty.call(data, 'poSignature')) {
       record.poSignature = clampImage(data.poSignature || '', 'Project Account signature');
     }
+    if (Object.prototype.hasOwnProperty.call(data, 'paymentProofImage')) {
+      record.paymentProofImage = clampImage(data.paymentProofImage || '', 'Payment transfer proof');
+    }
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId)
       .collection('artifacts').doc('signatures').set(record, { merge: true })
       .then(function () { return getVoucherSignatures(voucherId); });
@@ -1881,7 +1885,7 @@
       .collection('artifacts').doc('signatures').get()
       .then(function (snapshot) {
         return snapshot.exists ? snapshot.data() : {
-          clientSignature: '', cashierSignature: '', labSeal: '', poSignature: ''
+          clientSignature: '', cashierSignature: '', labSeal: '', poSignature: '', paymentProofImage: ''
         };
       });
   }

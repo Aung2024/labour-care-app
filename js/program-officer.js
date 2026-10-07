@@ -10,6 +10,7 @@
     selectedCodes: {},
     dashItems: [],
     payCodes: [],
+    payProofDataUrl: '',
     dashStatusFilter: null,
     poSettings: null,
     poPad: null,
@@ -801,7 +802,11 @@
           '<td>' + escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td>' +
           '<td>' + escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td>' +
           '<td>' + formatMoney(amount) + '</td>' +
-          '<td>' + statusBadge(row.status) + '</td>' +
+          '<td>' + statusBadge(row.status) +
+          (row.status === 'paid' && row.paymentProofAttached
+            ? '<span class="po-proof-chip">Proof</span>'
+            : '') +
+          '</td>' +
           '<td><button type="button" class="btn btn-outline-primary btn-sm" data-preview="' +
           escapeHtml(code) + '">Preview</button></td></tr>';
       }).join('') + '</tbody></table>';
@@ -869,7 +874,8 @@
         ),
         paidDesignation: voucher.paidDesignationSnapshot || voucher.poDesignationSnapshot ||
           (settings && settings.designation) || ''
-      } : {}
+      } : {},
+      paymentProofImage: (signatures && signatures.paymentProofImage) || ''
     };
   }
 
@@ -898,6 +904,11 @@
     mounts.forEach(function (item) {
       body.appendChild(item.wrap);
       window.VoucherInvoice.render(item.mount, window.VoucherInvoice.modelFromVoucher(item.voucher, item.extras));
+      if (item.extras && item.extras.paymentProofImage && window.VoucherInvoice.renderPaymentProof) {
+        var proof = document.createElement('div');
+        window.VoucherInvoice.renderPaymentProof(proof, item.extras.paymentProofImage);
+        item.wrap.insertBefore(proof, item.mount);
+      }
     });
   }
 
@@ -910,8 +921,46 @@
   function closePayConfirm() {
     byId('payConfirmModal').hidden = true;
     state.payCodes = [];
+    state.payProofDataUrl = '';
     if (byId('payConfirmQrHost')) byId('payConfirmQrHost').innerHTML = '';
+    if (byId('payProofInput')) byId('payProofInput').value = '';
+    renderPayProofPreview('');
     if (byId('previewModal').hidden) document.body.classList.remove('po-modal-open');
+  }
+
+  function renderPayProofPreview(dataUrl) {
+    var preview = byId('payProofPreview');
+    var clearBtn = byId('payProofClearBtn');
+    if (!preview) return;
+    if (dataUrl) {
+      preview.src = dataUrl;
+      preview.classList.remove('d-none');
+      if (clearBtn) clearBtn.classList.remove('d-none');
+      return;
+    }
+    preview.removeAttribute('src');
+    preview.classList.add('d-none');
+    if (clearBtn) clearBtn.classList.add('d-none');
+  }
+
+  function assertPayProofFile(file) {
+    if (!file) return;
+    var type = String(file.type || '').toLowerCase();
+    if (type !== 'image/png' && type !== 'image/jpeg' && type !== 'image/jpg') {
+      throw new Error('Payment proof must be a PNG or JPG image.');
+    }
+  }
+
+  async function handlePayProofFile(file) {
+    if (!file) {
+      state.payProofDataUrl = '';
+      renderPayProofPreview('');
+      return;
+    }
+    assertPayProofFile(file);
+    var dataUrl = await window.VoucherInvoice.fileToDataUrl(file);
+    state.payProofDataUrl = await window.VoucherInvoice.compressImage(dataUrl, 720, 1280, 0.78);
+    renderPayProofPreview(state.payProofDataUrl);
   }
 
   async function renderPayConfirmQrs(rows) {
@@ -973,6 +1022,9 @@
       client += shares.clientMinor;
     });
     state.payCodes = verified.map(function (row) { return row.code || row.id; });
+    state.payProofDataUrl = '';
+    if (byId('payProofInput')) byId('payProofInput').value = '';
+    renderPayProofPreview('');
     byId('payConfirmCount').textContent = String(state.payCodes.length);
     byId('payConfirmProject').textContent = formatMoney(project / 100);
     byId('payConfirmClient').textContent = formatMoney(client / 100);
@@ -1020,10 +1072,14 @@
       throw new Error('Enter a reject reason.');
     }
     for (var index = 0; index < list.length; index += 1) {
+      if (action === 'pay' && state.payProofDataUrl) {
+        await service().saveVoucherSignatures(list[index], { paymentProofImage: state.payProofDataUrl });
+      }
       await service().setVoucherReviewStatus(list[index], action, {
         poName: officerDisplayName((state.poSettings && state.poSettings.name) || byId('poName').value),
         poDesignation: (state.poSettings && state.poSettings.designation) || byId('poDesignation').value,
-        rejectReason: byId('rejectReason').value.trim()
+        rejectReason: byId('rejectReason').value.trim(),
+        paymentProofAttached: action === 'pay' && !!state.payProofDataUrl
       });
       if (action === 'verify' && state.poSettings && state.poSettings.signature) {
         await service().saveVoucherSignatures(list[index], { poSignature: state.poSettings.signature });
@@ -1382,6 +1438,24 @@
     document.querySelectorAll('[data-close-pay-confirm]').forEach(function (el) {
       el.addEventListener('click', closePayConfirm);
     });
+    if (byId('payProofInput')) {
+      byId('payProofInput').addEventListener('change', function () {
+        var file = byId('payProofInput').files[0];
+        handlePayProofFile(file).catch(function (error) {
+          byId('payProofInput').value = '';
+          state.payProofDataUrl = '';
+          renderPayProofPreview('');
+          showMessage(error.message || 'Could not read that payment proof.', 'error');
+        });
+      });
+    }
+    if (byId('payProofClearBtn')) {
+      byId('payProofClearBtn').addEventListener('click', function () {
+        if (byId('payProofInput')) byId('payProofInput').value = '';
+        state.payProofDataUrl = '';
+        renderPayProofPreview('');
+      });
+    }
     byId('printOneBtn').addEventListener('click', function () {
       printSelectedVouchers(selectedVerifyCodes()).catch(function (error) { showMessage(error.message, 'error'); });
     });

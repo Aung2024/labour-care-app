@@ -71,6 +71,21 @@
       '</div>';
   }
 
+  function renderPaymentProof(container, src) {
+    if (!container) return container;
+    var image = text(src);
+    if (!image || image.indexOf('data:image/') !== 0) {
+      container.innerHTML = '';
+      return container;
+    }
+    container.innerHTML =
+      '<section class="payment-proof">' +
+        '<h2>Payment transfer proof</h2>' +
+        '<img src="' + escapeHtml(image) + '" alt="Payment transfer proof">' +
+      '</section>';
+    return container;
+  }
+
   function voucherScopeNote() {
     return 'MCGL စီမံကိန်း၏ စံသတ်မှတ်ချက်များနှင့် ကိုက်ညီမှုရှိသော ကိုယ်ဝန်ဆောင်များအတွက် စရိတ်မျှပေးခံစနစ်ဖြင့် ဓာတ်ခွဲစမ်းသပ်မှုများအတွက်သာဖြစ်သည်။';
   }
@@ -524,6 +539,7 @@
 
   root.VoucherInvoice = Object.freeze({
     render: render,
+    renderPaymentProof: renderPaymentProof,
     waitForReady: waitForReady,
     downloadPng: downloadPng,
     printA4: printA4,

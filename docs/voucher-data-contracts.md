@@ -23,7 +23,8 @@ Issued vouchers snapshot `lineItems` and `totals` so later price edits do not re
 - `voucher_account_quotas/{midwifeId}` — Midwife-readable allocated and remaining voucher counts. No budget fields.
 - `voucher_account_budgets/{midwifeId}` — Program Officer-only financial amount and note.
 - `vouchers/{shortCode}` — issued invoice snapshot, selected tests, line items, totals, and status audit.
-- `vouchers/{shortCode}/artifacts/signatures` — compressed client, cashier, seal, and Program Officer images.
+- `vouchers/{shortCode}/artifacts/signatures` — compressed client, cashier, seal, Program Officer, and payment-transfer proof images.
+- Paid vouchers may also set `paymentProofAttached` so Lab lists can show that a KPay/transfer screenshot exists without loading the image.
 - `lab_settings/{labId}` — lab seal and up to three cashier names/signatures.
 - `po_settings/{uid}` — Program Officer name, designation, and signature.
 - `voucher_period_stats/{scope_period}` — monthly counts and project-amount totals for dashboards. Writes must include `lastVoucherId` and `lastStatus` and happen in the same transaction as that voucher’s status change.

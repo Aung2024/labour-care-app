@@ -847,7 +847,11 @@
           return '<tr class="lab-history-row" data-code="' + escapeHtml(code) +
             '" tabindex="0" role="link" aria-label="Open voucher ' + escapeHtml(code) + '">' +
             '<td>' + escapeHtml(code) + '</td>' +
-            '<td>' + escapeHtml(item.status || '') + '</td>' +
+            '<td>' + escapeHtml(item.status || '') +
+            (item.status === 'paid' && item.paymentProofAttached
+              ? ' <span class="lab-proof-chip">Proof</span>'
+              : '') +
+            '</td>' +
             '<td>' + escapeHtml(visitKind) + '</td>' +
             '<td>' + escapeHtml(item.issuerNameSnapshot || '') + '</td>' +
             '<td>' + escapeHtml(item.patientNameSnapshot || '') + '</td>' +
@@ -921,6 +925,11 @@
       var model = window.VoucherInvoice.modelFromVoucher(voucher, extrasFromStoredVoucher(voucher, signatures));
       model.date = window.VoucherInvoice.formatDate(voucher.redeemedAt || voucher.issuedAt);
       window.VoucherInvoice.render(mount, model);
+      if (signatures.paymentProofImage && window.VoucherInvoice.renderPaymentProof) {
+        var proof = document.createElement('div');
+        window.VoucherInvoice.renderPaymentProof(proof, signatures.paymentProofImage);
+        body.insertBefore(proof, mount);
+      }
     } catch (error) {
       body.innerHTML = '<p class="text-muted mb-0">' + escapeHtml(error.message || 'Could not open that voucher.') + '</p>';
     }

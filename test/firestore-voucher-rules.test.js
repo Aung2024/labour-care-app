@@ -468,12 +468,31 @@ test('Program Officer can verify reject and pay redeemed vouchers', async () => 
     poDesignationSnapshot: 'PO',
     verificationAudit: { action: 'verified', actorId: 'po', at: serverTimestamp() }
   }));
+  await assertSucceeds(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}/artifacts/signatures`), {
+    clientSignature: 'data:image/png;base64,aaaaaaaaaaaaaaaaaaaa',
+    cashierSignature: '',
+    labSeal: '',
+    poSignature: '',
+    paymentProofImage: 'data:image/jpeg;base64,cccccccccccccccccccc',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'po'
+  }));
+  await assertFails(updateDoc(doc(labDb, `vouchers/${VOUCHER_ID}/artifacts/signatures`), {
+    clientSignature: 'data:image/png;base64,aaaaaaaaaaaaaaaaaaaa',
+    cashierSignature: '',
+    labSeal: '',
+    poSignature: '',
+    paymentProofImage: 'data:image/jpeg;base64,labcannotwritethisxx',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'lab1'
+  }));
   await assertSucceeds(updateDoc(doc(poDb, `vouchers/${VOUCHER_ID}`), {
     status: 'paid',
     paidAt: serverTimestamp(),
     paidBy: 'po',
     paidNameSnapshot: 'Program Officer',
     paidDesignationSnapshot: 'PO',
+    paymentProofAttached: true,
     paymentAudit: { action: 'paid', actorId: 'po', at: serverTimestamp() }
   }));
 });

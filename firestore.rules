@@ -876,8 +876,13 @@ service cloud.firestore {
         && request.resource.data.status == "paid"
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status", "paidAt", "paidBy", "paymentAudit",
-          "paidNameSnapshot", "paidDesignationSnapshot"
-        ]);
+          "paidNameSnapshot", "paidDesignationSnapshot",
+          "paymentProofAttached"
+        ])
+        && (
+          !("paymentProofAttached" in request.resource.data)
+          || request.resource.data.paymentProofAttached is bool
+        );
       allow update: if isLab()
         && resource.data.status == "issued"
         && resource.data.expiresAt > request.time
@@ -920,9 +925,17 @@ service cloud.firestore {
           );
         allow create, update: if artifactId == "signatures"
           && request.resource.data.keys().hasOnly([
-            "clientSignature", "cashierSignature", "labSeal", "poSignature", "updatedAt", "updatedBy"
+            "clientSignature", "cashierSignature", "labSeal", "poSignature",
+            "paymentProofImage", "updatedAt", "updatedBy"
           ])
           && request.resource.data.updatedBy == request.auth.uid
+          && (
+            !("paymentProofImage" in request.resource.data)
+            || (
+              request.resource.data.paymentProofImage is string
+              && request.resource.data.paymentProofImage.size() <= 180000
+            )
+          )
           && (
             (
               isLab()
@@ -930,6 +943,8 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/vouchers/$(voucherId)).data.status == "issued"
               && request.resource.data.get("poSignature", "")
                 == (resource == null ? "" : resource.data.get("poSignature", ""))
+              && request.resource.data.get("paymentProofImage", "")
+                == (resource == null ? "" : resource.data.get("paymentProofImage", ""))
             )
             || (
               isVoucherAdministrator()
