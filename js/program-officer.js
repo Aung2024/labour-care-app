@@ -779,7 +779,15 @@
       query.endDate = range.endDate;
     }
     byId('verifyTable').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
-    var result = await service().queryVouchersPaged(query);
+    var result;
+    try {
+      result = await service().queryVouchersPaged(query);
+    } catch (error) {
+      state.queue = [];
+      byId('verifyTable').innerHTML = '<div class="po-empty">' +
+        escapeHtml(error.message || 'Could not load vouchers. Refresh and try again.') + '</div>';
+      throw error;
+    }
     state.queue = result.items || [];
     Object.keys(state.selectedCodes).forEach(function (code) {
       if (!state.queue.some(function (row) { return (row.code || row.id) === code; })) {

@@ -40,7 +40,7 @@
     if (typeof window.getFirebaseAuthErrorMessage === 'function') {
       var mapped = window.getFirebaseAuthErrorMessage(error);
       if (mapped && /too many requests|busy/i.test(mapped)) {
-        return 'Server was busy generating the QR. Wait a few seconds and tap Generate again.';
+        return 'Firestore is still rate-limiting writes. Wait one minute, then tap Generate once.';
       }
       if (mapped) return mapped;
     }
@@ -335,8 +335,6 @@
       button.disabled = true;
       setStatus('Generating QR securely…', 'info');
       var address = el('patientAddress').value.trim();
-      var storedAddress = patientAddress(state.patient || {}).trim();
-      if (address && address !== storedAddress) await savePatientAddress(address);
       var result = await service().issueVoucher({
         patientId: state.patientId,
         labId: state.labId,

@@ -2065,7 +2065,9 @@
           status: status,
           dateField: dateField,
           pageSize: pageSize
-        }), pageSize);
+        }), pageSize).catch(function () {
+          return { items: [] };
+        });
       })).then(function (pages) {
         var byId = {};
         pages.forEach(function (page) {

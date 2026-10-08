@@ -753,15 +753,18 @@ service cloud.firestore {
     match /vouchers/{voucherId} {
       // resource == null lets a Midwife check that a new code is unused
       // before creating it in the same transaction.
-      allow get: if (isMidwife() && (resource == null || resource.data.midwifeId == request.auth.uid))
+      allow get: if isVoucherAdministrator()
         || isLab()
-        || isVoucherAdministrator();
-      allow list: if (isMidwife() && resource.data.midwifeId == request.auth.uid)
-        || isVoucherAdministrator()
+        || (isMidwife() && (resource == null || resource.data.midwifeId == request.auth.uid));
+      // Admin/Lab unconstrained branches must stay first. If a resource filter
+      // leads, Firestore can treat the whole list query as midwife-scoped and
+      // return no Project Account or Lab rows.
+      allow list: if isVoucherAdministrator()
         || (isLab() && (
           resource.data.redeemedBy == request.auth.uid
           || resource.data.labId == request.auth.uid
-        ));
+        ))
+        || (isMidwife() && resource.data.midwifeId == request.auth.uid);
       allow create: if isMidwife()
         && isOpaqueVoucherId(voucherId)
         && request.resource.data.keys().hasOnly([
