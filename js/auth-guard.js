@@ -431,7 +431,7 @@ function getFirebaseAuthErrorMessage(error, language) {
   if (code === 'resource-exhausted' || /429/.test(message) || /too many requests/i.test(message)) {
     return language === 'mm'
       ? 'Server မအားပါးပါ။ စက္ကန့် 몇 ခု စောင့်ပြီး Save ကို ထပ်နှိပ်ပါ။'
-      : 'Server was busy (too many requests). Wait a few seconds and tap Save again.';
+      : 'Server was busy (too many requests). Wait a few seconds and try again.';
   }
   return message;
 }

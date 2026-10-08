@@ -36,6 +36,16 @@
     box.textContent = message;
     box.className = 'status-box ' + (kind || 'info');
   }
+  function friendlyError(error, fallback) {
+    if (typeof window.getFirebaseAuthErrorMessage === 'function') {
+      var mapped = window.getFirebaseAuthErrorMessage(error);
+      if (mapped && /too many requests|busy/i.test(mapped)) {
+        return 'Server was busy generating the QR. Wait a few seconds and tap Generate again.';
+      }
+      if (mapped) return mapped;
+    }
+    return (error && error.message) || fallback || 'Unable to generate QR.';
+  }
   function assertOnline() {
     if (navigator.onLine === false) throw new Error('QR generation is online-only. Please reconnect and try again.');
   }
@@ -107,13 +117,17 @@
       return;
     }
     chip.classList.remove('is-empty');
-    var remainingBudget = state.budgetSummary
-      ? formatMoney((state.budgetSummary.remainingBudgetMinor || 0) / 100)
-      : '—';
+    var budgetHtml = '';
+    if (state.budgetSummary && state.budgetSummary.remainingBudgetMinor != null) {
+      budgetHtml = '<span class="quota-chip__budget">Remaining budget ' +
+        escapeHtml(formatMoney((state.budgetSummary.remainingBudgetMinor || 0) / 100)) + '</span>';
+    } else if (state.budgetSummary && state.budgetSummary.budgetTotalMinor) {
+      budgetHtml = '<span class="quota-chip__budget">Budget ' +
+        escapeHtml(formatMoney(state.budgetSummary.budgetTotalMinor / 100)) + '</span>';
+    }
     chip.innerHTML =
       '<span>Allocation ' + Number(state.quota.remainingUnits || 0) + ' / ' +
-      Number(state.quota.allocatedUnits || 0) + '</span>' +
-      '<span class="quota-chip__budget">Remaining budget ' + escapeHtml(remainingBudget) + '</span>';
+      Number(state.quota.allocatedUnits || 0) + '</span>' + budgetHtml;
     var generate = el('generateButton');
     if (generate && !generate.classList.contains('d-none')) {
       generate.disabled = Number(state.quota.remainingUnits || 0) < 1;
@@ -121,7 +135,7 @@
   }
 
   async function loadQuota() {
-    state.budgetSummary = await service().getMidwifeBudgetSummary(state.user.uid);
+    state.budgetSummary = await service().getMidwifeBudgetSummary(state.user.uid, { skipUsage: true });
     state.quota = state.budgetSummary && state.budgetSummary.quota
       ? state.budgetSummary.quota
       : await service().getAccountQuota(state.user.uid);
@@ -154,12 +168,17 @@
   }
 
   async function loadAssignedLab() {
-    var rows = await service().listLabs();
-    state.labs = rows || [];
-    renderAssignedLab();
     if (!state.quota || !state.quota.labId) {
+      state.labs = [];
+      renderAssignedLab();
       throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
     }
+    state.labs = [{
+      id: state.quota.labId,
+      name: state.quota.labName || 'Lab',
+      address: ''
+    }];
+    renderAssignedLab();
   }
 
   async function loadTestCatalog() {
@@ -334,7 +353,7 @@
       setStatus('QR generated successfully. Use Back to ANC when finished.', 'success');
     } catch (error) {
       console.error('[PromoVoucher]', error);
-      setStatus(error.message || 'Unable to generate QR.', 'error');
+      setStatus(friendlyError(error, 'Unable to generate QR.'), 'error');
       setPostGenerateMode(false);
     }
   }
@@ -381,7 +400,11 @@
     }
   }
 
+  var initializeState = { startedFor: '', done: false };
+
   async function initialize(user) {
+    if (!user || initializeState.done || initializeState.startedFor === user.uid) return;
+    initializeState.startedFor = user.uid;
     try {
       assertOnline();
       state.user = user;
@@ -417,10 +440,12 @@
       await loadTestCatalog();
       el('voucherForm').classList.remove('d-none');
       setPostGenerateMode(false);
+      initializeState.done = true;
       setStatus('Select tests for the assigned laboratory, then generate the QR.', 'success');
     } catch (error) {
+      initializeState.startedFor = '';
       console.error('[PromoVoucher]', error);
-      setStatus(error.message || 'Unable to load QR page.', 'error');
+      setStatus(friendlyError(error, 'Unable to load QR page.'), 'error');
     }
   }
 

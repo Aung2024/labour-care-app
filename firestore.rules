@@ -21,51 +21,45 @@ service cloud.firestore {
         );
     }
 
-    function hasRole(role) {
+    function signedInReady() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && accountReady(currentUser())
-        && currentUser().role == role;
+        && accountReady(currentUser());
+    }
+
+    function hasRole(role) {
+      return signedInReady() && currentUser().role == role;
     }
 
     function isSuperAdmin() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && accountReady(currentUser())
-        && currentUser().role in ["Super Admin", "super admin"];
+      return signedInReady() && currentUser().role in ["Super Admin", "super admin"];
     }
 
     function isProgramOfficer() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && accountReady(currentUser())
-        && currentUser().role in [
-          "Program Officer", "program officer", "Programme Officer", "programme officer"
-        ];
+      return signedInReady() && currentUser().role in [
+        "Program Officer", "program officer", "Programme Officer", "programme officer"
+      ];
     }
 
     function isVoucherAdministrator() {
-      return isProgramOfficer() || isSuperAdmin();
+      return signedInReady() && currentUser().role in [
+        "Program Officer", "program officer", "Programme Officer", "programme officer",
+        "Super Admin", "super admin"
+      ];
     }
 
     function isLab() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && accountReady(currentUser())
-        && currentUser().role in ["Lab", "lab", "Laboratory", "laboratory"];
+      return signedInReady() && currentUser().role in ["Lab", "lab", "Laboratory", "laboratory"];
     }
 
     function isMidwife() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && accountReady(currentUser())
-        && (
-          currentUser().role in ["Midwife", "midwife"]
-          // Legacy clinical accounts predate the role field. The existing app
-          // treats an absent/blank role as Midwife for backward compatibility.
-          || !("role" in currentUser())
-          || currentUser().role == ""
-        );
+      return signedInReady() && (
+        currentUser().role in ["Midwife", "midwife"]
+        // Legacy clinical accounts predate the role field. The existing app
+        // treats an absent/blank role as Midwife for backward compatibility.
+        || !("role" in currentUser())
+        || currentUser().role == ""
+      );
     }
 
     function isClinicalUser() {
@@ -765,11 +759,11 @@ service cloud.firestore {
     match /vouchers/{voucherId} {
       // resource == null lets a Midwife check that a new code is unused
       // before creating it in the same transaction.
-      allow get: if isVoucherAdministrator()
+      allow get: if (isMidwife() && (resource == null || resource.data.midwifeId == request.auth.uid))
         || isLab()
-        || (isMidwife() && (resource == null || resource.data.midwifeId == request.auth.uid));
-      allow list: if isVoucherAdministrator()
-        || (isMidwife() && resource.data.midwifeId == request.auth.uid)
+        || isVoucherAdministrator();
+      allow list: if (isMidwife() && resource.data.midwifeId == request.auth.uid)
+        || isVoucherAdministrator()
         || (isLab() && (
           resource.data.redeemedBy == request.auth.uid
           || resource.data.labId == request.auth.uid
@@ -802,7 +796,11 @@ service cloud.firestore {
         )
         && request.resource.data.patientNameSnapshot ==
           get(/databases/$(database)/documents/patients/$(request.resource.data.patientId)).data.name
-        && request.resource.data.priceSheetId == assignedPriceSheetId(request.resource.data.labId)
+        && (
+          request.resource.data.priceSheetId ==
+            get(/databases/$(database)/documents/voucher_account_quotas/$(request.auth.uid)).data.priceSheetId
+          || request.resource.data.priceSheetId == assignedPriceSheetId(request.resource.data.labId)
+        )
         && request.resource.data.selectedServiceIds is list
         && request.resource.data.selectedServiceIds.size() > 0
         && request.resource.data.selectedServiceIds.size() <= 30
@@ -1006,10 +1004,10 @@ service cloud.firestore {
     match /voucher_period_stats/{statId} {
       // Lab/Midwife redeem and issue transactions must get() global and
       // cross-scope stats docs that already exist; list stays role-scoped.
-      allow get: if isVoucherAdministrator()
-        || isLab()
+      allow get: if resource == null
         || isMidwife()
-        || (resource == null);
+        || isLab()
+        || isVoucherAdministrator();
       allow list: if isVoucherAdministrator()
         || (isLab() && resource.data.scope == "lab" && resource.data.labId == request.auth.uid)
         || (isMidwife() && resource.data.scope == "midwife" && resource.data.midwifeId == request.auth.uid);

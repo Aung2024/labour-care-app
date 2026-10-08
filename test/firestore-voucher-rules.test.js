@@ -18,6 +18,7 @@ const {
   query,
   runTransaction,
   serverTimestamp,
+  deleteDoc,
   setDoc,
   updateDoc,
   where
@@ -367,6 +368,15 @@ test('voucher issuance and quota decrement must be atomic', async () => {
     code: 'CCCCCCCCCCCCCCCCCCCCCC',
     status: 'issued'
   }));
+});
+
+test('Midwife can issue from the allocated price sheet without assignment docs', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await deleteDoc(doc(db, 'voucher_price_assignments/lab1'));
+    await deleteDoc(doc(db, 'voucher_price_assignments/global'));
+  });
+  await assertSucceeds(issueVoucher());
 });
 
 async function writeClientSignature(uid) {

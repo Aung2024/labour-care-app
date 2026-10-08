@@ -60,6 +60,27 @@
     return value;
   }
 
+  function isResourceExhausted(error) {
+    var code = String((error && error.code) || '');
+    var message = String((error && error.message) || error || '');
+    return code === 'resource-exhausted' || /status 429/.test(message) || /too many requests/i.test(message);
+  }
+
+  function waitMs(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function withBusyRetry(work, attempts) {
+    var max = attempts || 3;
+    var run = function (n) {
+      return Promise.resolve().then(work).catch(function (error) {
+        if (!isResourceExhausted(error) || n >= max) throw error;
+        return waitMs(400 * n * n).then(function () { return run(n + 1); });
+      });
+    };
+    return run(1);
+  }
+
   function validateCurrency(value) {
     var currency = requireString(value, 'Currency', 3).toUpperCase();
     if (!CURRENCY_PATTERN.test(currency)) {
@@ -623,6 +644,15 @@
     });
   }
 
+  function publishedSheetById(sheetId) {
+    var context = firebaseContext();
+    if (!sheetId) return Promise.resolve(null);
+    return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId).get().then(function (snapshot) {
+      if (!snapshot.exists || snapshot.data().status !== 'published') return null;
+      return Object.assign({ id: snapshot.id }, snapshot.data());
+    });
+  }
+
   function getAssignedPriceSheet(labId) {
     var context = firebaseContext();
     var requestedLabId = labId || null;
@@ -634,12 +664,10 @@
       var assignment = snapshots[0].exists ? snapshots[0].data() :
         (snapshots[1].exists ? snapshots[1].data() : null);
       if (!assignment || !assignment.priceSheetId) throw new Error('No published price sheet is assigned.');
-      return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(assignment.priceSheetId).get();
-    }).then(function (snapshot) {
-      if (!snapshot.exists || snapshot.data().status !== 'published') {
-        throw new Error('The assigned price sheet is unavailable.');
-      }
-      return Object.assign({ id: snapshot.id }, snapshot.data());
+      return publishedSheetById(assignment.priceSheetId);
+    }).then(function (sheet) {
+      if (!sheet) throw new Error('The assigned price sheet is unavailable.');
+      return sheet;
     });
   }
 
@@ -766,31 +794,25 @@
   function getTestCatalog(labId) {
     var context = firebaseContext();
     var selectedLabId = requireString(labId, 'Lab ID', 128);
-    return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid).get().then(function (quotaSnapshot) {
-      if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
-        throw new Error('No voucher allocation is available for this account.');
-      }
-      var quota = quotaSnapshot.data() || {};
-      if (!quota.labId) {
-        throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
-      }
-      if (quota.labId !== selectedLabId) {
-        throw new Error('This maternity home is assigned to another laboratory.');
-      }
-      return Promise.all([
-        getAssignedPriceSheet(selectedLabId),
-        getProgramSettings()
-      ]);
-    }).then(function (results) {
-      var sheet = results[0];
-      var settings = results[1];
-      if (sheet && (sheet.projectCeilingMinor == null || sheet.projectCeilingMinor === 0) && settings.projectCeilingMinor) {
-        sheet = Object.assign({}, sheet, { projectCeilingMinor: settings.projectCeilingMinor });
-      } else if (sheet && settings.projectCeilingMinor) {
-        // Prefer live program ceiling so Configure Lab changes apply immediately.
-        sheet = Object.assign({}, sheet, { projectCeilingMinor: settings.projectCeilingMinor });
-      }
-      return catalogFromSheet(sheet);
+    return withBusyRetry(function () {
+      return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid).get().then(function (quotaSnapshot) {
+        if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
+          throw new Error('No voucher allocation is available for this account.');
+        }
+        var quota = quotaSnapshot.data() || {};
+        if (!quota.labId) {
+          throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
+        }
+        if (quota.labId !== selectedLabId) {
+          throw new Error('This maternity home is assigned to another laboratory.');
+        }
+        return publishedSheetById(quota.priceSheetId).then(function (quotaSheet) {
+          if (quotaSheet) return quotaSheet;
+          return getAssignedPriceSheet(selectedLabId);
+        }).then(function (sheet) {
+          return catalogFromSheet(sheet);
+        });
+      });
     });
   }
 
@@ -900,13 +922,17 @@
     });
   }
 
-  function getMidwifeBudgetSummary(midwifeId) {
+  function getMidwifeBudgetSummary(midwifeId, options) {
     var context = firebaseContext();
     var id = midwifeId || context.user.uid;
+    var skipUsage = !!(options && options.skipUsage);
+    var usagePromise = skipUsage
+      ? Promise.resolve({ redeemedCount: 0, redeemedProjectMinor: 0, skipped: true })
+      : summarizeMidwifeRedemptions(id);
     return Promise.all([
       context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(id).get(),
       context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).doc(id).get(),
-      summarizeMidwifeRedemptions(id)
+      usagePromise
     ]).then(function (results) {
       var quota = results[0].exists ? Object.assign({ id: results[0].id }, results[0].data()) : null;
       var budget = results[1].exists ? results[1].data() : null;
@@ -917,7 +943,7 @@
         budgetTotalMinor: totalMinor,
         redeemedCount: usage.redeemedCount,
         redeemedProjectMinor: usage.redeemedProjectMinor,
-        remainingBudgetMinor: Math.max(0, totalMinor - usage.redeemedProjectMinor),
+        remainingBudgetMinor: usage.skipped ? null : Math.max(0, totalMinor - usage.redeemedProjectMinor),
         currency: (budget && budget.currency) || 'MMK'
       };
     });
@@ -1128,23 +1154,19 @@
     var labRef = context.db.collection('users').doc(labId);
     var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
     var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
-    var settingsRef = context.db.collection(COLLECTIONS.PROGRAM_SETTINGS).doc('global');
 
-    return context.db.runTransaction(function (transaction) {
+    var runIssue = function () {
+      return context.db.runTransaction(function (transaction) {
       return Promise.all([
         transaction.get(quotaRef),
         transaction.get(patientRef),
         transaction.get(labRef),
-        transaction.get(labAssignmentRef),
-        transaction.get(globalAssignmentRef),
-        transaction.get(voucherRef),
-        transaction.get(settingsRef)
+        transaction.get(voucherRef)
       ]).then(function (snapshots) {
-        if (snapshots[5].exists) throw new Error('Voucher code collision.');
+        if (snapshots[3].exists) throw new Error('Voucher code collision.');
         var quotaSnapshot = snapshots[0];
         var patientSnapshot = snapshots[1];
         var labSnapshot = snapshots[2];
-        var programSettings = snapshots[6].exists ? snapshots[6].data() : { projectCeilingMinor: 0 };
         if (!quotaSnapshot.exists || !patientSnapshot.exists) throw new Error('Quota or patient was not found.');
         if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
           throw new Error('Select an active laboratory.');
@@ -1161,8 +1183,21 @@
         if (quota.labId !== labId) {
           throw new Error('This maternity home is assigned to another laboratory.');
         }
-        var assignment = snapshots[3].exists ? snapshots[3].data() :
-          (snapshots[4].exists ? snapshots[4].data() : null);
+        var quotaSheetId = typeof quota.priceSheetId === 'string' ? quota.priceSheetId : '';
+        var assignmentPromise = quotaSheetId
+          ? Promise.resolve({ priceSheetId: quotaSheetId })
+          : Promise.all([
+              transaction.get(labAssignmentRef),
+              transaction.get(globalAssignmentRef)
+            ]).then(function (assignmentSnaps) {
+              var row = assignmentSnaps[0].exists ? assignmentSnaps[0].data() :
+                (assignmentSnaps[1].exists ? assignmentSnaps[1].data() : null);
+              if (!row || !row.priceSheetId) {
+                throw new Error('No published price sheet is available for this laboratory.');
+              }
+              return row;
+            });
+        return assignmentPromise.then(function (assignment) {
         if (!assignment || !assignment.priceSheetId) {
           throw new Error('No published price sheet is available for this laboratory.');
         }
@@ -1181,7 +1216,7 @@
             if (!service) throw new Error('A selected service is not on the assigned price sheet.');
             return pricingApi().lineItemFromSheetService(service, percents);
           });
-          var ceilingMinor = resolveProjectCeilingMinor(sheet, programSettings);
+          var ceilingMinor = resolveProjectCeilingMinor(sheet, null);
           var capped = withProjectCeiling(rawLineItems, ceilingMinor);
           var lineItems = capped.lineItems;
           var totals = capped.totals;
@@ -1249,8 +1284,12 @@
             return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId), lineItems: lineItems, totals: totals };
           });
         });
+        });
       });
-    }).catch(function (error) {
+    });
+    };
+
+    return withBusyRetry(runIssue, 3).catch(function (error) {
       if (String(error && error.message) === 'Voucher code collision' && (attempt || 0) < 5) {
         return issueMultiServiceVoucher(input, (attempt || 0) + 1);
       }

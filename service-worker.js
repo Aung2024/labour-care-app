@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v307-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v308-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -171,6 +171,14 @@ function shouldCacheRequest(requestUrl) {
   return true;
 }
 
+function offlineFallbackResponse() {
+  return new Response('Offline', {
+    status: 503,
+    statusText: 'Service Unavailable',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  });
+}
+
 // Fetch event strategy:
 // - HTML/document navigation: network first, fallback to cache.
 // - Static assets: cache first, then network.
@@ -182,7 +190,7 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(fetch(event.request).catch(function () { return offlineFallbackResponse(); }));
     return;
   }
 
@@ -219,7 +227,11 @@ self.addEventListener('fetch', (event) => {
           if (homeFallback && (!preferredHome || preferredHome === 'home.html' || preferredHome === './home.html')) {
             return homeFallback;
           }
-          return caches.match('./login.html') || caches.match('./index.html');
+          const loginFallback = await caches.match('./login.html');
+          if (loginFallback) return loginFallback;
+          const indexFallback = await caches.match('./index.html');
+          if (indexFallback) return indexFallback;
+          return offlineFallbackResponse();
         })
     );
     return;
@@ -243,7 +255,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch((error) => {
           console.error('[Service Worker] Asset fetch failed:', error);
-          return caches.match(event.request);
+          return caches.match(event.request).then((cached) => cached || offlineFallbackResponse());
         });
     })
   );
