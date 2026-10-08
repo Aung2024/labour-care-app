@@ -623,13 +623,23 @@
     });
   }
 
+  var publishedSheetCache = {};
+
   function publishedSheetById(sheetId) {
     var context = firebaseContext();
     if (!sheetId) return Promise.resolve(null);
+    if (publishedSheetCache[sheetId]) return Promise.resolve(publishedSheetCache[sheetId]);
     return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId).get().then(function (snapshot) {
       if (!snapshot.exists || snapshot.data().status !== 'published') return null;
-      return Object.assign({ id: snapshot.id }, snapshot.data());
+      var sheet = Object.assign({ id: snapshot.id }, snapshot.data());
+      publishedSheetCache[sheetId] = sheet;
+      return sheet;
     });
+  }
+
+  function rowHasStoredTotals(row) {
+    return !!(row && Array.isArray(row.lineItems) && row.lineItems.length &&
+      row.totals && row.totals.projectContributionMinor != null);
   }
 
   function getAssignedPriceSheet(labId) {
@@ -662,8 +672,17 @@
 
   function listUsersByRoles(roles) {
     var context = firebaseContext();
-    return Promise.all((roles || []).map(function (role) {
-      return context.db.collection('users').where('role', '==', role).get();
+    var unique = [];
+    (roles || []).forEach(function (role) {
+      if (role && unique.indexOf(role) === -1) unique.push(role);
+    });
+    if (!unique.length) return Promise.resolve([]);
+    var batches = [];
+    for (var index = 0; index < unique.length; index += 10) {
+      batches.push(unique.slice(index, index + 10));
+    }
+    return Promise.all(batches.map(function (batch) {
+      return context.db.collection('users').where('role', 'in', batch).get();
     })).then(function (snapshots) {
       var seen = {};
       var rows = [];
@@ -852,27 +871,55 @@
     });
   }
 
+  function usageFromPeriodStats(statsRow) {
+    var counts = (statsRow && statsRow.counts) || {};
+    return {
+      redeemedCount: (Number(counts.redeemed) || 0) + (Number(counts.verified) || 0) + (Number(counts.paid) || 0),
+      redeemedProjectMinor: (Number(statsRow && statsRow.projectRedeemedMinor) || 0) +
+        (Number(statsRow && statsRow.projectVerifiedMinor) || 0) +
+        (Number(statsRow && statsRow.projectPaidMinor) || 0)
+    };
+  }
+
+  function summarizeAllocationsFromPeriodStats() {
+    var context = firebaseContext();
+    return context.db.collection(COLLECTIONS.PERIOD_STATS).where('scope', '==', 'midwife').get()
+      .then(function (snapshot) {
+        var usageByMidwife = {};
+        snapshot.docs.forEach(function (doc) {
+          var row = doc.data() || {};
+          var id = row.midwifeId;
+          if (!id) return;
+          if (!usageByMidwife[id]) usageByMidwife[id] = { redeemedCount: 0, redeemedProjectMinor: 0 };
+          var usage = usageFromPeriodStats(row);
+          usageByMidwife[id].redeemedCount += usage.redeemedCount;
+          usageByMidwife[id].redeemedProjectMinor += usage.redeemedProjectMinor;
+        });
+        return usageByMidwife;
+      })
+      .catch(function () { return {}; });
+  }
+
   function getAllocations() {
     var context = firebaseContext();
     return Promise.all([
       context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).get(),
-      context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).get()
+      context.db.collection(COLLECTIONS.ACCOUNT_BUDGETS).get(),
+      summarizeAllocationsFromPeriodStats()
     ]).then(function (snapshots) {
       var budgets = {};
       snapshots[1].docs.forEach(function (doc) { budgets[doc.id] = doc.data(); });
-      var rows = snapshots[0].docs.map(function (doc) {
-        return Object.assign({ id: doc.id, budget: budgets[doc.id] || null }, doc.data());
-      });
-      return Promise.all(rows.map(function (row) {
-        return summarizeMidwifeRedemptions(row.midwifeId || row.id).then(function (usage) {
-          var budgetTotal = Number((row.budget && row.budget.totalMinor) || 0);
-          return Object.assign({}, row, {
-            redeemedCount: usage.redeemedCount,
-            redeemedProjectMinor: usage.redeemedProjectMinor,
-            remainingBudgetMinor: Math.max(0, budgetTotal - usage.redeemedProjectMinor)
-          });
+      var usageByMidwife = snapshots[2] || {};
+      return snapshots[0].docs.map(function (doc) {
+        var row = Object.assign({ id: doc.id, budget: budgets[doc.id] || null }, doc.data());
+        var usage = usageByMidwife[row.midwifeId || row.id] || { redeemedCount: 0, redeemedProjectMinor: 0 };
+        var budgetTotal = Number((row.budget && row.budget.totalMinor) || 0);
+        return Object.assign({}, row, {
+          redeemedCount: usage.redeemedCount,
+          redeemedProjectMinor: usage.redeemedProjectMinor,
+          remainingBudgetMinor: Math.max(0, budgetTotal - usage.redeemedProjectMinor)
         });
-      }));
+      });
     });
   }
 
@@ -1224,20 +1271,18 @@
     return context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId).get().then(function (voucherSnapshot) {
       if (!voucherSnapshot.exists) throw new Error('Voucher was not found.');
       var voucher = Object.assign({ id: voucherSnapshot.id }, voucherSnapshot.data());
-      var sheetPromise = voucher.priceSheetId
-        ? context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(voucher.priceSheetId).get()
-        : Promise.resolve({ exists: false, data: function () { return null; } });
-      var assignedPromise = voucher.labId
+      var sheetPromise = publishedSheetById(voucher.priceSheetId);
+      var assignedPromise = (voucher.status === 'issued' && voucher.labId)
         ? context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(voucher.labId).get()
           .then(function (assignmentSnap) {
             if (!assignmentSnap.exists || !assignmentSnap.data().priceSheetId) return null;
-            return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(assignmentSnap.data().priceSheetId).get();
+            return publishedSheetById(assignmentSnap.data().priceSheetId);
           })
           .catch(function () { return null; })
         : Promise.resolve(null);
       return Promise.all([sheetPromise, assignedPromise]).then(function (results) {
-        var issuedSheet = results[0] && results[0].exists ? results[0].data() : null;
-        var assignedSheet = results[1] && results[1].exists ? results[1].data() : null;
+        var issuedSheet = results[0] || null;
+        var assignedSheet = results[1] || null;
         var sheet = issuedSheet;
         var sheetLabTotal = function (candidate) {
           return ((candidate && candidate.services) || []).reduce(function (sum, row) {
@@ -1256,7 +1301,7 @@
         voucher.generatedByName = voucher.issuerNameSnapshot;
         voucher.labName = voucher.labNameSnapshot || '';
         voucher.qrPayload = buildQrPayload(voucherId);
-        return attachPatientVisitKinds([voucher]).then(function (rows) { return rows[0]; });
+        return attachPatientVisitKinds([voucher], { storedOnly: true }).then(function (rows) { return rows[0]; });
       });
     });
   }
@@ -1976,13 +2021,16 @@
     query = query.orderBy(dateField, 'desc').limit(pageSize);
     return query.get().then(function (snapshot) {
       var rows = snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); });
-      var sheetIds = Array.from(new Set(rows.map(function (row) { return row.priceSheetId; }).filter(Boolean)));
-      return Promise.all(sheetIds.map(function (sheetId) {
-        return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId).get();
-      })).then(function (sheetSnapshots) {
+      var sheetIds = Array.from(new Set(rows.filter(function (row) {
+        return !rowHasStoredTotals(row);
+      }).map(function (row) { return row.priceSheetId; }).filter(Boolean)));
+      var sheetPromise = sheetIds.length
+        ? Promise.all(sheetIds.map(function (sheetId) { return publishedSheetById(sheetId); }))
+        : Promise.resolve([]);
+      return sheetPromise.then(function (sheetSnapshots) {
         var sheets = {};
         sheetSnapshots.forEach(function (sheet) {
-          if (sheet.exists) sheets[sheet.id] = sheet.data();
+          if (sheet && sheet.id) sheets[sheet.id] = sheet;
         });
         var items = rows.map(function (row) {
           hydrateVoucherTests(row, sheets[row.priceSheetId] || null);
@@ -2088,13 +2136,15 @@
     var pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 100));
     return query.limit(pageSize).get().then(function (snapshot) {
       var rows = snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); });
-      var sheetIds = Array.from(new Set(rows.map(function (row) { return row.priceSheetId; }).filter(Boolean)));
+      var sheetIds = Array.from(new Set(rows.filter(function (row) {
+        return !rowHasStoredTotals(row);
+      }).map(function (row) { return row.priceSheetId; }).filter(Boolean)));
       return Promise.all(sheetIds.map(function (sheetId) {
-        return context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId).get();
+        return publishedSheetById(sheetId);
       })).then(function (sheetSnapshots) {
         var sheets = {};
         sheetSnapshots.forEach(function (sheet) {
-          if (sheet.exists) sheets[sheet.id] = sheet.data();
+          if (sheet && sheet.id) sheets[sheet.id] = sheet;
         });
         var items = rows.map(function (row) {
           var sheet = sheets[row.priceSheetId];
@@ -2281,9 +2331,15 @@
     return {};
   }
 
-  function attachPatientVisitKinds(vouchers) {
+  function attachPatientVisitKinds(vouchers, options) {
     var list = (vouchers || []).filter(Boolean);
     if (!list.length) return Promise.resolve(list);
+    if (options && options.storedOnly) {
+      list.forEach(function (row) {
+        row.patientVisitKind = pricingApi().normalizeVisitKind(row.patientVisitKind) || 'new';
+      });
+      return Promise.resolve(list);
+    }
     var patientIds = Array.from(new Set(list.map(function (row) { return row.patientId; }).filter(Boolean)));
     return listPatientVouchersByIds(patientIds, visitKindQueryScope(list)).then(function (grouped) {
       list.forEach(function (row) {

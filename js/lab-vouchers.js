@@ -813,7 +813,7 @@
     } else if (state.dashStatus) {
       tableItems = tableItems.filter(function (item) { return item.status === state.dashStatus; });
     }
-    tableItems = await service().attachPatientVisitKinds(tableItems);
+    tableItems = await service().attachPatientVisitKinds(tableItems, { storedOnly: true });
     state.dashItems = tableItems;
     renderDashboardTable();
   }

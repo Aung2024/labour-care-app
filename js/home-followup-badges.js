@@ -142,9 +142,21 @@
     return false;
   }
 
+  var BADGE_CACHE_MS = 10 * 60 * 1000;
+
   async function refreshFollowUpBadges(db, user) {
     if (!db || !user || !user.uid) return { hrt: 0, kmc: 0 };
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+    try {
+      var cachedAt = Number(sessionStorage.getItem('hrtActiveFollowUpCountAt') || 0);
+      if (cachedAt && (Date.now() - cachedAt) < BADGE_CACHE_MS &&
+          sessionStorage.getItem('hrtActiveFollowUpCount') != null) {
+        return {
+          hrt: Number(sessionStorage.getItem('hrtActiveFollowUpCount')) || 0,
+          kmc: Number(sessionStorage.getItem('kmcActiveFollowUpCount')) || 0
+        };
+      }
+    } catch (e) { /* ignore */ }
 
     var patients = await fetchMidwifePatients(db, user.uid);
     var hrtCount = 0;

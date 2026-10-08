@@ -12,6 +12,7 @@
     payCodes: [],
     payProofDataUrl: '',
     dashStatusFilter: null,
+    allocationsLoaded: false,
     poSettings: null,
     poPad: null,
     editingSignature: false,
@@ -275,7 +276,13 @@
     if (page === 'outcomes') {
       loadPoOutcomeReport().catch(function (error) { showMessage(error.message, 'error'); });
     }
-    if (page === 'allocations') renderAllocations();
+    if (page === 'allocations') {
+      if (!state.allocationsLoaded) {
+        loadAllocations().catch(function (error) { showMessage(error.message, 'error'); });
+      } else {
+        renderAllocations();
+      }
+    }
     if (page === 'settings') renderPoSettingsUi();
   }
 
@@ -688,8 +695,11 @@
       if (range.monthOnly) return pricing().billingMonthOf(date) === range.monthOnly;
       return true;
     });
-    var classified = await service().attachPatientVisitKinds(filtered);
     var visitKind = byId('dashVisitKind') && byId('dashVisitKind').value;
+    var classified = await service().attachPatientVisitKinds(
+      filtered,
+      { storedOnly: visitKind !== 'new' && visitKind !== 'old' }
+    );
     if (visitKind === 'new' || visitKind === 'old') {
       return classified.filter(function (row) {
         return (row.patientVisitKind || 'new') === visitKind;
@@ -1121,6 +1131,7 @@
 
   async function loadAllocations() {
     state.allocations = await service().getAllocations();
+    state.allocationsLoaded = true;
     renderAllocations();
   }
 
@@ -1528,10 +1539,10 @@
 
   async function refreshAll(options) {
     await loadProfiles();
-    await loadAllocations();
+    if (!(options && options.skipAllocations)) await loadAllocations();
     state.poSettings = await service().getPoSettings();
     renderPoSettingsUi();
-    if (state.page === 'dashboard') await loadDashboardStats();
+    if (state.page === 'dashboard' && !(options && options.skipDashboard)) await loadDashboardStats();
     if (state.page === 'verify') await loadVerifyQueue();
     if (state.page === 'labs') await renderLabConfig();
     if (state.page === 'outcomes') await loadPoOutcomeReport();
@@ -1560,7 +1571,7 @@
     fillMonthOptions(byId('outcomeMonth'));
     byId('verifyStatus').value = 'redeemed';
     setNavCollapsed(false);
-    await refreshAll({ silent: true });
+    await refreshAll({ silent: true, skipDashboard: true, skipAllocations: true });
     showPage('dashboard');
   }
 
