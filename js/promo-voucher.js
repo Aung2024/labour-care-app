@@ -335,7 +335,8 @@
       button.disabled = true;
       setStatus('Generating QR securely…', 'info');
       var address = el('patientAddress').value.trim();
-      if (address) await savePatientAddress(address);
+      var storedAddress = patientAddress(state.patient || {}).trim();
+      if (address && address !== storedAddress) await savePatientAddress(address);
       var result = await service().issueVoucher({
         patientId: state.patientId,
         labId: state.labId,

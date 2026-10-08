@@ -60,27 +60,6 @@
     return value;
   }
 
-  function isResourceExhausted(error) {
-    var code = String((error && error.code) || '');
-    var message = String((error && error.message) || error || '');
-    return code === 'resource-exhausted' || /status 429/.test(message) || /too many requests/i.test(message);
-  }
-
-  function waitMs(ms) {
-    return new Promise(function (resolve) { setTimeout(resolve, ms); });
-  }
-
-  function withBusyRetry(work, attempts) {
-    var max = attempts || 3;
-    var run = function (n) {
-      return Promise.resolve().then(work).catch(function (error) {
-        if (!isResourceExhausted(error) || n >= max) throw error;
-        return waitMs(400 * n * n).then(function () { return run(n + 1); });
-      });
-    };
-    return run(1);
-  }
-
   function validateCurrency(value) {
     var currency = requireString(value, 'Currency', 3).toUpperCase();
     if (!CURRENCY_PATTERN.test(currency)) {
@@ -794,24 +773,22 @@
   function getTestCatalog(labId) {
     var context = firebaseContext();
     var selectedLabId = requireString(labId, 'Lab ID', 128);
-    return withBusyRetry(function () {
-      return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid).get().then(function (quotaSnapshot) {
-        if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
-          throw new Error('No voucher allocation is available for this account.');
-        }
-        var quota = quotaSnapshot.data() || {};
-        if (!quota.labId) {
-          throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
-        }
-        if (quota.labId !== selectedLabId) {
-          throw new Error('This maternity home is assigned to another laboratory.');
-        }
-        return publishedSheetById(quota.priceSheetId).then(function (quotaSheet) {
-          if (quotaSheet) return quotaSheet;
-          return getAssignedPriceSheet(selectedLabId);
-        }).then(function (sheet) {
-          return catalogFromSheet(sheet);
-        });
+    return context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid).get().then(function (quotaSnapshot) {
+      if (!quotaSnapshot.exists || quotaSnapshot.data().status !== 'active') {
+        throw new Error('No voucher allocation is available for this account.');
+      }
+      var quota = quotaSnapshot.data() || {};
+      if (!quota.labId) {
+        throw new Error('Ask the Project Account to assign a laboratory before generating a QR.');
+      }
+      if (quota.labId !== selectedLabId) {
+        throw new Error('This maternity home is assigned to another laboratory.');
+      }
+      return publishedSheetById(quota.priceSheetId).then(function (quotaSheet) {
+        if (quotaSheet) return quotaSheet;
+        return getAssignedPriceSheet(selectedLabId);
+      }).then(function (sheet) {
+        return catalogFromSheet(sheet);
       });
     });
   }
@@ -1151,29 +1128,19 @@
     var voucherRef = context.db.collection(COLLECTIONS.VOUCHERS).doc(voucherId);
     var quotaRef = context.db.collection(COLLECTIONS.ACCOUNT_QUOTAS).doc(context.user.uid);
     var patientRef = context.db.collection('patients').doc(patientId);
-    var labRef = context.db.collection('users').doc(labId);
-    var labAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc(labId);
-    var globalAssignmentRef = context.db.collection(COLLECTIONS.PRICE_ASSIGNMENTS).doc('global');
 
-    var runIssue = function () {
-      return context.db.runTransaction(function (transaction) {
+    return context.db.runTransaction(function (transaction) {
       return Promise.all([
         transaction.get(quotaRef),
         transaction.get(patientRef),
-        transaction.get(labRef),
         transaction.get(voucherRef)
       ]).then(function (snapshots) {
-        if (snapshots[3].exists) throw new Error('Voucher code collision.');
+        if (snapshots[2].exists) throw new Error('Voucher code collision.');
         var quotaSnapshot = snapshots[0];
         var patientSnapshot = snapshots[1];
-        var labSnapshot = snapshots[2];
         if (!quotaSnapshot.exists || !patientSnapshot.exists) throw new Error('Quota or patient was not found.');
-        if (!labSnapshot.exists || !isLabProfile(labSnapshot.data())) {
-          throw new Error('Select an active laboratory.');
-        }
         var quota = quotaSnapshot.data();
         var patient = patientSnapshot.data();
-        var lab = labSnapshot.data();
         if (quota.midwifeId !== context.user.uid || quota.status !== 'active' || quota.remainingUnits < 1) {
           throw new Error('No active voucher quota is available.');
         }
@@ -1183,26 +1150,9 @@
         if (quota.labId !== labId) {
           throw new Error('This maternity home is assigned to another laboratory.');
         }
-        var quotaSheetId = typeof quota.priceSheetId === 'string' ? quota.priceSheetId : '';
-        var assignmentPromise = quotaSheetId
-          ? Promise.resolve({ priceSheetId: quotaSheetId })
-          : Promise.all([
-              transaction.get(labAssignmentRef),
-              transaction.get(globalAssignmentRef)
-            ]).then(function (assignmentSnaps) {
-              var row = assignmentSnaps[0].exists ? assignmentSnaps[0].data() :
-                (assignmentSnaps[1].exists ? assignmentSnaps[1].data() : null);
-              if (!row || !row.priceSheetId) {
-                throw new Error('No published price sheet is available for this laboratory.');
-              }
-              return row;
-            });
-        return assignmentPromise.then(function (assignment) {
-        if (!assignment || !assignment.priceSheetId) {
-          throw new Error('No published price sheet is available for this laboratory.');
-        }
-        var sheetRef = context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(assignment.priceSheetId);
-        return transaction.get(sheetRef).then(function (sheetSnapshot) {
+        var sheetId = typeof quota.priceSheetId === 'string' ? quota.priceSheetId : '';
+        if (!sheetId) throw new Error('No published price sheet is available for this laboratory.');
+        return transaction.get(context.db.collection(COLLECTIONS.PRICE_SHEETS).doc(sheetId)).then(function (sheetSnapshot) {
           if (!sheetSnapshot.exists || sheetSnapshot.data().status !== 'published') {
             throw new Error('The assigned price sheet is unavailable.');
           }
@@ -1220,76 +1170,47 @@
           var capped = withProjectCeiling(rawLineItems, ceilingMinor);
           var lineItems = capped.lineItems;
           var totals = capped.totals;
-          var period = pricingApi().calendarPeriod(new Date());
-          var globalStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
-            pricingApi().periodStatsId('global', null, period)
-          );
-          var labStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
-            pricingApi().periodStatsId('lab', labId, period)
-          );
-          var midwifeStatsRef = context.db.collection(COLLECTIONS.PERIOD_STATS).doc(
-            pricingApi().periodStatsId('midwife', context.user.uid, period)
-          );
-          return Promise.all([
-            transaction.get(globalStatsRef),
-            transaction.get(labStatsRef),
-            transaction.get(midwifeStatsRef)
-          ]).then(function (statSnapshots) {
-            var now = serverTimestamp(context);
-            var labName = lab.displayName || lab.name || lab.labName || lab.organization_name || lab.email || 'Lab';
-            var address = typeof data.address === 'string' ? data.address.trim().slice(0, 240) :
-              (typeof patient.patient_address === 'string' ? patient.patient_address.slice(0, 240) :
-                (typeof patient.patientAddress === 'string' ? patient.patientAddress.slice(0, 240) : ''));
-            transaction.update(quotaRef, {
-              remainingUnits: quota.remainingUnits - 1,
-              lastVoucherId: voucherId,
-              updatedAt: now,
-              updatedBy: context.user.uid
-            });
-            transaction.set(voucherRef, {
-              code: voucherId,
-              status: 'issued',
-              patientId: patientId,
-              patientNameSnapshot: requireString(patient.name || patient.patient_name, 'Patient name', 160),
-              patientAgeSnapshot: patient.age == null ? null : Number(patient.age),
-              patientPhoneSnapshot: typeof patient.phone === 'string' ? patient.phone.slice(0, 40) : '',
-              patientNrcSnapshot: typeof data.nrc === 'string' ? data.nrc.trim().slice(0, 80) :
-                (typeof patient.nrc === 'string' ? patient.nrc.slice(0, 80) : ''),
-              patientAddressSnapshot: address,
-              ancVisitDate: requireString(data.ancVisitDate, 'ANC visit date', 10),
-              midwifeId: context.user.uid,
-              issuerNameSnapshot: requireString(data.issuerName, 'Issuer name', 160),
-              labId: labId,
-              labNameSnapshot: String(labName).slice(0, 160),
-              priceSheetId: assignment.priceSheetId,
-              selectedServiceIds: selectedServiceIds,
-              issuedServiceIds: selectedServiceIds,
-              lineItems: lineItems,
-              totals: totals,
-              projectCeilingMinor: ceilingMinor,
-              ceilingAppliedMinor: capped.ceilingAppliedMinor || 0,
-              currencySnapshot: 'MMK',
-              issuedAt: now,
-              expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
-            });
-            writePeriodStats(transaction, context, statSnapshots[0], globalStatsRef, {
-              scope: 'global', period: period, labId: '', midwifeId: '', voucherId: voucherId
-            }, null, 'issued', totals.projectContributionMinor);
-            writePeriodStats(transaction, context, statSnapshots[1], labStatsRef, {
-              scope: 'lab', period: period, labId: labId, midwifeId: context.user.uid, voucherId: voucherId
-            }, null, 'issued', totals.projectContributionMinor);
-            writePeriodStats(transaction, context, statSnapshots[2], midwifeStatsRef, {
-              scope: 'midwife', period: period, labId: labId, midwifeId: context.user.uid, voucherId: voucherId
-            }, null, 'issued', totals.projectContributionMinor);
-            return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId), lineItems: lineItems, totals: totals };
+          var now = serverTimestamp(context);
+          var labName = quota.labName || 'Lab';
+          var address = typeof data.address === 'string' ? data.address.trim().slice(0, 240) :
+            (typeof patient.patient_address === 'string' ? patient.patient_address.slice(0, 240) :
+              (typeof patient.patientAddress === 'string' ? patient.patientAddress.slice(0, 240) : ''));
+          transaction.update(quotaRef, {
+            remainingUnits: quota.remainingUnits - 1,
+            lastVoucherId: voucherId,
+            updatedAt: now,
+            updatedBy: context.user.uid
           });
-        });
+          transaction.set(voucherRef, {
+            code: voucherId,
+            status: 'issued',
+            patientId: patientId,
+            patientNameSnapshot: requireString(patient.name || patient.patient_name, 'Patient name', 160),
+            patientAgeSnapshot: patient.age == null ? null : Number(patient.age),
+            patientPhoneSnapshot: typeof patient.phone === 'string' ? patient.phone.slice(0, 40) : '',
+            patientNrcSnapshot: typeof data.nrc === 'string' ? data.nrc.trim().slice(0, 80) :
+              (typeof patient.nrc === 'string' ? patient.nrc.slice(0, 80) : ''),
+            patientAddressSnapshot: address,
+            ancVisitDate: requireString(data.ancVisitDate, 'ANC visit date', 10),
+            midwifeId: context.user.uid,
+            issuerNameSnapshot: requireString(data.issuerName, 'Issuer name', 160),
+            labId: labId,
+            labNameSnapshot: String(labName).slice(0, 160),
+            priceSheetId: sheetId,
+            selectedServiceIds: selectedServiceIds,
+            issuedServiceIds: selectedServiceIds,
+            lineItems: lineItems,
+            totals: totals,
+            projectCeilingMinor: ceilingMinor,
+            ceilingAppliedMinor: capped.ceilingAppliedMinor || 0,
+            currencySnapshot: 'MMK',
+            issuedAt: now,
+            expiresAt: dateTimestamp(context, data.expiresAt || new Date(Date.now() + 90 * 86400000), 'Expiry')
+          });
+          return { id: voucherId, code: voucherId, qrPayload: buildQrPayload(voucherId), lineItems: lineItems, totals: totals };
         });
       });
-    });
-    };
-
-    return withBusyRetry(runIssue, 3).catch(function (error) {
+    }).catch(function (error) {
       if (String(error && error.message) === 'Voucher code collision' && (attempt || 0) < 5) {
         return issueMultiServiceVoucher(input, (attempt || 0) + 1);
       }
