@@ -43,6 +43,40 @@ if (runtimeFirebaseConfig && runtimeFirebaseConfig.projectId) {
 }
 
 firebase.initializeApp(firebaseConfig);
+
+// The bundled Auth SDK still calls the retired
+// www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword address.
+// Some networks now receive a Google 404 for that path. Sign-in uses the
+// current Identity Toolkit password endpoint instead.
+(function rerouteLegacyPasswordSignIn() {
+  var legacyPath = "/identitytoolkit/v3/relyingparty/verifyPassword";
+  var currentEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword";
+  var rewrite = function (url) {
+    var text = String(url || "");
+    if (text.indexOf(legacyPath) === -1) return url;
+    var query = text.indexOf("?");
+    return currentEndpoint + (query === -1 ? "" : text.slice(query));
+  };
+  if (typeof window.fetch === "function") {
+    var originalFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      if (typeof input === "string") return originalFetch(rewrite(input), init);
+      if (input && typeof Request !== "undefined" && input instanceof Request && String(input.url).indexOf(legacyPath) !== -1) {
+        return originalFetch(new Request(rewrite(input.url), input), init);
+      }
+      return originalFetch(input, init);
+    };
+  }
+  if (typeof XMLHttpRequest !== "undefined") {
+    var originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      var args = Array.prototype.slice.call(arguments);
+      args[1] = rewrite(url);
+      return originalOpen.apply(this, args);
+    };
+  }
+})();
+
 const db = firebase.firestore();
 
 // --- Browser detection ---
