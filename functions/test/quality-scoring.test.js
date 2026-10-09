@@ -377,6 +377,7 @@ test('attributes ANC lab indicators to the first test in the month', () => {
 test('fails incomplete ANC documentation on existing fields only', () => {
   assert.equal(evaluateAncIndicator('anc_ifa', { ironFolicAcid: 'Not Prescribed' }), false);
   assert.equal(evaluateAncIndicator('anc_td', { tetanusToxoid: '' }), false);
+  assert.equal(evaluateAncIndicator('anc_td', { tetanusToxoid: 'not_given' }), true);
   assert.equal(evaluateAncIndicator('anc_high_risk', { high_risk: 'yes', risk_factors: [] }), false);
   assert.equal(evaluateAncIndicator('anc_high_risk', { high_risk: 'yes', risk_factors: ['anemia'] }), true);
   assert.equal(evaluateAncIndicator('anc_diagnosis', { provisionalDiagnosisType: 'Other' }), false);

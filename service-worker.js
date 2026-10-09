@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v336-moh';
+const CACHE_NAME = 'mch-care-v338-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -108,6 +108,7 @@ const FILES_TO_CACHE = [
   './js/tracking-reader.js',
   './js/township-region.js',
   './js/baby-patient-utils.js',
+  './js/service-closure.js',
   './js/submit-guard.js',
   './js/facility-config.js',
   './js/report-facility.js',
@@ -208,19 +209,17 @@ self.addEventListener('fetch', (event) => {
 
   if (isDocumentRequest) {
     event.respondWith(
-      caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-        const networkPromise = fetch(event.request)
-          .then((response) => {
-            if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
-              const responseToCache = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-            }
-            return response;
-          })
-          .catch(() => null);
-        if (cachedResponse) return cachedResponse;
-        return networkPromise.then(async (response) => {
-          if (response) return response;
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
+          if (cachedResponse) return cachedResponse;
           const homeFallback = await caches.match('./home.html');
           if (homeFallback) return homeFallback;
           const indexFallback = await caches.match('./index.html');
@@ -229,31 +228,27 @@ self.addEventListener('fetch', (event) => {
             '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
             { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
           );
-        });
-      })
+        })
     );
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
+      if (cachedResponse) return cachedResponse;
+
+      return fetch(event.request)
         .then((response) => {
-          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
+          if (!response || response.status !== 200 || response.type !== 'basic') {
+            return response;
+          }
+          if (shouldCacheRequest(requestUrl)) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           }
           return response;
         })
-        .catch(() => {
-          return cachedResponse || new Response('Resource temporarily unavailable', {
-            status: 503,
-            statusText: 'Service Unavailable',
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-          });
-        });
-
-      return cachedResponse || fetchPromise;
+        .catch(() => caches.match(event.request));
     })
   );
 });

@@ -17,6 +17,7 @@
   <script src="js/patient-session.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/session-manager.js"></script>
@@ -87,6 +88,10 @@
       display: grid;
       grid-template-columns: 1fr;
       gap: 0.85rem;
+    }
+
+    #newbornShortcut[hidden] {
+      display: none !important;
     }
 
     .module-card {
@@ -280,6 +285,8 @@
         <i class="fas fa-chevron-right module-arrow"></i>
       </div>
     </div>
+
+    <div id="newbornShortcut" class="care-modules" hidden></div>
   </main>
 
   <footer class="footer">
@@ -301,6 +308,7 @@
       if (document.getElementById('patientBanner') && typeof displayPatientBanner === 'function') {
         displayPatientBanner('patientBanner', { careType: 'pnc' });
       }
+      if (typeof loadNewbornShortcut === 'function') loadNewbornShortcut();
     }
 
     function hubT(en, mm) {
@@ -386,7 +394,61 @@
       if (window.VisitEditApprovalBadge) {
         VisitEditApprovalBadge.refresh('pnc', 'pncEditApprovalBadge');
       }
+      await loadNewbornShortcut();
     });
+
+    function openNewbornCard(targetId) {
+      if (!targetId) return;
+      sessionStorage.setItem('selectedPatientId', targetId);
+      window.location.href = 'newborn-care-page.html?patient=' + encodeURIComponent(targetId);
+    }
+
+    async function loadNewbornShortcut() {
+      var host = document.getElementById('newbornShortcut');
+      var motherId = getPatientId();
+      if (!host || !motherId || !firebase.firestore) return;
+      try {
+        var db = firebase.firestore();
+        var visits = await db.collection('patients').doc(motherId).collection('postpartum_visits').limit(1).get();
+        if (!visits || visits.empty) {
+          host.hidden = true;
+          return;
+        }
+        var babies = (window.BabyPatientUtils && BabyPatientUtils.listBabiesForMother)
+          ? await BabyPatientUtils.listBabiesForMother(db, motherId)
+          : [];
+        var targets = babies.length ? babies : [{ id: motherId, data: {} }];
+        host.innerHTML = '';
+        targets.forEach(function (baby) {
+          var name = baby.data && baby.data.name ? baby.data.name : '';
+          var card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'module-card';
+          card.style.minHeight = '44px';
+          card.onclick = function () { openNewbornCard(baby.id); };
+          var title = document.createElement('div');
+          title.className = 'module-title';
+          title.textContent = currentLanguage === 'en'
+            ? (name ? 'Newborn care — ' + name : "Newborn care for this mother's baby")
+            : (name ? 'မွေးကင်းစ စောင့်ရှောက်မှု — ' + name : 'ဤမိခင်၏ ကလေး မွေးကင်းစ စောင့်ရှောက်မှု');
+          var hint = document.createElement('div');
+          hint.className = 'module-description';
+          hint.textContent = currentLanguage === 'en'
+            ? 'Open the newborn card after the first PNC visit.'
+            : 'PNC ပထမအကြိမ် မှတ်ပြီးနောက် ကလေး၏ Newborn ကတ်သို့ သွားရန်။';
+          var content = document.createElement('div');
+          content.className = 'module-content';
+          content.appendChild(title);
+          content.appendChild(hint);
+          card.appendChild(content);
+          host.appendChild(card);
+        });
+        host.hidden = false;
+      } catch (error) {
+        console.warn('Could not load newborn cards:', error);
+        host.hidden = true;
+      }
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('.language-btn').forEach(function (btn) {

@@ -488,7 +488,7 @@ function isAncMedicationRecorded(value) {
 function hasTdStatus(visit) {
   const key = String((visit && (visit.tetanusToxoid || visit.td)) || '').trim();
   if (!key || key === 'Not Prescribed') return false;
-  return ['TD1', 'TD2', 'Completed', 'Prescribed', 'Already Prescribed', 'Given'].includes(key);
+  return ['TD1', 'TD2', 'not_given', 'Completed', 'Prescribed', 'Already Prescribed', 'Given'].includes(key);
 }
 
 function hasBloodPressure(visit) {

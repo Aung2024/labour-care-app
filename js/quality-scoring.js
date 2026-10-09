@@ -676,7 +676,7 @@
   function hasTdStatus(visit) {
     var key = String((visit && (visit.tetanusToxoid || visit.td)) || '').trim();
     if (!key || key === 'Not Prescribed') return false;
-    return ['TD1', 'TD2', 'Completed', 'Prescribed', 'Already Prescribed', 'Given'].indexOf(key) >= 0;
+    return ['TD1', 'TD2', 'not_given', 'Completed', 'Prescribed', 'Already Prescribed', 'Given'].indexOf(key) >= 0;
   }
 
   function hasBloodPressure(visit) {

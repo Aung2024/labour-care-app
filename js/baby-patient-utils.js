@@ -762,6 +762,22 @@
     };
   }
 
+  async function listBabiesForMother(db, motherId) {
+    if (!db || !motherId) return [];
+    var snap = await db.collection('patients')
+      .where('mother_patient_id', '==', String(motherId))
+      .limit(20)
+      .get();
+    var babies = [];
+    snap.forEach(function (doc) {
+      var data = doc.data() || {};
+      if (isBabyPatient(data) || data.patient_type === 'baby') {
+        babies.push({ id: doc.id, data: data });
+      }
+    });
+    return babies;
+  }
+
   global.BabyPatientUtils = {
     PATIENT_TYPE_MOTHER: PATIENT_TYPE_MOTHER,
     PATIENT_TYPE_BABY: PATIENT_TYPE_BABY,
@@ -785,6 +801,7 @@
     formatBabyAgeFromBirthDate: formatBabyAgeFromBirthDate,
     formatBabyAgeFromDiffDays: formatBabyAgeFromDiffDays,
     findExistingMotherPatient: findExistingMotherPatient,
+    listBabiesForMother: listBabiesForMother,
     normalizePersonName: normalizePersonName
   };
 })(typeof window !== 'undefined' ? window : this);

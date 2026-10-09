@@ -257,10 +257,23 @@
     return v;
   }
 
+  var CURRENT_BIRTH_PLACES = [
+    'government_hospital',
+    'health_facility_subfacility',
+    'private_facility',
+    'home',
+    'other'
+  ];
+
   function normalizeBirthPlaceForForm(value) {
     var key = normalizeBirthPlaceForNewborn(value);
     if (key === 'public_facility') return 'health_facility_subfacility';
     return key;
+  }
+
+  function birthPlaceForPncForm(value) {
+    var key = String(value || '').trim();
+    return CURRENT_BIRTH_PLACES.indexOf(key) >= 0 ? key : '';
   }
 
   async function promptDeliveryNotesRequired(patientId, language, options) {
@@ -588,6 +601,7 @@
     normalizeDeliveryModeForForm: normalizeDeliveryModeForForm,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,
     normalizeBirthPlaceForForm: normalizeBirthPlaceForForm,
+    birthPlaceForPncForm: birthPlaceForPncForm,
     normalizeBirthProvider: normalizeBirthProvider,
     birthPlaceLabel: birthPlaceLabel,
     deliveryModeLabel: deliveryModeLabel,

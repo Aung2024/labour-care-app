@@ -27,6 +27,7 @@
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/choice-controls.js"></script>
   <script src="js/submit-guard.js"></script>
@@ -353,17 +354,48 @@
 
     .info-row {
       display: flex;
-      justify-content: space-between;
-      margin-bottom: 0.25rem;
+      justify-content: flex-start;
+      align-items: baseline;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
     }
 
     .info-label {
       font-weight: 600;
       color: #374151;
+      flex: 0 0 auto;
     }
 
     .info-value {
-      color: #6b7280;
+      color: #111827;
+      font-weight: 600;
+    }
+
+    .newborn-shortcut[hidden] {
+      display: none !important;
+    }
+
+    .newborn-shortcut {
+      margin: -0.5rem 0 1.25rem;
+    }
+
+    .newborn-shortcut-card {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+      text-align: left;
+      background: #fff;
+      border: 1px solid #99f6e4;
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      min-height: 44px;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+    }
+
+    .newborn-shortcut-card strong {
+      display: block;
     }
 
     .loading-spinner {
@@ -686,6 +718,8 @@
       </div>
     </div>
 
+    <div id="newbornShortcut" class="newborn-shortcut" hidden></div>
+
     <!-- Postpartum Care Form -->
     <div class="form-container">
       <form id="postpartumForm">
@@ -708,7 +742,7 @@
             </div>
             <div class="col-md-6 col-sm-6">
               <label for="pncBirthPlace" class="form-label lang-text" data-en="Birth place" data-mm="မွေးဖွားရာနေရာ">Birth place</label>
-              <select class="form-control" id="pncBirthPlace" data-choice required>
+              <select class="form-control" id="pncBirthPlace" data-choice>
                 <option value="">-</option>
                 <option value="government_hospital" class="lang-text" data-en="Government Hospital" data-mm="အစိုးရဆေးရုံ">Government Hospital</option>
                 <option value="health_facility_subfacility" class="lang-text" data-en="RHC/SRHC" data-mm="ကျန်းမာရေးဌာန/ဌာနခွဲ">RHC/SRHC</option>
@@ -774,6 +808,21 @@
           <div class="mt-3 border rounded-3 p-3 bg-light">
             <h6 class="fw-bold mb-2"><i class="fas fa-history me-2"></i><span class="lang-text" data-en="ANC history for this pregnancy" data-mm="ဤကိုယ်ဝန်အတွက် ANC သမိုင်း">ANC history for this pregnancy</span></h6>
             <div id="ancHistorySummary" class="small text-muted">Loading ANC history...</div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label lang-text" data-en="Other ANC Visits" data-mm="အခြား ကျန်းမာရေးဌာနတွင် ပြသခဲ့သော ANC Visit များ">Other ANC Visits</label>
+            <div class="d-flex flex-wrap gap-3 mb-2">
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasAncOtherVisits" value="no" checked onchange="toggleAncOtherVisitsSection()"> <span class="lang-text" data-en="No" data-mm="မရှိ">No</span></label>
+              <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="hasAncOtherVisits" value="yes" onchange="toggleAncOtherVisitsSection()"> <span class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</span></label>
+            </div>
+            <div id="ancOtherVisitsSection" class="border rounded-3 p-3 bg-light" style="display:none;">
+              <div id="ancOtherVisitsRows" class="d-grid gap-2"></div>
+              <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addAncOtherVisitRow()" style="min-height:44px;">
+                <i class="fas fa-plus me-1"></i><span class="lang-text" data-en="Add Other Visit" data-mm="အခြား Visit ထည့်ရန်">Add Other Visit</span>
+              </button>
+            </div>
+            <small class="form-hint lang-text" data-en="Same ANC other-visit record used on the ANC form. It is saved on the antenatal visits." data-mm="ANC ဖောင်ရှိ အခြား Visit မှတ်တမ်းနှင့် တူညီသည်။ ကိုယ်ဝန်ဆောင် Visit မှတ်တမ်းထဲသို့ သိမ်းပါသည်။">Same ANC other-visit record used on the ANC form. It is saved on the antenatal visits.</small>
           </div>
 
           <div class="mt-3">
@@ -1234,6 +1283,7 @@
     let editVisitId = null;
     let editApprovalId = null;
     let isEditMode = false;
+    let ancOtherVisitsReady = false;
 
     const PNC_SCHEDULE_VISIT_COUNT = window.BirthDeliveryAnchor
       ? BirthDeliveryAnchor.CARE_SCHEDULE_VISIT_COUNT
@@ -1251,6 +1301,7 @@
       evaluateVitalAlerts();
       updatePncVisitSchedule();
       document.querySelectorAll('#otherVisitsRows .other-visit-row').forEach(applyLangToOtherVisitRow);
+      document.querySelectorAll('#ancOtherVisitsRows .other-visit-row').forEach(applyLangToOtherVisitRow);
     };
 
     function getBirthDateStrForSchedule() {
@@ -1384,24 +1435,29 @@
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
+    function canonicalPncBirthPlace(value) {
+      if (!window.DeliveryNotesUtils || typeof DeliveryNotesUtils.birthPlaceForPncForm !== 'function') return '';
+      return DeliveryNotesUtils.birthPlaceForPncForm(value);
+    }
+
     function applyPncDeliveryIdentityFields(source, lockFromDeliveryNotes) {
       source = source || {};
       const placeEl = document.getElementById('pncBirthPlace');
       const modeEl = document.getElementById('pncModeOfDelivery');
-      if (placeEl && source.birthplace) {
-        placeEl.value = window.DeliveryNotesUtils
-          ? (DeliveryNotesUtils.normalizeBirthPlaceForForm(source.birthplace) || source.birthplace)
-          : source.birthplace;
+      if (placeEl) {
+        placeEl.value = canonicalPncBirthPlace(source.birthplace);
       }
       if (modeEl && source.mode_of_delivery) {
         modeEl.value = window.DeliveryNotesUtils
           ? (DeliveryNotesUtils.normalizeDeliveryModeForForm(source.mode_of_delivery) || source.mode_of_delivery)
           : source.mode_of_delivery;
       }
-      [placeEl, modeEl].forEach(function (el) {
-        if (!el) return;
-        el.dataset.deliverySourceLocked = lockFromDeliveryNotes ? 'true' : 'false';
-      });
+      if (placeEl) {
+        placeEl.dataset.deliverySourceLocked = (lockFromDeliveryNotes && placeEl.value) ? 'true' : 'false';
+      }
+      if (modeEl) {
+        modeEl.dataset.deliverySourceLocked = lockFromDeliveryNotes ? 'true' : 'false';
+      }
       applyDeliveryDateTimeLock();
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
@@ -1824,9 +1880,7 @@
       if ((data.birthplace || data.birthPlace) && document.getElementById('pncBirthPlace')?.dataset.deliverySourceLocked !== 'true') {
         const placeEl = document.getElementById('pncBirthPlace');
         if (placeEl) {
-          placeEl.value = window.DeliveryNotesUtils
-            ? (DeliveryNotesUtils.normalizeBirthPlaceForForm(data.birthplace || data.birthPlace) || '')
-            : (data.birthplace || data.birthPlace || '');
+          placeEl.value = canonicalPncBirthPlace(data.birthplace || data.birthPlace);
         }
       }
       if ((data.mode_of_delivery || data.modeOfDelivery) && document.getElementById('pncModeOfDelivery')?.dataset.deliverySourceLocked !== 'true') {
@@ -1914,6 +1968,134 @@
       toggleOtherVisitsSection();
     }
 
+    function toggleAncOtherVisitsSection() {
+      const selected = document.querySelector('input[name="hasAncOtherVisits"]:checked');
+      const section = document.getElementById('ancOtherVisitsSection');
+      if (!section) return;
+      const show = selected && selected.value === 'yes';
+      section.style.display = show ? '' : 'none';
+      if (show && document.querySelectorAll('#ancOtherVisitsRows .other-visit-row').length === 0) {
+        addAncOtherVisitRow();
+      }
+    }
+
+    function addAncOtherVisitRow(data) {
+      const rows = document.getElementById('ancOtherVisitsRows');
+      if (!rows || !window.OtherFacilityVisitsUi) return;
+      const row = document.createElement('div');
+      row.className = 'other-visit-row row g-2 align-items-end';
+      row.innerHTML = OtherFacilityVisitsUi.buildOtherVisitRowHtml(data, {
+        normalizeDate: normalizeDateInput,
+        includeVisitNumber: false
+      });
+      rows.appendChild(row);
+      if (data && data.facilityType) row.querySelector('.other-visit-facility-type').value = data.facilityType;
+      applyLangToOtherVisitRow(row);
+    }
+
+    function collectAncOtherVisitsFromUi() {
+      const selected = document.querySelector('input[name="hasAncOtherVisits"]:checked');
+      if (!selected || selected.value !== 'yes') return [];
+      return Array.from(document.querySelectorAll('#ancOtherVisitsRows .other-visit-row')).map(function (row) {
+        return {
+          visitDate: row.querySelector('.other-visit-date')?.value || null,
+          facilityType: row.querySelector('.other-visit-facility-type')?.value || null,
+          facilityName: row.querySelector('.other-visit-facility-name')?.value || null
+        };
+      }).filter(function (item) {
+        return item.visitDate || item.facilityType || item.facilityName;
+      });
+    }
+
+    function applyAncOtherVisitsToUi(visits) {
+      const rows = document.getElementById('ancOtherVisitsRows');
+      if (!rows) return;
+      rows.innerHTML = '';
+      const list = Array.isArray(visits) ? visits : [];
+      const yes = document.querySelector('input[name="hasAncOtherVisits"][value="yes"]');
+      const no = document.querySelector('input[name="hasAncOtherVisits"][value="no"]');
+      if (list.length) {
+        if (yes) yes.checked = true;
+        list.forEach(addAncOtherVisitRow);
+      } else if (no) {
+        no.checked = true;
+      }
+      toggleAncOtherVisitsSection();
+    }
+
+    async function saveAncOtherVisitsFromPnc() {
+      if (!ancOtherVisitsReady || !currentPatient || !currentPatient.id) return;
+      const visits = collectAncOtherVisitsFromUi();
+      const db = firebase.firestore();
+      const snap = await db.collection('patients').doc(currentPatient.id).collection('antenatal_visits').get();
+      if (snap.empty) {
+        if (visits.length) {
+          const message = currentLanguage === 'en'
+            ? 'PNC was saved. ANC other visits were not saved because this mother has no ANC visit yet.'
+            : 'PNC သိမ်းပြီးပါပြီ။ ဤမိခင်တွင် ANC Visit မရှိသေးသောကြောင့် ANC အခြား Visit ကို မသိမ်းနိုင်ပါ။';
+          if (window.AppDialog && AppDialog.alert) await AppDialog.alert(message, { title: currentLanguage === 'en' ? 'ANC visits' : 'ANC Visit' });
+          else alert(message);
+        }
+        return;
+      }
+      const payload = {
+        otherVisits: visits,
+        hasOtherVisits: visits.length ? 'yes' : 'no',
+        otherVisitCount: visits.length
+      };
+      const batch = db.batch();
+      snap.docs.forEach(function (doc) {
+        batch.set(doc.ref, payload, { merge: true });
+      });
+      await batch.commit();
+    }
+
+    async function loadNewbornShortcut(hasPncVisit) {
+      const host = document.getElementById('newbornShortcut');
+      if (!host || !currentPatient || !currentPatient.id || !hasPncVisit) {
+        if (host) host.hidden = true;
+        return;
+      }
+      let babies = [];
+      try {
+        if (window.BabyPatientUtils && BabyPatientUtils.listBabiesForMother) {
+          babies = await BabyPatientUtils.listBabiesForMother(firebase.firestore(), currentPatient.id);
+        }
+      } catch (error) {
+        console.warn('Could not load newborn cards:', error);
+      }
+      const cards = babies.length
+        ? babies
+        : [{ id: currentPatient.id, data: { name: '' } }];
+      host.innerHTML = '';
+      cards.forEach(function (baby) {
+        const name = (baby.data && baby.data.name) || '';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'newborn-shortcut-card';
+        button.onclick = function () { openNewbornCard(baby.id); };
+        const title = document.createElement('strong');
+        title.textContent = currentLanguage === 'en'
+          ? (name ? 'Newborn care — ' + name : "Newborn care for this mother's baby")
+          : (name ? 'မွေးကင်းစ စောင့်ရှောက်မှု — ' + name : 'ဤမိခင်၏ ကလေး မွေးကင်းစ စောင့်ရှောက်မှု');
+        const hint = document.createElement('small');
+        hint.textContent = currentLanguage === 'en' ? 'Open the newborn card' : 'ကလေး၏ Newborn ကတ်သို့ သွားရန်';
+        const text = document.createElement('span');
+        text.appendChild(title);
+        text.appendChild(document.createElement('br'));
+        text.appendChild(hint);
+        button.appendChild(text);
+        host.appendChild(button);
+      });
+      host.hidden = false;
+    }
+
+    function openNewbornCard(targetId) {
+      if (!targetId) return;
+      sessionStorage.setItem('selectedPatientId', targetId);
+      window.location.href = 'newborn-care-page.html?patient=' + encodeURIComponent(targetId);
+    }
+
     async function loadAncHistorySummary() {
       const el = document.getElementById('ancHistorySummary');
       if (!el || !currentPatient || !currentPatient.id || !navigator.onLine) return;
@@ -1926,15 +2108,17 @@
           .get();
         let appVisits = 0;
         let otherVisits = [];
+        let latestVisit = null;
         snap.forEach(function (doc) {
           const data = doc.data() || {};
           appVisits++;
+          latestVisit = data;
           if (Array.isArray(data.otherVisits)) {
             otherVisits = data.otherVisits;
-          } else if (data.otherVisitCount) {
-            otherVisits = new Array(parseInt(data.otherVisitCount, 10) || 0).fill(null);
           }
         });
+        applyAncOtherVisitsToUi(Array.isArray(latestVisit && latestVisit.otherVisits) ? latestVisit.otherVisits : otherVisits);
+        ancOtherVisitsReady = true;
         const total = appVisits + otherVisits.length;
         el.innerHTML = 'App-recorded ANC visits: <strong>' + appVisits + '</strong> · Other-facility ANC visits: <strong>' + otherVisits.length + '</strong> · Total known ANC visits: <strong>' + total + '</strong>';
       } catch (e) {
@@ -1954,6 +2138,7 @@
         
         const visitNumber = Math.min(visitsSnapshot.size + 1, PNC_SCHEDULE_VISIT_COUNT);
         document.getElementById('visitNumber').value = visitNumber;
+        await loadNewbornShortcut(visitsSnapshot.size > 0 || isEditMode);
       } catch (error) {
         console.error('Error calculating visit number:', error);
         document.getElementById('visitNumber').value = 1;
@@ -2427,6 +2612,7 @@
             alert('PNC visit updated.');
           }
           if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(currentPatient.id, 'pnc_edit');
+          try { await saveAncOtherVisitsFromPnc(); } catch (ancError) { console.warn('ANC other visits were not saved:', ancError); }
           window.location.href = 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id);
           return;
         }
@@ -2468,6 +2654,7 @@
           }
         );
 
+        try { await saveAncOtherVisitsFromPnc(); } catch (ancError) { console.warn('ANC other visits were not saved:', ancError); }
         if (window.AnalyticsRefreshQueue) {
           await AnalyticsRefreshQueue.requestSafely(currentPatient.id, 'pnc_visit');
         }
