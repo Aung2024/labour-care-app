@@ -56,7 +56,7 @@ def main():
     x = range(len(labels))
     series = [
         ('ANC headcount', [row['ancHeadcount'] for row in townships], NAVY),
-        ('Deliveries', [row['deliveries'] for row in townships], TEAL),
+        ('Delivery notes', [row['deliveries'] for row in townships], TEAL),
         ('PNC headcount', [row['pncHeadcount'] for row in townships], AMBER),
         ('NBC headcount', [row['nbcHeadcount'] for row in townships], GREEN),
     ]

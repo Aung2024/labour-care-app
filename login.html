@@ -670,29 +670,7 @@
       try {
         console.log('Starting login process...');
         isLoggingIn = true; // Set flag to prevent session check
-        
-        // Check account lockout BEFORE attempting login
-        if (window.PasswordPolicy) {
-          const lockoutStatus = await PasswordPolicy.checkLockout(email);
-          if (lockoutStatus.isLocked) {
-            const currentLang = localStorage.getItem('language') || 'mm';
-            const message = currentLang === 'en'
-              ? `Account is locked due to too many failed login attempts. Please try again in ${lockoutStatus.remainingTime} minute(s).`
-              : `အကောင့်ကို ဝင်ရောက်ခွင့် မရှိပါ။ မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် ပိတ်ထားပါသည်။ ${lockoutStatus.remainingTime} မိနစ် စောင့်ပြီး ထပ်မံကြိုးစားပါ။`;
-            
-            messageDiv.innerHTML = `<div class="alert alert-warning"><i class="fas fa-lock me-2"></i>${message}</div>`;
-            submitButton.innerHTML = originalButtonText;
-            submitButton.disabled = false;
-            isLoggingIn = false;
-            
-            // Log failed login attempt (account locked)
-            if (window.AuditLogger) {
-              await AuditLogger.logLogin(email, false);
-            }
-            return;
-          }
-        }
-        
+
         const persistence = keepLoggedIn
           ? firebase.auth.Auth.Persistence.LOCAL
           : firebase.auth.Auth.Persistence.SESSION;
@@ -840,9 +818,7 @@
         // Reset button
         submitButton.innerHTML = originalButtonText;
         submitButton.disabled = false;
-        
-        // Record failed login attempt
-        // Check for various error codes that indicate failed login
+
         const isNetworkLikeError = err.code === 'auth/network-request-failed'
           || (err.message && (
             err.message.includes('ERR_INTERNET_DISCONNECTED') ||
@@ -850,81 +826,7 @@
             err.message.includes('interrupted') ||
             err.message.includes('unreachable')
           ));
-        const invalidCredentialError = err.code === 'auth/invalid-credential'
-          || err.code === 'auth/wrong-password'
-          || err.code === 'auth/user-not-found'
-          || (err.message && err.message.includes('INVALID_LOGIN_CREDENTIALS'));
-        const isFailedLogin = invalidCredentialError && !isNetworkLikeError;
-        
-        if (window.PasswordPolicy && isFailedLogin) {
-          try {
-            console.log('🔒 Recording failed login attempt for:', email);
-            console.log('🔒 Error code:', err.code);
-            const lockoutStatus = await PasswordPolicy.recordFailedAttempt(email);
-            console.log('🔒 Lockout status:', lockoutStatus);
-            console.log('🔒 Attempts:', lockoutStatus.attempts, '/', PasswordPolicy.LOCKOUT.maxAttempts);
-            
-            // Check if account is now locked
-            if (lockoutStatus.isLocked) {
-              const currentLang = localStorage.getItem('language') || 'mm';
-              const message = currentLang === 'en'
-                ? `Too many failed login attempts. Account locked for ${lockoutStatus.remainingTime} minute(s).`
-                : `မှားယွင်းသော ဝင်ရောက်မှု အကြိမ်ရေ များလွန်းသောကြောင့် အကောင့်ကို ${lockoutStatus.remainingTime} မိနစ် ပိတ်ထားပါသည်။`;
-              
-              messageDiv.innerHTML = `
-                <div class="alert alert-warning alert-dismissible fade show" role="alert" style="border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                  <div style="display: flex; align-items: center; gap: 12px;">
-                    <i class="fas fa-lock" style="font-size: 1.25rem;"></i>
-                    <div style="flex: 1;">
-                      <strong style="display: block; margin-bottom: 4px;">Account Locked</strong>
-                      <span style="font-size: 0.95rem;">${message}</span>
-                    </div>
-                  </div>
-                </div>
-              `;
-              messageDiv.className = 'mt-3';
-              
-              // Log account lockout
-              if (window.AuditLogger) {
-                await AuditLogger.logSecurityEvent(
-                  AuditLogger.ACTIONS.ACCOUNT_LOCKED,
-                  `Account locked after ${lockoutStatus.attempts} failed login attempts`,
-                  { email: email, attempts: lockoutStatus.attempts, remainingTime: lockoutStatus.remainingTime }
-                );
-              }
-              
-              isLoggingIn = false;
-              return;
-            }
-            
-            // Show remaining attempts
-            const remainingAttempts = PasswordPolicy.LOCKOUT.maxAttempts - lockoutStatus.attempts;
-            if (remainingAttempts > 0 && remainingAttempts <= 3) {
-              const currentLang = localStorage.getItem('language') || 'mm';
-              const warning = currentLang === 'en'
-                ? ` Warning: ${remainingAttempts} attempt(s) remaining before account lockout.`
-                : ` သတိပေးချက်: အကောင့် ပိတ်မည့်အထိ ${remainingAttempts} ကြိမ် ကျန်ရှိပါသည်။`;
-              
-              // Append to error message
-              console.warn('⚠️', warning);
-              
-              // Show warning in UI
-              const existingError = messageDiv.innerHTML;
-              messageDiv.innerHTML = existingError + `<div class="alert alert-warning mt-2"><small>${warning}</small></div>`;
-            }
-          } catch (lockoutError) {
-            console.error('❌ Error recording failed login attempt:', lockoutError);
-            console.error('❌ Lockout error details:', {
-              code: lockoutError.code,
-              message: lockoutError.message,
-              stack: lockoutError.stack
-            });
-            // Continue with normal error handling even if lockout fails
-          }
-        } else {
-          console.log('⚠️ Lockout not triggered - Error code:', err.code, 'isFailedLogin:', false);
-        }
-        
+
         // Log failed login (pass email for unauthenticated logging)
         if (window.AuditLogger) {
           await AuditLogger.logLogin(email, false, email);

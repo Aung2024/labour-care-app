@@ -8,7 +8,7 @@
  * - patients created by users whose role is Midwife (case-insensitive)
  * - metrics grouped by the creating midwife's facility_code
  * - Total Registered counts mothers and babies
- * - ANC / PNC / deliveries stay mother-centric; linked baby NBC records are
+ * - ANC / PNC / delivery notes stay mother-centric; linked baby NBC records are
  *   used only when the mother is not in the midwife set, to avoid double-count
  *
  * Authentication uses the existing Firebase CLI login. No service-account key
@@ -30,7 +30,10 @@ const firebaseApi = FUNCTIONS_REQUIRE('firebase-tools/lib/api.js');
 const { FacilityConfig } = require(path.join(ROOT, 'js', 'facility-config.js'));
 
 const PROJECT_ID = 'mnch-1cbda';
-const DEFAULT_WORKBOOK = path.join(ROOT, 'docs', 'Application data by facility.xlsx');
+const EXTRACT_DATE_LABEL = '23 August 2026';
+const EXTRACT_DATE_ISO = '2026-08-23';
+const PILOT_TOWNSHIPS = ['Pyinmana', 'Tatkon'];
+const DEFAULT_WORKBOOK = path.join(ROOT, 'docs', `Application data by facility - ${EXTRACT_DATE_ISO}.xlsx`);
 const EARLY_ANC_MAX_DAYS = 14 * 7;
 const LOW_BIRTH_WEIGHT_GRAM = 2000;
 const PRETERM_DAYS_BEFORE_EDD = 21;
@@ -48,15 +51,41 @@ const METRIC_KEYS = [
   'anemiaSevere',
   'hrt',
   'deliveries',
+  'dashboardDeliveries',
   'lcgSecondStage',
   'pncHeadcount',
   'pncServices',
   'pnc48h',
   'pnc42d',
+  'pncAfter42d',
+  'pncTimingUnknown',
   'nbcHeadcount',
+  'immediateNbcHeadcount',
   'nbcServices',
   'pretermLbw',
   'kmc',
+  'transfers',
+  'jointCare',
+];
+
+const ACCOUNT_ACTIVITY_KEYS = [
+  'ownedRegistered',
+  'ownedMothers',
+  'ownedBabies',
+  'activeJointCare',
+  'ancServices',
+  'ancNew',
+  'ancOld',
+  'pncServices',
+  'pncNew',
+  'pncOld',
+  'newbornServices',
+  'newbornNew',
+  'newbornOld',
+  'transfersRecorded',
+  'pretermLbwBabies',
+  'kmcYesBabies',
+  'fallbackAttributedServices',
 ];
 
 const FACILITY_METRIC_COLUMNS = [
@@ -70,21 +99,66 @@ const FACILITY_METRIC_COLUMNS = [
   'anemiaSevere',
   'hrt',
   'deliveries',
+  'dashboardDeliveries',
   'lcgSecondStage',
   'pncHeadcount',
   'pncServices',
   'pnc48h',
   'pnc42d',
+  'pncAfter42d',
+  'pncTimingUnknown',
   'nbcHeadcount',
+  'immediateNbcHeadcount',
   'nbcServices',
   'pretermLbw',
   'kmc',
+  'transfers',
+  'jointCare',
   'mothers',
   'babies',
 ];
 
 function emptyMetrics() {
   return Object.fromEntries(METRIC_KEYS.map((key) => [key, 0]));
+}
+
+function emptyAccountActivity() {
+  return Object.fromEntries(ACCOUNT_ACTIVITY_KEYS.map((key) => [key, 0]));
+}
+
+function townshipForFacilityCode(code) {
+  const facility = FacilityConfig.getFacilityByCode(code);
+  return facility && facility.township ? facility.township : '';
+}
+
+function isPilotFacilityCode(code) {
+  return PILOT_TOWNSHIPS.includes(townshipForFacilityCode(code));
+}
+
+function hasRecordData(record) {
+  if (!record) return false;
+  const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+    ? record.data
+    : record;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  return Object.keys(data).length > 0;
+}
+
+function isDashboardDelivered(patient, pncVisits, records, newbornEntries, immediateEntries) {
+  const bucket = statusBucket(patient);
+  if (bucket === 'pnc' || bucket === 'birthed') return true;
+  if ((pncVisits || []).length > 0) return true;
+  const hasNewborn = (newbornEntries || []).some((entry) => hasRecordData(entry.data || entry));
+  const hasImmediate = (immediateEntries || []).some((entry) => hasRecordData(entry.data || entry));
+  if (hasNewborn || hasImmediate) return true;
+  const birth = records.get('birthRecord') || {};
+  return Boolean(
+    birth.deliveryDate ||
+    birth.birthDate ||
+    birth.birthTime ||
+    birth.deliveredDateTime ||
+    birth.deliveryDateTime
+  );
 }
 
 function normalizeRole(role) {
@@ -135,6 +209,17 @@ function textFromFields(data, fields) {
 function isAffirmative(value) {
   if (value === true) return true;
   return ['yes', 'y', 'true'].includes(String(value || '').trim().toLowerCase());
+}
+
+function recordCreatorId(data) {
+  return textFromFields(data, [
+    'createdBy',
+    'created_by',
+    'recordedBy',
+    'recorded_by',
+    'midwifeId',
+    'midwife_id',
+  ]);
 }
 
 function patientIdFromSubcollectionDoc(doc) {
@@ -222,6 +307,10 @@ async function loadData(db) {
     if (normalizeRole(user.role) === 'midwife') {
       midwives.set(doc.id, {
         id: doc.id,
+        name: user.name || user.midwife_name || user.displayName || user.email || doc.id,
+        email: user.email || '',
+        township: user.township || '',
+        region: user.region || '',
         facilityCode: String(user.facility_code || '').trim(),
       });
     }
@@ -229,7 +318,14 @@ async function loadData(db) {
 
   if (!midwives.size) throw new Error('No Midwife-role users were found.');
 
-  console.log(`Loading patients created by ${midwives.size} Midwife accounts...`);
+  [...midwives.keys()].forEach((id) => {
+    if (!isPilotFacilityCode(midwives.get(id).facilityCode)) midwives.delete(id);
+  });
+  if (!midwives.size) {
+    throw new Error('No Midwife-role users were found for Pyinmana or Tatkon facilities.');
+  }
+
+  console.log(`Loading patients created by ${midwives.size} Pyinmana/Tatkon Midwife accounts...`);
   const patientsSnapshot = await db.collection('patients').get();
   const patients = new Map();
   patientsSnapshot.docs.forEach((doc) => {
@@ -255,6 +351,7 @@ async function loadData(db) {
     records,
     newbornCare,
     immediateNewbornCare,
+    labourCare,
   ] = await Promise.all([
     loadCollectionGroup(db, 'antenatal_visits', selectedPatientIds),
     loadCollectionGroup(db, 'postpartum_visits', selectedPatientIds),
@@ -264,7 +361,21 @@ async function loadData(db) {
     loadCollectionGroup(db, 'records', selectedPatientIds),
     loadCollectionGroup(db, 'newborn_care', selectedPatientIds),
     loadCollectionGroup(db, 'immediate_newborn_care', selectedPatientIds),
+    loadCollectionGroup(db, 'labour_care', selectedPatientIds),
   ]);
+
+  console.log('Loading active Joint Care links by Midwife account...');
+  const jointCareCounts = new Map();
+  const jointCarePatientIds = new Map();
+  await Promise.all([...midwives.keys()].map(async (midwifeId) => {
+    const snapshot = await db.collection('joint_care_links')
+      .doc(midwifeId)
+      .collection('patients')
+      .where('status', '==', 'active')
+      .get();
+    jointCareCounts.set(midwifeId, snapshot.size);
+    jointCarePatientIds.set(midwifeId, new Set(snapshot.docs.map((doc) => doc.id)));
+  }));
 
   return {
     midwives,
@@ -275,6 +386,9 @@ async function loadData(db) {
     records,
     newbornCare,
     immediateNewbornCare,
+    labourCare,
+    jointCareCounts,
+    jointCarePatientIds,
   };
 }
 
@@ -374,17 +488,8 @@ function recordsById(entries) {
   return result;
 }
 
-function isDelivered(patient, pncVisits, records, newbornEntries, immediateEntries) {
-  if (statusBucket(patient) === 'pnc') return true;
-  if (pncVisits.length || newbornEntries.length || immediateEntries.length) return true;
-  const birth = records.get('birthRecord') || {};
-  return Boolean(textFromFields(birth, [
-    'deliveryDate',
-    'birthDate',
-    'birthTime',
-    'deliveredDateTime',
-    'deliveryDateTime',
-  ]));
+function hasDeliveryNotes(records) {
+  return records.has('deliveryNotes');
 }
 
 function hasSecondStage(records) {
@@ -396,18 +501,64 @@ function hasSecondStage(records) {
   );
 }
 
+function yangonDayOrdinal(value) {
+  const date = asDate(value);
+  if (!date) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Yangon',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Math.floor(Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+  ) / 86400000);
+}
+
+function deliveryDateFromNotes(notes) {
+  const details = (notes && notes.deliveryDetails) || {};
+  const direct = dateFromFields(details, [
+    'deliveryDate',
+    'delivery_date',
+    'birthTime',
+    'birth_time',
+  ]);
+  if (direct) return direct;
+  const babyDates = (Array.isArray(details.babies) ? details.babies : [])
+    .map((baby) => dateFromFields(baby, [
+      'birthTime',
+      'birth_time',
+      'birthDate',
+      'birth_date',
+    ]))
+    .filter(Boolean)
+    .sort((left, right) => left.getTime() - right.getTime());
+  return babyDates[0] || null;
+}
+
 function firstPncDays(pncVisits, records) {
   if (!pncVisits.length) return null;
   const first = sortedByDate(
     pncVisits,
     ['visitDate', 'visit_date', 'timestamp', 'createdAt', 'created_at', 'date'],
   )[0].data;
-  const explicit = numberFromFields(first, [
+  let explicit = null;
+  [
     'postpartumDays',
     'postpartum_days',
     'daysPostpartum',
     'days_since_delivery',
-  ]);
+  ].some((field) => {
+    const value = Number.parseFloat(first && first[field]);
+    if (Number.isFinite(value) && value >= 0) {
+      explicit = value;
+      return true;
+    }
+    return false;
+  });
   if (explicit !== null) return explicit;
 
   const visitDate = dateFromFields(first, [
@@ -420,17 +571,32 @@ function firstPncDays(pncVisits, records) {
   ]);
   let deliveryDate = dateFromFields(first, ['deliveredDateTime', 'deliveryDate', 'delivery_date']);
   if (!deliveryDate) {
+    deliveryDate = deliveryDateFromNotes(
+      records.get('deliveryNotes') || records.get('thirdStage') || {},
+    );
+  }
+  if (!deliveryDate) {
     deliveryDate = dateFromFields(records.get('birthRecord') || {}, [
       'deliveryDate',
       'birthDate',
       'birthTime',
-      'timestamp',
-      'date',
     ]);
   }
   if (!visitDate || !deliveryDate) return null;
-  const days = Math.floor((visitDate.getTime() - deliveryDate.getTime()) / 86400000);
+  const visitDay = yangonDayOrdinal(visitDate);
+  const deliveryDay = yangonDayOrdinal(deliveryDate);
+  if (visitDay === null || deliveryDay === null) return null;
+  const days = visitDay - deliveryDay;
   return days >= 0 ? days : null;
+}
+
+function pncTimingBucket(days) {
+  if (days === null || days === undefined || !Number.isFinite(Number(days))) {
+    return 'pncTimingUnknown';
+  }
+  if (Number(days) <= 2) return 'pnc48h';
+  if (Number(days) <= 42) return 'pnc42d';
+  return 'pncAfter42d';
 }
 
 function getLatestAncData(visits) {
@@ -454,24 +620,64 @@ function getNewbornBabies(newbornEntries) {
   return babies;
 }
 
-function newbornIsPretermOrLbw(patient, babies, latestAnc) {
+function canonicalNewbornBabies(newbornEntries) {
+  const byIndex = new Map();
+  const mergeBaby = (index, base, baby) => {
+    const key = Number.parseInt(
+      baby && (baby.babyIndex || baby.baby_index),
+      10,
+    ) || index || 1;
+    byIndex.set(key, {
+      ...(byIndex.get(key) || {}),
+      ...(base || {}),
+      ...(baby || {}),
+      babyIndex: key,
+    });
+  };
+
+  (newbornEntries || []).forEach((entry) => {
+    const data = entry.data || {};
+    if (Array.isArray(data.babies) && data.babies.length) {
+      data.babies.forEach((baby, index) => mergeBaby(index + 1, data, baby));
+    } else {
+      mergeBaby(
+        Number.parseInt(data.babyIndex || data.baby_index, 10) || 1,
+        data,
+        null,
+      );
+    }
+    if (Array.isArray(data.kmc_babies)) {
+      data.kmc_babies.forEach((baby, index) => mergeBaby(index + 1, {}, baby));
+    }
+  });
+  return [...byIndex.values()].sort((a, b) => a.babyIndex - b.babyIndex);
+}
+
+function babyIsPretermOrLbw(patient, baby, latestAnc) {
   const edd = asDate(
     patient.edd || patient.EDD || patient.maternal_edd ||
     patient.manualEdd || patient.manual_edd ||
     latestAnc.edd || latestAnc.manualEdd || latestAnc.manual_edd,
   );
-  return babies.some((baby) => {
-    const weight = numberFromFields(baby, [
-      'birthWeightGram',
-      'birth_weight_gram',
-      'body_weight_gram',
-    ]);
-    if (weight !== null && weight < LOW_BIRTH_WEIGHT_GRAM) return true;
-    const birthDate = dateFromFields(baby, ['birthTime', 'birth_time', 'birthDate', 'birth_date']);
-    if (!birthDate || !edd) return false;
-    const daysBeforeEdd = Math.floor((edd.getTime() - birthDate.getTime()) / 86400000);
-    return daysBeforeEdd >= PRETERM_DAYS_BEFORE_EDD;
-  });
+  const weight = numberFromFields(baby, [
+    'birthWeightGram',
+    'birth_weight_gram',
+    'body_weight_gram',
+  ]);
+  if (weight !== null && weight < LOW_BIRTH_WEIGHT_GRAM) return true;
+  const birthDate = dateFromFields(baby, [
+    'birthTime',
+    'birth_time',
+    'birthDate',
+    'birth_date',
+  ]);
+  if (!birthDate || !edd) return false;
+  return Math.floor((edd.getTime() - birthDate.getTime()) / 86400000) >=
+    PRETERM_DAYS_BEFORE_EDD;
+}
+
+function newbornIsPretermOrLbw(patient, babies, latestAnc) {
+  return babies.some((baby) => babyIsPretermOrLbw(patient, baby, latestAnc));
 }
 
 function newbornHasKmcYes(newbornEntries, antenatalVisits) {
@@ -483,6 +689,26 @@ function newbornHasKmcYes(newbornEntries, antenatalVisits) {
     return babyArrays.some((babies) => Array.isArray(babies) && babies.some(
       (baby) => String(baby.kmc_selected || '').toLowerCase() === 'yes',
     ));
+  });
+}
+
+function babyHasKmcYes(newbornEntries, babyIndex) {
+  const target = Number.parseInt(babyIndex, 10) || 1;
+  return (newbornEntries || []).some((entry) => {
+    const data = entry.data || {};
+    if (Array.isArray(data.kmc_babies) && data.kmc_babies.some((baby, index) => {
+      const indexValue = Number.parseInt(baby.babyIndex || baby.baby_index, 10) ||
+        index + 1;
+      return indexValue === target &&
+        String(baby.kmc_selected || '').toLowerCase() === 'yes';
+    })) return true;
+    if (Array.isArray(data.babies) && data.babies.some((baby, index) => {
+      const indexValue = Number.parseInt(baby.babyIndex || baby.baby_index, 10) ||
+        index + 1;
+      return indexValue === target &&
+        String(baby.kmc_selected || '').toLowerCase() === 'yes';
+    })) return true;
+    return target === 1 && String(data.kmc_selected || '').toLowerCase() === 'yes';
   });
 }
 
@@ -501,20 +727,168 @@ function canonicalNewbornPatientIds(patients) {
   return canonical;
 }
 
+function serviceEventDate(type, data) {
+  const fieldsByType = {
+    anc: ['visitDate', 'visit_date', 'serviceDate', 'service_date'],
+    pnc: ['visitDate', 'visit_date', 'serviceDate', 'service_date'],
+    newborn: [
+      'visitDate',
+      'visit_date',
+      'serviceDate',
+      'birth_time',
+      'birthDate',
+      'birth_date',
+    ],
+    labour: [
+      'visitDate',
+      'visit_date',
+      'serviceDate',
+      'labourDate',
+      'labour_date',
+      'admissionDate',
+      'deliveryDate',
+      'delivery_date',
+      'deliveredDateTime',
+    ],
+  };
+  return dateFromFields(data, [
+    ...(fieldsByType[type] || []),
+    'createdAt',
+    'timestamp',
+    'created_at',
+  ]);
+}
+
+function serviceEventSortKey(event) {
+  const date = serviceEventDate(event.type, event.data);
+  if (!date) return null;
+  return [
+    date.toISOString().slice(0, 10),
+    event.type || '',
+    event.id || '',
+  ].join('|');
+}
+
+function aggregateAccountActivity(data) {
+  const result = new Map();
+  const ensure = (accountId) => {
+    if (!result.has(accountId)) result.set(accountId, emptyAccountActivity());
+    return result.get(accountId);
+  };
+  data.midwives.forEach((_, accountId) => {
+    const metrics = ensure(accountId);
+    metrics.activeJointCare = data.jointCareCounts.get(accountId) || 0;
+  });
+
+  data.patients.forEach((patient) => {
+    const metrics = ensure(patient.creatorId);
+    metrics.ownedRegistered++;
+    if (normalizePatientType(patient.data) === 'baby') metrics.ownedBabies++;
+    else metrics.ownedMothers++;
+  });
+
+  const eventsByAccountPatient = new Map();
+  const addEvents = (map, type) => {
+    map.forEach((entries, patientId) => {
+      const patient = data.patients.get(patientId);
+      if (!patient || normalizePatientType(patient.data) === 'baby') return;
+      entries.forEach((entry) => {
+        let accountId = recordCreatorId(entry.data);
+        let usedFallback = false;
+        if (!data.midwives.has(accountId)) {
+          accountId = patient.creatorId;
+          usedFallback = true;
+        }
+        const key = `${accountId}|${patientId}`;
+        if (!eventsByAccountPatient.has(key)) eventsByAccountPatient.set(key, []);
+        eventsByAccountPatient.get(key).push({
+          ...entry,
+          type,
+          accountId,
+          patientId,
+          usedFallback,
+        });
+      });
+    });
+  };
+  addEvents(data.antenatalVisits, 'anc');
+  addEvents(data.postpartumVisits, 'pnc');
+  addEvents(data.newbornCare, 'newborn');
+  addEvents(data.labourCare, 'labour');
+
+  eventsByAccountPatient.forEach((events, key) => {
+    const accountId = key.split('|')[0];
+    const metrics = ensure(accountId);
+    const datedKeys = events.map(serviceEventSortKey).filter(Boolean).sort();
+    const earliestKey = datedKeys[0] || null;
+    events.forEach((event) => {
+      if (!['anc', 'pnc', 'newborn'].includes(event.type)) return;
+      const prefix = event.type;
+      const eventKey = serviceEventSortKey(event);
+      const isNew = Boolean(earliestKey && eventKey === earliestKey);
+      metrics[`${prefix}Services`]++;
+      metrics[`${prefix}${isNew ? 'New' : 'Old'}`]++;
+      if (event.usedFallback) metrics.fallbackAttributedServices++;
+    });
+  });
+
+  data.records.forEach((entries, patientId) => {
+    const patient = data.patients.get(patientId);
+    if (!patient) return;
+    entries.filter((entry) => entry.id === 'transferRecord').forEach((entry) => {
+      let accountId = recordCreatorId(entry.data);
+      if (!data.midwives.has(accountId)) accountId = patient.creatorId;
+      ensure(accountId).transfersRecorded++;
+    });
+  });
+
+  const canonicalIds = canonicalNewbornPatientIds(data.patients);
+  data.patients.forEach((patient, patientId) => {
+    if (!canonicalIds.has(patientId)) return;
+    const allNewborn = [
+      ...(data.newbornCare.get(patientId) || []),
+      ...(data.immediateNewbornCare.get(patientId) || []),
+    ];
+    if (!allNewborn.length) return;
+    const latestAnc = getLatestAncData(data.antenatalVisits.get(patientId) || []);
+    const babies = canonicalNewbornBabies(allNewborn);
+    const participatingAccounts = new Set();
+    allNewborn.forEach((entry) => {
+      const creatorId = recordCreatorId(entry.data);
+      participatingAccounts.add(
+        data.midwives.has(creatorId) ? creatorId : patient.creatorId,
+      );
+    });
+    participatingAccounts.forEach((accountId) => {
+      const metrics = ensure(accountId);
+      babies.forEach((baby) => {
+        if (babyIsPretermOrLbw(patient.data, baby, latestAnc)) {
+          metrics.pretermLbwBabies++;
+        }
+        if (babyHasKmcYes(allNewborn, baby.babyIndex)) metrics.kmcYesBabies++;
+      });
+    });
+  });
+  return result;
+}
+
 function aggregate(data) {
   const metricsByFacility = new Map();
   const ensureFacility = (facilityCode) => {
-    const code = facilityCode || '__UNMAPPED__';
-    if (!metricsByFacility.has(code)) metricsByFacility.set(code, emptyMetrics());
-    return metricsByFacility.get(code);
+    if (!isPilotFacilityCode(facilityCode)) return null;
+    if (!metricsByFacility.has(facilityCode)) metricsByFacility.set(facilityCode, emptyMetrics());
+    return metricsByFacility.get(facilityCode);
   };
 
-  FacilityConfig.getFacilities().forEach((facility) => ensureFacility(facility.code));
+  FacilityConfig.getFacilities()
+    .filter((facility) => PILOT_TOWNSHIPS.includes(facility.township))
+    .forEach((facility) => ensureFacility(facility.code));
   const canonicalNbcIds = canonicalNewbornPatientIds(data.patients);
 
   data.patients.forEach((patient, patientId) => {
     const profile = patient.data;
     const facility = ensureFacility(patient.facilityCode);
+    if (!facility) return;
     const anc = data.antenatalVisits.get(patientId) || [];
     const pnc = data.postpartumVisits.get(patientId) || [];
     const tests = data.tests.get(patientId) || [];
@@ -541,27 +915,59 @@ function aggregate(data) {
       else if (hb !== null && hb <= 11) facility.anemiaMild++;
       if (isHighRisk(anc)) facility.hrt++;
 
-      if (isDelivered(profile, pnc, records, newborn, immediate)) facility.deliveries++;
+      if (hasDeliveryNotes(records)) facility.deliveries++;
+      if (isDashboardDelivered(profile, pnc, records, newborn, immediate)) {
+        facility.dashboardDeliveries++;
+      }
       if (hasSecondStage(records)) facility.lcgSecondStage++;
 
       if (pnc.length) {
         facility.pncHeadcount++;
         facility.pncServices += pnc.length;
         const days = firstPncDays(pnc, records);
-        if (days !== null && days <= 2) facility.pnc48h++;
-        if (days !== null && days <= 42) facility.pnc42d++;
+        facility[pncTimingBucket(days)]++;
       }
     }
 
     if (canonicalNbcIds.has(patientId) && allNewborn.length) {
       facility.nbcHeadcount++;
       facility.nbcServices += allNewborn.length;
-      const babies = getNewbornBabies(allNewborn);
-      if (newbornIsPretermOrLbw(profile, babies, getLatestAncData(anc))) {
-        facility.pretermLbw++;
-      }
-      if (newbornHasKmcYes(allNewborn, anc)) facility.kmc++;
+      const babies = canonicalNewbornBabies(allNewborn);
+      const latestAnc = getLatestAncData(anc);
+      facility.pretermLbw += babies.filter(
+        (baby) => babyIsPretermOrLbw(profile, baby, latestAnc),
+      ).length;
+      facility.kmc += babies.filter(
+        (baby) => babyHasKmcYes(allNewborn, baby.babyIndex),
+      ).length;
     }
+    if (canonicalNbcIds.has(patientId) && immediate.length) {
+      facility.immediateNbcHeadcount++;
+    }
+  });
+
+  const jointCareByFacility = new Map();
+  data.midwives.forEach((account, accountId) => {
+    if (!isPilotFacilityCode(account.facilityCode)) return;
+    if (!jointCareByFacility.has(account.facilityCode)) {
+      jointCareByFacility.set(account.facilityCode, new Set());
+    }
+    const patientIds = data.jointCarePatientIds.get(accountId) || new Set();
+    patientIds.forEach((patientId) => jointCareByFacility.get(account.facilityCode).add(patientId));
+  });
+  jointCareByFacility.forEach((patientIds, facilityCode) => {
+    const facility = ensureFacility(facilityCode);
+    if (facility) facility.jointCare = patientIds.size;
+  });
+
+  data.records.forEach((entries, patientId) => {
+    const patient = data.patients.get(patientId);
+    if (!patient || !entries.some((entry) => entry.id === 'transferRecord')) return;
+    const transfer = entries.find((entry) => entry.id === 'transferRecord');
+    const creatorId = recordCreatorId(transfer.data);
+    const account = data.midwives.get(creatorId) || data.midwives.get(patient.creatorId);
+    const facility = ensureFacility(account ? account.facilityCode : patient.facilityCode);
+    if (facility) facility.transfers++;
   });
 
   return metricsByFacility;
@@ -586,21 +992,32 @@ function buildFacilityRows(metricsByFacility) {
 
   addGroup('Pyinmana', facilities.filter((facility) => facility.township === 'Pyinmana'));
   addGroup('Tatkon', facilities.filter((facility) => facility.township === 'Tatkon'));
-
-  const otherFacilities = facilities.filter((facility) => !facility.township);
-  const knownCodes = new Set(facilities.map((facility) => facility.code));
-  const unknownCodes = [...metricsByFacility.keys()]
-    .filter((code) => code !== '__UNMAPPED__' && !knownCodes.has(code))
-    .sort()
-    .map((code) => ({ code, name_en: `Unknown facility (${code})` }));
-
-  const otherRows = [...otherFacilities, ...unknownCodes];
-  if (metricsByFacility.has('__UNMAPPED__')) {
-    otherRows.push({ code: '__UNMAPPED__', name_en: 'Missing facility code' });
-  }
-  if (otherRows.length) addGroup('Other / Unmapped', otherRows);
-
   return rows;
+}
+
+function buildAccountRows(data, activityByAccount) {
+  const facilities = new Map(
+    FacilityConfig.getFacilities().map((facility) => [facility.code, facility]),
+  );
+  return [...data.midwives.values()]
+    .filter((account) => isPilotFacilityCode(account.facilityCode))
+    .map((account) => {
+    const facility = facilities.get(account.facilityCode) || {};
+    return {
+      accountId: account.id,
+      accountName: account.name,
+      email: account.email,
+      township: facility.township || account.township || '',
+      region: account.region || facility.region || '',
+      facilityCode: account.facilityCode,
+      facilityName: facility.name_en || `Unknown facility (${account.facilityCode || 'missing'})`,
+      metrics: activityByAccount.get(account.id) || emptyAccountActivity(),
+    };
+  }).sort((left, right) => (
+    left.township.localeCompare(right.township) ||
+    left.facilityName.localeCompare(right.facilityName) ||
+    left.accountName.localeCompare(right.accountName)
+  ));
 }
 
 function cloneStyle(style) {
@@ -631,8 +1048,11 @@ function coverageRows(metrics) {
     { label: 'ANC 4+ among ANC clients', value: pct(metrics.anc4Plus, metrics.ancHeadcount) },
     { label: 'ANC 8+ among ANC clients', value: pct(metrics.anc8Plus, metrics.ancHeadcount) },
     { label: 'PNC within 48 hours among PNC clients', value: pct(metrics.pnc48h, metrics.pncHeadcount) },
-    { label: 'PNC within 42 days among PNC clients', value: pct(metrics.pnc42d, metrics.pncHeadcount) },
-    { label: 'LCG 2nd stage among deliveries', value: pct(metrics.lcgSecondStage, metrics.deliveries) },
+    {
+      label: 'PNC within 42 days (including 48 hours) among PNC clients',
+      value: pct(metrics.pnc48h + metrics.pnc42d, metrics.pncHeadcount),
+    },
+    { label: 'LCG 2nd stage among delivery notes', value: pct(metrics.lcgSecondStage, metrics.deliveries) },
   ];
 }
 
@@ -672,12 +1092,14 @@ function writeHeaderRow(worksheet, rowNumber, headers) {
   worksheet.getRow(rowNumber).height = 28;
 }
 
-function createWorkbookTemplate() {
+function createWorkbookTemplate(extractedAt) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Application data by facility');
   worksheet.getCell('A1').value =
-    'Total Registered = mothers + baby patient records. Midwife-created patients only. All-time extract from live MNCH data.';
-  worksheet.mergeCells('A1:X1');
+    'Pyinmana and Tatkon only. Total Registered = mothers + baby patient records. Midwife-created patients only. ' +
+    `PNC timing columns are mutually exclusive headcounts and reconcile to Total PNC Headcount. ` +
+    `Dashboard deliveries uses the Dashboard Total Deliveries rule. Extract date: ${extractedAt}.`;
+  worksheet.mergeCells('A1:AD1');
   worksheet.getCell('A1').font = { italic: true, size: 9, color: { argb: 'FF1F4E78' } };
   worksheet.getRow(1).height = 18;
 
@@ -691,23 +1113,30 @@ function createWorkbookTemplate() {
     G2: 'ANC',
     J2: 'Anemia',
     L2: 'HRT',
-    M2: 'Total Deliveries',
-    N2: 'LCG application (2nd stage)',
-    O2: 'Total PNC Headcount',
-    P2: 'Total PNC services received',
-    Q2: 'PNC within 48 hr',
-    R2: 'PNC within 42 Ds',
-    S2: 'Total NBC Headcount',
-    T2: 'Total NBC services received',
-    U2: 'Preterm/LBW',
-    V2: 'KMC',
-    W2: 'Mothers',
-    X2: 'Babies',
+    M2: 'Total Delivery Notes',
+    N2: 'Total Dashboard Deliveries',
+    O2: 'LCG application (2nd stage)',
+    P2: 'Total PNC Headcount',
+    Q2: 'Total PNC services received',
+    R2: 'PNC first-visit timing by headcount',
+    V2: 'Total NBC Headcount',
+    W2: 'Total Immediate NBC Headcount',
+    X2: 'Total NBC services received',
+    Y2: 'Preterm/LBW',
+    Z2: 'KMC',
+    AA2: 'Total Transferred Patients',
+    AB2: 'Total Patients Joint Cared',
+    AC2: 'Mothers',
+    AD2: 'Babies',
     G3: 'Early ANC',
     H3: 'ANC 4+ visit',
     I3: 'ANC 8+ visit',
     J3: 'Mild',
     K3: 'Sever',
+    R3: 'Within 48 hours',
+    S3: 'After 48 hours through day 42',
+    T3: 'After 42 days',
+    U3: 'Timing unavailable',
   };
   Object.entries(headers).forEach(([cell, value]) => {
     worksheet.getCell(cell).value = value;
@@ -716,20 +1145,21 @@ function createWorkbookTemplate() {
   [
     'A2:A3', 'B2:B3', 'C2:C3', 'D2:D3', 'E2:E3', 'F2:F3',
     'G2:I2', 'J2:K2', 'L2:L3', 'M2:M3', 'N2:N3', 'O2:O3',
-    'P2:P3', 'Q2:Q3', 'R2:R3', 'S2:S3', 'T2:T3', 'U2:U3', 'V2:V3',
-    'W2:W3', 'X2:X3',
+    'P2:P3', 'Q2:Q3', 'R2:U2', 'V2:V3', 'W2:W3', 'X2:X3', 'Y2:Y3',
+    'Z2:Z3', 'AA2:AA3', 'AB2:AB3', 'AC2:AC3', 'AD2:AD3',
   ].forEach((range) => worksheet.mergeCells(range));
 
   const widths = [
     4.3, 12.1, 24, 12.7, 15.3, 20.9, 10.6, 11.7, 11.9, 6.9, 6.9,
-    7.3, 13.4, 15.1, 13.4, 17.1, 11, 11.6, 13.4, 17.3, 13, 9, 10, 10,
+    7.3, 13.4, 18, 15.1, 13.4, 17.1, 13, 19, 14, 17, 15, 20, 17, 13, 9,
+    18, 19, 10, 10,
   ];
   widths.forEach((width, index) => { worksheet.getColumn(index + 1).width = width; });
   worksheet.getRow(2).height = 32;
   worksheet.getRow(3).height = 35.25;
 
   for (let row = 2; row <= 3; row++) {
-    for (let column = 1; column <= 24; column++) {
+    for (let column = 1; column <= 30; column++) {
       styleHeaderCell(worksheet.getCell(row, column));
     }
   }
@@ -741,25 +1171,32 @@ function addPivotSourceSheet(workbook, rows) {
   const headers = [
     'Township', 'Facility code', 'Health facility', 'Total registered', 'Mothers', 'Babies',
     'ANC headcount', 'ANC services', 'Early ANC', 'ANC 4+', 'ANC 8+',
-    'Anemia mild', 'Anemia severe', 'HRT', 'Deliveries', 'LCG 2nd stage',
-    'PNC headcount', 'PNC services', 'PNC 48h', 'PNC 42d',
-    'NBC headcount', 'NBC services', 'Preterm/LBW', 'KMC',
-    'Early ANC %', 'ANC 4+ %', 'PNC 48h %', 'PNC 42d %', 'LCG 2nd stage %',
+    'Anemia mild', 'Anemia severe', 'HRT', 'Delivery notes',
+    'Dashboard deliveries', 'LCG 2nd stage',
+    'PNC headcount', 'PNC services', 'PNC within 48h headcount',
+    'PNC >48h through day 42 headcount', 'PNC after day 42 headcount',
+    'PNC timing unavailable headcount', 'NBC headcount', 'Immediate NBC headcount',
+    'NBC services', 'Preterm/LBW', 'KMC', 'Transferred patients', 'Joint Care patients',
+    'Early ANC %', 'ANC 4+ %', 'PNC 48h %', 'PNC within 42d %', 'LCG 2nd stage %',
   ];
   writeHeaderRow(sheet, 1, headers);
-  const widths = [16, 12, 36, 14, 10, 10, 14, 14, 12, 10, 10, 12, 14, 10, 12, 14, 14, 14, 12, 12, 14, 14, 12, 10, 12, 12, 12, 12, 14];
-  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  headers.forEach((_, index) => {
+    sheet.getColumn(index + 1).width = index === 2 ? 36 : (index < 3 ? 16 : 16);
+  });
 
   rows.forEach((row, index) => {
     const m = row.metrics;
     const values = [
       row.township, row.facilityCode, row.facilityName, m.totalRegistered, m.mothers, m.babies,
       m.ancHeadcount, m.ancServices, m.earlyAnc, m.anc4Plus, m.anc8Plus,
-      m.anemiaMild, m.anemiaSevere, m.hrt, m.deliveries, m.lcgSecondStage,
-      m.pncHeadcount, m.pncServices, m.pnc48h, m.pnc42d,
-      m.nbcHeadcount, m.nbcServices, m.pretermLbw, m.kmc,
+      m.anemiaMild, m.anemiaSevere, m.hrt, m.deliveries,
+      m.dashboardDeliveries, m.lcgSecondStage,
+      m.pncHeadcount, m.pncServices, m.pnc48h, m.pnc42d, m.pncAfter42d,
+      m.pncTimingUnknown, m.nbcHeadcount, m.immediateNbcHeadcount, m.nbcServices,
+      m.pretermLbw, m.kmc, m.transfers, m.jointCare,
       pct(m.earlyAnc, m.ancHeadcount), pct(m.anc4Plus, m.ancHeadcount),
-      pct(m.pnc48h, m.pncHeadcount), pct(m.pnc42d, m.pncHeadcount),
+      pct(m.pnc48h, m.pncHeadcount),
+      pct(m.pnc48h + m.pnc42d, m.pncHeadcount),
       pct(m.lcgSecondStage, m.deliveries),
     ];
     values.forEach((value, offset) => {
@@ -783,9 +1220,12 @@ function addTownshipSummarySheet(workbook, rows) {
   const sheet = workbook.addWorksheet('Township summary');
   const headers = [
     'Township', 'Facilities with data', 'Total registered', 'Mothers', 'Babies',
-    'ANC headcount', 'Early ANC', 'ANC 4+', 'ANC 8+', 'HRT', 'Deliveries',
-    'LCG 2nd stage', 'PNC headcount', 'PNC 48h', 'PNC 42d', 'NBC', 'Preterm/LBW', 'KMC',
-    'Early ANC %', 'ANC 4+ %', 'PNC 48h %', 'PNC 42d %', 'LCG %',
+    'ANC headcount', 'Early ANC', 'ANC 4+', 'ANC 8+', 'HRT', 'Delivery notes',
+    'Dashboard deliveries', 'LCG 2nd stage', 'PNC headcount', 'PNC services', 'PNC within 48h',
+    'PNC >48h through day 42', 'PNC after day 42', 'PNC timing unavailable',
+    'NBC headcount', 'Immediate NBC headcount', 'Preterm/LBW', 'KMC',
+    'Transferred patients', 'Joint Care patients',
+    'Early ANC %', 'ANC 4+ %', 'PNC 48h %', 'PNC within 42d %', 'LCG %',
   ];
   writeHeaderRow(sheet, 1, headers);
   headers.forEach((_, index) => { sheet.getColumn(index + 1).width = index === 0 ? 20 : 14; });
@@ -799,10 +1239,14 @@ function addTownshipSummarySheet(workbook, rows) {
     const values = [
       township, facilitiesWithData, metrics.totalRegistered, metrics.mothers, metrics.babies,
       metrics.ancHeadcount, metrics.earlyAnc, metrics.anc4Plus, metrics.anc8Plus, metrics.hrt,
-      metrics.deliveries, metrics.lcgSecondStage, metrics.pncHeadcount, metrics.pnc48h,
-      metrics.pnc42d, metrics.nbcHeadcount, metrics.pretermLbw, metrics.kmc,
+      metrics.deliveries, metrics.dashboardDeliveries, metrics.lcgSecondStage,
+      metrics.pncHeadcount, metrics.pncServices,
+      metrics.pnc48h, metrics.pnc42d, metrics.pncAfter42d, metrics.pncTimingUnknown,
+      metrics.nbcHeadcount, metrics.immediateNbcHeadcount, metrics.pretermLbw, metrics.kmc,
+      metrics.transfers, metrics.jointCare,
       pct(metrics.earlyAnc, metrics.ancHeadcount), pct(metrics.anc4Plus, metrics.ancHeadcount),
-      pct(metrics.pnc48h, metrics.pncHeadcount), pct(metrics.pnc42d, metrics.pncHeadcount),
+      pct(metrics.pnc48h, metrics.pncHeadcount),
+      pct(metrics.pnc48h + metrics.pnc42d, metrics.pncHeadcount),
       pct(metrics.lcgSecondStage, metrics.deliveries),
     ];
     values.forEach((value, offset) => {
@@ -819,10 +1263,14 @@ function addTownshipSummarySheet(workbook, rows) {
     rows.filter((row) => row.metrics.totalRegistered > 0).length,
     overall.totalRegistered, overall.mothers, overall.babies, overall.ancHeadcount,
     overall.earlyAnc, overall.anc4Plus, overall.anc8Plus, overall.hrt, overall.deliveries,
-    overall.lcgSecondStage, overall.pncHeadcount, overall.pnc48h, overall.pnc42d,
-    overall.nbcHeadcount, overall.pretermLbw, overall.kmc,
+    overall.dashboardDeliveries, overall.lcgSecondStage, overall.pncHeadcount,
+    overall.pncServices, overall.pnc48h,
+    overall.pnc42d, overall.pncAfter42d, overall.pncTimingUnknown, overall.nbcHeadcount,
+    overall.immediateNbcHeadcount, overall.pretermLbw, overall.kmc, overall.transfers,
+    overall.jointCare,
     pct(overall.earlyAnc, overall.ancHeadcount), pct(overall.anc4Plus, overall.ancHeadcount),
-    pct(overall.pnc48h, overall.pncHeadcount), pct(overall.pnc42d, overall.pncHeadcount),
+    pct(overall.pnc48h, overall.pncHeadcount),
+    pct(overall.pnc48h + overall.pnc42d, overall.pncHeadcount),
     pct(overall.lcgSecondStage, overall.deliveries),
   ];
   totalValues.forEach((value, offset) => {
@@ -830,6 +1278,171 @@ function addTownshipSummarySheet(workbook, rows) {
     cell.value = value;
     styleHeaderCell(cell);
   });
+}
+
+function addDefinitionsSheet(workbook) {
+  const sheet = workbook.addWorksheet('Definitions');
+  writeHeaderRow(sheet, 1, ['Indicator', 'Definition']);
+  sheet.getColumn(1).width = 34;
+  sheet.getColumn(2).width = 100;
+  const definitions = [
+    ['Export scope', 'Pyinmana and Tatkon facilities only. Unmapped, Other, and facilities outside these two townships are excluded.'],
+    ['Total Delivery Notes', 'Unique mother patients with a records/deliveryNotes document.'],
+    ['Total Dashboard Deliveries', 'Matches the current Dashboard rule: a mother is counted when her status is postnatal/delivered, or she has a PNC visit, newborn/immediate newborn record, or dated birth record.'],
+    ['Total PNC headcount', 'Unique mother patients with at least one PNC visit.'],
+    ['Total PNC services', 'Number of PNC visit records. One patient can contribute multiple services.'],
+    ['PNC within 48 hours', 'Headcount whose first PNC visit was 0–2 days after delivery.'],
+    ['PNC after 48 hours through day 42', 'Headcount whose first PNC visit was more than 2 days and no more than 42 days after delivery.'],
+    ['PNC after 42 days', 'Headcount whose first PNC visit was more than 42 days after delivery.'],
+    ['PNC timing unavailable', 'Headcount with a PNC visit but insufficient delivery/visit timing data for classification.'],
+    ['PNC reconciliation', 'The four mutually exclusive PNC timing headcounts sum to Total PNC headcount.'],
+    ['Total Immediate NBC headcount', 'Unique canonical mother/baby care cases with at least one immediate_newborn_care record; twins in one case count once.'],
+    ['Total Transferred Patients', 'Unique patients with a current records/transferRecord document, attributed to the recording account’s facility. The data model stores one current transfer record per patient.'],
+    ['Total Patients Joint Cared', 'Distinct patients with active Joint Care links, deduplicated within each facility. Account activity shows active links for each account.'],
+  ];
+  definitions.forEach((values, index) => {
+    values.forEach((value, offset) => {
+      const cell = sheet.getCell(index + 2, offset + 1);
+      cell.value = value;
+      styleBodyCell(cell, { horizontal: 'left' });
+    });
+    sheet.getRow(index + 2).height = 34;
+  });
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+}
+
+function addAccountActivitySheet(workbook, accountRows) {
+  const sheet = workbook.addWorksheet('Account activity', {
+    properties: { tabColor: { argb: 'FF2D8C6B' } },
+  });
+  const headers = [
+    'Township',
+    'Facility code',
+    'Health facility',
+    'Account name',
+    'Account email',
+    'Account ID',
+    'Owned registered',
+    'Owned mothers',
+    'Owned babies',
+    'Active Joint Care patients',
+    'ANC services',
+    'ANC New',
+    'ANC Old',
+    'PNC services',
+    'PNC New',
+    'PNC Old',
+    'Newborn services',
+    'Newborn New',
+    'Newborn Old',
+    'Transfers recorded',
+    'LBW/Preterm babies',
+    'KMC Yes babies',
+    'Fallback-attributed services',
+  ];
+  writeHeaderRow(sheet, 1, headers);
+  const widths = [
+    15, 12, 34, 24, 28, 32, 15, 14, 13, 20, 13, 11, 11, 13, 11, 11,
+    16, 13, 13, 16, 18, 15, 22,
+  ];
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+
+  accountRows.forEach((row, index) => {
+    const m = row.metrics;
+    const values = [
+      row.township,
+      row.facilityCode,
+      row.facilityName,
+      row.accountName,
+      row.email,
+      row.accountId,
+      m.ownedRegistered,
+      m.ownedMothers,
+      m.ownedBabies,
+      m.activeJointCare,
+      m.ancServices,
+      m.ancNew,
+      m.ancOld,
+      m.pncServices,
+      m.pncNew,
+      m.pncOld,
+      m.newbornServices,
+      m.newbornNew,
+      m.newbornOld,
+      m.transfersRecorded,
+      m.pretermLbwBabies,
+      m.kmcYesBabies,
+      m.fallbackAttributedServices,
+    ];
+    values.forEach((value, offset) => {
+      const cell = sheet.getCell(index + 2, offset + 1);
+      cell.value = value;
+      styleBodyCell(cell, { horizontal: offset < 6 ? 'left' : 'center' });
+    });
+  });
+  const totalRow = accountRows.length + 2;
+  const totals = emptyAccountActivity();
+  accountRows.forEach((row) => {
+    ACCOUNT_ACTIVITY_KEYS.forEach((key) => {
+      totals[key] += row.metrics[key] || 0;
+    });
+  });
+  const totalValues = [
+    'All accounts',
+    '',
+    '',
+    '',
+    '',
+    '',
+    totals.ownedRegistered,
+    totals.ownedMothers,
+    totals.ownedBabies,
+    totals.activeJointCare,
+    totals.ancServices,
+    totals.ancNew,
+    totals.ancOld,
+    totals.pncServices,
+    totals.pncNew,
+    totals.pncOld,
+    totals.newbornServices,
+    totals.newbornNew,
+    totals.newbornOld,
+    totals.transfersRecorded,
+    totals.pretermLbwBabies,
+    totals.kmcYesBabies,
+    totals.fallbackAttributedServices,
+  ];
+  totalValues.forEach((value, offset) => {
+    const cell = sheet.getCell(totalRow, offset + 1);
+    cell.value = value;
+    styleHeaderCell(cell);
+  });
+  sheet.views = [{ state: 'frozen', ySplit: 1, xSplit: 4 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: accountRows.length + 1, column: headers.length },
+  };
+  const noteRow = totalRow + 2;
+  sheet.getCell(`A${noteRow}`).value =
+    'New/Old applies to service events, matching Midwife Report: the first dated clinical service ' +
+    'for that account and patient is New; later services are Old. Headcount remains unique clients. ' +
+    'Fallback-attributed services had no recognized record creator and were assigned to the patient owner.';
+  sheet.mergeCells(
+    noteRow,
+    1,
+    noteRow + 1,
+    headers.length,
+  );
+  sheet.getCell(`A${noteRow}`).alignment = {
+    vertical: 'middle',
+    horizontal: 'left',
+    wrapText: true,
+  };
+  sheet.getCell(`A${noteRow}`).font = {
+    italic: true,
+    size: 9,
+    color: { argb: 'FF334155' },
+  };
 }
 
 function addBriefingSheet(workbook, rows, extras) {
@@ -854,7 +1467,7 @@ function addBriefingSheet(workbook, rows, extras) {
     ['Mothers', totals.mothers],
     ['Babies', totals.babies],
     ['ANC clients', totals.ancHeadcount],
-    ['Deliveries', totals.deliveries],
+    ['Dashboard deliveries', totals.dashboardDeliveries],
     ['PNC clients', totals.pncHeadcount],
     ['NBC records', totals.nbcHeadcount],
     ['High-risk (HRT)', totals.hrt],
@@ -893,7 +1506,7 @@ function addBriefingSheet(workbook, rows, extras) {
   coverageRows(totals).forEach((row, index) => {
     const numerators = [
       totals.earlyAnc, totals.anc4Plus, totals.anc8Plus,
-      totals.pnc48h, totals.pnc42d, totals.lcgSecondStage,
+      totals.pnc48h, totals.pnc48h + totals.pnc42d, totals.lcgSecondStage,
     ];
     const denominators = [
       totals.ancHeadcount, totals.ancHeadcount, totals.ancHeadcount,
@@ -983,8 +1596,8 @@ function addChartsSheet(workbook, chartResult) {
   });
 }
 
-async function writeWorkbook(workbookPath, rows, extras) {
-  const workbook = createWorkbookTemplate();
+async function writeWorkbook(workbookPath, rows, accountRows, extras) {
+  const workbook = createWorkbookTemplate(extras.extractedAt);
   const worksheet = workbook.worksheets[0];
   const lastDataRow = 3 + rows.length;
 
@@ -1029,14 +1642,17 @@ async function writeWorkbook(workbookPath, rows, extras) {
     fitToWidth: 1,
     fitToHeight: 0,
   };
-  worksheet.headerFooter.oddFooter = 'Generated from MNCH live data — Midwife accounts only';
+  worksheet.headerFooter.oddFooter =
+    `Generated from MNCH live data — Pyinmana and Tatkon only — ${extras.extractedAt}`;
   worksheet.autoFilter = {
     from: { row: 3, column: 1 },
-    to: { row: lastDataRow, column: 24 },
+    to: { row: lastDataRow, column: 30 },
   };
 
   addBriefingSheet(workbook, rows, extras);
   addTownshipSummarySheet(workbook, rows);
+  addDefinitionsSheet(workbook);
+  addAccountActivitySheet(workbook, accountRows);
   addPivotSourceSheet(workbook, rows);
   const chartResult = renderChartImages(rows);
   try {
@@ -1064,15 +1680,32 @@ async function main() {
   try {
     const data = await loadData(db);
     const metricsByFacility = aggregate(data);
+    const activityByAccount = aggregateAccountActivity(data);
     const rows = buildFacilityRows(metricsByFacility);
-    await writeWorkbook(workbookPath, rows, { midwifeCount: data.midwives.size });
+    const accountRows = buildAccountRows(data, activityByAccount);
+    const extractedAt = EXTRACT_DATE_LABEL;
+    await writeWorkbook(workbookPath, rows, accountRows, {
+      midwifeCount: data.midwives.size,
+      extractedAt,
+    });
 
     const totals = totalsForRows(rows);
     console.log(`Wrote ${rows.length} facility rows.`);
     console.log(`Midwife accounts: ${data.midwives.size}`);
     console.log(`Selected patients: ${data.patients.size}`);
     console.log(`Registered patients: ${totals.totalRegistered} (${totals.mothers} mothers, ${totals.babies} babies)`);
+    console.log(`Delivery notes: ${totals.deliveries}; Dashboard deliveries: ${totals.dashboardDeliveries}`);
     console.log(`ANC services: ${totals.ancServices}; PNC services: ${totals.pncServices}; NBC services: ${totals.nbcServices}`);
+    const accountTotals = emptyAccountActivity();
+    activityByAccount.forEach((metrics) => {
+      ACCOUNT_ACTIVITY_KEYS.forEach((key) => { accountTotals[key] += metrics[key]; });
+    });
+    console.log(
+      `Account activity: Joint Care ${accountTotals.activeJointCare}; ` +
+      `transfers ${accountTotals.transfersRecorded}; ` +
+      `LBW/Preterm babies ${accountTotals.pretermLbwBabies}; ` +
+      `KMC Yes babies ${accountTotals.kmcYesBabies}.`,
+    );
     console.log('Export complete.');
   } finally {
     cleanup();
@@ -1080,7 +1713,28 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('Export failed:', error && error.stack ? error.stack : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('Export failed:', error && error.stack ? error.stack : error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  emptyAccountActivity,
+  recordCreatorId,
+  canonicalNewbornBabies,
+  babyIsPretermOrLbw,
+  babyHasKmcYes,
+  hasDeliveryNotes,
+  isDashboardDelivered,
+  isPilotFacilityCode,
+  yangonDayOrdinal,
+  deliveryDateFromNotes,
+  firstPncDays,
+  pncTimingBucket,
+  serviceEventDate,
+  serviceEventSortKey,
+  aggregateAccountActivity,
+  buildAccountRows,
+};

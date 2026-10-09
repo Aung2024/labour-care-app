@@ -166,46 +166,8 @@ async function resetLockoutRecord(userId) {
  * @param {string} userId - User ID or email
  * @returns {Promise<Object>} Lock status with isLocked and unlockTime
  */
-async function checkAccountLockout(userId) {
-  try {
-    const lockoutRef = firebase.firestore()
-      .collection('account_lockouts')
-      .doc(userId);
-    const lockoutDoc = await lockoutRef.get();
-    
-    if (!lockoutDoc.exists) {
-      return { isLocked: false, unlockTime: null, attempts: 0 };
-    }
-    
-    const lockoutData = lockoutDoc.data();
-    const now = Date.now();
-    const lockoutUntil = lockoutData.lockoutUntil?.toMillis() || 0;
-    
-    // Check if lockout has expired
-    if (lockoutUntil && now >= lockoutUntil) {
-      await resetLockoutRecord(userId);
-      return { isLocked: false, unlockTime: null, attempts: 0 };
-    }
-
-    if (lockoutUntil && now < lockoutUntil) {
-      return {
-        isLocked: true,
-        unlockTime: new Date(lockoutUntil),
-        attempts: lockoutData.attempts || 0,
-        remainingTime: Math.ceil((lockoutUntil - now) / 1000 / 60) // minutes
-      };
-    }
-    
-    return {
-      isLocked: false,
-      unlockTime: null,
-      attempts: lockoutData.attempts || 0
-    };
-    
-  } catch (error) {
-    console.error('Error checking account lockout:', error);
-    return { isLocked: false, unlockTime: null, attempts: 0 };
-  }
+async function checkAccountLockout() {
+  return { isLocked: false, unlockTime: null, attempts: 0, remainingTime: null };
 }
 
 /**
@@ -213,73 +175,8 @@ async function checkAccountLockout(userId) {
  * @param {string} userId - User ID or email
  * @returns {Promise<Object>} Lock status after recording attempt
  */
-async function recordFailedLoginAttempt(userId) {
-  try {
-    const lockoutRef = firebase.firestore()
-      .collection('account_lockouts')
-      .doc(userId);
-    const lockoutDoc = await lockoutRef.get();
-    const now = Date.now();
-    let attempts = 1;
-    let lockoutCount = 1;
-    let lockoutUntil = null;
-    let isLocked = false;
-
-    if (lockoutDoc.exists) {
-      const data = lockoutDoc.data();
-      const existingLockoutUntil = data.lockoutUntil?.toMillis() || 0;
-
-      if (existingLockoutUntil && now < existingLockoutUntil) {
-        return {
-          isLocked: true,
-          unlockTime: new Date(existingLockoutUntil),
-          attempts: data.attempts || LOCKOUT_CONFIG.maxAttempts,
-          remainingTime: Math.ceil((existingLockoutUntil - now) / 1000 / 60)
-        };
-      }
-
-      lockoutCount = data.lockoutCount || 0;
-      if (existingLockoutUntil && now >= existingLockoutUntil) {
-        attempts = 1;
-      } else {
-        attempts = (data.attempts || 0) + 1;
-      }
-    }
-
-    if (attempts >= LOCKOUT_CONFIG.maxAttempts) {
-      lockoutCount += 1;
-      lockoutUntil = now + LOCKOUT_CONFIG.lockoutDuration;
-      isLocked = true;
-
-      if (window.AuditLogger) {
-        await AuditLogger.logSecurityEvent(
-          'account_locked',
-          'Account locked after ' + attempts + ' failed login attempts',
-          { userId: userId, attempts: attempts, lockoutDuration: LOCKOUT_CONFIG.lockoutDuration }
-        );
-      }
-    }
-
-    await lockoutRef.set({
-      attempts: attempts,
-      lockoutUntil: lockoutUntil ? firebase.firestore.Timestamp.fromMillis(lockoutUntil) : null,
-      lockoutCount: lockoutCount,
-      lastAttempt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      email: userId
-    }, { merge: true });
-
-    return {
-      isLocked: isLocked,
-      unlockTime: lockoutUntil ? new Date(lockoutUntil) : null,
-      attempts: attempts,
-      remainingTime: lockoutUntil ? Math.ceil((lockoutUntil - now) / 1000 / 60) : null
-    };
-
-  } catch (error) {
-    console.error('Error recording failed login attempt:', error);
-    return { isLocked: false, unlockTime: null, attempts: 0 };
-  }
+async function recordFailedLoginAttempt() {
+  return { isLocked: false, unlockTime: null, attempts: 0, remainingTime: null };
 }
 
 /**
