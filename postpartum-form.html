@@ -1751,6 +1751,9 @@
         
         const urlParams = new URLSearchParams(window.location.search);
         patientId = urlParams.get('patient') || sessionStorage.getItem('selectedPatientId');
+        if (window.BabyPatientUtils && BabyPatientUtils.keepMotherSelectedForPnc) {
+          patientId = await BabyPatientUtils.keepMotherSelectedForPnc(firebase.firestore()) || patientId;
+        }
         updateBackToPncLink();
         
         if (!patientId) {
@@ -2053,47 +2056,38 @@
     async function loadNewbornShortcut(hasPncVisit) {
       const host = document.getElementById('newbornShortcut');
       if (!host || !currentPatient || !currentPatient.id || !hasPncVisit) {
-        if (host) host.hidden = true;
+        if (host) {
+          host.hidden = true;
+          host.innerHTML = '';
+        }
         return;
       }
-      let babies = [];
-      try {
-        if (window.BabyPatientUtils && BabyPatientUtils.listBabiesForMother) {
-          babies = await BabyPatientUtils.listBabiesForMother(firebase.firestore(), currentPatient.id);
-        }
-      } catch (error) {
-        console.warn('Could not load newborn cards:', error);
-      }
-      const cards = babies.length
-        ? babies
-        : [{ id: currentPatient.id, data: { name: '' } }];
       host.innerHTML = '';
-      cards.forEach(function (baby) {
-        const name = (baby.data && baby.data.name) || '';
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'newborn-shortcut-card';
-        button.onclick = function () { openNewbornCard(baby.id); };
-        const title = document.createElement('strong');
-        title.textContent = currentLanguage === 'en'
-          ? (name ? 'Newborn care — ' + name : "Newborn care for this mother's baby")
-          : (name ? 'မွေးကင်းစ စောင့်ရှောက်မှု — ' + name : 'ဤမိခင်၏ ကလေး မွေးကင်းစ စောင့်ရှောက်မှု');
-        const hint = document.createElement('small');
-        hint.textContent = currentLanguage === 'en' ? 'Open the newborn card' : 'ကလေး၏ Newborn ကတ်သို့ သွားရန်';
-        const text = document.createElement('span');
-        text.appendChild(title);
-        text.appendChild(document.createElement('br'));
-        text.appendChild(hint);
-        button.appendChild(text);
-        host.appendChild(button);
-      });
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'newborn-shortcut-card';
+      button.onclick = openNewbornHub;
+      const title = document.createElement('strong');
+      title.textContent = currentLanguage === 'en' ? 'Newborn hub' : 'မွေးကင်းစ စောင့်ရှောက်မှု';
+      const hint = document.createElement('small');
+      hint.textContent = currentLanguage === 'en'
+        ? 'Open immediate newborn care, newborn visits, and the newborn report.'
+        : 'မွေးပြီးပြီးချင်း စောင့်ရှောက်မှု၊ မွေးကင်းစ မှတ်တမ်းနှင့် အစီရင်ခံစာကို ဖွင့်ရန်။';
+      const text = document.createElement('span');
+      text.appendChild(title);
+      text.appendChild(document.createElement('br'));
+      text.appendChild(hint);
+      button.appendChild(text);
+      host.appendChild(button);
       host.hidden = false;
     }
 
-    function openNewbornCard(targetId) {
-      if (!targetId) return;
-      sessionStorage.setItem('selectedPatientId', targetId);
-      window.location.href = 'newborn-care-page.html?patient=' + encodeURIComponent(targetId);
+    async function openNewbornHub() {
+      if (window.BabyPatientUtils && BabyPatientUtils.keepMotherSelectedForPnc && currentPatient && currentPatient.id) {
+        sessionStorage.setItem('selectedPatientId', currentPatient.id);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(currentPatient));
+      }
+      window.location.href = 'immediate-newborn-care.html';
     }
 
     async function loadAncHistorySummary() {

@@ -762,6 +762,38 @@
     };
   }
 
+  function readStoredPatient() {
+    try {
+      return JSON.parse(sessionStorage.getItem('selectedPatientData') || 'null');
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function keepMotherSelectedForPnc(db) {
+    if (typeof sessionStorage === 'undefined') return '';
+    var selectedId = sessionStorage.getItem('selectedPatientId') || '';
+    var stored = readStoredPatient();
+    if (stored && stored.id && selectedId && stored.id !== selectedId && !isBabyPatient(stored)) {
+      sessionStorage.setItem('selectedPatientId', stored.id);
+      selectedId = stored.id;
+    }
+    if (!db || !selectedId) return selectedId;
+    var snap = await db.collection('patients').doc(selectedId).get();
+    var data = snap.exists ? (snap.data() || {}) : {};
+    var motherId = data.mother_patient_id;
+    if (motherId && (isBabyPatient(data) || data.patient_type === 'baby')) {
+      var motherSnap = await db.collection('patients').doc(motherId).get();
+      if (motherSnap.exists) {
+        var mother = Object.assign({ id: motherSnap.id }, motherSnap.data() || {});
+        sessionStorage.setItem('selectedPatientId', mother.id);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(mother));
+        return mother.id;
+      }
+    }
+    return selectedId;
+  }
+
   async function listBabiesForMother(db, motherId) {
     if (!db || !motherId) return [];
     var snap = await db.collection('patients')
@@ -802,6 +834,7 @@
     formatBabyAgeFromDiffDays: formatBabyAgeFromDiffDays,
     findExistingMotherPatient: findExistingMotherPatient,
     listBabiesForMother: listBabiesForMother,
+    keepMotherSelectedForPnc: keepMotherSelectedForPnc,
     normalizePersonName: normalizePersonName
   };
 })(typeof window !== 'undefined' ? window : this);

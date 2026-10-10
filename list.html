@@ -703,7 +703,8 @@
       cursor: pointer;
     }
 
-    .service-close-backdrop[hidden] {
+    .service-close-backdrop[hidden],
+    #serviceReopenBtn[hidden] {
       display: none !important;
     }
 
@@ -1268,6 +1269,7 @@
           <button type="button" class="btn btn-outline-secondary flex-fill" onclick="closeServiceClosure()">Cancel</button>
           <button type="button" class="btn btn-primary flex-fill" onclick="saveServiceClosure()">Save</button>
         </div>
+        <button type="button" id="serviceReopenBtn" class="btn btn-outline-primary w-100 mt-2" hidden onclick="reopenServiceClosure()"></button>
       </div>
     </div>
 
@@ -3070,6 +3072,19 @@
       fillServiceCloseSelect(document.getElementById('serviceCloseDeathCause'), ServiceClosure.deathCauses, closure.deathCause || '');
       document.getElementById('serviceCloseDetail').value = closure.detail || '';
       document.getElementById('serviceCloseNote').value = closure.note || '';
+      const reopenBtn = document.getElementById('serviceReopenBtn');
+      const alreadyClosed = ServiceClosure.isClosed(patient);
+      if (reopenBtn) {
+        reopenBtn.hidden = !alreadyClosed;
+        reopenBtn.textContent = lang === 'en'
+          ? 'Mark in service again'
+          : 'စောင့်ရှောက်မှု ဆက်လုပ်ဆဲသို့ ပြန်ထားရန်';
+      }
+      if (alreadyClosed) {
+        document.getElementById('serviceCloseHint').textContent = lang === 'en'
+          ? 'This patient is already marked complete. You can correct the outcome, or put them back on the in-service list.'
+          : 'ဤလူနာကို ပြီးမြောက်ပြီးဟု မှတ်ထားသည်။ ရလဒ်ကို ပြင်နိုင်သည်၊ သို့မဟုတ် စောင့်ရှောက်မှု ဆက်လုပ်ဆဲ စာရင်းသို့ ပြန်ထားနိုင်သည်။';
+      }
       backdrop.hidden = false;
       renderServiceClosureFields();
     }
@@ -3128,6 +3143,34 @@
       }, { merge: true });
       patient.serviceClosure = Object.assign({}, result.record, { status: 'closed' });
       patient.rosterStatus = 'closed';
+      closeServiceClosure();
+      filterPatients();
+    }
+
+    async function reopenServiceClosure() {
+      if (!serviceClosePatientId) return;
+      const patient = allPatients.find(function (item) { return item.id === serviceClosePatientId; });
+      if (!patient) return;
+      const lang = serviceCloseLang();
+      const message = lang === 'en'
+        ? 'Put this patient back on the in-service list?'
+        : 'ဤလူနာကို စောင့်ရှောက်မှု ဆက်လုပ်ဆဲ စာရင်းသို့ ပြန်ထားမလား။';
+      const title = lang === 'en' ? 'Mark in service again' : 'စောင့်ရှောက်မှု ဆက်လုပ်ဆဲ';
+      let confirmed = false;
+      if (window.AppDialog && AppDialog.confirm) {
+        confirmed = await AppDialog.confirm(message, { title: title });
+      } else {
+        confirmed = window.confirm(message);
+      }
+      if (!confirmed) return;
+      const db = firebase.firestore();
+      await db.collection('patients').doc(patient.id).set({
+        serviceClosure: firebase.firestore.FieldValue.delete(),
+        rosterStatus: 'open',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      delete patient.serviceClosure;
+      patient.rosterStatus = 'open';
       closeServiceClosure();
       filterPatients();
     }
