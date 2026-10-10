@@ -215,7 +215,7 @@ test('TD cannot move backwards, and missing labs do not keep a complete patient 
     testRecords: [{ id: 't1', data: { hivResult: 'Negative' } }]
   });
   assert.equal(category(labsOnly, 'test').optional, true);
-  assert.equal(group(labsOnly, 'test', 'testDate').status, 'missing');
+  assert.equal(group(labsOnly, 'test', 'lab:t1').status, 'missing');
   assert.equal(labsOnly.gapCount, 0);
 });
 
@@ -258,6 +258,31 @@ test('PNC mothers without newborn records get redirect cards instead of inline n
   assert.equal(category(scan, 'newborn-links').groups.length, 0);
 });
 
+test('previous-pregnancy writes keep the ANC delivery-type dropdown values', () => {
+  const plan = rules.planWrites({
+    patient: mother({ gravida_value: 3, parity_primary: 2 }),
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } }]
+  }, [{
+    module: 'anc',
+    applyTo: 'all',
+    values: {
+      previousObstetricHistory: [{ year: '2020', deliveryType: 'Live birth', birthPlace: 'Home' }]
+    }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.operations[0].data.previousObstetricHistory[0].deliveryType, 'ရိုးရိုးမွေး');
+
+  const invalid = rules.planWrites({
+    patient: mother({ gravida_value: 3, parity_primary: 2 }),
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } }]
+  }, [{
+    module: 'anc',
+    recordId: 'v1',
+    values: { previousObstetricHistory: [{ year: '2020', deliveryType: 'typed by hand' }] }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(invalid.ok, false);
+});
+
 test('future dates are rejected and twins require two baby rows', () => {
   const future = rules.planWrites({
     patient: mother(),
@@ -297,5 +322,11 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(rulesSource, /newborn-care-page\.html/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
   assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v346-moh/);
+  assert.match(worker, /mch-care-v347-moh/);
+  const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');
+  assert.match(langApply, /global\.currentLanguage = lang/);
+  assert.equal(rules.fieldMap('registration').gravida.type, 'select');
+  assert.equal(rules.fieldMap('test').hivResult.type, 'select');
+  assert.equal(rules.fieldMap('test').rhFactor.options.some(function (item) { return item.value === 'Rh negative'; }), true);
+  assert.ok(rules.obstetricDeliveryTypes.some(function (item) { return item.value === 'ရိုးရိုးမွေး'; }));
 });

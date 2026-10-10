@@ -451,8 +451,11 @@
   }
 
   function firstValue(group, key) {
-    if (group.proposedValue && !group.visits.length) {
-      return key && group.proposedValue[key] != null ? group.proposedValue[key] : group.proposedValue;
+    if (key && group.proposedValue && typeof group.proposedValue === 'object' && !Array.isArray(group.proposedValue) && group.proposedValue[key] != null && group.proposedValue[key] !== '') {
+      return group.proposedValue[key];
+    }
+    if (group.proposedValue && !(group.visits && group.visits.length)) {
+      return group.proposedValue;
     }
     var found = '';
     (group.visits || []).forEach(function (visit) {
@@ -481,6 +484,15 @@
         other.hidden = control.value !== 'Other';
       });
     }
+    if (field.key === 'ultrasoundServices') {
+      var detailsField = { key: 'ultrasoundDetails', type: 'text', labelEn: 'Ultrasound details', labelMm: 'Ultrasound အသေးစိတ်' };
+      var details = fieldEditor(detailsField, id + ':details', '');
+      details.hidden = String(value) !== 'Yes';
+      wrap.appendChild(details);
+      control.addEventListener('change', function () {
+        details.hidden = control.value !== 'Yes';
+      });
+    }
     return wrap;
   }
 
@@ -494,7 +506,13 @@
     var title = document.createElement('h3');
     title.textContent = t('Add a lab result', 'ဓာတ်ခွဲအဖြေ ထည့်ရန်');
     wrap.appendChild(title);
-    wrap.appendChild(fieldEditor({ key: 'testDate', type: 'date', labelEn: 'Test date', labelMm: 'စစ်ဆေးသည့်ရက်' }, 'newLab:testDate', ''));
+    var fields = global.RetroactiveDataRules && global.RetroactiveDataRules.fieldMap
+      ? global.RetroactiveDataRules.fieldMap('test')
+      : {};
+    Object.keys(fields).forEach(function (key) {
+      if (key === 'ultrasoundDetails') return;
+      wrap.appendChild(fieldEditor(fields[key], 'newLab:' + key, ''));
+    });
     return wrap;
   }
 
@@ -644,58 +662,92 @@
     var add = document.createElement('button');
     add.type = 'button';
     add.className = 'secondary-btn';
-    add.textContent = t('Add pregnancy', 'ကိုယ်ဝန်တစ်ခု ထည့်ရန်');
+    add.textContent = t('Add previous pregnancy', 'ယခင်ကိုယ်ဝန် ထည့်ရန်');
     add.addEventListener('click', function () { wrap.insertBefore(obstetricRow({}), add); });
     wrap.appendChild(add);
     return wrap;
   }
 
+  function obstetricField(captionEn, captionMm, control) {
+    var wrap = document.createElement('label');
+    wrap.className = 'field-block';
+    wrap.appendChild(document.createTextNode(t(captionEn, captionMm)));
+    wrap.appendChild(control);
+    return wrap;
+  }
+
   function obstetricRow(data) {
     var row = document.createElement('div');
-    row.className = 'repeat-row';
+    row.className = 'repeat-row obstetric-row';
     row.dataset.obRow = '1';
     var year = document.createElement('input');
     year.dataset.part = 'year';
     year.type = 'number';
-    year.placeholder = t('Year', 'ခုနှစ်');
+    year.min = '1950';
+    year.max = '2100';
+    year.inputMode = 'numeric';
     year.className = 'field-input';
     if (data && data.year) year.value = data.year;
+    row.appendChild(obstetricField('Previous pregnancies (year)', 'ယခင်ကိုယ်ဝန် (ခုနှစ်)', year));
+
     var delivery = document.createElement('select');
     delivery.dataset.part = 'deliveryType';
     delivery.className = 'field-input';
-    [choice('', t('Delivery type', 'မွေးဖွားနည်း'), t('Delivery type', 'မွေးဖွားနည်း'))].concat([
-      ['ရိုးရိုးမွေး', 'Normal delivery', 'ရိုးရိုးမွေး'],
-      ['လမစေ့မွေး', 'Preterm birth', 'လမစေ့မွေး'],
-      ['အသေမွေး', 'Stillbirth', 'အသေမွေး'],
-      ['ညှပ်ဆွဲ', 'Forceps', 'ညှပ်ဆွဲ'],
-      ['လေစုပ်', 'Vacuum', 'လေစုပ်'],
-      ['ဗိုက်ခွဲ', 'Cesarean section', 'ဗိုက်ခွဲ'],
-      ['သားပျက်', 'Abortion', 'သားပျက်']
-    ].map(function (item) { return choice(item[0], item[1], item[2]); })).forEach(function (option) {
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = t('Select', 'ရွေးချယ်ပါ');
+    delivery.appendChild(blank);
+    var types = (global.RetroactiveDataRules && global.RetroactiveDataRules.obstetricDeliveryTypes) || [];
+    types.forEach(function (option) {
       var node = document.createElement('option');
       node.value = option.value;
-      node.textContent = option.value ? optionLabel(option) : option.en;
+      node.textContent = optionLabel(option);
       delivery.appendChild(node);
     });
-    if (data && data.deliveryType) delivery.value = data.deliveryType;
-    row.appendChild(year);
-    row.appendChild(delivery);
-    ['birthPlace', 'attendant', 'conditionAfterBirth'].forEach(function (key) {
-      var input = document.createElement('input');
-      input.dataset.part = key;
-      input.className = 'field-input';
-      input.placeholder = key === 'birthPlace' ? t('Place', 'နေရာ') : (key === 'attendant' ? t('Attendant', 'မွေးဖွားသူ') : t('Condition', 'အခြေအနေ'));
-      if (data && data[key]) input.value = data[key];
-      row.appendChild(input);
-    });
+    var mapped = global.RetroactiveDataRules && global.RetroactiveDataRules.mapLegacyDeliveryType
+      ? global.RetroactiveDataRules.mapLegacyDeliveryType(data && (data.deliveryType || data.outcome))
+      : (data && data.deliveryType) || '';
+    if (mapped) delivery.value = mapped;
+    row.appendChild(obstetricField('Mode of delivery', 'မွေးဖွားပုံ', delivery));
+
+    var place = document.createElement('input');
+    place.dataset.part = 'birthPlace';
+    place.type = 'text';
+    place.className = 'field-input';
+    if (data && data.birthPlace) place.value = data.birthPlace;
+    row.appendChild(obstetricField('Birth place', 'မွေးဖွားသည့်နေရာ', place));
+
+    var attendant = document.createElement('input');
+    attendant.dataset.part = 'attendant';
+    attendant.type = 'text';
+    attendant.className = 'field-input';
+    if (data && data.attendant) attendant.value = data.attendant;
+    row.appendChild(obstetricField('Birth attendant', 'မွေးဖွားပေးသူ', attendant));
+
     var weight = document.createElement('input');
     weight.dataset.part = 'birthWeightKg';
     weight.type = 'number';
+    weight.min = '0';
+    weight.max = '8';
     weight.step = '0.01';
-    weight.placeholder = t('Weight kg', 'အလေးချိန်');
+    weight.inputMode = 'decimal';
     weight.className = 'field-input';
-    if (data && data.birthWeightKg) weight.value = data.birthWeightKg;
-    row.appendChild(weight);
+    if (data && (data.birthWeightKg != null && data.birthWeightKg !== '')) weight.value = data.birthWeightKg;
+    row.appendChild(obstetricField('Birth weight (kg)', 'မွေးဖွားချိန် အလေးချိန် (ကီလို)', weight));
+
+    var condition = document.createElement('input');
+    condition.dataset.part = 'conditionAfterBirth';
+    condition.type = 'text';
+    condition.className = 'field-input';
+    if (data && data.conditionAfterBirth) condition.value = data.conditionAfterBirth;
+    row.appendChild(obstetricField('Condition after birth', 'မွေးပြီး အခြေအနေ', condition));
+
+    var remark = document.createElement('input');
+    remark.dataset.part = 'remark';
+    remark.type = 'text';
+    remark.className = 'field-input';
+    if (data && (data.remark || data.notes)) remark.value = data.remark || data.notes;
+    row.appendChild(obstetricField('Remark', 'မှတ်ချက်', remark));
     return row;
   }
 
@@ -786,10 +838,14 @@
     var type = document.createElement('select');
     type.dataset.part = 'facilityType';
     type.className = 'field-input';
-    ['', 'Public', 'Private'].forEach(function (value) {
+    [
+      ['', t('Facility type', 'ဌာနအမျိုးအစား')],
+      ['Public', t('Public', 'ပြည်သူ့ ကျန်းမာရေးဌာန')],
+      ['Private', t('Private', 'ပုဂ္ဂလိက ကျန်းမာရေးဌာန')]
+    ].forEach(function (item) {
       var option = document.createElement('option');
-      option.value = value;
-      option.textContent = value || t('Facility type', 'ဌာနအမျိုးအစား');
+      option.value = item[0];
+      option.textContent = item[1];
       type.appendChild(option);
     });
     if (data && data.facilityType) type.value = data.facilityType;
@@ -819,6 +875,10 @@
       var other = block.querySelector('[data-field-key="provisionalDiagnosisOther"]');
       if (other && value === 'Other') extra.provisionalDiagnosisOther = readControl(other.querySelector('[data-input-id], textarea, input'));
     }
+    if (fieldKey === 'ultrasoundServices') {
+      var details = block.querySelector('[data-field-key="ultrasoundDetails"]');
+      if (details && value === 'Yes') extra.ultrasoundDetails = readControl(details.querySelector('[data-input-id], textarea, input'));
+    }
     if (value === '' || value == null || (Array.isArray(value) && !value.length)) return extra.provisionalDiagnosisOther ? Object.assign({ key: fieldKey, value: value }, extra) : null;
     return Object.assign({ key: fieldKey, value: value }, extra);
   }
@@ -832,6 +892,7 @@
       if (!item) return;
       values[item.key] = item.value;
       if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
+      if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
     });
     var compound = panel.querySelector('[data-compound]');
     if (compound && compound.closest('.group-card') === panel.closest('.group-card') && !Object.keys(values).length) {
@@ -859,6 +920,7 @@
             if (!item) return;
             values[item.key] = item.value;
             if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
+            if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
           });
           if (Object.keys(values).length) visitValues[row.dataset.recordId] = values;
         });
@@ -872,11 +934,12 @@
       else {
         card.querySelectorAll('.once-panel .field-block, .once-panel [data-compound], .field-block').forEach(function (node) {
           if (node.classList.contains('field-block')) {
-            if (node.closest('.visit-row')) return;
+            if (node.closest('.visit-row') || node.closest('[data-compound]')) return;
             var item = readFieldBlock(node);
             if (!item) return;
             values[item.key] = item.value;
             if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
+            if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
           } else if (node.dataset && node.dataset.compound) {
             var key = card.dataset.groupKey === 'youngestChildAge' ? 'youngestChildAge' : (card.dataset.groupKey === 'previousObstetricHistory' ? 'previousObstetricHistory' : (card.dataset.groupKey === 'otherVisits' ? 'otherVisits' : (card.dataset.groupKey === 'babies' ? 'babies' : card.dataset.groupKey)));
             var compoundValue = readControl(node);
@@ -884,7 +947,7 @@
           }
         });
       }
-      if (card.dataset.groupKey === 'newLab' && values.testDate) {
+      if (card.dataset.groupKey === 'newLab' && Object.keys(values).length) {
         requests.push({ module: 'test', values: values });
         return;
       }
@@ -936,7 +999,7 @@
         row.querySelectorAll('[data-part]').forEach(function (input) { item[input.dataset.part] = input.value; });
         return item;
       }).filter(function (item) {
-        return item.year || item.deliveryType || item.birthPlace || item.attendant || item.birthWeightKg || item.conditionAfterBirth;
+        return item.year || item.deliveryType || item.birthPlace || item.attendant || item.birthWeightKg || item.conditionAfterBirth || item.remark;
       });
     }
     if (kind === 'babies') {

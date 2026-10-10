@@ -17,6 +17,7 @@
 
   function switchLanguage(lang) {
     currentLanguage = lang;
+    global.currentLanguage = lang;
     localStorage.setItem('appLanguage', lang);
     global.document.querySelectorAll('.language-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.lang === lang);

@@ -57,6 +57,64 @@
     ];
   }
 
+  function numberChoices(min, max) {
+    var options = [];
+    for (var i = min; i <= max; i++) options.push(choice(String(i), String(i), String(i)));
+    return options;
+  }
+
+  var OBSTETRIC_DELIVERY_TYPES = [
+    choice('ရိုးရိုးမွေး', 'Normal delivery', 'ရိုးရိုးမွေး'),
+    choice('လမစေ့မွေး', 'Preterm birth', 'လမစေ့မွေး'),
+    choice('အသေမွေး', 'Stillbirth', 'အသေမွေး'),
+    choice('ညှပ်ဆွဲ', 'Forceps', 'ညှပ်ဆွဲ'),
+    choice('လေစုပ်', 'Vacuum', 'လေစုပ်'),
+    choice('ဗိုက်ခွဲ', 'Cesarean section', 'ဗိုက်ခွဲ'),
+    choice('သားပျက်', 'Abortion', 'သားပျက်')
+  ];
+
+  function mapLegacyDeliveryType(value) {
+    var raw = text(value);
+    if (!raw) return '';
+    if (OBSTETRIC_DELIVERY_TYPES.some(function (item) { return item.value === raw; })) return raw;
+    var aliases = {
+      'Live birth': 'ရိုးရိုးမွေး',
+      'Normal delivery': 'ရိုးရိုးမွေး',
+      'Stillbirth': 'အသေမွေး',
+      'Preterm birth': 'လမစေ့မွေး',
+      'Forceps': 'ညှပ်ဆွဲ',
+      'Vacuum': 'လေစုပ်',
+      'Cesarean section': 'ဗိုက်ခွဲ',
+      'C-section': 'ဗိုက်ခွဲ',
+      'Abortion': 'သားပျက်',
+      'Ectopic/Molar': 'သားပျက်'
+    };
+    return aliases[raw] || '';
+  }
+
+  function labResultOptions(kind) {
+    if (kind === 'hiv') {
+      return [
+        choice('No Test Yet', 'No Test Yet', 'မစစ်ရသေး'),
+        choice('Reactive', 'Reactive', 'Reactive'),
+        choice('Non-reactive', 'Non-reactive', 'Non-reactive'),
+        choice('Indeterminate', 'Indeterminate', 'မသေချာ')
+      ];
+    }
+    if (kind === 'rdt') {
+      return [
+        choice('No Test Yet', 'No Test Yet', 'မစစ်ရသေး'),
+        choice('Positive', 'Positive', 'Positive'),
+        choice('Negative', 'Negative', 'Negative')
+      ];
+    }
+    return [
+      choice('No Test Yet', 'No Test Yet', 'မစစ်ရသေး'),
+      choice('Reactive', 'Reactive', 'Reactive'),
+      choice('Non-reactive', 'Non-reactive', 'Non-reactive')
+    ];
+  }
+
   function text(value) {
     return value == null ? '' : String(value).trim();
   }
@@ -324,8 +382,8 @@
       { key: 'age', path: ['age'], type: 'number', required: true, min: 10, max: 60, step: '1', labelEn: 'Age', labelMm: 'အသက်' },
       { key: 'phone', path: ['phone'], aliases: [['phone_number'], ['phoneNumber']], type: 'text', required: true, labelEn: 'Phone', labelMm: 'ဖုန်းနံပါတ်' },
       { key: 'registration_date', path: ['registration_date'], aliases: [['registrationDate']], type: 'date', required: true, labelEn: 'Registration date', labelMm: 'မှတ်ပုံတင်သည့်နေ့', sync: function (value) { return { registrationDate: value }; } },
-      { key: 'gravida', path: ['gravida'], aliases: [['gravida_value']], type: 'number', required: true, min: 1, max: 20, step: '1', labelEn: 'Gravida', labelMm: 'ကိုယ်ဝန်အကြိမ် (G)', sync: function (value) { return { gravida_value: value }; } },
-      { key: 'parity', path: ['parity_primary'], aliases: [['parity']], type: 'number', required: true, min: 0, max: 20, step: '1', labelEn: 'Parity', labelMm: 'မွေးဖွားအကြိမ် (P)', sync: function (value) { return { parity: value }; } },
+      { key: 'gravida', path: ['gravida'], aliases: [['gravida_value']], type: 'select', required: true, labelEn: 'Gravida', labelMm: 'ကိုယ်ဝန်အကြိမ် (G)', options: numberChoices(1, 15), sync: function (value) { var number = parseInt(value, 10); return { gravida: number, gravida_value: number }; } },
+      { key: 'parity', path: ['parity_primary'], aliases: [['parity']], type: 'select', required: true, labelEn: 'Parity', labelMm: 'မွေးဖွားအကြိမ် (P)', options: numberChoices(0, 15), sync: function (value) { var number = parseInt(value, 10); return { parity: number, parity_primary: number }; } },
       { key: 'youngestChildAge', path: ['youngest_child_age_years'], type: 'age', required: false, labelEn: 'Youngest child age', labelMm: 'အငယ်ဆုံးကလေး အသက်' }
     ];
   }
@@ -373,16 +431,17 @@
 
   function testFields() {
     return [
-      { key: 'testDate', path: ['testDate'], type: 'date', required: true, labelEn: 'Test date', labelMm: 'စစ်ဆေးသည့်ရက်' },
-      { key: 'hivResult', path: ['hivResult'], type: 'text', required: false, labelEn: 'HIV', labelMm: 'HIV' },
-      { key: 'malariaResult', path: ['malariaResult'], type: 'text', required: false, labelEn: 'Malaria', labelMm: 'ငှက်ဖျား' },
-      { key: 'syphilisResult', path: ['syphilisResult'], type: 'text', required: false, labelEn: 'Syphilis', labelMm: 'ဆစ်ဖလစ်' },
-      { key: 'hepatitisBResult', path: ['hepatitisBResult'], type: 'text', required: false, labelEn: 'Hepatitis B', labelMm: 'အသည်းရောင် ဘီ' },
-      { key: 'hepatitisCResult', path: ['hepatitisCResult'], type: 'text', required: false, labelEn: 'Hepatitis C', labelMm: 'အသည်းရောင် စီ' },
-      { key: 'hemoglobinResult', path: ['hemoglobinResult'], type: 'number', required: false, min: 1, max: 25, step: '0.1', labelEn: 'Hb', labelMm: 'Hb' },
-      { key: 'bloodGroup', path: ['bloodGroup'], type: 'select', required: false, labelEn: 'Blood group', labelMm: 'သွေးအုပ်စု', options: ['A', 'B', 'AB', 'O'].map(function (value) { return choice(value, value, value); }) },
-      { key: 'rhFactor', path: ['rhFactor'], type: 'select', required: false, labelEn: 'Rh factor', labelMm: 'Rh', options: [choice('Positive', 'Positive', 'Positive'), choice('Negative', 'Negative', 'Negative')] },
-      { key: 'ultrasoundServices', path: ['ultrasoundServices'], type: 'text', required: false, labelEn: 'Ultrasound', labelMm: 'အာထရာဆောင်း' }
+      { key: 'testDate', path: ['testDate'], type: 'date', required: false, labelEn: 'Test date', labelMm: 'စစ်ဆေးသည့်ရက်' },
+      { key: 'hivResult', path: ['hivResult'], type: 'select', required: false, labelEn: 'HIV', labelMm: 'HIV', options: labResultOptions('hiv') },
+      { key: 'malariaResult', path: ['malariaResult'], type: 'select', required: false, labelEn: 'Malaria', labelMm: 'ငှက်ဖျား', options: labResultOptions('rdt') },
+      { key: 'syphilisResult', path: ['syphilisResult'], type: 'select', required: false, labelEn: 'Syphilis', labelMm: 'ဆစ်ဖလစ်', options: labResultOptions() },
+      { key: 'hepatitisBResult', path: ['hepatitisBResult'], type: 'select', required: false, labelEn: 'Hepatitis B', labelMm: 'အသည်းရောင် ဘီ', options: labResultOptions() },
+      { key: 'hepatitisCResult', path: ['hepatitisCResult'], type: 'select', required: false, labelEn: 'Hepatitis C', labelMm: 'အသည်းရောင် စီ', options: labResultOptions() },
+      { key: 'hemoglobinResult', path: ['hemoglobinResult'], type: 'number', required: false, min: 1, max: 25, step: '0.1', labelEn: 'Hb (g/dl)', labelMm: 'Hb (g/dl)' },
+      { key: 'bloodGroup', path: ['bloodGroup'], type: 'select', required: false, labelEn: 'Blood group', labelMm: 'သွေးအုပ်စု', options: [choice('No Test Yet', 'No Test Yet', 'မစစ်ရသေး')].concat(['A', 'B', 'O', 'AB'].map(function (value) { return choice(value, value, value); })) },
+      { key: 'rhFactor', path: ['rhFactor'], type: 'select', required: false, labelEn: 'Rh factor', labelMm: 'Rh', options: [choice('No Test Yet', 'No Test Yet', 'မစစ်ရသေး'), choice('Rh positive', 'Rh positive', 'Rh positive'), choice('Rh negative', 'Rh negative', 'Rh negative')] },
+      { key: 'ultrasoundServices', path: ['ultrasoundServices'], type: 'select', required: false, labelEn: 'Ultrasound', labelMm: 'အာထရာဆောင်း', options: [choice('Yes', 'Yes', 'ရှိ'), choice('No', 'No', 'မရှိ')] },
+      { key: 'ultrasoundDetails', path: ['ultrasoundDetails'], type: 'text', required: false, labelEn: 'Ultrasound details', labelMm: 'Ultrasound အသေးစိတ်' }
     ];
   }
 
@@ -744,24 +803,25 @@
     });
     if (!category.applicable) return category;
     tests.forEach(function (test) {
-      var field = testFields()[0];
-      var current = readValue(test.data, field);
+      var fields = testFields();
+      var values = {};
+      fields.forEach(function (field) { values[field.key] = readValue(test.data, field); });
       category.groups.push({
-        key: 'testDate',
-        keys: ['testDate'],
+        key: 'lab:' + test.id,
+        keys: fields.map(function (field) { return field.key; }),
         module: 'test',
         mode: 'once',
         recordId: test.id,
         required: false,
         counts: false,
         optional: true,
-        status: valueFilled(field, current) ? 'ok' : 'missing',
-        labelEn: 'Lab test date',
-        labelMm: 'ဓာတ်ခွဲစစ်သည့်ရက်',
-        editor: editorOf(field),
-        fields: testFields(),
-        visits: [{ recordId: test.id, visitDate: test.visitDate, currentValue: current, status: valueFilled(field, current) ? 'ok' : 'missing' }],
-        proposedValue: current
+        status: valueFilled(fields[0], values.testDate) ? 'ok' : 'missing',
+        labelEn: 'Lab test',
+        labelMm: 'ဓာတ်ခွဲမှတ်တမ်း',
+        editor: editorOf(fields[0]),
+        fields: fields,
+        visits: [],
+        proposedValue: values
       });
     });
     return summarize(category);
@@ -957,21 +1017,22 @@
     if (field.type === 'obstetric') {
       if (!Array.isArray(raw) || !raw.length) return { error: error('Add at least one previous pregnancy.', 'ယခင်ကိုယ်ဝန် အနည်းဆုံးတစ်ခု ဖြည့်ပါ။') };
       var rows = raw.map(function (row, index) {
+        var deliveryType = mapLegacyDeliveryType(row.deliveryType || row.outcome);
         return {
           serial: index + 1,
           year: text(row.year),
-          deliveryType: text(row.deliveryType),
+          deliveryType: deliveryType,
           birthPlace: text(row.birthPlace),
           attendant: text(row.attendant),
           birthWeightKg: text(row.birthWeightKg),
           conditionAfterBirth: text(row.conditionAfterBirth),
           remark: text(row.remark),
-          outcome: text(row.deliveryType),
+          outcome: deliveryType,
           notes: text(row.remark)
         };
       }).filter(function (row) { return row.year || row.deliveryType; });
       if (!rows.length || rows.some(function (row) { return !row.year || !row.deliveryType; })) {
-        return { error: error('Each previous pregnancy needs a year and delivery type.', 'ယခင်ကိုယ်ဝန်တစ်ခုစီအတွက် ခုနှစ်နှင့် မွေးဖွားနည်း ဖြည့်ပါ။') };
+        return { error: error('Each previous pregnancy needs a year and the ANC delivery-type dropdown.', 'ယခင်ကိုယ်ဝန်တစ်ခုစီအတွက် ခုနှစ်နှင့် ANC မွေးဖွားပုံ ရွေးချယ်မှု ဖြည့်ပါ။') };
       }
       return { value: rows };
     }
@@ -1276,6 +1337,8 @@
     normalizeDeliveryMode: normalizeDeliveryMode,
     normalizeTd: normalizeTd,
     fieldMap: fieldMap,
-    visitRows: visitRows
+    visitRows: visitRows,
+    obstetricDeliveryTypes: OBSTETRIC_DELIVERY_TYPES,
+    mapLegacyDeliveryType: mapLegacyDeliveryType
   };
 });
