@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Back Fill</title>
+  <link rel="stylesheet" href="css/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body {
+      margin: 0;
+      background: #f4f7f8;
+      color: #14212b;
+      min-height: 100dvh;
+    }
+    .backfill-app {
+      width: min(920px, 100%);
+      margin: 0 auto;
+      padding: calc(0.75rem + env(safe-area-inset-top)) 1rem calc(6rem + env(safe-area-inset-bottom));
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 56px;
+      margin: 0 -1rem 1rem;
+      padding: 0.5rem 1rem;
+      background: #fff;
+      border-bottom: 1px solid #d9e3e8;
+    }
+    .topbar h1 { flex: 1; min-width: 0; font-size: 1rem; margin: 0; line-height: 1.25; }
+    .icon-btn, .primary-btn, .secondary-btn, .patient-row {
+      min-height: 44px;
+      min-width: 44px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .icon-btn, .secondary-btn, .primary-btn {
+      border-radius: 12px;
+      border: 1px solid #c5d4dc;
+      background: #fff;
+      font-weight: 700;
+    }
+    .icon-btn { width: 44px; }
+    .primary-btn {
+      border: 0;
+      background: #0f766e;
+      color: #fff;
+    }
+    .secondary-btn { padding: 0.55rem 0.8rem; margin-top: 0.75rem; }
+    .search-input, .field-input, select.field-input, textarea.field-input {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid #c5d4dc;
+      border-radius: 12px;
+      padding: 0.55rem 0.75rem;
+      font-size: 1rem;
+      background: #fff;
+    }
+    .patient-row, .module-card, .record-card, .state-card {
+      background: #fff;
+      border: 1px solid #d9e3e8;
+      border-radius: 16px;
+    }
+    .patient-row {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: center;
+      text-align: left;
+      padding: 0.8rem 0.9rem;
+      margin-bottom: 0.65rem;
+    }
+    .patient-list { margin-top: 0.8rem; }
+    .module-card, .record-card { padding: 0.9rem; margin-top: 0.8rem; }
+    .module-card h2, .record-card h3 { font-size: 1rem; margin: 0 0 0.7rem; }
+    .record-head { display: flex; align-items: center; gap: 0.65rem; }
+    .record-head input { width: 1.25rem; height: 1.25rem; }
+    .gap-field, .group-field { margin-top: 0.8rem; }
+    .conflict-copy, .warn-copy { color: #9a3412; background: #fff7ed; border-radius: 10px; padding: 0.55rem 0.7rem; }
+    .empty-copy, .status-copy { color: #52616b; }
+    .savebar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      display: flex;
+      gap: 0.7rem;
+      align-items: center;
+      padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+      background: #fff;
+      border-top: 1px solid #d9e3e8;
+    }
+    .savebar .primary-btn { flex: 1; }
+    .repeat-row, .inline-pair { display: grid; gap: 0.45rem; margin-top: 0.55rem; }
+    .language-switch { margin-left: auto; display: flex; gap: 0.35rem; }
+    .language-btn { min-height: 44px; min-width: 44px; }
+    @media (min-width: 768px) {
+      .repeat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="backfill-app">
+    <header class="topbar">
+      <button id="homeBtn" class="icon-btn" type="button" aria-label="Home"><i class="fas fa-home"></i></button>
+      <h1><span class="lang-text" data-en="Back Fill" data-mm="ဒေတာပြည့်စုံစွာဖြည့်ရန်">ဒေတာပြည့်စုံစွာဖြည့်ရန်</span></h1>
+      <div class="language-switch">
+        <button type="button" class="language-btn btn btn-sm btn-outline-secondary" data-lang="mm">MM</button>
+        <button type="button" class="language-btn btn btn-sm btn-outline-secondary" data-lang="en">EN</button>
+      </div>
+    </header>
+
+    <p id="bootState" class="status-copy lang-text" data-en="Checking your account…" data-mm="အကောင့်ကို စစ်နေသည်…">အကောင့်ကို စစ်နေသည်…</p>
+    <section id="offlineState" class="state-card" hidden>
+      <p class="lang-text" data-en="Back Fill is available online only. Reconnect, then open this card again." data-mm="ဒေတာပြန်ဖြည့်ခြင်းကို အင်တာနက်ရှိမှ သုံးနိုင်သည်။ ပြန်ချိတ်ပြီး ဤကတ်ကို ပြန်ဖွင့်ပါ။">ဒေတာပြန်ဖြည့်ခြင်းကို အင်တာနက်ရှိမှ သုံးနိုင်သည်။ ပြန်ချိတ်ပြီး ဤကတ်ကို ပြန်ဖွင့်ပါ။</p>
+    </section>
+    <section id="deniedState" class="state-card" hidden>
+      <p class="lang-text" data-en="Back Fill is available to the midwife who registered the patient." data-mm="ဒေတာပြန်ဖြည့်ခြင်းကို လူနာမှတ်ပုံတင်ထားသော သားဖွားဆရာမအတွက်သာ ဖွင့်ထားသည်။">ဒေတာပြန်ဖြည့်ခြင်းကို လူနာမှတ်ပုံတင်ထားသော သားဖွားဆရာမအတွက်သာ ဖွင့်ထားသည်။</p>
+    </section>
+
+    <main id="workState" hidden>
+      <section id="listView">
+        <p class="status-copy" id="statusText"></p>
+        <label class="visually-hidden" for="patientSearch">Search</label>
+        <input id="patientSearch" class="search-input" type="search" placeholder="Search">
+        <div id="patientList" class="patient-list"></div>
+        <p id="loadingState" class="status-copy" hidden>…</p>
+        <button id="loadMoreBtn" class="secondary-btn" type="button" hidden>
+          <span class="lang-text" data-en="Check more patients" data-mm="နောက်ထပ်လူနာများ စစ်ရန်">နောက်ထပ်လူနာများ စစ်ရန်</span>
+        </button>
+        <button id="retryBtn" class="secondary-btn" type="button">
+          <span class="lang-text" data-en="Check again" data-mm="ပြန်စစ်ရန်">ပြန်စစ်ရန်</span>
+        </button>
+      </section>
+
+      <section id="detailView" hidden>
+        <button id="backBtn" class="secondary-btn" type="button">
+          <span class="lang-text" data-en="All patients" data-mm="လူနာအားလုံး">လူနာအားလုံး</span>
+        </button>
+        <h2 id="detailName"></h2>
+        <p id="detailMeta" class="status-copy"></p>
+        <div id="detailBody"></div>
+      </section>
+    </main>
+  </div>
+  <div class="savebar" id="saveBar" hidden>
+    <p id="saveStatus" class="status-copy"></p>
+    <button id="saveBtn" class="primary-btn" type="button" disabled>Save</button>
+  </div>
+
+  <script src="js/vendor/firebase-app.js"></script>
+  <script src="js/vendor/firebase-auth.js"></script>
+  <script src="js/vendor/firebase-firestore.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth-guard.js"></script>
+  <script src="js/lang-apply.js"></script>
+  <script src="js/ui-dialogs.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
+  <script src="js/baby-patient-utils.js"></script>
+  <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
+  <script src="js/retroactive-data-rules.js"></script>
+  <script src="js/retroactive-data-service.js"></script>
+  <script src="js/retroactive-data-page.js"></script>
+  <script>
+    document.getElementById('detailView').addEventListener('toggle', function () {});
+    var detail = document.getElementById('detailView');
+    var bar = document.getElementById('saveBar');
+    new MutationObserver(function () { bar.hidden = detail.hidden; }).observe(detail, { attributes: true, attributeFilter: ['hidden'] });
+  </script>
+</body>
+</html>

@@ -1249,10 +1249,16 @@
         <!-- Anatomy Abnormalities -->
         <div class="mb-4">
           <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="anatomy_abnormalities" name="anatomy_abnormalities" value="yes">
+            <input class="form-check-input" type="checkbox" id="anatomy_abnormalities" name="anatomy_abnormalities" value="yes" onchange="toggleAnatomyAbnormalityDetails()">
             <label class="form-check-label" for="anatomy_abnormalities">
               <span class="lang-text" data-en="Anatomy abnormalities" data-mm="ခန္ဓာကိုယ်အစိတ်အပိုင်းများ ပုံမှန်မရှိခြင်း">Anatomy abnormalities</span>
             </label>
+          </div>
+          <div class="mt-2" id="anatomyAbnormalityDetailsGroup" style="display:none;">
+            <label for="anatomy_abnormality_details" class="form-label">
+              <span class="lang-text" data-en="Abnormality details *" data-mm="ပုံမမှန်မှု အသေးစိတ် *">Abnormality details *</span>
+            </label>
+            <textarea class="form-control" id="anatomy_abnormality_details" name="anatomy_abnormality_details" rows="2"></textarea>
           </div>
         </div>
 
@@ -1927,6 +1933,7 @@
       state.cord_care = getRadioValue('cord_care');
       state.kmc_selected = getRadioValue('kmc_selected');
       state.anatomy_abnormalities = !!document.getElementById('anatomy_abnormalities')?.checked;
+      state.anatomy_abnormality_details = document.getElementById('anatomy_abnormality_details')?.value || '';
       state.exclusive_breastfeeding_on_demand = !!document.getElementById('exclusive_breastfeeding_on_demand')?.checked;
       state.difficult_breathing_signs = Array.from(document.querySelectorAll('input[name="difficult_breathing_signs"]:checked')).map(function (el) { return el.value; });
       state.eye_infection_findings = Array.from(document.querySelectorAll('input[name="eye_infection_findings"]:checked')).map(function (el) { return el.value; });
@@ -1962,6 +1969,9 @@
       setRadioValue('kmc_selected', state.kmc_selected || null);
       const anatomy = document.getElementById('anatomy_abnormalities');
       if (anatomy) anatomy.checked = !!state.anatomy_abnormalities;
+      const anatomyDetails = document.getElementById('anatomy_abnormality_details');
+      if (anatomyDetails) anatomyDetails.value = state.anatomy_abnormality_details || '';
+      toggleAnatomyAbnormalityDetails();
       const ebf = document.getElementById('exclusive_breastfeeding_on_demand');
       if (ebf) ebf.checked = !!state.exclusive_breastfeeding_on_demand;
       document.querySelectorAll('input[name="difficult_breathing_signs"]').forEach(function (el) {
@@ -2320,6 +2330,9 @@
       });
       const anatomy = document.getElementById('anatomy_abnormalities');
       if (anatomy) anatomy.checked = false;
+      const anatomyDetails = document.getElementById('anatomy_abnormality_details');
+      if (anatomyDetails) anatomyDetails.value = '';
+      toggleAnatomyAbnormalityDetails();
       const ebf = document.getElementById('exclusive_breastfeeding_on_demand');
       if (ebf) ebf.checked = false;
       const eyeCare = document.getElementById('eye_care_status');
@@ -2377,6 +2390,7 @@
           eye_infection_status: null,
           cord_care: null,
           anatomy_abnormalities: false,
+          anatomy_abnormality_details: '',
           exclusive_breastfeeding_on_demand: false,
           difficult_breathing_signs: [],
           eye_infection_findings: [],
@@ -3477,6 +3491,9 @@
       }
 
       if (data.anatomy_abnormalities) document.getElementById('anatomy_abnormalities').checked = true;
+      const anatomyDetails = document.getElementById('anatomy_abnormality_details');
+      if (anatomyDetails) anatomyDetails.value = data.anatomy_abnormality_details || '';
+      toggleAnatomyAbnormalityDetails();
       const legacyImmunization = [
         data.vitamin_k ? 'Vitamin K' : '',
         data.hepatitis_b ? 'Hepatitis B' : '',
@@ -3777,6 +3794,11 @@
         alert(currentLanguage === 'mm' ? 'ချက်တိုင်စောင့်ရှောက်မှု ရှိ/မရှိ ရွေးပါ။' : 'Please select cord care.');
         return;
       }
+      if (document.getElementById('anatomy_abnormalities')?.checked && !document.getElementById('anatomy_abnormality_details')?.value.trim()) {
+        alert(currentLanguage === 'mm' ? 'ခန္ဓာကိုယ်ပုံမမှန်မှု အသေးစိတ် ဖြည့်ပါ။' : 'Enter the anatomy abnormality details.');
+        document.getElementById('anatomy_abnormality_details')?.focus();
+        return;
+      }
 
       updateCurrentWeightVisibility();
       if (shouldShowCurrentVisitWeight()) {
@@ -3906,6 +3928,9 @@
           eye_care_status: document.getElementById('eye_care_status').value || null,
           cord_care: document.querySelector('input[name="cord_care"]:checked')?.value || null,
           anatomy_abnormalities: document.getElementById('anatomy_abnormalities').checked,
+          anatomy_abnormality_details: document.getElementById('anatomy_abnormalities').checked
+            ? (document.getElementById('anatomy_abnormality_details')?.value.trim() || null)
+            : null,
           exclusive_breastfeeding_on_demand: document.getElementById('exclusive_breastfeeding_on_demand').checked,
           follow_up_appointment_date: document.getElementById('follow_up_appointment_date').value || null,
           follow_up_manual_override: document.getElementById('followUpManualOverride').checked,
@@ -4135,6 +4160,14 @@
       const followup = document.getElementById('eyeInfectionFollowup');
       const isAD = document.getElementById('eye_infection_ad').checked;
       followup.style.display = isAD ? 'block' : 'none';
+    }
+
+    function toggleAnatomyAbnormalityDetails() {
+      const checked = !!document.getElementById('anatomy_abnormalities')?.checked;
+      const group = document.getElementById('anatomyAbnormalityDetailsGroup');
+      const input = document.getElementById('anatomy_abnormality_details');
+      if (group) group.style.display = checked ? '' : 'none';
+      if (input) input.required = checked;
     }
 
     function toggleOutcomeFollowup() {

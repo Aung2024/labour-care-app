@@ -395,6 +395,27 @@ test('HRT completion reasons exclude risk resolved', () => {
   assert.doesNotMatch(source, /<option value="risk_resolved">/);
 });
 
+test('home page exposes midwife Back Fill without a homepage data scan', () => {
+  const source = readAppFile('home.html');
+  assert.match(source, /id="backFillCard"/);
+  assert.match(source, /case 'retroactive-data'/);
+  assert.match(source, /retroactive-data-entry\.html/);
+  assert.doesNotMatch(source, /tmo:\s*\[[^\]]*backFillCard/);
+});
+
+test('newborn anatomy abnormality details are required only when selected', () => {
+  const source = readAppFile('newborn-care-page.html');
+  assert.match(source, /id="anatomy_abnormality_details"/);
+  assert.match(source, /function toggleAnatomyAbnormalityDetails/);
+  assert.match(source, /anatomy_abnormality_details/);
+});
+
+test('ANC still carries TD and deworming into the next visit', () => {
+  const source = readAppFile('antenatal-form.html');
+  assert.match(source, /previousVisit\.tetanusToxoid \|\| previousVisit\.td/);
+  assert.match(source, /value="Already Prescribed"/);
+});
+
 test('patient registration requires patient phone and allows reused numbers', () => {
   const source = readAppFile('patient-enhanced.html');
   assert.match(source, /name="phone" id="phone"[^>]*required/);
