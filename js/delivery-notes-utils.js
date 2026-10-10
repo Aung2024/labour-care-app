@@ -297,7 +297,9 @@
       global.alert(message);
     }
     if (go && patientId) {
-      global.location.href = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
+      var hubUrl = 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
+      if (options.openDelivery) hubUrl += '&openDelivery=1';
+      global.location.href = hubUrl;
     }
     return false;
   }

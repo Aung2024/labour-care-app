@@ -404,8 +404,33 @@
     });
 
     async function openNewbornHub() {
+      var patientId = getPatientId();
       if (window.BabyPatientUtils && BabyPatientUtils.keepMotherSelectedForPnc) {
-        await BabyPatientUtils.keepMotherSelectedForPnc(firebase.firestore());
+        patientId = await BabyPatientUtils.keepMotherSelectedForPnc(firebase.firestore()) || patientId;
+      }
+      var notes = null;
+      try {
+        if (patientId && window.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes) {
+          notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+        }
+      } catch (error) {
+        console.warn('Could not check Delivery Notes before newborn hub:', error);
+      }
+      if (!notes) {
+        if (window.DeliveryNotesUtils && DeliveryNotesUtils.promptDeliveryNotesRequired) {
+          await DeliveryNotesUtils.promptDeliveryNotesRequired(patientId, currentLanguage, {
+            allowCancel: true,
+            openDelivery: true,
+            title: hubT('Delivery Notes required', 'Delivery Notes လိုအပ်သည်'),
+            message: hubT(
+              'Save Delivery Notes before opening newborn care.',
+              'မွေးကင်းစ စောင့်ရှောက်မှု မဖွင့်မီ Delivery Notes ကို အရင်သိမ်းပါ။'
+            ),
+            okLabel: hubT('Open Delivery Notes', 'Delivery Notes ဖွင့်ရန်'),
+            cancelLabel: hubT('Close', 'ပိတ်ရန်')
+          });
+        }
+        return;
       }
       window.location.href = 'immediate-newborn-care.html';
     }
