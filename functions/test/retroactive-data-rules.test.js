@@ -15,14 +15,17 @@ function mother(extra) {
     age: 28,
     phone: '09111111111',
     registration_date: '2024-01-02',
-    gravida_value: 1
+    gravida_value: 1,
+    parity_primary: 0
   }, extra || {});
 }
 
-function gaps(scan, moduleName) {
-  return scan.modules
-    .filter(function (mod) { return mod.id === moduleName; })
-    .flatMap(function (mod) { return mod.records.flatMap(function (record) { return record.gaps; }); });
+function category(scan, id) {
+  return (scan.categories || []).find(function (item) { return item.id === id; }) || { groups: [], redirects: [], missingCount: 0 };
+}
+
+function group(scan, id, key) {
+  return category(scan, id).groups.find(function (item) { return item.key === key; }) || null;
 }
 
 test('back fill includes only mothers owned by the signed-in midwife', () => {
@@ -32,35 +35,48 @@ test('back fill includes only mothers owned by the signed-in midwife', () => {
   assert.equal(rules.isOwnedMother(mother({ patient_type: 'baby', created_by: 'midwife-1' }), 'midwife-1'), false);
 });
 
-test('ANC detects missing TD, accepts a matching legacy alias, and flags a real conflict', () => {
-  const missing = rules.scanPatient({
-    patient: mother(),
-    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: '' } }]
-  });
-  assert.ok(gaps(missing, 'anc').some(function (gap) { return gap.field === 'tetanusToxoid' && gap.kind === 'missing'; }));
+test('registration-only patients stay off ANC until a visit exists, and first pregnancy skips youngest-child age', () => {
+  const first = rules.scanPatient({ patient: mother() });
+  assert.equal(first.gapCount, 0);
+  assert.equal(category(first, 'anc').applicable, false);
+  assert.equal(category(first, 'test').applicable, false);
+  assert.equal(group(first, 'registration', 'youngestChildAge').status, 'not_needed');
 
-  const legacy = rules.scanPatient({
-    patient: mother(),
-    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', td: 'TD1' } }]
-  });
-  const legacyGap = gaps(legacy, 'anc').find(function (gap) { return gap.field === 'tetanusToxoid'; });
-  assert.equal(legacyGap.kind, 'conflict');
-  assert.equal(legacyGap.proposedValue, 'TD1');
+  const missingPhone = rules.scanPatient({ patient: mother({ phone: '' }) });
+  assert.ok(missingPhone.gapCount >= 1);
+  assert.equal(group(missingPhone, 'registration', 'phone').status, 'missing');
 
-  const conflict = rules.scanPatient({
-    patient: mother(),
-    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: 'TD1', td: 'TD2' } }]
-  });
-  assert.equal(gaps(conflict, 'anc').find(function (gap) { return gap.field === 'tetanusToxoid'; }).kind, 'conflict');
-
-  const aligned = rules.scanPatient({
-    patient: mother(),
-    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: 'TD1', td: 'td1' } }]
-  });
-  assert.equal(gaps(aligned, 'anc').some(function (gap) { return gap.field === 'tetanusToxoid'; }), false);
+  const second = rules.scanPatient({ patient: mother({ gravida_value: 2, parity_primary: 1 }) });
+  assert.equal(group(second, 'registration', 'youngestChildAge').status, 'missing');
 });
 
-test('high-risk Other requires the condition text and provisional Other requires diagnosis text', () => {
+test('ANC shows workbook fields only, hides history for gravida 1, and does not invent visits', () => {
+  const noAnc = rules.scanPatient({ patient: mother() });
+  assert.equal(category(noAnc, 'anc').visitCount, 0);
+
+  const scan = rules.scanPatient({
+    patient: mother(),
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } }]
+  });
+  assert.equal(category(scan, 'anc').visitCount, 1);
+  assert.equal(group(scan, 'anc', 'previousObstetricHistory').status, 'not_needed');
+  assert.equal(group(scan, 'anc', 'lastPregnancyOutcome').status, 'not_needed');
+  assert.equal(group(scan, 'anc', 'medicines').status, 'missing');
+  assert.equal(group(scan, 'anc', 'prevention').status, 'missing');
+  assert.equal(group(scan, 'anc', 'cleanDeliveryKit').status, 'missing');
+  assert.equal(group(scan, 'anc', 'screening').status, 'missing');
+  assert.equal(category(scan, 'anc').groups.some(function (item) { return item.key === 'systolicBP' || item.key === 'temperature'; }), false);
+  assert.equal(category(scan, 'anc').groups.some(function (item) { return item.key === 'otherVisits'; }), false);
+
+  const multi = rules.scanPatient({
+    patient: mother({ gravida_value: 3, parity_primary: 2 }),
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } }]
+  });
+  assert.equal(group(multi, 'anc', 'previousObstetricHistory').status, 'missing');
+  assert.equal(group(multi, 'anc', 'lastPregnancyOutcome').status, 'missing');
+});
+
+test('high-risk Other shows the condition text once, and Other diagnosis needs a name', () => {
   const scan = rules.scanPatient({
     patient: mother(),
     ancVisits: [{
@@ -72,26 +88,41 @@ test('high-risk Other requires the condition text and provisional Other requires
       }
     }]
   });
-  const fields = gaps(scan, 'anc').map(function (gap) { return gap.field; });
-  assert.ok(fields.indexOf('otherMedicalConditionName') >= 0);
-  assert.ok(fields.indexOf('provisionalDiagnosisOther') >= 0);
+  assert.equal(group(scan, 'anc', 'otherMedicalConditionName').status, 'missing');
+  assert.equal(group(scan, 'anc', 'diagnosis').status, 'missing');
 });
 
-test('PNC without a delivery note asks for Delivery Notes and does not invent one', () => {
+test('PNC without a delivery note requires Delivery Notes, and apply-all copies one ANC value to every visit', () => {
   const scan = rules.scanPatient({
     patient: mother(),
     pncVisits: [{ id: 'p1', data: { visitNumber: 1, visitDate: '2024-06-01', maternalOutcome: 'alive' } }]
   });
-  assert.equal(gaps(scan, 'delivery')[0].kind, 'absent');
-  const plan = rules.planWrites(scan && {
+  assert.equal(category(scan, 'delivery').applicable, true);
+  assert.equal(group(scan, 'delivery', 'deliveryNotes').status, 'missing');
+  assert.equal(category(scan, 'newborn-links').redirects.filter(function (item) { return item.missing; }).length, 2);
+
+  const incomplete = rules.planWrites({
     patient: mother(),
     pncVisits: [{ id: 'p1', data: { visitNumber: 1, visitDate: '2024-06-01', maternalOutcome: 'alive' } }]
   }, [{ module: 'delivery', create: true, values: { birthPlace: 'home' } }], { uid: 'midwife-1', now: '2026-10-10' });
-  assert.equal(plan.ok, false);
-  assert.equal(plan.operations.length, 0);
+  assert.equal(incomplete.ok, false);
+
+  const applyAll = rules.planWrites({
+    patient: mother(),
+    ancVisits: [
+      { id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } },
+      { id: 'v2', data: { visitNumber: 2, visitDate: '2024-03-01' } }
+    ]
+  }, [{ module: 'anc', applyTo: 'all', values: { goiterStatus: 'No', tbSymptoms: 'No' } }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(applyAll.ok, true);
+  assert.equal(applyAll.operations.length, 2);
+  assert.deepEqual(applyAll.operations.map(function (item) { return item.path; }).sort(), [
+    'patients/mother-1/antenatal_visits/v1',
+    'patients/mother-1/antenatal_visits/v2'
+  ]);
 });
 
-test('equivalent delivery mode values are not a conflict and unknown legacy places need a current choice', () => {
+test('equivalent delivery mode values stay complete and unknown places stay blank until chosen', () => {
   const aligned = rules.scanPatient({
     patient: mother(),
     delivery: {
@@ -112,43 +143,86 @@ test('equivalent delivery mode values are not a conflict and unknown legacy plac
       }
     }
   });
-  assert.equal(gaps(aligned, 'delivery').some(function (gap) { return gap.field === 'modeOfDelivery'; }), false);
+  assert.equal(group(aligned, 'delivery', 'modeOfDelivery').status, 'ok');
 
   const legacyPlace = rules.scanPatient({
     patient: mother(),
     delivery: { id: 'deliveryNotes', canonical: true, data: { deliveryDetails: { birthplace: 'old clinic' } } }
   });
-  const place = gaps(legacyPlace, 'delivery').find(function (gap) { return gap.field === 'birthPlace'; });
-  assert.equal(place.kind, 'conflict');
-  assert.equal(place.proposedValue, '');
+  assert.equal(group(legacyPlace, 'delivery', 'birthPlace').status, 'missing');
 });
 
-test('historical visits update a matching record and reject a duplicate visit number', () => {
-  const visits = [
-    { id: 'existing', data: { visitNumber: 2, visitDate: '2024-03-01' } },
-    { id: 'other', data: { visitNumber: 3, visitDate: '2024-04-01' } }
-  ];
-  assert.equal(rules.findDuplicateVisit(visits, 2, '2024-03-01').type, 'match');
-  assert.equal(rules.findDuplicateVisit(visits, 2, '2024-05-01').type, 'number-taken');
-  assert.equal(rules.historicalVisitId('anc', 4, '2024-05-01'), 'bf_anc_v4_20240501');
-
-  const plan = rules.planWrites({
+test('Back Fill updates existing ANC visits only and accepts CDK Not given', () => {
+  const createRejected = rules.planWrites({
     patient: mother(),
-    ancVisits: visits
+    ancVisits: [{ id: 'existing', data: { visitNumber: 2, visitDate: '2024-03-01' } }]
   }, [{
     module: 'anc',
     create: true,
-    visitNumber: 2,
+    visitNumber: 4,
     values: { visitDate: '2024-05-01', tetanusToxoid: 'TD2' }
   }], { uid: 'midwife-1', now: '2026-10-10' });
-  assert.equal(plan.ok, false);
+  assert.equal(createRejected.ok, false);
+
+  const cdk = rules.planWrites({
+    patient: mother(),
+    ancVisits: [
+      { id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } },
+      { id: 'v2', data: { visitNumber: 2, visitDate: '2024-03-01' } }
+    ]
+  }, [{ module: 'anc', applyTo: 'all', values: { cleanDeliveryKit: 'not_given' } }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(cdk.ok, true);
+  assert.equal(cdk.operations[0].data.cleanDeliveryKitStatus, 'not_given');
+  assert.equal(cdk.operations[0].data.cleanDeliveryKitNotGiven, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(cdk.operations[0].data, 'cleanDeliveryKitDate'), false);
 });
 
-test('saves merge changed fields, keep replaced values in the audit, and convert weight to grams', () => {
+test('TD cannot move backwards, and missing labs do not keep a complete patient on the list', () => {
+  const backward = rules.planWrites({
+    patient: mother(),
+    ancVisits: [
+      { id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: 'TD2' } },
+      { id: 'v2', data: { visitNumber: 2, visitDate: '2024-03-01' } }
+    ]
+  }, [{
+    module: 'anc',
+    applyTo: 'per-visit',
+    visitValues: {
+      v1: { tetanusToxoid: 'TD2' },
+      v2: { tetanusToxoid: 'TD1' }
+    }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(backward.ok, false);
+
+  const labsOnly = rules.scanPatient({
+    patient: mother(),
+    ancVisits: [{
+      id: 'v1',
+      data: {
+        visitNumber: 1,
+        visitDate: '2024-02-01',
+        goiterStatus: 'No',
+        tbSymptoms: 'No',
+        ironFolicAcid: 'Prescribed',
+        micronutrientsTablet: 'Prescribed',
+        vitaminB1: 'Prescribed',
+        deworming: 'Prescribed',
+        tetanusToxoid: 'TD1',
+        provisionalDiagnosisType: 'Routine ANC',
+        cleanDeliveryKitStatus: 'not_given'
+      }
+    }],
+    testRecords: [{ id: 't1', data: { hivResult: 'Negative' } }]
+  });
+  assert.equal(category(labsOnly, 'test').optional, true);
+  assert.equal(group(labsOnly, 'test', 'testDate').status, 'missing');
+  assert.equal(labsOnly.gapCount, 0);
+});
+
+test('saves merge changed fields, keep replaced values in the audit, and reject clearing a name', () => {
   const bundle = {
     patient: mother(),
-    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: '', td: 'TD1' } }],
-    newbornVisits: [{ id: 'n1', data: { visit_number: 2, visitDate: '2024-06-08' } }]
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', tetanusToxoid: '', td: 'TD1' } }]
   };
   const ancPlan = rules.planWrites(bundle, [{
     module: 'anc',
@@ -163,13 +237,6 @@ test('saves merge changed fields, keep replaced values in the audit, and convert
   assert.equal(ancPlan.operations[0].audit.changes[0].after, 'TD1');
   assert.equal(JSON.stringify(ancPlan.operations[0].data).indexOf('delete'), -1);
 
-  const weightPlan = rules.planWrites(bundle, [{
-    module: 'newborn',
-    recordId: 'n1',
-    values: { current_weight_gram: '2.5' }
-  }], { uid: 'midwife-1', now: '2026-10-10' });
-  assert.equal(weightPlan.operations[0].data.current_weight_gram, 2500);
-
   const clearPlan = rules.planWrites(bundle, [{
     module: 'registration',
     recordId: 'mother-1',
@@ -179,35 +246,16 @@ test('saves merge changed fields, keep replaced values in the audit, and convert
   assert.equal(clearPlan.operations.length, 0);
 });
 
-test('newborn anatomy details and resuscitation outcome are conditional', () => {
-  const anatomy = rules.scanPatient({
+test('PNC mothers without newborn records get redirect cards instead of inline newborn forms', () => {
+  const scan = rules.scanPatient({
     patient: mother(),
-    delivery: { id: 'deliveryNotes', canonical: true, data: { deliveryDetails: { maternalCondition: 'alive' } } },
-    newbornVisits: [{ id: 'n1', data: { visit_number: 1, visitDate: '2024-06-02', anatomy_abnormalities: true } }]
+    pncVisits: [{ id: 'p1', data: { visitNumber: 1, visitDate: '2024-06-01', maternalOutcome: 'alive' } }],
+    immediateRecords: [{ id: 'i1', data: { breathing_status: 'spontaneous' } }]
   });
-  assert.ok(gaps(anatomy, 'newborn').some(function (gap) { return gap.field === 'anatomy_abnormality_details'; }));
-
-  const noAnatomy = rules.scanPatient({
-    patient: mother(),
-    delivery: { id: 'deliveryNotes', canonical: true, data: { deliveryDetails: { maternalCondition: 'alive' } } },
-    newbornVisits: [{ id: 'n1', data: { visit_number: 1, visitDate: '2024-06-02', anatomy_abnormalities: false, baby_outcome: 'alive' } }]
-  });
-  assert.equal(gaps(noAnatomy, 'newborn').some(function (gap) { return gap.field === 'anatomy_abnormality_details'; }), false);
-
-  const resuscitation = rules.scanPatient({
-    patient: mother(),
-    immediateRecords: [{ id: 'i1', patientId: 'mother-1', data: { breathing_status: 'gasping_or_no_breathing' } }]
-  });
-  assert.ok(gaps(resuscitation, 'immediate').some(function (gap) { return gap.field === 'resuscitation_outcome'; }));
-});
-
-test('gravida two requires youngest-child age and a missing lab record is not required', () => {
-  const needsAge = rules.scanPatient({ patient: mother({ gravida_value: 2 }) });
-  assert.ok(gaps(needsAge, 'registration').some(function (gap) { return gap.field === 'youngestChildAge'; }));
-  const firstPregnancy = rules.scanPatient({ patient: mother({ gravida_value: 1 }) });
-  assert.equal(gaps(firstPregnancy, 'registration').some(function (gap) { return gap.field === 'youngestChildAge'; }), false);
-  const labs = rules.scanPatient({ patient: mother(), testRecords: [] });
-  assert.equal(gaps(labs, 'test').length, 0);
+  const redirects = category(scan, 'newborn-links').redirects;
+  assert.equal(redirects.find(function (item) { return item.care === 'immediate'; }).missing, false);
+  assert.equal(redirects.find(function (item) { return item.care === 'newborn'; }).missing, true);
+  assert.equal(category(scan, 'newborn-links').groups.length, 0);
 });
 
 test('future dates are rejected and twins require two baby rows', () => {
@@ -237,16 +285,17 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   const root = path.resolve(__dirname, '../..');
   const service = fs.readFileSync(path.join(root, 'js/retroactive-data-service.js'), 'utf8');
   const home = fs.readFileSync(path.join(root, 'home.html'), 'utf8');
-  const newborn = fs.readFileSync(path.join(root, 'newborn-care-page.html'), 'utf8');
+  const page = fs.readFileSync(path.join(root, 'js/retroactive-data-page.js'), 'utf8');
+  const rulesSource = fs.readFileSync(path.join(root, 'js/retroactive-data-rules.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'service-worker.js'), 'utf8');
   assert.match(service, /merge:\s*true/);
   assert.doesNotMatch(service, /\.delete\(/);
   assert.match(service, /retroactive_backfill/);
   assert.match(home, /id="backFillCard"/);
-  assert.match(home, /'backFillCard'/);
+  assert.match(page, /Apply to all visits/);
+  assert.match(rulesSource, /immediate-newborn-care\.html/);
+  assert.match(rulesSource, /newborn-care-page\.html/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
-  assert.match(newborn, /id="anatomy_abnormality_details"/);
-  assert.match(newborn, /function toggleAnatomyAbnormalityDetails/);
   assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v345-moh/);
+  assert.match(worker, /mch-care-v346-moh/);
 });

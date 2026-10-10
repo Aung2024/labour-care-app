@@ -1,5 +1,5 @@
 /**
- * Midwife Back Fill page controller.
+ * Categorized midwife Back Fill page.
  */
 (function (global) {
   'use strict';
@@ -11,7 +11,6 @@
     bundles: new Map(),
     cursor: 0,
     activeId: null,
-    templates: {},
     saving: false,
     booted: false
   };
@@ -44,6 +43,10 @@
     if (el) el.textContent = text || '';
   }
 
+  function choice(value, en, mm) {
+    return { value: value, en: en, mm: mm };
+  }
+
   async function boot() {
     if (state.booted) return;
     show('bootState', false);
@@ -57,9 +60,7 @@
     if (!user) return;
     var profile = await global.firebase.firestore().collection('users').doc(user.uid).get();
     var data = profile.exists ? profile.data() || {} : {};
-    var role = String(data.role || '').toLowerCase();
-    if (role !== 'midwife') {
-      show('bootState', false);
+    if (String(data.role || '').toLowerCase() !== 'midwife') {
       show('deniedState', true);
       show('workState', false);
       return;
@@ -106,6 +107,25 @@
     renderList();
   }
 
+  function categoryOf(scan, id) {
+    return (scan.categories || []).find(function (item) { return item.id === id; }) || null;
+  }
+
+  function listSummary(scan) {
+    var bits = [];
+    var registration = categoryOf(scan, 'registration');
+    var anc = categoryOf(scan, 'anc');
+    var delivery = categoryOf(scan, 'delivery');
+    var pnc = categoryOf(scan, 'pnc');
+    if (registration && registration.missingCount) bits.push(t('Registration ' + registration.missingCount + ' missing', 'မှတ်ပုံတင် ' + registration.missingCount + ' ချက်လို'));
+    if (anc && anc.applicable) bits.push(t(anc.visitCount + ' ANC visits', 'ANC ' + anc.visitCount + ' ကြိမ်'));
+    if (delivery && delivery.applicable && delivery.missingCount) bits.push(t('Delivery incomplete', 'မွေးဖွားမှတ်တမ်း မပြည့်'));
+    if (pnc && pnc.applicable && pnc.missingCount) bits.push(t('PNC incomplete', 'PNC မပြည့်'));
+    var links = categoryOf(scan, 'newborn-links');
+    if (links && links.missingCount) bits.push(t('Newborn records missing', 'ကလေးမှတ်တမ်း လိုသေးသည်'));
+    return bits.join(' · ');
+  }
+
   function filteredScans() {
     var query = (document.getElementById('patientSearch').value || '').trim().toLowerCase();
     var rows = [];
@@ -142,7 +162,7 @@
     if (!rows.length && !remaining) {
       var empty = document.createElement('p');
       empty.className = 'empty-copy';
-      empty.textContent = t('No missing data found in the patients checked so far.', 'ယခုစစ်ထားသော လူနာများတွင် ပြန်ဖြည့်ရန် လိုအပ်ချက် မတွေ့ပါ။');
+      empty.textContent = t('No missing required data in the patients checked so far.', 'ယခုစစ်ထားသော လူနာများတွင် မဖြစ်မနေ ပြန်ဖြည့်ရန် အချက် မတွေ့ပါ။');
       list.appendChild(empty);
       return;
     }
@@ -153,21 +173,23 @@
     var button = document.createElement('button');
     button.type = 'button';
     button.className = 'patient-row';
+    var left = document.createElement('span');
     var name = document.createElement('strong');
     name.textContent = scan.patientName || t('Unnamed patient', 'အမည်မရှိ');
     var meta = document.createElement('span');
+    meta.className = 'patient-meta';
     meta.textContent = scan.pending
       ? t('Not checked yet', 'မစစ်ရသေး')
-      : (t(scan.gapCount + ' items', scan.gapCount + ' ချက်') + (scan.age !== '' ? ' · ' + scan.age : ''));
-    button.appendChild(name);
-    button.appendChild(meta);
+      : ((scan.gapCount ? t(scan.gapCount + ' required items', scan.gapCount + ' ချက်လို') : t('Complete', 'ပြည့်စုံ')) + (listSummary(scan) ? ' · ' + listSummary(scan) : ''));
+    left.appendChild(name);
+    left.appendChild(meta);
+    button.appendChild(left);
     button.addEventListener('click', function () { openPatient(scan.patientId); });
     return button;
   }
 
   async function openPatient(patientId) {
     state.activeId = patientId;
-    state.templates = {};
     show('listView', false);
     show('detailView', true);
     if (!state.bundles.get(patientId)) {
@@ -194,136 +216,322 @@
     host.textContent = '';
     if (!scan || !bundle) return;
     document.getElementById('detailName').textContent = scan.patientName || t('Patient', 'လူနာ');
-    document.getElementById('detailMeta').textContent = t(scan.gapCount + ' items to complete', scan.gapCount + ' ချက် ဖြည့်ရန်');
-    if (scan.truncated) {
-      var note = document.createElement('p');
-      note.className = 'warn-copy';
-      note.textContent = t('This patient has a very large record. The oldest rows may not be shown yet.', 'ဤလူနာတွင် မှတ်တမ်းအလွန်များနေ၍ အဟောင်းများကို အကုန်မပြနိုင်ပါ။');
-      host.appendChild(note);
-    }
-    scan.modules.forEach(function (mod) {
-      if (!mod.records.length && !mod.canAdd) return;
-      host.appendChild(moduleBlock(mod, bundle));
+    document.getElementById('detailMeta').textContent = scan.gapCount
+      ? t(scan.gapCount + ' required items left', scan.gapCount + ' ချက် ဖြည့်ရန်ကျန်သည်')
+      : t('Required back-fill is complete for this patient.', 'ဤလူနာအတွက် မဖြစ်မနေ ပြန်ဖြည့်ရန် မကျန်တော့ပါ။');
+    scan.categories.forEach(function (category) {
+      if (!category.applicable) return;
+      host.appendChild(categoryCard(category, bundle, scan));
     });
-    host.querySelectorAll('input, select, textarea, button').forEach(function (el) {
-      el.addEventListener('change', updateReviewCount);
-      el.addEventListener('input', updateReviewCount);
+    host.querySelectorAll('input, select, textarea').forEach(function (el) {
+      var mark = function () {
+        var card = el.closest('.group-card');
+        if (card) card.dataset.dirty = '1';
+        updateReviewCount();
+      };
+      el.addEventListener('change', mark);
+      el.addEventListener('input', mark);
     });
     updateReviewCount();
   }
 
-  function moduleBlock(mod, bundle) {
-    var section = document.createElement('section');
-    section.className = 'module-card';
-    var title = document.createElement('h2');
-    title.textContent = label(mod);
-    section.appendChild(title);
-    mod.records.forEach(function (record) {
-      section.appendChild(recordCard(record));
+  function categoryCard(category, bundle, scan) {
+    var card = document.createElement('section');
+    card.className = 'category-card';
+    card.dataset.category = category.id;
+    var open = category.missingCount > 0 || category.id === 'test';
+    var head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'category-head';
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var title = document.createElement('strong');
+    title.textContent = label(category);
+    var counts = document.createElement('span');
+    counts.textContent = categoryCopy(category);
+    head.appendChild(title);
+    head.appendChild(counts);
+    var body = document.createElement('div');
+    body.className = 'category-body';
+    body.hidden = !open;
+    head.addEventListener('click', function () {
+      body.hidden = !body.hidden;
+      head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
     });
-    if (mod.canAdd) {
-      var add = document.createElement('button');
-      add.type = 'button';
-      add.className = 'secondary-btn';
-      add.textContent = t('Add historical record', 'ယခင်မှတ်တမ်း ထည့်ရန်');
-      add.addEventListener('click', function () {
-        state.templates[mod.id] = global.RetroactiveDataRules.createTemplate(mod.id, bundle);
-        renderDetail();
-      });
-      section.appendChild(add);
-      if (state.templates[mod.id]) section.appendChild(templateCard(state.templates[mod.id]));
+    card.appendChild(head);
+    if (category.id === 'anc' && category.visitCount) {
+      var visitNote = document.createElement('p');
+      visitNote.className = 'hint-copy';
+      visitNote.textContent = t(
+        'This mother has ' + category.visitCount + ' ANC visit records.',
+        'ဤမိခင်တွင် ANC ပြသမှု ' + category.visitCount + ' ကြိမ် ရှိသည်။'
+      );
+      body.appendChild(visitNote);
     }
-    return section;
-  }
-
-  function recordCard(record) {
-    var card = document.createElement('article');
-    card.className = 'record-card';
-    card.dataset.recordKey = record.key;
-    var heading = document.createElement('div');
-    heading.className = 'record-head';
-    var toggle = document.createElement('input');
-    toggle.type = 'checkbox';
-    toggle.checked = true;
-    toggle.dataset.recordToggle = record.key;
-    toggle.setAttribute('aria-label', label(record));
-    var name = document.createElement('h3');
-    name.textContent = label(record);
-    heading.appendChild(toggle);
-    heading.appendChild(name);
-    card.appendChild(heading);
-    record.gaps.forEach(function (gap) { card.appendChild(gapEditor(gap, record)); });
-    (record.optional || []).forEach(function (gap) { card.appendChild(gapEditor(gap, record)); });
+    if (category.id === 'test') {
+      var labNote = document.createElement('p');
+      labNote.className = 'hint-copy';
+      labNote.textContent = t(
+        'Labs are optional. Fill only if a test was done and the result is available.',
+        'ဓာတ်ခွဲသည် မဖြည့်လည်း ရသည်။ စစ်ထားပြီး အဖြေရှိမှသာ ဖြည့်ပါ။'
+      );
+      body.appendChild(labNote);
+    }
+    category.groups.forEach(function (group) {
+      if (group.status === 'not_needed' && group.key !== 'youngestChildAge') return;
+      body.appendChild(groupBlock(group, category));
+    });
+    if (category.id === 'test') body.appendChild(labAddBlock());
+    category.redirects.forEach(function (item) { body.appendChild(redirectCard(item, bundle, scan)); });
+    card.appendChild(body);
     return card;
   }
 
-  function templateCard(template) {
-    var record = {
-      key: template.module + ':template',
-      module: template.module,
-      recordId: null,
-      create: true,
-      visitNumber: template.visitNumber,
-      labelEn: 'New historical record',
-      labelMm: 'ယခင်မှတ်တမ်းအသစ်',
-      gaps: [{
-        id: template.module + ':template:create',
-        field: '*',
-        kind: 'absent',
-        editor: { type: 'group', fields: template.fields }
-      }]
-    };
-    return recordCard(record);
+  function categoryCopy(category) {
+    if (category.id === 'anc') {
+      return t(
+        category.visitCount + ' visits · ' + category.missingCount + ' missing · ' + category.filledCount + ' filled',
+        category.visitCount + ' ကြိမ် · လို ' + category.missingCount + ' · ပြည့် ' + category.filledCount
+      );
+    }
+    if (category.optional) {
+      return t('Optional', 'မဖြည့်လည်း ရသည်');
+    }
+    return t(
+      category.missingCount + ' missing · ' + category.filledCount + ' filled',
+      'လို ' + category.missingCount + ' · ပြည့် ' + category.filledCount
+    );
   }
 
-  function gapEditor(gap, record) {
-    var wrap = document.createElement('div');
-    wrap.className = 'gap-field';
-    wrap.dataset.gapId = gap.id;
-    wrap.dataset.module = record.module;
-    wrap.dataset.recordId = record.recordId || '';
-    wrap.dataset.create = record.create ? '1' : '0';
-    wrap.dataset.field = gap.field || '';
-    if (record.visitNumber) wrap.dataset.visitNumber = String(record.visitNumber);
-    if (gap.kind === 'conflict') {
-      var conflict = document.createElement('p');
-      conflict.className = 'conflict-copy';
-      conflict.textContent = t('Current: ', 'လက်ရှိ: ') + displayValue(gap.currentValue) + t(' · Previous: ', ' · ယခင်: ') + displayValue(gap.legacyValue);
-      wrap.appendChild(conflict);
-    }
-    if (gap.babyField) {
-      wrap.dataset.babyIndex = String(gap.babyIndex || 0);
-      wrap.dataset.babyField = gap.babyField;
-    }
-    if (gap.editor && gap.editor.type === 'group') {
-      gap.editor.fields.forEach(function (field) {
-        var block = document.createElement('div');
-        block.className = 'group-field';
-        var caption = document.createElement('label');
-        caption.textContent = label(field);
-        block.appendChild(caption);
-        block.appendChild(controlFor(field, gap.id + ':' + field.key));
-        wrap.appendChild(block);
-      });
+  function groupBlock(group, category) {
+    var wrap = document.createElement('article');
+    wrap.className = 'group-card' + (group.status === 'ok' ? ' is-complete' : '') + (group.status === 'not_needed' ? ' is-skip' : '');
+    wrap.dataset.groupKey = group.key;
+    wrap.dataset.module = group.module || category.id;
+    wrap.dataset.mode = group.mode;
+    wrap.dataset.status = group.status;
+    wrap.dataset.optional = group.optional ? '1' : '0';
+    if (group.recordId) wrap.dataset.recordId = group.recordId;
+    var title = document.createElement('h3');
+    title.textContent = label(group);
+    wrap.appendChild(title);
+    if (group.status === 'not_needed') {
+      var skip = document.createElement('p');
+      skip.className = 'skip-copy';
+      skip.textContent = lang() === 'en' ? group.notNeededReasonEn : group.notNeededReasonMm;
+      wrap.appendChild(skip);
       return wrap;
     }
-    var title = document.createElement('label');
-    title.textContent = label(gap);
-    title.htmlFor = 'field-' + gap.id;
-    wrap.appendChild(title);
-    wrap.appendChild(controlFor(gap, 'field-' + gap.id));
+    if (group.status === 'ok') {
+      var done = document.createElement('p');
+      done.className = 'ok-copy';
+      done.textContent = t('Already filled.', 'ဖြည့်ပြီးပါပြီ။');
+      wrap.appendChild(done);
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'secondary-btn';
+      edit.textContent = t('Change', 'ပြင်ရန်');
+      wrap.appendChild(edit);
+      var editors = document.createElement('div');
+      editors.hidden = true;
+      editors.dataset.filledEditors = '1';
+      edit.addEventListener('click', function () {
+        editors.hidden = !editors.hidden;
+        edit.textContent = editors.hidden ? t('Change', 'ပြင်ရန်') : t('Hide', 'ပိတ်ရန်');
+      });
+      wrap.appendChild(editors);
+      attachEditors(editors, group);
+      return wrap;
+    } else if (group.totalVisits) {
+      var progress = document.createElement('p');
+      progress.className = 'hint-copy';
+      progress.textContent = t(
+        group.filledVisits + ' of ' + group.totalVisits + ' visits filled',
+        group.totalVisits + ' ကြိမ်အနက် ' + group.filledVisits + ' ကြိမ် ဖြည့်ပြီး'
+      );
+      wrap.appendChild(progress);
+    }
+    if (group.hintEn) {
+      var hint = document.createElement('p');
+      hint.className = 'hint-copy';
+      hint.textContent = lang() === 'en' ? group.hintEn : group.hintMm;
+      wrap.appendChild(hint);
+    }
+    attachEditors(wrap, group);
     return wrap;
   }
 
-  function displayValue(value) {
-    if (value == null || value === '') return t('blank', 'ဗလာ');
-    if (typeof value === 'boolean') return value ? t('Yes', 'ရှိ') : t('No', 'မရှိ');
-    return String(value);
+  function attachEditors(host, group) {
+    if (group.mode === 'apply-choice') host.appendChild(applyToggle(group));
+    if (group.mode === 'per-visit') host.appendChild(perVisitEditors(group));
+    else if (group.mode === 'apply-choice') {
+      host.appendChild(allEditor(group));
+      host.appendChild(perVisitEditors(group, true));
+    } else {
+      host.appendChild(onceEditor(group));
+    }
+    host.querySelectorAll('input, select, textarea').forEach(function (el) {
+      var mark = function () {
+        var card = el.closest('.group-card');
+        if (card) card.dataset.dirty = '1';
+        updateReviewCount();
+      };
+      el.addEventListener('change', mark);
+      el.addEventListener('input', mark);
+    });
   }
 
-  function controlFor(field, id) {
+  function applyToggle(group) {
+    var box = document.createElement('div');
+    box.className = 'apply-toggle';
+    box.appendChild(radio(group.key, 'all', t('Apply to all visits', 'အကြိမ်အားလုံးသို့ သုံးရန်'), true));
+    box.appendChild(radio(group.key, 'each', t('Set each visit', 'အကြိမ်အလိုက် ဖြည့်ရန်'), false));
+    return box;
+  }
+
+  function radio(groupKey, mode, caption, checked) {
+    var labelEl = document.createElement('label');
+    var input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'apply-' + groupKey;
+    input.value = mode;
+    input.checked = checked;
+    input.addEventListener('change', function () {
+      var card = labelEl.closest('.group-card');
+      if (!card) return;
+      var all = card.querySelector('[data-apply-panel="all"]');
+      var each = card.querySelector('[data-apply-panel="each"]');
+      if (all) all.hidden = mode !== 'all';
+      if (each) each.hidden = mode !== 'each';
+    });
+    labelEl.appendChild(input);
+    labelEl.appendChild(document.createTextNode(caption));
+    return labelEl;
+  }
+
+  function onceEditor(group) {
+    var box = document.createElement('div');
+    box.className = 'once-panel';
+    (group.fields || []).forEach(function (field) {
+      if (field.key === 'provisionalDiagnosisOther') return;
+      box.appendChild(fieldEditor(field, group.key + ':' + field.key, firstValue(group, field.key)));
+    });
+    if (group.key === 'babies') box.appendChild(babiesEditor(group.key + ':babies', group.proposedValue));
+    return box;
+  }
+
+  function allEditor(group) {
+    var box = document.createElement('div');
+    box.dataset.applyPanel = 'all';
+    (group.fields || []).forEach(function (field) {
+      if (field.key === 'provisionalDiagnosisOther') return;
+      box.appendChild(fieldEditor(field, group.key + ':all:' + field.key, firstValue(group, field.key)));
+    });
+    return box;
+  }
+
+  function perVisitEditors(group, hidden) {
+    var box = document.createElement('div');
+    box.dataset.applyPanel = 'each';
+    if (hidden) box.hidden = true;
+    (group.visits || []).forEach(function (visit) {
+      var row = document.createElement('div');
+      row.className = 'visit-row';
+      row.dataset.recordId = visit.recordId;
+      var caption = document.createElement('strong');
+      caption.textContent = t('Visit ' + (visit.visitNumber || '?'), 'အကြိမ် ' + (visit.visitNumber || '?')) + (visit.visitDate ? ' · ' + visit.visitDate : '');
+      row.appendChild(caption);
+      (group.fields || []).forEach(function (field) {
+        if (field.key === 'provisionalDiagnosisOther') return;
+        var current = visit.values ? visit.values[field.key] : visit.currentValue;
+        row.appendChild(fieldEditor(field, group.key + ':' + visit.recordId + ':' + field.key, current));
+      });
+      box.appendChild(row);
+    });
+    return box;
+  }
+
+  function firstValue(group, key) {
+    if (group.proposedValue && !group.visits.length) {
+      return key && group.proposedValue[key] != null ? group.proposedValue[key] : group.proposedValue;
+    }
+    var found = '';
+    (group.visits || []).forEach(function (visit) {
+      if (found !== '' && found != null) return;
+      found = visit.values ? visit.values[key] : visit.currentValue;
+    });
+    return found;
+  }
+
+  function fieldEditor(field, id, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'field-block';
+    wrap.dataset.fieldKey = field.key;
+    var caption = document.createElement('label');
+    caption.textContent = label(field);
+    caption.htmlFor = id;
+    wrap.appendChild(caption);
+    var control = controlFor(field, id, value);
+    wrap.appendChild(control);
+    if (field.key === 'provisionalDiagnosisType') {
+      var otherField = { key: 'provisionalDiagnosisOther', type: 'text', labelEn: 'Other diagnosis', labelMm: 'အခြားရောဂါအမည်' };
+      var other = fieldEditor(otherField, id + ':other', '');
+      other.hidden = String(value) !== 'Other';
+      wrap.appendChild(other);
+      control.addEventListener('change', function () {
+        other.hidden = control.value !== 'Other';
+      });
+    }
+    return wrap;
+  }
+
+  function labAddBlock() {
+    var wrap = document.createElement('article');
+    wrap.className = 'group-card';
+    wrap.dataset.groupKey = 'newLab';
+    wrap.dataset.module = 'test';
+    wrap.dataset.mode = 'once';
+    wrap.dataset.optional = '1';
+    var title = document.createElement('h3');
+    title.textContent = t('Add a lab result', 'ဓာတ်ခွဲအဖြေ ထည့်ရန်');
+    wrap.appendChild(title);
+    wrap.appendChild(fieldEditor({ key: 'testDate', type: 'date', labelEn: 'Test date', labelMm: 'စစ်ဆေးသည့်ရက်' }, 'newLab:testDate', ''));
+    return wrap;
+  }
+
+  function redirectCard(item, bundle, scan) {
+    var card = document.createElement('a');
+    card.className = 'redirect-card';
+    card.href = item.href + '?patient=' + encodeURIComponent(scan.patientId);
+    card.textContent = '';
+    var title = document.createElement('strong');
+    title.textContent = label(item);
+    var copy = document.createElement('span');
+    copy.textContent = item.missing
+      ? t('Missing. Open the care page to record it.', 'မရှိသေးပါ။ မှတ်ရန် စောင့်ရှောက်မှုစာမျက်နှာသို့ သွားပါ။')
+      : t('Already recorded. Open to review or add another visit.', 'မှတ်ပြီးပါပြီ။ ပြန်ကြည့်ရန် ဖွင့်ပါ။');
+    card.appendChild(title);
+    card.appendChild(copy);
+    card.addEventListener('click', function (event) {
+      event.preventDefault();
+      var patient = Object.assign({ id: scan.patientId }, (bundle.patient || {}));
+      if (typeof global.updateSelectedPatient === 'function') global.updateSelectedPatient(patient);
+      else {
+        sessionStorage.setItem('selectedPatientId', patient.id);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
+      }
+      global.location.href = card.href;
+    });
+    return card;
+  }
+
+  function controlFor(field, id, value) {
     var editor = field.editor || field;
-    var type = editor.type;
+    var type = editor.type || field.type;
+    if (type === 'cdk') return cdkEditor(id, value);
+    if (type === 'obstetric') return obstetricEditor(id, value);
+    if (type === 'babies') return babiesEditor(id, value);
+    if (type === 'other-visits') return otherVisitsEditor(id, value);
+    if (type === 'age') return ageEditor(id, value);
     var input;
     if (type === 'select' || type === 'boolean') {
       input = document.createElement('select');
@@ -335,27 +543,20 @@
       input.appendChild(blank);
       var options = type === 'boolean'
         ? [{ value: 'yes', en: 'Yes', mm: 'ရှိ' }, { value: 'no', en: 'No', mm: 'မရှိ' }]
-        : (editor.options || []);
+        : (editor.options || field.options || []);
       options.forEach(function (option) {
         var node = document.createElement('option');
         node.value = option.value;
         node.textContent = optionLabel(option);
         input.appendChild(node);
       });
-      if (type === 'boolean' && (field.proposedValue === true || field.proposedValue === false)) input.value = field.proposedValue ? 'yes' : 'no';
-      else if (field.proposedValue !== '' && field.proposedValue != null) input.value = String(field.proposedValue);
+      if (type === 'boolean' && (value === true || value === false)) input.value = value ? 'yes' : 'no';
+      else if (value !== '' && value != null) input.value = String(value);
     } else if (type === 'text') {
       input = document.createElement('textarea');
       input.id = id;
       input.rows = 2;
-    } else if (type === 'obstetric') {
-      return obstetricEditor(id);
-    } else if (type === 'babies') {
-      return babiesEditor(id);
-    } else if (type === 'other-visits') {
-      return otherVisitsEditor(id);
-    } else if (type === 'age') {
-      return ageEditor(id);
+      if (value) input.value = String(value);
     } else {
       input = document.createElement('input');
       input.id = id;
@@ -365,12 +566,17 @@
         if (editor.min != null) input.min = String(editor.min);
         if (editor.max != null) input.max = String(editor.max);
         if (editor.step) input.step = String(editor.step);
+        if (type === 'weight' && value > 20) input.value = String(value / 1000);
+        else if (value !== '' && value != null) input.value = String(value);
       } else if (type === 'date') {
         input.type = 'date';
+        if (value) input.value = String(value).slice(0, 10);
       } else if (type === 'datetime') {
         input.type = 'datetime-local';
+        if (value) input.value = String(value).slice(0, 16);
       } else {
         input.type = 'text';
+        if (value) input.value = String(value);
       }
     }
     input.className = 'field-input';
@@ -378,44 +584,73 @@
     return input;
   }
 
-  function ageEditor(id) {
+  function cdkEditor(id, value) {
+    var wrap = document.createElement('div');
+    wrap.dataset.compound = 'cdk';
+    wrap.dataset.inputId = id;
+    var date = document.createElement('input');
+    date.type = 'date';
+    date.className = 'field-input';
+    date.dataset.part = 'date';
+    if (value && value !== 'not_given') date.value = String(value).slice(0, 10);
+    var notGiven = document.createElement('label');
+    notGiven.className = 'check-row';
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.dataset.part = 'notGiven';
+    box.checked = value === 'not_given';
+    date.disabled = box.checked;
+    box.addEventListener('change', function () { date.disabled = box.checked; });
+    notGiven.appendChild(box);
+    notGiven.appendChild(document.createTextNode(t('Not given', 'မပေးခဲ့ပါ')));
+    wrap.appendChild(date);
+    wrap.appendChild(notGiven);
+    return wrap;
+  }
+
+  function ageEditor(id, value) {
     var wrap = document.createElement('div');
     wrap.className = 'inline-pair';
     wrap.dataset.compound = 'age';
     wrap.dataset.inputId = id;
-    wrap.appendChild(numberInput(t('Years', 'နှစ်'), 'years'));
-    wrap.appendChild(numberInput(t('Months', 'လ'), 'months'));
+    var years = numberInput(t('Years', 'နှစ်'), 'years');
+    var months = numberInput(t('Months', 'လ'), 'months');
+    if (value && value.years != null) years.querySelector('input').value = value.years;
+    if (value && value.months != null) months.querySelector('input').value = value.months;
+    wrap.appendChild(years);
+    wrap.appendChild(months);
     return wrap;
   }
 
   function numberInput(caption, key) {
-    var label = document.createElement('label');
-    label.textContent = caption;
+    var labelEl = document.createElement('label');
+    labelEl.textContent = caption;
     var input = document.createElement('input');
     input.type = 'number';
     input.min = '0';
     input.inputMode = 'numeric';
     input.dataset.part = key;
     input.className = 'field-input';
-    label.appendChild(input);
-    return label;
+    labelEl.appendChild(input);
+    return labelEl;
   }
 
-  function obstetricEditor(id) {
+  function obstetricEditor(id, value) {
     var wrap = document.createElement('div');
     wrap.dataset.compound = 'obstetric';
     wrap.dataset.inputId = id;
-    wrap.appendChild(obstetricRow());
+    var rows = Array.isArray(value) && value.length ? value : [{}];
+    rows.forEach(function (row) { wrap.appendChild(obstetricRow(row)); });
     var add = document.createElement('button');
     add.type = 'button';
     add.className = 'secondary-btn';
     add.textContent = t('Add pregnancy', 'ကိုယ်ဝန်တစ်ခု ထည့်ရန်');
-    add.addEventListener('click', function () { wrap.insertBefore(obstetricRow(), add); });
+    add.addEventListener('click', function () { wrap.insertBefore(obstetricRow({}), add); });
     wrap.appendChild(add);
     return wrap;
   }
 
-  function obstetricRow() {
+  function obstetricRow(data) {
     var row = document.createElement('div');
     row.className = 'repeat-row';
     row.dataset.obRow = '1';
@@ -424,10 +659,11 @@
     year.type = 'number';
     year.placeholder = t('Year', 'ခုနှစ်');
     year.className = 'field-input';
+    if (data && data.year) year.value = data.year;
     var delivery = document.createElement('select');
     delivery.dataset.part = 'deliveryType';
     delivery.className = 'field-input';
-    [choice('', t('Delivery type', 'မွေးဖွားနည်း'))].concat([
+    [choice('', t('Delivery type', 'မွေးဖွားနည်း'), t('Delivery type', 'မွေးဖွားနည်း'))].concat([
       ['ရိုးရိုးမွေး', 'Normal delivery', 'ရိုးရိုးမွေး'],
       ['လမစေ့မွေး', 'Preterm birth', 'လမစေ့မွေး'],
       ['အသေမွေး', 'Stillbirth', 'အသေမွေး'],
@@ -441,6 +677,7 @@
       node.textContent = option.value ? optionLabel(option) : option.en;
       delivery.appendChild(node);
     });
+    if (data && data.deliveryType) delivery.value = data.deliveryType;
     row.appendChild(year);
     row.appendChild(delivery);
     ['birthPlace', 'attendant', 'conditionAfterBirth'].forEach(function (key) {
@@ -448,6 +685,7 @@
       input.dataset.part = key;
       input.className = 'field-input';
       input.placeholder = key === 'birthPlace' ? t('Place', 'နေရာ') : (key === 'attendant' ? t('Attendant', 'မွေးဖွားသူ') : t('Condition', 'အခြေအနေ'));
+      if (data && data[key]) input.value = data[key];
       row.appendChild(input);
     });
     var weight = document.createElement('input');
@@ -456,61 +694,58 @@
     weight.step = '0.01';
     weight.placeholder = t('Weight kg', 'အလေးချိန်');
     weight.className = 'field-input';
+    if (data && data.birthWeightKg) weight.value = data.birthWeightKg;
     row.appendChild(weight);
     return row;
   }
 
-  function choice(value, en, mm) {
-    return { value: value, en: en, mm: mm };
-  }
-
-  function babiesEditor(id) {
+  function babiesEditor(id, value) {
     var wrap = document.createElement('div');
     wrap.dataset.compound = 'babies';
     wrap.dataset.inputId = id;
-    wrap.appendChild(babyRow(1));
+    var rows = Array.isArray(value) && value.length ? value : [{}];
+    rows.forEach(function (row, index) { wrap.appendChild(babyRow(index + 1, row)); });
     var add = document.createElement('button');
     add.type = 'button';
     add.className = 'secondary-btn';
     add.textContent = t('Add twin', 'အမွှာထည့်ရန်');
-    add.addEventListener('click', function () { wrap.insertBefore(babyRow(wrap.querySelectorAll('[data-baby-row]').length + 1), add); });
+    add.addEventListener('click', function () { wrap.insertBefore(babyRow(wrap.querySelectorAll('[data-baby-row]').length + 1, {}), add); });
     wrap.appendChild(add);
     return wrap;
   }
 
-  function babyRow(index) {
+  function babyRow(index, data) {
     var row = document.createElement('div');
     row.className = 'repeat-row';
     row.dataset.babyRow = '1';
     var caption = document.createElement('strong');
     caption.textContent = t('Baby ', 'ကလေး ') + index;
     row.appendChild(caption);
-    row.appendChild(textPart('babyName', t('Name', 'အမည်')));
-    row.appendChild(selectPart('gender', [[ '', t('Sex', 'ကျား/မ') ], [ 'male', t('Male', 'ကျား') ], [ 'female', t('Female', 'မ') ]]));
-    row.appendChild(selectPart('outcome', [[ '', t('Outcome', 'ရလဒ်') ], [ 'alive', t('Alive', 'ရှင်') ], [ 'death', t('Death', 'သေ') ], [ 'stillbirth', t('Stillbirth', 'သေမွေး') ]]));
-    var weight = textPart('birthWeightKg', t('Weight kg', 'အလေးချိန် kg'));
+    row.appendChild(textPart('babyName', t('Name', 'အမည်'), data && data.babyName));
+    row.appendChild(selectPart('gender', [['', t('Sex', 'ကျား/မ')], ['male', t('Male', 'ကျား')], ['female', t('Female', 'မ')]], data && data.gender));
+    row.appendChild(selectPart('outcome', [['', t('Outcome', 'ရလဒ်')], ['alive', t('Alive', 'ရှင်')], ['death', t('Death', 'သေ')], ['stillbirth', t('Stillbirth', 'သေမွေး')]], data && data.outcome));
+    var grams = data && (data.birthWeightGram != null ? data.birthWeightGram : data.birth_weight_gram);
+    var weight = textPart('birthWeightKg', t('Weight kg', 'အလေးချိန် kg'), grams > 20 ? grams / 1000 : grams);
     weight.type = 'number';
     weight.step = '0.001';
-    weight.min = '0.3';
-    weight.max = '7';
     row.appendChild(weight);
-    var time = textPart('birthTime', '');
-    time.type = 'datetime-local';
-    row.appendChild(time);
-    row.appendChild(selectPart('anusPresent', [[ '', t('Anus', 'စအိုပေါက်') ], [ 'yes', t('Yes', 'ရှိ') ], [ 'no', t('No', 'မရှိ') ]]));
-    row.appendChild(textPart('causeOfDeath', t('Cause of death if needed', 'သေဆုံးရသည့်အကြောင်း')));
+    row.appendChild(textPart('birthTime', '', data && (data.birthTime || data.birth_time), 'datetime-local'));
+    row.appendChild(selectPart('anusPresent', [['', t('Anus', 'စအိုပေါက်')], ['yes', t('Yes', 'ရှိ')], ['no', t('No', 'မရှိ')]], data && data.anusPresent));
+    row.appendChild(textPart('causeOfDeath', t('Cause of death if needed', 'သေဆုံးရသည့်အကြောင်း'), data && (data.causeOfDeath || data.cause_of_death)));
     return row;
   }
 
-  function textPart(key, placeholder) {
+  function textPart(key, placeholder, value, type) {
     var input = document.createElement('input');
     input.dataset.part = key;
     input.placeholder = placeholder;
     input.className = 'field-input';
+    if (type) input.type = type;
+    if (value) input.value = type === 'datetime-local' ? String(value).slice(0, 16) : value;
     return input;
   }
 
-  function selectPart(key, options) {
+  function selectPart(key, options, value) {
     var select = document.createElement('select');
     select.dataset.part = key;
     select.className = 'field-input';
@@ -520,27 +755,26 @@
       node.textContent = option[1];
       select.appendChild(node);
     });
+    if (value) select.value = value;
     return select;
   }
 
-  function otherVisitsEditor(id) {
+  function otherVisitsEditor(id, value) {
     var wrap = document.createElement('div');
     wrap.dataset.compound = 'other-visits';
     wrap.dataset.inputId = id;
-    var title = document.createElement('p');
-    title.textContent = t('Other-facility visits', 'အခြားဌာနတွင် ပြသခဲ့သောအကြိမ်များ');
-    wrap.appendChild(title);
-    wrap.appendChild(otherVisitRow());
+    var rows = Array.isArray(value) && value.length ? value : [{}];
+    rows.forEach(function (row) { wrap.appendChild(otherVisitRow(row)); });
     var add = document.createElement('button');
     add.type = 'button';
     add.className = 'secondary-btn';
     add.textContent = t('Add visit', 'အကြိမ်ထည့်ရန်');
-    add.addEventListener('click', function () { wrap.insertBefore(otherVisitRow(), add); });
+    add.addEventListener('click', function () { wrap.insertBefore(otherVisitRow({}), add); });
     wrap.appendChild(add);
     return wrap;
   }
 
-  function otherVisitRow() {
+  function otherVisitRow(data) {
     var row = document.createElement('div');
     row.className = 'repeat-row';
     row.dataset.otherRow = '1';
@@ -548,6 +782,7 @@
     date.type = 'date';
     date.dataset.part = 'visitDate';
     date.className = 'field-input';
+    if (data && data.visitDate) date.value = String(data.visitDate).slice(0, 10);
     var type = document.createElement('select');
     type.dataset.part = 'facilityType';
     type.className = 'field-input';
@@ -557,62 +792,143 @@
       option.textContent = value || t('Facility type', 'ဌာနအမျိုးအစား');
       type.appendChild(option);
     });
+    if (data && data.facilityType) type.value = data.facilityType;
     var name = document.createElement('input');
     name.dataset.part = 'facilityName';
     name.placeholder = t('Facility name', 'ဌာနအမည်');
     name.className = 'field-input';
+    if (data && data.facilityName) name.value = data.facilityName;
     row.appendChild(date);
     row.appendChild(type);
     row.appendChild(name);
     return row;
   }
 
-  function selectedRecords() {
-    var grouped = new Map();
-    document.querySelectorAll('.record-card').forEach(function (card) {
-      var toggle = card.querySelector('[data-record-toggle]');
-      if (toggle && !toggle.checked) return;
-      var key = card.dataset.recordKey;
-      var values = {};
-      var meta = { key: key };
-      card.querySelectorAll('[data-gap-id]').forEach(function (gap) {
-        meta.module = gap.dataset.module;
-        meta.recordId = gap.dataset.recordId || null;
-        meta.create = gap.dataset.create === '1';
-        meta.visitNumber = gap.dataset.visitNumber ? parseInt(gap.dataset.visitNumber, 10) : null;
-        if (gap.dataset.field === '*') {
-          gap.querySelectorAll('[data-input-id]').forEach(function (input) {
-            var fieldKey = input.dataset.inputId.split(':').pop();
-            var value = readControl(input);
-            if (value !== '' && value != null && !(Array.isArray(value) && !value.length)) values[fieldKey] = value;
-          });
-          return;
-        }
-        var control = gap.querySelector('[data-input-id]');
-        if (!control) return;
-        var fieldValue = readControl(control);
-        if (fieldValue === '' || fieldValue == null || (Array.isArray(fieldValue) && !fieldValue.length)) return;
-        if (gap.dataset.babyField) {
-          if (!Array.isArray(values.babies)) values.babies = [];
-          var babyIndex = parseInt(gap.dataset.babyIndex, 10) || 0;
-          values.babies[babyIndex] = values.babies[babyIndex] || {};
-          values.babies[babyIndex][gap.dataset.babyField] = fieldValue;
-          return;
-        }
-        values[gap.dataset.field] = fieldValue;
-      });
-      if (Object.keys(values).length) grouped.set(key, Object.assign(meta, { values: values }));
+  function selectedApplyMode(card) {
+    var radioEl = card.querySelector('input[type="radio"]:checked');
+    return radioEl ? radioEl.value : (card.dataset.mode === 'per-visit' ? 'each' : 'all');
+  }
+
+  function readFieldBlock(block) {
+    var fieldKey = block.dataset.fieldKey;
+    var control = block.querySelector('[data-input-id], select, textarea, input.field-input');
+    if (!control) return null;
+    var value = readControl(control);
+    var extra = {};
+    if (fieldKey === 'provisionalDiagnosisType') {
+      var other = block.querySelector('[data-field-key="provisionalDiagnosisOther"]');
+      if (other && value === 'Other') extra.provisionalDiagnosisOther = readControl(other.querySelector('[data-input-id], textarea, input'));
+    }
+    if (value === '' || value == null || (Array.isArray(value) && !value.length)) return extra.provisionalDiagnosisOther ? Object.assign({ key: fieldKey, value: value }, extra) : null;
+    return Object.assign({ key: fieldKey, value: value }, extra);
+  }
+
+  function valuesFromPanel(panel) {
+    var values = {};
+    if (!panel) return values;
+    panel.querySelectorAll(':scope > .field-block, :scope .field-block').forEach(function (block) {
+      if (block.closest('.field-block') !== block && block.parentElement && block.parentElement.closest('.field-block')) return;
+      var item = readFieldBlock(block);
+      if (!item) return;
+      values[item.key] = item.value;
+      if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
     });
-    return Array.from(grouped.values());
+    var compound = panel.querySelector('[data-compound]');
+    if (compound && compound.closest('.group-card') === panel.closest('.group-card') && !Object.keys(values).length) {
+      var group = panel.closest('.group-card');
+      values[group.dataset.groupKey === 'babies' ? 'babies' : group.dataset.groupKey] = readControl(compound);
+    }
+    return values;
+  }
+
+  function selectedRequests() {
+    var requests = [];
+    document.querySelectorAll('.group-card').forEach(function (card) {
+      if (card.dataset.status === 'not_needed') return;
+      if (card.dataset.status === 'ok' && card.dataset.dirty !== '1') return;
+      var moduleName = card.dataset.module;
+      var mode = card.dataset.mode;
+      var apply = selectedApplyMode(card);
+      if (mode === 'per-visit' || apply === 'each') {
+        var visitValues = {};
+        card.querySelectorAll('.visit-row').forEach(function (row) {
+          var values = {};
+          row.querySelectorAll('.field-block').forEach(function (block) {
+            if (block.parentElement !== row && !row.contains(block)) return;
+            var item = readFieldBlock(block);
+            if (!item) return;
+            values[item.key] = item.value;
+            if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
+          });
+          if (Object.keys(values).length) visitValues[row.dataset.recordId] = values;
+        });
+        if (Object.keys(visitValues).length) {
+          requests.push({ module: moduleName, applyTo: 'per-visit', visitValues: visitValues });
+        }
+        return;
+      }
+      var values = {};
+      if (mode === 'apply-choice') values = valuesFromPanel(card.querySelector('[data-apply-panel="all"]'));
+      else {
+        card.querySelectorAll('.once-panel .field-block, .once-panel [data-compound], .field-block').forEach(function (node) {
+          if (node.classList.contains('field-block')) {
+            if (node.closest('.visit-row')) return;
+            var item = readFieldBlock(node);
+            if (!item) return;
+            values[item.key] = item.value;
+            if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
+          } else if (node.dataset && node.dataset.compound) {
+            var key = card.dataset.groupKey === 'youngestChildAge' ? 'youngestChildAge' : (card.dataset.groupKey === 'previousObstetricHistory' ? 'previousObstetricHistory' : (card.dataset.groupKey === 'otherVisits' ? 'otherVisits' : (card.dataset.groupKey === 'babies' ? 'babies' : card.dataset.groupKey)));
+            var compoundValue = readControl(node);
+            if (compoundValue !== '' && compoundValue != null && !(Array.isArray(compoundValue) && !compoundValue.length)) values[key] = compoundValue;
+          }
+        });
+      }
+      if (card.dataset.groupKey === 'newLab' && values.testDate) {
+        requests.push({ module: 'test', values: values });
+        return;
+      }
+      if (card.dataset.recordId && Object.keys(values).length) {
+        requests.push({ module: moduleName, recordId: card.dataset.recordId, values: values });
+        return;
+      }
+      if (!Object.keys(values).length) return;
+      if (moduleName === 'registration' || moduleName === 'delivery') {
+        requests.push({ module: moduleName, create: moduleName === 'delivery' && card.dataset.status === 'missing', values: values });
+        return;
+      }
+      requests.push({ module: moduleName, applyTo: 'all', values: values });
+    });
+    return mergeRequests(requests);
+  }
+
+  function mergeRequests(requests) {
+    var merged = [];
+    requests.forEach(function (request) {
+      var prior = merged.find(function (item) {
+        return item.module === request.module && item.applyTo === request.applyTo && item.recordId === request.recordId && !item.visitValues && !request.visitValues;
+      });
+      if (prior && request.values) {
+        Object.assign(prior.values, request.values);
+        return;
+      }
+      merged.push(request);
+    });
+    return merged;
   }
 
   function readControl(control) {
+    if (!control) return '';
     var kind = control.dataset.compound;
     if (kind === 'age') {
       var years = control.querySelector('[data-part="years"]').value;
       var months = control.querySelector('[data-part="months"]').value;
       if (years === '' && months === '') return '';
       return { years: years, months: months };
+    }
+    if (kind === 'cdk') {
+      if (control.querySelector('[data-part="notGiven"]').checked) return 'not_given';
+      return control.querySelector('[data-part="date"]').value;
     }
     if (kind === 'obstetric') {
       return Array.from(control.querySelectorAll('[data-ob-row]')).map(function (row) {
@@ -642,15 +958,15 @@
   }
 
   function updateReviewCount() {
-    var count = selectedRecords().length;
+    var count = selectedRequests().length;
     var button = document.getElementById('saveBtn');
     button.disabled = !count || state.saving;
-    button.textContent = t('Save ' + count + ' selected', count + ' ခု သိမ်းရန်');
+    button.textContent = t('Save changes', 'ပြောင်းလဲချက် သိမ်းရန်');
   }
 
   async function saveSelected() {
     if (state.saving) return;
-    var requests = selectedRecords();
+    var requests = selectedRequests();
     if (!requests.length) return;
     var confirmed = global.AppDialog
       ? await global.AppDialog.confirm(t(
@@ -664,23 +980,9 @@
     setMessage('saveStatus', t('Saving…', 'သိမ်းနေသည်…'));
     try {
       var bundle = state.bundles.get(state.activeId);
-      requests.forEach(function (request) {
-        if (request.module !== 'delivery' || !Array.isArray(request.values.babies)) return;
-        var existingBabies = (((bundle.delivery || {}).data || {}).deliveryDetails || {}).babies || [];
-        request.values.babies = request.values.babies.filter(Boolean).map(function (patch, index) {
-          var prior = existingBabies[index] || {};
-          var grams = prior.birthWeightGram != null ? prior.birthWeightGram : prior.birth_weight_gram;
-          return Object.assign({}, prior, patch, {
-            birthWeightKg: patch.birthWeightKg || patch.birthWeightGram || (grams ? grams / 1000 : ''),
-            birthTime: patch.birthTime || prior.birthTime || prior.birth_time || '',
-            causeOfDeath: patch.causeOfDeath || prior.causeOfDeath || prior.cause_of_death || ''
-          });
-        });
-      });
-      var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests.map(cleanRequest));
+      var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests);
       state.bundles.set(state.activeId, result.bundle);
       state.scans.set(state.activeId, result.inspection);
-      state.templates = {};
       setMessage('saveStatus', t('Saved. The list has been refreshed.', 'သိမ်းပြီးပါပြီ။ စာရင်းကို ပြန်စစ်ပြီးပါပြီ။'));
       if (!result.inspection.gapCount) closeDetail();
       else renderDetail();
@@ -693,16 +995,6 @@
       state.saving = false;
       updateReviewCount();
     }
-  }
-
-  function cleanRequest(request) {
-    return {
-      module: request.module,
-      recordId: request.recordId || null,
-      create: request.create,
-      visitNumber: request.visitNumber,
-      values: request.values
-    };
   }
 
   function closeDetail() {
