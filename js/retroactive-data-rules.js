@@ -1019,31 +1019,42 @@
 
     category.groups.push(groupFromVisits({
       key: 'visitDate', module: 'newborn', mode: 'per-visit', required: true,
-      labelEn: 'Visit date', labelMm: 'ပြသသည့်ရက်',
-      hintEn: 'Most visits already have a date. Add or correct it here if it is missing.',
-      hintMm: 'အကြိမ်အများစုတွင် ရက်စွဲရှိပြီးသားဖြစ်သည်။ ပျောက်နေလျှင် ဤနေရာတွင် ဖြည့် သို့မဟုတ် ပြင်ပါ။'
+      labelEn: 'Visit date', labelMm: 'ပြသသည့်ရက်'
     }, visits, newbornField('visitDate')));
 
     var weight = groupFromVisits({
       key: 'current_weight_gram', module: 'newborn', mode: 'per-visit', required: true,
       labelEn: 'Current visit weight (kg)', labelMm: 'ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)',
-      hintEn: 'Each visit can have its own weight. Visit 1 does not need this if birth weight is already recorded.',
-      hintMm: 'အကြိမ်တစ်ခုစီတွင် ကိုယ်အလေးချိန် မတူနိုင်ပါ။ မွေးချိန်အလေးချိန်ရှိပြီးသား အကြိမ် ၁ တွင် မဖြည့်လည်း ရသည်။'
+      hintEn: 'This is the weight measured at this visit. Birth weight from Delivery Notes stays separate and can be different.',
+      hintMm: 'ဤသည်မှာ ဤအကြိမ် တိုင်းထားသော ကိုယ်အလေးချိန်ဖြစ်သည်။ Delivery Note မှ မွေးချိန်အလေးချိန်နှင့် မတူနိုင်ပါ။'
     }, visits, newbornField('current_weight_gram'));
+    weight.birthWeightGram = birthWeightGrams(bundle, visits[0]);
     weight.visits = visits.map(function (visit) {
       var current = readValue(visit.data, newbornField('current_weight_gram'));
-      var needed = currentWeightRequired(visit);
+      var filled = valueFilled(newbornField('current_weight_gram'), current);
       return {
         recordId: visit.id,
         visitNumber: visit.visitNumber,
         visitDate: visit.visitDate,
-        status: !needed || valueFilled(newbornField('current_weight_gram'), current) ? 'ok' : 'missing',
+        status: filled ? 'ok' : (currentWeightRequired(visit) ? 'missing' : 'optional'),
         currentValue: current
       };
     });
     weight.filledVisits = weight.visits.filter(function (item) { return item.status === 'ok'; }).length;
     weight.totalVisits = weight.visits.length;
-    weight.status = weight.visits.every(function (item) { return item.status === 'ok'; }) ? 'ok' : 'missing';
+    if (weight.visits.some(function (item) { return item.status === 'missing'; })) {
+      weight.status = 'missing';
+      weight.optional = false;
+      weight.counts = true;
+    } else if (weight.visits.every(function (item) { return item.status === 'ok'; })) {
+      weight.status = 'ok';
+      weight.optional = false;
+      weight.counts = true;
+    } else {
+      weight.status = 'optional';
+      weight.optional = true;
+      weight.counts = false;
+    }
     category.groups.push(weight);
 
     ['head_circumference_cm', 'birth_length_cm'].forEach(function (key) {
@@ -1072,8 +1083,8 @@
     ], visits, {
       labelEn: 'Assessment',
       labelMm: 'စမ်းသပ်စစ်ဆေးခြင်း',
-      hintEn: 'Fill the examination if it is missing. Immunization is left on the newborn-care page.',
-      hintMm: 'စမ်းသပ်စစ်ဆေးခြင်း ပျောက်နေလျှင် ဤနေရာတွင် ဖြည့်ပါ။ ကာကွယ်ဆေးကို Newborn Care စာမျက်နှာတွင်သာ ဖြည့်သည်။'
+      hintEn: '',
+      hintMm: ''
     }, function (visit, values) {
       if (!values.eye_infection_status || !values.eye_care_status || !values.cord_care) return false;
       if (values.eye_infection_status === 'ad' && !(values.eye_infection_findings && values.eye_infection_findings.length)) return false;
@@ -1096,10 +1107,18 @@
   }
 
   function currentWeightRequired(visit) {
-    var number = visit && visit.visitNumber;
-    if (number > 1) return true;
-    var birth = parseFloat(visit && visit.data && (visit.data.body_weight_gram || visit.data.birth_weight_gram || visit.data.birthWeightGram));
-    return isNaN(birth) || birth <= 0;
+    return !!(visit && visit.visitNumber > 1);
+  }
+
+  function birthWeightGrams(bundle, visit) {
+    var visitBirth = parseFloat(visit && visit.data && (
+      visit.data.body_weight_gram || visit.data.birth_weight_gram || visit.data.birthWeightGram
+    ));
+    if (!isNaN(visitBirth) && visitBirth > 0) return visitBirth;
+    var babies = babiesOf(bundle && bundle.delivery && bundle.delivery.data);
+    var grams = babies[0] && (babies[0].birthWeightGram != null ? babies[0].birthWeightGram : babies[0].birth_weight_gram);
+    grams = parseFloat(grams);
+    return !isNaN(grams) && grams > 0 ? grams : 0;
   }
 
   function scanImmediate(bundle) {

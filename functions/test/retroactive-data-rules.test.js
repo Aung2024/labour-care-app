@@ -262,7 +262,9 @@ test('existing newborn visits are filled inline and missing INC can be created',
   });
   assert.equal(category(incomplete, 'newborn').applicable, true);
   assert.equal(group(incomplete, 'newborn', 'assessment').status, 'missing');
-  assert.equal(group(incomplete, 'newborn', 'current_weight_gram').status, 'ok');
+  assert.equal(group(incomplete, 'newborn', 'current_weight_gram').status, 'optional');
+  assert.equal(group(incomplete, 'newborn', 'current_weight_gram').birthWeightGram, 3000);
+  assert.equal(group(incomplete, 'newborn', 'current_weight_gram').visits[0].currentValue, '');
   assert.equal(group(incomplete, 'newborn', 'head_circumference_cm').status, 'missing');
   assert.equal(group(incomplete, 'immediate', 'immediate:bf_immediate_1').status, 'missing');
   assert.ok(incomplete.gapCount >= 1);
@@ -445,12 +447,14 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(home, /id="backFillCard"/);
   assert.match(page, /Apply to all visits/);
   assert.doesNotMatch(page, /redirect-card/);
+  assert.match(page, /မတိုင်းထားပါ/);
+  assert.doesNotMatch(page, /မတိုင်းရပါ/);
   assert.doesNotMatch(rulesSource, /immediate-newborn-care\.html/);
   assert.doesNotMatch(rulesSource, /newborn-care-page\.html/);
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
   assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v350-moh/);
+  assert.match(worker, /mch-care-v351-moh/);
   assert.match(worker, /uniqueCacheFiles/);
   assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);
   const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');

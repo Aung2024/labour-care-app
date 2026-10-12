@@ -33,6 +33,23 @@
     return lang() === 'en' ? option.en : option.mm;
   }
 
+  function formatKg(grams) {
+    var number = parseFloat(grams);
+    if (isNaN(number) || number <= 0) return '';
+    if (number > 20) number = number / 1000;
+    return String(Math.round(number * 1000) / 1000);
+  }
+
+  function filledSummary(group) {
+    if (group.key !== 'current_weight_gram') return '';
+    var parts = (group.visits || []).map(function (visit) {
+      var kg = formatKg(visit.currentValue);
+      if (!kg) return '';
+      return t('Visit ' + (visit.visitNumber || '?') + ': ' + kg + ' kg', 'အကြိမ် ' + (visit.visitNumber || '?') + ': ' + kg + ' ကီလို');
+    }).filter(Boolean);
+    return parts.length ? parts.join(' · ') : '';
+  }
+
   function show(id, visible) {
     var el = document.getElementById(id);
     if (el) el.hidden = !visible;
@@ -329,10 +346,19 @@
       wrap.appendChild(skip);
       return wrap;
     }
+    if (group.birthWeightGram) {
+      var birthNote = document.createElement('p');
+      birthNote.className = 'hint-copy';
+      birthNote.textContent = t(
+        'Birth weight: ' + formatKg(group.birthWeightGram) + ' kg. Current visit weight can be different.',
+        'မွေးချိန်အလေးချိန်: ' + formatKg(group.birthWeightGram) + ' ကီလို။ ယခုအကြိမ် ကိုယ်အလေးချိန်နှင့် မတူနိုင်ပါ။'
+      );
+      wrap.appendChild(birthNote);
+    }
     if (group.status === 'ok') {
       var done = document.createElement('p');
       done.className = 'ok-copy';
-      done.textContent = t('Already filled.', 'ဖြည့်ပြီးပါပြီ။');
+      done.textContent = filledSummary(group) || t('Already filled.', 'ဖြည့်ပြီးပါပြီ။');
       wrap.appendChild(done);
       var edit = document.createElement('button');
       edit.type = 'button';
@@ -420,10 +446,12 @@
     var box = document.createElement('div');
     box.className = 'once-panel';
     (group.fields || []).forEach(function (field) {
-      if (nestedField(field.key)) return;
+      if (nestedField(field.key) || field.type === 'babies' || field.key === 'babies') return;
       box.appendChild(fieldEditor(field, group.key + ':' + field.key, firstValue(group, field.key), group));
     });
-    if (group.key === 'babies') box.appendChild(babiesEditor(group.key + ':babies', group.proposedValue));
+    if (group.key === 'babies' || (group.fields || []).some(function (field) { return field.key === 'babies'; })) {
+      box.appendChild(babiesEditor(group.key + ':babies', group.key === 'babies' ? group.proposedValue : firstValue(group, 'babies')));
+    }
     return box;
   }
 
@@ -724,7 +752,7 @@
     number.disabled = box.checked;
     box.addEventListener('change', function () { number.disabled = box.checked; });
     notMeasured.appendChild(box);
-    notMeasured.appendChild(document.createTextNode(t('Not Measured', 'မတိုင်းရပါ')));
+    notMeasured.appendChild(document.createTextNode(t('Not Measured', 'မတိုင်းထားပါ')));
     wrap.appendChild(number);
     wrap.appendChild(notMeasured);
     return wrap;
