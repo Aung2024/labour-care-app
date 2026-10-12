@@ -32,6 +32,37 @@
     persistPreferredHome(landingPageForRole(role));
   }
 
+  function isLoggingOut() {
+    try { return root.sessionStorage.getItem('mchLoggingOut') === '1'; } catch (error) { return false; }
+  }
+
+  function beginLogout() {
+    try {
+      root.sessionStorage.clear();
+      root.sessionStorage.setItem('mchLoggingOut', '1');
+    } catch (error) {}
+    [
+      'role', 'userEmail', 'userId', 'uid', 'rememberMe', 'userName',
+      'userTownship', 'userRegion', 'providerType', 'sessionExpiry'
+    ].forEach(function (key) {
+      try { root.localStorage.removeItem(key); } catch (error) {}
+    });
+    if (root.caches && root.caches.delete) {
+      root.caches.delete('mch-preferred-home').catch(function () {});
+    }
+  }
+
+  function finishLogout() {
+    try { root.sessionStorage.removeItem('mchLoggingOut'); } catch (error) {}
+  }
+
+  function goToLogin() {
+    var page = '';
+    try { page = String(root.location.pathname || '').split('/').pop(); } catch (error) { page = ''; }
+    if (page === 'login.html') return;
+    root.location.replace('login.html');
+  }
+
   function cachedRole() {
     try { return root.localStorage.getItem('role') || ''; } catch (error) { return ''; }
   }
@@ -65,6 +96,15 @@
     rememberRole: rememberRole,
     cachedRole: cachedRole,
     cachedLandingPage: cachedLandingPage,
-    resolveLandingPage: resolveLandingPage
+    resolveLandingPage: resolveLandingPage,
+    isLoggingOut: isLoggingOut,
+    beginLogout: beginLogout,
+    finishLogout: finishLogout,
+    goToLogin: goToLogin
   });
+
+  try {
+    var currentPage = String(root.location.pathname || '').split('/').pop();
+    if (currentPage === 'login.html' || currentPage === '') finishLogout();
+  } catch (error) {}
 })(typeof window !== 'undefined' ? window : globalThis);

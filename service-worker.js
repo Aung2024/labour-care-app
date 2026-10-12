@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v312-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v313-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -132,10 +132,14 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('[Service Worker] Caching app shell');
-        return cache.addAll(FILES_TO_CACHE);
+        return Promise.all(FILES_TO_CACHE.map((url) => (
+          cache.add(url).catch((error) => {
+            console.warn('[Service Worker] Skip precache:', url, error);
+          })
+        )));
       })
       .then(() => {
-        console.log('[Service Worker] Successfully cached all resources');
+        console.log('[Service Worker] Successfully cached app shell');
         return self.skipWaiting();
       })
       .catch((error) => {
@@ -171,6 +175,15 @@ function shouldCacheRequest(requestUrl) {
   return true;
 }
 
+function isLoginRequest(requestUrl) {
+  return /\/login\.html$/i.test(requestUrl.pathname);
+}
+
+function isAbortLike(error) {
+  const message = String((error && error.message) || error || '');
+  return (error && error.name === 'AbortError') || /abort|timeout|fail(ed)? to fetch/i.test(message);
+}
+
 function offlineFallbackResponse() {
   return new Response('Offline', {
     status: 503,
@@ -179,8 +192,45 @@ function offlineFallbackResponse() {
   });
 }
 
+function fetchWithTimeout(request, timeoutMs) {
+  let timer = 0;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+  });
+  return Promise.race([fetch(request), timeout]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
+function matchPage(page) {
+  return caches.match(page, { ignoreSearch: true }).then((cached) => cached || null);
+}
+
+function cachedDocumentFallback(request, requestUrl) {
+  if (isLoginRequest(requestUrl)) {
+    return matchPage('./login.html').then((cached) => cached || offlineFallbackResponse());
+  }
+  return caches.match(request, { ignoreSearch: true }).then((cached) => {
+    if (cached) return cached;
+    return matchPage('./login.html').then((login) => (
+      login || matchPage('./index.html').then((index) => index || offlineFallbackResponse())
+    ));
+  });
+}
+
+function rememberSuccessfulDocument(request, requestUrl, response) {
+  if (!response || response.status !== 200 || response.type !== 'basic') return response;
+  const cacheUrl = isLoginRequest(requestUrl) ? './login.html' : (shouldCacheRequest(requestUrl) ? request : null);
+  if (!cacheUrl) return response;
+  const responseToCache = response.clone();
+  caches.open(CACHE_NAME).then((cache) => cache.put(cacheUrl, responseToCache));
+  return response;
+}
+
 // Fetch event strategy:
-// - HTML/document navigation: network first, fallback to cache.
+// - Login HTML: cache first so logout is not blocked by a failed or aborted network fetch.
+// - Other HTML: network first with a short timeout, then the same page from cache.
+//   Never fall back to a role landing page (that kept Lab users on lab-vouchers.html).
 // - Static assets: cache first, then network.
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
@@ -199,41 +249,26 @@ self.addEventListener('fetch', (event) => {
     (event.request.headers.get('accept') || '').includes('text/html');
 
   if (isDocumentRequest) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-          }
-          return response;
-        })
-        .catch(async (error) => {
-          console.error('[Service Worker] Document fetch failed:', error);
-          const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
-          if (cachedResponse) return cachedResponse;
-          let preferredHome = '';
-          try {
-            const preferred = await caches.open('mch-preferred-home').then((cache) => cache.match('./__preferred-home'));
-            if (preferred) preferredHome = (await preferred.text()).trim();
-          } catch (cacheError) {
-            preferredHome = '';
-          }
-          if (preferredHome && preferredHome !== './home.html' && preferredHome !== 'home.html') {
-            const roleFallback = await caches.match(preferredHome.charAt(0) === '.' ? preferredHome : ('./' + preferredHome));
-            if (roleFallback) return roleFallback;
-          }
-          const homeFallback = await caches.match('./home.html');
-          if (homeFallback && (!preferredHome || preferredHome === 'home.html' || preferredHome === './home.html')) {
-            return homeFallback;
-          }
-          const loginFallback = await caches.match('./login.html');
-          if (loginFallback) return loginFallback;
-          const indexFallback = await caches.match('./index.html');
-          if (indexFallback) return indexFallback;
-          return offlineFallbackResponse();
-        })
-    );
+    event.respondWith((async () => {
+      if (isLoginRequest(requestUrl)) {
+        const cachedLogin = await matchPage('./login.html');
+        if (cachedLogin) {
+          fetchWithTimeout(event.request, 2500)
+            .then((response) => rememberSuccessfulDocument(event.request, requestUrl, response))
+            .catch(() => {});
+          return cachedLogin;
+        }
+      }
+      try {
+        const response = await fetchWithTimeout(event.request, 2500);
+        return rememberSuccessfulDocument(event.request, requestUrl, response) || cachedDocumentFallback(event.request, requestUrl);
+      } catch (error) {
+        if (!isAbortLike(error)) {
+          console.warn('[Service Worker] Document fetch failed:', error);
+        }
+        return cachedDocumentFallback(event.request, requestUrl);
+      }
+    })());
     return;
   }
 
@@ -254,7 +289,9 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch((error) => {
-          console.error('[Service Worker] Asset fetch failed:', error);
+          if (!isAbortLike(error)) {
+            console.warn('[Service Worker] Asset fetch failed:', error);
+          }
           return caches.match(event.request).then((cached) => cached || offlineFallbackResponse());
         });
     })

@@ -1416,12 +1416,10 @@
   async function logout() {
     state.loggingOut = true;
     stopCamera();
-    try {
-      await firebase.auth().signOut();
-    } catch (error) {}
-    sessionStorage.clear();
-    ['role', 'userEmail', 'userId'].forEach(function (key) { localStorage.removeItem(key); });
+    if (window.RoleLanding && RoleLanding.beginLogout) RoleLanding.beginLogout();
+    if (window.AuthGuard && AuthGuard.clearCache) AuthGuard.clearCache();
     window.location.replace('login.html');
+    try { firebase.auth().signOut(); } catch (error) {}
   }
 
   async function initialize(user) {
@@ -1665,8 +1663,7 @@
   window.addEventListener('beforeunload', stopCamera);
 
   firebase.auth().onAuthStateChanged(function (user) {
-    if (state.loggingOut) {
-      window.location.replace('login.html');
+    if (state.loggingOut || (window.RoleLanding && RoleLanding.isLoggingOut && RoleLanding.isLoggingOut())) {
       return;
     }
     if (!user) {

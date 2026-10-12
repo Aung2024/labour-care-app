@@ -158,6 +158,11 @@ function initAuthGuard() {
     }
     
     if (!user) {
+      if (window.RoleLanding && RoleLanding.isLoggingOut && RoleLanding.isLoggingOut()) {
+        hasUnsubscribed = true;
+        unsubscribe();
+        return;
+      }
       user = await waitForAuthRecovery();
       if (user) {
         console.log('✅ User recovered after auth restore delay:', user.uid);

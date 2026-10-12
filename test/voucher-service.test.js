@@ -194,6 +194,36 @@ test('marks the first redeemed voucher New and later ones Old', () => {
   assert.equal(pricing.visitKindFromSiblings(later, [rejected, later]), 'old');
 });
 
+test('maps Lab and Project Account roles to voucher landing pages', () => {
+  const context = {
+    localStorage: {
+      store: {},
+      setItem(key, value) { this.store[key] = String(value); },
+      getItem(key) { return Object.prototype.hasOwnProperty.call(this.store, key) ? this.store[key] : null; },
+      removeItem(key) { delete this.store[key]; }
+    },
+    sessionStorage: {
+      store: {},
+      setItem(key, value) { this.store[key] = String(value); },
+      getItem(key) { return Object.prototype.hasOwnProperty.call(this.store, key) ? this.store[key] : null; },
+      removeItem(key) { delete this.store[key]; },
+      clear() { this.store = {}; }
+    },
+    location: { pathname: '/lab-vouchers.html', replace() {} }
+  };
+  context.globalThis = context;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'role-landing.js'), 'utf8'),
+    context,
+    { filename: 'role-landing.js' }
+  );
+  assert.equal(context.RoleLanding.landingPageForRole('Lab'), 'lab-vouchers.html');
+  assert.equal(context.RoleLanding.landingPageForRole('Program Officer'), 'program-officer.html');
+  context.RoleLanding.beginLogout();
+  assert.equal(context.RoleLanding.isLoggingOut(), true);
+  assert.equal(context.localStorage.getItem('role'), null);
+});
+
 test('loads only the 8 outcome indicators and splits Hb%', () => {
   const pricing = loadPricing();
   assert.equal(pricing.LAB_OUTCOME_TESTS.length, 8);
