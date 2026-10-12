@@ -63,6 +63,14 @@
     root.location.replace('login.html');
   }
 
+  function handleLogout(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    beginLogout();
+    if (root.AuthGuard && root.AuthGuard.clearCache) root.AuthGuard.clearCache();
+    try { if (root.firebase && root.firebase.auth) root.firebase.auth().signOut(); } catch (error) {}
+    goToLogin();
+  }
+
   function cachedRole() {
     try { return root.localStorage.getItem('role') || ''; } catch (error) { return ''; }
   }
@@ -100,7 +108,8 @@
     isLoggingOut: isLoggingOut,
     beginLogout: beginLogout,
     finishLogout: finishLogout,
-    goToLogin: goToLogin
+    goToLogin: goToLogin,
+    handleLogout: handleLogout
   });
 
   try {

@@ -137,10 +137,9 @@
   el('filterStatus').addEventListener('change', renderList);
 
   firebase.auth().onAuthStateChanged(function (user) {
-    if (!user) {
-      window.location.replace('login.html?redirect=' + encodeURIComponent(window.location.pathname));
-      return;
-    }
+    if (window.RoleLanding && RoleLanding.isLoggingOut && RoleLanding.isLoggingOut()) return;
+    user = user || firebase.auth().currentUser;
+    if (!user) return;
     initialize(user).catch(function (error) {
       setStatus(error.message || 'Could not load QR vouchers.', 'error');
     });

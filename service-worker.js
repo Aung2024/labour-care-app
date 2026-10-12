@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v313-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v314-labourcare-2481a-vouchers';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -206,31 +206,39 @@ function matchPage(page) {
   return caches.match(page, { ignoreSearch: true }).then((cached) => cached || null);
 }
 
+function documentCacheKey(requestUrl) {
+  const parts = requestUrl.pathname.split('/');
+  let name = parts[parts.length - 1] || 'index.html';
+  if (!name || requestUrl.pathname.endsWith('/')) name = 'index.html';
+  return './' + name;
+}
+
 function cachedDocumentFallback(request, requestUrl) {
   if (isLoginRequest(requestUrl)) {
     return matchPage('./login.html').then((cached) => cached || offlineFallbackResponse());
   }
   return caches.match(request, { ignoreSearch: true }).then((cached) => {
     if (cached) return cached;
-    return matchPage('./login.html').then((login) => (
-      login || matchPage('./index.html').then((index) => index || offlineFallbackResponse())
-    ));
+    return matchPage(documentCacheKey(requestUrl)).then((page) => {
+      if (page) return page;
+      return matchPage('./login.html').then((login) => (
+        login || matchPage('./index.html').then((index) => index || offlineFallbackResponse())
+      ));
+    });
   });
 }
 
 function rememberSuccessfulDocument(request, requestUrl, response) {
   if (!response || response.status !== 200 || response.type !== 'basic') return response;
-  const cacheUrl = isLoginRequest(requestUrl) ? './login.html' : (shouldCacheRequest(requestUrl) ? request : null);
-  if (!cacheUrl) return response;
+  const cacheUrl = documentCacheKey(requestUrl);
   const responseToCache = response.clone();
   caches.open(CACHE_NAME).then((cache) => cache.put(cacheUrl, responseToCache));
   return response;
 }
 
 // Fetch event strategy:
-// - Login HTML: cache first so logout is not blocked by a failed or aborted network fetch.
-// - Other HTML: network first with a short timeout, then the same page from cache.
-//   Never fall back to a role landing page (that kept Lab users on lab-vouchers.html).
+// - HTML navigations (Back, Home, logout → login): cache first, refresh in the
+//   background. Never wait on the network and never fall back to a role page.
 // - Static assets: cache first, then network.
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
@@ -246,19 +254,17 @@ self.addEventListener('fetch', (event) => {
 
   const isDocumentRequest =
     event.request.mode === 'navigate' ||
-    (event.request.headers.get('accept') || '').includes('text/html');
+    event.request.destination === 'document';
 
   if (isDocumentRequest) {
     event.respondWith((async () => {
-      if (isLoginRequest(requestUrl)) {
-        const cachedLogin = await matchPage('./login.html');
-        if (cachedLogin) {
-          fetchWithTimeout(event.request, 2500)
-            .then((response) => rememberSuccessfulDocument(event.request, requestUrl, response))
-            .catch(() => {});
-          return cachedLogin;
-        }
-      }
+      const cached = isLoginRequest(requestUrl)
+        ? await matchPage('./login.html')
+        : (await caches.match(event.request, { ignoreSearch: true })) || await matchPage(documentCacheKey(requestUrl));
+      fetchWithTimeout(event.request, 4000)
+        .then((response) => rememberSuccessfulDocument(event.request, requestUrl, response))
+        .catch(() => {});
+      if (cached) return cached;
       try {
         const response = await fetchWithTimeout(event.request, 2500);
         return rememberSuccessfulDocument(event.request, requestUrl, response) || cachedDocumentFallback(event.request, requestUrl);

@@ -222,6 +222,7 @@ test('maps Lab and Project Account roles to voucher landing pages', () => {
   context.RoleLanding.beginLogout();
   assert.equal(context.RoleLanding.isLoggingOut(), true);
   assert.equal(context.localStorage.getItem('role'), null);
+  assert.equal(typeof context.RoleLanding.handleLogout, 'function');
 });
 
 test('loads only the 8 outcome indicators and splits Hb%', () => {

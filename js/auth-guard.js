@@ -163,10 +163,7 @@ function initAuthGuard() {
         unsubscribe();
         return;
       }
-      user = await waitForAuthRecovery();
-      if (user) {
-        console.log('✅ User recovered after auth restore delay:', user.uid);
-      }
+      user = firebase.auth().currentUser || null;
     }
 
     if (!user) {
@@ -176,6 +173,10 @@ function initAuthGuard() {
         hasUnsubscribed = true;
         unsubscribe();
         return;
+      }
+      user = await waitForAuthRecovery();
+      if (user) {
+        console.log('✅ User recovered after auth restore delay:', user.uid);
       }
     }
 
@@ -242,8 +243,10 @@ function initAuthGuard() {
 }
 
 function waitForAuthRecovery() {
+  const immediate = firebase.auth().currentUser;
+  if (immediate) return Promise.resolve(immediate);
   const cachedUid = localStorage.getItem('uid');
-  const maxWaitMs = cachedUid ? 5000 : 1500;
+  const maxWaitMs = cachedUid ? 600 : 250;
   const started = Date.now();
 
   return new Promise((resolve) => {
@@ -253,7 +256,7 @@ function waitForAuthRecovery() {
         resolve(recovered || null);
         return;
       }
-      setTimeout(check, 150);
+      setTimeout(check, 50);
     };
     check();
   });

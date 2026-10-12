@@ -470,10 +470,9 @@
   });
 
   firebase.auth().onAuthStateChanged(function (user) {
-    if (!user) {
-      window.location.replace('login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));
-      return;
-    }
+    if (window.RoleLanding && RoleLanding.isLoggingOut && RoleLanding.isLoggingOut()) return;
+    user = user || firebase.auth().currentUser;
+    if (!user) return;
     initialize(user);
   });
 })();
