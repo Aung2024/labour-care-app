@@ -133,6 +133,24 @@ test('puts rounding remainder on the project contribution', () => {
   assert.equal(shares.projectContributionMinor, 90);
 });
 
+test('applies the project ceiling by moving excess onto client co-payment', () => {
+  const pricing = loadPricing();
+  const capped = pricing.applyProjectCeiling([
+    { serviceId: 'urine-re', serviceName: 'Urine RE', regularPriceMinor: 500000, labCostShareMinor: 0, subsidizedCostMinor: 450000, clientCopayMinor: 45000, projectContributionMinor: 405000 },
+    { serviceId: 'hb', serviceName: 'Hb%', regularPriceMinor: 400000, labCostShareMinor: 0, subsidizedCostMinor: 360000, clientCopayMinor: 36000, projectContributionMinor: 324000 }
+  ], 500000);
+  assert.equal(capped.totals.projectContributionMinor, 500000);
+  assert.equal(capped.totals.clientCopayMinor, 310000);
+  assert.equal(capped.ceilingAppliedMinor, 229000);
+});
+
+test('uses the live Configure Lab ceiling over a stale sheet ceiling of zero', () => {
+  const service = loadService();
+  assert.equal(service.resolveProjectCeilingMinor({ projectCeilingMinor: 0 }, { projectCeilingMinor: 700000 }), 700000);
+  assert.equal(service.resolveProjectCeilingMinor({ projectCeilingMinor: 400000 }, { projectCeilingMinor: 0 }), 0);
+  assert.equal(service.resolveProjectCeilingMinor({ projectCeilingMinor: 400000 }, null), 400000);
+});
+
 test('rejects percent pairs that do not add up to 100', () => {
   const pricing = loadPricing();
   assert.throws(() => pricing.normalizePercentPair(80, 10), /100/);

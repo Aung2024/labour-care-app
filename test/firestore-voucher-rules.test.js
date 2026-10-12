@@ -26,6 +26,7 @@ const {
 
 const PROJECT_ID = 'demo-labourcare-2481a-vouchers';
 const SHEET_ID = 'AAAAAAAAAAAAAAAAAAAAAA';
+const LIVE_SHEET_ID = 'BBBBBBBBBBBBBBBBBBBBBB';
 const VOUCHER_ID = 'K7MP-3QWX';
 let env;
 
@@ -113,7 +114,7 @@ async function seed() {
   });
 }
 
-async function issueVoucher(selectedIds) {
+async function issueVoucher(selectedIds, priceSheetId) {
   const serviceIds = selectedIds && selectedIds.length ? selectedIds : ['urine-re'];
   const db = env.authenticatedContext('mw').firestore();
   const quotaRef = doc(db, 'voucher_account_quotas/mw');
@@ -134,12 +135,12 @@ async function issueVoucher(selectedIds) {
       patientAgeSnapshot: 28,
       patientPhoneSnapshot: '091234',
       patientNrcSnapshot: '',
-            ancVisitDate: '2026-08-27',
+      ancVisitDate: '2026-08-27',
       midwifeId: 'mw',
       issuerNameSnapshot: 'Maternity Home',
       labId: 'lab1',
       labNameSnapshot: 'Lab One',
-      priceSheetId: SHEET_ID,
+      priceSheetId: priceSheetId || SHEET_ID,
       selectedServiceIds: serviceIds,
       issuedServiceIds: serviceIds,
       issuedAt: serverTimestamp(),
@@ -377,6 +378,48 @@ test('Midwife can issue from the allocated price sheet without assignment docs',
     await deleteDoc(doc(db, 'voucher_price_assignments/global'));
   });
   await assertSucceeds(issueVoucher());
+});
+
+test('Midwife can issue from the live assigned price sheet after PO republish', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, `voucher_price_sheets/${LIVE_SHEET_ID}`), {
+      labId: 'lab1',
+      midwifeId: null,
+      currency: 'MMK',
+      status: 'published',
+      serviceIds: ['urine-re', 'hb'],
+      services: [{
+        serviceId: 'urine-re',
+        serviceCode: 'URINE_RE',
+        serviceName: 'Urine RE',
+        regularPriceMinor: 600000,
+        labCostShareMinor: 60000,
+        subsidizedCostMinor: 540000,
+        clientCostShareMinor: 54000,
+        projectCostShareMinor: 486000
+      }],
+      pricesByServiceId: {
+        'urine-re': {
+          regularPriceMinor: 600000,
+          labCostShareMinor: 60000,
+          clientCostShareMinor: 54000,
+          projectCostShareMinor: 486000
+        }
+      },
+      projectCeilingMinor: 700000,
+      publishedAt: new Date(),
+      publishedBy: 'po'
+    });
+    await setDoc(doc(db, 'voucher_price_assignments/lab1'), {
+      labId: 'lab1',
+      midwifeId: null,
+      priceSheetId: LIVE_SHEET_ID,
+      updatedAt: new Date(),
+      updatedBy: 'po'
+    });
+  });
+  await assertSucceeds(issueVoucher(['urine-re'], LIVE_SHEET_ID));
 });
 
 async function writeClientSignature(uid) {
