@@ -314,6 +314,16 @@
       return obstetricComplete(rows) ? rows : '';
     }
     if (field.type === 'cdk') return cdkValue(record);
+    if (field.type === 'measure') return measureValue(record, field);
+    if (field.type === 'findings') {
+      var findings = getPath(record, field.path || [field.key]);
+      return Array.isArray(findings) ? findings : [];
+    }
+    if (field.type === 'checkbox') {
+      var checked = booleanOrNull(getPath(record, field.path || [field.key]));
+      return checked === null ? '' : checked;
+    }
+    if (field.key === 'breathing_status') return breathingOf(record);
     if (field.type === 'age') {
       var years = record.youngest_child_age_years;
       var months = record.youngest_child_age_months;
@@ -341,10 +351,11 @@
   }
 
   function valueFilled(field, value) {
-    if (field.type === 'boolean') return value === true || value === false;
+    if (field.type === 'boolean' || field.type === 'checkbox') return value === true || value === false;
+    if (field.type === 'measure') return value === 'not_measured' || (value !== '' && value != null && !isNaN(parseFloat(value)) && parseFloat(value) > 0);
     if (field.type === 'obstetric') return obstetricComplete(value);
     if (field.type === 'age') return !!(value && ((value.years != null && value.years !== '') || (value.months != null && value.months !== '')));
-    if (field.type === 'other-visits') return Array.isArray(value) && value.length > 0;
+    if (field.type === 'other-visits' || field.type === 'findings') return Array.isArray(value) && value.length > 0;
     if (Array.isArray(value)) return value.length > 0;
     return value !== '' && value != null;
   }
@@ -429,6 +440,77 @@
     ];
   }
 
+  function measureField(key, en, mm) {
+    return {
+      key: key,
+      path: [key],
+      type: 'measure',
+      labelEn: en,
+      labelMm: mm,
+      flag: key + '_not_measured',
+      min: 0.1,
+      max: 80,
+      step: '0.1'
+    };
+  }
+
+  function newbornField(key) {
+    var fields = {
+      visitDate: { key: 'visitDate', path: ['visitDate'], aliases: [['visit_date']], type: 'date', labelEn: 'Visit date', labelMm: 'ပြသသည့်ရက်', sync: function (value) { return { visit_date: value }; } },
+      current_weight_gram: { key: 'current_weight_gram', path: ['current_weight_gram'], type: 'weight', labelEn: 'Current visit weight (kg)', labelMm: 'ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)', min: 0.3, max: 10, step: '0.001' },
+      head_circumference_cm: measureField('head_circumference_cm', 'Birth head circumference (cm)', 'မွေးကင်းစ ဦးခေါင်းပတ်လည် (စင်တီမီတာ)'),
+      birth_length_cm: measureField('birth_length_cm', 'Birth length (cm)', 'မွေးကင်းစ ကိုယ်အရပ်အမြင့် (စင်တီမီတာ)'),
+      otherVisits: { key: 'otherVisits', path: ['otherVisits'], type: 'other-visits', labelEn: 'Other newborn-care visits', labelMm: 'အခြားကျန်းမာရေးဌာနတွင် ပြသခဲ့သော Newborn Care Visit များ', sync: function (value) { return { hasOtherVisits: value && value.length ? 'yes' : 'no' }; } },
+      eye_infection_status: { key: 'eye_infection_status', path: ['eye_infection_status'], type: 'select', labelEn: 'Eye redness / swelling / pus', labelMm: 'မျက်စိ နီမှု၊ ရောင်ရမ်းမှု၊ ပြည်တည်မှု', options: [choice('nad', 'NAD', 'ပုံမှန် (NAD)'), choice('ad', 'AD', 'ပုံမှန် မဟုတ် (AD)')] },
+      eye_infection_findings: { key: 'eye_infection_findings', path: ['eye_infection_findings'], type: 'findings', labelEn: 'Eye findings', labelMm: 'မျက်စိ လက္ခဏာများ', options: [choice('redness', 'Redness', 'နီခြင်း'), choice('swelling', 'Swelling', 'ရောင်ရမ်းခြင်း'), choice('pus_discharge', 'Pus discharge', 'ပြည်တည်ခြင်း')] },
+      eye_care_status: { key: 'eye_care_status', path: ['eye_care_status'], type: 'select', labelEn: 'Eye care', labelMm: 'မျက်စိကို ပြုစုစောင့်ရှောက်မှုပေးခြင်း', options: [choice('clean_and_dry', 'Clean and dry', 'ခြောက်သွေ့သန့်ရှင်းနေသည်'), choice('discharge_present', 'Discharge present', 'အရည်ထွက်နေသည်')] },
+      cord_care: { key: 'cord_care', path: ['cord_care'], type: 'select', labelEn: 'Cord care', labelMm: 'ချက်တိုင်စောင့်ရှောက်မှုပေးခြင်း', options: [choice('yes', 'Yes', 'ရှိ'), choice('no', 'No', 'မရှိ')] },
+      anatomy_abnormalities: { key: 'anatomy_abnormalities', path: ['anatomy_abnormalities'], type: 'checkbox', labelEn: 'Anatomy abnormalities', labelMm: 'ခန္ဓာကိုယ်အစိတ်အပိုင်းများ ပုံမှန်မရှိခြင်း' },
+      anatomy_abnormality_details: { key: 'anatomy_abnormality_details', path: ['anatomy_abnormality_details'], type: 'text', labelEn: 'Abnormality details', labelMm: 'ပုံမမှန်မှု အသေးစိတ်' },
+      exclusive_breastfeeding_on_demand: { key: 'exclusive_breastfeeding_on_demand', path: ['exclusive_breastfeeding_on_demand'], type: 'checkbox', labelEn: 'Exclusive breastfeeding on demand', labelMm: 'မိခင်နို့တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း' },
+      baby_outcome: { key: 'baby_outcome', path: ['baby_outcome'], aliases: [['outcome']], type: 'select', labelEn: 'Outcome', labelMm: 'ရလဒ်', normalize: normalizeOutcome, options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('death', 'Death', 'သေဆုံး')], sync: function (value) { return { outcome: value === 'death' ? 'dead' : value }; } },
+      cause_of_death: { key: 'cause_of_death', path: ['cause_of_death'], type: 'text', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း' }
+    };
+    return fields[key];
+  }
+
+  function immediateFields() {
+    return [
+      { key: 'thorough_drying', path: ['thorough_drying'], type: 'checkbox', labelEn: 'Thorough drying', labelMm: 'ခြောက်သွေ့အောင် သေချာသုတ်ပါ။' },
+      { key: 'breathing_status', path: ['breathing_status'], type: 'select', required: true, labelEn: 'Breathing status', labelMm: 'အသက်ရှူမှု အခြေအနေ', options: [choice('spontaneous', 'Spontaneous breathing', 'ကောင်းစွာအသက်ရှူသည်'), choice('gasping_or_no_breathing', 'Not breathing / start resuscitation', 'အသက်မရှူပါက အသက်ရှူအားကူနည်း စတင်ရန်')], sync: function (value) { return { spontaneous_breathing: value === 'spontaneous', gasping_or_no_breathing: value === 'gasping_or_no_breathing' }; } },
+      { key: 'tactile_stimulation', path: ['tactile_stimulation'], type: 'checkbox', labelEn: 'Tactile stimulation', labelMm: 'အသက်ရှူစေရန် နှိုးဆွခြင်း' },
+      { key: 'bag_and_mask', path: ['bag_and_mask'], type: 'checkbox', labelEn: 'Bag and mask', labelMm: 'လေအိတ်နှင့် မျက်နှာဖုံး' },
+      { key: 'resuscitation_outcome', path: ['resuscitation_outcome'], type: 'select', labelEn: 'Baby condition after resuscitation', labelMm: 'ကလေးအခြေအနေ', options: [choice('alive', 'Alive', 'အရှင်'), choice('death', 'Death', 'အသေ'), choice('referred', 'Referred', 'လွှဲပြောင်း')] },
+      { key: 'skin_to_skin_contact', path: ['skin_to_skin_contact'], type: 'checkbox', labelEn: 'Skin-to-skin contact', labelMm: 'မိခင်နှင့် အရေပြားခြင်း ထိကပ်ထားခြင်း' },
+      { key: 'delayed_cord_clamping', path: ['delayed_cord_clamping'], type: 'checkbox', labelEn: 'Delayed cord clamping', labelMm: 'အချိန်ဆိုင်း၍ ချက်ကြိုးဖြတ်ခြင်း' },
+      { key: 'support_early_exclusive_breastfeeding', path: ['support_early_exclusive_breastfeeding'], type: 'checkbox', labelEn: 'Early exclusive breastfeeding', labelMm: 'စောလျင်စွာ မိခင်နို့ တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း' },
+      { key: 'eye_care_teo', path: ['eye_care_teo'], type: 'checkbox', labelEn: 'Eye care with TEO', labelMm: 'မျက်လုံးအား TEO အသုံးပြုခြင်း' },
+      { key: 'cord_care_clean_dry', path: ['cord_care_clean_dry'], type: 'checkbox', labelEn: 'Cord care clean and dry', labelMm: 'ချက်ကြိုး သန့်ရှင်း ခြောက်သွေ့အောင်ထားခြင်း' },
+      { key: 'vitamin_k', path: ['vitamin_k'], type: 'checkbox', labelEn: 'Vitamin K given', labelMm: 'ဗီတာမင်ကေ ထိုးပြီး' }
+    ];
+  }
+
+  function breathingOf(record) {
+    if (text(record && record.breathing_status)) return text(record.breathing_status);
+    if (record && (record.gasping_or_no_breathing === true || record.gasping_or_no_breathing === 'yes')) return 'gasping_or_no_breathing';
+    if (record && (record.spontaneous_breathing === true || record.spontaneous_breathing === 'yes')) return 'spontaneous';
+    return '';
+  }
+
+  function measureComplete(record, field) {
+    if (!record) return false;
+    if (record[field.flag] === true || text(record[field.flag]) === 'not_measured') return true;
+    var number = parseFloat(getPath(record, field.path || [field.key]));
+    return !isNaN(number) && number > 0;
+  }
+
+  function measureValue(record, field) {
+    if (!record) return '';
+    if (record[field.flag] === true || text(record[field.flag]) === 'not_measured') return 'not_measured';
+    var number = getPath(record, field.path || [field.key]);
+    return number == null || number === '' ? '' : number;
+  }
+
   function testFields() {
     return [
       { key: 'testDate', path: ['testDate'], type: 'date', required: false, labelEn: 'Test date', labelMm: 'စစ်ဆေးသည့်ရက်' },
@@ -452,7 +534,9 @@
       anc: ['visitDate', 'previousObstetricHistory', 'lastPregnancyOutcome', 'goiterStatus', 'tbSymptoms', 'otherMedicalConditionName', 'ironFolicAcid', 'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid', 'provisionalDiagnosisType', 'provisionalDiagnosisOther', 'cleanDeliveryKit'].map(ancField),
       pnc: pncFields(),
       test: testFields(),
-      delivery: deliveryFieldDefs()
+      delivery: deliveryFieldDefs(),
+      newborn: ['visitDate', 'current_weight_gram', 'head_circumference_cm', 'birth_length_cm', 'otherVisits', 'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care', 'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand', 'baby_outcome', 'cause_of_death'].map(newbornField),
+      immediate: immediateFields()
     };
     (lists[moduleName] || []).forEach(function (field) { map[field.key] = field; });
     return map;
@@ -476,7 +560,9 @@
 
   function visitState(visit, field) {
     var current = readValue(visit.data, field);
-    var filled = field.type === 'cdk' ? cdkComplete(visit.data) : valueFilled(field, current);
+    var filled = field.type === 'cdk'
+      ? cdkComplete(visit.data)
+      : (field.type === 'measure' ? measureComplete(visit.data, field) : valueFilled(field, current));
     return {
       recordId: visit.id,
       visitNumber: visit.visitNumber,
@@ -753,16 +839,17 @@
     return summarize(category);
   }
 
-  function multiFieldGroup(key, keys, visits, labels, completeFn) {
-    var fields = keys.map(ancField);
+  function multiFieldGroup(key, keys, visits, labels, completeFn, fieldFn, moduleName) {
+    fieldFn = fieldFn || ancField;
+    var fields = keys.map(fieldFn);
     var group = {
       key: key,
       keys: keys,
-      module: 'anc',
-      mode: 'apply-choice',
-      required: true,
-      counts: true,
-      optional: false,
+      module: moduleName || 'anc',
+      mode: labels.mode || 'apply-choice',
+      required: labels.required !== false,
+      counts: labels.counts !== false && !labels.optional,
+      optional: !!labels.optional,
       labelEn: labels.labelEn,
       labelMm: labels.labelMm,
       hintEn: labels.hintEn || '',
@@ -772,10 +859,10 @@
       proposedValue: '',
       visits: visits.map(function (visit) {
         var values = {};
-        keys.forEach(function (fieldKey) { values[fieldKey] = readValue(visit.data, ancField(fieldKey)); });
+        keys.forEach(function (fieldKey) { values[fieldKey] = readValue(visit.data, fieldFn(fieldKey)); });
         var ok = completeFn
           ? completeFn(visit, values)
-          : keys.every(function (fieldKey) { return valueFilled(ancField(fieldKey), values[fieldKey]); });
+          : keys.every(function (fieldKey) { return valueFilled(fieldFn(fieldKey), values[fieldKey]); });
         return {
           recordId: visit.id,
           visitNumber: visit.visitNumber,
@@ -922,28 +1009,143 @@
     return summarize(category);
   }
 
-  function scanNewbornLinks(bundle) {
-    var hasPnc = (bundle.pncVisits || []).length > 0;
-    var category = categoryShell('newborn-links', 'Newborn care', 'မွေးကင်းစကလေးစောင့်ရှောက်မှု', {
-      applicable: hasPnc
+  function scanNewborn(bundle) {
+    var visits = visitRows(bundle.newbornVisits);
+    var category = categoryShell('newborn', 'Newborn care', 'မွေးကင်းစကလေး စောင့်ရှောက်မှု', {
+      visitCount: visits.length,
+      applicable: visits.length > 0
     });
-    if (!hasPnc) return category;
-    category.redirects = [
-      {
-        care: 'immediate',
-        missing: !(bundle.immediateRecords || []).length,
+    if (!visits.length) return category;
+
+    category.groups.push(groupFromVisits({
+      key: 'visitDate', module: 'newborn', mode: 'per-visit', required: true,
+      labelEn: 'Visit date', labelMm: 'ပြသသည့်ရက်',
+      hintEn: 'Most visits already have a date. Add or correct it here if it is missing.',
+      hintMm: 'အကြိမ်အများစုတွင် ရက်စွဲရှိပြီးသားဖြစ်သည်။ ပျောက်နေလျှင် ဤနေရာတွင် ဖြည့် သို့မဟုတ် ပြင်ပါ။'
+    }, visits, newbornField('visitDate')));
+
+    var weight = groupFromVisits({
+      key: 'current_weight_gram', module: 'newborn', mode: 'per-visit', required: true,
+      labelEn: 'Current visit weight (kg)', labelMm: 'ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)',
+      hintEn: 'Each visit can have its own weight. Visit 1 does not need this if birth weight is already recorded.',
+      hintMm: 'အကြိမ်တစ်ခုစီတွင် ကိုယ်အလေးချိန် မတူနိုင်ပါ။ မွေးချိန်အလေးချိန်ရှိပြီးသား အကြိမ် ၁ တွင် မဖြည့်လည်း ရသည်။'
+    }, visits, newbornField('current_weight_gram'));
+    weight.visits = visits.map(function (visit) {
+      var current = readValue(visit.data, newbornField('current_weight_gram'));
+      var needed = currentWeightRequired(visit);
+      return {
+        recordId: visit.id,
+        visitNumber: visit.visitNumber,
+        visitDate: visit.visitDate,
+        status: !needed || valueFilled(newbornField('current_weight_gram'), current) ? 'ok' : 'missing',
+        currentValue: current
+      };
+    });
+    weight.filledVisits = weight.visits.filter(function (item) { return item.status === 'ok'; }).length;
+    weight.totalVisits = weight.visits.length;
+    weight.status = weight.visits.every(function (item) { return item.status === 'ok'; }) ? 'ok' : 'missing';
+    category.groups.push(weight);
+
+    ['head_circumference_cm', 'birth_length_cm'].forEach(function (key) {
+      var measure = groupFromVisits({
+        key: key, module: 'newborn', mode: 'once', required: true,
+        labelEn: newbornField(key).labelEn, labelMm: newbornField(key).labelMm,
+        hintEn: 'This stays the same on every visit. Enter the centimetres once, or choose Not measured.',
+        hintMm: 'အကြိမ်အားလုံးတွင် တူညီရမည်။ စင်တီမီတာကို တစ်ကြိမ်သာ ဖြည့်ပါ။ မတိုင်းရသေးလျှင် Not Measured ရွေးပါ။'
+      }, visits, newbornField(key));
+      measure.status = measure.filledVisits ? 'ok' : 'missing';
+      category.groups.push(measure);
+    });
+
+    var other = groupFromVisits({
+      key: 'otherVisits', module: 'newborn', mode: 'once', required: false, optional: true, counts: false,
+      labelEn: 'Other-facility newborn visits', labelMm: 'အခြားကျန်းမာရေးဌာနတွင် ပြသခဲ့သော Newborn Care Visit များ',
+      hintEn: 'Optional. Fill once if the baby had newborn care elsewhere; it is copied to every newborn visit.',
+      hintMm: 'မဖြည့်လည်း ရသည်။ အခြားဌာနတွင် Newborn Care ယူခဲ့လျှင် တစ်ကြိမ်သာ ဖြည့်ပါ။'
+    }, visits, newbornField('otherVisits'));
+    other.status = other.filledVisits ? 'ok' : 'optional';
+    category.groups.push(other);
+
+    category.groups.push(multiFieldGroup('assessment', [
+      'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care',
+      'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand'
+    ], visits, {
+      labelEn: 'Assessment',
+      labelMm: 'စမ်းသပ်စစ်ဆေးခြင်း',
+      hintEn: 'Fill the examination if it is missing. Immunization is left on the newborn-care page.',
+      hintMm: 'စမ်းသပ်စစ်ဆေးခြင်း ပျောက်နေလျှင် ဤနေရာတွင် ဖြည့်ပါ။ ကာကွယ်ဆေးကို Newborn Care စာမျက်နှာတွင်သာ ဖြည့်သည်။'
+    }, function (visit, values) {
+      if (!values.eye_infection_status || !values.eye_care_status || !values.cord_care) return false;
+      if (values.eye_infection_status === 'ad' && !(values.eye_infection_findings && values.eye_infection_findings.length)) return false;
+      if (values.anatomy_abnormalities === true && !text(values.anatomy_abnormality_details)) return false;
+      return true;
+    }, newbornField, 'newborn'));
+
+    category.groups.push(multiFieldGroup('outcome', ['baby_outcome', 'cause_of_death'], visits, {
+      labelEn: 'Outcome',
+      labelMm: 'ရလဒ်',
+      hintEn: 'Usually already filled. Apply one outcome to all visits, or change a single visit.',
+      hintMm: 'အများအားဖြင့် ဖြည့်ပြီးသားဖြစ်သည်။ အကြိမ်အားလုံးသို့ တူညီစွာ သုံးနိုင်သည်။ အကြိမ်အလိုက် ပြင်နိုင်သည်။'
+    }, function (visit, values) {
+      if (!values.baby_outcome) return false;
+      if (values.baby_outcome === 'death') return !!text(values.cause_of_death);
+      return true;
+    }, newbornField, 'newborn'));
+
+    return summarize(category);
+  }
+
+  function currentWeightRequired(visit) {
+    var number = visit && visit.visitNumber;
+    if (number > 1) return true;
+    var birth = parseFloat(visit && visit.data && (visit.data.body_weight_gram || visit.data.birth_weight_gram || visit.data.birthWeightGram));
+    return isNaN(birth) || birth <= 0;
+  }
+
+  function scanImmediate(bundle) {
+    var hasNewborn = (bundle.newbornVisits || []).length > 0;
+    var records = bundle.immediateRecords || [];
+    var category = categoryShell('immediate', 'Immediate newborn care', 'မွေးပြီးချက်ချင်း စောင့်ရှောက်မှု', {
+      applicable: hasNewborn || records.length > 0,
+      visitCount: records.length
+    });
+    if (!category.applicable) return category;
+    var rows = records.length ? records : (hasNewborn ? [{ id: 'bf_immediate_1', data: {}, create: true, patientId: (bundle.patient || {}).id }] : []);
+    rows.forEach(function (row) {
+      var data = row.data || {};
+      var exists = !row.create;
+      var breathing = breathingOf(data);
+      var gasping = breathing === 'gasping_or_no_breathing';
+      var methodOk = !!(data.tactile_stimulation || data.bag_and_mask);
+      var outcomeOk = !!text(data.resuscitation_outcome);
+      var complete = exists && !!breathing && (!gasping || (methodOk && outcomeOk));
+      var values = {};
+      immediateFields().forEach(function (field) { values[field.key] = readValue(data, field); });
+      category.groups.push({
+        key: 'immediate:' + row.id,
+        keys: immediateFields().map(function (field) { return field.key; }),
+        module: 'immediate',
+        mode: 'once',
+        recordId: row.create ? '' : row.id,
+        patientId: row.patientId || (bundle.patient || {}).id,
+        create: !exists,
+        required: true,
+        counts: true,
+        status: complete ? 'ok' : 'missing',
         labelEn: 'Immediate newborn care',
-        labelMm: 'မွေးပြီးပြီးချင်း ကလေးစောင့်ရှောက်မှု',
-        href: 'immediate-newborn-care.html'
-      },
-      {
-        care: 'newborn',
-        missing: !(bundle.newbornVisits || []).length,
-        labelEn: 'Newborn care',
-        labelMm: 'မွေးကင်းစကလေး စောင့်ရှောက်မှု',
-        href: 'newborn-care-page.html'
-      }
-    ];
+        labelMm: 'မွေးပြီးချက်ချင်း စောင့်ရှောက်မှု',
+        hintEn: exists
+          ? 'Checkboxes can stay unchecked if they were not done. Breathing is required. Resuscitation appears only if the baby was not breathing.'
+          : 'This baby has newborn care, so Immediate Newborn Care should be recorded here. Breathing is required; the rest are checkboxes.',
+        hintMm: exists
+          ? 'မလုပ်ခဲ့သော အချက်များကို အမှန်ခြစ်မထားလည်း ရသည်။ အသက်ရှူမှု မဖြစ်မနေ ဖြည့်ရသည်။ အသက်မရှူမှသာ အသက်ရှူအားကူနည်း ပေါ်သည်။'
+          : 'ဤကလေးတွင် Newborn Care ရှိသဖြင့် Immediate Newborn Care ကို ဤနေရာတွင် ဖြည့်ပါ။ အသက်ရှူမှု မဖြစ်မနေ ဖြည့်ရသည်။',
+        editor: { type: 'group', fields: immediateFields() },
+        fields: immediateFields(),
+        visits: [],
+        proposedValue: values
+      });
+    });
     return summarize(category);
   }
 
@@ -956,7 +1158,8 @@
       scanLabs(bundle),
       scanDelivery(bundle),
       scanPnc(bundle),
-      scanNewbornLinks(bundle)
+      scanNewborn(bundle),
+      scanImmediate(bundle)
     ];
     var gapCount = 0;
     categories.forEach(function (category) {
@@ -989,6 +1192,27 @@
       var bool = booleanOrNull(raw);
       if (bool === null) return { error: error('Choose yes or no for ' + field.labelEn + '.', field.labelMm + ' အတွက် ရှိ/မရှိ ရွေးပါ။') };
       return { value: bool };
+    }
+    if (field.type === 'measure') {
+      if (raw === 'not_measured') return { value: 'not_measured' };
+      if (raw === '' || raw == null) return { error: error(field.labelEn + ' is required.', field.labelMm + ' ဖြည့်ပါ။') };
+      var measure = parseFloat(raw);
+      if (isNaN(measure)) return { error: error(field.labelEn + ' must be a number.', field.labelMm + ' ကို ကိန်းဂဏန်းဖြည့်ပါ။') };
+      if (field.min != null && measure < field.min) return { error: error(field.labelEn + ' is below the allowed range.', field.labelMm + ' သည် ခွင့်ပြုအပိုင်းအခြားအောက် ရောက်နေသည်။') };
+      if (field.max != null && measure > field.max) return { error: error(field.labelEn + ' is above the allowed range.', field.labelMm + ' သည် ခွင့်ပြုအပိုင်းအခြားအထက် ရောက်နေသည်။') };
+      return { value: measure };
+    }
+    if (field.type === 'checkbox') {
+      var checked = booleanOrNull(raw);
+      if (checked === null) return { error: error('Choose yes or no for ' + field.labelEn + '.', field.labelMm + ' အတွက် ရွေးပါ။') };
+      return { value: checked };
+    }
+    if (field.type === 'findings') {
+      var items = (Array.isArray(raw) ? raw : []).map(text).filter(function (item) {
+        return field.options.some(function (option) { return option.value === item; });
+      });
+      if (!items.length) return { error: error('Tick at least one eye finding.', 'မျက်စိ လက္ခဏာ အနည်းဆုံးတစ်ခု ရွေးပါ။') };
+      return { value: items };
     }
     if (field.type === 'number' || field.type === 'weight') {
       if (raw === '' || raw == null) return { error: error(field.labelEn + ' is required.', field.labelMm + ' ဖြည့်ပါ။') };
@@ -1063,7 +1287,9 @@
     return {
       anc: 'antenatal_visits',
       test: 'testRecords',
-      pnc: 'postpartum_visits'
+      pnc: 'postpartum_visits',
+      newborn: 'newborn_care',
+      immediate: 'immediate_newborn_care'
     }[moduleName];
   }
 
@@ -1071,7 +1297,9 @@
     return {
       anc: bundle.ancVisits,
       pnc: bundle.pncVisits,
-      test: bundle.testRecords
+      test: bundle.testRecords,
+      newborn: bundle.newbornVisits,
+      immediate: bundle.immediateRecords
     }[moduleName] || [];
   }
 
@@ -1103,7 +1331,7 @@
   function expandRequests(bundle, requests) {
     var out = [];
     (requests || []).forEach(function (request) {
-      if (request.applyTo === 'all' && (request.module === 'anc' || request.module === 'pnc')) {
+      if (request.applyTo === 'all' && (request.module === 'anc' || request.module === 'pnc' || request.module === 'newborn')) {
         collectionOf(bundle, request.module).forEach(function (visit) {
           out.push({ module: request.module, recordId: visit.id, values: request.values || {} });
         });
@@ -1157,6 +1385,14 @@
       if (coerced.value.status === 'given') data.cleanDeliveryKitDate = coerced.value.date;
       return;
     }
+    if (field.type === 'measure') {
+      if (coerced.value === 'not_measured') {
+        data[field.flag] = true;
+        return;
+      }
+      setPath(data, field.path || [field.key], coerced.value);
+      return;
+    }
     setPath(data, field.path || [field.key], coerced.value);
     if (field.sync) Object.assign(data, field.sync(coerced.value));
   }
@@ -1171,9 +1407,18 @@
     var changes = [];
     var values = request.values || {};
 
-    if (creating && (request.module === 'anc' || request.module === 'pnc')) {
-      errors.push(error('Back Fill updates existing visits only. Record a new visit from ANC or PNC care.', 'Back Fill သည် ရှိပြီးသားအကြိမ်များကိုသာ ပြင်သည်။ အသစ်ကို ANC/PNC မှ မှတ်ပါ။'));
+    if (creating && (request.module === 'anc' || request.module === 'pnc' || request.module === 'newborn')) {
+      errors.push(error('Back Fill updates existing visits only. Record a new visit from the care page.', 'Back Fill သည် ရှိပြီးသားအကြိမ်များကိုသာ ပြင်သည်။ အသစ်ကို စောင့်ရှောက်မှုစာမျက်နှာမှ မှတ်ပါ။'));
       return;
+    }
+    if (creating && request.module === 'immediate') {
+      if (!(bundle.newbornVisits || []).length && !(bundle.immediateRecords || []).length) {
+        errors.push(error('Immediate Newborn Care can be added only when a newborn-care record exists.', 'Newborn Care မှတ်တမ်းရှိမှသာ Immediate Newborn Care ကို ဤနေရာတွင် ဖြည့်နိုင်သည်။'));
+        return;
+      }
+      request.recordId = request.recordId || 'bf_immediate_1';
+      existing = existingFor(bundle, request);
+      creating = !existing;
     }
     if (creating && request.module === 'test') {
       var testDate = text(values.testDate).slice(0, 10);
@@ -1190,6 +1435,11 @@
       var field = fields[key];
       if (!field) return;
       if (key === 'provisionalDiagnosisOther' && text(values.provisionalDiagnosisType) && text(values.provisionalDiagnosisType) !== 'Other') return;
+      if (key === 'eye_infection_findings' && text(values.eye_infection_status) !== 'ad') return;
+      if (key === 'anatomy_abnormality_details' && values.anatomy_abnormalities !== true) return;
+      if (key === 'cause_of_death' && normalizeOutcome(values.baby_outcome || (existing && existing.data && (existing.data.baby_outcome || existing.data.outcome))) !== 'death') return;
+      if ((key === 'tactile_stimulation' || key === 'bag_and_mask' || key === 'resuscitation_outcome') &&
+        text(values.breathing_status || (existing && existing.data && breathingOf(existing.data))) !== 'gasping_or_no_breathing') return;
       var coerced = coerceValue(field, values[key], actor.now);
       if (coerced.error) {
         errors.push(coerced.error);
@@ -1197,7 +1447,9 @@
       }
       if (key === 'otherVisits' && Array.isArray(coerced.value) && !coerced.value.length) return;
       var before = existing && existing.data ? (
-        field.type === 'cdk' ? cdkValue(existing.data) : getPath(existing.data, field.path || [key])
+        field.type === 'cdk' ? cdkValue(existing.data)
+          : field.type === 'measure' ? measureValue(existing.data, field)
+            : getPath(existing.data, field.path || [key])
       ) : '';
       if (before !== '' && before != null && (coerced.value === '' || coerced.value == null)) {
         errors.push(error('Existing clinical values cannot be cleared.', 'ရှိပြီးသား ဆေးမှတ်တမ်းကို ဖျက်၍ မရပါ။'));
@@ -1207,10 +1459,35 @@
       changes.push({ field: key, before: before === '' ? null : before, after: coerced.value, kind: before === '' || before == null ? 'missing' : 'conflict' });
     });
 
+    if (request.module === 'newborn' && text(values.eye_infection_status) === 'ad') {
+      var findings = values.eye_infection_findings || (existing && existing.data && existing.data.eye_infection_findings);
+      if (!Array.isArray(findings) || !findings.length) {
+        errors.push(error('Tick at least one eye finding for AD.', 'AD ဖြစ်ပါက မျက်စိ လက္ခဏာ အနည်းဆုံးတစ်ခု ရွေးပါ။'));
+      }
+    }
+    if (request.module === 'newborn' && normalizeOutcome(values.baby_outcome) === 'death' && !text(values.cause_of_death) && !(existing && existing.data && text(existing.data.cause_of_death))) {
+      errors.push(error('Enter the cause of death.', 'သေဆုံးရသည့် အကြောင်းအရင်း ဖြည့်ပါ။'));
+    }
+    if (request.module === 'immediate') {
+      var breathing = text(values.breathing_status) || (existing && existing.data ? breathingOf(existing.data) : '');
+      if (creating && !breathing) {
+        errors.push(error('Choose the breathing status.', 'အသက်ရှူမှု အခြေအနေ ရွေးပါ။'));
+      }
+      if (breathing === 'gasping_or_no_breathing') {
+        var tactile = values.tactile_stimulation != null ? values.tactile_stimulation : !!(existing && existing.data && existing.data.tactile_stimulation);
+        var bag = values.bag_and_mask != null ? values.bag_and_mask : !!(existing && existing.data && existing.data.bag_and_mask);
+        var resusOutcome = values.resuscitation_outcome != null ? values.resuscitation_outcome : (existing && existing.data && existing.data.resuscitation_outcome);
+        if (!tactile && !bag) errors.push(error('Choose tactile stimulation and/or bag and mask.', 'အသက်ရှူစေရန် နှိုးဆွခြင်း နှင့်/သို့မဟုတ် လေအိတ်နှင့်မျက်နှာဖုံး ရွေးပါ။'));
+        if (!text(resusOutcome)) errors.push(error('Choose the baby condition after resuscitation.', 'ကလေးအခြေအနေ ရွေးပါ။'));
+      }
+    }
+    if (creating && request.module === 'immediate') data.patientId = request.patientId || patient.id;
+
     if (!Object.keys(data).length || errors.length) return;
+    var ownerId = request.patientId || (existing && existing.patientId) || patient.id;
     var path = request.module === 'registration'
       ? 'patients/' + patient.id
-      : 'patients/' + patient.id + '/' + collectionName(request.module) + '/' + request.recordId;
+      : 'patients/' + ownerId + '/' + collectionName(request.module) + '/' + request.recordId;
     operations.push({
       kind: 'merge',
       path: path,

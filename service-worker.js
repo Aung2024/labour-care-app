@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v347-moh';
+const CACHE_NAME = 'mch-care-v350-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -131,7 +131,6 @@ const FILES_TO_CACHE = [
   './js/status-manager.js',
   './js/sent-transfer-hrt-view.js',
   './js/transfer-load-utils.js',
-  './js/user-cache.js',
   './js/quality-scoring.js',
   './js/quality-possible-causes.js',
   './js/quality-improvement.js',
@@ -146,21 +145,35 @@ const FILES_TO_CACHE = [
   './icons/icon-512.png'
 ];
 
+function uniqueCacheFiles(files) {
+  var seen = {};
+  return files.filter(function (file) {
+    if (seen[file]) return false;
+    seen[file] = true;
+    return true;
+  });
+}
+
 // Install event - cache resources
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
+      .then(function (cache) {
         console.log('[Service Worker] Caching app shell');
-        return cache.addAll(FILES_TO_CACHE);
+        return Promise.all(uniqueCacheFiles(FILES_TO_CACHE).map(function (file) {
+          return cache.add(file).catch(function (error) {
+            console.warn('[Service Worker] Skip cache', file, error);
+          });
+        }));
       })
-      .then(() => {
-        console.log('[Service Worker] Successfully cached all resources');
+      .then(function () {
+        console.log('[Service Worker] App shell cache ready');
         return self.skipWaiting();
       })
-      .catch((error) => {
+      .catch(function (error) {
         console.error('[Service Worker] Cache failed:', error);
+        return self.skipWaiting();
       })
   );
 });
@@ -241,10 +254,10 @@ self.addEventListener('fetch', (event) => {
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
 
-      return fetch(event.request)
+          return fetch(event.request)
         .then((response) => {
           if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+            return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
           }
           if (shouldCacheRequest(requestUrl)) {
             const responseToCache = response.clone();
@@ -252,7 +265,11 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request));
+        .catch(function () {
+          return caches.match(event.request).then(function (cachedResponse) {
+            return cachedResponse || new Response('', { status: 504, statusText: 'Offline' });
+          });
+        });
     })
   );
 });

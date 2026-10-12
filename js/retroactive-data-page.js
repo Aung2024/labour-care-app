@@ -121,8 +121,10 @@
     if (anc && anc.applicable) bits.push(t(anc.visitCount + ' ANC visits', 'ANC ' + anc.visitCount + ' ကြိမ်'));
     if (delivery && delivery.applicable && delivery.missingCount) bits.push(t('Delivery incomplete', 'မွေးဖွားမှတ်တမ်း မပြည့်'));
     if (pnc && pnc.applicable && pnc.missingCount) bits.push(t('PNC incomplete', 'PNC မပြည့်'));
-    var links = categoryOf(scan, 'newborn-links');
-    if (links && links.missingCount) bits.push(t('Newborn records missing', 'ကလေးမှတ်တမ်း လိုသေးသည်'));
+    var newborn = categoryOf(scan, 'newborn');
+    var immediate = categoryOf(scan, 'immediate');
+    if (newborn && newborn.applicable && newborn.missingCount) bits.push(t('Newborn care incomplete', 'မွေးကင်းစစောင့်ရှောက်မှု မပြည့်'));
+    if (immediate && immediate.applicable && immediate.missingCount) bits.push(t('Immediate newborn care missing', 'Immediate Newborn Care လိုသေးသည်'));
     return bits.join(' · ');
   }
 
@@ -258,13 +260,18 @@
       head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
     });
     card.appendChild(head);
-    if (category.id === 'anc' && category.visitCount) {
+    if ((category.id === 'anc' || category.id === 'newborn') && category.visitCount) {
       var visitNote = document.createElement('p');
       visitNote.className = 'hint-copy';
-      visitNote.textContent = t(
-        'This mother has ' + category.visitCount + ' ANC visit records.',
-        'ဤမိခင်တွင် ANC ပြသမှု ' + category.visitCount + ' ကြိမ် ရှိသည်။'
-      );
+      visitNote.textContent = category.id === 'anc'
+        ? t(
+          'This mother has ' + category.visitCount + ' ANC visit records.',
+          'ဤမိခင်တွင် ANC ပြသမှု ' + category.visitCount + ' ကြိမ် ရှိသည်။'
+        )
+        : t(
+          'This baby has ' + category.visitCount + ' newborn-care visit records.',
+          'ဤကလေးတွင် Newborn Care ပြသမှု ' + category.visitCount + ' ကြိမ် ရှိသည်။'
+        );
       body.appendChild(visitNote);
     }
     if (category.id === 'test') {
@@ -281,13 +288,12 @@
       body.appendChild(groupBlock(group, category));
     });
     if (category.id === 'test') body.appendChild(labAddBlock());
-    category.redirects.forEach(function (item) { body.appendChild(redirectCard(item, bundle, scan)); });
     card.appendChild(body);
     return card;
   }
 
   function categoryCopy(category) {
-    if (category.id === 'anc') {
+    if (category.id === 'anc' || category.id === 'newborn') {
       return t(
         category.visitCount + ' visits · ' + category.missingCount + ' missing · ' + category.filledCount + ' filled',
         category.visitCount + ' ကြိမ် · လို ' + category.missingCount + ' · ပြည့် ' + category.filledCount
@@ -311,6 +317,8 @@
     wrap.dataset.status = group.status;
     wrap.dataset.optional = group.optional ? '1' : '0';
     if (group.recordId) wrap.dataset.recordId = group.recordId;
+    if (group.patientId) wrap.dataset.patientId = group.patientId;
+    if (group.create) wrap.dataset.create = '1';
     var title = document.createElement('h3');
     title.textContent = label(group);
     wrap.appendChild(title);
@@ -412,8 +420,8 @@
     var box = document.createElement('div');
     box.className = 'once-panel';
     (group.fields || []).forEach(function (field) {
-      if (field.key === 'provisionalDiagnosisOther') return;
-      box.appendChild(fieldEditor(field, group.key + ':' + field.key, firstValue(group, field.key)));
+      if (nestedField(field.key)) return;
+      box.appendChild(fieldEditor(field, group.key + ':' + field.key, firstValue(group, field.key), group));
     });
     if (group.key === 'babies') box.appendChild(babiesEditor(group.key + ':babies', group.proposedValue));
     return box;
@@ -423,8 +431,8 @@
     var box = document.createElement('div');
     box.dataset.applyPanel = 'all';
     (group.fields || []).forEach(function (field) {
-      if (field.key === 'provisionalDiagnosisOther') return;
-      box.appendChild(fieldEditor(field, group.key + ':all:' + field.key, firstValue(group, field.key)));
+      if (nestedField(field.key)) return;
+      box.appendChild(fieldEditor(field, group.key + ':all:' + field.key, firstValue(group, field.key), group));
     });
     return box;
   }
@@ -441,44 +449,88 @@
       caption.textContent = t('Visit ' + (visit.visitNumber || '?'), 'အကြိမ် ' + (visit.visitNumber || '?')) + (visit.visitDate ? ' · ' + visit.visitDate : '');
       row.appendChild(caption);
       (group.fields || []).forEach(function (field) {
-        if (field.key === 'provisionalDiagnosisOther') return;
+        if (nestedField(field.key)) return;
         var current = visit.values ? visit.values[field.key] : visit.currentValue;
-        row.appendChild(fieldEditor(field, group.key + ':' + visit.recordId + ':' + field.key, current));
+        row.appendChild(fieldEditor(field, group.key + ':' + visit.recordId + ':' + field.key, current, {
+          proposedValue: visit.values || {},
+          fields: group.fields,
+          visits: []
+        }));
       });
       box.appendChild(row);
     });
     return box;
   }
 
-  function firstValue(group, key) {
-    if (key && group.proposedValue && typeof group.proposedValue === 'object' && !Array.isArray(group.proposedValue) && group.proposedValue[key] != null && group.proposedValue[key] !== '') {
-      return group.proposedValue[key];
-    }
-    if (group.proposedValue && !(group.visits && group.visits.length)) {
-      return group.proposedValue;
-    }
-    var found = '';
-    (group.visits || []).forEach(function (visit) {
-      if (found !== '' && found != null) return;
-      found = visit.values ? visit.values[key] : visit.currentValue;
-    });
-    return found;
+  function nestedField(key) {
+    return key === 'provisionalDiagnosisOther' ||
+      key === 'ultrasoundDetails' ||
+      key === 'eye_infection_findings' ||
+      key === 'anatomy_abnormality_details' ||
+      key === 'cause_of_death' ||
+      key === 'tactile_stimulation' ||
+      key === 'bag_and_mask' ||
+      key === 'resuscitation_outcome';
   }
 
-  function fieldEditor(field, id, value) {
+  function editorValue(value) {
+    if (Array.isArray(value) || value === true || value === false) return value;
+    return scalarValue(value);
+  }
+
+  function firstValue(group, key) {
+    var proposed = group && group.proposedValue;
+    if (Array.isArray(proposed) || (proposed && typeof proposed === 'object' && (proposed.years != null || proposed.months != null))) {
+      return proposed;
+    }
+    if (proposed && typeof proposed === 'object') {
+      return key && Object.prototype.hasOwnProperty.call(proposed, key) ? editorValue(proposed[key]) : '';
+    }
+    if (proposed != null && proposed !== '') return proposed;
+    var found = '';
+    (group.visits || []).forEach(function (visit) {
+      if (found !== '' && found != null && found !== false) return;
+      var candidate = visit.values ? visit.values[key] : visit.currentValue;
+      if (candidate === false || candidate === 0 || (candidate !== '' && candidate != null)) found = candidate;
+    });
+    return editorValue(found);
+  }
+
+  function scalarValue(value) {
+    if (value == null || value === '') return '';
+    if (typeof value === 'object') return '';
+    return value;
+  }
+
+  function fieldFromGroup(group, key, fallback) {
+    var found = ((group && group.fields) || []).find(function (item) { return item.key === key; });
+    return found || fallback;
+  }
+
+  function fieldEditor(field, id, value, group) {
+    var type = field.type || (field.editor && field.editor.type);
+    var safeValue = type === 'findings' || type === 'checkbox' || type === 'measure' ? value : scalarValue(value);
     var wrap = document.createElement('div');
-    wrap.className = 'field-block';
+    wrap.className = type === 'checkbox' ? 'field-block check-row' : 'field-block';
     wrap.dataset.fieldKey = field.key;
-    var caption = document.createElement('label');
-    caption.textContent = label(field);
-    caption.htmlFor = id;
-    wrap.appendChild(caption);
-    var control = controlFor(field, id, value);
-    wrap.appendChild(control);
+    var control = controlFor(field, id, safeValue);
+    if (type === 'checkbox') {
+      wrap.appendChild(control);
+      var checkCaption = document.createElement('label');
+      checkCaption.textContent = label(field);
+      checkCaption.htmlFor = id;
+      wrap.appendChild(checkCaption);
+    } else {
+      var caption = document.createElement('label');
+      caption.textContent = label(field);
+      caption.htmlFor = id;
+      wrap.appendChild(caption);
+      wrap.appendChild(control);
+    }
     if (field.key === 'provisionalDiagnosisType') {
       var otherField = { key: 'provisionalDiagnosisOther', type: 'text', labelEn: 'Other diagnosis', labelMm: 'အခြားရောဂါအမည်' };
-      var other = fieldEditor(otherField, id + ':other', '');
-      other.hidden = String(value) !== 'Other';
+      var other = fieldEditor(otherField, id + ':other', firstValue(group || {}, 'provisionalDiagnosisOther'));
+      other.hidden = String(safeValue) !== 'Other';
       wrap.appendChild(other);
       control.addEventListener('change', function () {
         other.hidden = control.value !== 'Other';
@@ -486,11 +538,58 @@
     }
     if (field.key === 'ultrasoundServices') {
       var detailsField = { key: 'ultrasoundDetails', type: 'text', labelEn: 'Ultrasound details', labelMm: 'Ultrasound အသေးစိတ်' };
-      var details = fieldEditor(detailsField, id + ':details', '');
-      details.hidden = String(value) !== 'Yes';
+      var details = fieldEditor(detailsField, id + ':details', firstValue(group || {}, 'ultrasoundDetails'));
+      details.hidden = String(safeValue) !== 'Yes';
       wrap.appendChild(details);
       control.addEventListener('change', function () {
         details.hidden = control.value !== 'Yes';
+      });
+    }
+    if (field.key === 'eye_infection_status') {
+      var findingsField = fieldFromGroup(group, 'eye_infection_findings', {
+        key: 'eye_infection_findings', type: 'findings', labelEn: 'Eye findings', labelMm: 'မျက်စိ လက္ခဏာများ',
+        options: [choice('redness', 'Redness', 'နီခြင်း'), choice('swelling', 'Swelling', 'ရောင်ရမ်းခြင်း'), choice('pus_discharge', 'Pus discharge', 'ပြည်တည်ခြင်း')]
+      });
+      var findings = fieldEditor(findingsField, id + ':findings', firstValue(group || {}, 'eye_infection_findings'), group);
+      findings.hidden = String(safeValue) !== 'ad';
+      wrap.appendChild(findings);
+      control.addEventListener('change', function () {
+        findings.hidden = control.value !== 'ad';
+      });
+    }
+    if (field.key === 'anatomy_abnormalities') {
+      var anatomyField = fieldFromGroup(group, 'anatomy_abnormality_details', {
+        key: 'anatomy_abnormality_details', type: 'text', labelEn: 'Abnormality details', labelMm: 'ပုံမမှန်မှု အသေးစိတ်'
+      });
+      var anatomy = fieldEditor(anatomyField, id + ':anatomy', firstValue(group || {}, 'anatomy_abnormality_details'), group);
+      anatomy.hidden = safeValue !== true;
+      wrap.appendChild(anatomy);
+      control.addEventListener('change', function () {
+        anatomy.hidden = !control.checked;
+      });
+    }
+    if (field.key === 'baby_outcome') {
+      var causeField = fieldFromGroup(group, 'cause_of_death', {
+        key: 'cause_of_death', type: 'text', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း'
+      });
+      var cause = fieldEditor(causeField, id + ':cause', firstValue(group || {}, 'cause_of_death'), group);
+      cause.hidden = String(safeValue) !== 'death';
+      wrap.appendChild(cause);
+      control.addEventListener('change', function () {
+        cause.hidden = control.value !== 'death';
+      });
+    }
+    if (field.key === 'breathing_status') {
+      var resus = document.createElement('div');
+      resus.dataset.resuscitation = '1';
+      resus.hidden = String(safeValue) !== 'gasping_or_no_breathing';
+      ['tactile_stimulation', 'bag_and_mask', 'resuscitation_outcome'].forEach(function (key) {
+        var nested = fieldFromGroup(group, key, { key: key, type: key === 'resuscitation_outcome' ? 'select' : 'checkbox' });
+        resus.appendChild(fieldEditor(nested, id + ':' + key, firstValue(group || {}, key), group));
+      });
+      wrap.appendChild(resus);
+      control.addEventListener('change', function () {
+        resus.hidden = control.value !== 'gasping_or_no_breathing';
       });
     }
     return wrap;
@@ -516,36 +615,13 @@
     return wrap;
   }
 
-  function redirectCard(item, bundle, scan) {
-    var card = document.createElement('a');
-    card.className = 'redirect-card';
-    card.href = item.href + '?patient=' + encodeURIComponent(scan.patientId);
-    card.textContent = '';
-    var title = document.createElement('strong');
-    title.textContent = label(item);
-    var copy = document.createElement('span');
-    copy.textContent = item.missing
-      ? t('Missing. Open the care page to record it.', 'မရှိသေးပါ။ မှတ်ရန် စောင့်ရှောက်မှုစာမျက်နှာသို့ သွားပါ။')
-      : t('Already recorded. Open to review or add another visit.', 'မှတ်ပြီးပါပြီ။ ပြန်ကြည့်ရန် ဖွင့်ပါ။');
-    card.appendChild(title);
-    card.appendChild(copy);
-    card.addEventListener('click', function (event) {
-      event.preventDefault();
-      var patient = Object.assign({ id: scan.patientId }, (bundle.patient || {}));
-      if (typeof global.updateSelectedPatient === 'function') global.updateSelectedPatient(patient);
-      else {
-        sessionStorage.setItem('selectedPatientId', patient.id);
-        sessionStorage.setItem('selectedPatientData', JSON.stringify(patient));
-      }
-      global.location.href = card.href;
-    });
-    return card;
-  }
-
   function controlFor(field, id, value) {
     var editor = field.editor || field;
     var type = editor.type || field.type;
     if (type === 'cdk') return cdkEditor(id, value);
+    if (type === 'measure') return measureEditor(id, value, field);
+    if (type === 'checkbox') return checkboxEditor(id, value);
+    if (type === 'findings') return findingsEditor(id, value, field);
     if (type === 'obstetric') return obstetricEditor(id, value);
     if (type === 'babies') return babiesEditor(id, value);
     if (type === 'other-visits') return otherVisitsEditor(id, value);
@@ -574,7 +650,7 @@
       input = document.createElement('textarea');
       input.id = id;
       input.rows = 2;
-      if (value) input.value = String(value);
+      if (value && typeof value !== 'object') input.value = String(value);
     } else {
       input = document.createElement('input');
       input.id = id;
@@ -623,6 +699,63 @@
     notGiven.appendChild(document.createTextNode(t('Not given', 'မပေးခဲ့ပါ')));
     wrap.appendChild(date);
     wrap.appendChild(notGiven);
+    return wrap;
+  }
+
+  function measureEditor(id, value, field) {
+    var wrap = document.createElement('div');
+    wrap.dataset.compound = 'measure';
+    wrap.dataset.inputId = id;
+    var number = document.createElement('input');
+    number.type = 'number';
+    number.inputMode = 'decimal';
+    number.className = 'field-input';
+    number.dataset.part = 'cm';
+    if (field && field.min != null) number.min = String(field.min);
+    if (field && field.max != null) number.max = String(field.max);
+    number.step = (field && field.step) || '0.1';
+    if (value && value !== 'not_measured') number.value = String(value);
+    var notMeasured = document.createElement('label');
+    notMeasured.className = 'check-row';
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.dataset.part = 'notMeasured';
+    box.checked = value === 'not_measured';
+    number.disabled = box.checked;
+    box.addEventListener('change', function () { number.disabled = box.checked; });
+    notMeasured.appendChild(box);
+    notMeasured.appendChild(document.createTextNode(t('Not Measured', 'မတိုင်းရပါ')));
+    wrap.appendChild(number);
+    wrap.appendChild(notMeasured);
+    return wrap;
+  }
+
+  function checkboxEditor(id, value) {
+    var input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = id;
+    input.dataset.inputId = id;
+    input.dataset.valueKind = 'checkbox';
+    input.checked = value === true;
+    return input;
+  }
+
+  function findingsEditor(id, value, field) {
+    var wrap = document.createElement('div');
+    wrap.dataset.compound = 'findings';
+    wrap.dataset.inputId = id;
+    var selected = Array.isArray(value) ? value : [];
+    (field.options || []).forEach(function (option) {
+      var row = document.createElement('label');
+      row.className = 'check-row';
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.part = option.value;
+      box.checked = selected.indexOf(option.value) >= 0;
+      row.appendChild(box);
+      row.appendChild(document.createTextNode(optionLabel(option)));
+      wrap.appendChild(row);
+    });
     return wrap;
   }
 
@@ -879,20 +1012,51 @@
       var details = block.querySelector('[data-field-key="ultrasoundDetails"]');
       if (details && value === 'Yes') extra.ultrasoundDetails = readControl(details.querySelector('[data-input-id], textarea, input'));
     }
-    if (value === '' || value == null || (Array.isArray(value) && !value.length)) return extra.provisionalDiagnosisOther ? Object.assign({ key: fieldKey, value: value }, extra) : null;
+    if (fieldKey === 'eye_infection_status') {
+      var findings = block.querySelector('[data-field-key="eye_infection_findings"]');
+      if (findings && value === 'ad') extra.eye_infection_findings = readControl(findings.querySelector('[data-compound="findings"], [data-input-id]'));
+    }
+    if (fieldKey === 'anatomy_abnormalities' && value === true) {
+      var anatomy = block.querySelector('[data-field-key="anatomy_abnormality_details"]');
+      if (anatomy) extra.anatomy_abnormality_details = readControl(anatomy.querySelector('[data-input-id], textarea, input'));
+    }
+    if (fieldKey === 'baby_outcome' && value === 'death') {
+      var cause = block.querySelector('[data-field-key="cause_of_death"]');
+      if (cause) extra.cause_of_death = readControl(cause.querySelector('[data-input-id], textarea, input'));
+    }
+    if (fieldKey === 'breathing_status' && value === 'gasping_or_no_breathing') {
+      var resus = block.querySelector('[data-resuscitation]');
+      if (resus) {
+        resus.querySelectorAll(':scope > .field-block').forEach(function (nested) {
+          var nestedItem = readFieldBlock(nested);
+          if (nestedItem) extra[nestedItem.key] = nestedItem.value;
+        });
+      }
+    }
+    if (control.dataset && control.dataset.valueKind === 'checkbox' && value === false && !Object.keys(extra).length) {
+      return null;
+    }
+    if (value === '' || value == null || (Array.isArray(value) && !value.length)) {
+      return Object.keys(extra).length ? Object.assign({ key: fieldKey, value: value }, extra) : null;
+    }
     return Object.assign({ key: fieldKey, value: value }, extra);
+  }
+
+  function assignItemValues(values, item) {
+    if (!item) return;
+    Object.keys(item).forEach(function (key) {
+      if (key === 'key' || key === 'value') return;
+      values[key] = item[key];
+    });
+    values[item.key] = item.value;
   }
 
   function valuesFromPanel(panel) {
     var values = {};
     if (!panel) return values;
     panel.querySelectorAll(':scope > .field-block, :scope .field-block').forEach(function (block) {
-      if (block.closest('.field-block') !== block && block.parentElement && block.parentElement.closest('.field-block')) return;
-      var item = readFieldBlock(block);
-      if (!item) return;
-      values[item.key] = item.value;
-      if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
-      if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
+      if (block.parentElement && block.parentElement.closest('.field-block')) return;
+      assignItemValues(values, readFieldBlock(block));
     });
     var compound = panel.querySelector('[data-compound]');
     if (compound && compound.closest('.group-card') === panel.closest('.group-card') && !Object.keys(values).length) {
@@ -915,12 +1079,8 @@
         card.querySelectorAll('.visit-row').forEach(function (row) {
           var values = {};
           row.querySelectorAll('.field-block').forEach(function (block) {
-            if (block.parentElement !== row && !row.contains(block)) return;
-            var item = readFieldBlock(block);
-            if (!item) return;
-            values[item.key] = item.value;
-            if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
-            if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
+            if (block.parentElement && block.parentElement.closest('.field-block')) return;
+            assignItemValues(values, readFieldBlock(block));
           });
           if (Object.keys(values).length) visitValues[row.dataset.recordId] = values;
         });
@@ -934,13 +1094,11 @@
       else {
         card.querySelectorAll('.once-panel .field-block, .once-panel [data-compound], .field-block').forEach(function (node) {
           if (node.classList.contains('field-block')) {
-            if (node.closest('.visit-row') || node.closest('[data-compound]')) return;
-            var item = readFieldBlock(node);
-            if (!item) return;
-            values[item.key] = item.value;
-            if (item.provisionalDiagnosisOther) values.provisionalDiagnosisOther = item.provisionalDiagnosisOther;
-            if (item.ultrasoundDetails) values.ultrasoundDetails = item.ultrasoundDetails;
+            if (node.closest('.visit-row') || node.closest('[data-apply-panel="each"]')) return;
+            if (node.parentElement && node.parentElement.closest('.field-block')) return;
+            assignItemValues(values, readFieldBlock(node));
           } else if (node.dataset && node.dataset.compound) {
+            if (node.closest('.field-block')) return;
             var key = card.dataset.groupKey === 'youngestChildAge' ? 'youngestChildAge' : (card.dataset.groupKey === 'previousObstetricHistory' ? 'previousObstetricHistory' : (card.dataset.groupKey === 'otherVisits' ? 'otherVisits' : (card.dataset.groupKey === 'babies' ? 'babies' : card.dataset.groupKey)));
             var compoundValue = readControl(node);
             if (compoundValue !== '' && compoundValue != null && !(Array.isArray(compoundValue) && !compoundValue.length)) values[key] = compoundValue;
@@ -951,8 +1109,23 @@
         requests.push({ module: 'test', values: values });
         return;
       }
+      if (moduleName === 'immediate' && Object.keys(values).length) {
+        requests.push({
+          module: 'immediate',
+          recordId: card.dataset.recordId || undefined,
+          patientId: card.dataset.patientId || undefined,
+          create: card.dataset.create === '1',
+          values: values
+        });
+        return;
+      }
       if (card.dataset.recordId && Object.keys(values).length) {
-        requests.push({ module: moduleName, recordId: card.dataset.recordId, values: values });
+        requests.push({
+          module: moduleName,
+          recordId: card.dataset.recordId,
+          patientId: card.dataset.patientId || undefined,
+          values: values
+        });
         return;
       }
       if (!Object.keys(values).length) return;
@@ -993,6 +1166,15 @@
       if (control.querySelector('[data-part="notGiven"]').checked) return 'not_given';
       return control.querySelector('[data-part="date"]').value;
     }
+    if (kind === 'measure') {
+      if (control.querySelector('[data-part="notMeasured"]').checked) return 'not_measured';
+      return control.querySelector('[data-part="cm"]').value;
+    }
+    if (kind === 'findings') {
+      return Array.from(control.querySelectorAll('input[type="checkbox"]')).filter(function (box) {
+        return box.checked;
+      }).map(function (box) { return box.dataset.part; });
+    }
     if (kind === 'obstetric') {
       return Array.from(control.querySelectorAll('[data-ob-row]')).map(function (row) {
         var item = {};
@@ -1017,6 +1199,7 @@
       }).filter(function (item) { return item.visitDate || item.facilityType || item.facilityName; });
     }
     if (control.dataset.valueKind === 'boolean') return control.value === '' ? '' : control.value === 'yes';
+    if (control.dataset.valueKind === 'checkbox') return !!control.checked;
     return control.value;
   }
 

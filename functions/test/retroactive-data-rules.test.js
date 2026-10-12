@@ -99,7 +99,8 @@ test('PNC without a delivery note requires Delivery Notes, and apply-all copies 
   });
   assert.equal(category(scan, 'delivery').applicable, true);
   assert.equal(group(scan, 'delivery', 'deliveryNotes').status, 'missing');
-  assert.equal(category(scan, 'newborn-links').redirects.filter(function (item) { return item.missing; }).length, 2);
+  assert.equal(category(scan, 'newborn').applicable, false);
+  assert.equal(category(scan, 'immediate').applicable, false);
 
   const incomplete = rules.planWrites({
     patient: mother(),
@@ -246,16 +247,141 @@ test('saves merge changed fields, keep replaced values in the audit, and reject 
   assert.equal(clearPlan.operations.length, 0);
 });
 
-test('PNC mothers without newborn records get redirect cards instead of inline newborn forms', () => {
+test('existing newborn visits are filled inline and missing INC can be created', () => {
+  const incomplete = rules.scanPatient({
+    patient: mother(),
+    newbornVisits: [{
+      id: 'n1',
+      data: {
+        visitNumber: 1,
+        visitDate: '2024-06-02',
+        body_weight_gram: 3000,
+        baby_outcome: 'alive'
+      }
+    }]
+  });
+  assert.equal(category(incomplete, 'newborn').applicable, true);
+  assert.equal(group(incomplete, 'newborn', 'assessment').status, 'missing');
+  assert.equal(group(incomplete, 'newborn', 'current_weight_gram').status, 'ok');
+  assert.equal(group(incomplete, 'newborn', 'head_circumference_cm').status, 'missing');
+  assert.equal(group(incomplete, 'immediate', 'immediate:bf_immediate_1').status, 'missing');
+  assert.ok(incomplete.gapCount >= 1);
+
+  const complete = rules.scanPatient({
+    patient: mother(),
+    newbornVisits: [{
+      id: 'n1',
+      data: {
+        visitNumber: 1,
+        visitDate: '2024-06-02',
+        body_weight_gram: 3000,
+        head_circumference_cm: 34,
+        birth_length_cm: 48,
+        eye_infection_status: 'nad',
+        eye_care_status: 'clean_and_dry',
+        cord_care: 'yes',
+        baby_outcome: 'alive'
+      }
+    }],
+    immediateRecords: [{ id: 'i1', data: { breathing_status: 'spontaneous' }, patientId: 'mother-1' }]
+  });
+  assert.equal(group(complete, 'newborn', 'assessment').status, 'ok');
+  assert.equal(group(complete, 'immediate', 'immediate:i1').status, 'ok');
+  assert.equal(complete.gapCount, 0);
+});
+
+test('newborn measures can be applied to every visit or marked not measured', () => {
+  const bundle = {
+    patient: mother(),
+    newbornVisits: [
+      { id: 'n1', data: { visitNumber: 1, visitDate: '2024-06-02' } },
+      { id: 'n2', data: { visitNumber: 2, visitDate: '2024-06-09' } }
+    ]
+  };
+  const apply = rules.planWrites(bundle, [{
+    module: 'newborn',
+    applyTo: 'all',
+    values: { head_circumference_cm: 34, birth_length_cm: 48 }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(apply.ok, true);
+  assert.equal(apply.operations.length, 2);
+  assert.equal(apply.operations[0].data.head_circumference_cm, 34);
+  assert.equal(apply.operations[0].data.birth_length_cm, 48);
+
+  const skipped = rules.planWrites(bundle, [{
+    module: 'newborn',
+    applyTo: 'all',
+    values: { head_circumference_cm: 'not_measured' }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.operations[0].data.head_circumference_cm_not_measured, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(skipped.operations[0].data, 'head_circumference_cm'), false);
+
+  const created = rules.planWrites({
+    patient: mother(),
+    newbornVisits: [{ id: 'n1', data: { visitNumber: 1, visitDate: '2024-06-02' } }]
+  }, [{
+    module: 'immediate',
+    create: true,
+    values: { breathing_status: 'spontaneous', thorough_drying: true }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(created.ok, true);
+  assert.equal(created.operations[0].path, 'patients/mother-1/immediate_newborn_care/bf_immediate_1');
+  assert.equal(created.operations[0].create, true);
+  assert.equal(created.operations[0].data.breathing_status, 'spontaneous');
+  assert.equal(created.operations[0].data.spontaneous_breathing, true);
+  assert.equal(created.operations[0].data.thorough_drying, true);
+
+  const invent = rules.planWrites({
+    patient: mother(),
+    newbornVisits: [{ id: 'n1', data: { visitNumber: 1, visitDate: '2024-06-02' } }]
+  }, [{
+    module: 'newborn',
+    create: true,
+    values: { visitDate: '2024-06-16' }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(invent.ok, false);
+
+  const laterWeight = rules.scanPatient({
+    patient: mother(),
+    newbornVisits: [
+      { id: 'n1', data: { visitNumber: 1, visitDate: '2024-06-02', body_weight_gram: 3000 } },
+      { id: 'n2', data: { visitNumber: 2, visitDate: '2024-06-09' } }
+    ]
+  });
+  assert.equal(group(laterWeight, 'newborn', 'current_weight_gram').status, 'missing');
+
+  const gasping = rules.planWrites({
+    patient: mother(),
+    newbornVisits: [{ id: 'n1', data: { visitNumber: 1, visitDate: '2024-06-02' } }]
+  }, [{
+    module: 'immediate',
+    create: true,
+    values: { breathing_status: 'gasping_or_no_breathing' }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(gasping.ok, false);
+});
+
+test('existing lab records expose ultrasound as Yes/No, not a details object', () => {
   const scan = rules.scanPatient({
     patient: mother(),
-    pncVisits: [{ id: 'p1', data: { visitNumber: 1, visitDate: '2024-06-01', maternalOutcome: 'alive' } }],
-    immediateRecords: [{ id: 'i1', data: { breathing_status: 'spontaneous' } }]
+    ancVisits: [{ id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01' } }],
+    testRecords: [{
+      id: 't1',
+      data: {
+        testDate: '2024-02-10',
+        hemoglobinResult: 12,
+        ultrasoundServices: 'No',
+        ultrasoundDetails: 'leave blank'
+      }
+    }]
   });
-  const redirects = category(scan, 'newborn-links').redirects;
-  assert.equal(redirects.find(function (item) { return item.care === 'immediate'; }).missing, false);
-  assert.equal(redirects.find(function (item) { return item.care === 'newborn'; }).missing, true);
-  assert.equal(category(scan, 'newborn-links').groups.length, 0);
+  const lab = group(scan, 'test', 'lab:t1');
+  assert.equal(lab.fields.find(function (field) { return field.key === 'ultrasoundServices'; }).type, 'select');
+  assert.equal(lab.proposedValue.ultrasoundServices, 'No');
+  assert.equal(typeof lab.proposedValue.ultrasoundServices, 'string');
+  assert.equal(typeof lab.proposedValue, 'object');
+  assert.equal(lab.proposedValue.ultrasoundDetails, 'leave blank');
 });
 
 test('previous-pregnancy writes keep the ANC delivery-type dropdown values', () => {
@@ -318,15 +444,21 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(service, /retroactive_backfill/);
   assert.match(home, /id="backFillCard"/);
   assert.match(page, /Apply to all visits/);
-  assert.match(rulesSource, /immediate-newborn-care\.html/);
-  assert.match(rulesSource, /newborn-care-page\.html/);
+  assert.doesNotMatch(page, /redirect-card/);
+  assert.doesNotMatch(rulesSource, /immediate-newborn-care\.html/);
+  assert.doesNotMatch(rulesSource, /newborn-care-page\.html/);
+  assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
   assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v347-moh/);
+  assert.match(worker, /mch-care-v350-moh/);
+  assert.match(worker, /uniqueCacheFiles/);
+  assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);
   const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');
   assert.match(langApply, /global\.currentLanguage = lang/);
   assert.equal(rules.fieldMap('registration').gravida.type, 'select');
   assert.equal(rules.fieldMap('test').hivResult.type, 'select');
+  assert.equal(rules.fieldMap('test').ultrasoundServices.type, 'select');
+  assert.deepEqual(rules.fieldMap('test').ultrasoundServices.options.map(function (item) { return item.value; }), ['Yes', 'No']);
   assert.equal(rules.fieldMap('test').rhFactor.options.some(function (item) { return item.value === 'Rh negative'; }), true);
   assert.ok(rules.obstetricDeliveryTypes.some(function (item) { return item.value === 'ရိုးရိုးမွေး'; }));
 });
