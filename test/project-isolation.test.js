@@ -33,7 +33,9 @@ test('Spark release blocks Cloud Functions deployment', () => {
 
 test('offline caches are namespaced for the isolated project', () => {
   assert.match(read('service-worker.js'), /labourcare-2481a-vouchers/);
-  assert.match(read('service-worker.js'), /never fall back to a role page/);
+  assert.match(read('service-worker.js'), /[Nn]ever fall back to a role page/);
+  assert.match(read('service-worker.js'), /CORE_SHELL/);
+  assert.doesNotMatch(read('service-worker.js'), /html2canvas/);
   assert.match(read('js/offline-store.js'), /LabourCareOffline_labourcare_2481a/);
   assert.match(read('js/offline-manager.js'), /mch_offline_db_labourcare_2481a/);
 });
