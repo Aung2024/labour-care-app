@@ -454,7 +454,7 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
   assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v351-moh/);
+  assert.match(worker, /mch-care-v352-moh/);
   assert.match(worker, /uniqueCacheFiles/);
   assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);
   const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');

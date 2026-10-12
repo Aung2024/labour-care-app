@@ -350,8 +350,8 @@
       var birthNote = document.createElement('p');
       birthNote.className = 'hint-copy';
       birthNote.textContent = t(
-        'Birth weight: ' + formatKg(group.birthWeightGram) + ' kg. Current visit weight can be different.',
-        'မွေးချိန်အလေးချိန်: ' + formatKg(group.birthWeightGram) + ' ကီလို။ ယခုအကြိမ် ကိုယ်အလေးချိန်နှင့် မတူနိုင်ပါ။'
+        'Birth weight: ' + formatKg(group.birthWeightGram) + ' kg',
+        'မွေးချိန်အလေးချိန်: ' + formatKg(group.birthWeightGram) + ' ကီလို'
       );
       wrap.appendChild(birthNote);
     }
@@ -375,7 +375,7 @@
       wrap.appendChild(editors);
       attachEditors(editors, group);
       return wrap;
-    } else if (group.totalVisits) {
+    } else if (group.totalVisits && group.key !== 'current_weight_gram') {
       var progress = document.createElement('p');
       progress.className = 'hint-copy';
       progress.textContent = t(

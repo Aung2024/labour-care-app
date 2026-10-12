@@ -1024,9 +1024,7 @@
 
     var weight = groupFromVisits({
       key: 'current_weight_gram', module: 'newborn', mode: 'per-visit', required: true,
-      labelEn: 'Current visit weight (kg)', labelMm: 'ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)',
-      hintEn: 'This is the weight measured at this visit. Birth weight from Delivery Notes stays separate and can be different.',
-      hintMm: 'ဤသည်မှာ ဤအကြိမ် တိုင်းထားသော ကိုယ်အလေးချိန်ဖြစ်သည်။ Delivery Note မှ မွေးချိန်အလေးချိန်နှင့် မတူနိုင်ပါ။'
+      labelEn: 'Current visit weight (kg)', labelMm: 'ယခုအကြိမ် ကိုယ်အလေးချိန် (ကီလိုဂရမ်)'
     }, visits, newbornField('current_weight_gram'));
     weight.birthWeightGram = birthWeightGrams(bundle, visits[0]);
     weight.visits = visits.map(function (visit) {
