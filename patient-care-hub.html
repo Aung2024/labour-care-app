@@ -1260,6 +1260,31 @@
       await loadPatientData();
     });
 
+    var hubDeliveryModalOpened = false;
+
+    function showHubShell() {
+      displayPatientInfo();
+      const loading = document.getElementById('loadingContainer');
+      const infoBar = document.getElementById('patientInfoBar');
+      const cards = document.getElementById('careCardsContainer');
+      if (loading) loading.style.display = 'none';
+      if (infoBar) infoBar.style.display = 'flex';
+      if (cards) cards.style.display = 'grid';
+    }
+
+    function openHubDeliveryModalOnce() {
+      if (hubDeliveryModalOpened) return;
+      if (!isDeliveryEditMode && !openDeliveryOnLoad) return;
+      hubDeliveryModalOpened = true;
+      openThirdStageModal();
+    }
+
+    function refreshHubBackground(patientId) {
+      loadLatestAncForRiskDisplay(patientId).catch(function () {});
+      loadCareStats().catch(function () {});
+      ensureBabyPatientsFromSavedDeliveryNotes().catch(function () {});
+    }
+
     // Load patient data from session storage
     async function loadPatientData() {
       try {
@@ -1273,44 +1298,47 @@
           return;
         }
 
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        try {
           const sessionPatient = sessionStorage.getItem('selectedPatientData');
           if (sessionPatient) {
-            selectedPatient = JSON.parse(sessionPatient);
-            await loadLatestAncForRiskDisplay(patientId);
-            displayPatientInfo();
-            document.getElementById('loadingContainer').style.display = 'none';
-            document.getElementById('patientInfoBar').style.display = 'flex';
-            document.getElementById('careCardsContainer').style.display = 'grid';
-            return;
-          }
-          if (window.LabourCareOffline) {
-            const mirrored = await LabourCareOffline.getPatientPayload(patientId);
-            if (mirrored) {
-              selectedPatient = { id: patientId, ...mirrored };
-              sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
-              await loadLatestAncForRiskDisplay(patientId);
-              displayPatientInfo();
-              document.getElementById('loadingContainer').style.display = 'none';
-              document.getElementById('patientInfoBar').style.display = 'flex';
-              document.getElementById('careCardsContainer').style.display = 'grid';
-              return;
+            const parsed = JSON.parse(sessionPatient);
+            if (parsed && (!parsed.id || parsed.id === patientId)) {
+              selectedPatient = parsed.id ? parsed : { id: patientId, ...parsed };
+              showHubShell();
+              refreshHubBackground(patientId);
+              openHubDeliveryModalOnce();
             }
+          }
+        } catch (sessionError) {}
+
+        if (!selectedPatient && window.LabourCareOffline) {
+          const mirrored = await LabourCareOffline.getPatientPayload(patientId);
+          if (mirrored) {
+            selectedPatient = { id: patientId, ...mirrored };
+            sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+            showHubShell();
+            refreshHubBackground(patientId);
+            openHubDeliveryModalOnce();
           }
         }
 
-        // Load patient from Firestore - use smart query for Safari compatibility
-        const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
         const patientQuery = firebase.firestore()
           .collection('patients')
           .doc(patientId);
         const patientDoc = await smartFirestoreQuery(
           Promise.resolve(patientQuery),
-          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
         );
 
-        if (!patientDoc || !patientDoc.exists) {
-          // Patient not found
+        if (patientDoc && patientDoc._smartQueryFailed) {
+          if (selectedPatient) return;
+          document.getElementById('loadingContainer').style.display = 'none';
+          document.getElementById('noPatientContainer').style.display = 'block';
+          return;
+        }
+
+        if (!patientDoc || patientDoc.exists !== true) {
+          if (selectedPatient) return;
           sessionStorage.removeItem('selectedPatientId');
           sessionStorage.removeItem('selectedPatientData');
           document.getElementById('loadingContainer').style.display = 'none';
@@ -1319,24 +1347,17 @@
         }
 
         selectedPatient = { id: patientDoc.id, ...patientDoc.data() };
-        
-        // Save to session storage
         sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
-
-        await loadLatestAncForRiskDisplay(patientId);
-        displayPatientInfo();
-        await Promise.all([
-          loadCareStats(),
-          ensureBabyPatientsFromSavedDeliveryNotes()
-        ]);
-        
-        document.getElementById('loadingContainer').style.display = 'none';
-        document.getElementById('patientInfoBar').style.display = 'flex';
-        document.getElementById('careCardsContainer').style.display = 'grid';
-        if (isDeliveryEditMode || openDeliveryOnLoad) openThirdStageModal();
+        showHubShell();
+        refreshHubBackground(patientId);
+        openHubDeliveryModalOnce();
 
       } catch (error) {
         console.error('Error loading patient data:', error);
+        if (selectedPatient) {
+          showHubShell();
+          return;
+        }
         alert('Error loading patient data: ' + error.message);
         document.getElementById('loadingContainer').style.display = 'none';
         document.getElementById('noPatientContainer').style.display = 'block';
@@ -1602,7 +1623,7 @@
           .limit(1); // Only need count and latest visit
         const ancVisitsSnap = await smartFirestoreQuery(
           Promise.resolve(ancVisitsQuery),
-          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
         );
         
         // Get total count separately - use smart query
@@ -1612,12 +1633,12 @@
           .collection('antenatal_visits');
         const ancCountSnap = await smartFirestoreQuery(
           Promise.resolve(ancCountQuery),
-          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
         );
         
         const ancCount = ancCountSnap && ancCountSnap.size ? ancCountSnap.size : 0;
-        
-        document.getElementById('ancVisits').textContent = ancCount;
+        const ancVisitsEl = document.getElementById('ancVisits');
+        if (ancVisitsEl) ancVisitsEl.textContent = ancCount;
         
         // Update ANC action button text based on visit count
         const ancActionBtn = document.querySelector('.care-card.antenatal .care-action');
@@ -1628,14 +1649,15 @@
           }
           
           const lastVisit = ancVisitsSnap && ancVisitsSnap.docs && ancVisitsSnap.docs.length > 0 ? ancVisitsSnap.docs[0].data() : null;
-          if (!lastVisit) return;
-          // Try multiple possible date fields
-          const lastVisitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
-          if (lastVisitDate) {
-            const dateToFormat = lastVisitDate.seconds ? 
-              new Date(lastVisitDate.seconds * 1000) : 
-              new Date(lastVisitDate);
-            document.getElementById('lastANCVisit').textContent = formatDateShort(dateToFormat);
+          if (lastVisit) {
+            const lastVisitDate = lastVisit.visitDate || lastVisit.visit_date || lastVisit.timestamp;
+            if (lastVisitDate) {
+              const dateToFormat = lastVisitDate.seconds ? 
+                new Date(lastVisitDate.seconds * 1000) : 
+                new Date(lastVisitDate);
+              const lastANCVisitEl = document.getElementById('lastANCVisit');
+              if (lastANCVisitEl) lastANCVisitEl.textContent = formatDateShort(dateToFormat);
+            }
           }
         } else {
           if (ancActionBtn) {
@@ -1643,7 +1665,8 @@
             ancActionBtn.innerHTML = `<i class="fas fa-stethoscope me-2"></i><span class="lang-text" data-en="Start ANC Visit" data-mm="ကိုယ်ဝန်ဆောင်စောင့်ရှောက်မှု စတင်ရန်">${btnText}</span>`;
           }
           const neverText = currentLanguage === 'en' ? 'Never' : 'မရှိသေး';
-          document.getElementById('lastANCVisit').textContent = neverText;
+          const lastANCVisitEl = document.getElementById('lastANCVisit');
+          if (lastANCVisitEl) lastANCVisitEl.textContent = neverText;
         }
         
         // Load Labour status - check patient's current status and summary data
@@ -1657,7 +1680,7 @@
           .doc('summary');
         const summaryDoc = await smartFirestoreQuery(
           Promise.resolve(summaryQuery),
-          { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+          { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
         );
         
         if (summaryDoc && summaryDoc.exists) {
@@ -1667,8 +1690,11 @@
           if (currentStatus === 'postnatal_newborn_care' || currentStatus === 'postnatal_care' || currentStatus === 'postpartum' || currentStatus === 'birthed') {
             // Patient has completed labour care and moved to postnatal
             const statusText = currentLanguage === 'en' ? 'Labour Care Done' : 'မွေးဖွားစောင့်ရှောက်မှု ပြီးစီးပြီ';
-            document.getElementById('labourStatus').textContent = statusText;
-            document.getElementById('labourStatus').style.color = '#059669'; // Green color for completed
+            const labourStatusEl = document.getElementById('labourStatus');
+            if (labourStatusEl) {
+              labourStatusEl.textContent = statusText;
+              labourStatusEl.style.color = '#059669';
+            }
             
             // Show completion date (second stage time or delivery time)
             const completionDate = summaryData.secondStage_Time || summaryData.deliveryTime || summaryData.timestamp;
@@ -1676,13 +1702,17 @@
               const dateToFormat = completionDate.seconds ? 
                 new Date(completionDate.seconds * 1000) : 
                 new Date(completionDate);
-              document.getElementById('lastLabourUpdate').textContent = formatDateShort(dateToFormat);
+              const lastLabourUpdateEl = document.getElementById('lastLabourUpdate');
+              if (lastLabourUpdateEl) lastLabourUpdateEl.textContent = formatDateShort(dateToFormat);
             }
           } else if (currentStatus === 'intrapartum' || currentStatus === 'in_labour' || currentStatus === 'labour_care') {
             // Patient is currently in labour care
             const statusText = currentLanguage === 'en' ? 'In Progress' : 'လုပ်ဆောင်နေသည်';
-            document.getElementById('labourStatus').textContent = statusText;
-            document.getElementById('labourStatus').style.color = '#dc2626'; // Red color for in progress
+            const labourStatusEl = document.getElementById('labourStatus');
+            if (labourStatusEl) {
+              labourStatusEl.textContent = statusText;
+              labourStatusEl.style.color = '#dc2626';
+            }
             
             // Show when labour started (active first stage time)
             const startDate = summaryData.activeFirstStage_Time || summaryData.timestamp;
@@ -1690,19 +1720,26 @@
               const dateToFormat = startDate.seconds ? 
                 new Date(startDate.seconds * 1000) : 
                 new Date(startDate);
-              document.getElementById('lastLabourUpdate').textContent = formatDateShort(dateToFormat);
+              const lastLabourUpdateEl = document.getElementById('lastLabourUpdate');
+              if (lastLabourUpdateEl) lastLabourUpdateEl.textContent = formatDateShort(dateToFormat);
             }
           } else {
             // Patient has labour data but status is not labour/postnatal (shouldn't happen)
             const statusText = currentLanguage === 'en' ? 'Data Available' : 'ဒေတာ ရရှိနိုင်သည်';
-            document.getElementById('labourStatus').textContent = statusText;
-            document.getElementById('labourStatus').style.color = '#6b7280';
+            const labourStatusEl = document.getElementById('labourStatus');
+            if (labourStatusEl) {
+              labourStatusEl.textContent = statusText;
+              labourStatusEl.style.color = '#6b7280';
+            }
           }
         } else {
           // No labour care data yet
           const statusText = currentLanguage === 'en' ? 'Not Started' : 'မစတင်ရသေး';
-          document.getElementById('labourStatus').textContent = statusText;
-          document.getElementById('labourStatus').style.color = '#6b7280';
+          const labourStatusEl = document.getElementById('labourStatus');
+          if (labourStatusEl) {
+            labourStatusEl.textContent = statusText;
+            labourStatusEl.style.color = '#6b7280';
+          }
         }
         
         // Load PNC visits - optimized with cache-first
@@ -1722,7 +1759,7 @@
               .limit(1); // Only need latest for display
             pncVisitsSnap = await smartFirestoreQuery(
               Promise.resolve(pncVisitsQuery),
-              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
             );
           } catch (orderError) {
             // If orderBy fails, try without it - use smart query
@@ -1734,7 +1771,7 @@
               .limit(1);
             pncVisitsSnap = await smartFirestoreQuery(
               Promise.resolve(pncVisitsQueryNoOrder),
-              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
             );
           }
           
@@ -1745,7 +1782,7 @@
             .collection('postpartum_visits');
           const pncCountSnap = await smartFirestoreQuery(
             Promise.resolve(pncCountQuery),
-            { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+            { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
           );
           
           pncCount = pncCountSnap && pncCountSnap.size ? pncCountSnap.size : 0;
@@ -1807,7 +1844,7 @@
             .doc('birthRecord');
           const birthRecordDoc = await smartFirestoreQuery(
             Promise.resolve(birthRecordQuery),
-            { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+            { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
           );
           
           if (birthRecordDoc && birthRecordDoc.exists) {
@@ -1832,7 +1869,7 @@
                 .limit(1);
               babyRecordsSnap = await smartFirestoreQuery(
                 Promise.resolve(babyRecordsQuery),
-                { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+                { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
               );
             } catch (orderError) {
               // If orderBy fails, try without it - use smart query
@@ -1844,7 +1881,7 @@
                 .limit(1);
               babyRecordsSnap = await smartFirestoreQuery(
                 Promise.resolve(babyRecordsQueryNoOrder),
-                { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+                { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
               );
             }
             
@@ -1868,7 +1905,7 @@
               .limit(1);
             const newbornCareSnap = await smartFirestoreQuery(
               Promise.resolve(newbornCareQuery),
-              { preferCache: isIOSDevice, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: true, timeout: 4000, retries: 1, fallbackToCache: true }
             );
             
             if (newbornCareSnap && !newbornCareSnap.empty) {

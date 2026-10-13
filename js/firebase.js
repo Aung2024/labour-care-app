@@ -316,6 +316,49 @@ window.testFirebaseDomains = async function () {
   return results;
 };
 
+var firestoreBackendUnavailableUntil = 0;
+
+function isLikelyFirestoreUnavailableError(error) {
+  if (!error) return false;
+  var message = String(error.message || "");
+  return error.code === "unavailable" ||
+    error.code === "deadline-exceeded" ||
+    message.indexOf("timeout") !== -1 ||
+    message.indexOf("UNAVAILABLE") !== -1 ||
+    message.indexOf("offline") !== -1 ||
+    message.indexOf("Could not reach Cloud Firestore") !== -1 ||
+    message.indexOf("Failed to get document") !== -1;
+}
+
+function noteFirestoreBackendIssue(error) {
+  if (isLikelyFirestoreUnavailableError(error)) {
+    firestoreBackendUnavailableUntil = Date.now() + 12000;
+  }
+}
+
+function isFirestoreLikelyUnavailable() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return Date.now() < firestoreBackendUnavailableUntil;
+}
+
+function isUsableCacheResult(cacheResult) {
+  if (!cacheResult || cacheResult._smartQueryFailed) return false;
+  if (cacheResult.exists === true) return true;
+  if (typeof cacheResult.size === "number") return cacheResult.size > 0;
+  return cacheResult.empty === false;
+}
+
+function emptySmartQueryResult() {
+  return {
+    _smartQueryFailed: true,
+    empty: true,
+    size: 0,
+    exists: undefined,
+    forEach: function () {},
+    docs: []
+  };
+}
+
 // --- Smart query function (kept as-is, just slightly cleaned) ---
 window.smartFirestoreQuery = async function (queryPromise, options = {}) {
   const {
@@ -326,6 +369,22 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
   } = options;
 
   const isIOSDetected = isAppleMobileOrTablet();
+
+  if (isFirestoreLikelyUnavailable()) {
+    if (fallbackToCache) {
+      try {
+        const cacheResult = await Promise.race([
+          queryPromise.then((q) => q.get({ source: "cache" })),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 1500))
+        ]);
+        if (isUsableCacheResult(cacheResult)) {
+          console.log("✅ Loaded from cache (offline/unavailable)");
+          return cacheResult;
+        }
+      } catch (cacheError) {}
+    }
+    return emptySmartQueryResult();
+  }
 
   // Prefer cache on iOS if requested
   if (preferCache && isIOSDetected) {
@@ -370,16 +429,18 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
           error.code === "unavailable" ||
           error.code === "deadline-exceeded");
 
+      noteFirestoreBackendIssue(error);
+
       if (isLastAttempt) {
         if (fallbackToCache) {
           try {
             console.log("⚠️ Server failed, trying cache fallback...");
             const cacheResult = await Promise.race([
               queryPromise.then((q) => q.get({ source: "cache" })),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 5000))
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 1500))
             ]);
-            if (cacheResult && !cacheResult.empty) {
-              console.log("✅ Loaded from cache (fallback) -", cacheResult.size, "documents");
+            if (isUsableCacheResult(cacheResult)) {
+              console.log("✅ Loaded from cache (fallback) -", cacheResult.size != null ? cacheResult.size : 1, "documents");
               return cacheResult;
             } else if (cacheResult) {
               console.log("⚠️ Cache is empty (no cached data available)");
@@ -407,13 +468,20 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
 
         console.error("❌ All query attempts failed. Returning empty result.");
         console.error("Error:", error.message, error.code);
-        return {
-          _smartQueryFailed: true,
-          empty: true,
-          size: 0,
-          forEach: () => {},
-          docs: []
-        };
+        return emptySmartQueryResult();
+      }
+
+      if (isFirestoreLikelyUnavailable()) {
+        if (fallbackToCache) {
+          try {
+            const cacheResult = await Promise.race([
+              queryPromise.then((q) => q.get({ source: "cache" })),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 1500))
+            ]);
+            if (isUsableCacheResult(cacheResult)) return cacheResult;
+          } catch (cacheError) {}
+        }
+        return emptySmartQueryResult();
       }
 
       // exponential backoff between retries

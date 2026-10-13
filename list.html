@@ -1524,7 +1524,7 @@
           result = await queryOrDocRef.get();
         }
       } catch (error) {
-        console.warn('[list] smart query failed, attempting direct get:', error);
+        console.warn('[list] smart query failed:', error);
       }
 
       const inconclusive =
@@ -1533,13 +1533,14 @@
         (typeof result.forEach !== 'function' && typeof result.exists !== 'boolean');
 
       if (!inconclusive) return result;
-
-      try {
-        return await queryOrDocRef.get();
-      } catch (fallbackError) {
-        console.warn('[list] direct get fallback failed:', fallbackError);
-        return result;
-      }
+      return result || {
+        _smartQueryFailed: true,
+        empty: true,
+        size: 0,
+        exists: false,
+        forEach: function () {},
+        docs: []
+      };
     }
 
     function mergePatientDocs(patientMap, snapshot) {
@@ -1558,17 +1559,18 @@
         db.collection('patients').where('createdBy', '==', uid),
         db.collection('patients').where('care_team_midwife_ids', 'array-contains', uid)
       ];
-      for (let i = 0; i < queries.length; i++) {
-        try {
-          const snapshot = await listSmartQuery(
-            queries[i],
-            { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
-          );
-          mergePatientDocs(patientMap, snapshot);
-        } catch (err) {
+      const snapshots = await Promise.all(queries.map(function (query) {
+        return listSmartQuery(
+          query,
+          { preferCache: isIOS, timeout: 4000, retries: 1, fallbackToCache: true }
+        ).catch(function (err) {
           console.warn('Patient ownership query failed:', err);
-        }
-      }
+          return null;
+        });
+      }));
+      snapshots.forEach(function (snapshot) {
+        mergePatientDocs(patientMap, snapshot);
+      });
       return Array.from(patientMap.values());
     }
 
@@ -1920,13 +1922,6 @@
           userRole === 'TMO' ||
           userRole === 'Regional Officer' ||
           ((userRole === 'Super Admin' || userRole === 'admin') && selectedMidwifeId && selectedMidwifeId !== 'all');
-        if (shouldHydrateBabies) {
-          try {
-            allPatients = await hydrateLinkedBabyPatients(db, allPatients, isIOS);
-          } catch (hydrateError) {
-            console.warn('Could not hydrate linked baby patients:', hydrateError);
-          }
-        }
         
         // Sort by creation date (newest first) - optimized
         allPatients.sort((a, b) => {
@@ -1969,7 +1964,22 @@
           console.log('✅ Displaying patients immediately; enriching in background');
           updateSectionTitle();
           filterPatients();
-          reconcileRegisteredPatientStatuses()
+          Promise.resolve()
+            .then(function () {
+              if (!shouldHydrateBabies) return allPatients;
+              return hydrateLinkedBabyPatients(db, allPatients, isIOS);
+            })
+            .then(function (hydrated) {
+              if (Array.isArray(hydrated)) allPatients = hydrated;
+              allPatients.sort((a, b) => {
+                const dateA = a.created_at ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at)) : new Date(0);
+                const dateB = b.created_at ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at)) : new Date(0);
+                return dateB - dateA;
+              });
+              filteredPatients = [...allPatients];
+              filterPatients();
+              return reconcileRegisteredPatientStatuses();
+            })
             .then(function () { return reconcileLinkedMotherParityFromBabies(); })
             .then(function () {
               filterPatients();

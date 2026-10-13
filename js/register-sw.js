@@ -7,9 +7,21 @@
 
   var reloading = false
   var hadController = !!navigator.serviceWorker.controller
+  var pageStartedAt = Date.now()
+
+  var isReloadNavigation = function () {
+    try {
+      var entries = performance.getEntriesByType('navigation')
+      return !!(entries && entries[0] && entries[0].type === 'reload')
+    } catch (e) {
+      return false
+    }
+  }
 
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (!hadController || reloading) return
+    if (isReloadNavigation()) return
+    if (Date.now() - pageStartedAt < 5000) return
     reloading = true
     window.location.reload()
   })
