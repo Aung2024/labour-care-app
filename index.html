@@ -27,6 +27,7 @@
       to { opacity: 1; }
     }
   </style>
+  <script src="js/register-sw.js"></script>
   <!-- Load Firebase -->
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
@@ -68,8 +69,14 @@
             checkAuthAndRoute.retryCount++;
             setTimeout(checkAuthAndRoute, 100);
           } else {
-            // Firebase failed to load after 2 seconds - default to login
-            console.warn('⚠️ Firebase failed to load quickly - routing to login (network may be slow)');
+            // Firebase failed to load after 2 seconds - keep remembered users on home
+            console.warn('⚠️ Firebase failed to load quickly - checking remembered session');
+            try {
+              if (localStorage.getItem('rememberMe') === 'true' && localStorage.getItem('uid')) {
+                redirectToHome();
+                return;
+              }
+            } catch (error) {}
             redirectToLogin();
           }
           return;
@@ -111,6 +118,8 @@
             try {
               const user = firebase.auth().currentUser;
               if (user) {
+                redirectToHome();
+              } else if (localStorage.getItem('rememberMe') === 'true' && localStorage.getItem('uid')) {
                 redirectToHome();
               } else {
                 redirectToLogin();

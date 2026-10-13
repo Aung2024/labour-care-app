@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v352-moh';
+const CACHE_NAME = 'mch-care-v354-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -17,6 +17,8 @@ const FILES_TO_CACHE = [
   './patient-consent.html',
   './provider-consent.html',
   './patient-care-hub.html',
+  './patient-care-hub-lcg.html',
+  './township-report.html',
   './baby-patient-backfill.html',
   './retroactive-data-entry.html',
   './patient-enhanced.html',
@@ -76,14 +78,14 @@ const FILES_TO_CACHE = [
   './css/webfonts/fa-regular-400.woff2',
   './css/webfonts/fa-brands-400.woff2',
   './js/vendor/bootstrap.bundle.min.js',
-  './js/vendor/apexcharts.min.js',
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
-  './js/vendor/html2canvas.min.js',
   './js/firebase.js',
   './js/auth-guard.js',
+  './js/register-sw.js',
   './js/nav-back.js',
+  './js/page-performance.js',
   './js/user-cache.js',
   './js/consent-manager.js',
   './js/offline-store.js',
@@ -198,16 +200,103 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+function isRuntimeConfigPath(pathname) {
+  return pathname.endsWith('/firebase.runtime-config.json');
+}
+
+function isStaticAssetPath(pathname) {
+  return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
+}
+
 function shouldCacheRequest(requestUrl) {
-  // Avoid caching runtime env config, auth-like endpoints, and query-heavy URLs.
-  if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) return false;
+  if (isRuntimeConfigPath(requestUrl.pathname)) return false;
+  if (isStaticAssetPath(requestUrl.pathname)) return true;
+  // Keep HTML/document cache keys query-free so patient IDs are not stored.
   if (requestUrl.search) return false;
   return true;
 }
 
+function assetCacheKey(requestUrl) {
+  return requestUrl.origin + requestUrl.pathname;
+}
+
+function documentCacheKey(request, requestUrl) {
+  if (requestUrl.search) return requestUrl.origin + requestUrl.pathname;
+  return request;
+}
+
+function matchCachedDocument(request) {
+  var requestUrl = new URL(request.url);
+  var path = requestUrl.pathname;
+  if (path.endsWith('/')) path += 'index.html';
+  return caches.match(request).then(function (exact) {
+    if (exact) return exact;
+    return caches.match(path).then(function (byPath) {
+      if (byPath) return byPath;
+      return caches.match('.' + path);
+    });
+  });
+}
+
+function matchCachedAsset(request) {
+  return caches.match(request).then(function (exact) {
+    if (exact) return exact;
+    return caches.match(request, { ignoreSearch: true });
+  });
+}
+
+function offlineDocumentResponse() {
+  return new Response(
+    '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
+
+function networkFirstDocument(request) {
+  var requestUrl = new URL(request.url);
+  var networkPromise = fetch(request).then(function (response) {
+    if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
+      var responseToCache = response.clone();
+      caches.open(CACHE_NAME).then(function (cache) {
+        cache.put(documentCacheKey(request, requestUrl), responseToCache);
+      });
+    }
+    return response;
+  });
+
+  var timeoutPromise = new Promise(function (resolve) {
+    setTimeout(function () { resolve(null); }, 4000);
+  });
+
+  return Promise.race([
+    networkPromise,
+    timeoutPromise.then(function () {
+      return matchCachedDocument(request).then(function (cachedResponse) {
+        return cachedResponse || networkPromise;
+      });
+    })
+  ]).catch(function () {
+    return matchCachedDocument(request).then(function (cachedResponse) {
+      if (cachedResponse) return cachedResponse;
+      return caches.match('./home.html').then(function (homeFallback) {
+        if (homeFallback) return homeFallback;
+        return caches.match('./index.html').then(function (indexFallback) {
+          return indexFallback || offlineDocumentResponse();
+        });
+      });
+    });
+  });
+}
+
+self.addEventListener('message', function (event) {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Fetch event strategy:
-// - HTML/document navigation: network first, fallback to cache.
-// - Static assets: cache first, then network.
+// - HTML/document navigation: network first, cache after 4s on slow links.
+// - Static assets: cache first, ignore ?v= so versioned script tags match precache.
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
@@ -215,8 +304,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   const requestUrl = new URL(event.request.url);
-  if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) {
-    event.respondWith(fetch(event.request));
+  // Do not intercept runtime config. A failed SW fetch previously forced
+  // login onto the embedded pilot project and blocked hard refresh.
+  if (isRuntimeConfigPath(requestUrl.pathname)) {
     return;
   }
 
@@ -225,49 +315,28 @@ self.addEventListener('fetch', (event) => {
     (event.request.headers.get('accept') || '').includes('text/html');
 
   if (isDocumentRequest) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
-          if (cachedResponse) return cachedResponse;
-          const homeFallback = await caches.match('./home.html');
-          if (homeFallback) return homeFallback;
-          const indexFallback = await caches.match('./index.html');
-          if (indexFallback) return indexFallback;
-          return new Response(
-            '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
-            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-          );
-        })
-    );
+    event.respondWith(networkFirstDocument(event.request));
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    matchCachedAsset(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
 
-          return fetch(event.request)
+      return fetch(event.request)
         .then((response) => {
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
           }
           if (shouldCacheRequest(requestUrl)) {
             const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+            caches.open(CACHE_NAME).then((cache) => cache.put(assetCacheKey(requestUrl), responseToCache));
           }
           return response;
         })
         .catch(function () {
-          return caches.match(event.request).then(function (cachedResponse) {
-            return cachedResponse || new Response('', { status: 504, statusText: 'Offline' });
+          return matchCachedAsset(event.request).then(function (fallbackResponse) {
+            return fallbackResponse || new Response('', { status: 504, statusText: 'Offline' });
           });
         });
     })

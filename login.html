@@ -432,6 +432,7 @@
     }
   </style>
   
+  <script src="js/register-sw.js"></script>
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
@@ -679,17 +680,25 @@
         await firebase.auth().setPersistence(persistence);
         setRememberMe(keepLoggedIn);
 
+        const activeProjectId = (typeof firebaseConfig !== 'undefined' && firebaseConfig.projectId)
+          || (firebase.app && firebase.app().options && firebase.app().options.projectId)
+          || '';
+        if (window.location.hostname === 'mnch-v2.netlify.app' && activeProjectId === 'labourcare-2481a') {
+          throw {
+            code: 'auth/internal-error',
+            message: 'Wrong Firebase project for this deployment'
+          };
+        }
+
         const userCred = await firebase.auth().signInWithEmailAndPassword(email, password);
         console.log('Firebase sign in successful:', userCred.user.uid);
         
-        // Clear failed login attempts on successful login
-        if (window.PasswordPolicy) {
-          await PasswordPolicy.clearFailedAttempts(email);
+        if (window.PasswordPolicy && PasswordPolicy.clearFailedAttempts) {
+          Promise.resolve(PasswordPolicy.clearFailedAttempts(email)).catch(function () {});
         }
         
-        // Log successful login
         if (window.AuditLogger) {
-          await AuditLogger.logLogin(userCred.user.uid, true);
+          AuditLogger.logLogin(userCred.user.uid, true).catch(function () {});
         }
         
         // Get user document from Firestore
@@ -796,9 +805,10 @@
         // auth recovery can otherwise send users to Register/List unexpectedly.
         const redirectUrl = null;
         
-        // Check provider consent before redirecting
-        const consentCheck = await ConsentManager.checkProviderConsent(userCred.user.uid);
-        if (!consentCheck.hasConsent || consentCheck.needsReconsent) {
+        const consentCheck = window.ConsentManager
+          ? await ConsentManager.checkProviderConsent(userCred.user.uid)
+          : { hasConsent: true, needsReconsent: false, uncertain: true };
+        if (!consentCheck.uncertain && (!consentCheck.hasConsent || consentCheck.needsReconsent)) {
           // Redirect to consent page (preserve redirect URL if exists)
           const consentUrl = redirectUrl 
             ? `provider-consent.html?redirect=${encodeURIComponent(redirectUrl)}`
@@ -853,7 +863,7 @@
           alertClass = 'alert-warning';
           icon = 'fas fa-clock';
         } else if (err.code === 'auth/internal-error') {
-          errorMessage = 'Sign-in could not reach the account service. Please try again. This was not caused by a wrong password.';
+          errorMessage = 'The app is still connecting to the account service. Wait a moment, then tap Sign In again. This was not caused by a wrong password.';
           alertClass = 'alert-warning';
           icon = 'fas fa-wifi';
         } else if (err.message && err.message.includes('INVALID_LOGIN_CREDENTIALS')) {

@@ -296,7 +296,8 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v352-moh/);
+  assert.match(sw, /mch-care-v354-moh/);
+  assert.match(sw, /ignoreSearch: true/);
 });
 
 test('tracking calls use same-origin Netlify proxies instead of browser Cloud Run transport', () => {
@@ -311,6 +312,25 @@ test('tracking calls use same-origin Netlify proxies instead of browser Cloud Ru
   assert.match(netlify, /from = "\/api\/query-kmc-tracking"/);
   assert.match(netlify, /to = "https:\/\/querykmctracking-houbbz2mta-uc\.a\.run\.app"/);
   assert.match(netlify, /from = "\/api\/send-hrt-sms"/);
+});
+
+test('MOH login never falls back to the pilot Firebase project', () => {
+  const firebaseInit = readAppFile('js/firebase.js');
+  const login = readAppFile('login.html');
+  const index = readAppFile('index.html');
+  const list = readAppFile('list.html');
+  const registerSw = readAppFile('js/register-sw.js');
+
+  assert.match(firebaseInit, /isMohDeployHost/);
+  assert.match(firebaseInit, /mnch-v2\.netlify\.app/);
+  assert.match(firebaseInit, /MOH_FIREBASE_CONFIG/);
+  assert.match(firebaseInit, /projectId: "mnch-1cbda"/);
+  assert.match(firebaseInit, /labourcare-firebase-runtime-config/);
+  assert.match(login, /js\/register-sw\.js/);
+  assert.match(index, /js\/register-sw\.js/);
+  assert.match(list, /js\/register-sw\.js/);
+  assert.match(registerSw, /DOMContentLoaded/);
+  assert.match(registerSw, /controllerchange/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {

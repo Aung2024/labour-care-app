@@ -238,7 +238,11 @@ function initAuthGuard() {
 
 function waitForAuthRecovery() {
   const cachedUid = localStorage.getItem('uid');
-  const maxWaitMs = cachedUid ? 5000 : 1500;
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline && cachedUid) {
+    return Promise.resolve(firebase.auth().currentUser || getCachedOfflineUser());
+  }
+  const maxWaitMs = cachedUid ? 2500 : 1200;
   const started = Date.now();
 
   return new Promise((resolve) => {

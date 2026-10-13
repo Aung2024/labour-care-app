@@ -3,10 +3,39 @@
  * Ensures precache runs for flows that skip index.html / home.html.
  */
 (function () {
-  if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./service-worker.js').catch(function (e) {
-      console.warn('[SW] register failed', e);
-    });
-  });
-})();
+  if (!('serviceWorker' in navigator)) return
+
+  var reloading = false
+  var hadController = !!navigator.serviceWorker.controller
+
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController || reloading) return
+    reloading = true
+    window.location.reload()
+  })
+
+  var register = function () {
+    navigator.serviceWorker.register('./service-worker.js').then(function (registration) {
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+      }
+      registration.addEventListener('updatefound', function () {
+        var worker = registration.installing
+        if (!worker) return
+        worker.addEventListener('statechange', function () {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            worker.postMessage({ type: 'SKIP_WAITING' })
+          }
+        })
+      })
+    }).catch(function (e) {
+      console.warn('[SW] register failed', e)
+    })
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', register)
+  } else {
+    register()
+  }
+})()

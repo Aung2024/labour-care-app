@@ -1,5 +1,5 @@
 // --- Firebase init ---
-var defaultFirebaseConfig = {
+var PILOT_FIREBASE_CONFIG = {
   apiKey: "AIzaSyC8-y2xnLINlVTWOOaU8-w82RBzSo2djAQ",
   authDomain: "labourcare-2481a.firebaseapp.com",
   projectId: "labourcare-2481a",
@@ -8,31 +8,126 @@ var defaultFirebaseConfig = {
   appId: "1:1033457212744:web:4d767eb4ef246b1090e77d"
 };
 
-function loadRuntimeFirebaseConfig() {
-  if (typeof window !== "undefined" && window.__LABOURCARE_FIREBASE_CONFIG__) {
-    return window.__LABOURCARE_FIREBASE_CONFIG__;
+var MOH_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAAyhV6Wp9yQGxcpT1GZPbwEa676dwTMC4",
+  authDomain: "mnch-1cbda.firebaseapp.com",
+  projectId: "mnch-1cbda",
+  storageBucket: "mnch-1cbda.firebasestorage.app",
+  messagingSenderId: "166093206737",
+  appId: "1:166093206737:web:247112e5f2cda369b841f0",
+  measurementId: "G-3PRRVBTMEC",
+  functionUrls: {
+    queryHrtTracking: "/api/query-hrt-tracking",
+    queryKmcTracking: "/api/query-kmc-tracking",
+    sendHrtSms: "/api/send-hrt-sms"
   }
+};
 
-  // Netlify/static-friendly runtime override without rebuilding HTML files.
-  // If file is absent or invalid JSON, we fall back to embedded defaults.
+var RUNTIME_CONFIG_CACHE_KEY = "labourcare-firebase-runtime-config";
+
+function currentHostname() {
+  try {
+    return String((typeof window !== "undefined" && window.location && window.location.hostname) || "").toLowerCase();
+  } catch (error) {
+    return "";
+  }
+}
+
+function isMohDeployHost(hostname) {
+  hostname = String(hostname || currentHostname());
+  return hostname === "mnch-v2.netlify.app" || hostname === "www.mnch-v2.netlify.app";
+}
+
+function isLocalHost(hostname) {
+  hostname = String(hostname || currentHostname());
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "";
+}
+
+function hostDefaultFirebaseConfig() {
+  return isMohDeployHost() ? MOH_FIREBASE_CONFIG : PILOT_FIREBASE_CONFIG;
+}
+
+function isCompleteFirebaseConfig(parsed) {
+  return !!(parsed && parsed.projectId && parsed.apiKey && parsed.appId);
+}
+
+function readCachedRuntimeFirebaseConfig() {
+  if (typeof window === "undefined") return null;
+  var stores = [];
+  try { stores.push(window.sessionStorage); } catch (error) {}
+  try { stores.push(window.localStorage); } catch (error) {}
+  for (var i = 0; i < stores.length; i++) {
+    try {
+      var raw = stores[i].getItem(RUNTIME_CONFIG_CACHE_KEY);
+      if (!raw) continue;
+      var parsed = JSON.parse(raw);
+      if (isCompleteFirebaseConfig(parsed)) return parsed;
+    } catch (error) {}
+  }
+  return null;
+}
+
+function writeCachedRuntimeFirebaseConfig(config) {
+  if (!isCompleteFirebaseConfig(config)) return;
+  var raw = JSON.stringify(config);
+  try { sessionStorage.setItem(RUNTIME_CONFIG_CACHE_KEY, raw); } catch (error) {}
+  try { localStorage.setItem(RUNTIME_CONFIG_CACHE_KEY, raw); } catch (error) {}
+}
+
+function fetchRuntimeFirebaseConfigSync() {
   try {
     var req = new XMLHttpRequest();
     req.open("GET", "/firebase.runtime-config.json", false);
     req.send(null);
     if (req.status >= 200 && req.status < 300 && req.responseText) {
       var parsed = JSON.parse(req.responseText);
-      if (parsed && parsed.projectId && parsed.apiKey && parsed.appId) {
-        return parsed;
-      }
+      if (isCompleteFirebaseConfig(parsed)) return parsed;
       console.warn("⚠️ Runtime Firebase config exists but is incomplete. Using embedded defaults.");
     }
   } catch (error) {
     // Expected when runtime config is not present.
   }
-
   return null;
 }
 
+function refreshRuntimeFirebaseConfigAsync() {
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+  window.fetch("/firebase.runtime-config.json", { cache: "no-store" })
+    .then(function (response) {
+      if (!response || !response.ok) return null;
+      return response.json();
+    })
+    .then(function (parsed) {
+      if (isCompleteFirebaseConfig(parsed)) writeCachedRuntimeFirebaseConfig(parsed);
+    })
+    .catch(function () {});
+}
+
+function loadRuntimeFirebaseConfig() {
+  if (typeof window !== "undefined" && window.__LABOURCARE_FIREBASE_CONFIG__) {
+    return window.__LABOURCARE_FIREBASE_CONFIG__;
+  }
+
+  var cached = readCachedRuntimeFirebaseConfig();
+  if (cached) {
+    refreshRuntimeFirebaseConfigAsync();
+    return cached;
+  }
+
+  // Local/dev only: the JSON is same-origin and fast. Never block MOH phones
+  // on a sync XHR — a timeout there used the pilot project and broke login.
+  if (isLocalHost()) {
+    var fromNetwork = fetchRuntimeFirebaseConfigSync();
+    if (fromNetwork) writeCachedRuntimeFirebaseConfig(fromNetwork);
+    refreshRuntimeFirebaseConfigAsync();
+    return fromNetwork;
+  }
+
+  refreshRuntimeFirebaseConfigAsync();
+  return null;
+}
+
+var defaultFirebaseConfig = hostDefaultFirebaseConfig();
 var runtimeFirebaseConfig = loadRuntimeFirebaseConfig();
 var firebaseConfig = runtimeFirebaseConfig || defaultFirebaseConfig;
 

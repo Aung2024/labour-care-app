@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Patient Registration - Maternal & Child Health Care System</title>
   <link rel="manifest" href="manifest.json" />
+  <script src="js/register-sw.js"></script>
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
@@ -41,33 +42,9 @@
     }
 
     /* Animated background elements */
-    body::before {
-      content: '';
-      position: fixed;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
-      animation: float 20s ease-in-out infinite;
-      z-index: 0;
-    }
-
+    body::before,
     body::after {
-      content: '';
-      position: fixed;
-      top: -30%;
-      right: -30%;
-      width: 160%;
-      height: 160%;
-      background: radial-gradient(circle, rgba(52, 211, 153, 0.08) 0%, transparent 50%);
-      animation: float 25s ease-in-out infinite reverse;
-      z-index: 0;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      50% { transform: translate(-20px, -20px) rotate(180deg); }
+      display: none;
     }
 
     /* Header styling */
@@ -2344,6 +2321,16 @@
     });
   }
 
+  function getLocalRegistrationProfile(user) {
+    return {
+      role: localStorage.getItem('role') || 'Midwife',
+      email: localStorage.getItem('userEmail') || (user && user.email) || '',
+      township: localStorage.getItem('userTownship') || '',
+      region: localStorage.getItem('userRegion') || '',
+      facility_code: localStorage.getItem('facilityCode') || '003'
+    };
+  }
+
   async function getCurrentUserProfileForRegistration(user) {
     if (!user) return {};
 
@@ -2352,13 +2339,16 @@
       : null;
     if (cached) return cached;
 
-    const localProfile = {
-      role: localStorage.getItem('role') || 'Midwife',
-      email: localStorage.getItem('userEmail') || user.email || '',
-      township: localStorage.getItem('userTownship') || '',
-      region: localStorage.getItem('userRegion') || '',
-      facility_code: localStorage.getItem('facilityCode') || '003'
-    };
+    const localProfile = getLocalRegistrationProfile(user);
+
+    if (window.UserCache && typeof UserCache.get === 'function') {
+      try {
+        const cachedProfile = await UserCache.get(user.uid, false);
+        if (cachedProfile && (cachedProfile.township || cachedProfile.role)) {
+          return cachedProfile;
+        }
+      } catch (error) {}
+    }
 
     if (isOfflineNow()) {
       return localProfile;
@@ -2384,15 +2374,15 @@
     const firebaseUser = firebase.auth().currentUser;
     if (firebaseUser) return firebaseUser;
 
-    if (isOfflineNow()) {
-      const uid = localStorage.getItem('uid');
-      if (uid) {
-        return {
-          uid,
-          email: localStorage.getItem('userEmail') || '',
-          isOfflineCachedUser: true
-        };
-      }
+    const uid = localStorage.getItem('uid');
+    const remembered = localStorage.getItem('rememberMe') === 'true';
+    if (uid && (isOfflineNow() || remembered)) {
+      return {
+        uid,
+        email: localStorage.getItem('userEmail') || '',
+        isOfflineCachedUser: true,
+        isPilotCachedUser: true
+      };
     }
 
     return null;
@@ -2556,12 +2546,37 @@
       throw new Error(`Failed to generate ID: ${error.message || error} (Code: ${error.code || 'unknown'})`);
     }
   }
+    function applyRegistrationTownship(userData) {
+      userData = userData || {};
+      const township = userData.township || 'Not set';
+      const userTownshipEl = document.getElementById('userTownship');
+      const townshipDisplayEl = document.getElementById('townshipDisplay');
+      if (userTownshipEl) userTownshipEl.textContent = township;
+      if (townshipDisplayEl) townshipDisplayEl.style.display = 'block';
+
+      const regionShortInput = document.getElementById('regionShort');
+      const tspCodeInput = document.getElementById('tspCode');
+      const tspCodeDisplay = document.getElementById('tspCodeDisplay');
+      const facilityCode = userData.facility_code || '003';
+      const locationMetadata = getLocationMetadataByTownship(township);
+      let regionShort = 'UNK';
+      let tspCode = 'UNK-0';
+      if (locationMetadata) {
+        regionShort = locationMetadata.regionShort || 'UNK';
+        tspCode = locationMetadata.tspCode || 'UNK-0';
+      }
+      if (regionShortInput) regionShortInput.value = regionShort;
+      if (tspCodeInput) tspCodeInput.value = tspCode;
+      if (tspCodeDisplay) tspCodeDisplay.textContent = tspCode;
+      return { township, facilityCode, regionShort, tspCode };
+    }
+
     // Load user's township and display it
     async function loadUserTownship() {
       try {
         console.log('loadUserTownship() called');
-        
-        // Wait for Firebase auth to be ready
+        applyRegistrationTownship(getLocalRegistrationProfile());
+
         let user = getCurrentOrCachedOfflineUser();
         if (!user) {
           console.log('No current user, waiting for auth state...');
@@ -2571,11 +2586,10 @@
               user = authUser || getCurrentOrCachedOfflineUser();
               resolve();
             });
-            // Timeout after 5 seconds
             setTimeout(() => {
               unsubscribe();
               resolve();
-            }, 5000);
+            }, 1500);
           });
         }
         
@@ -2591,70 +2605,12 @@
         
         if (userData && Object.keys(userData).length) {
           console.log('Full user data:', userData);
-          console.log('Township from user data:', userData.township);
-          
-          const township = userData.township || 'Not set';
-          console.log('Township to display:', township);
-          
-          // Only update display elements if they exist
-          const userTownshipEl = document.getElementById('userTownship');
-          const townshipDisplayEl = document.getElementById('townshipDisplay');
-          if (userTownshipEl) {
-            userTownshipEl.textContent = township;
-          }
-          if (townshipDisplayEl) {
-            townshipDisplayEl.style.display = 'block';
-          }
-
-          const regionShortInput = document.getElementById('regionShort');
-          const tspCodeInput = document.getElementById('tspCode');
-          const tspCodeDisplay = document.getElementById('tspCodeDisplay');
-
-          // Get facility code from user data (default to 003 if not set)
-          const facilityCode = userData.facility_code || '003';
-          console.log('Facility code from user data:', facilityCode);
-          
-          const locationMetadata = getLocationMetadataByTownship(township);
-          let regionShort = 'UNK';
-          let tspCode = 'UNK-0';
-          
-          if (locationMetadata) {
-            regionShort = locationMetadata.regionShort || 'UNK';
-            tspCode = locationMetadata.tspCode || 'UNK-0';
-            if (regionShortInput) regionShortInput.value = regionShort;
-            if (tspCodeInput) tspCodeInput.value = tspCode;
-            if (tspCodeDisplay) tspCodeDisplay.textContent = tspCode;
-          } else {
-            if (regionShortInput) regionShortInput.value = regionShort;
-            if (tspCodeInput) tspCodeInput.value = tspCode;
-            if (tspCodeDisplay) tspCodeDisplay.textContent = tspCode;
-            console.warn('No location metadata found for township:', township);
-          }
-          
-          // Preview the next patient ID (read-only, doesn't increment counter)
+          const applied = applyRegistrationTownship(userData);
+          console.log('Township from user data:', applied.township);
           const patientUniqueIdDisplay = document.getElementById('patientUniqueIdDisplay');
-          if (false && patientUniqueIdDisplay && regionShort !== 'UNK' && tspCode !== 'UNK-0') {
-            try {
-              console.log('Loading preview ID...');
-              patientUniqueIdDisplay.value = 'Loading...';
-              const previewResult = await previewNextPatientId(regionShort, tspCode, facilityCode);
-              if (patientUniqueIdDisplay) {
-                patientUniqueIdDisplay.value = previewResult.uniqueId;
-                patientUniqueIdDisplay.placeholder = previewResult.uniqueId;
-              }
-              console.log('Preview ID loaded:', previewResult.uniqueId);
-            } catch (previewError) {
-              console.warn('Failed to load preview ID:', previewError);
-              if (patientUniqueIdDisplay) {
-                patientUniqueIdDisplay.value = '';
-                patientUniqueIdDisplay.placeholder = '';
-              }
-            }
-          } else {
-            if (patientUniqueIdDisplay) {
-              patientUniqueIdDisplay.value = '';
-                patientUniqueIdDisplay.placeholder = '';
-            }
+          if (patientUniqueIdDisplay) {
+            patientUniqueIdDisplay.value = '';
+            patientUniqueIdDisplay.placeholder = '';
           }
           console.log('Location codes loaded. Preview ID displayed (counter will increment on save).');
           

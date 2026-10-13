@@ -6,6 +6,36 @@
 const CONSENT_VERSION = '1.0'; // Update this when consent text changes
 const PROVIDER_RE_CONSENT_DAYS = 90; // 3 months
 
+const CONSENT_SESSION_TTL_MS = 30 * 60 * 1000;
+
+function consentSessionKey(userId) {
+  return 'providerConsentCheck:' + userId;
+}
+
+function readConsentSession(userId) {
+  try {
+    const raw = sessionStorage.getItem(consentSessionKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.ts && (Date.now() - parsed.ts) < CONSENT_SESSION_TTL_MS) {
+      return parsed;
+    }
+  } catch (error) {}
+  return null;
+}
+
+function writeConsentSession(userId, result) {
+  if (!result || result.uncertain || !result.hasConsent || result.needsReconsent) return;
+  try {
+    sessionStorage.setItem(consentSessionKey(userId), JSON.stringify({
+      hasConsent: true,
+      needsReconsent: false,
+      uncertain: false,
+      ts: Date.now()
+    }));
+  } catch (error) {}
+}
+
 /**
  * Check if provider has given consent
  * @param {string} userId - User ID
@@ -13,6 +43,16 @@ const PROVIDER_RE_CONSENT_DAYS = 90; // 3 months
  */
 async function checkProviderConsent(userId) {
   try {
+    const cachedConsent = readConsentSession(userId);
+    if (cachedConsent && cachedConsent.hasConsent && !cachedConsent.needsReconsent) {
+      return {
+        hasConsent: true,
+        needsReconsent: false,
+        consentData: null,
+        uncertain: false
+      };
+    }
+
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
     const consentQuery = firebase.firestore()
       .collection('provider_consents')
@@ -23,8 +63,8 @@ async function checkProviderConsent(userId) {
       Promise.resolve(consentQuery),
       { 
         preferCache: isIOS, 
-        timeout: 8000, 
-        retries: 2, 
+        timeout: 4000, 
+        retries: 1, 
         fallbackToCache: true 
       }
     );
@@ -53,12 +93,14 @@ async function checkProviderConsent(userId) {
     const needsReconsent = daysSinceConsent >= PROVIDER_RE_CONSENT_DAYS || 
                            consentData.version !== CONSENT_VERSION;
     
-    return {
+    const result = {
       hasConsent: true,
       needsReconsent: needsReconsent,
       consentData: consentData,
       uncertain: false
     };
+    writeConsentSession(userId, result);
+    return result;
   } catch (error) {
     console.error('Error checking provider consent:', error);
     return { hasConsent: true, needsReconsent: false, consentData: null, uncertain: true };
