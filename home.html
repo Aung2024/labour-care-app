@@ -36,6 +36,7 @@
   <script src="js/anc-tracking-status.js"></script>
   <script src="js/kmc-utils.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/tracking-reader.js"></script>
   <script src="js/home-followup-badges.js"></script>
   <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/sync-manager.js"></script>
@@ -1157,7 +1158,13 @@
       }
     }
 
+    function isHomeMidwifeRole(role) {
+      const key = String(role || '').toLowerCase().replace(/\s+/g, ' ');
+      return key === 'midwife' || key === '';
+    }
+
     function scheduleFullMirrorPull() {
+      if (!isHomeMidwifeRole(userRole)) return;
       if (navigator.onLine && window.LabourCareOffline && currentUser && userRole) {
         const tsPull = LabourCareOffline.scopeFilterValueForRole(userRole);
         LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
@@ -1181,13 +1188,15 @@
             throw new Error(syncResult.message || 'Some offline records could not be synced.');
           }
         }
-        if (window.LabourCareOffline) {
+        if (window.LabourCareOffline && isHomeMidwifeRole(userRole)) {
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
           LabourCareOffline.setOfflineBanner(false);
         }
         await loadPatientStats();
-        alert('Sync complete.');
+        alert(isHomeMidwifeRole(userRole)
+          ? 'Sync complete.'
+          : 'Online sync finished. Dashboard, HRT, and KMC stay available while you are connected.');
       } catch (e) {
         alert('Sync failed: ' + (e && e.message ? e.message : e));
       } finally {
@@ -1209,7 +1218,7 @@
         return;
       }
       try {
-        await HomeFollowUpBadges.refreshFollowUpBadges(firebase.firestore(), currentUser);
+        await HomeFollowUpBadges.refreshFollowUpBadges();
       } catch (e) {
         console.warn('Home follow-up badge refresh failed', e);
       }
@@ -1367,22 +1376,7 @@
           const listFiltered = list || [];
 
           for (let i = 0; i < listFiltered.length; i++) {
-            const data = listFiltered[i];
-            let status = data.status || data.treatmentStatus || 'antenatal';
-            if (status === 'active') status = 'antenatal';
-            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
-              status = 'postnatal';
-            }
-            if (patientStats.hasOwnProperty(status)) {
-              patientStats[status]++;
-            }
-            if (status === 'postnatal' && window.OfflineStore) {
-              const rec = await OfflineStore.getDocument('patients/' + data.id + '/records/birthRecord');
-              if (rec && rec.payload) {
-                patientStats.baby++;
-              }
-            }
-            patientStats.total++;
+            tallyHomePatientStats(listFiltered[i]);
           }
           updateStatsDisplay();
           LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
@@ -1414,16 +1408,11 @@
         // Load patient statistics based on user role with timeout handling
         // OPTIMIZED: Use shorter timeouts and batch processing
         if (userRole === "Super Admin" || userRole === "admin") {
-          // Super Admin sees all patients
-          const patientsQuery = db.collection("patients");
-          querySnapshot = await homeSmartQuery(
-            patientsQuery,
-            { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
-          );
+          updateStatsDisplay();
+          return;
         } else if (userRole === "TMO") {
-          // TMO sees patients from their township
           if (userTownship) {
-            const patientsQuery = db.collection("patients").where("township", "==", userTownship);
+            const patientsQuery = db.collection("patients").where("township", "==", userTownship).limit(250);
             querySnapshot = await homeSmartQuery(
               patientsQuery,
               { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
@@ -1433,9 +1422,8 @@
             return;
           }
         } else if (userRole && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer") {
-          // Regional Officer sees patients from their region
           if (userRegion) {
-            const patientsQuery = db.collection("patients").where("region", "==", userRegion);
+            const patientsQuery = db.collection("patients").where("region", "==", userRegion).limit(250);
             querySnapshot = await homeSmartQuery(
               patientsQuery,
               { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
@@ -1460,72 +1448,10 @@
 
           // Stage 1: fast stats render without deep per-patient subcollection reads.
           const docsArray = midwifeSnap && !midwifeSnap.empty ? midwifeSnap.docs : [];
-          const batchSize = 10;
-          const postnatalCandidateIds = [];
-          
-          for (let i = 0; i < docsArray.length; i += batchSize) {
-            if (runToken !== patientStatsLoadToken) return;
-            const batch = docsArray.slice(i, i + batchSize);
-            await Promise.all(batch.map(async (doc) => {
-              const data = doc.data();
-              // Map legacy statuses to new 3-status system
-              let status = data.status || data.treatmentStatus || 'antenatal';
-              if (status === 'active') status = 'antenatal';
-              if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
-                status = 'postnatal';
-              }
-              
-              if (patientStats.hasOwnProperty(status)) {
-                patientStats[status]++;
-              }
-
-              if (status === 'postnatal' && postnatalCandidateIds.length < 120) {
-                postnatalCandidateIds.push(doc.id);
-              }
-              
-              patientStats.total++;
-            }));
-            
-            // Update display after each batch for better UX
-            updateStatsDisplay();
-            
-            // Small delay between batches to keep UI responsive
-            if (i + batchSize < docsArray.length) {
-              await new Promise(resolve => setTimeout(resolve, 50));
-            }
-          }
-          
+          docsArray.forEach(function (doc) {
+            tallyHomePatientStats(doc && doc.data ? doc.data() : {});
+          });
           updateStatsDisplay();
-
-          // Stage 2: background refinement for baby counter.
-          setTimeout(async () => {
-            for (let i = 0; i < postnatalCandidateIds.length; i++) {
-              if (runToken !== patientStatsLoadToken) return;
-              const patientId = postnatalCandidateIds[i];
-              try {
-                const birthRecordRef = db.collection("patients")
-                  .doc(patientId)
-                  .collection("records")
-                  .doc("birthRecord");
-                const birthRecord = await homeSmartQuery(
-                  birthRecordRef,
-                  { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
-                );
-                if (birthRecord && birthRecord.exists) {
-                  patientStats.baby++;
-                }
-              } catch (error) {
-                // Background refinement only.
-              }
-
-              if (i % 10 === 0) {
-                updateStatsDisplay();
-                await new Promise(resolve => setTimeout(resolve, 0));
-              }
-            }
-            updateStatsDisplay();
-          }, 0);
-
           return;
         } else {
           // No access for other roles
@@ -1533,83 +1459,35 @@
           return;
         }
 
-        // Process query results for Super Admin / TMO / Regional Officer.
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
           return;
         }
-        
-        const docsArray = querySnapshot.docs;
-        const batchSize = 20; // Larger batches for Super Admin/TMO
-        const postnatalCandidateIds = [];
-        
-        for (let i = 0; i < docsArray.length; i += batchSize) {
-          if (runToken !== patientStatsLoadToken) return;
-          const batch = docsArray.slice(i, i + batchSize);
-          await Promise.all(batch.map(async (doc) => {
-            const data = doc.data();
-            // Map legacy statuses to new 3-status system
-            let status = data.status || data.treatmentStatus || 'antenatal';
-            if (status === 'active') status = 'antenatal';
-            if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
-              status = 'postnatal';
-            }
-            
-            if (patientStats.hasOwnProperty(status)) {
-              patientStats[status]++;
-            }
-
-            if (status === 'postnatal' && postnatalCandidateIds.length < 200) {
-              postnatalCandidateIds.push(doc.id);
-            }
-            
-            patientStats.total++;
-          }));
-          
-          // Update display after each batch
-          updateStatsDisplay();
-          
-          // Small delay between batches to keep UI responsive
-          if (i + batchSize < docsArray.length) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
-        }
-
+        querySnapshot.forEach(function (doc) {
+          tallyHomePatientStats(doc && doc.data ? doc.data() : {});
+        });
         updateStatsDisplay();
-
-        // Background refinement for baby count to keep first render responsive.
-        setTimeout(async () => {
-          for (let i = 0; i < postnatalCandidateIds.length; i++) {
-            if (runToken !== patientStatsLoadToken) return;
-            const patientId = postnatalCandidateIds[i];
-            try {
-              const birthRecordRef = db.collection("patients")
-                .doc(patientId)
-                .collection("records")
-                .doc("birthRecord");
-              const birthRecord = await homeSmartQuery(
-                birthRecordRef,
-                { preferCache: isIOSDevice, timeout: 2000, retries: 0, fallbackToCache: false }
-              );
-              if (birthRecord && birthRecord.exists) {
-                patientStats.baby++;
-              }
-            } catch (error) {
-              // Background refinement only.
-            }
-
-            if (i % 10 === 0) {
-              updateStatsDisplay();
-              await new Promise(resolve => setTimeout(resolve, 0));
-            }
-          }
-          updateStatsDisplay();
-        }, 0);
       } catch (error) {
         console.error('Error loading patient stats:', error);
         // Still update display with zeros so page doesn't look broken
         updateStatsDisplay();
       }
+    }
+
+    function tallyHomePatientStats(data) {
+      data = data || {};
+      let status = data.status || data.treatmentStatus || 'antenatal';
+      if (status === 'active') status = 'antenatal';
+      if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
+        status = 'postnatal';
+      }
+      if (patientStats.hasOwnProperty(status)) {
+        patientStats[status]++;
+      }
+      if (data.mother_patient_id || data.patient_type === 'baby' || data.type === 'baby' || data.status === 'baby') {
+        patientStats.baby++;
+      }
+      patientStats.total++;
     }
 
     function updateStatsDisplay() {

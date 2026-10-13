@@ -296,7 +296,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v356-moh/);
+  assert.match(sw, /mch-care-v357-moh/);
   assert.match(sw, /ignoreSearch: true/);
 });
 
@@ -312,6 +312,18 @@ test('tracking calls use same-origin Netlify proxies instead of browser Cloud Ru
   assert.match(netlify, /from = "\/api\/query-kmc-tracking"/);
   assert.match(netlify, /to = "https:\/\/querykmctracking-houbbz2mta-uc\.a\.run\.app"/);
   assert.match(netlify, /from = "\/api\/send-hrt-sms"/);
+});
+
+test('home badges use tracking APIs instead of per-patient scans', () => {
+  const badges = readAppFile('js/home-followup-badges.js');
+  const dashboard = readAppFile('js/dashboard-data.js');
+  const offline = readAppFile('js/offline-sync.js');
+
+  assert.match(badges, /queryHrtTracking/);
+  assert.match(badges, /queryKmcTracking/);
+  assert.doesNotMatch(badges, /fetchAncVisits/);
+  assert.match(dashboard, /Dashboard is reconnecting/);
+  assert.match(offline, /Full offline sync is for midwives only/);
 });
 
 test('MOH login never falls back to the pilot Firebase project', () => {

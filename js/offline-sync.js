@@ -399,49 +399,10 @@
       const r = LabourCareOffline.normalizeRoleKey(role);
       const scope = township;
 
-      if (r === "super admin" || r === "admin") {
-        return runQuery(db.collection("patients")).then(function (snap) {
-          patientSnaps = [];
-          if (snap && snap.forEach) {
-            snap.forEach(function (d) {
-              patientSnaps.push(d);
-            });
-          }
-          return LabourCareOffline._deepMirrorPatients(patientSnaps);
-        });
-      }
-      if (r === "central") {
-        return runQuery(db.collection("patients")).then(function (snap) {
-          patientSnaps = [];
-          if (snap && snap.forEach) {
-            snap.forEach(function (d) {
-              patientSnaps.push(d);
-            });
-          }
-          return LabourCareOffline._deepMirrorPatients(patientSnaps);
-        });
-      }
-      if (r === "regional officer" && scope) {
-        return runQuery(db.collection("patients").where("region", "==", scope)).then(function (snap) {
-          patientSnaps = [];
-          if (snap && snap.forEach) {
-            snap.forEach(function (d) {
-              patientSnaps.push(d);
-            });
-          }
-          return LabourCareOffline._deepMirrorPatients(patientSnaps);
-        });
-      }
-      if (r === "tmo" && scope) {
-        return runQuery(db.collection("patients").where("township", "==", scope)).then(function (snap) {
-          patientSnaps = [];
-          if (snap && snap.forEach) {
-            snap.forEach(function (d) {
-              patientSnaps.push(d);
-            });
-          }
-          return LabourCareOffline._deepMirrorPatients(patientSnaps);
-        });
+      if (r === "super admin" || r === "admin" || r === "central" || r === "regional officer" || r === "tmo") {
+        return Promise.reject(new Error(
+          "Full offline sync is for midwives only. Use Dashboard, HRT, and KMC while online."
+        ));
       }
       return Promise.all([
         runQuery(db.collection("patients").where("created_by", "==", uid)),

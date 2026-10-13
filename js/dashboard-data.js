@@ -212,7 +212,18 @@
       if (activeProfile && isRegionalRole(activeProfile.role) && filters.region) {
         query = query.where('region', '==', filters.region)
       }
-      var snapshot = await query.get({ source: navigator.onLine ? 'server' : 'cache' })
+      var snapshot
+      try {
+        snapshot = await query.get({
+          source: (navigator.onLine && !(global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable()))
+            ? 'server'
+            : 'cache'
+        })
+      } catch (queryError) {
+        if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(queryError)
+        snapshot = await query.get({ source: 'cache' }).catch(function () { return null })
+        if (!snapshot) throw queryError
+      }
       var facilities = new Map()
       snapshot.forEach(function (doc) {
         var data = doc.data() || {}
@@ -402,26 +413,58 @@
       console.warn('Dashboard cache read failed:', cacheError)
     }
 
-    if (!navigator.onLine) {
+    var firestoreOffline = !navigator.onLine ||
+      (global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable())
+
+    if (firestoreOffline) {
       if (cached && cached.complete) {
         return Object.assign({ source: 'cache' }, cached, request)
       }
-      throw new Error('No saved dashboard summary is available while offline.')
     }
 
-    var server = mergeSnapshots(
-      await getSnapshots(request.references, 'server'),
-      request.references.length
-    )
-    if (!server || !server.complete) {
-      if (cached && cached.complete) {
-        return Object.assign({ source: 'cache' }, cached, request)
-      }
-      var missing = new Error('The backend summary is not available for this filter yet.')
-      missing.code = 'summary-not-found'
-      throw missing
+    var server = null
+    var serverError = null
+    try {
+      server = mergeSnapshots(
+        await getSnapshots(request.references, 'server'),
+        request.references.length
+      )
+    } catch (error) {
+      serverError = error
+      if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(error)
     }
-    return Object.assign({ source: 'server' }, server, request)
+
+    if ((!server || !server.complete) && serverError) {
+      await new Promise(function (resolve) { setTimeout(resolve, 1500) })
+      try {
+        server = mergeSnapshots(
+          await getSnapshots(request.references, 'server'),
+          request.references.length
+        )
+        serverError = null
+      } catch (retryError) {
+        serverError = retryError
+        if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(retryError)
+      }
+    }
+
+    if (server && server.complete) {
+      return Object.assign({ source: 'server' }, server, request)
+    }
+    if (cached && cached.complete) {
+      return Object.assign({ source: 'cache' }, cached, request)
+    }
+    if (serverError && (global.isLikelyFirestoreUnavailableError && isLikelyFirestoreUnavailableError(serverError))) {
+      var offline = new Error('Dashboard is reconnecting. Tap Retry in a moment.')
+      offline.code = 'unavailable'
+      throw offline
+    }
+    if (!navigator.onLine) {
+      throw new Error('No saved dashboard summary is available while offline.')
+    }
+    var missing = new Error('The backend summary is not available for this filter yet.')
+    missing.code = 'summary-not-found'
+    throw missing
   }
 
   function scopeLabel(profile, filters) {

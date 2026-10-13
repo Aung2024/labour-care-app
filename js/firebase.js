@@ -491,3 +491,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
     }
   }
 };
+
+window.isFirestoreLikelyUnavailable = isFirestoreLikelyUnavailable;
+window.noteFirestoreBackendIssue = noteFirestoreBackendIssue;
+window.isLikelyFirestoreUnavailableError = isLikelyFirestoreUnavailableError;
