@@ -114,7 +114,7 @@
     });
     var titles = { scan: 'Scan', dashboard: 'Dashboard', outcomes: 'Outcome report', settings: 'Settings' };
     el('labPageTitle').textContent = titles[page] || 'Laboratory';
-    document.body.classList.toggle('lab-has-floating', page === 'settings' || (page === 'scan' && !!state.voucher));
+    document.body.classList.toggle('lab-has-floating', page === 'scan' && !!state.voucher);
     if (page === 'dashboard') loadDashboard().catch(function (error) {
       if (!state.loggingOut) setStatus(error.message, 'error');
     });
@@ -1353,7 +1353,34 @@
     });
   }
 
+  function setSaveSettingsBusy(busy) {
+    var button = el('saveSettingsBtn');
+    if (!button) return;
+    if (busy && !button.dataset.label) button.dataset.label = button.innerHTML;
+    button.classList.toggle('is-busy', !!busy);
+    button.disabled = !!busy;
+    if (busy) {
+      button.setAttribute('aria-busy', 'true');
+      button.innerHTML = '<span class="lab-redeem-spinner" aria-hidden="true"></span>Saving…';
+      return;
+    }
+    button.removeAttribute('aria-busy');
+    button.innerHTML = button.dataset.label || '<i class="fas fa-save me-2" aria-hidden="true"></i>Save settings';
+  }
+
+  function withTimeout(promise, ms, message) {
+    return Promise.race([
+      promise,
+      new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error(message)); }, ms);
+      })
+    ]);
+  }
+
   async function saveSettings() {
+    assertOnline();
+    setSaveSettingsBusy(true);
+    try {
     var sealFile = el('sealInput').files[0];
     var seal = state.clearSealImage ? '' : ((state.settings && state.settings.seal) || '');
     if (sealFile) {
@@ -1388,14 +1415,14 @@
     }
     var address = el('labSettingsAddress') ? el('labSettingsAddress').value.trim() : '';
     var phone = el('labSettingsPhone') ? el('labSettingsPhone').value.trim() : '';
-    state.settings = await service().saveLabSettings({
+    state.settings = await withTimeout(service().saveLabSettings({
       labName: state.profile.displayName || state.profile.name || state.profile.labName || '',
       address: address,
       phone: phone,
       seal: seal,
       paymentQr: paymentQr,
       cashiers: cashiers
-    });
+    }), 20000, 'Could not reach the server. Check the connection and tap Save settings again.');
     if (state.profile) {
       state.profile.address = address;
       state.profile.phone = phone;
@@ -1411,6 +1438,9 @@
     renderSettings();
     renderLabHeaderName();
     setStatus('Laboratory settings saved.', 'success');
+    } finally {
+      setSaveSettingsBusy(false);
+    }
   }
 
   async function logout() {

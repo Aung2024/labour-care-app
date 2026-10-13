@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v315-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v316-labourcare-2481a-vouchers';
 
 // Keep this list small. Other pages and heavy libraries are cached on first visit.
 const CORE_SHELL = [
