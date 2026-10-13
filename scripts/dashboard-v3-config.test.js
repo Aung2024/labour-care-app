@@ -247,6 +247,14 @@ test('dashboard scope ids match the analytics-v3 backend contract', () => {
       'geography=township:Pyinmana|department=doph|facilityType=rhc'
     )
   )
+  assert.equal(
+    global.DashboardData.scopeDocId(
+      { type: 'township', id: 'Tatkon' },
+      '',
+      null
+    ),
+    encodeURIComponent('geography=township:Tatkon')
+  )
 })
 
 test('role scope resolution never permits a wider implicit scope', () => {

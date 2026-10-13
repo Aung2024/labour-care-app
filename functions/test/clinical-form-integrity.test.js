@@ -296,7 +296,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v357-moh/);
+  assert.match(sw, /mch-care-v358-moh/);
   assert.match(sw, /ignoreSearch: true/);
 });
 
@@ -323,6 +323,7 @@ test('home badges use tracking APIs instead of per-patient scans', () => {
   assert.match(badges, /queryKmcTracking/);
   assert.doesNotMatch(badges, /fetchAncVisits/);
   assert.match(dashboard, /Dashboard is reconnecting/);
+  assert.match(readAppFile('js/dashboard-v3.js'), /Loading this filter/);
   assert.match(offline, /Full offline sync is for midwives only/);
 });
 

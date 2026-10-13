@@ -214,13 +214,13 @@
       }
       var snapshot
       try {
-        snapshot = await query.get({
-          source: (navigator.onLine && !(global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable()))
-            ? 'server'
-            : 'cache'
-        })
+        snapshot = await query.get({ source: 'cache' })
+        if (!snapshot || snapshot.empty) {
+          if (navigator.onLine && !(global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable())) {
+            snapshot = await query.get({ source: 'server' })
+          }
+        }
       } catch (queryError) {
-        if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(queryError)
         snapshot = await query.get({ source: 'cache' }).catch(function () { return null })
         if (!snapshot) throw queryError
       }
@@ -249,12 +249,9 @@
     }
   }
 
-  async function refreshFacilityOptions(selected) {
-    var filters = readFilterValues()
-    var staticList = staticFacilities(filters)
-    var dynamicList = await dynamicFacilityOptions(filters)
+  function applyFacilityOptions(list, selected) {
     var byCode = new Map()
-    staticList.concat(dynamicList).forEach(function (item) {
+    list.forEach(function (item) {
       byCode.set(item.value, item)
     })
     var options = Array.from(byCode.values()).sort(function (left, right) {
@@ -266,6 +263,16 @@
       'All facilities',
       selected || ''
     )
+  }
+
+  async function refreshFacilityOptions(selected) {
+    var filters = readFilterValues()
+    var staticList = staticFacilities(filters)
+    applyFacilityOptions(staticList, selected)
+    dynamicFacilityOptions(filters).then(function (dynamicList) {
+      if (!dynamicList.length) return
+      applyFacilityOptions(staticList.concat(dynamicList), document.getElementById('dashboardFacility').value || selected)
+    }).catch(function () {})
   }
 
   function updateRoleVisibility(profile) {
@@ -389,12 +396,26 @@
     }
   }
 
+  function getWithTimeout(reference, source, ms) {
+    return Promise.race([
+      reference.get({ source: source }),
+      new Promise(function (_, reject) {
+        setTimeout(function () {
+          var error = new Error('timeout')
+          error.code = 'unavailable'
+          reject(error)
+        }, ms)
+      })
+    ])
+  }
+
   async function getSnapshots(references, source) {
     return Promise.all(references.map(function (reference) {
-      return reference.get({ source: source }).catch(function (error) {
-        if (source === 'cache') return null
-        throw error
-      })
+      return getWithTimeout(reference, source, source === 'server' ? 4000 : 1500)
+        .catch(function (error) {
+          if (source === 'cache') return null
+          throw error
+        })
     }))
   }
 
@@ -420,6 +441,9 @@
       if (cached && cached.complete) {
         return Object.assign({ source: 'cache' }, cached, request)
       }
+      var waiting = new Error('Dashboard is reconnecting. Tap Retry in a moment.')
+      waiting.code = 'unavailable'
+      throw waiting
     }
 
     var server = null

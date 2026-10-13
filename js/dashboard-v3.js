@@ -3,6 +3,7 @@
 
   var viewer = null
   var hasRenderedSummary = false
+  var renderedFilterKey = ''
   var requestSequence = 0
 
   function element(id) {
@@ -79,14 +80,28 @@
     freshness.textContent = prefix + ' · ' + date.toLocaleString()
   }
 
+  function filterKey(filters) {
+    return [
+      DashboardData.scopeLabel(viewer, filters),
+      DashboardData.periodKey(filters),
+      filters.department || '',
+      (filters.facilityTypes || []).slice().sort().join(',')
+    ].join('|')
+  }
+
+  function showScope(filters, suffix) {
+    element('dashboardScopeLabel').textContent =
+      DashboardData.scopeLabel(viewer, filters) + ' · ' +
+      (suffix || DashboardData.periodKey(filters))
+  }
+
   function renderSummary(summary, filters) {
     hideStates()
     hasRenderedSummary = true
+    renderedFilterKey = filterKey(filters)
     element('dashboardSections').hidden = false
     DashboardCharts.setMetrics(summary.metrics || {})
-    element('dashboardScopeLabel').textContent =
-      DashboardData.scopeLabel(viewer, filters) + ' · ' +
-      DashboardData.periodKey(filters)
+    showScope(filters)
     formatFreshness(summary)
   }
 
@@ -97,10 +112,15 @@
   async function loadDashboard() {
     var sequence = ++requestSequence
     var filters = DashboardData.readFilterValues()
+    var nextKey = filterKey(filters)
+    var sameScope = nextKey === renderedFilterKey
     showLoading()
     element('dashboardRefreshButton').disabled = true
-    element('dashboardScopeLabel').textContent =
-      DashboardData.scopeLabel(viewer, filters) + ' · loading'
+    showScope(filters, sameScope ? 'updating' : 'loading')
+    if (hasRenderedSummary && !sameScope) {
+      element('dashboardFreshness').classList.add('is-stale')
+      element('dashboardFreshness').textContent = 'Loading this filter…'
+    }
     try {
       var summary = await DashboardData.loadSummary(viewer, filters, function (cached) {
         if (sequence !== requestSequence) return
@@ -109,11 +129,11 @@
       if (sequence !== requestSequence) return
       if (summaryIsEmpty(summary)) {
         hideStates()
+        hasRenderedSummary = false
+        renderedFilterKey = nextKey
         element('dashboardSections').hidden = true
         setVisible('dashboardEmpty', true)
-        element('dashboardScopeLabel').textContent =
-          DashboardData.scopeLabel(viewer, filters) + ' · ' +
-          DashboardData.periodKey(filters)
+        showScope(filters)
         formatFreshness(summary)
         return
       }
@@ -121,12 +141,19 @@
     } catch (error) {
       if (sequence !== requestSequence) return
       console.error('Dashboard summary load failed:', error)
-      if (!hasRenderedSummary) showError(error)
-      else {
+      if (sameScope && hasRenderedSummary) {
+        hideStates()
+        element('dashboardSections').hidden = false
+        showScope(filters)
         element('dashboardFreshness').classList.add('is-stale')
         element('dashboardFreshness').textContent =
           'Refresh failed · continuing with saved summary'
+        return
       }
+      hasRenderedSummary = false
+      renderedFilterKey = ''
+      showScope(filters)
+      showError(error)
     } finally {
       if (sequence === requestSequence) {
         element('dashboardRefreshButton').disabled = false
@@ -200,7 +227,9 @@
     var reference = firebase.firestore().collection('users').doc(user.uid)
     var snapshot
     try {
-      snapshot = await reference.get({ source: navigator.onLine ? 'server' : 'cache' })
+      var preferServer = navigator.onLine &&
+        !(global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable())
+      snapshot = await reference.get({ source: preferServer ? 'server' : 'cache' })
     } catch (error) {
       snapshot = await reference.get({ source: 'cache' })
     }
