@@ -223,7 +223,26 @@
     global.addEventListener('offline', updateOfflineNotice)
   }
 
+  function profileFromUserData(user, data) {
+    data = data || {}
+    return {
+      uid: user.uid,
+      email: data.email || user.email || '',
+      name: data.name || data.midwife_name || data.displayName || '',
+      role: data.role || localStorage.getItem('role') || '',
+      township: data.township || localStorage.getItem('userTownship') || '',
+      region: data.region || (
+        global.getRegionFromTownship ? getRegionFromTownship(data.township) : ''
+      ) || localStorage.getItem('userRegion') || '',
+      facilityCode: data.facilityCode || data.facility_code || localStorage.getItem('facilityCode') || ''
+    }
+  }
+
   async function userProfile(user) {
+    if (global.UserCache) {
+      var cached = UserCache.getCached(user.uid)
+      if (cached && cached.role) return profileFromUserData(user, cached)
+    }
     var reference = firebase.firestore().collection('users').doc(user.uid)
     var snapshot
     try {
@@ -233,21 +252,15 @@
     } catch (error) {
       snapshot = await reference.get({ source: 'cache' })
     }
+    if ((!snapshot || !snapshot.exists) && localStorage.getItem('role')) {
+      return profileFromUserData(user, {})
+    }
     if (!snapshot || !snapshot.exists) {
       throw new Error('Your user profile could not be loaded.')
     }
     var data = snapshot.data() || {}
-    return {
-      uid: user.uid,
-      email: data.email || user.email || '',
-      name: data.name || data.midwife_name || data.displayName || '',
-      role: data.role || '',
-      township: data.township || '',
-      region: data.region || (
-        global.getRegionFromTownship ? getRegionFromTownship(data.township) : ''
-      ),
-      facilityCode: data.facilityCode || data.facility_code || ''
-    }
+    if (global.UserCache) UserCache.cache(user.uid, data)
+    return profileFromUserData(user, data)
   }
 
   async function initialize(user) {

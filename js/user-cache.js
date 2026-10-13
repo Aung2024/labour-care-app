@@ -12,10 +12,45 @@ const USER_DATA_CACHE = {
   TTL: 10 * 60 * 1000 // 10 minutes cache (user data doesn't change often)
 };
 
+const USER_DATA_STORE_KEY = 'labourcare-user-cache-v1';
+
+function persistUserDataCache() {
+  if (!USER_DATA_CACHE.data || !USER_DATA_CACHE.userId) return;
+  try {
+    sessionStorage.setItem(USER_DATA_STORE_KEY, JSON.stringify({
+      userId: USER_DATA_CACHE.userId,
+      timestamp: USER_DATA_CACHE.timestamp,
+      data: USER_DATA_CACHE.data
+    }));
+  } catch (e) {}
+}
+
+function restoreUserDataCache(userId) {
+  if (USER_DATA_CACHE.userId === userId && USER_DATA_CACHE.data) {
+    return USER_DATA_CACHE.data;
+  }
+  try {
+    const raw = sessionStorage.getItem(USER_DATA_STORE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.userId !== userId || !parsed.data) return null;
+    if (Date.now() - parsed.timestamp > USER_DATA_CACHE.TTL) return null;
+    USER_DATA_CACHE.data = parsed.data;
+    USER_DATA_CACHE.timestamp = parsed.timestamp;
+    USER_DATA_CACHE.userId = parsed.userId;
+    return parsed.data;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Get cached user data if available and valid
  */
 function getCachedUserData(userId) {
+  const restored = restoreUserDataCache(userId);
+  if (restored) return restored;
+
   // Check if cache is for the same user
   if (USER_DATA_CACHE.userId !== userId) {
     return null;
@@ -46,6 +81,7 @@ function cacheUserData(userId, userData) {
   USER_DATA_CACHE.data = userData;
   USER_DATA_CACHE.timestamp = Date.now();
   USER_DATA_CACHE.userId = userId;
+  persistUserDataCache();
   console.log('✅ User data cached');
 }
 
@@ -56,6 +92,7 @@ function clearUserDataCache() {
   USER_DATA_CACHE.data = null;
   USER_DATA_CACHE.timestamp = null;
   USER_DATA_CACHE.userId = null;
+  try { sessionStorage.removeItem(USER_DATA_STORE_KEY); } catch (e) {}
   console.log('✅ User data cache cleared');
 }
 

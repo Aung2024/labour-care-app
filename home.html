@@ -1032,7 +1032,7 @@
           result = await queryOrDocRef.get();
         }
       } catch (error) {
-        console.warn('[home] smart query failed, trying direct get:', error);
+        console.warn('[home] smart query failed:', error);
       }
 
       const inconclusive =
@@ -1041,13 +1041,14 @@
         (typeof result.forEach !== 'function' && typeof result.exists !== 'boolean');
 
       if (!inconclusive) return result;
-
-      try {
-        return await queryOrDocRef.get();
-      } catch (fallbackError) {
-        console.warn('[home] direct get fallback failed:', fallbackError);
-        return result;
-      }
+      return result || {
+        _smartQueryFailed: true,
+        empty: true,
+        size: 0,
+        exists: undefined,
+        forEach: function () {},
+        docs: []
+      };
     }
     
     function updateHomeUserRoleLabel() {
@@ -1060,6 +1061,19 @@
 
     async function loadUserData() {
       try {
+        const localRole = localStorage.getItem('role');
+        if (localRole) {
+          userRole = userRole || localRole;
+          applyHomeCardVisibility({
+            role: localRole,
+            provider_type: localStorage.getItem('providerType') || '',
+            township: localStorage.getItem('userTownship') || '',
+            region: localStorage.getItem('userRegion') || ''
+          });
+          const emailEl = document.getElementById('userEmail');
+          if (emailEl) emailEl.textContent = (currentUser && currentUser.email) || localStorage.getItem('userEmail') || '';
+        }
+
         // OPTIMIZED: Use user cache to avoid redundant queries
         let userData;
         if (currentUser.isPilotCachedUser) {
@@ -1071,8 +1085,7 @@
             region: localStorage.getItem('userRegion') || ''
           };
         } else if (window.UserCache) {
-          const refreshProfile = typeof navigator === 'undefined' || navigator.onLine !== false;
-          userData = await window.UserCache.get(currentUser.uid, refreshProfile);
+          userData = await window.UserCache.get(currentUser.uid, false);
         } else {
           // Fallback to direct query if cache not available
           const userQuery = db.collection("users").doc(currentUser.uid);
@@ -1106,16 +1119,13 @@
             settingsButton.style.display = "inline-flex";
           }
           
-          // Load patient stats after user role is loaded (deferred for performance)
-          setTimeout(() => {
-            if (accountLevel === 'super_admin') {
-              loadMidwifeCountForHome();
-            } else {
-              loadPatientStats();
-            }
-            loadPendingTransferCount();
-            refreshHomeFollowUpBadges();
-          }, 500);
+          if (accountLevel === 'super_admin') {
+            loadMidwifeCountForHome();
+          } else {
+            loadPatientStats();
+          }
+          loadPendingTransferCount();
+          refreshHomeFollowUpBadges();
         }
       } catch (error) {
         console.warn('Error loading user data:', error);
@@ -1474,8 +1484,21 @@
       }
     }
 
+    function isHomeBabyPatient(data) {
+      if (!data) return false;
+      if (window.BabyPatientUtils && typeof BabyPatientUtils.isBabyPatient === 'function') {
+        return BabyPatientUtils.isBabyPatient(data);
+      }
+      return !!(data.mother_patient_id || data.patient_type === 'baby' || data.type === 'baby' || data.status === 'baby');
+    }
+
     function tallyHomePatientStats(data) {
       data = data || {};
+      if (data.status === 'duplicate_archived' || data.deleted === true || data.isDeleted === true) return;
+      if (isHomeBabyPatient(data)) {
+        patientStats.baby++;
+        return;
+      }
       let status = data.status || data.treatmentStatus || 'antenatal';
       if (status === 'active') status = 'antenatal';
       if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
@@ -1483,9 +1506,6 @@
       }
       if (patientStats.hasOwnProperty(status)) {
         patientStats[status]++;
-      }
-      if (data.mother_patient_id || data.patient_type === 'baby' || data.type === 'baby' || data.status === 'baby') {
-        patientStats.baby++;
       }
       patientStats.total++;
     }

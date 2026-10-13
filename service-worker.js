@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v358-moh';
+const CACHE_NAME = 'mch-care-v359-moh';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -163,26 +163,21 @@ function networkFirstDocument(request) {
       });
     }
     return response;
-  });
+  }).catch(function () { return null; });
 
-  var timeoutPromise = new Promise(function (resolve) {
-    setTimeout(function () { resolve(null); }, 4000);
-  });
-
-  return Promise.race([
-    networkPromise,
-    timeoutPromise.then(function () {
-      return matchCachedDocument(request).then(function (cachedResponse) {
-        return cachedResponse || networkPromise;
-      });
-    })
-  ]).catch(function () {
-    return matchCachedDocument(request).then(function (cachedResponse) {
-      if (cachedResponse) return cachedResponse;
-      return caches.match('./home.html').then(function (homeFallback) {
-        if (homeFallback) return homeFallback;
-        return caches.match('./index.html').then(function (indexFallback) {
-          return indexFallback || offlineDocumentResponse();
+  return matchCachedDocument(request).then(function (cachedResponse) {
+    if (cachedResponse) return cachedResponse;
+    var timeoutPromise = new Promise(function (resolve) {
+      setTimeout(function () { resolve(null); }, 2000);
+    });
+    return Promise.race([networkPromise, timeoutPromise]).then(function (fast) {
+      return fast || networkPromise.then(function (response) {
+        if (response) return response;
+        return caches.match('./home.html').then(function (homeFallback) {
+          if (homeFallback) return homeFallback;
+          return caches.match('./index.html').then(function (indexFallback) {
+            return indexFallback || offlineDocumentResponse();
+          });
         });
       });
     });
@@ -196,7 +191,7 @@ self.addEventListener('message', function (event) {
 });
 
 // Fetch event strategy:
-// - HTML/document navigation: network first, cache after 4s on slow links.
+// - HTML/document navigation: cached shell first, refresh in the background.
 // - Static assets: cache first, ignore ?v= so versioned script tags match precache.
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
