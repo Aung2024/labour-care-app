@@ -326,26 +326,53 @@
     history.replaceState({}, '', location.pathname + (query ? '?' + query : ''));
   }
 
+  var DIRECT_TRACKING_SERVICE_URLS = {
+    'mnch-1cbda': {
+      queryHrtTracking: 'https://queryhrttracking-houbbz2mta-uc.a.run.app',
+      queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app',
+      sendHrtSms: 'https://sendhrtsms-houbbz2mta-uc.a.run.app'
+    }
+  };
+
+  function projectIdForTracking() {
+    return (global.firebaseConfig && firebaseConfig.projectId) ||
+      (global.firebase && firebase.app && firebase.app().options.projectId) || '';
+  }
+
+  function directTrackingServiceUrl(name) {
+    var projectId = projectIdForTracking();
+    var map = DIRECT_TRACKING_SERVICE_URLS[projectId];
+    return map && map[name] ? map[name] : '';
+  }
+
+  function isSameOriginApiProxy(url) {
+    try {
+      var parsed = new URL(url, global.location.href);
+      return parsed.origin === global.location.origin &&
+        (parsed.pathname === '/api' || parsed.pathname.indexOf('/api/') === 0);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function callableUrl(name) {
-    var projectId = global.firebaseConfig && firebaseConfig.projectId ||
-      firebase.app().options.projectId;
     var configuredUrls = global.firebaseConfig && firebaseConfig.functionUrls || {};
     if (configuredUrls[name]) return configuredUrls[name];
-    // The Cloud Functions vanity host is intermittently reset by some local
-    // networks. This is the same deployed Gen 2 service on its stable Cloud
-    // Run host, not a separate backend.
-    var serviceUrls = {
-      'mnch-1cbda': {
-        queryHrtTracking: 'https://queryhrttracking-houbbz2mta-uc.a.run.app',
-        queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app',
-        sendHrtSms: 'https://sendhrtsms-houbbz2mta-uc.a.run.app'
-      }
-    };
-    if (serviceUrls[projectId] && serviceUrls[projectId][name]) {
-      return serviceUrls[projectId][name];
-    }
+    var direct = directTrackingServiceUrl(name);
+    if (direct) return direct;
+    var projectId = projectIdForTracking();
     return 'https://us-central1-' + encodeURIComponent(projectId) +
       '.cloudfunctions.net/' + encodeURIComponent(name);
+  }
+
+  function trackingRequestUrls(name) {
+    var primary = callableUrl(name);
+    var urls = [primary];
+    var direct = directTrackingServiceUrl(name);
+    if (direct && direct !== primary && isSameOriginApiProxy(primary)) {
+      urls.push(direct);
+    }
+    return urls;
   }
 
   function sleep(ms) {
@@ -369,14 +396,11 @@
     return friendly;
   }
 
-  async function callOnce(name, payload) {
-    var user = firebase.auth().currentUser;
-    if (!user) throw new Error('Sign in is required.');
-    var token = await user.getIdToken();
+  async function fetchTrackingAt(url, token, payload) {
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
     try {
-      var response = await fetch(callableUrl(name), {
+      var response = await fetch(url, {
         method: 'POST',
         mode: 'cors',
         cache: 'no-store',
@@ -401,10 +425,33 @@
         timeout.code = 'timeout';
         throw timeout;
       }
+      if (error && error.name === 'TypeError') {
+        error.retryable = true;
+      }
       throw error;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function callOnce(name, payload) {
+    var user = firebase.auth().currentUser;
+    if (!user) throw new Error('Sign in is required.');
+    var token = await user.getIdToken();
+    var urls = trackingRequestUrls(name);
+    var lastError = null;
+    for (var i = 0; i < urls.length; i++) {
+      try {
+        return await fetchTrackingAt(urls[i], token, payload);
+      } catch (error) {
+        lastError = error;
+        if (i < urls.length - 1 && isRetryableTrackingError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError || new Error('Tracking request failed.');
   }
 
   async function call(name, payload, options) {

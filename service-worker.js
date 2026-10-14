@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v361-moh';
+const CACHE_NAME = 'mch-care-v362-moh';
 
 const SHELL_PRECACHE = [
   './index.html',
@@ -53,7 +53,8 @@ const BACKGROUND_PRECACHE = [
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
-const PRECACHE_BATCH_SIZE = 4;
+const PRECACHE_BATCH_SIZE = 2;
+const PRECACHE_BATCH_DELAY_MS = 800;
 
 function uniqueCacheFiles(files) {
   var seen = {};
@@ -75,7 +76,12 @@ function cacheFilesInBatches(cache, files, batchSize) {
       return cache.add(file).catch(function (error) {
         console.warn('[Service Worker] Skip cache', file, error);
       });
-    })).then(nextBatch);
+    })).then(function () {
+      if (index >= list.length) return;
+      return new Promise(function (resolve) {
+        setTimeout(resolve, PRECACHE_BATCH_DELAY_MS);
+      });
+    }).then(nextBatch);
   }
   return nextBatch();
 }

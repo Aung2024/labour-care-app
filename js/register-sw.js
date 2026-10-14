@@ -26,15 +26,26 @@
     window.location.reload()
   })
 
+  var backgroundPrecacheScheduled = false
+
   var scheduleBackgroundPrecache = function (registration) {
-    if (!registration || !registration.active) return
-    try {
-      registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
-    } catch (e) {}
+    if (!registration || !registration.active || backgroundPrecacheScheduled) return
+    backgroundPrecacheScheduled = true
+    var run = function () {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        setTimeout(run, 15000)
+        return
+      }
+      try {
+        registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
+      } catch (e) {}
+    }
+    setTimeout(run, 90000)
   }
 
   var register = function () {
-    navigator.serviceWorker.register('./service-worker.js').then(function (registration) {
+    navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).then(function (registration) {
+      try { registration.update() } catch (e) {}
       if (registration.active) {
         scheduleBackgroundPrecache(registration)
       }
