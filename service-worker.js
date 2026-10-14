@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v362-moh';
+const CACHE_NAME = 'mch-care-v363-moh';
 
 const SHELL_PRECACHE = [
   './index.html',
@@ -24,32 +24,8 @@ const SHELL_PRECACHE = [
   './icons/icon-512.png'
 ];
 
-const BACKGROUND_PRECACHE = [
-  './registration.html',
-  './patient-care-hub.html',
-  './patient-care-hub-lcg.html',
-  './patient-enhanced.html',
-  './retroactive-data-entry.html',
-  './provider-consent.html',
-  './dashboard.html',
-  './css/dashboard-v3.css',
-  './js/vendor/bootstrap.bundle.min.js',
-  './js/page-performance.js',
-  './js/consent-manager.js',
-  './js/offline-store.js',
-  './js/offline-sync.js',
-  './js/offline-manager.js',
-  './js/offline-status-bar.js',
-  './js/ui-dialogs.js',
-  './js/session-manager.js',
-  './js/role-display.js',
-  './js/tracking-reader.js',
-  './js/home-followup-badges.js',
-  './js/report-facility.js',
-  './js/dashboard-data.js',
-  './js/dashboard-v3.js',
-  './js/dashboard-metrics-config.js'
-];
+// Filled at runtime when pages are visited; avoid bulk precache competing with tracking APIs.
+const BACKGROUND_PRECACHE = [];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
@@ -315,6 +291,9 @@ self.addEventListener('fetch', function (event) {
   }
 
   var requestUrl = new URL(event.request.url);
+  if (event.request.method !== 'GET') {
+    return;
+  }
   if (isRuntimeConfigPath(requestUrl.pathname) || isApiPath(requestUrl.pathname)) {
     return;
   }

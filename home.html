@@ -1022,6 +1022,21 @@
     setTimeout(waitForAuthAndLoad, 200);
 
     let patientStatsLoadToken = 0;
+    let patientStatsDebounceTimer = null;
+
+    function scheduleLoadPatientStats() {
+      if (patientStatsDebounceTimer) {
+        clearTimeout(patientStatsDebounceTimer);
+      }
+      patientStatsDebounceTimer = setTimeout(function () {
+        patientStatsDebounceTimer = null;
+        loadPatientStats();
+      }, 250);
+    }
+
+    function isCurrentPatientStatsRun(runToken) {
+      return runToken === patientStatsLoadToken;
+    }
 
     async function homeSmartQuery(queryOrDocRef, options = {}) {
       let result = null;
@@ -1122,7 +1137,7 @@
           if (accountLevel === 'super_admin') {
             loadMidwifeCountForHome();
           } else {
-            loadPatientStats();
+            scheduleLoadPatientStats();
           }
           loadPendingTransferCount();
           refreshHomeFollowUpBadges();
@@ -1133,7 +1148,7 @@
         document.getElementById("userEmail").textContent = currentUser.email || 'User';
         document.getElementById("userRole").textContent = 'Loading...';
         // Try to load stats anyway (might work with cached data)
-        loadPatientStats();
+        scheduleLoadPatientStats();
       }
     }
 
@@ -1386,8 +1401,10 @@
           const listFiltered = list || [];
 
           for (let i = 0; i < listFiltered.length; i++) {
+            if (!isCurrentPatientStatsRun(runToken)) return;
             tallyHomePatientStats(listFiltered[i]);
           }
+          if (!isCurrentPatientStatsRun(runToken)) return;
           updateStatsDisplay();
           LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
           return;
@@ -1456,11 +1473,14 @@
             midwifeSnap = { forEach: () => {}, docs: [], empty: true };
           }
 
+          if (!isCurrentPatientStatsRun(runToken)) return;
+
           // Stage 1: fast stats render without deep per-patient subcollection reads.
           const docsArray = midwifeSnap && !midwifeSnap.empty ? midwifeSnap.docs : [];
           docsArray.forEach(function (doc) {
             tallyHomePatientStats(doc && doc.data ? doc.data() : {});
           });
+          if (!isCurrentPatientStatsRun(runToken)) return;
           updateStatsDisplay();
           return;
         } else {
@@ -1469,6 +1489,8 @@
           return;
         }
 
+        if (!isCurrentPatientStatsRun(runToken)) return;
+
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
           return;
@@ -1476,10 +1498,11 @@
         querySnapshot.forEach(function (doc) {
           tallyHomePatientStats(doc && doc.data ? doc.data() : {});
         });
+        if (!isCurrentPatientStatsRun(runToken)) return;
         updateStatsDisplay();
       } catch (error) {
         console.error('Error loading patient stats:', error);
-        // Still update display with zeros so page doesn't look broken
+        if (!isCurrentPatientStatsRun(runToken)) return;
         updateStatsDisplay();
       }
     }
@@ -1511,13 +1534,15 @@
     }
 
     function updateStatsDisplay() {
-      // Update stats in each care card
-      document.querySelectorAll('.stat-number').forEach(stat => {
+      const total = patientStats.total || 0;
+      document.querySelectorAll('.stat-number[data-type="total"]').forEach(function (stat) {
+        stat.textContent = String(total);
+      });
+      document.querySelectorAll('.stat-number[data-type]').forEach(function (stat) {
         const type = stat.getAttribute('data-type');
-        if (type === 'total') {
-          stat.textContent = patientStats.total || 0;
-        } else if (patientStats[type] !== undefined) {
-          stat.textContent = patientStats[type];
+        if (!type || type === 'total') return;
+        if (patientStats[type] !== undefined) {
+          stat.textContent = String(patientStats[type]);
         }
       });
     }

@@ -26,41 +26,9 @@
     window.location.reload()
   })
 
-  var backgroundPrecacheScheduled = false
-
-  var scheduleBackgroundPrecache = function (registration) {
-    if (!registration || !registration.active || backgroundPrecacheScheduled) return
-    backgroundPrecacheScheduled = true
-    var run = function () {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        setTimeout(run, 15000)
-        return
-      }
-      try {
-        registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
-      } catch (e) {}
-    }
-    setTimeout(run, 90000)
-  }
-
   var register = function () {
     navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).then(function (registration) {
       try { registration.update() } catch (e) {}
-      if (registration.active) {
-        scheduleBackgroundPrecache(registration)
-      }
-      navigator.serviceWorker.ready.then(function (readyRegistration) {
-        scheduleBackgroundPrecache(readyRegistration)
-      })
-      registration.addEventListener('updatefound', function () {
-        var worker = registration.installing
-        if (!worker) return
-        worker.addEventListener('statechange', function () {
-          if (worker.state === 'activated') {
-            scheduleBackgroundPrecache(registration)
-          }
-        })
-      })
     }).catch(function (e) {
       console.warn('[SW] register failed', e)
     })

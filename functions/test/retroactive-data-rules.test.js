@@ -453,8 +453,8 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.doesNotMatch(rulesSource, /newborn-care-page\.html/);
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
-  assert.match(worker, /retroactive-data-entry\.html/);
-  assert.match(worker, /mch-care-v362-moh/);
+  assert.match(worker, /const BACKGROUND_PRECACHE = \[\]/);
+  assert.match(worker, /mch-care-v363-moh/);
   assert.match(worker, /ignoreSearch: true/);
   assert.match(worker, /uniqueCacheFiles/);
   assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);

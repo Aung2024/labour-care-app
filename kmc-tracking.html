@@ -373,8 +373,9 @@
     </div>
 
     <div id="emptyState" class="card-panel text-center py-5 d-none">
-      <i class="fas fa-baby fa-2x text-muted mb-3"></i>
+      <i id="emptyStateIcon" class="fas fa-baby fa-2x text-muted mb-3"></i>
       <p class="mb-0 text-muted" id="emptyText">No KMC-eligible babies in your caseload.</p>
+      <button type="button" id="kmcRetryBtn" class="hrt-retry-btn d-none mt-3" onclick="retryKmcLoad()">Try again</button>
     </div>
 
     <div id="tableState" class="card-panel d-none">
@@ -532,7 +533,8 @@
         days: ' days',
         noWeight: '—',
         scheduleHint: 'Schedule: +3d · Day 7 · Day 14 · monthly after discharge',
-        loadingRemaining: 'Loading remaining patients…'
+        loadingRemaining: 'Loading remaining patients…',
+        retry: 'Try again'
       },
       mm: {
         loading: 'KMC မှတ်တမ်း ဖတ်နေသည်…',
@@ -600,7 +602,8 @@
         days: ' ရက်',
         noWeight: '—',
         scheduleHint: '+၃ရက် · Day 7 · Day 14 · လစဉ်',
-        loadingRemaining: 'ကျန်ရှိသော လူနာများကို ဖတ်နေသည်…'
+        loadingRemaining: 'ကျန်ရှိသော လူနာများကို ဖတ်နေသည်…',
+        retry: 'ထပ်မံကြိုးစားပါ'
       }
     };
 
@@ -627,6 +630,8 @@
       });
       document.getElementById('loadingText').textContent = tr('loading');
       document.getElementById('emptyText').textContent = tr('empty');
+      var kmcRetryBtn = document.getElementById('kmcRetryBtn');
+      if (kmcRetryBtn) kmcRetryBtn.textContent = tr('retry');
       document.getElementById('registryTitle').textContent = tr('registryTitle');
       document.getElementById('registryHint').textContent = tr('registryHint');
       document.getElementById('statTotalPotentialKmcLabel').textContent = tr('statPotential');
@@ -1965,7 +1970,21 @@
       document.getElementById('emptyState').classList.toggle('d-none', state !== 'empty' && state !== 'error');
       document.getElementById('dashboardState').classList.toggle('d-none', state === 'loading' || state === 'error');
       document.getElementById('tableState').classList.toggle('d-none', state === 'loading' || state === 'error' || state === 'empty');
+      var icon = document.getElementById('emptyStateIcon');
+      var retryBtn = document.getElementById('kmcRetryBtn');
+      if (icon) {
+        icon.className = state === 'error'
+          ? 'fas fa-circle-exclamation text-danger fa-3x mb-3'
+          : 'fas fa-baby fa-2x text-muted mb-3';
+      }
+      if (retryBtn) retryBtn.classList.toggle('d-none', state !== 'error');
       if (message) document.getElementById('emptyText').textContent = message;
+    }
+
+    function retryKmcLoad() {
+      loadAllKmcProjections().catch(function (error) {
+        console.error('KMC retry', error);
+      });
     }
 
     async function loadKmcProjectionPage(append) {
@@ -2137,8 +2156,8 @@
         }
       } catch (e) {
         console.error('KMC load failed', e);
-        document.getElementById('loadingState').classList.add('d-none');
-        document.getElementById('emptyState').classList.remove('d-none');
+        var errMsg = (e && e.message) || tr('empty');
+        setKmcPageState('error', errMsg);
       }
     });
   </script>

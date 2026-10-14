@@ -326,23 +326,16 @@
     history.replaceState({}, '', location.pathname + (query ? '?' + query : ''));
   }
 
-  var DIRECT_TRACKING_SERVICE_URLS = {
-    'mnch-1cbda': {
-      queryHrtTracking: 'https://queryhrttracking-houbbz2mta-uc.a.run.app',
-      queryKmcTracking: 'https://querykmctracking-houbbz2mta-uc.a.run.app',
-      sendHrtSms: 'https://sendhrtsms-houbbz2mta-uc.a.run.app'
-    }
-  };
-
   function projectIdForTracking() {
     return (global.firebaseConfig && firebaseConfig.projectId) ||
       (global.firebase && firebase.app && firebase.app().options.projectId) || '';
   }
 
-  function directTrackingServiceUrl(name) {
+  function cloudFunctionsCallableUrl(name) {
     var projectId = projectIdForTracking();
-    var map = DIRECT_TRACKING_SERVICE_URLS[projectId];
-    return map && map[name] ? map[name] : '';
+    if (!projectId) return '';
+    return 'https://us-central1-' + encodeURIComponent(projectId) +
+      '.cloudfunctions.net/' + encodeURIComponent(name);
   }
 
   function isSameOriginApiProxy(url) {
@@ -358,19 +351,17 @@
   function callableUrl(name) {
     var configuredUrls = global.firebaseConfig && firebaseConfig.functionUrls || {};
     if (configuredUrls[name]) return configuredUrls[name];
-    var direct = directTrackingServiceUrl(name);
-    if (direct) return direct;
-    var projectId = projectIdForTracking();
-    return 'https://us-central1-' + encodeURIComponent(projectId) +
-      '.cloudfunctions.net/' + encodeURIComponent(name);
+    return cloudFunctionsCallableUrl(name);
   }
 
   function trackingRequestUrls(name) {
     var primary = callableUrl(name);
     var urls = [primary];
-    var direct = directTrackingServiceUrl(name);
-    if (direct && direct !== primary && isSameOriginApiProxy(primary)) {
-      urls.push(direct);
+    // Netlify /api proxy first; Firebase HTTPS callable host as backup (not intercepted by SW).
+    // Do not call *.run.app from the browser — many mobile networks block it (ERR_CONNECTION_REFUSED).
+    if (isSameOriginApiProxy(primary)) {
+      var callable = cloudFunctionsCallableUrl(name);
+      if (callable && callable !== primary) urls.push(callable);
     }
     return urls;
   }
