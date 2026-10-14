@@ -454,7 +454,7 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
   assert.match(worker, /const BACKGROUND_PRECACHE = \[\]/);
-  assert.match(worker, /mch-care-v363-moh/);
+  assert.match(worker, /mch-care-v364-moh/);
   assert.match(worker, /ignoreSearch: true/);
   assert.match(worker, /uniqueCacheFiles/);
   assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);

@@ -296,7 +296,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v363-moh/);
+  assert.match(sw, /mch-care-v364-moh/);
   assert.match(sw, /ignoreSearch: true/);
 });
 

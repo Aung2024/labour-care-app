@@ -1,11 +1,13 @@
 
-const CACHE_NAME = 'mch-care-v363-moh';
+const CACHE_NAME = 'mch-care-v364-moh';
 
 const SHELL_PRECACHE = [
   './index.html',
   './login.html',
   './home.html',
   './list.html',
+  './registration.html',
+  './provider-consent.html',
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
@@ -27,8 +29,7 @@ const SHELL_PRECACHE = [
 // Filled at runtime when pages are visited; avoid bulk precache competing with tracking APIs.
 const BACKGROUND_PRECACHE = [];
 
-const ASSET_FETCH_TIMEOUT_MS = 8000;
-const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
+const ASSET_FETCH_TIMEOUT_MS = 12000;
 const PRECACHE_BATCH_SIZE = 2;
 const PRECACHE_BATCH_DELAY_MS = 800;
 
@@ -180,13 +181,6 @@ function matchCachedAsset(request) {
   });
 }
 
-function offlineDocumentResponse() {
-  return new Response(
-    '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
-    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-  );
-}
-
 function fetchWithTimeout(request, timeoutMs) {
   return new Promise(function (resolve, reject) {
     var settled = false;
@@ -209,51 +203,6 @@ function fetchWithTimeout(request, timeoutMs) {
   });
 }
 
-function isHardReloadRequest(request) {
-  if (request.cache === 'reload') return true;
-  var pragma = request.headers.get('pragma') || '';
-  return pragma.indexOf('no-cache') !== -1;
-}
-
-function cacheDocumentResponse(request, response) {
-  var requestUrl = new URL(request.url);
-  if (!response || response.status !== 200 || response.type !== 'basic' || !shouldCacheRequest(requestUrl)) {
-    return;
-  }
-  var responseToCache = response.clone();
-  caches.open(CACHE_NAME).then(function (cache) {
-    cache.put(documentCacheKey(request, requestUrl), responseToCache);
-  });
-}
-
-function networkFirstDocument(request) {
-  var requestUrl = new URL(request.url);
-
-  if (isHardReloadRequest(request)) {
-    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-      .then(function (response) {
-        cacheDocumentResponse(request, response);
-        return response;
-      })
-      .catch(function () {
-        return matchCachedDocument(request).then(function (cached) {
-          return cached || offlineDocumentResponse();
-        });
-      });
-  }
-
-  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      cacheDocumentResponse(request, response);
-      return response;
-    })
-    .catch(function () {
-      return matchCachedDocument(request).then(function (cached) {
-        return cached || offlineDocumentResponse();
-      });
-    });
-}
-
 function networkFirstAsset(request, requestUrl) {
   return fetchWithTimeout(request, ASSET_FETCH_TIMEOUT_MS)
     .then(function (response) {
@@ -270,7 +219,8 @@ function networkFirstAsset(request, requestUrl) {
     })
     .catch(function () {
       return matchCachedAsset(request).then(function (fallbackResponse) {
-        return fallbackResponse || new Response('', { status: 504, statusText: 'Offline' });
+        if (fallbackResponse) return fallbackResponse;
+        return fetch(request);
       });
     });
 }
@@ -298,12 +248,12 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  var isDocumentRequest =
+  // HTML navigations: never intercept — browser + Netlify serve pages directly.
+  // Intercepting caused false "Offline" 503 pages when the network was slow or uncached.
+  if (
     event.request.mode === 'navigate' ||
-    (event.request.headers.get('accept') || '').indexOf('text/html') !== -1;
-
-  if (isDocumentRequest) {
-    event.respondWith(networkFirstDocument(event.request));
+    (event.request.headers.get('accept') || '').indexOf('text/html') !== -1
+  ) {
     return;
   }
 
