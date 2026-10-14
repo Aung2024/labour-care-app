@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v360-moh';
+const CACHE_NAME = 'mch-care-v361-moh';
 
 const SHELL_PRECACHE = [
   './index.html',
@@ -144,6 +144,10 @@ function isRuntimeConfigPath(pathname) {
   return pathname.endsWith('/firebase.runtime-config.json');
 }
 
+function isApiPath(pathname) {
+  return pathname === '/api' || pathname.indexOf('/api/') === 0;
+}
+
 function isStaticAssetPath(pathname) {
   return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
 }
@@ -168,11 +172,21 @@ function matchCachedDocument(request) {
   var requestUrl = new URL(request.url);
   var path = requestUrl.pathname;
   if (path.endsWith('/')) path += 'index.html';
+  var pathnameKey = requestUrl.origin + requestUrl.pathname;
+  var fileName = path.split('/').pop();
+  var dotPath = fileName ? './' + fileName : null;
   return caches.match(request).then(function (exact) {
     if (exact) return exact;
-    return caches.match(path).then(function (byPath) {
-      if (byPath) return byPath;
-      return caches.match('.' + path);
+    return caches.match(pathnameKey).then(function (byOriginPath) {
+      if (byOriginPath) return byOriginPath;
+      return caches.match(path).then(function (byPath) {
+        if (byPath) return byPath;
+        return caches.match('.' + path).then(function (byDotPath) {
+          if (byDotPath) return byDotPath;
+          if (!dotPath) return null;
+          return caches.match(dotPath);
+        });
+      });
     });
   });
 }
@@ -295,7 +309,7 @@ self.addEventListener('fetch', function (event) {
   }
 
   var requestUrl = new URL(event.request.url);
-  if (isRuntimeConfigPath(requestUrl.pathname)) {
+  if (isRuntimeConfigPath(requestUrl.pathname) || isApiPath(requestUrl.pathname)) {
     return;
   }
 

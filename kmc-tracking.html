@@ -681,7 +681,29 @@
       return window.KmcUtils && KmcUtils.rowIsCompleted(row);
     }
 
+    function rowIsOnKmcProgram(row) {
+      if (!row) return false;
+      if (row.enrolled) return true;
+      if (String(row.kmcSelected || '').toLowerCase() === 'yes') return true;
+      var visitCount = row.completedVisitCount || row.completedPostDischargeVisitCount ||
+        row.visitCount || 0;
+      if (visitCount > 0) return true;
+      if (window.KmcUtils && KmcUtils.rowIsOnKmcProgram) {
+        return KmcUtils.rowIsOnKmcProgram(row);
+      }
+      return false;
+    }
+
     function rowTrackingStatus(row) {
+      if (isCompleted(row)) {
+        if (row && row._projection) {
+          return { key: 'complete', labelEn: 'Complete', labelMm: 'ပြီးမြောက်' };
+        }
+        return KmcUtils.rowTrackingStatus(row);
+      }
+      if (!rowIsOnKmcProgram(row)) {
+        return null;
+      }
       if (row && row._projection) {
         var labels = {
           on_track: ['Active KMC', 'ရက်ချိန်းမှန်သော KMC'],
@@ -689,13 +711,16 @@
           lost_to_followup: ['Defaulted/Lost', 'အဆက်အသွယ်မရသော KMC'],
           complete: ['Complete', 'ပြီးမြောက်']
         };
-        var value = labels[row.status] || labels.on_track;
-        return { key: row.status || 'on_track', labelEn: value[0], labelMm: value[1] };
+        if (row.status === 'not_enrolled') return null;
+        var value = labels[row.status];
+        if (!value) return null;
+        return { key: row.status, labelEn: value[0], labelMm: value[1] };
       }
       return KmcUtils.rowTrackingStatus(row);
     }
 
     function statusBadgeHtml(status) {
+      if (!status) return '<span class="text-muted">—</span>';
       var label = lang === 'mm' ? status.labelMm : status.labelEn;
       return '<span class="hrt-outcome-badge hrt-outcome-' + status.key + '"><i class="fas fa-circle"></i>' +
         escapeHtml(label) + '</span>';

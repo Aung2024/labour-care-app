@@ -296,7 +296,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v360-moh/);
+  assert.match(sw, /mch-care-v361-moh/);
   assert.match(sw, /ignoreSearch: true/);
 });
 
@@ -357,6 +357,7 @@ test('service worker cold start avoids hung fetches and aggressive install takeo
   assert.match(sw, /function fetchWithTimeout/);
   assert.match(sw, /SHELL_PRECACHE/);
   assert.match(sw, /shellHasRequiredPages/);
+  assert.match(sw, /function isApiPath/);
   assert.ok(installBlock, 'install handler present');
   assert.doesNotMatch(installBlock[0], /skipWaiting/);
   assert.doesNotMatch(sw, /clients\.claim\(/);

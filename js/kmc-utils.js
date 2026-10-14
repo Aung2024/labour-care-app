@@ -433,10 +433,24 @@
     return getCompleteAction(filtered);
   }
 
+  function rowIsOnKmcProgram(row) {
+    if (!row) return false;
+    if (row.enrolled) return true;
+    if (String(row.kmcSelected || row.kmc_selected || '').toLowerCase() === 'yes') return true;
+    var visitCount = row.completedVisitCount || row.completedPostDischargeVisitCount ||
+      row.visitCount || 0;
+    if (visitCount > 0) return true;
+    if (Array.isArray(row.newbornCareVisits) && row.newbornCareVisits.length) return true;
+    return false;
+  }
+
   function rowTrackingStatus(row) {
     var completeAction = getCompleteAction(row.kmcActions || row.actions || []);
     if (row.completed || completeAction) {
       return { key: 'complete', labelEn: 'Complete', labelMm: 'ပြီးမြောက်' };
+    }
+    if (!rowIsOnKmcProgram(row)) {
+      return null;
     }
 
     var daysLate = getDaysLateForKmc(row.dischargeDate, row.completedPostDischargeVisitCount || 0);
@@ -655,6 +669,7 @@
     getCompleteAction: getCompleteAction,
     getCompleteActionForBaby: getCompleteActionForBaby,
     getCompletionOutcome: getCompletionOutcome,
+    rowIsOnKmcProgram: rowIsOnKmcProgram,
     rowTrackingStatus: rowTrackingStatus,
     reasonLabels: reasonLabels,
     isLowBirthWeight: isLowBirthWeight,

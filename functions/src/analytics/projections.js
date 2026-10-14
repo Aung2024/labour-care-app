@@ -541,7 +541,9 @@ function buildKmcProjections(facts, options) {
     const dueDate = kmcDueDate(discharge, visits);
     const tracked = complete
       ? { status: 'complete', daysLate: 0 }
-      : trackingStatus(dueDate, 14, asOf);
+      : (!enrolled
+        ? { status: 'not_enrolled', daysLate: null }
+        : trackingStatus(dueDate, 14, asOf));
     const activeFrom = birth || firstDate(visits[0], [
       'visitDate', 'visit_date', 'recordedAt'
     ]) || asOf;

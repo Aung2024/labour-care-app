@@ -354,9 +354,12 @@
 
   function isRetryableTrackingError(error) {
     if (!error) return false;
+    if (error.retryable) return true;
     if (error.name === 'AbortError' || error.code === 'timeout') return true;
+    var code = String(error.code || '');
+    if (/^(502|503|504)$/.test(code)) return true;
     var text = String(error.message || error.code || '');
-    return /failed to fetch|networkerror|err_connection|load failed|unavailable|internal/i.test(text);
+    return /failed to fetch|networkerror|err_connection|load failed|unavailable|internal|returned 50[234]/i.test(text);
   }
 
   function friendlyTrackingError(error) {
@@ -386,6 +389,9 @@
         var detail = body.error && body.error.message;
         var error = new Error(detail || ('Tracking service returned ' + response.status));
         error.code = body.error && body.error.status || String(response.status);
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          error.retryable = true;
+        }
         throw error;
       }
       return body.result || body.data || {};

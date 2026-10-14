@@ -366,6 +366,23 @@ test('KMC date-based baby ids preserve baby 2 weight history', () => {
   assert.deepEqual(row.weightHistory.map((item) => item.grams), [1800, 1950]);
 });
 
+test('KMC eligible but not enrolled uses not_enrolled status', () => {
+  const [row] = buildKmcProjections(facts({
+    newbornVisits: [{
+      data: {
+        visit_number: 1,
+        visitDate: '2026-04-01',
+        body_weight_gram: 1800,
+        kmc_selected: 'no',
+        potential_kmc: true
+      }
+    }]
+  }), { asOf: '2026-04-10' });
+  assert.equal(row.enrolled, false);
+  assert.equal(row.eligible, true);
+  assert.equal(row.status, 'not_enrolled');
+});
+
 test('KMC birth weight treats kg-scale values as kilograms', () => {
   const [row] = buildKmcProjections(facts({
     newbornVisits: [{
