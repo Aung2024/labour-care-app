@@ -1,16 +1,12 @@
 
-const CACHE_NAME = 'mch-care-v323-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v324-labourcare-2481a-vouchers';
 
-const INSTALL_PRECACHE = [
-  './index.html',
-  './login.html'
-];
-
+// Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
+  './index.html',
+  './login.html',
   './home.html',
   './list.html',
-  './patient-care-hub.html',
-  './promo-voucher.html',
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
@@ -53,8 +49,7 @@ const BACKGROUND_PRECACHE = [
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
-const PRECACHE_BATCH_SIZE = 2;
-const PRECACHE_BATCH_DELAY_MS = 400;
+const PRECACHE_BATCH_SIZE = 4;
 
 var backgroundPrecacheCancelled = false;
 var backgroundPrecachePromise = null;
@@ -76,18 +71,6 @@ function uniqueCacheFiles(files) {
   });
 }
 
-function cacheOneFile(cache, file) {
-  if (backgroundPrecacheCancelled) return Promise.resolve(undefined);
-  var url = resolvedUrl(file);
-  return fetch(url, { credentials: 'same-origin' }).then(function (response) {
-    if (backgroundPrecacheCancelled) return undefined;
-    if (!response || !response.ok) return undefined;
-    return cache.put(url, response.clone());
-  }).catch(function () {
-    return undefined;
-  });
-}
-
 function cacheFilesInBatches(cache, files, batchSize) {
   var list = uniqueCacheFiles(files);
   var index = 0;
@@ -96,12 +79,8 @@ function cacheFilesInBatches(cache, files, batchSize) {
     var batch = list.slice(index, index + batchSize);
     index += batchSize;
     return Promise.all(batch.map(function (file) {
-      return cacheOneFile(cache, file);
-    })).then(function () {
-      return new Promise(function (resolve) {
-        setTimeout(resolve, PRECACHE_BATCH_DELAY_MS);
-      });
-    }).then(nextBatch);
+      return cache.add(file).catch(function () {});
+    })).then(nextBatch);
   }
   return nextBatch();
 }
@@ -109,8 +88,8 @@ function cacheFilesInBatches(cache, files, batchSize) {
 function shellHasRequiredPages(cache) {
   return cache.match(resolvedUrl('./login.html')).then(function (login) {
     if (!login) return false;
-    return cache.match(resolvedUrl('./index.html')).then(function (indexPage) {
-      return !!indexPage;
+    return cache.match(resolvedUrl('./home.html')).then(function (home) {
+      return !!home;
     });
   });
 }
@@ -150,11 +129,7 @@ function runBackgroundPrecache() {
 }
 
 self.addEventListener('install', function (event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(function (cache) {
-      return cacheFilesInBatches(cache, INSTALL_PRECACHE, PRECACHE_BATCH_SIZE);
-    })
-  );
+  event.waitUntil(caches.open(CACHE_NAME));
 });
 
 self.addEventListener('activate', function (event) {
@@ -176,54 +151,39 @@ function isStaticAssetPath(pathname) {
   return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
 }
 
-function isHtmlPath(pathname) {
-  return pathname === '/' || /\.html?$/i.test(pathname) || !/\.[a-z0-9]+$/i.test(pathname);
-}
-
 function shouldCacheRequest(requestUrl) {
   if (isRuntimeConfigPath(requestUrl.pathname)) return false;
   if (isStaticAssetPath(requestUrl.pathname)) return true;
-  if (isHtmlPath(requestUrl.pathname)) return true;
   if (requestUrl.search) return false;
   return true;
-}
-
-function documentCacheUrl(requestUrl) {
-  return resolvedUrl(requestUrl.pathname || '/');
-}
-
-function isAuthEntryPath(pathname) {
-  var leaf = pathname.split('/').pop() || 'index.html';
-  return leaf === 'login.html' || leaf === 'index.html';
 }
 
 function assetCacheKey(requestUrl) {
   return requestUrl.origin + requestUrl.pathname;
 }
 
+function documentCacheKey(request, requestUrl) {
+  if (requestUrl.search) return requestUrl.origin + requestUrl.pathname;
+  return request;
+}
+
 function matchCachedDocument(request) {
   var requestUrl = new URL(request.url);
   var path = requestUrl.pathname;
   if (path.endsWith('/')) path += 'index.html';
-  return caches.match(documentCacheUrl(requestUrl)).then(function (byPath) {
-    if (byPath) return byPath;
-    return caches.match(request).then(function (exact) {
-      if (exact) return exact;
-      var leaf = path.split('/').pop() || 'index.html';
-      return caches.match(resolvedUrl('./' + leaf));
+  return caches.match(request).then(function (exact) {
+    if (exact) return exact;
+    return caches.match(resolvedUrl(path)).then(function (byPath) {
+      if (byPath) return byPath;
+      return caches.match(resolvedUrl('.' + path));
     });
   });
 }
 
 function matchCachedAsset(request) {
-  var requestUrl = new URL(request.url);
-  var key = assetCacheKey(requestUrl);
-  return caches.match(key).then(function (exact) {
+  return caches.match(request).then(function (exact) {
     if (exact) return exact;
-    return caches.match(request).then(function (byRequest) {
-      if (byRequest) return byRequest;
-      return caches.match(request, { ignoreSearch: true });
-    });
+    return caches.match(request, { ignoreSearch: true });
   });
 }
 
@@ -269,40 +229,11 @@ function cacheDocumentResponse(request, response) {
   }
   var responseToCache = response.clone();
   caches.open(CACHE_NAME).then(function (cache) {
-    return cache.put(documentCacheUrl(requestUrl), responseToCache);
+    return cache.put(documentCacheKey(request, requestUrl), responseToCache);
   }).catch(function () {});
 }
 
 function networkFirstDocument(request) {
-  var requestUrl = new URL(request.url);
-
-  if (isHardReloadRequest(request)) {
-    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-      .then(function (response) {
-        cacheDocumentResponse(request, response);
-        return response;
-      })
-      .catch(function () {
-        return matchCachedDocument(request).then(function (cached) {
-          return cached || offlineDocumentResponse();
-        });
-      });
-  }
-
-  if (isAuthEntryPath(requestUrl.pathname)) {
-    return matchCachedDocument(request).then(function (cached) {
-      if (cached) return cached;
-      return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-        .then(function (response) {
-          cacheDocumentResponse(request, response);
-          return response;
-        })
-        .catch(function () {
-          return offlineDocumentResponse();
-        });
-    });
-  }
-
   return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
     .then(function (response) {
       cacheDocumentResponse(request, response);
@@ -323,9 +254,8 @@ function networkFirstAsset(request, requestUrl) {
       }
       if (shouldCacheRequest(requestUrl)) {
         var responseToCache = response.clone();
-        var key = assetCacheKey(requestUrl);
         caches.open(CACHE_NAME).then(function (cache) {
-          return cache.put(key, responseToCache);
+          return cache.put(assetCacheKey(requestUrl), responseToCache);
         }).catch(function () {});
       }
       return response;
@@ -355,6 +285,10 @@ self.addEventListener('message', function (event) {
 
 self.addEventListener('fetch', function (event) {
   if (!event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  if (isHardReloadRequest(event.request)) {
     return;
   }
 

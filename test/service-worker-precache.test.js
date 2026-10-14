@@ -24,7 +24,6 @@ test('service worker precache lists only existing files and no background HTML',
   assert.doesNotMatch(source, /dashboard-v3/);
   assert.doesNotMatch(source, /report-facility/);
 
-  const install = extractPrecacheArray(source, 'INSTALL_PRECACHE');
   const shell = extractPrecacheArray(source, 'SHELL_PRECACHE');
   const background = extractPrecacheArray(source, 'BACKGROUND_PRECACHE');
 
@@ -32,9 +31,7 @@ test('service worker precache lists only existing files and no background HTML',
     assert.doesNotMatch(file, /\.html$/i, 'background precache must not include HTML: ' + file);
   });
 
-  assert.ok(install.length <= 4, 'install precache should stay minimal');
-
-  install.concat(shell).concat(background).forEach((file) => {
+  shell.concat(background).forEach((file) => {
     const diskPath = path.join(root, file.replace(/^\.\//, ''));
     assert.ok(fs.existsSync(diskPath), 'missing precache file: ' + file);
   });

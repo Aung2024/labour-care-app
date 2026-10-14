@@ -1,11 +1,13 @@
 /**
- * Registers the app service worker from any page under the site root.
- * V2-style: defer registration; background precache only after idle (no install contention).
+ * Registers the service worker (V2-style). Hard reload bypasses the SW in fetch;
+ * cancel background precache on reload so connections stay free.
  */
 (function () {
   if (!('serviceWorker' in navigator)) return
 
-  var backgroundPrecacheScheduled = false
+  var reloading = false
+  var hadController = !!navigator.serviceWorker.controller
+  var pageStartedAt = Date.now()
 
   var isReloadNavigation = function () {
     try {
@@ -16,40 +18,53 @@
     }
   }
 
-  var isAuthEntryPage = function () {
+  var cancelBackgroundPrecache = function (registration) {
+    var worker = (registration && registration.active) ||
+      (navigator.serviceWorker && navigator.serviceWorker.controller)
+    if (!worker) return
     try {
-      var page = String(window.location.pathname || '').split('/').pop() || 'index.html'
-      return page === 'login.html' || page === 'index.html'
-    } catch (e) {
-      return false
-    }
+      worker.postMessage({ type: 'CANCEL_PRECACHE' })
+    } catch (e) {}
   }
 
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController || reloading) return
+    if (isReloadNavigation()) return
+    if (Date.now() - pageStartedAt < 5000) return
+    reloading = true
+    window.location.reload()
+  })
+
   var scheduleBackgroundPrecache = function (registration) {
-    if (backgroundPrecacheScheduled || isReloadNavigation() || isAuthEntryPage()) return
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
-    backgroundPrecacheScheduled = true
-
-    var post = function () {
-      if (!registration || !registration.active) return
-      try {
-        registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
-      } catch (e) {}
+    if (isReloadNavigation()) {
+      cancelBackgroundPrecache(registration)
+      return
     }
-
-    setTimeout(function () {
-      if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(post, { timeout: 20000 })
-        return
-      }
-      post()
-    }, 20000)
+    if (!registration || !registration.active) return
+    try {
+      registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
+    } catch (e) {}
   }
 
   var register = function () {
+    if (isReloadNavigation()) {
+      cancelBackgroundPrecache(null)
+    }
     navigator.serviceWorker.register('./service-worker.js').then(function (registration) {
+      if (registration.active) {
+        scheduleBackgroundPrecache(registration)
+      }
       navigator.serviceWorker.ready.then(function (readyRegistration) {
         scheduleBackgroundPrecache(readyRegistration)
+      })
+      registration.addEventListener('updatefound', function () {
+        var worker = registration.installing
+        if (!worker) return
+        worker.addEventListener('statechange', function () {
+          if (worker.state === 'activated' && !isReloadNavigation()) {
+            scheduleBackgroundPrecache(registration)
+          }
+        })
       })
     }).catch(function (e) {
       console.warn('[SW] register failed', e)
@@ -58,10 +73,10 @@
 
   var deferRegister = function () {
     if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(function () { register() }, { timeout: 4000 })
+      window.requestIdleCallback(function () { register() }, { timeout: 3000 })
       return
     }
-    setTimeout(register, 500)
+    setTimeout(register, 0)
   }
 
   if (document.readyState === 'complete') {
