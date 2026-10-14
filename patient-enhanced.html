@@ -2784,14 +2784,22 @@
     }
 
     function isBabyRegistration() {
-      const ageValue = parseInt(document.getElementById('age')?.value, 10);
-      if (Number.isFinite(ageValue) && ageValue < 12) return true;
       const dob = getBirthDateFromParts();
-      if (!dob) return false;
-      const years = window.BabyPatientUtils && BabyPatientUtils.ageInYears
-        ? BabyPatientUtils.ageInYears(dob)
-        : null;
-      return years != null && years < 12;
+      if (dob) {
+        const years = window.BabyPatientUtils && BabyPatientUtils.ageInYears
+          ? BabyPatientUtils.ageInYears(dob)
+          : null;
+        if (years != null && years < 12) return true;
+      }
+      const ageInput = document.getElementById('age');
+      if (!ageInput) return false;
+      const raw = String(ageInput.value || '').trim();
+      if (!raw) return false;
+      if (document.activeElement === ageInput && raw.length < 2) {
+        return false;
+      }
+      const ageValue = parseInt(raw, 10);
+      return Number.isFinite(ageValue) && ageValue < 12;
     }
 
     function getBirthDateFromParts() {
@@ -2840,14 +2848,14 @@
       const babyMode = isBabyRegistration();
       if (hint) hint.style.display = babyMode ? 'block' : 'none';
       if (!display) return;
+      const dob = getBirthDateFromParts();
       if (!babyMode) {
         display.style.display = 'none';
         display.textContent = '';
         if (ageInput) ageInput.readOnly = false;
         return;
       }
-      if (ageInput) ageInput.readOnly = true;
-      const dob = getBirthDateFromParts();
+      if (ageInput) ageInput.readOnly = !!dob;
       if (!dob || !window.BabyPatientUtils || !BabyPatientUtils.formatBabyAgeFromBirthDate) {
         display.style.display = 'none';
         display.textContent = '';
@@ -3029,6 +3037,11 @@
           if (e.target.value !== value) {
             e.target.value = value;
           }
+          evaluateAgeRisk();
+        });
+
+        ageInput.addEventListener('blur', function() {
+          updatePatientTypeFields();
           evaluateAgeRisk();
         });
         
