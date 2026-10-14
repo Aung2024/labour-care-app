@@ -93,6 +93,37 @@
           return;
         }
         
+        var rememberedUid = '';
+        try { rememberedUid = localStorage.getItem('uid') || ''; } catch (e) {}
+
+        function finishAuthRouting(user) {
+          if (redirectExecuted) return;
+          if (user) {
+            redirectToHome();
+          } else {
+            redirectToLogin();
+          }
+        }
+
+        function waitForAuthRestoreThenRoute() {
+          var maxWaitMs = rememberedUid ? 3500 : 3500;
+          var started = Date.now();
+          function poll() {
+            if (redirectExecuted) return;
+            var user = firebase.auth().currentUser;
+            if (user) {
+              finishAuthRouting(user);
+              return;
+            }
+            if (Date.now() - started >= maxWaitMs) {
+              finishAuthRouting(null);
+              return;
+            }
+            setTimeout(poll, 150);
+          }
+          poll();
+        }
+
         // Set up auth state listener with timeout
         let listenerTimeout;
         let listenerFired = false;
@@ -106,33 +137,35 @@
           
           if (user) {
             redirectToHome();
+          } else if (rememberedUid) {
+            waitForAuthRestoreThenRoute();
           } else {
-            // No user - redirect to login
             redirectToLogin();
           }
         });
         
-        // Timeout: If listener doesn't fire within 2 seconds, check directly and redirect
+        // Timeout: If listener doesn't fire in time, poll for session restore when remembered
         listenerTimeout = setTimeout(function() {
           if (!listenerFired && !redirectExecuted) {
             console.warn('⚠️ Auth state check timeout - checking directly');
             unsubscribe(); // Clean up listener
+            listenerFired = true;
             
-            // Final direct check
             try {
               const user = firebase.auth().currentUser;
               if (user) {
                 redirectToHome();
+              } else if (rememberedUid) {
+                waitForAuthRestoreThenRoute();
               } else {
                 redirectToLogin();
               }
             } catch (error) {
               console.error('❌ Error checking auth:', error);
-              // On error, default to login
               redirectToLogin();
             }
           }
-        }, 2000); // 2 second timeout
+        }, 3500);
       }
       
       // Start routing immediately

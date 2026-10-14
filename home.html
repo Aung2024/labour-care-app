@@ -762,9 +762,19 @@
     
     // Show loading state immediately to prevent interaction
     let pageInitialized = false;
+    let navigationInProgress = false;
     let authWaitInterval = null;
     let authStateUnsubscribe = null;
     const mainContainer = document.querySelector('.main-container');
+
+    function isHardPageReload() {
+      try {
+        var entries = performance.getEntriesByType('navigation');
+        return !!(entries && entries[0] && entries[0].type === 'reload');
+      } catch (e) {
+        return false;
+      }
+    }
 
     function setHomeInteractionEnabled(enabled) {
       if (mainContainer) {
@@ -822,6 +832,17 @@
 
     // Wait for auth guard to verify authentication before loading data
     function waitForAuthAndLoad() {
+      if (isHardPageReload()) {
+        pageInitialized = false;
+        navigationInProgress = false;
+        var reloadUser = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ||
+          getPilotCachedUser();
+        if (reloadUser) {
+          document.body.classList.add('auth-verified');
+          setHomeInteractionEnabled(true);
+        }
+      }
+
       let checkCount = 0;
       const maxChecks = isIOSDevice ? 150 : 80;
 
@@ -838,6 +859,7 @@
 
       function attemptInitialize(user) {
         if (!user || pageInitialized) return;
+        document.body.classList.add('auth-verified');
         if (authWaitInterval) {
           clearInterval(authWaitInterval);
           authWaitInterval = null;
@@ -1617,9 +1639,6 @@
       });
     }
 
-    // Debounce navigation to prevent rapid clicks
-    let navigationInProgress = false;
-    
     function navigateToCare(careType) {
       if (!pageInitialized || navigationInProgress) {
         if (!pageInitialized) {

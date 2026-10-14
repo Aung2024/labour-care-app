@@ -28,6 +28,36 @@ const USER_VERIFICATION_CACHE = {
   TTL: 5 * 60 * 1000 // 5 minutes cache
 };
 
+const USER_VERIFICATION_STORE_KEY = 'labourcare-user-verified';
+
+function persistUserVerification() {
+  if (!USER_VERIFICATION_CACHE.data || !USER_VERIFICATION_CACHE.timestamp) return;
+  try {
+    sessionStorage.setItem(USER_VERIFICATION_STORE_KEY, JSON.stringify({
+      data: USER_VERIFICATION_CACHE.data,
+      timestamp: USER_VERIFICATION_CACHE.timestamp
+    }));
+  } catch (e) {}
+}
+
+function restoreUserVerification(userId) {
+  if (isCacheValid() && USER_VERIFICATION_CACHE.data && USER_VERIFICATION_CACHE.data.userId === userId) {
+    return USER_VERIFICATION_CACHE.data;
+  }
+  try {
+    const raw = sessionStorage.getItem(USER_VERIFICATION_STORE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.data || parsed.data.userId !== userId) return null;
+    if (Date.now() - parsed.timestamp > USER_VERIFICATION_CACHE.TTL) return null;
+    USER_VERIFICATION_CACHE.data = parsed.data;
+    USER_VERIFICATION_CACHE.timestamp = parsed.timestamp;
+    return parsed.data;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Check if current page is a public page
  */
@@ -211,8 +241,8 @@ function initAuthGuard() {
       console.log('✅ User authenticated:', user.uid);
       
       // OPTIMIZED: Check cache first before making Firestore query
-      const cachedUserId = USER_VERIFICATION_CACHE.data?.userId;
-      if (isCacheValid() && cachedUserId === user.uid) {
+      const cachedVerification = restoreUserVerification(user.uid);
+      if (cachedVerification && cachedVerification.isValid) {
         console.log('✅ User verified (cached)');
         hasUnsubscribed = true;
         unsubscribe();
@@ -243,10 +273,12 @@ function initAuthGuard() {
 }
 
 function waitForAuthRecovery() {
-  const immediate = firebase.auth().currentUser;
-  if (immediate) return Promise.resolve(immediate);
   const cachedUid = localStorage.getItem('uid');
-  const maxWaitMs = cachedUid ? 600 : 250;
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline && cachedUid) {
+    return Promise.resolve(firebase.auth().currentUser || getCachedOfflineUser());
+  }
+  const maxWaitMs = cachedUid ? 2500 : 1200;
   const started = Date.now();
 
   return new Promise((resolve) => {
@@ -256,7 +288,7 @@ function waitForAuthRecovery() {
         resolve(recovered || null);
         return;
       }
-      setTimeout(check, 50);
+      setTimeout(check, 150);
     };
     check();
   });
@@ -270,9 +302,10 @@ function waitForAuthRecovery() {
 async function verifyUserInFirestore(userId) {
   try {
     // Check cache first
-    if (isCacheValid() && USER_VERIFICATION_CACHE.data?.userId === userId) {
+    const persisted = restoreUserVerification(userId);
+    if (persisted) {
       console.log('✅ Using cached user verification');
-      return USER_VERIFICATION_CACHE.data.isValid;
+      return persisted.isValid;
     }
     
     // Check if smartFirestoreQuery is available (might not be loaded yet)
@@ -360,6 +393,7 @@ async function verifyUserInFirestore(userId) {
     // Cache the positive result
     USER_VERIFICATION_CACHE.data = { userId, isValid: true };
     USER_VERIFICATION_CACHE.timestamp = Date.now();
+    persistUserVerification();
     
     return true;
   } catch (error) {
@@ -376,6 +410,7 @@ async function verifyUserInFirestore(userId) {
 function clearUserVerificationCache() {
   USER_VERIFICATION_CACHE.data = null;
   USER_VERIFICATION_CACHE.timestamp = null;
+  try { sessionStorage.removeItem(USER_VERIFICATION_STORE_KEY); } catch (e) {}
 }
 
 /**

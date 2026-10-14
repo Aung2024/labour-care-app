@@ -1,164 +1,321 @@
 
-const CACHE_NAME = 'mch-care-v316-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v317-labourcare-2481a-vouchers';
 
-// Keep this list small. Other pages and heavy libraries are cached on first visit.
-const CORE_SHELL = [
-  './login.html',
+const SHELL_PRECACHE = [
   './index.html',
+  './login.html',
   './home.html',
   './list.html',
-  './patient-care-hub.html',
-  './lab-vouchers.html',
-  './program-officer.html',
-  './promo-voucher.html',
-  './midwife-vouchers.html',
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
-  './css/webfonts/fa-solid-900.woff2',
   './css/style.css',
   './css/compact-app-bar.css',
-  './css/vouchers.css',
-  './js/vendor/bootstrap.bundle.min.js',
+  './css/webfonts/fa-solid-900.woff2',
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
   './js/firebase.js',
+  './js/register-sw.js',
   './js/auth-guard.js',
   './js/role-landing.js',
-  './js/register-sw.js',
-  './icons/icon-192.png'
+  './js/user-cache.js',
+  './js/nav-back.js',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => Promise.all(CORE_SHELL.map((url) => (
-        cache.add(url).catch((error) => {
-          console.warn('[Service Worker] Skip precache:', url, error);
-        })
-      ))))
-      .then(() => self.skipWaiting())
-  );
-});
+const BACKGROUND_PRECACHE = [
+  './registration.html',
+  './patient-care-hub.html',
+  './patient-care-hub-lcg.html',
+  './patient-enhanced.html',
+  './provider-consent.html',
+  './dashboard.html',
+  './midwife-vouchers.html',
+  './lab-vouchers.html',
+  './program-officer.html',
+  './promo-voucher.html',
+  './css/vouchers.css',
+  './css/dashboard-v3.css',
+  './js/vendor/bootstrap.bundle.min.js',
+  './js/page-performance.js',
+  './js/consent-manager.js',
+  './js/offline-store.js',
+  './js/offline-sync.js',
+  './js/offline-manager.js',
+  './js/offline-status-bar.js',
+  './js/ui-dialogs.js',
+  './js/session-manager.js',
+  './js/role-display.js',
+  './js/sync-manager.js',
+  './js/status-manager.js',
+  './js/home-followup-badges.js',
+  './js/report-facility.js',
+  './js/dashboard-data.js',
+  './js/dashboard-v3.js',
+  './js/dashboard-metrics-config.js'
+];
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.map((key) => {
-      if (key.indexOf('mch-care-') === 0 && key !== CACHE_NAME) {
-        return caches.delete(key);
-      }
-      return undefined;
-    }))).then(() => self.clients.claim())
-  );
-});
+const ASSET_FETCH_TIMEOUT_MS = 8000;
+const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
+const PRECACHE_BATCH_SIZE = 4;
 
-function isLoginRequest(requestUrl) {
-  return /\/login\.html$/i.test(requestUrl.pathname);
-}
-
-function isAbortLike(error) {
-  const message = String((error && error.message) || error || '');
-  return (error && error.name === 'AbortError') || /abort|timeout|fail(ed)? to fetch/i.test(message);
-}
-
-function offlineFallbackResponse() {
-  return new Response('Offline', {
-    status: 503,
-    statusText: 'Service Unavailable',
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+function uniqueCacheFiles(files) {
+  var seen = {};
+  return files.filter(function (file) {
+    if (seen[file]) return false;
+    seen[file] = true;
+    return true;
   });
 }
 
-function documentCacheKey(requestUrl) {
-  const parts = requestUrl.pathname.split('/');
-  let name = parts[parts.length - 1] || 'index.html';
-  if (!name || requestUrl.pathname.endsWith('/')) name = 'index.html';
-  return './' + name;
-}
-
-function matchPage(page) {
-  return caches.match(page, { ignoreSearch: true }).then((cached) => cached || null);
-}
-
-function cachedDocumentFallback(request, requestUrl) {
-  if (isLoginRequest(requestUrl)) {
-    return matchPage('./login.html').then((cached) => cached || offlineFallbackResponse());
+function cacheFilesInBatches(cache, files, batchSize) {
+  var list = uniqueCacheFiles(files);
+  var index = 0;
+  function nextBatch() {
+    if (index >= list.length) return Promise.resolve();
+    var batch = list.slice(index, index + batchSize);
+    index += batchSize;
+    return Promise.all(batch.map(function (file) {
+      return cache.add(file).catch(function (error) {
+        console.warn('[Service Worker] Skip cache', file, error);
+      });
+    })).then(nextBatch);
   }
-  return caches.match(request, { ignoreSearch: true }).then((cached) => {
-    if (cached) return cached;
-    return matchPage(documentCacheKey(requestUrl)).then((page) => {
-      if (page) return page;
-      return matchPage('./login.html').then((login) => login || offlineFallbackResponse());
+  return nextBatch();
+}
+
+function shellHasRequiredPages(cache) {
+  return cache.match('./login.html').then(function (login) {
+    if (!login) return false;
+    return cache.match('./home.html').then(function (home) {
+      return !!home;
     });
   });
 }
 
-function putInCache(requestUrl, response, request) {
-  if (!response || response.status !== 200 || response.type !== 'basic') return response;
-  const cacheUrl = requestUrl.pathname.endsWith('.html') || requestUrl.pathname.endsWith('/')
-    ? documentCacheKey(requestUrl)
-    : request;
-  const copy = response.clone();
-  caches.open(CACHE_NAME).then((cache) => cache.put(cacheUrl, copy));
-  return response;
-}
-
-function fetchFresh(request, timeoutMs) {
-  let timer = 0;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+function deleteOldCaches() {
+  return caches.keys().then(function (keyList) {
+    return Promise.all(keyList.map(function (key) {
+      if (key !== CACHE_NAME) {
+        console.log('[Service Worker] Removing old cache:', key);
+        return caches.delete(key);
+      }
+    }));
   });
-  return Promise.race([fetch(request), timeout]).finally(() => clearTimeout(timer));
 }
 
-// Cache first for same-origin GET. Do not re-fetch HTML in the background on
-// every Back tap — that queued network work is what made pages feel frozen.
-// Never fall back to a role page.
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  if (!event.request.url.startsWith(self.location.origin)) return;
+function runBackgroundPrecache() {
+  return caches.open(CACHE_NAME).then(function (cache) {
+    return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
+  }).catch(function (error) {
+    console.warn('[Service Worker] Background precache failed:', error);
+  });
+}
 
-  const requestUrl = new URL(event.request.url);
-  if (requestUrl.pathname.endsWith('/firebase.runtime-config.json')) {
-    event.respondWith(fetch(event.request).catch(() => offlineFallbackResponse()));
+self.addEventListener('install', function (event) {
+  console.log('[Service Worker] Installing...');
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(function (cache) {
+        console.log('[Service Worker] Caching app shell');
+        return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
+      })
+      .then(function () {
+        console.log('[Service Worker] App shell cache ready');
+      })
+      .catch(function (error) {
+        console.error('[Service Worker] Shell cache failed:', error);
+      })
+  );
+});
+
+self.addEventListener('activate', function (event) {
+  console.log('[Service Worker] Activating...');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function (cache) {
+      return shellHasRequiredPages(cache).then(function (ready) {
+        if (!ready) {
+          console.warn('[Service Worker] Shell incomplete — keeping previous caches');
+          return;
+        }
+        return deleteOldCaches();
+      });
+    })
+  );
+});
+
+function isRuntimeConfigPath(pathname) {
+  return pathname.endsWith('/firebase.runtime-config.json');
+}
+
+function isStaticAssetPath(pathname) {
+  return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
+}
+
+function shouldCacheRequest(requestUrl) {
+  if (isRuntimeConfigPath(requestUrl.pathname)) return false;
+  if (isStaticAssetPath(requestUrl.pathname)) return true;
+  if (requestUrl.search) return false;
+  return true;
+}
+
+function assetCacheKey(requestUrl) {
+  return requestUrl.origin + requestUrl.pathname;
+}
+
+function documentCacheKey(request, requestUrl) {
+  if (requestUrl.search) return requestUrl.origin + requestUrl.pathname;
+  return request;
+}
+
+function matchCachedDocument(request) {
+  var requestUrl = new URL(request.url);
+  var path = requestUrl.pathname;
+  if (path.endsWith('/')) path += 'index.html';
+  return caches.match(request).then(function (exact) {
+    if (exact) return exact;
+    return caches.match(path).then(function (byPath) {
+      if (byPath) return byPath;
+      return caches.match('.' + path);
+    });
+  });
+}
+
+function matchCachedAsset(request) {
+  return caches.match(request).then(function (exact) {
+    if (exact) return exact;
+    return caches.match(request, { ignoreSearch: true });
+  });
+}
+
+function offlineDocumentResponse() {
+  return new Response(
+    '<!DOCTYPE html><html><body><p>Offline. Open the app once on a working network, then try again.</p></body></html>',
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
+
+function fetchWithTimeout(request, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      reject(new Error('fetch-timeout'));
+    }, timeoutMs);
+    fetch(request).then(function (response) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(response);
+    }).catch(function (error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function isHardReloadRequest(request) {
+  if (request.cache === 'reload') return true;
+  var pragma = request.headers.get('pragma') || '';
+  return pragma.indexOf('no-cache') !== -1;
+}
+
+function cacheDocumentResponse(request, response) {
+  var requestUrl = new URL(request.url);
+  if (!response || response.status !== 200 || response.type !== 'basic' || !shouldCacheRequest(requestUrl)) {
+    return;
+  }
+  var responseToCache = response.clone();
+  caches.open(CACHE_NAME).then(function (cache) {
+    cache.put(documentCacheKey(request, requestUrl), responseToCache);
+  });
+}
+
+function networkFirstDocument(request) {
+  if (isHardReloadRequest(request)) {
+    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+      .then(function (response) {
+        cacheDocumentResponse(request, response);
+        return response;
+      })
+      .catch(function () {
+        return matchCachedDocument(request).then(function (cached) {
+          return cached || offlineDocumentResponse();
+        });
+      });
+  }
+
+  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      cacheDocumentResponse(request, response);
+      return response;
+    })
+    .catch(function () {
+      return matchCachedDocument(request).then(function (cached) {
+        return cached || offlineDocumentResponse();
+      });
+    });
+}
+
+function networkFirstAsset(request, requestUrl) {
+  return fetchWithTimeout(request, ASSET_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      if (!response || response.status !== 200 || response.type !== 'basic') {
+        return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
+      }
+      if (shouldCacheRequest(requestUrl)) {
+        var responseToCache = response.clone();
+        caches.open(CACHE_NAME).then(function (cache) {
+          cache.put(assetCacheKey(requestUrl), responseToCache);
+        });
+      }
+      return response;
+    })
+    .catch(function () {
+      return matchCachedAsset(request).then(function (fallbackResponse) {
+        return fallbackResponse || new Response('', { status: 504, statusText: 'Offline' });
+      });
+    });
+}
+
+self.addEventListener('message', function (event) {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data.type === 'PRECACHE_BACKGROUND') {
+    event.waitUntil(runBackgroundPrecache());
+  }
+});
+
+self.addEventListener('fetch', function (event) {
+  if (!event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
-  const isDocument =
-    event.request.mode === 'navigate' ||
-    event.request.destination === 'document';
+  var requestUrl = new URL(event.request.url);
+  if (isRuntimeConfigPath(requestUrl.pathname)) {
+    return;
+  }
 
-  if (isDocument) {
-    event.respondWith((async () => {
-      const cached = isLoginRequest(requestUrl)
-        ? await matchPage('./login.html')
-        : (await caches.match(event.request, { ignoreSearch: true })) || await matchPage(documentCacheKey(requestUrl));
-      if (cached) return cached;
-      try {
-        const response = await fetchFresh(event.request, 2500);
-        return putInCache(requestUrl, response, event.request) || cachedDocumentFallback(event.request, requestUrl);
-      } catch (error) {
-        if (!isAbortLike(error)) {
-          console.warn('[Service Worker] Document fetch failed:', error);
-        }
-        return cachedDocumentFallback(event.request, requestUrl);
-      }
-    })());
+  var isDocumentRequest =
+    event.request.mode === 'navigate' ||
+    (event.request.headers.get('accept') || '').indexOf('text/html') !== -1;
+
+  if (isDocumentRequest) {
+    event.respondWith(networkFirstDocument(event.request));
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    matchCachedAsset(event.request).then(function (cachedResponse) {
       if (cachedResponse) return cachedResponse;
-      return fetch(event.request)
-        .then((response) => putInCache(requestUrl, response, event.request))
-        .catch((error) => {
-          if (!isAbortLike(error)) {
-            console.warn('[Service Worker] Asset fetch failed:', error);
-          }
-          return caches.match(event.request).then((cached) => cached || offlineFallbackResponse());
-        });
+      return networkFirstAsset(event.request, requestUrl);
     })
   );
 });
