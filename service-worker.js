@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v324-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v325-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -7,6 +7,7 @@ const SHELL_PRECACHE = [
   './login.html',
   './home.html',
   './list.html',
+  './patient-care-hub.html',
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
@@ -151,9 +152,20 @@ function isStaticAssetPath(pathname) {
   return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
 }
 
+function isHtmlPath(pathname) {
+  return pathname === '/' || /\.html?$/i.test(pathname) || !/\.[a-z0-9]+$/i.test(pathname);
+}
+
+function documentCacheUrl(requestUrl) {
+  var path = requestUrl.pathname || '/';
+  if (path.endsWith('/')) path += 'index.html';
+  return resolvedUrl(path);
+}
+
 function shouldCacheRequest(requestUrl) {
   if (isRuntimeConfigPath(requestUrl.pathname)) return false;
   if (isStaticAssetPath(requestUrl.pathname)) return true;
+  if (isHtmlPath(requestUrl.pathname)) return true;
   if (requestUrl.search) return false;
   return true;
 }
@@ -162,19 +174,14 @@ function assetCacheKey(requestUrl) {
   return requestUrl.origin + requestUrl.pathname;
 }
 
-function documentCacheKey(request, requestUrl) {
-  if (requestUrl.search) return requestUrl.origin + requestUrl.pathname;
-  return request;
-}
-
 function matchCachedDocument(request) {
   var requestUrl = new URL(request.url);
   var path = requestUrl.pathname;
   if (path.endsWith('/')) path += 'index.html';
-  return caches.match(request).then(function (exact) {
-    if (exact) return exact;
-    return caches.match(resolvedUrl(path)).then(function (byPath) {
-      if (byPath) return byPath;
+  return caches.match(documentCacheUrl(requestUrl)).then(function (byPath) {
+    if (byPath) return byPath;
+    return caches.match(request).then(function (exact) {
+      if (exact) return exact;
       return caches.match(resolvedUrl('.' + path));
     });
   });
@@ -229,21 +236,35 @@ function cacheDocumentResponse(request, response) {
   }
   var responseToCache = response.clone();
   caches.open(CACHE_NAME).then(function (cache) {
-    return cache.put(documentCacheKey(request, requestUrl), responseToCache);
+    return cache.put(documentCacheUrl(requestUrl), responseToCache);
   }).catch(function () {});
 }
 
-function networkFirstDocument(request) {
-  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      cacheDocumentResponse(request, response);
-      return response;
-    })
-    .catch(function () {
-      return matchCachedDocument(request).then(function (cached) {
-        return cached || offlineDocumentResponse();
-      });
+function isHistoryNavigation(request) {
+  return request.mode === 'navigate' && request.cache === 'only-if-cached';
+}
+
+function respondDocument(request) {
+  if (isHistoryNavigation(request)) {
+    return matchCachedDocument(request).then(function (cached) {
+      if (cached) return cached;
+      return fetch(request);
     });
+  }
+
+  return matchCachedDocument(request).then(function (cached) {
+    if (cached) return cached;
+    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+      .then(function (response) {
+        cacheDocumentResponse(request, response);
+        return response;
+      })
+      .catch(function () {
+        return matchCachedDocument(request).then(function (fallback) {
+          return fallback || offlineDocumentResponse();
+        });
+      });
+  });
 }
 
 function networkFirstAsset(request, requestUrl) {
@@ -302,7 +323,7 @@ self.addEventListener('fetch', function (event) {
     (event.request.headers.get('accept') || '').indexOf('text/html') !== -1;
 
   if (isDocumentRequest) {
-    event.respondWith(networkFirstDocument(event.request));
+    event.respondWith(respondDocument(event.request));
     return;
   }
 
