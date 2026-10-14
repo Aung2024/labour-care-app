@@ -1,59 +1,60 @@
 
-const CACHE_NAME = 'mch-care-v320-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v321-labourcare-2481a-vouchers';
 
-// Small install set so hard refresh / login are not competing with 30+ parallel fetches.
+// Install: only router + login — do not fetch home/list during install (avoids ERR_CONNECTION_CLOSED).
 const INSTALL_PRECACHE = [
-  './login.html',
   './index.html',
+  './login.html'
+];
+
+// Cached after first paint via PRECACHE_BACKGROUND (V2-style shell, isolated paths only).
+const SHELL_PRECACHE = [
   './home.html',
+  './list.html',
+  './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
+  './css/style.css',
+  './css/compact-app-bar.css',
+  './css/webfonts/fa-solid-900.woff2',
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
   './js/firebase.js',
+  './js/register-sw.js',
+  './js/auth-guard.js',
   './js/role-landing.js',
+  './js/user-cache.js',
+  './js/nav-back.js',
   './js/consent-manager.js',
   './js/audit-logger.js',
   './js/password-policy.js',
-  './js/session-manager.js'
-];
-
-const DEFERRED_SHELL_PRECACHE = [
-  './list.html',
-  './manifest.json',
-  './css/style.css',
-  './css/compact-app-bar.css',
-  './css/webfonts/fa-solid-900.woff2',
-  './js/vendor/bootstrap.bundle.min.js',
-  './js/register-sw.js',
-  './js/auth-guard.js',
-  './js/user-cache.js',
-  './js/nav-back.js',
-  './js/offline-store.js',
-  './js/offline-manager.js',
-  './js/offline-sync.js',
-  './js/status-manager.js',
-  './js/anc-tracking-status.js',
-  './js/baby-patient-utils.js',
-  './js/page-performance.js',
+  './js/session-manager.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
 
 const BACKGROUND_PRECACHE = [
   './css/vouchers.css',
+  './js/vendor/bootstrap.bundle.min.js',
+  './js/page-performance.js',
+  './js/offline-store.js',
+  './js/offline-manager.js',
+  './js/offline-sync.js',
   './js/offline-status-bar.js',
   './js/ui-dialogs.js',
   './js/role-display.js',
   './js/sync-manager.js',
+  './js/status-manager.js',
+  './js/anc-tracking-status.js',
+  './js/baby-patient-utils.js',
   './js/home-followup-badges.js'
 ];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
-const PRECACHE_BATCH_SIZE = 1;
-const PRECACHE_BATCH_DELAY_MS = 200;
+const PRECACHE_BATCH_SIZE = 2;
+const PRECACHE_BATCH_DELAY_MS = 250;
 
 function resolvedUrl(file) {
   try {
@@ -103,8 +104,8 @@ function cacheFilesInBatches(cache, files, batchSize) {
 function shellHasRequiredPages(cache) {
   return cache.match(resolvedUrl('./login.html')).then(function (login) {
     if (!login) return false;
-    return cache.match(resolvedUrl('./home.html')).then(function (home) {
-      return !!home;
+    return cache.match(resolvedUrl('./index.html')).then(function (indexPage) {
+      return !!indexPage;
     });
   });
 }
@@ -124,9 +125,18 @@ var backgroundPrecachePromise = null;
 function runBackgroundPrecache() {
   if (backgroundPrecachePromise) return backgroundPrecachePromise;
   backgroundPrecachePromise = caches.open(CACHE_NAME).then(function (cache) {
-    return cacheFilesInBatches(cache, DEFERRED_SHELL_PRECACHE, PRECACHE_BATCH_SIZE)
+    return cacheFilesInBatches(cache, INSTALL_PRECACHE, PRECACHE_BATCH_SIZE)
+      .then(function () {
+        return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
+      })
       .then(function () {
         return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
+      })
+      .then(function () {
+        return shellHasRequiredPages(cache).then(function (ready) {
+          if (!ready) return undefined;
+          return deleteOldCaches();
+        });
       });
   }).catch(function () {
     backgroundPrecachePromise = null;
@@ -135,20 +145,14 @@ function runBackgroundPrecache() {
 }
 
 self.addEventListener('install', function (event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(function (cache) {
-        return cacheFilesInBatches(cache, INSTALL_PRECACHE, PRECACHE_BATCH_SIZE);
-      })
-      .catch(function () {})
-  );
+  event.waitUntil(caches.open(CACHE_NAME));
 });
 
 self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return shellHasRequiredPages(cache).then(function (ready) {
-        if (!ready) return;
+        if (!ready) return undefined;
         return deleteOldCaches();
       });
     })
@@ -187,7 +191,8 @@ function matchCachedDocument(request) {
     if (exact) return exact;
     return caches.match(resolvedUrl(path)).then(function (byPath) {
       if (byPath) return byPath;
-      return caches.match(resolvedUrl('./' + path.replace(/^\//, '')));
+      var leaf = path.split('/').pop() || 'index.html';
+      return caches.match(resolvedUrl('./' + leaf));
     });
   });
 }
@@ -265,17 +270,16 @@ function networkFirstDocument(request) {
       });
   }
 
-  return matchCachedDocument(request).then(function (cached) {
-    if (cached) return cached;
-    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-      .then(function (response) {
-        cacheDocumentResponse(request, response);
-        return response;
-      })
-      .catch(function () {
-        return offlineDocumentResponse();
+  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      cacheDocumentResponse(request, response);
+      return response;
+    })
+    .catch(function () {
+      return matchCachedDocument(request).then(function (cached) {
+        return cached || offlineDocumentResponse();
       });
-  });
+    });
 }
 
 function networkFirstAsset(request, requestUrl) {
@@ -299,16 +303,6 @@ function networkFirstAsset(request, requestUrl) {
         return fetch(request);
       });
     });
-}
-
-function serveAsset(request, requestUrl) {
-  if (isHardReloadRequest(request)) {
-    return networkFirstAsset(request, requestUrl);
-  }
-  return matchCachedAsset(request).then(function (cachedResponse) {
-    if (cachedResponse) return cachedResponse;
-    return networkFirstAsset(request, requestUrl);
-  });
 }
 
 self.addEventListener('message', function (event) {
@@ -340,5 +334,10 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  event.respondWith(serveAsset(event.request, requestUrl));
+  event.respondWith(
+    matchCachedAsset(event.request).then(function (cachedResponse) {
+      if (cachedResponse) return cachedResponse;
+      return networkFirstAsset(event.request, requestUrl);
+    })
+  );
 });

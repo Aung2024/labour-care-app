@@ -35,6 +35,9 @@ test('offline caches are namespaced for the isolated project', () => {
   const serviceWorkerSource = read('service-worker.js');
   assert.match(serviceWorkerSource, /labourcare-2481a-vouchers/);
   assert.match(serviceWorkerSource, /INSTALL_PRECACHE/);
+  assert.match(serviceWorkerSource, /SHELL_PRECACHE/);
+  assert.match(serviceWorkerSource, /fetchWithTimeout/);
+  assert.match(serviceWorkerSource, /addEventListener\('install'[\s\S]*?event\.waitUntil\(caches\.open\(CACHE_NAME\)\)/);
   assert.match(serviceWorkerSource, /isHardReloadRequest/);
   assert.match(serviceWorkerSource, /networkFirstDocument/);
   assert.match(serviceWorkerSource, /BACKGROUND_PRECACHE/);
