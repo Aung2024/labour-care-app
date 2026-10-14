@@ -16,8 +16,17 @@
     }
   }
 
+  var isAuthEntryPage = function () {
+    try {
+      var page = String(window.location.pathname || '').split('/').pop() || 'index.html'
+      return page === 'login.html' || page === 'index.html'
+    } catch (e) {
+      return false
+    }
+  }
+
   var scheduleBackgroundPrecache = function (registration) {
-    if (backgroundPrecacheScheduled || isReloadNavigation()) return
+    if (backgroundPrecacheScheduled || isReloadNavigation() || isAuthEntryPage()) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     backgroundPrecacheScheduled = true
 
@@ -34,7 +43,7 @@
         return
       }
       post()
-    }, 12000)
+    }, 20000)
   }
 
   var register = function () {

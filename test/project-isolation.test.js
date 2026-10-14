@@ -37,7 +37,8 @@ test('offline caches are namespaced for the isolated project', () => {
   assert.match(serviceWorkerSource, /INSTALL_PRECACHE/);
   assert.match(serviceWorkerSource, /SHELL_PRECACHE/);
   assert.match(serviceWorkerSource, /fetchWithTimeout/);
-  assert.match(serviceWorkerSource, /addEventListener\('install'[\s\S]*?event\.waitUntil\(caches\.open\(CACHE_NAME\)\)/);
+  assert.match(serviceWorkerSource, /CANCEL_PRECACHE/);
+  assert.match(serviceWorkerSource, /addEventListener\('install'[\s\S]*?INSTALL_PRECACHE/);
   assert.match(serviceWorkerSource, /isHardReloadRequest/);
   assert.match(serviceWorkerSource, /networkFirstDocument/);
   assert.match(serviceWorkerSource, /BACKGROUND_PRECACHE/);

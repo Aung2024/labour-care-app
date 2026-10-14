@@ -56,10 +56,19 @@
     try { root.sessionStorage.removeItem('mchLoggingOut'); } catch (error) {}
   }
 
+  function cancelServiceWorkerPrecache() {
+    try {
+      if (root.navigator && root.navigator.serviceWorker && root.navigator.serviceWorker.controller) {
+        root.navigator.serviceWorker.controller.postMessage({ type: 'CANCEL_PRECACHE' });
+      }
+    } catch (error) {}
+  }
+
   function goToLogin() {
     var page = '';
     try { page = String(root.location.pathname || '').split('/').pop(); } catch (error) { page = ''; }
     if (page === 'login.html') return;
+    cancelServiceWorkerPrecache();
     root.location.replace('login.html');
   }
 

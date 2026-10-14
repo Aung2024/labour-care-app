@@ -1,13 +1,11 @@
 
-const CACHE_NAME = 'mch-care-v322-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v323-labourcare-2481a-vouchers';
 
-// Install: only router + login — do not fetch home/list during install (avoids ERR_CONNECTION_CLOSED).
 const INSTALL_PRECACHE = [
   './index.html',
   './login.html'
 ];
 
-// Cached after first paint via PRECACHE_BACKGROUND (V2-style shell, isolated paths only).
 const SHELL_PRECACHE = [
   './home.html',
   './list.html',
@@ -56,7 +54,10 @@ const BACKGROUND_PRECACHE = [
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
 const PRECACHE_BATCH_SIZE = 2;
-const PRECACHE_BATCH_DELAY_MS = 250;
+const PRECACHE_BATCH_DELAY_MS = 400;
+
+var backgroundPrecacheCancelled = false;
+var backgroundPrecachePromise = null;
 
 function resolvedUrl(file) {
   try {
@@ -76,8 +77,10 @@ function uniqueCacheFiles(files) {
 }
 
 function cacheOneFile(cache, file) {
+  if (backgroundPrecacheCancelled) return Promise.resolve(undefined);
   var url = resolvedUrl(file);
   return fetch(url, { credentials: 'same-origin' }).then(function (response) {
+    if (backgroundPrecacheCancelled) return undefined;
     if (!response || !response.ok) return undefined;
     return cache.put(url, response.clone());
   }).catch(function () {
@@ -89,7 +92,7 @@ function cacheFilesInBatches(cache, files, batchSize) {
   var list = uniqueCacheFiles(files);
   var index = 0;
   function nextBatch() {
-    if (index >= list.length) return Promise.resolve();
+    if (backgroundPrecacheCancelled || index >= list.length) return Promise.resolve();
     var batch = list.slice(index, index + batchSize);
     index += batchSize;
     return Promise.all(batch.map(function (file) {
@@ -122,19 +125,17 @@ function deleteOldCaches() {
   });
 }
 
-var backgroundPrecachePromise = null;
-
 function runBackgroundPrecache() {
+  if (backgroundPrecacheCancelled) return Promise.resolve();
   if (backgroundPrecachePromise) return backgroundPrecachePromise;
   backgroundPrecachePromise = caches.open(CACHE_NAME).then(function (cache) {
-    return cacheFilesInBatches(cache, INSTALL_PRECACHE, PRECACHE_BATCH_SIZE)
+    return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE)
       .then(function () {
-        return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
-      })
-      .then(function () {
+        if (backgroundPrecacheCancelled) return undefined;
         return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
       })
       .then(function () {
+        if (backgroundPrecacheCancelled) return undefined;
         return shellHasRequiredPages(cache).then(function (ready) {
           if (!ready) return undefined;
           return deleteOldCaches();
@@ -142,12 +143,18 @@ function runBackgroundPrecache() {
       });
   }).catch(function () {
     backgroundPrecachePromise = null;
+  }).then(function () {
+    backgroundPrecachePromise = null;
   });
   return backgroundPrecachePromise;
 }
 
 self.addEventListener('install', function (event) {
-  event.waitUntil(caches.open(CACHE_NAME));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function (cache) {
+      return cacheFilesInBatches(cache, INSTALL_PRECACHE, PRECACHE_BATCH_SIZE);
+    })
+  );
 });
 
 self.addEventListener('activate', function (event) {
@@ -183,6 +190,11 @@ function shouldCacheRequest(requestUrl) {
 
 function documentCacheUrl(requestUrl) {
   return resolvedUrl(requestUrl.pathname || '/');
+}
+
+function isAuthEntryPath(pathname) {
+  var leaf = pathname.split('/').pop() || 'index.html';
+  return leaf === 'login.html' || leaf === 'index.html';
 }
 
 function assetCacheKey(requestUrl) {
@@ -261,15 +273,9 @@ function cacheDocumentResponse(request, response) {
   }).catch(function () {});
 }
 
-function revalidateDocumentInBackground(request) {
-  fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      cacheDocumentResponse(request, response);
-    })
-    .catch(function () {});
-}
-
 function networkFirstDocument(request) {
+  var requestUrl = new URL(request.url);
+
   if (isHardReloadRequest(request)) {
     return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
       .then(function (response) {
@@ -283,20 +289,30 @@ function networkFirstDocument(request) {
       });
   }
 
-  return matchCachedDocument(request).then(function (cached) {
-    if (cached) {
-      revalidateDocumentInBackground(request);
-      return cached;
-    }
-    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-      .then(function (response) {
-        cacheDocumentResponse(request, response);
-        return response;
-      })
-      .catch(function () {
-        return offlineDocumentResponse();
+  if (isAuthEntryPath(requestUrl.pathname)) {
+    return matchCachedDocument(request).then(function (cached) {
+      if (cached) return cached;
+      return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+        .then(function (response) {
+          cacheDocumentResponse(request, response);
+          return response;
+        })
+        .catch(function () {
+          return offlineDocumentResponse();
+        });
+    });
+  }
+
+  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      cacheDocumentResponse(request, response);
+      return response;
+    })
+    .catch(function () {
+      return matchCachedDocument(request).then(function (cached) {
+        return cached || offlineDocumentResponse();
       });
-  });
+    });
 }
 
 function networkFirstAsset(request, requestUrl) {
@@ -309,8 +325,8 @@ function networkFirstAsset(request, requestUrl) {
         var responseToCache = response.clone();
         var key = assetCacheKey(requestUrl);
         caches.open(CACHE_NAME).then(function (cache) {
-          cache.put(key, responseToCache);
-        });
+          return cache.put(key, responseToCache);
+        }).catch(function () {});
       }
       return response;
     })
@@ -327,7 +343,12 @@ self.addEventListener('message', function (event) {
   if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  if (event.data.type === 'CANCEL_PRECACHE') {
+    backgroundPrecacheCancelled = true;
+    backgroundPrecachePromise = null;
+  }
   if (event.data.type === 'PRECACHE_BACKGROUND') {
+    if (backgroundPrecacheCancelled) return;
     event.waitUntil(runBackgroundPrecache());
   }
 });
