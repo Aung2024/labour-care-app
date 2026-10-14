@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v326-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v327-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -229,50 +229,78 @@ function isHardReloadRequest(request) {
   return pragma.indexOf('no-cache') !== -1;
 }
 
-function cacheDocumentResponse(request, response) {
-  var requestUrl = new URL(request.url);
-  if (!response || response.status !== 200 || response.type !== 'basic' || !shouldCacheRequest(requestUrl)) {
-    return;
-  }
-  var responseToCache = response.clone();
-  caches.open(CACHE_NAME).then(function (cache) {
-    return cache.put(documentCacheUrl(requestUrl), responseToCache);
-  }).catch(function () {});
-}
-
 function isHistoryNavigation(request) {
   return request.mode === 'navigate' && request.cache === 'only-if-cached';
 }
 
-function usableHtmlResponse(response) {
-  if (!response || response.status !== 200) return null;
-  var contentType = response.headers.get('content-type') || '';
-  if (contentType.indexOf('text/html') === -1 && contentType.indexOf('application/xhtml') === -1) {
+function htmlLooksValid(text) {
+  if (!text || text.length < 400) return false;
+  return text.indexOf('<html') !== -1 || text.indexOf('<!DOCTYPE') !== -1;
+}
+
+function deleteCachedDocument(requestUrl) {
+  return caches.open(CACHE_NAME).then(function (cache) {
+    return cache.delete(documentCacheUrl(requestUrl));
+  }).catch(function () {});
+}
+
+function htmlDocumentFromResponse(response, requestUrlForPurge) {
+  if (!response || response.status !== 200) return Promise.resolve(null);
+  return response.clone().text().then(function (text) {
+    if (!htmlLooksValid(text)) {
+      if (requestUrlForPurge) deleteCachedDocument(requestUrlForPurge);
+      return null;
+    }
+    return new Response(text, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+  }).catch(function () {
     return null;
-  }
-  return response.clone();
+  });
 }
 
 function respondDocument(request) {
+  var requestUrl = new URL(request.url);
+
   if (isHistoryNavigation(request)) {
     return matchCachedDocument(request).then(function (cached) {
-      var doc = usableHtmlResponse(cached);
-      if (doc) return doc;
-      return fetch(request);
+      return htmlDocumentFromResponse(cached, requestUrl).then(function (doc) {
+        if (doc) return doc;
+        return fetch(request);
+      });
     });
   }
 
   return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
     .then(function (response) {
       if (response && response.ok) {
-        cacheDocumentResponse(request, response);
+        return htmlDocumentFromResponse(response, null).then(function (doc) {
+          if (doc) {
+            caches.open(CACHE_NAME).then(function (cache) {
+              return cache.put(documentCacheUrl(requestUrl), doc.clone());
+            }).catch(function () {});
+            return doc;
+          }
+          return matchCachedDocument(request).then(function (cached) {
+            return htmlDocumentFromResponse(cached, requestUrl).then(function (fallback) {
+              return fallback || response;
+            });
+          });
+        });
       }
-      return response;
+      return matchCachedDocument(request).then(function (cached) {
+        return htmlDocumentFromResponse(cached, requestUrl).then(function (doc) {
+          return doc || offlineDocumentResponse();
+        });
+      });
     })
     .catch(function () {
       return matchCachedDocument(request).then(function (cached) {
-        var doc = usableHtmlResponse(cached);
-        return doc || offlineDocumentResponse();
+        return htmlDocumentFromResponse(cached, requestUrl).then(function (doc) {
+          return doc || offlineDocumentResponse();
+        });
       });
     });
 }

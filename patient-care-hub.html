@@ -8,9 +8,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <script src="js/register-sw.js"></script>
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
   <link rel="stylesheet" href="css/compact-app-bar.css" />
   
@@ -32,8 +30,14 @@
       box-sizing: border-box;
     }
 
+    html {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100%;
+      min-height: 100dvh;
+    }
+
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       padding: 0;
@@ -935,6 +939,7 @@
     </div>
   </footer>
 
+  <script src="js/register-sw.js"></script>
   <script src="js/vendor/firebase-app.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
@@ -1107,15 +1112,44 @@
     }
 
     // Initialize Firebase auth state
+    let hubBootDone = false;
+    let hubBootTimer = null;
+
+    function finishHubBootShowShell() {
+      const loadingEl = document.getElementById('loadingContainer');
+      if (loadingEl) loadingEl.style.display = 'none';
+    }
+
+    function startHubBootTimeout() {
+      if (hubBootTimer) clearTimeout(hubBootTimer);
+      hubBootTimer = setTimeout(function () {
+        if (hubBootDone) return;
+        finishHubBootShowShell();
+        const noPatient = document.getElementById('noPatientContainer');
+        if (noPatient) noPatient.style.display = 'block';
+      }, 15000);
+    }
+
     firebase.auth().onAuthStateChanged(async function(user) {
       if (!user) user = getPilotCachedUser();
       if (!user) {
         window.location.href = "login.html";
         return;
       }
-      
+
       currentUser = user;
-      await loadPatientData();
+      startHubBootTimeout();
+      try {
+        await loadPatientData();
+        hubBootDone = true;
+        if (hubBootTimer) clearTimeout(hubBootTimer);
+      } catch (e) {
+        hubBootDone = true;
+        if (hubBootTimer) clearTimeout(hubBootTimer);
+        finishHubBootShowShell();
+        const noPatient = document.getElementById('noPatientContainer');
+        if (noPatient) noPatient.style.display = 'block';
+      }
     });
 
     // Load patient data from session storage
