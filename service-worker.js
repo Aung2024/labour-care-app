@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v321-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v322-labourcare-2481a-vouchers';
 
 // Install: only router + login — do not fetch home/list during install (avoids ERR_CONNECTION_CLOSED).
 const INSTALL_PRECACHE = [
@@ -11,6 +11,8 @@ const INSTALL_PRECACHE = [
 const SHELL_PRECACHE = [
   './home.html',
   './list.html',
+  './patient-care-hub.html',
+  './promo-voucher.html',
   './manifest.json',
   './css/vendor/bootstrap.min.css',
   './css/vendor/fontawesome-all.min.css',
@@ -167,30 +169,34 @@ function isStaticAssetPath(pathname) {
   return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
 }
 
+function isHtmlPath(pathname) {
+  return pathname === '/' || /\.html?$/i.test(pathname) || !/\.[a-z0-9]+$/i.test(pathname);
+}
+
 function shouldCacheRequest(requestUrl) {
   if (isRuntimeConfigPath(requestUrl.pathname)) return false;
   if (isStaticAssetPath(requestUrl.pathname)) return true;
+  if (isHtmlPath(requestUrl.pathname)) return true;
   if (requestUrl.search) return false;
   return true;
+}
+
+function documentCacheUrl(requestUrl) {
+  return resolvedUrl(requestUrl.pathname || '/');
 }
 
 function assetCacheKey(requestUrl) {
   return requestUrl.origin + requestUrl.pathname;
 }
 
-function documentCacheKey(request, requestUrl) {
-  if (requestUrl.search) return requestUrl.origin + requestUrl.pathname;
-  return request;
-}
-
 function matchCachedDocument(request) {
   var requestUrl = new URL(request.url);
   var path = requestUrl.pathname;
   if (path.endsWith('/')) path += 'index.html';
-  return caches.match(request).then(function (exact) {
-    if (exact) return exact;
-    return caches.match(resolvedUrl(path)).then(function (byPath) {
-      if (byPath) return byPath;
+  return caches.match(documentCacheUrl(requestUrl)).then(function (byPath) {
+    if (byPath) return byPath;
+    return caches.match(request).then(function (exact) {
+      if (exact) return exact;
       var leaf = path.split('/').pop() || 'index.html';
       return caches.match(resolvedUrl('./' + leaf));
     });
@@ -251,9 +257,16 @@ function cacheDocumentResponse(request, response) {
   }
   var responseToCache = response.clone();
   caches.open(CACHE_NAME).then(function (cache) {
-    cache.put(documentCacheKey(request, requestUrl), responseToCache);
-    cache.put(resolvedUrl(requestUrl.pathname), responseToCache);
-  });
+    return cache.put(documentCacheUrl(requestUrl), responseToCache);
+  }).catch(function () {});
+}
+
+function revalidateDocumentInBackground(request) {
+  fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      cacheDocumentResponse(request, response);
+    })
+    .catch(function () {});
 }
 
 function networkFirstDocument(request) {
@@ -270,16 +283,20 @@ function networkFirstDocument(request) {
       });
   }
 
-  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      cacheDocumentResponse(request, response);
-      return response;
-    })
-    .catch(function () {
-      return matchCachedDocument(request).then(function (cached) {
-        return cached || offlineDocumentResponse();
+  return matchCachedDocument(request).then(function (cached) {
+    if (cached) {
+      revalidateDocumentInBackground(request);
+      return cached;
+    }
+    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+      .then(function (response) {
+        cacheDocumentResponse(request, response);
+        return response;
+      })
+      .catch(function () {
+        return offlineDocumentResponse();
       });
-    });
+  });
 }
 
 function networkFirstAsset(request, requestUrl) {

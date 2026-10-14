@@ -77,6 +77,15 @@
     return 'patient-care-hub.html?patient=' + encodeURIComponent(state.patientId || '');
   }
 
+  function goBackToHub(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (window.AppNavBack && typeof window.AppNavBack.toHub === 'function') {
+      window.AppNavBack.toHub(state.patientId);
+      return;
+    }
+    window.location.href = ancHubHref();
+  }
+
   function todayInputValue() {
     var now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -453,6 +462,11 @@
   });
   el('voucherForm').addEventListener('submit', generate);
   el('downloadButton').addEventListener('click', downloadPng);
+  ['backLink', 'afterGenerateBack'].forEach(function (id) {
+    var link = el(id);
+    if (!link) return;
+    link.addEventListener('click', goBackToHub);
+  });
   el('selectAllTests').addEventListener('click', function () {
     var boxes = Array.from(document.querySelectorAll('.test-select'));
     var shouldSelect = boxes.some(function (box) { return !box.checked; });
