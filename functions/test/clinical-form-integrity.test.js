@@ -340,8 +340,11 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(login, /js\/register-sw\.js/);
   assert.match(index, /js\/register-sw\.js/);
   assert.match(list, /js\/register-sw\.js/);
+  assert.match(readAppFile('postpartum-care.html'), /js\/register-sw\.js/);
+  assert.match(readAppFile('immediate-newborn-care.html'), /js\/register-sw\.js/);
   assert.match(registerSw, /getRegistrations/);
   assert.match(registerSw, /unregister/);
+  assert.match(registerSw, /runTeardown\('immediate'\)/);
   assert.doesNotMatch(registerSw, /\.register\(/);
 });
 
