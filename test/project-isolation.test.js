@@ -34,7 +34,7 @@ test('Spark release blocks Cloud Functions deployment', () => {
 test('offline caches are namespaced for the isolated project', () => {
   const serviceWorkerSource = read('service-worker.js');
   assert.match(serviceWorkerSource, /labourcare-2481a-vouchers/);
-  assert.match(serviceWorkerSource, /SHELL_PRECACHE/);
+  assert.match(serviceWorkerSource, /INSTALL_PRECACHE/);
   assert.match(serviceWorkerSource, /isHardReloadRequest/);
   assert.match(serviceWorkerSource, /networkFirstDocument/);
   assert.match(serviceWorkerSource, /BACKGROUND_PRECACHE/);
