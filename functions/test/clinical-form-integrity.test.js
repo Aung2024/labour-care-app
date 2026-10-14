@@ -296,7 +296,7 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v359-moh/);
+  assert.match(sw, /mch-care-v360-moh/);
   assert.match(sw, /ignoreSearch: true/);
 });
 
@@ -345,8 +345,21 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(login, /js\/register-sw\.js/);
   assert.match(index, /js\/register-sw\.js/);
   assert.match(list, /js\/register-sw\.js/);
-  assert.match(registerSw, /DOMContentLoaded/);
+  assert.match(registerSw, /addEventListener\('load'/);
+  assert.match(registerSw, /requestIdleCallback/);
   assert.match(registerSw, /controllerchange/);
+  assert.doesNotMatch(registerSw, /SKIP_WAITING/);
+});
+
+test('service worker cold start avoids hung fetches and aggressive install takeover', () => {
+  const sw = readAppFile('service-worker.js');
+  const installBlock = sw.match(/addEventListener\('install'[\s\S]*?\n\}\);/);
+  assert.match(sw, /function fetchWithTimeout/);
+  assert.match(sw, /SHELL_PRECACHE/);
+  assert.match(sw, /shellHasRequiredPages/);
+  assert.ok(installBlock, 'install handler present');
+  assert.doesNotMatch(installBlock[0], /skipWaiting/);
+  assert.doesNotMatch(sw, /clients\.claim\(/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {

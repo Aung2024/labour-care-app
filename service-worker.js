@@ -1,11 +1,30 @@
 
-const CACHE_NAME = 'mch-care-v359-moh';
-const FILES_TO_CACHE = [
-  './',
+const CACHE_NAME = 'mch-care-v360-moh';
+
+const SHELL_PRECACHE = [
   './index.html',
+  './login.html',
   './home.html',
   './list.html',
-  './login.html',
+  './manifest.json',
+  './css/vendor/bootstrap.min.css',
+  './css/vendor/fontawesome-all.min.css',
+  './css/style.css',
+  './css/compact-app-bar.css',
+  './css/webfonts/fa-solid-900.woff2',
+  './js/vendor/firebase-app.js',
+  './js/vendor/firebase-auth.js',
+  './js/vendor/firebase-firestore.js',
+  './js/firebase.js',
+  './js/register-sw.js',
+  './js/auth-guard.js',
+  './js/user-cache.js',
+  './js/nav-back.js',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
+];
+
+const BACKGROUND_PRECACHE = [
   './registration.html',
   './patient-care-hub.html',
   './patient-care-hub-lcg.html',
@@ -13,23 +32,9 @@ const FILES_TO_CACHE = [
   './retroactive-data-entry.html',
   './provider-consent.html',
   './dashboard.html',
-  './manifest.json',
-  './css/vendor/bootstrap.min.css',
-  './css/vendor/fontawesome-all.min.css',
-  './css/style.css',
-  './css/compact-app-bar.css',
   './css/dashboard-v3.css',
-  './css/webfonts/fa-solid-900.woff2',
   './js/vendor/bootstrap.bundle.min.js',
-  './js/vendor/firebase-app.js',
-  './js/vendor/firebase-auth.js',
-  './js/vendor/firebase-firestore.js',
-  './js/firebase.js',
-  './js/auth-guard.js',
-  './js/register-sw.js',
-  './js/nav-back.js',
   './js/page-performance.js',
-  './js/user-cache.js',
   './js/consent-manager.js',
   './js/offline-store.js',
   './js/offline-sync.js',
@@ -43,10 +48,12 @@ const FILES_TO_CACHE = [
   './js/report-facility.js',
   './js/dashboard-data.js',
   './js/dashboard-v3.js',
-  './js/dashboard-metrics-config.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+  './js/dashboard-metrics-config.js'
 ];
+
+const ASSET_FETCH_TIMEOUT_MS = 8000;
+const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
+const PRECACHE_BATCH_SIZE = 4;
 
 function uniqueCacheFiles(files) {
   var seen = {};
@@ -57,46 +64,78 @@ function uniqueCacheFiles(files) {
   });
 }
 
-// Install event - cache resources
-self.addEventListener('install', (event) => {
+function cacheFilesInBatches(cache, files, batchSize) {
+  var list = uniqueCacheFiles(files);
+  var index = 0;
+  function nextBatch() {
+    if (index >= list.length) return Promise.resolve();
+    var batch = list.slice(index, index + batchSize);
+    index += batchSize;
+    return Promise.all(batch.map(function (file) {
+      return cache.add(file).catch(function (error) {
+        console.warn('[Service Worker] Skip cache', file, error);
+      });
+    })).then(nextBatch);
+  }
+  return nextBatch();
+}
+
+function shellHasRequiredPages(cache) {
+  return cache.match('./login.html').then(function (login) {
+    if (!login) return false;
+    return cache.match('./home.html').then(function (home) {
+      return !!home;
+    });
+  });
+}
+
+function deleteOldCaches() {
+  return caches.keys().then(function (keyList) {
+    return Promise.all(keyList.map(function (key) {
+      if (key !== CACHE_NAME) {
+        console.log('[Service Worker] Removing old cache:', key);
+        return caches.delete(key);
+      }
+    }));
+  });
+}
+
+function runBackgroundPrecache() {
+  return caches.open(CACHE_NAME).then(function (cache) {
+    return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
+  }).catch(function (error) {
+    console.warn('[Service Worker] Background precache failed:', error);
+  });
+}
+
+self.addEventListener('install', function (event) {
   console.log('[Service Worker] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(function (cache) {
         console.log('[Service Worker] Caching app shell');
-        return Promise.all(uniqueCacheFiles(FILES_TO_CACHE).map(function (file) {
-          return cache.add(file).catch(function (error) {
-            console.warn('[Service Worker] Skip cache', file, error);
-          });
-        }));
+        return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
       })
       .then(function () {
         console.log('[Service Worker] App shell cache ready');
-        return self.skipWaiting();
       })
       .catch(function (error) {
-        console.error('[Service Worker] Cache failed:', error);
-        return self.skipWaiting();
+        console.error('[Service Worker] Shell cache failed:', error);
       })
   );
 });
 
-// Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener('activate', function (event) {
   console.log('[Service Worker] Activating...');
   event.waitUntil(
-    caches.keys().then((keyList) => {
-      return Promise.all(
-        keyList.map((key) => {
-          if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Removing old cache:', key);
-            return caches.delete(key);
-          }
-        })
-      );
-    }).then(() => {
-      console.log('[Service Worker] Claiming clients');
-      return self.clients.claim();
+    caches.open(CACHE_NAME).then(function (cache) {
+      return shellHasRequiredPages(cache).then(function (ready) {
+        if (!ready) {
+          console.warn('[Service Worker] Shell incomplete — keeping previous caches');
+          return;
+        }
+        return deleteOldCaches();
+      });
     })
   );
 });
@@ -112,7 +151,6 @@ function isStaticAssetPath(pathname) {
 function shouldCacheRequest(requestUrl) {
   if (isRuntimeConfigPath(requestUrl.pathname)) return false;
   if (isStaticAssetPath(requestUrl.pathname)) return true;
-  // Keep HTML/document cache keys query-free so patient IDs are not stored.
   if (requestUrl.search) return false;
   return true;
 }
@@ -153,62 +191,117 @@ function offlineDocumentResponse() {
   );
 }
 
-function networkFirstDocument(request) {
-  var requestUrl = new URL(request.url);
-  var networkPromise = fetch(request).then(function (response) {
-    if (response && response.status === 200 && response.type === 'basic' && shouldCacheRequest(requestUrl)) {
-      var responseToCache = response.clone();
-      caches.open(CACHE_NAME).then(function (cache) {
-        cache.put(documentCacheKey(request, requestUrl), responseToCache);
-      });
-    }
-    return response;
-  }).catch(function () { return null; });
-
-  return matchCachedDocument(request).then(function (cachedResponse) {
-    if (cachedResponse) return cachedResponse;
-    var timeoutPromise = new Promise(function (resolve) {
-      setTimeout(function () { resolve(null); }, 2000);
-    });
-    return Promise.race([networkPromise, timeoutPromise]).then(function (fast) {
-      return fast || networkPromise.then(function (response) {
-        if (response) return response;
-        return caches.match('./home.html').then(function (homeFallback) {
-          if (homeFallback) return homeFallback;
-          return caches.match('./index.html').then(function (indexFallback) {
-            return indexFallback || offlineDocumentResponse();
-          });
-        });
-      });
+function fetchWithTimeout(request, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      reject(new Error('fetch-timeout'));
+    }, timeoutMs);
+    fetch(request).then(function (response) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(response);
+    }).catch(function (error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
     });
   });
 }
 
+function isHardReloadRequest(request) {
+  if (request.cache === 'reload') return true;
+  var pragma = request.headers.get('pragma') || '';
+  return pragma.indexOf('no-cache') !== -1;
+}
+
+function cacheDocumentResponse(request, response) {
+  var requestUrl = new URL(request.url);
+  if (!response || response.status !== 200 || response.type !== 'basic' || !shouldCacheRequest(requestUrl)) {
+    return;
+  }
+  var responseToCache = response.clone();
+  caches.open(CACHE_NAME).then(function (cache) {
+    cache.put(documentCacheKey(request, requestUrl), responseToCache);
+  });
+}
+
+function networkFirstDocument(request) {
+  var requestUrl = new URL(request.url);
+
+  if (isHardReloadRequest(request)) {
+    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+      .then(function (response) {
+        cacheDocumentResponse(request, response);
+        return response;
+      })
+      .catch(function () {
+        return matchCachedDocument(request).then(function (cached) {
+          return cached || offlineDocumentResponse();
+        });
+      });
+  }
+
+  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      cacheDocumentResponse(request, response);
+      return response;
+    })
+    .catch(function () {
+      return matchCachedDocument(request).then(function (cached) {
+        return cached || offlineDocumentResponse();
+      });
+    });
+}
+
+function networkFirstAsset(request, requestUrl) {
+  return fetchWithTimeout(request, ASSET_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      if (!response || response.status !== 200 || response.type !== 'basic') {
+        return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
+      }
+      if (shouldCacheRequest(requestUrl)) {
+        var responseToCache = response.clone();
+        caches.open(CACHE_NAME).then(function (cache) {
+          cache.put(assetCacheKey(requestUrl), responseToCache);
+        });
+      }
+      return response;
+    })
+    .catch(function () {
+      return matchCachedAsset(request).then(function (fallbackResponse) {
+        return fallbackResponse || new Response('', { status: 504, statusText: 'Offline' });
+      });
+    });
+}
+
 self.addEventListener('message', function (event) {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  if (event.data.type === 'PRECACHE_BACKGROUND') {
+    event.waitUntil(runBackgroundPrecache());
   }
 });
 
-// Fetch event strategy:
-// - HTML/document navigation: cached shell first, refresh in the background.
-// - Static assets: cache first, ignore ?v= so versioned script tags match precache.
-self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
+self.addEventListener('fetch', function (event) {
   if (!event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
-  const requestUrl = new URL(event.request.url);
-  // Do not intercept runtime config. A failed SW fetch previously forced
-  // login onto the embedded pilot project and blocked hard refresh.
+  var requestUrl = new URL(event.request.url);
   if (isRuntimeConfigPath(requestUrl.pathname)) {
     return;
   }
 
-  const isDocumentRequest =
+  var isDocumentRequest =
     event.request.mode === 'navigate' ||
-    (event.request.headers.get('accept') || '').includes('text/html');
+    (event.request.headers.get('accept') || '').indexOf('text/html') !== -1;
 
   if (isDocumentRequest) {
     event.respondWith(networkFirstDocument(event.request));
@@ -216,25 +309,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    matchCachedAsset(event.request).then((cachedResponse) => {
+    matchCachedAsset(event.request).then(function (cachedResponse) {
       if (cachedResponse) return cachedResponse;
-
-      return fetch(event.request)
-        .then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
-          }
-          if (shouldCacheRequest(requestUrl)) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(assetCacheKey(requestUrl), responseToCache));
-          }
-          return response;
-        })
-        .catch(function () {
-          return matchCachedAsset(event.request).then(function (fallbackResponse) {
-            return fallbackResponse || new Response('', { status: 504, statusText: 'Offline' });
-          });
-        });
+      return networkFirstAsset(event.request, requestUrl);
     })
   );
 });

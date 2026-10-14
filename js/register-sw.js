@@ -26,17 +26,27 @@
     window.location.reload()
   })
 
+  var scheduleBackgroundPrecache = function (registration) {
+    if (!registration || !registration.active) return
+    try {
+      registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
+    } catch (e) {}
+  }
+
   var register = function () {
     navigator.serviceWorker.register('./service-worker.js').then(function (registration) {
-      if (registration.waiting && navigator.serviceWorker.controller) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+      if (registration.active) {
+        scheduleBackgroundPrecache(registration)
       }
+      navigator.serviceWorker.ready.then(function (readyRegistration) {
+        scheduleBackgroundPrecache(readyRegistration)
+      })
       registration.addEventListener('updatefound', function () {
         var worker = registration.installing
         if (!worker) return
         worker.addEventListener('statechange', function () {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-            worker.postMessage({ type: 'SKIP_WAITING' })
+          if (worker.state === 'activated') {
+            scheduleBackgroundPrecache(registration)
           }
         })
       })
@@ -45,9 +55,17 @@
     })
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', register)
+  var deferRegister = function () {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(function () { register() }, { timeout: 3000 })
+      return
+    }
+    setTimeout(register, 0)
+  }
+
+  if (document.readyState === 'complete') {
+    deferRegister()
   } else {
-    register()
+    window.addEventListener('load', deferRegister)
   }
 })()
