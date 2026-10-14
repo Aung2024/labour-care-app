@@ -1,6 +1,5 @@
 /**
  * Registers the app service worker from any page under the site root.
- * Ensures precache runs for flows that skip index.html / home.html.
  */
 (function () {
   if (!('serviceWorker' in navigator)) return
@@ -8,6 +7,7 @@
   var reloading = false
   var hadController = !!navigator.serviceWorker.controller
   var pageStartedAt = Date.now()
+  var backgroundPrecacheScheduled = false
 
   var isReloadNavigation = function () {
     try {
@@ -26,14 +26,23 @@
     window.location.reload()
   })
 
-  var backgroundPrecacheScheduled = false
-
   var scheduleBackgroundPrecache = function (registration) {
-    if (backgroundPrecacheScheduled || !registration || !registration.active) return
+    if (backgroundPrecacheScheduled || isReloadNavigation()) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     backgroundPrecacheScheduled = true
-    try {
-      registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
-    } catch (e) {}
+
+    var post = function () {
+      if (!registration || !registration.active) return
+      try {
+        registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
+      } catch (e) {}
+    }
+
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(post, { timeout: 10000 })
+      return
+    }
+    setTimeout(post, 8000)
   }
 
   var register = function () {

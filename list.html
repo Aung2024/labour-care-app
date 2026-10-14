@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Select Patient - Maternal & Child Health Care System</title>
   <link rel="manifest" href="manifest.json" />
+  <script src="js/register-sw.js"></script>
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
@@ -1039,7 +1040,7 @@
           <span class="tracking-bell-badge d-none" id="trackingBellBadge">0</span>
           <span class="app-bar-btn-label lang-text" data-en="Alerts" data-mm="သတိပေးချက်">Alerts</span>
         </button>
-        <a href="home.html" class="app-bar-btn" aria-label="Home">
+        <a href="home.html" class="app-bar-btn" aria-label="Home" onclick="if(window.AppNavBack){event.preventDefault();AppNavBack.toHome();}">
           <i class="fas fa-home" aria-hidden="true"></i>
           <span class="app-bar-btn-label lang-text" data-en="Home" data-mm="ပင်မ">Home</span>
         </a>
@@ -1214,8 +1215,9 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/register-sw.js"></script>
   <script src="js/role-landing.js"></script>
+  <script src="js/nav-back.js"></script>
+  <script src="js/page-performance.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-manager.js"></script>
@@ -1248,6 +1250,66 @@
     const TRACKING_CONCURRENCY = 6;
     const BABY_INFO_CONCURRENCY = 6;
     let currentLanguage = localStorage.getItem('appLanguage') || localStorage.getItem('language') || 'mm';
+    let listBootCompleted = false;
+    let listBootTimeoutId = null;
+    const LIST_PATIENTS_WARM_KEY = 'listPatientsWarm:v1';
+    const LIST_PATIENTS_WARM_TTL_MS = 3 * 60 * 1000;
+
+    function saveListWarmCache(uid, patients) {
+      if (!uid || !Array.isArray(patients)) return;
+      try {
+        sessionStorage.setItem(LIST_PATIENTS_WARM_KEY, JSON.stringify({
+          uid: uid,
+          at: Date.now(),
+          patients: patients
+        }));
+      } catch (e) {}
+    }
+
+    function loadListWarmCache(uid) {
+      try {
+        const raw = sessionStorage.getItem(LIST_PATIENTS_WARM_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.uid !== uid || !Array.isArray(parsed.patients)) return null;
+        if (Date.now() - parsed.at > LIST_PATIENTS_WARM_TTL_MS) return null;
+        return parsed.patients;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function clearListWarmCache() {
+      try { sessionStorage.removeItem(LIST_PATIENTS_WARM_KEY); } catch (e) {}
+    }
+
+    function showListFromWarmCache(patients) {
+      allPatients = patients;
+      filteredPatients = patients.slice();
+      stopListLoadingMessages();
+      const loadingEl = document.getElementById('loadingContainer');
+      const emptyEl = document.getElementById('emptyState');
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'none';
+      updateSectionTitle();
+      filterPatients();
+    }
+
+    function startListBootTimeout() {
+      if (listBootTimeoutId) clearTimeout(listBootTimeoutId);
+      listBootTimeoutId = setTimeout(function () {
+        if (listBootCompleted) return;
+        stopListLoadingMessages();
+        const loadingEl = document.getElementById('loadingContainer');
+        const emptyEl = document.getElementById('emptyState');
+        const emptyMsg = document.getElementById('emptyMessage');
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'block';
+        if (emptyMsg) {
+          emptyMsg.textContent = listT('unableToLoad') + ' Tap Retry on the loading area or refresh.';
+        }
+      }, 20000);
+    }
 
     const LIST_I18N = {
       en: {
@@ -1458,11 +1520,14 @@
     firebase.auth().onAuthStateChanged(async function(user) {
       if (!user) user = getPilotCachedUser();
       if (!user) {
+        clearListWarmCache();
         window.location.href = "login.html";
         return;
       }
       
       currentUser = user;
+      listBootCompleted = false;
+      startListBootTimeout();
       
       // Detect iOS/iPadOS WebKit devices.
       const isIOS = isAppleMobileOrTablet();
@@ -1509,9 +1574,21 @@
       } else {
         document.getElementById('midwifeFilterContainer').style.display = 'none';
       }
+
+      const warmPatients = loadListWarmCache(user.uid);
+      if (warmPatients && warmPatients.length) {
+        showListFromWarmCache(warmPatients);
+      }
       
-      // Load all patients
-      await loadPatients();
+      try {
+        await loadPatients();
+      } finally {
+        listBootCompleted = true;
+        if (listBootTimeoutId) {
+          clearTimeout(listBootTimeoutId);
+          listBootTimeoutId = null;
+        }
+      }
     });
 
     function startListLoadingMessages() {
@@ -1770,6 +1847,7 @@
           document.getElementById('emptyMessage').textContent = emptyMsg;
         } else {
           console.log('✅ Displaying patients immediately; enriching in background');
+          saveListWarmCache(currentUser && currentUser.uid, allPatients);
           updateSectionTitle();
           filterPatients();
           reconcileRegisteredPatientStatuses()

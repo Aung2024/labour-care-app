@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v318-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v319-labourcare-2481a-vouchers';
 
 const SHELL_PRECACHE = [
   './index.html',
@@ -15,50 +15,41 @@ const SHELL_PRECACHE = [
   './js/vendor/firebase-app.js',
   './js/vendor/firebase-auth.js',
   './js/vendor/firebase-firestore.js',
+  './js/vendor/bootstrap.bundle.min.js',
   './js/firebase.js',
   './js/register-sw.js',
   './js/auth-guard.js',
   './js/role-landing.js',
   './js/user-cache.js',
   './js/nav-back.js',
+  './js/offline-store.js',
+  './js/offline-manager.js',
+  './js/offline-sync.js',
+  './js/session-manager.js',
+  './js/status-manager.js',
+  './js/anc-tracking-status.js',
+  './js/baby-patient-utils.js',
+  './js/audit-logger.js',
+  './js/page-performance.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
 
+// JS/CSS only — HTML is cached on real navigation, never prefetched in background.
 const BACKGROUND_PRECACHE = [
-  './registration.html',
-  './patient-care-hub.html',
-  './patient-care-hub-lcg.html',
-  './patient-enhanced.html',
-  './provider-consent.html',
-  './dashboard.html',
-  './midwife-vouchers.html',
-  './lab-vouchers.html',
-  './program-officer.html',
-  './promo-voucher.html',
   './css/vouchers.css',
-  './js/vendor/bootstrap.bundle.min.js',
-  './js/page-performance.js',
   './js/consent-manager.js',
-  './js/offline-store.js',
-  './js/offline-sync.js',
-  './js/offline-manager.js',
   './js/offline-status-bar.js',
   './js/ui-dialogs.js',
-  './js/session-manager.js',
   './js/role-display.js',
   './js/sync-manager.js',
-  './js/status-manager.js',
-  './js/home-followup-badges.js',
-  './js/anc-tracking-status.js',
-  './js/baby-patient-utils.js',
-  './js/audit-logger.js',
-  './js/nav-back.js'
+  './js/home-followup-badges.js'
 ];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
 const DOCUMENT_FETCH_TIMEOUT_MS = 10000;
-const PRECACHE_BATCH_SIZE = 4;
+const PRECACHE_BATCH_SIZE = 1;
+const PRECACHE_BATCH_DELAY_MS = 120;
 
 function uniqueCacheFiles(files) {
   var seen = {};
@@ -66,6 +57,15 @@ function uniqueCacheFiles(files) {
     if (seen[file]) return false;
     seen[file] = true;
     return true;
+  });
+}
+
+function cacheOneFile(cache, file) {
+  return fetch(file, { credentials: 'same-origin' }).then(function (response) {
+    if (!response || !response.ok) return undefined;
+    return cache.put(file, response);
+  }).catch(function () {
+    return undefined;
   });
 }
 
@@ -77,13 +77,12 @@ function cacheFilesInBatches(cache, files, batchSize) {
     var batch = list.slice(index, index + batchSize);
     index += batchSize;
     return Promise.all(batch.map(function (file) {
-      return fetch(file, { credentials: 'same-origin' }).then(function (response) {
-        if (!response || !response.ok) return undefined;
-        return cache.put(file, response);
-      }).catch(function () {
-        return undefined;
+      return cacheOneFile(cache, file);
+    })).then(function () {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, PRECACHE_BATCH_DELAY_MS);
       });
-    })).then(nextBatch);
+    }).then(nextBatch);
   }
   return nextBatch();
 }
@@ -101,7 +100,6 @@ function deleteOldCaches() {
   return caches.keys().then(function (keyList) {
     return Promise.all(keyList.map(function (key) {
       if (key !== CACHE_NAME) {
-        console.log('[Service Worker] Removing old cache:', key);
         return caches.delete(key);
       }
     }));
@@ -114,39 +112,27 @@ function runBackgroundPrecache() {
   if (backgroundPrecachePromise) return backgroundPrecachePromise;
   backgroundPrecachePromise = caches.open(CACHE_NAME).then(function (cache) {
     return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
-  }).catch(function (error) {
+  }).catch(function () {
     backgroundPrecachePromise = null;
-    console.warn('[Service Worker] Background precache failed:', error);
   });
   return backgroundPrecachePromise;
 }
 
 self.addEventListener('install', function (event) {
-  console.log('[Service Worker] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(function (cache) {
-        console.log('[Service Worker] Caching app shell');
         return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
       })
-      .then(function () {
-        console.log('[Service Worker] App shell cache ready');
-      })
-      .catch(function (error) {
-        console.error('[Service Worker] Shell cache failed:', error);
-      })
+      .catch(function () {})
   );
 });
 
 self.addEventListener('activate', function (event) {
-  console.log('[Service Worker] Activating...');
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return shellHasRequiredPages(cache).then(function (ready) {
-        if (!ready) {
-          console.warn('[Service Worker] Shell incomplete — keeping previous caches');
-          return;
-        }
+        if (!ready) return;
         return deleteOldCaches();
       });
     })
@@ -257,20 +243,16 @@ function networkFirstDocument(request) {
       });
   }
 
-  // Normal navigation: cached HTML immediately, refresh in background (fast Back/Home).
   return matchCachedDocument(request).then(function (cached) {
-    var networkUpdate = fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    if (cached) return cached;
+    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
       .then(function (response) {
         cacheDocumentResponse(request, response);
         return response;
+      })
+      .catch(function () {
+        return offlineDocumentResponse();
       });
-    if (cached) {
-      networkUpdate.catch(function () {});
-      return cached;
-    }
-    return networkUpdate.catch(function () {
-      return offlineDocumentResponse();
-    });
   });
 }
 
