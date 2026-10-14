@@ -801,6 +801,9 @@
     }
 
     function statusTrackHtml(completedCount, row) {
+      if (!rowIsOnKmcProgram(row) && !isCompleted(row)) {
+        return '<span class="text-muted">—</span>';
+      }
       var totalDots = Math.max(6, Math.min(10, (completedCount || 0) + 1));
       var status = rowTrackingStatus(row);
       var dots = [];
@@ -808,8 +811,10 @@
       for (var i = 1; i <= totalDots; i++) {
         var cls = '';
         if (i <= (completedCount || 0)) cls = 'visited';
-        else if (i === nextVisit) {
+        else if (i === nextVisit && status) {
           cls = status.key === 'overdue_followup' || status.key === 'lost_to_followup' ? status.key : 'next';
+        } else if (i === nextVisit) {
+          cls = 'next';
         }
         dots.push('<span class="hrt-track-dot ' + cls + '">' + i + '</span>');
       }
@@ -1143,9 +1148,12 @@
           : (lang === 'mm' ? ('ရက်ချိန်းလွန် ' + daysLate + ' ရက်') : ('Overdue by ' + daysLate + ' day(s)'));
       }
       var nextDue = row.nextDueDate || tr('pendingDischargeDate');
+      var statusLabel = status
+        ? (lang === 'mm' ? (status.labelMm || status.labelEn || status.key) : (status.labelEn || status.labelMm || status.key))
+        : (lang === 'mm' ? 'KMC မစတင်ရသေး' : 'Not on KMC');
       var message = [
         (lang === 'mm' ? 'ကလေး: ' : 'Baby: ') + (row.babyName || '—'),
-        (lang === 'mm' ? 'အခြေအနေ: ' : 'Status: ') + (lang === 'mm' ? (status.labelMm || status.labelEn || status.key) : (status.labelEn || status.labelMm || status.key)),
+        (lang === 'mm' ? 'အခြေအနေ: ' : 'Status: ') + statusLabel,
         (lang === 'mm' ? 'ပြီးမြောက်သော KMC visit: ' : 'Completed KMC visits: ') + (row.completedVisitCount || 0),
         tr('nextDue') + ': ' + nextDue,
         overdueText
@@ -1170,9 +1178,9 @@
       if (!isKmcYes) return false;
       if (statusFilter === 'all') return true;
       var status = rowTrackingStatus(r);
-      if (statusFilter === 'complete') return status.key === 'complete' || completed;
+      if (statusFilter === 'complete') return (status && status.key === 'complete') || completed;
       if (completed) return false;
-      return status.key === statusFilter;
+      return !!(status && status.key === statusFilter);
     }
 
     function getRowsForCardFilter(filter) {
