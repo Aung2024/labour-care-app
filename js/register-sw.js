@@ -22,10 +22,22 @@
     return unregister.then(clearCaches)
   }
 
+  var CLEANUP_KEY = 'mnch-sw-cleanup-done'
+
   var run = function () {
-    teardown().catch(function (e) {
-      console.warn('[SW] disabled — cleanup failed', e)
-    })
+    try {
+      if (sessionStorage.getItem(CLEANUP_KEY) === '1') return
+    } catch (e) {}
+
+    teardown()
+      .then(function () {
+        try {
+          sessionStorage.setItem(CLEANUP_KEY, '1')
+        } catch (e2) {}
+      })
+      .catch(function (e) {
+        console.warn('[SW] disabled — cleanup failed', e)
+      })
   }
 
   if (document.readyState === 'complete') {
