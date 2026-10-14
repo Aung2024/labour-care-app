@@ -342,6 +342,8 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(list, /js\/register-sw\.js/);
   assert.match(readAppFile('postpartum-care.html'), /js\/register-sw\.js/);
   assert.match(readAppFile('immediate-newborn-care.html'), /js\/register-sw\.js/);
+  assert.match(readAppFile('antenatal-care.html'), /js\/register-sw\.js/);
+  assert.match(readAppFile('js/auth-guard.js'), /__mnchPilotSwTeardown/);
   assert.match(registerSw, /getRegistrations/);
   assert.match(registerSw, /unregister/);
   assert.match(registerSw, /runTeardown\('immediate'\)/);

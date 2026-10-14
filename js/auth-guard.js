@@ -6,6 +6,44 @@
  * PERFORMANCE OPTIMIZED: Uses caching to avoid redundant Firestore queries
  */
 
+/* eslint-disable no-unused-expressions */
+(function (global) {
+  if (!global || global.__mnchPilotSwTeardown) return;
+  global.__mnchPilotSwTeardown = true;
+  if (!global.navigator || !('serviceWorker' in global.navigator)) return;
+  function teardown() {
+    var unregister = global.navigator.serviceWorker.getRegistrations
+      ? global.navigator.serviceWorker.getRegistrations().then(function (regs) {
+          return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+        })
+      : Promise.resolve();
+    var clearCaches = ('caches' in global)
+      ? global.caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (key) { return global.caches.delete(key); }));
+        })
+      : Promise.resolve();
+    return unregister.then(clearCaches);
+  }
+  function stillControlled() {
+    try { return !!global.navigator.serviceWorker.controller; } catch (e) { return false; }
+  }
+  function runTeardown(reason) {
+    return teardown().catch(function (e) {
+      console.warn('[SW] disabled — cleanup failed' + (reason ? ' (' + reason + ')' : ''), e);
+    });
+  }
+  runTeardown('auth-guard');
+  if (stillControlled()) {
+    global.navigator.serviceWorker.ready.then(function () { return runTeardown('ready'); }).catch(function () {});
+  }
+  if (global.document && global.document.readyState !== 'complete') {
+    global.addEventListener('load', function () {
+      if (stillControlled()) runTeardown('load');
+    }, { once: true });
+  }
+})(typeof window !== 'undefined' ? window : undefined);
+/* eslint-enable no-unused-expressions */
+
 // Pages that don't require authentication (public pages)
 const PUBLIC_PAGES = [
   'login.html',

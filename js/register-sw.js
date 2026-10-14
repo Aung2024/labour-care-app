@@ -6,6 +6,9 @@
 (function (global) {
   'use strict';
 
+  if (global.__mnchPilotSwTeardown) return;
+  global.__mnchPilotSwTeardown = true;
+
   if (!global.navigator || !('serviceWorker' in global.navigator)) return;
 
   function teardown() {
