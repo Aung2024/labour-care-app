@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v325-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v326-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -244,27 +244,37 @@ function isHistoryNavigation(request) {
   return request.mode === 'navigate' && request.cache === 'only-if-cached';
 }
 
+function usableHtmlResponse(response) {
+  if (!response || response.status !== 200) return null;
+  var contentType = response.headers.get('content-type') || '';
+  if (contentType.indexOf('text/html') === -1 && contentType.indexOf('application/xhtml') === -1) {
+    return null;
+  }
+  return response.clone();
+}
+
 function respondDocument(request) {
   if (isHistoryNavigation(request)) {
     return matchCachedDocument(request).then(function (cached) {
-      if (cached) return cached;
+      var doc = usableHtmlResponse(cached);
+      if (doc) return doc;
       return fetch(request);
     });
   }
 
-  return matchCachedDocument(request).then(function (cached) {
-    if (cached) return cached;
-    return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-      .then(function (response) {
+  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+    .then(function (response) {
+      if (response && response.ok) {
         cacheDocumentResponse(request, response);
-        return response;
-      })
-      .catch(function () {
-        return matchCachedDocument(request).then(function (fallback) {
-          return fallback || offlineDocumentResponse();
-        });
+      }
+      return response;
+    })
+    .catch(function () {
+      return matchCachedDocument(request).then(function (cached) {
+        var doc = usableHtmlResponse(cached);
+        return doc || offlineDocumentResponse();
       });
-  });
+    });
 }
 
 function networkFirstAsset(request, requestUrl) {
