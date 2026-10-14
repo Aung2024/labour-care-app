@@ -38,6 +38,7 @@ test('offline caches are namespaced for the isolated project', () => {
   assert.match(serviceWorkerSource, /isHardReloadRequest/);
   assert.match(serviceWorkerSource, /networkFirstDocument/);
   assert.match(serviceWorkerSource, /midwife-vouchers\.html/);
+  assert.doesNotMatch(serviceWorkerSource, /dashboard-v3/);
   assert.doesNotMatch(serviceWorkerSource, /html2canvas/);
   assert.match(read('js/offline-store.js'), /LabourCareOffline_labourcare_2481a/);
   assert.match(read('js/offline-manager.js'), /mch_offline_db_labourcare_2481a/);

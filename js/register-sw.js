@@ -26,8 +26,11 @@
     window.location.reload()
   })
 
+  var backgroundPrecacheScheduled = false
+
   var scheduleBackgroundPrecache = function (registration) {
-    if (!registration || !registration.active) return
+    if (backgroundPrecacheScheduled || !registration || !registration.active) return
+    backgroundPrecacheScheduled = true
     try {
       registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
     } catch (e) {}

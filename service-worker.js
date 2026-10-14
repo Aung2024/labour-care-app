@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v317-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v318-labourcare-2481a-vouchers';
 
 const SHELL_PRECACHE = [
   './index.html',
@@ -37,7 +37,6 @@ const BACKGROUND_PRECACHE = [
   './program-officer.html',
   './promo-voucher.html',
   './css/vouchers.css',
-  './css/dashboard-v3.css',
   './js/vendor/bootstrap.bundle.min.js',
   './js/page-performance.js',
   './js/consent-manager.js',
@@ -51,10 +50,10 @@ const BACKGROUND_PRECACHE = [
   './js/sync-manager.js',
   './js/status-manager.js',
   './js/home-followup-badges.js',
-  './js/report-facility.js',
-  './js/dashboard-data.js',
-  './js/dashboard-v3.js',
-  './js/dashboard-metrics-config.js'
+  './js/anc-tracking-status.js',
+  './js/baby-patient-utils.js',
+  './js/audit-logger.js',
+  './js/nav-back.js'
 ];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
@@ -78,8 +77,11 @@ function cacheFilesInBatches(cache, files, batchSize) {
     var batch = list.slice(index, index + batchSize);
     index += batchSize;
     return Promise.all(batch.map(function (file) {
-      return cache.add(file).catch(function (error) {
-        console.warn('[Service Worker] Skip cache', file, error);
+      return fetch(file, { credentials: 'same-origin' }).then(function (response) {
+        if (!response || !response.ok) return undefined;
+        return cache.put(file, response);
+      }).catch(function () {
+        return undefined;
       });
     })).then(nextBatch);
   }
@@ -106,12 +108,17 @@ function deleteOldCaches() {
   });
 }
 
+var backgroundPrecachePromise = null;
+
 function runBackgroundPrecache() {
-  return caches.open(CACHE_NAME).then(function (cache) {
+  if (backgroundPrecachePromise) return backgroundPrecachePromise;
+  backgroundPrecachePromise = caches.open(CACHE_NAME).then(function (cache) {
     return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
   }).catch(function (error) {
+    backgroundPrecachePromise = null;
     console.warn('[Service Worker] Background precache failed:', error);
   });
+  return backgroundPrecachePromise;
 }
 
 self.addEventListener('install', function (event) {
@@ -250,16 +257,21 @@ function networkFirstDocument(request) {
       });
   }
 
-  return fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      cacheDocumentResponse(request, response);
-      return response;
-    })
-    .catch(function () {
-      return matchCachedDocument(request).then(function (cached) {
-        return cached || offlineDocumentResponse();
+  // Normal navigation: cached HTML immediately, refresh in background (fast Back/Home).
+  return matchCachedDocument(request).then(function (cached) {
+    var networkUpdate = fetchWithTimeout(request, DOCUMENT_FETCH_TIMEOUT_MS)
+      .then(function (response) {
+        cacheDocumentResponse(request, response);
+        return response;
       });
+    if (cached) {
+      networkUpdate.catch(function () {});
+      return cached;
+    }
+    return networkUpdate.catch(function () {
+      return offlineDocumentResponse();
     });
+  });
 }
 
 function networkFirstAsset(request, requestUrl) {
