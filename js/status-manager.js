@@ -135,7 +135,8 @@
     const checks = [
       patientRef.collection('immediate_newborn_care').limit(1).get(),
       patientRef.collection('newborn_care').limit(1).get(),
-      patientRef.collection('postpartum_visits').limit(1).get()
+      patientRef.collection('postpartum_visits').limit(1).get(),
+      patientRef.collection('records').doc('deliveryNotes').get()
     ];
 
     try {
@@ -146,7 +147,9 @@
         });
       }));
       return snapshots.some(function (snap) {
-        return snap && !snap.empty;
+        if (!snap) return false;
+        if (typeof snap.exists === 'boolean') return snap.exists;
+        return !snap.empty;
       });
     } catch (error) {
       console.warn('[StatusManager] Could not check postnatal/newborn activity:', error);

@@ -2096,6 +2096,30 @@
       await batch.commit();
     }
 
+    async function refreshPatientStatusAfterPncSave(patientId) {
+      if (!patientId || !window.StatusManager) return;
+      try {
+        await StatusManager.reconcilePostnatalNewbornStatus(patientId, {
+          reason: 'PNC form saved — postnatal status reconciliation'
+        });
+      } catch (e) {
+        console.warn('Postnatal status reconciliation failed:', e);
+      }
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      try {
+        const doc = await firebase.firestore().collection('patients').doc(patientId).get();
+        if (!doc.exists) return;
+        const status = doc.data().status;
+        if (currentPatient && currentPatient.id === patientId) {
+          currentPatient.status = status;
+          sessionStorage.setItem('selectedPatientId', patientId);
+          sessionStorage.setItem('selectedPatientData', JSON.stringify(currentPatient));
+        }
+      } catch (e) {
+        console.warn('Could not refresh patient status mirror after PNC save:', e);
+      }
+    }
+
     async function loadNewbornShortcut(hasPncVisit) {
       const host = document.getElementById('newbornShortcut');
       if (!host || !currentPatient || !currentPatient.id || !hasPncVisit) {
@@ -2675,6 +2699,7 @@
           }
           if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(currentPatient.id, 'pnc_edit');
           try { await saveAncOtherVisitsFromPnc(); } catch (ancError) { console.warn('ANC other visits were not saved:', ancError); }
+          try { await refreshPatientStatusAfterPncSave(currentPatient.id); } catch (statusError) { console.warn('Patient status refresh failed:', statusError); }
           window.location.href = 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id);
           return;
         }
@@ -2717,6 +2742,7 @@
         );
 
         try { await saveAncOtherVisitsFromPnc(); } catch (ancError) { console.warn('ANC other visits were not saved:', ancError); }
+        try { await refreshPatientStatusAfterPncSave(currentPatient.id); } catch (statusError) { console.warn('Patient status refresh failed:', statusError); }
         if (window.AnalyticsRefreshQueue) {
           await AnalyticsRefreshQueue.requestSafely(currentPatient.id, 'pnc_visit');
         }

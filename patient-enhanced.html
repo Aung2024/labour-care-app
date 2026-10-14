@@ -2829,7 +2829,34 @@
         : null;
       if (years == null) return;
       ageInput.value = String(Math.max(0, years));
+      updateBabyAgeDisplayFromBirthDate();
       evaluateAgeRisk();
+    }
+
+    function updateBabyAgeDisplayFromBirthDate() {
+      const display = document.getElementById('babyAgeDisplay');
+      const hint = document.getElementById('babyAgeYearsHint');
+      const ageInput = document.getElementById('age');
+      const babyMode = isBabyRegistration();
+      if (hint) hint.style.display = babyMode ? 'block' : 'none';
+      if (!display) return;
+      if (!babyMode) {
+        display.style.display = 'none';
+        display.textContent = '';
+        if (ageInput) ageInput.readOnly = false;
+        return;
+      }
+      if (ageInput) ageInput.readOnly = true;
+      const dob = getBirthDateFromParts();
+      if (!dob || !window.BabyPatientUtils || !BabyPatientUtils.formatBabyAgeFromBirthDate) {
+        display.style.display = 'none';
+        display.textContent = '';
+        return;
+      }
+      const lang = localStorage.getItem('appLanguage') || 'mm';
+      const label = lang === 'mm' ? 'အတိအကျ အသက်: ' : 'Exact age: ';
+      display.textContent = label + BabyPatientUtils.formatBabyAgeFromBirthDate(dob, lang);
+      display.style.display = 'block';
     }
 
     function initBirthDatePicker() {
@@ -2847,6 +2874,7 @@
     function onBirthDatePartChanged() {
       syncBirthDateFromParts();
       syncBabyAgeFromBirthDate();
+      updateBabyAgeDisplayFromBirthDate();
       updatePatientTypeFields();
     }
 
@@ -2869,6 +2897,7 @@
         const el = document.getElementById(id);
         if (el) el.required = !babyMode;
       });
+      updateBabyAgeDisplayFromBirthDate();
     }
 
     async function resolveMotherPatientIdForBaby(data) {
@@ -3790,6 +3819,8 @@
                   <i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>
                 </label>
                 <input type="number" name="age" id="age" class="form-control" required min="0" max="110" pattern="[0-9]*" inputmode="numeric">
+                <p id="babyAgeDisplay" class="form-text text-primary mb-1" style="display: none;" aria-live="polite"></p>
+                <small id="babyAgeYearsHint" class="text-muted lang-text" style="display: none;" data-en="For babies, use birth date below for exact age. Years shown here are for reports only." data-mm="ကလေးလူနာအတွက် အတိအကျ အသက်ကို အောက်ပါ မွေးဖွားရက်မှ တွက်ပါသည်။ ဤနေရာရှိ အသက် (နှစ်) သည် အစီရင်ခံစာအတွက်သာ ဖြစ်သည်။">For babies, use birth date below for exact age. Years shown here are for reports only.</small>
                 <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
                   <i class="fas fa-exclamation-triangle me-2"></i>
                   <span>Age risk alert will appear here.</span>

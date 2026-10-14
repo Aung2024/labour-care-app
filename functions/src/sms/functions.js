@@ -18,6 +18,11 @@ const {
 } = require('./hrt-templates');
 const { selectOutgoingMessages, resolveSendPhone } = require('./compose');
 const { sendSmsPoh } = require('./smspoh-client');
+const {
+  normalizeHrtSmsSendCount,
+  hrtSmsQuotaFromCount,
+  assertCanConsumeHrtSmsSendSlot
+} = require('./hrt-quota');
 
 const REGION = 'us-central1';
 const SMS_COLLECTION = 'sms_sends';
@@ -78,6 +83,7 @@ async function resolveHrtSmsDraft(patientId, user) {
     : (Array.isArray(row.riskFactors) ? row.riskFactors : []);
   const phone = normalizeMyanmarMobile(profilePhone(profile, row.patientPhone));
   const resolved = resolveHrtSmsTemplates(riskFactors, gaWeeks);
+  const quota = hrtSmsQuotaFromCount(row.hrtSmsSendCount);
   return {
     patientId,
     patientName: row.patientName || profile.name || profile.patientName || '',
@@ -89,7 +95,8 @@ async function resolveHrtSmsDraft(patientId, user) {
     riskFactors,
     templates: resolved.templates,
     canCustom: true,
-    source: SMS_SOURCE
+    source: SMS_SOURCE,
+    ...quota
   };
 }
 
@@ -103,6 +110,7 @@ async function writeSmsLog(payload) {
 }
 
 function publicDraft(draft) {
+  const quota = hrtSmsQuotaFromCount(draft && draft.hrtSmsSendCount);
   return {
     patientId: draft.patientId,
     patientName: draft.patientName,
@@ -113,8 +121,38 @@ function publicDraft(draft) {
     needsGa: !!draft.needsGa,
     riskFactors: draft.riskFactors || [],
     templates: publicTemplates(draft.templates),
-    canCustom: true
+    canCustom: true,
+    ...quota
   };
+}
+
+async function consumeHrtSmsSendSlot(patientId) {
+  const ref = db().collection(HRT_COLLECTION).doc(patientId);
+  return db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'This patient is not on the high-risk register.');
+    }
+    const count = normalizeHrtSmsSendCount(snap.data().hrtSmsSendCount);
+    assertCanConsumeHrtSmsSendSlot(count);
+    const next = count + 1;
+    tx.set(ref, {
+      hrtSmsSendCount: next,
+      hrtSmsSendCountUpdatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    return hrtSmsQuotaFromCount(next);
+  });
+}
+
+async function releaseHrtSmsSendSlot(patientId) {
+  const ref = db().collection(HRT_COLLECTION).doc(patientId);
+  await db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return;
+    const count = normalizeHrtSmsSendCount(snap.data().hrtSmsSendCount);
+    if (count <= 0) return;
+    tx.set(ref, { hrtSmsSendCount: count - 1 }, { merge: true });
+  });
 }
 
 async function persistPatientPhone(patientId, phone, user) {
@@ -204,6 +242,12 @@ async function handleSendHrtSms(request, sender) {
   if (previewOnly) {
     return { preview: true, ...publicDraft(draft) };
   }
+  if (!draft.canSendHrtSms) {
+    throw new HttpsError(
+      'resource-exhausted',
+      `This patient has already received the maximum of ${draft.hrtSmsSendLimit} high-risk SMS send actions.`
+    );
+  }
   const outgoing = selectOutgoingMessages(draft.templates, request.data);
   const phone = resolveSendPhone(draft.storedPhone, request.data && request.data.phone);
   if (!phone) {
@@ -211,11 +255,6 @@ async function handleSendHrtSms(request, sender) {
       'failed-precondition',
       'Enter a valid Myanmar mobile number before sending.'
     );
-  }
-  let phoneSaved = false;
-  if (request.data && request.data.savePhone !== false && phone !== draft.storedPhone) {
-    await persistPatientPhone(patientId, phone, user);
-    phoneSaved = true;
   }
   const senderId = String(smspohSenderId.value() || '').trim();
   const apiKey = String(smspohApiKey.value() || '').trim();
@@ -226,28 +265,53 @@ async function handleSendHrtSms(request, sender) {
       'SMS account secrets are not configured on the server yet.'
     );
   }
+  const quotaAfterSend = await consumeHrtSmsSendSlot(patientId);
+  let phoneSaved = false;
+  if (request.data && request.data.savePhone !== false && phone !== draft.storedPhone) {
+    try {
+      await persistPatientPhone(patientId, phone, user);
+      phoneSaved = true;
+    } catch (error) {
+      await releaseHrtSmsSendSlot(patientId);
+      throw error;
+    }
+  }
   const send = sender || sendSmsPoh;
   const sends = [];
-  for (const item of outgoing) {
-    sends.push(await sendOneHrtSms({
-      draft,
-      item,
-      phone,
-      user,
-      sender: send,
-      apiKey,
-      apiSecret,
-      senderId
-    }));
+  try {
+    for (const item of outgoing) {
+      sends.push(await sendOneHrtSms({
+        draft,
+        item,
+        phone,
+        user,
+        sender: send,
+        apiKey,
+        apiSecret,
+        senderId
+      }));
+    }
+  } catch (error) {
+    await releaseHrtSmsSendSlot(patientId);
+    throw error;
   }
   const accepted = sends.filter((item) => item.ok);
   const failed = sends.filter((item) => !item.ok);
   if (!accepted.length) {
+    await releaseHrtSmsSendSlot(patientId);
     const first = failed[0];
     throw new HttpsError(first && first.error && /credit|balance/i.test(first.error)
       ? 'resource-exhausted'
       : 'unavailable', (first && first.error) || 'The SMS could not be sent.');
   }
+  const draftForResponse = {
+    ...draft,
+    to: phone,
+    hrtSmsSendCount: quotaAfterSend.hrtSmsSendCount,
+    hrtSmsRemaining: quotaAfterSend.hrtSmsRemaining,
+    canSendHrtSms: quotaAfterSend.canSendHrtSms,
+    hrtSmsSendLimit: quotaAfterSend.hrtSmsSendLimit
+  };
   return {
     preview: false,
     accepted: true,
@@ -258,7 +322,7 @@ async function handleSendHrtSms(request, sender) {
     messageId: accepted[0].messageId || '',
     operator: accepted[0].operator || '',
     sends,
-    ...publicDraft({ ...draft, to: phone })
+    ...publicDraft(draftForResponse)
   };
 }
 
@@ -273,5 +337,7 @@ const sendHrtSms = onCall({
 module.exports = {
   SMS_COLLECTION,
   sendHrtSms,
-  handleSendHrtSms
+  handleSendHrtSms,
+  consumeHrtSmsSendSlot,
+  releaseHrtSmsSendSlot
 };

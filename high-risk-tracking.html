@@ -1490,6 +1490,7 @@
     <div class="hrt-sms-modal">
       <h3 id="hrtSmsModalTitle" class="hrt-sms-modal-title" data-i18n="smsPreviewTitle">Send high-risk SMS</h3>
       <p id="hrtSmsPatientName" class="hrt-sms-modal-patient">—</p>
+      <p id="hrtSmsQuotaLine" class="hrt-sms-hint hrt-sms-quota-line" aria-live="polite"></p>
       <div class="hrt-sms-modal-grid">
         <div class="hrt-modal-box" style="grid-column:1/-1;">
           <label class="hrt-modal-label" for="hrtSmsPhoneInput" data-i18n="smsToLabel">To</label>
@@ -1671,7 +1672,9 @@
         smsNeedsGa: 'Official trimester messages need gestational age. You can still send another selected message or a custom SMS.',
         smsNoOfficial: 'No official template matches these risk factors. Write a custom message below.',
         smsNeedSelection: 'Select at least one official message or write a custom SMS',
-        smsCompletedBlock: 'Completed patients cannot be sent a follow-up SMS'
+        smsCompletedBlock: 'Completed patients cannot be sent a follow-up SMS',
+        smsQuotaLine: 'SMS sends used: {sent} / {limit} ({remaining} left)',
+        smsQuotaExhausted: 'Maximum SMS sends reached for this patient (3)'
       },
       mm: {
         title: 'အန္တရာယ်ဖြစ်နိုင်ချေမြင့်မားသော ကိုယ်ဝန်ဆောင်များအား စောင့်ကြည့်ခြင်း',
@@ -1807,7 +1810,9 @@
         smsNeedsGa: 'သုံးလပတ်အလိုက် တရားဝင်စာများအတွက် ကိုယ်ဝန်အပတ် လိုအပ်ပါသည်။ အခြားရွေးထားသော စာ (သို့) ကိုယ်တိုင်ရေးသော စာကို ပို့နိုင်ပါသည်။',
         smsNoOfficial: 'ဤအန္တရာယ်အချက်များနှင့် ကိုက်ညီသော တရားဝင်စာ မရှိပါ။ အောက်တွင် ကိုယ်တိုင် ရေးပါ။',
         smsNeedSelection: 'တရားဝင်စာ အနည်းဆုံး တစ်စောင် ရွေးပါ (သို့) ကိုယ်တိုင် ရေးပါ',
-        smsCompletedBlock: 'ပြီးမြောက်ပြီးသော လူနာထံ follow-up SMS မပို့နိုင်ပါ'
+        smsCompletedBlock: 'ပြီးမြောက်ပြီးသော လူနာထံ follow-up SMS မပို့နိုင်ပါ',
+        smsQuotaLine: 'SMS ပို့ချက် — သုံးပြီး {sent} / {limit} (ကျန် {remaining})',
+        smsQuotaExhausted: 'ဤလူနာအတွက် SMS ပို့ချက် အများဆုံး (၃) ပြည့်ပါပြီ'
       }
     };
 
@@ -2509,6 +2514,18 @@
       return projectId === 'mnch-1cbda';
     }
 
+    function hrtSmsSendCountFromRow(row) {
+      if (!row) return 0;
+      var raw = row.hrtSmsSendCount;
+      if (raw == null && row.patient) raw = row.patient.hrtSmsSendCount;
+      var n = parseInt(raw, 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function hrtSmsQuotaExceeded(row) {
+      return hrtSmsSendCountFromRow(row) >= 3;
+    }
+
     function smsButtonHtml(patientId, enabled, reason) {
       if (!hrtSmsEnabled() || !patientId || _hrtRoleLevel !== 'provider') return '';
       var label = tr('sendSms');
@@ -2530,8 +2547,11 @@
           (township ? ' · ' + escapeHtml(township) : '') + '</div>';
       }
       var patientId = (patient && patient.id) || (row && (row.patientId || row.id)) || '';
-      var canSms = !(row && isCompleted(row));
-      var smsReason = canSms ? tr('sendSms') : tr('smsCompletedBlock');
+      var quotaBlocked = row && hrtSmsQuotaExceeded(row);
+      var canSms = !(row && isCompleted(row)) && !quotaBlocked;
+      var smsReason = quotaBlocked
+        ? tr('smsQuotaExhausted')
+        : (canSms ? tr('sendSms') : tr('smsCompletedBlock'));
       return '<div class="hrt-sms-contact">' +
         contactActionRowHtml('contactPatient', patientPhoneValue(patient), 'callPatient', 'hrt-contact-patient', 'fa-phone', smsButtonHtml(patientId, canSms, smsReason)) +
         contactActionRowHtml('contactEmergency', emergencyPhoneValue(patient), 'callEmergency', 'hrt-contact-emergency', 'fa-phone-alt') +
@@ -2613,10 +2633,24 @@
       handleHrtSmsSelectionChange();
     }
 
+    function updateHrtSmsQuotaLine(draft) {
+      var el = document.getElementById('hrtSmsQuotaLine');
+      if (!el) return;
+      var limit = (draft && draft.hrtSmsSendLimit) || 3;
+      var sent = (draft && draft.hrtSmsSendCount) || 0;
+      var remaining = (draft && draft.hrtSmsRemaining != null)
+        ? draft.hrtSmsRemaining
+        : Math.max(0, limit - sent);
+      el.textContent = formatSmsText('smsQuotaLine', { sent: sent, limit: limit, remaining: remaining });
+      el.classList.toggle('text-danger', remaining <= 0);
+    }
+
     function handleHrtSmsSelectionChange() {
       var btn = document.getElementById('hrtSmsConfirmBtn');
       if (!btn || _hrtSmsBusy) return;
+      var quotaOk = !(_hrtSmsDraft && _hrtSmsDraft.canSendHrtSms === false);
       var count = selectedHrtSmsCount();
+      btn.disabled = !quotaOk;
       btn.textContent = count > 1
         ? formatSmsText('smsConfirmSendCount', { count: count })
         : tr('smsConfirmSend');
@@ -2644,6 +2678,21 @@
       var card = checkbox && checkbox.closest ? checkbox.closest('.hrt-sms-template') : null;
       if (card) card.classList.toggle('is-selected', !!checkbox.checked);
       handleHrtSmsSelectionChange();
+    }
+
+    function applyHrtSmsQuotaToRow(patientId, quotaPayload) {
+      if (!patientId || !quotaPayload) return;
+      var sent = quotaPayload.hrtSmsSendCount;
+      if (sent == null) return;
+      (window._hrtRows || []).forEach(function (row) {
+        var id = (row.patient && row.patient.id) || row.patientId || row.id;
+        if (id !== patientId) return;
+        row.hrtSmsSendCount = sent;
+        row.hrtSmsRemaining = quotaPayload.hrtSmsRemaining;
+        row.canSendHrtSms = quotaPayload.canSendHrtSms;
+        if (row.patient) row.patient.hrtSmsSendCount = sent;
+      });
+      if (window._hrtRows) renderAll(getFilteredHrtRows());
     }
 
     function applySavedHrtSmsPhone(patientId, phone) {
@@ -2700,7 +2749,9 @@
         customInput.placeholder = tr('smsCustomPlaceholder');
         customInput.classList.toggle('d-none', !(customToggle && customToggle.checked));
       }
+      updateHrtSmsQuotaLine(draft);
       handleHrtSmsPhoneInput();
+      handleHrtSmsSelectionChange();
     }
 
     function closeHrtSmsModal() {
@@ -2750,6 +2801,10 @@
           patientId: patientId,
           previewOnly: true
         });
+        if (preview && preview.canSendHrtSms === false) {
+          await notifyHrtSms(tr('smsQuotaExhausted'), tr('sendSms'));
+          return;
+        }
         _hrtSmsDraft = preview;
         fillHrtSmsModal(preview);
         document.getElementById('hrtSmsModalBackdrop').classList.add('is-open');
@@ -2793,6 +2848,9 @@
           customMessage: customMessage
         }, { retry: false });
         if (result && result.phone) applySavedHrtSmsPhone(_hrtSmsDraft.patientId, result.phone);
+        if (result && _hrtSmsDraft && _hrtSmsDraft.patientId) {
+          applyHrtSmsQuotaToRow(_hrtSmsDraft.patientId, result);
+        }
         _hrtSmsBusy = false;
         closeHrtSmsModal();
         var sent = (result && result.sentCount) || 1;

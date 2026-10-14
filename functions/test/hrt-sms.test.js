@@ -19,6 +19,12 @@ const {
   mapSmsPohError
 } = require('../src/sms/smspoh-client');
 const { assertCanSendHrtSms, assertTrackingRowScope } = require('../src/sms/access');
+const {
+  HRT_SMS_SEND_LIMIT,
+  normalizeHrtSmsSendCount,
+  hrtSmsQuotaFromCount,
+  assertCanConsumeHrtSmsSendSlot
+} = require('../src/sms/hrt-quota');
 
 test('normalizes Myanmar mobiles to 09 form', () => {
   assert.equal(normalizeMyanmarMobile('09 123 456 789'), '09123456789');
@@ -157,6 +163,29 @@ test('SMSPoh payload forces unicode and Bearer auth', () => {
   assert.equal(payload.unicode, 1);
   assert.equal(payload.from, 'MOH');
   assert.equal(authHeader('key', 'secret'), `Bearer ${Buffer.from('key:secret').toString('base64')}`);
+});
+
+test('HRT SMS quota allows three send actions per patient', () => {
+  assert.equal(HRT_SMS_SEND_LIMIT, 3);
+  assert.equal(normalizeHrtSmsSendCount(undefined), 0);
+  assert.equal(normalizeHrtSmsSendCount('2'), 2);
+  assert.deepEqual(hrtSmsQuotaFromCount(0), {
+    hrtSmsSendLimit: 3,
+    hrtSmsSendCount: 0,
+    hrtSmsRemaining: 3,
+    canSendHrtSms: true
+  });
+  assert.deepEqual(hrtSmsQuotaFromCount(3), {
+    hrtSmsSendLimit: 3,
+    hrtSmsSendCount: 3,
+    hrtSmsRemaining: 0,
+    canSendHrtSms: false
+  });
+  assert.throws(
+    () => assertCanConsumeHrtSmsSendSlot(3),
+    (error) => error instanceof HttpsError && error.code === 'resource-exhausted'
+  );
+  assert.doesNotThrow(() => assertCanConsumeHrtSmsSendSlot(2));
 });
 
 test('only midwives may send HRT SMS', () => {

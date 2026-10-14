@@ -419,6 +419,11 @@ test('new vaccine page can record multiple vaccines at once', () => {
   assert.match(source, /batch\.commit/);
 });
 
+test('status manager treats delivery notes as postnatal activity', () => {
+  const source = readAppFile('js/status-manager.js');
+  assert.match(source, /collection\('records'\)\.doc\('deliveryNotes'\)/);
+});
+
 test('HRT SMS lets midwives choose templates, write custom text, and save a phone', () => {
   const source = readAppFile('high-risk-tracking.html');
   assert.match(source, /id="hrtSmsPhoneInput"/);
