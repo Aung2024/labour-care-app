@@ -440,7 +440,7 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   const home = fs.readFileSync(path.join(root, 'home.html'), 'utf8');
   const page = fs.readFileSync(path.join(root, 'js/retroactive-data-page.js'), 'utf8');
   const rulesSource = fs.readFileSync(path.join(root, 'js/retroactive-data-rules.js'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'service-worker.js'), 'utf8');
+  const registerSw = fs.readFileSync(path.join(root, 'js/register-sw.js'), 'utf8');
   assert.match(service, /merge:\s*true/);
   assert.doesNotMatch(service, /\.delete\(/);
   assert.match(service, /retroactive_backfill/);
@@ -453,11 +453,8 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.doesNotMatch(rulesSource, /newborn-care-page\.html/);
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
-  assert.match(worker, /const BACKGROUND_PRECACHE = \[\]/);
-  assert.match(worker, /mch-care-v364-moh/);
-  assert.match(worker, /ignoreSearch: true/);
-  assert.match(worker, /uniqueCacheFiles/);
-  assert.equal((worker.match(/\.\/js\/user-cache\.js/g) || []).length, 1);
+  assert.match(registerSw, /unregister/);
+  assert.doesNotMatch(registerSw, /\.register\(/);
   const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');
   assert.match(langApply, /global\.currentLanguage = lang/);
   assert.equal(rules.fieldMap('registration').gravida.type, 'select');

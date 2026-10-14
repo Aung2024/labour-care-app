@@ -282,8 +282,6 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   const report = readAppFile('overall-patient-report.html');
   const form = readAppFile('transfer-patient.html');
   const requests = readAppFile('transfer-requests.html');
-  const sw = readAppFile('service-worker.js');
-
   assert.match(hubView, /isUnavailablePatient/);
   assert.match(hubView, /if \(isUnavailablePatient\(patient\)\) return null;/);
   assert.doesNotMatch(hubView, /transferReq\.patientName \|\| 'Unknown'/);
@@ -296,8 +294,6 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /referralData\.destinationFacilityCode/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
-  assert.match(sw, /mch-care-v364-moh/);
-  assert.match(sw, /ignoreSearch: true/);
 });
 
 test('tracking calls use same-origin Netlify proxies instead of browser Cloud Run transport', () => {
@@ -327,7 +323,6 @@ test('home badges use tracking APIs instead of per-patient scans', () => {
   assert.match(offline, /Full offline sync is for midwives only/);
   assert.match(readAppFile('home.html'), /isHomeBabyPatient/);
   assert.match(readAppFile('js/user-cache.js'), /labourcare-user-cache-v1/);
-  assert.match(readAppFile('service-worker.js'), /if \(cachedResponse\) return cachedResponse;/);
 });
 
 test('MOH login never falls back to the pilot Firebase project', () => {
@@ -345,22 +340,17 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(login, /js\/register-sw\.js/);
   assert.match(index, /js\/register-sw\.js/);
   assert.match(list, /js\/register-sw\.js/);
-  assert.match(registerSw, /addEventListener\('load'/);
-  assert.match(registerSw, /requestIdleCallback/);
-  assert.match(registerSw, /controllerchange/);
-  assert.doesNotMatch(registerSw, /SKIP_WAITING/);
+  assert.match(registerSw, /getRegistrations/);
+  assert.match(registerSw, /unregister/);
+  assert.doesNotMatch(registerSw, /\.register\(/);
 });
 
-test('service worker cold start avoids hung fetches and aggressive install takeover', () => {
+test('service worker stays disabled for v2 pilot reliability', () => {
+  const registerSw = readAppFile('js/register-sw.js');
   const sw = readAppFile('service-worker.js');
-  const installBlock = sw.match(/addEventListener\('install'[\s\S]*?\n\}\);/);
-  assert.match(sw, /function fetchWithTimeout/);
-  assert.match(sw, /SHELL_PRECACHE/);
-  assert.match(sw, /shellHasRequiredPages/);
-  assert.match(sw, /function isApiPath/);
-  assert.ok(installBlock, 'install handler present');
-  assert.doesNotMatch(installBlock[0], /skipWaiting/);
-  assert.doesNotMatch(sw, /clients\.claim\(/);
+  assert.match(registerSw, /service worker disabled/i);
+  assert.match(sw, /intentionally disabled/i);
+  assert.doesNotMatch(sw, /addEventListener\('fetch'/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {
@@ -395,7 +385,6 @@ test('ANC, newborn, and PNC reports show resolved facility names', () => {
   const newborn = readAppFile('newborn-report.html');
   const pnc = readAppFile('postpartum-report.html');
   const helper = readAppFile('js/report-facility.js');
-  const sw = readAppFile('service-worker.js');
 
   [anc, newborn, pnc].forEach(function (source) {
     assert.match(source, /js\/facility-config\.js/);
@@ -407,7 +396,6 @@ test('ANC, newborn, and PNC reports show resolved facility names', () => {
   assert.match(newborn, /id="motherDetailFacility"/);
   assert.match(helper, /patient\.facility_code/);
   assert.match(helper, /user\.facility_code/);
-  assert.match(sw, /\.\/js\/report-facility\.js/);
 });
 
 test('transfer page is single-midwife and hides helper counts', () => {

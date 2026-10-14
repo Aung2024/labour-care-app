@@ -1,50 +1,36 @@
 /**
- * Registers the app service worker from any page under the site root.
- * Ensures precache runs for flows that skip index.html / home.html.
+ * MNCH v2 pilot: service worker disabled for online reliability.
+ * Clears any prior SW registration and Cache Storage from dev builds.
+ * Offline clinical data uses Firestore / Offline Manager (IndexedDB), not SW.
  */
 (function () {
   if (!('serviceWorker' in navigator)) return
 
-  var reloading = false
-  var hadController = !!navigator.serviceWorker.controller
-  var pageStartedAt = Date.now()
+  var teardown = function () {
+    var unregister = navigator.serviceWorker.getRegistrations
+      ? navigator.serviceWorker.getRegistrations().then(function (regs) {
+          return Promise.all(regs.map(function (reg) { return reg.unregister() }))
+        })
+      : Promise.resolve()
 
-  var isReloadNavigation = function () {
-    try {
-      var entries = performance.getEntriesByType('navigation')
-      return !!(entries && entries[0] && entries[0].type === 'reload')
-    } catch (e) {
-      return false
-    }
+    var clearCaches = ('caches' in window)
+      ? caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (key) { return caches.delete(key) }))
+        })
+      : Promise.resolve()
+
+    return unregister.then(clearCaches)
   }
 
-  navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (!hadController || reloading) return
-    if (isReloadNavigation()) return
-    if (Date.now() - pageStartedAt < 5000) return
-    reloading = true
-    window.location.reload()
-  })
-
-  var register = function () {
-    navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).then(function (registration) {
-      try { registration.update() } catch (e) {}
-    }).catch(function (e) {
-      console.warn('[SW] register failed', e)
+  var run = function () {
+    teardown().catch(function (e) {
+      console.warn('[SW] disabled — cleanup failed', e)
     })
   }
 
-  var deferRegister = function () {
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(function () { register() }, { timeout: 3000 })
-      return
-    }
-    setTimeout(register, 0)
-  }
-
   if (document.readyState === 'complete') {
-    deferRegister()
+    run()
   } else {
-    window.addEventListener('load', deferRegister)
+    window.addEventListener('load', run)
   }
 })()
