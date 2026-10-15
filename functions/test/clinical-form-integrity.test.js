@@ -48,7 +48,9 @@ test('newborn care uses shared alert logic and canonical storage patient ID', ()
     /\.doc\(patientId\)\s*\.collection\('newborn_care'\)/
   );
   assert.match(source, /id="body_weight_gram"[^>]*required/);
-  assert.match(source, /stored > NEWBORN_SCHEDULE_VISIT_COUNT/);
+  assert.match(source, /function getSubstantiveNewbornVisits/);
+  assert.match(source, /function maxSubstantiveNewbornVisitNumber/);
+  assert.doesNotMatch(source, /inferNewbornVisitNumberFromDays/);
   assert.match(
     source,
     /\.doc\(getNewbornCareStoragePatientId\(\)\)\s*\.collection\('newborn_care'\)/

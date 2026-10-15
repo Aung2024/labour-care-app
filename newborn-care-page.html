@@ -1532,35 +1532,40 @@
         : dt.split('T')[0];
     }
 
-    function inferNewbornVisitNumberFromDays(birthTimeStr) {
-      if (!birthTimeStr) return 1;
-      const birth = new Date(birthTimeStr);
-      if (isNaN(birth.getTime())) return 1;
-      const parseDay = window.BirthDeliveryAnchor
-        ? BirthDeliveryAnchor.parseDateOnlyLocal.bind(BirthDeliveryAnchor)
-        : function (d) { return d; };
-      const today = parseDay(new Date());
-      const birthDay = parseDay(birth);
-      const days = Math.floor((today - birthDay) / 86400000);
-      if (days >= 42) return 4;
-      if (days >= 14) return 3;
-      if (days >= 3) return 2;
-      return 1;
+    function getSubstantiveNewbornVisits() {
+      return sortedNewbornVisits().filter(function (item) {
+        return isCompletedNewbornAssessment(getVisitData(item));
+      });
+    }
+
+    function getAnchorOnlyNewbornVisitRecord() {
+      return sortedNewbornVisits().find(function (item) {
+        return !isCompletedNewbornAssessment(getVisitData(item));
+      }) || null;
+    }
+
+    function maxSubstantiveNewbornVisitNumber() {
+      return getSubstantiveNewbornVisits().reduce(function (max, item) {
+        const n = parseInt(getVisitData(item).visit_number || getVisitData(item).visitNumber, 10) || 1;
+        return Math.max(max, n);
+      }, 0);
     }
 
     function applyNewbornVisitNumber(storedVisitNumber) {
-      const birthTimeStr = document.getElementById('birth_time')?.value;
-      const inferred = inferNewbornVisitNumberFromDays(birthTimeStr);
+      const input = document.getElementById('visit_number');
+      if (!input) return;
       const stored = parseInt(storedVisitNumber, 10);
-      let visitNum;
-      if (stored > NEWBORN_SCHEDULE_VISIT_COUNT) {
+      let visitNum = 1;
+      if (isEditMode && stored >= 1) {
         visitNum = stored;
-      } else if (stored >= 1 && stored <= NEWBORN_SCHEDULE_VISIT_COUNT) {
-        visitNum = Math.max(stored, inferred);
+      } else if (hasSavedFirstNewbornVisit() && stored >= 1) {
+        visitNum = stored;
+      } else if (stored > NEWBORN_SCHEDULE_VISIT_COUNT) {
+        visitNum = stored;
       } else {
-        visitNum = inferred;
+        visitNum = 1;
       }
-      document.getElementById('visit_number').value = visitNum;
+      input.value = visitNum;
       applyBirthTimeLock();
       updateCurrentWeightVisibility();
     }
@@ -3671,18 +3676,16 @@
         const visit1Data = getVisit1Data();
         const hasVisit1 = !!visit1Data;
         const isNewFollowUpVisit = hasVisit1 && !isEditMode && !isNewKmcVisit;
+        const substantiveVisits = getSubstantiveNewbornVisits();
 
-        if (newbornCareVisits.length) {
-          const maxVisit = newbornCareVisits.reduce(function (max, item) {
-            const n = parseInt(getVisitData(item).visit_number, 10) || 1;
-            return Math.max(max, n);
-          }, 1);
+        if (substantiveVisits.length) {
+          const maxVisit = maxSubstantiveNewbornVisitNumber();
 
           if (isEditMode) {
             populateNewbornCareFields(editAuthorization.visit);
             currentNewbornDocId = editVisitId;
           } else if (isNewKmcVisit || isNewFollowUpVisit) {
-            const identitySource = visit1Data || getVisitData(newbornCareVisits[newbornCareVisits.length - 1]);
+            const identitySource = visit1Data || getVisitData(substantiveVisits[substantiveVisits.length - 1]);
             populateIdentityFromVisit(identitySource, true);
             applyNewVisitShell(maxVisit + 1);
             currentNewbornDocId = null;
@@ -3692,14 +3695,8 @@
           }
         } else {
           applyNewbornVisitNumber(1);
-          if (window.OfflineVisitNumber) {
-            const nextVisit = await OfflineVisitNumber.resolveNextVisitNumber({
-              patientId: getNewbornCareStoragePatientId(),
-              collectionName: 'newborn_care',
-              pendingStore: 'pending_newborn_records'
-            });
-            document.getElementById('visit_number').value = nextVisit;
-          }
+          const anchorRecord = getAnchorOnlyNewbornVisitRecord();
+          currentNewbornDocId = anchorRecord && anchorRecord.id ? anchorRecord.id : null;
           await applySharedDeliveryAnchor();
           await preloadDeliveryNotesIntoNewbornForm();
         }
@@ -4027,15 +4024,19 @@
               cloudData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
               cloudData.updatedBy = currentUser.uid;
               delete cloudData.timestamp;
-              delete cloudData.createdAt;
-              delete cloudData.createdBy;
-              await JointCareUtils.commitAuthorizedVisitEdit({
-                patientId: getNewbornCareStoragePatientId(),
-                visitType: 'newborn',
-                visitId: editVisitId,
-                user: currentUser,
-                approvalId: editApprovalId
-              }, cloudData);
+              if (isEditMode) {
+                delete cloudData.createdAt;
+                delete cloudData.createdBy;
+                await JointCareUtils.commitAuthorizedVisitEdit({
+                  patientId: getNewbornCareStoragePatientId(),
+                  visitType: 'newborn',
+                  visitId: editVisitId,
+                  user: currentUser,
+                  approvalId: editApprovalId
+                }, cloudData);
+              } else {
+                await collectionRef.doc(currentNewbornDocId).set(cloudData, { merge: true });
+              }
             } else {
               const created = await collectionRef.add(cloudData);
               cloudId = created.id;
