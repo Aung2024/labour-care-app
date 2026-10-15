@@ -360,6 +360,26 @@ test('service worker stays disabled for v2 pilot reliability', () => {
   assert.doesNotMatch(sw, /addEventListener\('fetch'/);
 });
 
+test('navigation lifecycle closes Firestore before MPA navigations', () => {
+  const lifecycle = readAppFile('js/app-lifecycle.js');
+  const navBack = readAppFile('js/nav-back.js');
+  const appNav = readAppFile('js/app-nav.js');
+  const netlify = readAppFile('netlify.toml');
+  const home = readAppFile('home.html');
+  const list = readAppFile('list.html');
+
+  assert.match(lifecycle, /disableNetwork/);
+  assert.match(lifecycle, /pagehide/);
+  assert.match(lifecycle, /recoverPageFromBfcache/);
+  assert.match(navBack, /location\.assign/);
+  assert.match(appNav, /navigateToHome/);
+  assert.match(netlify, /for = "\/\*\.html"/);
+  assert.match(netlify, /no-cache, must-revalidate/);
+  assert.match(home, /js\/app-lifecycle\.js/);
+  assert.match(list, /AppNav\.navigateToHome/);
+  assert.doesNotMatch(readAppFile('dashboard.html'), /rel="prefetch" href="home\.html"/);
+});
+
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {
   const newborn = readAppFile('newborn-care-page.html');
   const pnc = readAppFile('postpartum-form.html');

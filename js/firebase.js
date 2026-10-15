@@ -495,38 +495,3 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
 window.isFirestoreLikelyUnavailable = isFirestoreLikelyUnavailable;
 window.noteFirestoreBackendIssue = noteFirestoreBackendIssue;
 window.isLikelyFirestoreUnavailableError = isLikelyFirestoreUnavailableError;
-
-(function (global) {
-  if (!global.document) return;
-  var lastHiddenAt = 0;
-  function enableFirestoreNetwork() {
-    try {
-      if (!global.firebase || !firebase.firestore) return;
-      var db = firebase.firestore();
-      if (db && typeof db.enableNetwork === "function") {
-        db.enableNetwork().catch(function () {});
-      }
-    } catch (e) {
-      console.warn("[FirestoreResume] enableNetwork failed", e);
-    }
-  }
-  global.document.addEventListener("visibilitychange", function () {
-    if (global.document.visibilityState === "hidden") {
-      lastHiddenAt = Date.now();
-      return;
-    }
-    if (global.document.visibilityState !== "visible") return;
-    enableFirestoreNetwork();
-    var hiddenMs = lastHiddenAt ? Date.now() - lastHiddenAt : 0;
-    if (hiddenMs >= 15000) {
-      global.setTimeout(enableFirestoreNetwork, 400);
-    }
-  });
-  global.addEventListener("pageshow", function (event) {
-    if (!event.persisted) return;
-    enableFirestoreNetwork();
-  });
-  global.addEventListener("focus", function () {
-    enableFirestoreNetwork();
-  });
-})(typeof window !== "undefined" ? window : undefined);

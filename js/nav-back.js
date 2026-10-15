@@ -1,5 +1,5 @@
 /**
- * Reliable back navigation for iOS Safari / PWA (avoids history.back() traps).
+ * Reliable back navigation for iOS Safari / PWA (always uses assign via AppNav).
  */
 (function (global) {
   'use strict';
@@ -25,27 +25,15 @@
     return 'patient-care-hub.html?patient=' + encodeURIComponent(patientId);
   }
 
-  function canUseHistoryBack(url) {
-    if (!global.history || global.history.length <= 1) return false;
-    var referrer = global.document && global.document.referrer;
-    if (!referrer) return false;
-    try {
-      var ref = new URL(referrer);
-      var dest = new URL(url, global.location.href);
-      return ref.origin === global.location.origin &&
-        ref.pathname === dest.pathname &&
-        ref.search === dest.search;
-    } catch (e) {
-      return false;
-    }
-  }
-
   function go(url) {
-    if (canUseHistoryBack(url)) {
-      global.history.back();
+    if (global.AppNav && typeof global.AppNav.navigateTo === 'function') {
+      global.AppNav.navigateTo(url);
       return;
     }
-    global.location.href = url;
+    if (global.AppLifecycle && typeof global.AppLifecycle.disableFirestoreNetwork === 'function') {
+      global.AppLifecycle.disableFirestoreNetwork();
+    }
+    global.location.assign(url);
   }
 
   global.AppNavBack = {
