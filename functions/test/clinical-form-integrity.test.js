@@ -363,7 +363,9 @@ test('new newborn and PNC visits require canonical Delivery Notes identity', () 
   const pnc = readAppFile('postpartum-form.html');
   const report = readAppFile('newborn-report.html');
 
-  assert.match(newborn, /data-en="Visit Info" data-mm="ပြသမှု အချက်အလက်များ"/);
+  assert.match(newborn, /data-en="Visit information" data-mm="ပြသမှုအချက်အလက်များ"/);
+  assert.match(newborn, /getElementById\('assessmentSection'\)/);
+  assert.match(newborn, /getElementById\('newbornFollowUpSection'\)/);
   assert.match(newborn, /id="baby_age" readonly/);
   assert.match(newborn, /DeliveryNotesUtils\.formatBabyAge/);
   assert.match(newborn, /if \(isEditMode\) return true/);
