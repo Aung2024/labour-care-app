@@ -26,6 +26,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/clinical-refer-flow.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
@@ -281,6 +282,19 @@
       justify-content: stretch;
       align-items: stretch;
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .anc-form-actions .btn-refer {
+      background-color: #f59e0b;
+      border: 1px solid #d97706;
+      color: #111827;
+    }
+
+    .anc-form-actions .btn-refer:hover,
+    .anc-form-actions .btn-refer:focus-visible {
+      background-color: #d97706;
+      border-color: #b45309;
+      color: #111827;
     }
 
     .anc-form-actions .btn {
@@ -1367,7 +1381,7 @@
     </form>
 
     <div class="anc-form-actions" role="toolbar" aria-label="Form actions">
-      <button type="button" class="btn btn-warning" onclick="referPatient()" style="background-color: #fbbf24; border-color: #fbbf24; color: #000;">
+      <button type="button" class="btn btn-refer" onclick="referPatient()">
         <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
       </button>
       <button type="submit" class="btn btn-save" form="newbornCareForm">
@@ -3731,6 +3745,8 @@
 
     async function saveNewbornCareData(event) {
       event.preventDefault();
+      var navigatedAfterSave = false;
+      try {
 
       var birthplaceEl = document.getElementById('birthplace');
       if (!birthplaceEl || !birthplaceEl.value) {
@@ -4104,7 +4120,10 @@
         } else {
           alert(nbcMsg);
         }
-        window.location.href = 'immediate-newborn-care.html';
+        navigatedAfterSave = true;
+        window.location.href = window.ClinicalReferFlow
+          ? ClinicalReferFlow.resolvePostSaveRedirect('immediate-newborn-care.html')
+          : 'immediate-newborn-care.html';
       };
 
       if (window.SubmitGuard) {
@@ -4136,6 +4155,11 @@
         if (submitButton) {
           submitButton.disabled = false;
           submitButton.innerHTML = restoreHtml;
+        }
+      }
+      } finally {
+        if (!navigatedAfterSave && window.ClinicalReferFlow) {
+          ClinicalReferFlow.clearReferRedirect();
         }
       }
     }
@@ -4253,7 +4277,15 @@
       }
     }
 
-    function referPatient() {
+    async function referPatient() {
+      if (window.ClinicalReferFlow) {
+        await ClinicalReferFlow.beginReferFromForm({
+          formId: 'newbornCareForm',
+          transferType: 'newborn',
+          getPatientId: function () { return patientId; }
+        });
+        return;
+      }
       if (!patientId) {
         window.location.href = 'transfer-patient.html';
         return;

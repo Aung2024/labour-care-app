@@ -26,6 +26,7 @@
   <script src="js/offline-status-bar.js"></script>
   <script src="js/register-sw.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/clinical-refer-flow.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
@@ -281,6 +282,19 @@
       background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
       border: none;
       color: white;
+    }
+
+    .anc-form-actions .btn-refer {
+      background-color: #f59e0b;
+      border: 1px solid #d97706;
+      color: #111827;
+    }
+
+    .anc-form-actions .btn-refer:hover,
+    .anc-form-actions .btn-refer:focus-visible {
+      background-color: #d97706;
+      border-color: #b45309;
+      color: #111827;
     }
 
     .danger-signs-section {
@@ -734,7 +748,7 @@
               <button type="button" class="language-btn active" data-lang="mm">MM</button>
             </div>
             <a href="#" id="backToPncLink" class="btn btn-outline-light btn-sm">
-              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back to Postpartum Care" data-mm="မွေးပြီးမိခင် ပြုစုစောင့်ရှောက်မှုသို့ ပြန်သွားရန်">Back to Postpartum Care</span>
+              <i class="fas fa-arrow-left me-2"></i><span class="lang-text" data-en="Back" data-mm="ပြန်သွားရန်">Back</span>
             </a>
           </div>
         </div>
@@ -1236,11 +1250,11 @@
     </div>
 
     <div class="anc-form-actions" role="toolbar" aria-label="Visit actions">
+      <button type="button" class="btn btn-refer" onclick="referPatient()">
+        <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+      </button>
       <button type="submit" class="btn btn-save" form="postpartumForm">
         <i class="fas fa-save"></i><span class="lang-text" data-en="Save Postpartum Visit" data-mm="မွေးပြီးမိခင် စောင့်ရှောက်မှု သိမ်းဆည်းရန်">Save Postpartum Visit</span>
-      </button>
-      <button type="button" class="btn btn-warning" onclick="referPatient()" style="background-color: #f59e0b; border-color: #f59e0b; color: #000;">
-        <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
       </button>
     </div>
 
@@ -1537,7 +1551,17 @@
         : 'postpartum-care.html';
     }
 
-    function referPatient() {
+    async function referPatient() {
+      if (window.ClinicalReferFlow) {
+        await ClinicalReferFlow.beginReferFromForm({
+          formId: 'postpartumForm',
+          transferType: 'pnc',
+          getPatientId: function () {
+            return patientId || (currentPatient && currentPatient.id) || sessionStorage.getItem('selectedPatientId');
+          }
+        });
+        return;
+      }
       const pid = patientId || (currentPatient && currentPatient.id) || sessionStorage.getItem('selectedPatientId');
       if (!pid) {
         window.location.href = 'transfer-patient.html';
@@ -2594,9 +2618,14 @@
     // Form submission
     document.getElementById('postpartumForm').addEventListener('submit', async function(e) {
       e.preventDefault();
-      
-      if (!validatePncOutcomes()) return;
+      var navigatedAfterSave = false;
+
+      if (!validatePncOutcomes()) {
+        if (window.ClinicalReferFlow) ClinicalReferFlow.clearReferRedirect();
+        return;
+      }
       if (!isEditMode && !(await ensureDeliveryNotesBeforePnc(patientId || (currentPatient && currentPatient.id)))) {
+        if (window.ClinicalReferFlow) ClinicalReferFlow.clearReferRedirect();
         return;
       }
 
@@ -2703,7 +2732,10 @@
           if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(currentPatient.id, 'pnc_edit');
           try { await saveAncOtherVisitsFromPnc(); } catch (ancError) { console.warn('ANC other visits were not saved:', ancError); }
           try { await refreshPatientStatusAfterPncSave(currentPatient.id); } catch (statusError) { console.warn('Patient status refresh failed:', statusError); }
-          window.location.href = 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id);
+          navigatedAfterSave = true;
+          window.location.href = window.ClinicalReferFlow
+            ? ClinicalReferFlow.resolvePostSaveRedirect('postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id))
+            : 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id);
           return;
         }
 
@@ -2757,9 +2789,13 @@
         } else {
           alert(pncMsg);
         }
-        window.location.href = currentPatient && currentPatient.id
+        navigatedAfterSave = true;
+        var pncDefaultUrl = currentPatient && currentPatient.id
           ? 'postpartum-care.html?patient=' + encodeURIComponent(currentPatient.id)
           : 'postpartum-care.html';
+        window.location.href = window.ClinicalReferFlow
+          ? ClinicalReferFlow.resolvePostSaveRedirect(pncDefaultUrl)
+          : pncDefaultUrl;
       };
 
       if (window.SubmitGuard) {
@@ -2769,12 +2805,19 @@
           } catch (error) {
             console.error('Error saving postpartum visit:', error);
             alert('Could not save postpartum visit. Please try again.');
+          } finally {
+            if (!navigatedAfterSave && window.ClinicalReferFlow) {
+              ClinicalReferFlow.clearReferRedirect();
+            }
           }
         }, {
           loadingHtml: '<i class="fas fa-spinner fa-spin me-2"></i>Saving...',
           restoreHtml: restoreHtml
         });
-        if (guard.skipped) return;
+        if (guard.skipped) {
+          if (window.ClinicalReferFlow) ClinicalReferFlow.clearReferRedirect();
+          return;
+        }
         return;
       }
 
@@ -2788,6 +2831,9 @@
         console.error('Error saving postpartum visit:', error);
         alert('Could not save postpartum visit. Please try again.');
       } finally {
+        if (!navigatedAfterSave && window.ClinicalReferFlow) {
+          ClinicalReferFlow.clearReferRedirect();
+        }
         if (submitButton) {
           submitButton.disabled = false;
           submitButton.innerHTML = restoreHtml;

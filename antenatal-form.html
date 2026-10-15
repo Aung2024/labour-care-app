@@ -31,6 +31,7 @@
   <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/offline-status-bar.js"></script>
   <script src="js/ui-dialogs.js"></script>
+  <script src="js/clinical-refer-flow.js"></script>
   <script src="js/choice-controls.js"></script>
   <script src="js/submit-guard.js"></script>
   <style>
@@ -670,6 +671,19 @@
 
     .anc-form-actions .btn i {
       flex-shrink: 0;
+    }
+
+    .anc-form-actions .btn-refer {
+      background-color: #f59e0b;
+      border: 1px solid #d97706;
+      color: #111827;
+    }
+
+    .anc-form-actions .btn-refer:hover,
+    .anc-form-actions .btn-refer:focus-visible {
+      background-color: #d97706;
+      border-color: #b45309;
+      color: #111827;
     }
 
     @media (max-width: 576px) {
@@ -2384,11 +2398,11 @@
 
     <!-- Action Buttons - separate from form sections, proper document flow -->
     <div class="anc-form-actions" role="toolbar" aria-label="Visit actions">
+      <button type="button" class="btn btn-refer" onclick="referPatient()">
+        <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
+      </button>
       <button type="submit" class="btn btn-save" form="ancForm">
         <i class="fas fa-save"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ပြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>
-      </button>
-      <button type="button" class="btn btn-warning" onclick="referPatient()" style="background-color: #f59e0b; border-color: #f59e0b; color: #000;">
-        <i class="fas fa-share-square"></i><span class="lang-text" data-en="Refer Patient" data-mm="လူနာ လွှဲပြောင်းရန်">Refer Patient</span>
       </button>
     </div>
   </div>
@@ -4997,12 +5011,20 @@
       }
     }
 
-    function referPatient() {
+    async function referPatient() {
+      if (window.ClinicalReferFlow) {
+        await ClinicalReferFlow.beginReferFromForm({
+          formId: 'ancForm',
+          transferType: 'anc',
+          getPatientId: function () { return patientId; }
+        });
+        return;
+      }
       if (!patientId) {
         window.location.href = 'transfer-patient.html';
         return;
       }
-      window.location.href = `transfer-patient.html?patient=${encodeURIComponent(patientId)}&type=anc`;
+      window.location.href = 'transfer-patient.html?patient=' + encodeURIComponent(patientId) + '&type=anc';
     }
 
     function fillCurrentUser(fieldId) {
@@ -5038,6 +5060,7 @@
       event.preventDefault();
       if (window.SubmitGuard && SubmitGuard.isLocked('anc-visit-save')) return;
 
+      var navigatedAfterSave = false;
       const submitButton = document.querySelector('.anc-form-actions .btn-save') || event.target.querySelector('button[type="submit"]');
       const restoreHtml = '<i class="fas fa-save me-2"></i><span class="lang-text" data-en="Save Visit Data" data-mm="ြသမှု အချက်အလက် သိမ်းဆည်းရန်">Save Visit Data</span>';
       if (window.SubmitGuard && !SubmitGuard.tryBegin('anc-visit-save')) return;
@@ -5455,7 +5478,10 @@
             alert('ANC visit updated.');
           }
           if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(patientId, 'anc_edit');
-          window.location.href = 'antenatal-care.html';
+          navigatedAfterSave = true;
+          window.location.href = window.ClinicalReferFlow
+            ? ClinicalReferFlow.resolvePostSaveRedirect('antenatal-care.html')
+            : 'antenatal-care.html';
           return;
         }
 
@@ -5533,12 +5559,18 @@
           sessionStorage.setItem('selectedPatientId', patientId);
         }
         if (window.AnalyticsRefreshQueue) await AnalyticsRefreshQueue.requestSafely(patientId, 'anc_visit');
-        window.location.href = 'antenatal-care.html';
+        navigatedAfterSave = true;
+        window.location.href = window.ClinicalReferFlow
+          ? ClinicalReferFlow.resolvePostSaveRedirect('antenatal-care.html')
+          : 'antenatal-care.html';
 
       } catch (error) {
         console.error('Error saving visit data:', error);
         alert(`Error saving visit data: ${error.message}`);
       } finally {
+        if (!navigatedAfterSave && window.ClinicalReferFlow) {
+          ClinicalReferFlow.clearReferRedirect();
+        }
         if (window.SubmitGuard) {
           SubmitGuard.end('anc-visit-save', submitButton, { restoreHtml: restoreHtml });
         } else if (submitButton) {

@@ -7,7 +7,7 @@
  * - API and runtime Firebase configuration requests are never intercepted.
  * - Updates never force-reload an open page or claim an active client.
  */
-const CACHE_NAME = 'mnch-v2-shell-v1-20261015';
+const CACHE_NAME = 'mnch-v2-shell-v1-20261015-refer-backfill';
 const NETWORK_TIMEOUT_MS = 8000;
 const OFFLINE_PAGE = '/offline.html';
 

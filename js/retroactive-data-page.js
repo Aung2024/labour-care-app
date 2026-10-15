@@ -100,6 +100,7 @@
       state.mothers = [];
       setMessage('statusText', t('Finding your patients…', 'လူနာများကို ရှာနေသည်…'));
       state.mothers = await global.RetroactiveDataService.listOwnedMothers(global.firebase.firestore(), state.user.uid);
+      updateProgress();
     }
     await scanMore();
   }
@@ -107,6 +108,11 @@
   async function scanMore() {
     var next = state.mothers.slice(state.cursor, state.cursor + PAGE);
     state.cursor += next.length;
+    if (!next.length) {
+      updateProgress();
+      renderList();
+      return;
+    }
     show('loadingState', true);
     var db = global.firebase.firestore();
     for (var i = 0; i < next.length; i++) {
@@ -122,6 +128,7 @@
     }
     show('loadingState', false);
     renderList();
+    if (state.cursor < state.mothers.length) await scanMore();
   }
 
   function categoryOf(scan, id) {
@@ -161,7 +168,7 @@
         });
       });
     } else {
-      state.scans.forEach(function (scan) { if (scan.gapCount) rows.push(scan); });
+      state.scans.forEach(function (scan) { rows.push(scan); });
     }
     rows.sort(function (a, b) { return String(a.patientName).localeCompare(String(b.patientName)); });
     return rows;
@@ -170,28 +177,56 @@
   function renderList() {
     var list = document.getElementById('patientList');
     var rows = filteredScans();
-    var scanned = state.scans.size;
-    var remaining = Math.max(0, state.mothers.length - state.cursor);
-    setMessage('statusText', t(
-      scanned + ' checked · ' + rows.length + ' need data',
-      scanned + ' ဦး စစ်ပြီး · ' + rows.length + ' ဦး ဒေတာလိုသေးသည်'
-    ));
-    show('loadMoreBtn', remaining > 0);
+    updateProgress();
     list.textContent = '';
-    if (!rows.length && !remaining) {
+    if (!rows.length && state.scans.size === state.mothers.length) {
       var empty = document.createElement('p');
       empty.className = 'empty-copy';
-      empty.textContent = t('No missing required data in the patients checked so far.', 'ယခုစစ်ထားသော လူနာများတွင် မဖြစ်မနေ ပြန်ဖြည့်ရန် အချက် မတွေ့ပါ။');
+      empty.textContent = t('No patients match your search.', 'ရှာဖွေမှုနှင့် ကိုက်ညီသော လူနာမတွေ့ပါ။');
       list.appendChild(empty);
       return;
     }
     rows.forEach(function (scan) { list.appendChild(patientButton(scan)); });
   }
 
+  function updateProgress() {
+    var total = state.mothers.length;
+    var checked = state.scans.size;
+    var complete = 0;
+    var needsBackfill = 0;
+    state.scans.forEach(function (scan) {
+      if (scan.pending) return;
+      if (scan.gapCount) needsBackfill += 1;
+      else complete += 1;
+    });
+    var percent = total ? Math.round((checked / total) * 100) : 0;
+    var progress = document.querySelector('.progress-track');
+    var value = document.getElementById('progressValue');
+    var totalEl = document.getElementById('totalPatients');
+    var remainingEl = document.getElementById('remainingPatients');
+    var completeEl = document.getElementById('completedPatients');
+    var percentEl = document.getElementById('progressPercent');
+    var copy = document.getElementById('progressCopy');
+    if (!progress || !value || !totalEl || !remainingEl || !completeEl || !percentEl || !copy) return;
+    totalEl.textContent = String(total);
+    completeEl.textContent = checked === total ? String(complete) : '—';
+    remainingEl.textContent = checked === total ? String(needsBackfill) : '—';
+    percentEl.textContent = percent + '%';
+    value.style.width = percent + '%';
+    progress.setAttribute('aria-valuenow', String(percent));
+    setMessage('statusText', checked === total
+      ? t(complete + ' complete · ' + needsBackfill + ' need backfill', complete + ' ဦး ပြည့်စုံ · ' + needsBackfill + ' ဦး ပြန်ဖြည့်ရန်လို')
+      : t('Checking ' + checked + ' of ' + total + ' patients…', 'လူနာ ' + checked + ' / ' + total + ' ဦးကို စစ်နေသည်…'));
+    copy.textContent = checked === total
+      ? t(needsBackfill + ' patients still need required data. Completed patients remain editable.', needsBackfill + ' ဦးတွင် မဖြစ်မနေဒေတာ လိုသေးသည်။ ပြည့်စုံပြီးသော လူနာများကိုလည်း ပြင်နိုင်သည်။')
+      : t(checked + ' of ' + total + ' checked. The final remaining count will appear when checking finishes.', total + ' ဦးအနက် ' + checked + ' ဦး စစ်ပြီးပါပြီ။ စစ်ဆေးမှုပြီးသောအခါ ကျန်အရေအတွက် အတိအကျ ပေါ်ပါမည်။');
+  }
+
   function patientButton(scan) {
     var button = document.createElement('button');
     button.type = 'button';
-    button.className = 'patient-row';
+    var isComplete = !scan.pending && !scan.gapCount;
+    button.className = 'patient-row ' + (scan.pending ? '' : (isComplete ? 'is-complete' : 'is-missing'));
     var left = document.createElement('span');
     var name = document.createElement('strong');
     name.textContent = scan.patientName || t('Unnamed patient', 'အမည်မရှိ');
@@ -200,9 +235,15 @@
     meta.textContent = scan.pending
       ? t('Not checked yet', 'မစစ်ရသေး')
       : ((scan.gapCount ? t(scan.gapCount + ' required items', scan.gapCount + ' ချက်လို') : t('Complete', 'ပြည့်စုံ')) + (listSummary(scan) ? ' · ' + listSummary(scan) : ''));
+    var status = document.createElement('span');
+    status.className = 'patient-status ' + (scan.pending ? '' : (isComplete ? 'is-complete' : 'is-missing'));
+    status.textContent = scan.pending
+      ? t('Checking', 'စစ်နေသည်')
+      : (isComplete ? t('Complete', 'ပြည့်စုံ') : t('Needs backfill', 'ပြန်ဖြည့်ရန်လို'));
     left.appendChild(name);
     left.appendChild(meta);
     button.appendChild(left);
+    button.appendChild(status);
     button.addEventListener('click', function () { openPatient(scan.patientId); });
     return button;
   }
@@ -261,7 +302,9 @@
     var open = category.missingCount > 0 || category.id === 'test';
     var head = document.createElement('button');
     head.type = 'button';
-    head.className = 'category-head';
+    head.className = 'category-head ' + (category.optional
+      ? 'is-optional'
+      : (category.missingCount ? 'is-missing' : 'is-complete'));
     head.setAttribute('aria-expanded', open ? 'true' : 'false');
     var title = document.createElement('strong');
     title.textContent = label(category);
@@ -327,7 +370,10 @@
 
   function groupBlock(group, category) {
     var wrap = document.createElement('article');
-    wrap.className = 'group-card' + (group.status === 'ok' ? ' is-complete' : '') + (group.status === 'not_needed' ? ' is-skip' : '');
+    wrap.className = 'group-card' +
+      (group.status === 'ok' ? ' is-complete' : '') +
+      (group.status === 'missing' ? ' is-missing' : '') +
+      (group.status === 'not_needed' ? ' is-skip' : '');
     wrap.dataset.groupKey = group.key;
     wrap.dataset.module = group.module || category.id;
     wrap.dataset.mode = group.mode;
@@ -1282,7 +1328,6 @@
     var search = document.getElementById('patientSearch');
     search.placeholder = t('Search your patients', 'လူနာအမည် ရှာရန်');
     search.addEventListener('input', renderList);
-    document.getElementById('loadMoreBtn').addEventListener('click', function () { scanMore(); });
     document.getElementById('retryBtn').addEventListener('click', function () { loadQueue(true); });
     document.getElementById('backBtn').addEventListener('click', closeDetail);
     document.getElementById('homeBtn').addEventListener('click', function () {
