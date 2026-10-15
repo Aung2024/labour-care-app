@@ -4,6 +4,7 @@
  */
 (function (global) {
   const CLOUD_WRITE_MS = 10000;
+  const OFFLINE_READY_KEY_PREFIX = "labourcare-offline-ready:";
 
   function nowMs() {
     return Date.now();
@@ -85,6 +86,34 @@
 
     isOnline: function () {
       return typeof navigator !== "undefined" && navigator.onLine;
+    },
+
+    getOfflineReadiness: function (uid) {
+      if (!uid) return null;
+      try {
+        const raw = localStorage.getItem(OFFLINE_READY_KEY_PREFIX + uid);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    markOfflineReady: function (uid, patientCount) {
+      if (!uid) return null;
+      const readiness = {
+        ready: true,
+        syncedAt: new Date().toISOString(),
+        patientCount: Number(patientCount) || 0
+      };
+      try {
+        localStorage.setItem(
+          OFFLINE_READY_KEY_PREFIX + uid,
+          JSON.stringify(readiness)
+        );
+      } catch (error) {
+        /* The completed mirror remains usable when metadata storage is full. */
+      }
+      return readiness;
     },
 
     setOfflineBanner: function (show, message) {
@@ -417,7 +446,13 @@
           }
         });
         patientSnaps = Object.values(map);
-        return LabourCareOffline._deepMirrorPatients(patientSnaps);
+        return LabourCareOffline._deepMirrorPatients(patientSnaps).then(function () {
+          LabourCareOffline.markOfflineReady(uid, patientSnaps.length);
+          return {
+            ready: true,
+            patientCount: patientSnaps.length
+          };
+        });
       });
     },
 

@@ -1,239 +1,194 @@
+/**
+ * MNCH v2 stable PWA shell.
+ *
+ * Contract:
+ * - HTML and application assets are network-first with a bounded timeout.
+ * - Cached responses are used only when the network cannot answer.
+ * - API and runtime Firebase configuration requests are never intercepted.
+ * - Updates never force-reload an open page or claim an active client.
+ */
+const CACHE_NAME = 'mnch-v2-shell-v1-20261015';
+const NETWORK_TIMEOUT_MS = 8000;
+const OFFLINE_PAGE = '/offline.html';
 
-const CACHE_NAME = 'mch-care-v365-moh-v2';
-
-const SHELL_PRECACHE = [
-  './index.html',
-  './login.html',
-  './home.html',
-  './list.html',
-  './patient-care-hub.html',
-  './registration.html',
-  './provider-consent.html',
-  './manifest.json',
-  './css/vendor/bootstrap.min.css',
-  './css/vendor/fontawesome-all.min.css',
-  './css/style.css',
-  './css/compact-app-bar.css',
-  './css/webfonts/fa-solid-900.woff2',
-  './js/vendor/firebase-app.js',
-  './js/vendor/firebase-auth.js',
-  './js/vendor/firebase-firestore.js',
-  './js/firebase.js',
-  './js/register-sw.js',
-  './js/auth-guard.js',
-  './js/user-cache.js',
-  './js/nav-back.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+const REQUIRED_SHELL = [
+  '/index.html',
+  '/login.html',
+  '/home.html',
+  '/list.html',
+  OFFLINE_PAGE,
+  '/manifest.json',
+  '/css/vendor/bootstrap.min.css',
+  '/css/vendor/fontawesome-all.min.css',
+  '/css/style.css',
+  '/js/vendor/firebase-app.js',
+  '/js/vendor/firebase-auth.js',
+  '/js/vendor/firebase-firestore.js',
+  '/js/firebase.js',
+  '/js/register-sw.js',
+  '/js/auth-guard.js',
+  '/js/user-cache.js',
+  '/js/offline-store.js',
+  '/js/offline-sync.js',
+  '/js/offline-manager.js',
+  '/js/offline-status-bar.js',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
-// Filled at runtime when pages are visited; avoid bulk precache competing with tracking APIs.
-const BACKGROUND_PRECACHE = [];
+const OPTIONAL_SHELL = [
+  '/patient-care-hub.html',
+  '/css/compact-app-bar.css',
+  '/images/moh-logo.png'
+];
 
-const ASSET_FETCH_TIMEOUT_MS = 12000;
-const PRECACHE_BATCH_SIZE = 2;
-const PRECACHE_BATCH_DELAY_MS = 800;
+const STATIC_ASSET_PATTERN = /\.(?:js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i;
+const LEGACY_CACHE_PATTERN = /^(?:labour-care-|mch-care-|mnch-v2-)/;
 
-function uniqueCacheFiles(files) {
-  var seen = {};
-  return files.filter(function (file) {
-    if (seen[file]) return false;
-    seen[file] = true;
-    return true;
-  });
-}
+const normalizeDocumentPath = (pathname) => {
+  if (!pathname || pathname === '/') return '/index.html';
+  if (pathname.endsWith('/')) return pathname + 'index.html';
+  return pathname;
+};
 
-function cacheFilesInBatches(cache, files, batchSize) {
-  var list = uniqueCacheFiles(files);
-  var index = 0;
-  function nextBatch() {
-    if (index >= list.length) return Promise.resolve();
-    var batch = list.slice(index, index + batchSize);
-    index += batchSize;
-    return Promise.all(batch.map(function (file) {
-      return cache.add(file).catch(function (error) {
-        console.warn('[Service Worker] Skip cache', file, error);
-      });
-    })).then(function () {
-      if (index >= list.length) return;
-      return new Promise(function (resolve) {
-        setTimeout(resolve, PRECACHE_BATCH_DELAY_MS);
-      });
-    }).then(nextBatch);
+const cacheKeyForRequest = (requestUrl, isDocument) => {
+  const pathname = isDocument
+    ? normalizeDocumentPath(requestUrl.pathname)
+    : requestUrl.pathname;
+  return new Request(requestUrl.origin + pathname, { method: 'GET' });
+};
+
+const isCacheableResponse = (response) => {
+  return !!response &&
+    response.status === 200 &&
+    (response.type === 'basic' || response.type === 'default');
+};
+
+const fetchWithTimeout = (request, timeoutMs) => {
+  if (typeof AbortController === 'undefined') {
+    return Promise.race([
+      fetch(request),
+      new Promise((resolve, reject) => {
+        setTimeout(() => reject(new Error('network-timeout')), timeoutMs);
+      })
+    ]);
   }
-  return nextBatch();
-}
 
-function shellHasRequiredPages(cache) {
-  return cache.match('./login.html').then(function (login) {
-    if (!login) return false;
-    return cache.match('./home.html').then(function (home) {
-      return !!home;
-    });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(request, { signal: controller.signal }).then((response) => {
+    clearTimeout(timeoutId);
+    return response;
+  }).catch((error) => {
+    clearTimeout(timeoutId);
+    throw error;
   });
-}
+};
 
-function deleteOldCaches() {
-  return caches.keys().then(function (keyList) {
-    return Promise.all(keyList.map(function (key) {
-      if (key !== CACHE_NAME) {
-        console.log('[Service Worker] Removing old cache:', key);
-        return caches.delete(key);
-      }
-    }));
-  });
-}
+const cacheRequiredShell = async () => {
+  const cache = await caches.open(CACHE_NAME);
+  await cache.addAll(REQUIRED_SHELL);
 
-function runBackgroundPrecache() {
-  return caches.open(CACHE_NAME).then(function (cache) {
-    return cacheFilesInBatches(cache, BACKGROUND_PRECACHE, PRECACHE_BATCH_SIZE);
-  }).catch(function (error) {
-    console.warn('[Service Worker] Background precache failed:', error);
-  });
-}
-
-self.addEventListener('install', function (event) {
-  console.log('[Service Worker] Installing...');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(function (cache) {
-        console.log('[Service Worker] Caching app shell');
-        return cacheFilesInBatches(cache, SHELL_PRECACHE, PRECACHE_BATCH_SIZE);
-      })
-      .then(function () {
-        console.log('[Service Worker] App shell cache ready');
-      })
-      .catch(function (error) {
-        console.error('[Service Worker] Shell cache failed:', error);
-      })
+  const requiredMatches = await Promise.all(
+    REQUIRED_SHELL.map((url) => cache.match(url))
   );
+  if (requiredMatches.some((response) => !response)) {
+    throw new Error('required-shell-incomplete');
+  }
+
+  await Promise.all(
+    OPTIONAL_SHELL.map((url) => {
+      return cache.add(url).catch((error) => {
+        console.warn('[SW] Optional shell item unavailable:', url, error);
+      });
+    })
+  );
+};
+
+const hasCompleteRequiredShell = async () => {
+  const cache = await caches.open(CACHE_NAME);
+  const requiredMatches = await Promise.all(
+    REQUIRED_SHELL.map((url) => cache.match(url))
+  );
+  return requiredMatches.every(Boolean);
+};
+
+const deleteLegacyCaches = async () => {
+  const cacheNames = await caches.keys();
+  await Promise.all(
+    cacheNames.map((cacheName) => {
+      if (cacheName === CACHE_NAME || !LEGACY_CACHE_PATTERN.test(cacheName)) {
+        return Promise.resolve(false);
+      }
+      return caches.delete(cacheName);
+    })
+  );
+};
+
+const networkFirst = async (request, options) => {
+  const requestUrl = new URL(request.url);
+  const cacheKey = cacheKeyForRequest(requestUrl, options.isDocument);
+
+  try {
+    const networkResponse = await fetchWithTimeout(request, NETWORK_TIMEOUT_MS);
+    if (isCacheableResponse(networkResponse)) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(cacheKey, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (networkError) {
+    const cachedResponse = await caches.match(cacheKey);
+    if (cachedResponse) return cachedResponse;
+
+    if (options.isDocument) {
+      const offlineResponse = await caches.match(OFFLINE_PAGE);
+      if (offlineResponse) return offlineResponse;
+    }
+
+    return Response.error();
+  }
+};
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(cacheRequiredShell());
 });
 
-self.addEventListener('activate', function (event) {
-  console.log('[Service Worker] Activating...');
+self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(function (cache) {
-      return shellHasRequiredPages(cache).then(function (ready) {
-        if (!ready) {
-          console.warn('[Service Worker] Shell incomplete — keeping previous caches');
-          return;
-        }
-        return deleteOldCaches();
-      });
+    hasCompleteRequiredShell().then((isComplete) => {
+      if (!isComplete) {
+        throw new Error('required-shell-incomplete-on-activate');
+      }
+      return deleteLegacyCaches();
     })
   );
 });
 
-function isRuntimeConfigPath(pathname) {
-  return pathname.endsWith('/firebase.runtime-config.json');
-}
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (!request || request.method !== 'GET') return;
 
-function isApiPath(pathname) {
-  return pathname === '/api' || pathname.indexOf('/api/') === 0;
-}
+  const requestUrl = new URL(request.url);
+  if (requestUrl.origin !== self.location.origin) return;
 
-function isStaticAssetPath(pathname) {
-  return /\.(js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i.test(pathname);
-}
-
-function shouldCacheRequest(requestUrl) {
-  if (isRuntimeConfigPath(requestUrl.pathname)) return false;
-  if (isStaticAssetPath(requestUrl.pathname)) return true;
-  if (requestUrl.search) return false;
-  return true;
-}
-
-function assetCacheKey(requestUrl) {
-  return requestUrl.origin + requestUrl.pathname;
-}
-
-function matchCachedAsset(request) {
-  return caches.match(request).then(function (exact) {
-    if (exact) return exact;
-    return caches.match(request, { ignoreSearch: true });
-  });
-}
-
-function fetchWithTimeout(request, timeoutMs) {
-  return new Promise(function (resolve, reject) {
-    var settled = false;
-    var timer = setTimeout(function () {
-      if (settled) return;
-      settled = true;
-      reject(new Error('fetch-timeout'));
-    }, timeoutMs);
-    fetch(request).then(function (response) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(response);
-    }).catch(function (error) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
-}
-
-function networkFirstAsset(request, requestUrl) {
-  return fetchWithTimeout(request, ASSET_FETCH_TIMEOUT_MS)
-    .then(function (response) {
-      if (!response || response.status !== 200 || response.type !== 'basic') {
-        return response || new Response('', { status: 502, statusText: 'Bad Gateway' });
-      }
-      if (shouldCacheRequest(requestUrl)) {
-        var responseToCache = response.clone();
-        caches.open(CACHE_NAME).then(function (cache) {
-          cache.put(assetCacheKey(requestUrl), responseToCache);
-        });
-      }
-      return response;
-    })
-    .catch(function () {
-      return matchCachedAsset(request).then(function (fallbackResponse) {
-        if (fallbackResponse) return fallbackResponse;
-        return fetch(request);
-      });
-    });
-}
-
-self.addEventListener('message', function (event) {
-  if (!event.data) return;
-  if (event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  if (event.data.type === 'PRECACHE_BACKGROUND') {
-    event.waitUntil(runBackgroundPrecache());
-  }
-});
-
-self.addEventListener('fetch', function (event) {
-  if (!event.request.url.startsWith(self.location.origin)) {
-    return;
-  }
-
-  var requestUrl = new URL(event.request.url);
-  if (event.request.method !== 'GET') {
-    return;
-  }
-  if (isRuntimeConfigPath(requestUrl.pathname) || isApiPath(requestUrl.pathname)) {
-    return;
-  }
-
-  // HTML navigations: never intercept — browser + Netlify serve pages directly.
-  // Intercepting caused false "Offline" 503 pages when the network was slow or uncached.
+  const pathname = requestUrl.pathname;
   if (
-    event.request.mode === 'navigate' ||
-    (event.request.headers.get('accept') || '').indexOf('text/html') !== -1
+    pathname === '/service-worker.js' ||
+    pathname.endsWith('/firebase.runtime-config.json') ||
+    pathname === '/api' ||
+    pathname.startsWith('/api/')
   ) {
     return;
   }
 
-  event.respondWith(
-    matchCachedAsset(event.request).then(function (cachedResponse) {
-      if (cachedResponse) return cachedResponse;
-      return networkFirstAsset(event.request, requestUrl);
-    })
-  );
+  const acceptHeader = request.headers.get('accept') || '';
+  const isDocument =
+    request.mode === 'navigate' ||
+    acceptHeader.includes('text/html');
+  const isStaticAsset = STATIC_ASSET_PATTERN.test(pathname);
+
+  if (!isDocument && !isStaticAsset) return;
+
+  event.respondWith(networkFirst(request, { isDocument }));
 });

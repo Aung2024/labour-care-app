@@ -292,6 +292,16 @@
       border-color: rgba(255, 255, 255, 0.55);
     }
 
+    .home-tool-btn.offline-ready {
+      border-color: #86efac;
+      background: rgba(22, 163, 74, 0.3);
+    }
+
+    .home-tool-btn.offline-sync-required {
+      border-color: #fcd34d;
+      background: rgba(217, 119, 6, 0.28);
+    }
+
     .home-tool-btn i {
       font-size: 0.95rem;
       width: 1.1rem;
@@ -1468,6 +1478,7 @@
           }
           loadPendingTransferCount();
           refreshHomeFollowUpBadges();
+          updateOfflineReadinessStatus();
         }
       } catch (error) {
         console.warn('Error loading user data:', error);
@@ -1515,11 +1526,46 @@
       return key === 'midwife' || key === '';
     }
 
-    function scheduleFullMirrorPull() {
-      if (!isHomeMidwifeRole(userRole)) return;
-      if (navigator.onLine && window.LabourCareOffline && currentUser && userRole) {
-        const tsPull = LabourCareOffline.scopeFilterValueForRole(userRole);
-        LabourCareOffline.fullPullForScope(currentUser.uid, userRole, tsPull).catch(function () {});
+    function updateOfflineReadinessStatus() {
+      const button = document.getElementById('labourCareSyncBtnHeader');
+      if (!button) return;
+
+      const label = button.querySelector('.home-tool-btn-label');
+      const readiness = window.LabourCareOffline && currentUser
+        ? LabourCareOffline.getOfflineReadiness(currentUser.uid)
+        : null;
+      let rememberedSession = false;
+      try {
+        const rawExpiry = localStorage.getItem('sessionExpiry');
+        const expiryMs = rawExpiry ? Date.parse(rawExpiry) : 0;
+        rememberedSession =
+          localStorage.getItem('rememberMe') === 'true' &&
+          !!localStorage.getItem('uid') &&
+          (!rawExpiry || (Number.isFinite(expiryMs) && expiryMs > Date.now()));
+      } catch (error) {}
+
+      const applyReadiness = function (shellReady) {
+        const ready = !!(shellReady && rememberedSession && readiness && readiness.ready);
+        const statusText = ready ? 'Offline ready' : 'Sync required';
+
+        button.classList.toggle('offline-ready', ready);
+        button.classList.toggle('offline-sync-required', !ready);
+        button.title = statusText;
+        button.setAttribute('aria-label', statusText);
+        if (label) {
+          label.textContent = statusText;
+          label.setAttribute('data-en', statusText);
+          label.setAttribute('data-mm', ready ? 'အော့ဖ်လိုင်း အသင့်' : 'စင့်ခ်လုပ်ရန်');
+        }
+      };
+
+      applyReadiness(false);
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+        navigator.serviceWorker.getRegistration('/').then(function (registration) {
+          applyReadiness(!!(registration && registration.active));
+        }).catch(function () {
+          applyReadiness(false);
+        });
       }
     }
 
@@ -1544,6 +1590,7 @@
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
           LabourCareOffline.setOfflineBanner(false);
+          updateOfflineReadinessStatus();
         }
         await loadPatientStats();
         alert(isHomeMidwifeRole(userRole)
@@ -2007,6 +2054,7 @@
       applyHomeLanguage(currentLanguage);
       const syncBtn = document.getElementById('labourCareSyncBtnHeader');
       if (syncBtn) {
+        updateOfflineReadinessStatus();
         syncBtn.addEventListener('click', function () {
           labourCareHomeSync();
         });

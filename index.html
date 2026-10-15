@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#10b981">
-  <title>Loading...</title>
+  <title>MNCH App</title>
   <style>
     /* Minimal loading screen - no content visible */
     body {
@@ -28,113 +28,29 @@
     }
   </style>
   <script src="js/register-sw.js"></script>
-  <!-- Load Firebase -->
-  <script src="js/vendor/firebase-app.js"></script>
-  <script src="js/vendor/firebase-auth.js"></script>
-  <script src="js/firebase.js"></script>
-  
   <script>
     /**
-     * INDEX.HTML - App Router
-     * This is the entry point for the app. It acts as a router:
-     * - If user is authenticated → redirect to home.html (dashboard)
-     * - If user is NOT authenticated → redirect to login.html
-     * 
-     * This is the industry standard pattern used by most apps.
+     * Lightweight entry router.
+     * Firebase Auth restores on the destination page and never blocks first paint here.
      */
-    
-    (function() {
-      let redirectExecuted = false;
-      
-      function redirectToLogin() {
-        if (redirectExecuted) return;
-        redirectExecuted = true;
-        console.log('🔒 No authenticated user - routing to login');
-        window.location.replace('login.html');
-      }
-      
-      function redirectToHome() {
-        if (redirectExecuted) return;
-        redirectExecuted = true;
-        console.log('✅ User authenticated - routing to home');
-        window.location.replace('home.html');
-      }
-      
-      // Wait for Firebase to load with timeout
-      function checkAuthAndRoute() {
-        if (typeof firebase === 'undefined' || !firebase.auth) {
-          // Retry (max 2 seconds for Firebase to load)
-          if (!checkAuthAndRoute.retryCount) checkAuthAndRoute.retryCount = 0;
-          if (checkAuthAndRoute.retryCount < 20) {
-            checkAuthAndRoute.retryCount++;
-            setTimeout(checkAuthAndRoute, 100);
-          } else {
-            // Firebase failed to load after 2 seconds - keep remembered users on home
-            console.warn('⚠️ Firebase failed to load quickly - checking remembered session');
-            try {
-              if (localStorage.getItem('rememberMe') === 'true' && localStorage.getItem('uid')) {
-                redirectToHome();
-                return;
-              }
-            } catch (error) {}
-            redirectToLogin();
-          }
-          return;
+    (function () {
+      var destination = 'login.html';
+      try {
+        var rememberMe = localStorage.getItem('rememberMe') === 'true';
+        var uid = localStorage.getItem('uid');
+        var rawExpiry = localStorage.getItem('sessionExpiry');
+        var sessionExpiry = rawExpiry ? Date.parse(rawExpiry) : 0;
+        var sessionValid = !rawExpiry ||
+          (Number.isFinite(sessionExpiry) && sessionExpiry > Date.now());
+
+        if (rememberMe && uid && sessionValid) {
+          destination = 'home.html';
         }
-        
-        // Check current user (synchronous - fastest)
-        const currentUser = firebase.auth().currentUser;
-        if (currentUser) {
-          redirectToHome();
-          return;
-        }
-        
-        // Set up auth state listener with timeout
-        let listenerTimeout;
-        let listenerFired = false;
-        
-        const unsubscribe = firebase.auth().onAuthStateChanged(function(user) {
-          if (listenerFired) return; // Prevent multiple calls
-          listenerFired = true;
-          
-          clearTimeout(listenerTimeout);
-          unsubscribe(); // Unsubscribe immediately after first check
-          
-          if (user) {
-            redirectToHome();
-          } else {
-            // No user - redirect to login
-            redirectToLogin();
-          }
-        });
-        
-        // Timeout: If listener doesn't fire within 2 seconds, check directly and redirect
-        listenerTimeout = setTimeout(function() {
-          if (!listenerFired && !redirectExecuted) {
-            console.warn('⚠️ Auth state check timeout - checking directly');
-            unsubscribe(); // Clean up listener
-            
-            // Final direct check
-            try {
-              const user = firebase.auth().currentUser;
-              if (user) {
-                redirectToHome();
-              } else if (localStorage.getItem('rememberMe') === 'true' && localStorage.getItem('uid')) {
-                redirectToHome();
-              } else {
-                redirectToLogin();
-              }
-            } catch (error) {
-              console.error('❌ Error checking auth:', error);
-              // On error, default to login
-              redirectToLogin();
-            }
-          }
-        }, 2000); // 2 second timeout
+      } catch (error) {
+        destination = 'login.html';
       }
-      
-      // Start routing immediately
-      checkAuthAndRoute();
+
+      window.location.replace(destination);
     })();
   </script>
 </head>

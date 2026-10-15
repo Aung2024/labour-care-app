@@ -9,7 +9,6 @@
   <title>Login - Maternal & Child Health Care System</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="css/vendor/bootstrap.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/vendor/fontawesome-all.min.css" />
   
   <style>
@@ -243,6 +242,29 @@
       line-height: 1.35;
     }
 
+    .offline-login-panel {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.85rem;
+      border: 1px solid #fbbf24;
+      border-radius: 12px;
+      background: #fffbeb;
+      color: #92400e;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .offline-login-panel.show {
+      display: block;
+    }
+
+    .offline-login-panel .btn {
+      min-height: 44px;
+      margin-top: 0.75rem;
+      padding: 0.65rem 1rem;
+      touch-action: manipulation;
+    }
+
     /* Buttons */
     .btn {
       border-radius: 12px;
@@ -433,15 +455,15 @@
   </style>
   
   <script src="js/register-sw.js"></script>
-  <script src="js/vendor/firebase-app.js"></script>
-  <script src="js/vendor/firebase-auth.js"></script>
-  <script src="js/vendor/firebase-firestore.js"></script>
-  <script src="js/firebase.js"></script>
-  <script src="js/user-cache.js"></script>
-  <script src="js/consent-manager.js"></script>
-  <script src="js/audit-logger.js"></script>
-  <script src="js/password-policy.js"></script>
-  <script src="js/session-manager.js"></script>
+  <script defer src="js/vendor/firebase-app.js"></script>
+  <script defer src="js/vendor/firebase-auth.js"></script>
+  <script defer src="js/vendor/firebase-firestore.js"></script>
+  <script defer src="js/firebase.js"></script>
+  <script defer src="js/user-cache.js"></script>
+  <script defer src="js/consent-manager.js"></script>
+  <script defer src="js/audit-logger.js"></script>
+  <script defer src="js/password-policy.js"></script>
+  <script defer src="js/session-manager.js"></script>
 </head>
 <body>
   <div class="login-container">
@@ -491,6 +513,13 @@
           </a>
         </div>
       </form>
+
+      <div id="offlineLoginPanel" class="offline-login-panel" role="status" aria-live="polite">
+        <div id="offlineLoginMessage">Internet is required to sign in.</div>
+        <button id="continueOfflineBtn" type="button" class="btn btn-primary w-100" style="display:none;">
+          <i class="fas fa-arrow-right"></i> Continue offline
+        </button>
+      </div>
 
       <!-- Register Form -->
       <form id="registerForm" class="form-transition" style="display:none;">
@@ -587,6 +616,36 @@
       return hasBasicSession;
     }
 
+    function hasValidRememberedSession() {
+      try {
+        if (localStorage.getItem('rememberMe') !== 'true') return false;
+        if (!localStorage.getItem('uid')) return false;
+        const rawExpiry = localStorage.getItem('sessionExpiry');
+        if (!rawExpiry) return true;
+        const expiryMs = Date.parse(rawExpiry);
+        return Number.isFinite(expiryMs) && expiryMs > Date.now();
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function updateLoginConnectivity() {
+      const panel = document.getElementById('offlineLoginPanel');
+      const message = document.getElementById('offlineLoginMessage');
+      const continueButton = document.getElementById('continueOfflineBtn');
+      if (!panel || !message || !continueButton) return;
+
+      const offline = navigator.onLine === false;
+      panel.classList.toggle('show', offline);
+      if (!offline) return;
+
+      const canContinueOffline = hasValidRememberedSession();
+      message.textContent = canContinueOffline
+        ? 'You are offline. This device has a remembered session and can open saved data.'
+        : 'You are offline. Internet is required for the first sign-in on this device.';
+      continueButton.style.display = canContinueOffline ? 'inline-flex' : 'none';
+    }
+
     function clearSession() {
       localStorage.removeItem('rememberMe');
       localStorage.removeItem('sessionExpiry');
@@ -659,6 +718,18 @@
       const keepLoggedIn = document.getElementById("keepLoggedIn").checked;
       const submitButton = e.target.querySelector('button[type="submit"]');
       const messageDiv = document.getElementById('message');
+
+      if (navigator.onLine === false) {
+        updateLoginConnectivity();
+        messageDiv.innerHTML = '<div class="alert alert-warning">Internet is required to sign in. If this device has a remembered session, use Continue offline.</div>';
+        messageDiv.className = 'mt-3';
+        return;
+      }
+      if (typeof firebase === 'undefined' || !firebase.auth) {
+        messageDiv.innerHTML = '<div class="alert alert-warning">The secure sign-in service is still loading. Please wait a moment and try again.</div>';
+        messageDiv.className = 'mt-3';
+        return;
+      }
       
       // Show loading state
       const originalButtonText = submitButton.innerHTML;
@@ -897,6 +968,17 @@
     let sessionCheckDone = false;
     document.addEventListener('DOMContentLoaded', function() {
       console.log('DOM loaded, checking Firebase auth state...');
+      updateLoginConnectivity();
+      window.addEventListener('online', updateLoginConnectivity);
+      window.addEventListener('offline', updateLoginConnectivity);
+      const continueOfflineButton = document.getElementById('continueOfflineBtn');
+      if (continueOfflineButton) {
+        continueOfflineButton.addEventListener('click', function () {
+          if (hasValidRememberedSession()) {
+            window.location.replace('home.html');
+          }
+        });
+      }
       
       // Check if user is already logged in (only check once)
       if (sessionCheckDone) return;

@@ -347,21 +347,25 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(readAppFile('antenatal-care.html'), /js\/register-sw\.js/);
   assert.match(registerSw, /serviceWorker\.register/);
   assert.match(registerSw, /updateViaCache:\s*'none'/);
+  assert.match(registerSw, /registration\.update/);
   assert.doesNotMatch(registerSw, /controllerchange/);
   assert.doesNotMatch(registerSw, /location\.reload/);
 });
 
-test('service worker caches assets only and does not intercept HTML navigations', () => {
+test('service worker uses bounded network-first offline fallback', () => {
   const registerSw = readAppFile('js/register-sw.js');
   const sw = readAppFile('service-worker.js');
-  assert.match(registerSw, /serviceWorker\.register/);
-  assert.match(sw, /addEventListener\('fetch'/);
-  assert.match(sw, /HTML navigations: never intercept/);
-  assert.match(sw, /event\.request\.mode === 'navigate'/);
-  assert.match(sw, /ASSET_FETCH_TIMEOUT_MS/);
-  assert.match(sw, /mch-care-v365-moh-v2/);
+  const authGuard = readAppFile('js/auth-guard.js');
+  assert.match(sw, /mnch-v2-shell-v1-20261015/);
+  assert.match(sw, /NETWORK_TIMEOUT_MS/);
+  assert.match(sw, /required-shell-incomplete/);
+  assert.match(sw, /firebase\.runtime-config\.json/);
+  assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);
+  assert.match(sw, /caches\.match\(OFFLINE_PAGE\)/);
+  assert.doesNotMatch(sw, /skipWaiting/);
   assert.doesNotMatch(sw, /clients\.claim/);
   assert.doesNotMatch(registerSw, /controllerchange/);
+  assert.doesNotMatch(authGuard, /getRegistrations|serviceWorker/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {

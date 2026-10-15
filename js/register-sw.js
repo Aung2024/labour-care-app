@@ -1,29 +1,31 @@
 /**
- * Registers the app service worker from any page under the site root.
- * Asset-only caching; HTML navigations are not intercepted by the SW.
+ * Registers the stable MNCH service worker without blocking page paint.
+ * Updates never force-reload or take over an already-open page.
  */
-(function () {
-  if (!('serviceWorker' in navigator)) return;
+(function (global) {
+  'use strict';
 
-  var register = function () {
-    navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).then(function (registration) {
-      try { registration.update(); } catch (e) { /* ignore */ }
-    }).catch(function (e) {
-      console.warn('[SW] register failed', e);
-    });
-  };
+  if (!global.navigator || !('serviceWorker' in global.navigator)) return;
+  if (global.__mnchServiceWorkerRegistration) return;
 
-  var deferRegister = function () {
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(function () { register(); }, { timeout: 3000 });
-      return;
+  global.__mnchServiceWorkerRegistration = global.navigator.serviceWorker.register(
+    '/service-worker.js',
+    {
+      scope: '/',
+      updateViaCache: 'none'
     }
-    setTimeout(register, 0);
-  };
-
-  if (document.readyState === 'complete') {
-    deferRegister();
-  } else {
-    window.addEventListener('load', deferRegister);
-  }
-})();
+  ).then(function (registration) {
+    try {
+      var updatePromise = registration.update();
+      if (updatePromise && typeof updatePromise.catch === 'function') {
+        updatePromise.catch(function () {});
+      }
+    } catch (e) {
+      /* Registration is still usable when an explicit update check fails. */
+    }
+    return registration;
+  }).catch(function (error) {
+    console.warn('[SW] Registration failed; app will continue online', error);
+    return null;
+  });
+})(typeof window !== 'undefined' ? window : this);

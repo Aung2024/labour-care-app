@@ -540,8 +540,9 @@
   function setupConnectionListeners() {
     window.addEventListener('online', () => {
       if (isOfflineMode()) {
-        showConnectionToast('Connection restored. Tap Sync to upload offline data.', 'success');
+        setOfflineMode(false);
       }
+      showConnectionToast('Connection restored. Tap Sync to upload offline data.', 'success');
     });
 
     window.addEventListener('offline', () => {
