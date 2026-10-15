@@ -1042,8 +1042,6 @@
   <script src="js/vendor/firebase-firestore.js" crossorigin="anonymous"></script>
   <script src="js/vendor/firebase-auth.js" crossorigin="anonymous"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/app-lifecycle.js"></script>
-  <script src="js/app-nav.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
   <script src="js/offline-manager.js"></script>
@@ -1217,7 +1215,7 @@
     function retryHomeInit() {
       hideHomeInitBanner();
       pageInitialized = false;
-      window.navigationInProgress = false;
+      navigationInProgress = false;
       setHomeInteractionEnabled(false);
       waitForAuthAndLoad();
     }
@@ -1329,7 +1327,7 @@
       document.body.classList.add('auth-verified');
       setHomeInteractionEnabled(true);
       hideHomeInitBanner();
-      window.navigationInProgress = false;
+      navigationInProgress = false;
 
       const user = (window.resolvePilotAuthUser && firebase.auth)
         ? window.resolvePilotAuthUser(firebase.auth().currentUser)
@@ -1877,10 +1875,10 @@
     }
 
     // Debounce navigation to prevent rapid clicks
-    window.navigationInProgress = false;
+    let navigationInProgress = false;
     
     function navigateToCare(careType) {
-      if (!pageInitialized || window.navigationInProgress) {
+      if (!pageInitialized || navigationInProgress) {
         if (!pageInitialized) {
           showHomeInitRetry(
             currentLanguage === 'mm'
@@ -1891,12 +1889,12 @@
         return;
       }
       
-      window.navigationInProgress = true;
+      navigationInProgress = true;
 
       const onlineOnly = ['dashboard', 'midwife-report', 'monthly-report', 'township-report', 'visit-edit-approvals', 'admin', 'manage-midwives', 'cme', 'scoreboard', 'high-risk-tracking', 'kmc-tracking', 'joint-care', 'patient-transfers', 'quality-improvement', 'retroactive-data'];
       if (onlineOnly.includes(careType) && typeof navigator !== 'undefined' && navigator.onLine === false) {
         alert('This feature is available online only. Please reconnect to the internet and try again.');
-        window.navigationInProgress = false;
+        navigationInProgress = false;
         return;
       }
       
@@ -1955,7 +1953,7 @@
             window.location.href = 'retroactive-data-entry.html';
             break;
           default:
-            window.navigationInProgress = false;
+            navigationInProgress = false;
             break;
         }
       }, 100);
@@ -2020,12 +2018,10 @@
           refreshHomeFollowUpBadges();
         }
       });
-      if (window.AppLifecycle) {
-        AppLifecycle.onBfcacheRecover(recoverHomeFromCache);
-      }
       window.addEventListener('pageshow', function (event) {
-        window.navigationInProgress = false;
-        if (!event.persisted && currentUser) {
+        if (event.persisted) {
+          recoverHomeFromCache();
+        } else if (currentUser) {
           loadUserData();
           refreshHomeFollowUpBadges();
         }
