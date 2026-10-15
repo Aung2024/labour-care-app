@@ -453,8 +453,7 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.doesNotMatch(rulesSource, /newborn-care-page\.html/);
   assert.match(rulesSource, /_not_measured/);
   assert.doesNotMatch(home, /tmo:\s*\[[^\]]*backFillCard/);
-  assert.match(registerSw, /unregister/);
-  assert.doesNotMatch(registerSw, /\.register\(/);
+  assert.match(registerSw, /serviceWorker\.register/);
   const langApply = fs.readFileSync(path.join(root, 'js/lang-apply.js'), 'utf8');
   assert.match(langApply, /global\.currentLanguage = lang/);
   assert.equal(rules.fieldMap('registration').gravida.type, 'select');

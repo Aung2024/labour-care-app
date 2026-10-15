@@ -32,8 +32,8 @@ const firebaseApi = FUNCTIONS_REQUIRE('firebase-tools/lib/api.js');
 const { FacilityConfig } = require(path.join(ROOT, 'js', 'facility-config.js'));
 
 const PROJECT_ID = 'mnch-1cbda';
-const EXTRACT_DATE_LABEL = '20 September 2026';
-const EXTRACT_DATE_ISO = '2026-09-20';
+const EXTRACT_DATE_LABEL = '15 October 2026';
+const EXTRACT_DATE_ISO = '2026-10-15';
 const PILOT_TOWNSHIPS = ['Pyinmana', 'Tatkon'];
 const DEFAULT_WORKBOOK = path.join(ROOT, 'docs', `Application data by facility - ${EXTRACT_DATE_ISO}.xlsx`);
 const EARLY_ANC_MAX_WEEKS = 12;

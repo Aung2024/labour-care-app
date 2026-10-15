@@ -345,19 +345,23 @@ test('MOH login never falls back to the pilot Firebase project', () => {
   assert.match(readAppFile('postpartum-care.html'), /js\/register-sw\.js/);
   assert.match(readAppFile('immediate-newborn-care.html'), /js\/register-sw\.js/);
   assert.match(readAppFile('antenatal-care.html'), /js\/register-sw\.js/);
-  assert.match(readAppFile('js/auth-guard.js'), /__mnchPilotSwTeardown/);
-  assert.match(registerSw, /getRegistrations/);
-  assert.match(registerSw, /unregister/);
-  assert.match(registerSw, /runTeardown\('immediate'\)/);
-  assert.doesNotMatch(registerSw, /\.register\(/);
+  assert.match(registerSw, /serviceWorker\.register/);
+  assert.match(registerSw, /updateViaCache:\s*'none'/);
+  assert.doesNotMatch(registerSw, /controllerchange/);
+  assert.doesNotMatch(registerSw, /location\.reload/);
 });
 
-test('service worker stays disabled for v2 pilot reliability', () => {
+test('service worker caches assets only and does not intercept HTML navigations', () => {
   const registerSw = readAppFile('js/register-sw.js');
   const sw = readAppFile('service-worker.js');
-  assert.match(registerSw, /service worker disabled/i);
-  assert.match(sw, /intentionally disabled/i);
-  assert.doesNotMatch(sw, /addEventListener\('fetch'/);
+  assert.match(registerSw, /serviceWorker\.register/);
+  assert.match(sw, /addEventListener\('fetch'/);
+  assert.match(sw, /HTML navigations: never intercept/);
+  assert.match(sw, /event\.request\.mode === 'navigate'/);
+  assert.match(sw, /ASSET_FETCH_TIMEOUT_MS/);
+  assert.match(sw, /mch-care-v365-moh-v2/);
+  assert.doesNotMatch(sw, /clients\.claim/);
+  assert.doesNotMatch(registerSw, /controllerchange/);
 });
 
 test('new newborn and PNC visits require canonical Delivery Notes identity', () => {
