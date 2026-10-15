@@ -1526,13 +1526,49 @@
       return key === 'midwife' || key === '';
     }
 
+    function getHomeOfflineReadiness(uid) {
+      if (!uid) return null;
+      if (
+        window.LabourCareOffline &&
+        typeof LabourCareOffline.getOfflineReadiness === 'function'
+      ) {
+        return LabourCareOffline.getOfflineReadiness(uid);
+      }
+      try {
+        const raw = localStorage.getItem('labourcare-offline-ready:' + uid);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function markHomeOfflineReadyFallback(uid) {
+      if (!uid) return;
+      if (
+        window.LabourCareOffline &&
+        typeof LabourCareOffline.markOfflineReady === 'function'
+      ) {
+        return;
+      }
+      try {
+        localStorage.setItem(
+          'labourcare-offline-ready:' + uid,
+          JSON.stringify({
+            ready: true,
+            syncedAt: new Date().toISOString(),
+            patientCount: null
+          })
+        );
+      } catch (error) {}
+    }
+
     function updateOfflineReadinessStatus() {
       const button = document.getElementById('labourCareSyncBtnHeader');
       if (!button) return;
 
       const label = button.querySelector('.home-tool-btn-label');
-      const readiness = window.LabourCareOffline && currentUser
-        ? LabourCareOffline.getOfflineReadiness(currentUser.uid)
+      const readiness = currentUser
+        ? getHomeOfflineReadiness(currentUser.uid)
         : null;
       let rememberedSession = false;
       try {
@@ -1589,6 +1625,7 @@
         if (window.LabourCareOffline && isHomeMidwifeRole(userRole)) {
           const ts = LabourCareOffline.scopeFilterValueForRole(userRole);
           await LabourCareOffline.fullPullForScope(currentUser.uid, userRole, ts);
+          markHomeOfflineReadyFallback(currentUser.uid);
           LabourCareOffline.setOfflineBanner(false);
           updateOfflineReadinessStatus();
         }

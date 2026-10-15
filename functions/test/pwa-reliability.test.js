@@ -94,6 +94,8 @@ test('offline readiness is recorded only after a completed mirror pull', () => {
   assert.match(offlineSync, /OFFLINE_READY_KEY_PREFIX/)
   assert.match(offlineSync, /markOfflineReady\(uid, patientSnaps\.length\)/)
   assert.match(home, /updateOfflineReadinessStatus/)
+  assert.match(home, /typeof LabourCareOffline\.getOfflineReadiness === 'function'/)
+  assert.match(home, /markHomeOfflineReadyFallback/)
   assert.match(home, /navigator\.serviceWorker\.getRegistration/)
   assert.match(home, /rememberMe/)
   assert.match(home, /Offline ready/)
