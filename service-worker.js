@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v327-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v328-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -33,6 +33,7 @@ const SHELL_PRECACHE = [
 
 const BACKGROUND_PRECACHE = [
   './css/vouchers.css',
+  './css/program-officer.css',
   './js/vendor/bootstrap.bundle.min.js',
   './js/page-performance.js',
   './js/offline-store.js',
@@ -43,6 +44,7 @@ const BACKGROUND_PRECACHE = [
   './js/role-display.js',
   './js/sync-manager.js',
   './js/status-manager.js',
+  './js/program-officer.js',
   './js/anc-tracking-status.js',
   './js/baby-patient-utils.js',
   './js/home-followup-badges.js'
@@ -365,10 +367,8 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  event.respondWith(
-    matchCachedAsset(event.request).then(function (cachedResponse) {
-      if (cachedResponse) return cachedResponse;
-      return networkFirstAsset(event.request, requestUrl);
-    })
-  );
+  // Always ask the network first for JavaScript, CSS and other static assets.
+  // Serving these cache-first made installed PWAs keep stale application code
+  // even after a deploy. The cache remains an offline/poor-network fallback.
+  event.respondWith(networkFirstAsset(event.request, requestUrl));
 });

@@ -1978,6 +1978,24 @@
       });
   }
 
+  function redeemedVoucherTime(value) {
+    if (!value) return 0;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    if (typeof value.toDate === 'function') return value.toDate().getTime();
+    var parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function isRedeemedVoucher(row) {
+    return !!(row && row.redeemedAt && row.status !== 'issued');
+  }
+
+  function compareRedeemedVouchers(first, second) {
+    var timeDifference = redeemedVoucherTime(first.redeemedAt) - redeemedVoucherTime(second.redeemedAt);
+    if (timeDifference) return timeDifference;
+    return String(first.code || first.id).localeCompare(String(second.code || second.id));
+  }
+
   function deleteVoucher(voucherCode) {
     var context = firebaseContext();
     var voucherId = validateVoucherCode(voucherCode, 'Voucher code');
@@ -1985,12 +2003,44 @@
     var signaturesRef = voucherRef.collection('artifacts').doc('signatures');
     return voucherRef.get().then(function (snapshot) {
       if (!snapshot.exists) throw new Error('Voucher was not found.');
-      return signaturesRef.delete().catch(function () {
-        return null;
-      }).then(function () {
-        return voucherRef.delete();
-      }).then(function () {
-        return { id: voucherId, deleted: true };
+      var voucher = snapshot.data() || {};
+      var patientId = voucher.patientId || '';
+      var patientStatsRef = patientId
+        ? context.db.collection(COLLECTIONS.PATIENT_STATS).doc(patientId)
+        : null;
+      var patientVouchersQuery = patientId
+        ? context.db.collection(COLLECTIONS.VOUCHERS).where('patientId', '==', patientId)
+        : null;
+      return (patientVouchersQuery ? patientVouchersQuery.get() : Promise.resolve({ docs: [] })).then(function (patientSnapshot) {
+        var remainingRedeemed = patientSnapshot.docs.map(function (doc) {
+          return Object.assign({ id: doc.id }, doc.data() || {});
+        }).filter(function (row) {
+          return row.id !== voucherId && isRedeemedVoucher(row);
+        }).sort(compareRedeemedVouchers);
+        return context.db.runTransaction(function (transaction) {
+          return transaction.get(voucherRef).then(function (currentSnapshot) {
+            if (!currentSnapshot.exists) throw new Error('Voucher was already deleted.');
+            if (patientStatsRef) return transaction.get(patientStatsRef);
+            return null;
+          }).then(function () {
+            transaction.delete(signaturesRef);
+            transaction.delete(voucherRef);
+            if (patientStatsRef) {
+              if (remainingRedeemed.length) {
+                transaction.set(patientStatsRef, {
+                  patientId: patientId,
+                  redeemedCount: remainingRedeemed.length,
+                  firstRedeemedVoucherId: remainingRedeemed[0].code || remainingRedeemed[0].id,
+                  updatedAt: serverTimestamp(context),
+                  updatedBy: context.user.uid
+                });
+              } else {
+                transaction.delete(patientStatsRef);
+              }
+            }
+            return { id: voucherId, deleted: true };
+          });
+        });
       });
     });
   }
@@ -2436,16 +2486,17 @@
         }
       });
       list.forEach(function (row) {
-        var stored = pricingApi().normalizeVisitKind(row.patientVisitKind);
         if (!row.patientId) {
-          row.patientVisitKind = stored || 'new';
+          row.patientVisitKind = pricingApi().normalizeVisitKind(row.patientVisitKind) || 'new';
           return;
         }
         var computed = pricingApi().visitKindFromSiblings(
           Object.assign({}, row, { patientVisitKind: '' }),
           grouped[row.patientId] || []
         );
-        row.patientVisitKind = stored === 'old' ? 'old' : computed;
+        // Derive from the current redeemed siblings. This intentionally
+        // ignores a stale stored label after a voucher is deleted.
+        row.patientVisitKind = computed;
       });
       return list;
     }).catch(function () {

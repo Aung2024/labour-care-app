@@ -1052,7 +1052,16 @@ service cloud.firestore {
         && request.resource.data.redeemedCount >= 1
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
+      // Project Account deletion must unwind the redeemed counter so the next
+      // voucher for a patient is correctly classified as New.
+      allow update: if isVoucherAdministrator()
+        && request.resource.data.patientId == patientId
+        && request.resource.data.redeemedCount is int
+        && request.resource.data.redeemedCount >= 1
+        && request.resource.data.firstRedeemedVoucherId is string
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isVoucherAdministrator();
     }
 
     match /voucher_lab_outcomes/{reportId} {

@@ -18,7 +18,12 @@
     editingSignature: false,
     page: 'dashboard',
     navCollapsed: false,
-    loggingOut: false
+    loggingOut: false,
+    dashboardRequestId: 0,
+    verifyRequestId: 0,
+    loadingDashboard: false,
+    loadingVerify: false,
+    dashboardFilterTimer: null
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -642,11 +647,14 @@
 
   function summarizeDash(items) {
     var counts = pricing().emptyCounts();
+    var visitCounts = {};
     var verified = { clientMinor: 0, projectMinor: 0 };
     var paid = { clientMinor: 0, projectMinor: 0 };
     (items || []).forEach(function (row) {
       var status = row.status;
       if (counts[status] != null) counts[status] += 1;
+      if (!visitCounts[status]) visitCounts[status] = { new: 0, old: 0 };
+      visitCounts[status][row.patientVisitKind === 'old' ? 'old' : 'new'] += 1;
       var shares = sharesOf(row);
       if (status === 'verified') {
         verified.clientMinor += shares.clientMinor;
@@ -657,7 +665,7 @@
         paid.projectMinor += shares.projectMinor;
       }
     });
-    return { counts: counts, verified: verified, paid: paid };
+    return { counts: counts, visitCounts: visitCounts, verified: verified, paid: paid };
   }
 
   async function fetchDashboardVouchers() {
@@ -716,9 +724,13 @@
   }
 
   async function loadDashboardStats() {
+    var requestId = ++state.dashboardRequestId;
+    state.loadingDashboard = true;
     var range = selectedBillingRange(byId('dashYear'), byId('dashMonth'));
     byId('dashPeriodHint').textContent = periodHint(range);
-    state.dashItems = await fetchDashboardVouchers();
+    var items = await fetchDashboardVouchers();
+    if (requestId !== state.dashboardRequestId) return;
+    state.dashItems = items;
     var summary = summarizeDash(state.dashItems);
     var verifiedTotal = (summary.verified.clientMinor + summary.verified.projectMinor) / 100;
     byId('statIssued').textContent = formatNumber(summary.counts.issued);
@@ -726,6 +738,11 @@
     byId('statVerified').textContent = formatNumber(summary.counts.verified);
     byId('statPaid').textContent = formatNumber(summary.counts.paid);
     byId('statRejected').textContent = formatNumber(summary.counts.rejected);
+    ['issued', 'redeemed', 'verified', 'paid', 'rejected'].forEach(function (status) {
+      var split = summary.visitCounts[status] || { new: 0, old: 0 };
+      byId('stat' + status.charAt(0).toUpperCase() + status.slice(1) + 'Break').textContent =
+        'New ' + formatNumber(split.new) + ' · Old ' + formatNumber(split.old);
+    });
     byId('statIncoming').textContent = formatMoney(verifiedTotal);
     byId('statIncomingBreak').textContent =
       'Client = ' + formatMoney(summary.verified.clientMinor / 100) +
@@ -736,6 +753,15 @@
     } else {
       clearDashListHint();
     }
+    state.loadingDashboard = false;
+  }
+
+  function scheduleDashboardStats() {
+    if (state.dashboardFilterTimer) window.clearTimeout(state.dashboardFilterTimer);
+    state.dashboardFilterTimer = window.setTimeout(function () {
+      state.dashboardFilterTimer = null;
+      loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+    }, 120);
   }
 
   async function loadDashboardList(status) {
@@ -749,7 +775,7 @@
     }
     var rows = state.dashItems.filter(function (row) { return row.status === status; });
     byId('dashList').innerHTML = rows.length
-      ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>New / Old</th><th>Midwife</th><th>Lab</th><th>Project</th></tr></thead><tbody>' +
+      ? '<table class="po-table"><thead><tr><th>Voucher</th><th>Status</th><th>New / Old</th><th>Midwife</th><th>Lab</th><th>Project contribution</th><th>Client co-payment</th><th>Total</th></tr></thead><tbody>' +
         rows.map(function (row) {
           var code = row.code || row.id;
           var visitKind = row.patientVisitKind === 'old' ? 'Old' : 'New';
@@ -759,12 +785,17 @@
             escapeHtml(visitKind) + '</td><td>' +
             escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td><td>' +
             escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td><td>' +
-            formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td></tr>';
+            formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td><td>' +
+            formatMoney(((row.totals && row.totals.clientCopayMinor) || 0) / 100) + '</td><td>' +
+            formatMoney((((row.totals && row.totals.projectContributionMinor) || 0) +
+              ((row.totals && row.totals.clientCopayMinor) || 0)) / 100) + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '<div class="po-empty">No ' + escapeHtml(status) + ' vouchers for this filter.</div>';
   }
 
   async function loadVerifyQueue() {
+    var requestId = ++state.verifyRequestId;
+    state.loadingVerify = true;
     var status = normalizeVerifyStatus(byId('verifyStatus').value);
     var period = byId('verifyPeriod').value || 'all';
     var range = periodDateRange(period);
@@ -783,18 +814,29 @@
     try {
       result = await service().queryVouchersPaged(query);
     } catch (error) {
+      if (requestId !== state.verifyRequestId) return;
       state.queue = [];
       byId('verifyTable').innerHTML = '<div class="po-empty">' +
         escapeHtml(error.message || 'Could not load vouchers. Refresh and try again.') + '</div>';
       throw error;
     }
+    if (requestId !== state.verifyRequestId) return;
     state.queue = result.items || [];
+    var visitKind = byId('verifyVisitKind').value;
+    if (visitKind === 'new' || visitKind === 'old') {
+      state.queue = await service().attachPatientVisitKinds(state.queue, { storedOnly: false });
+      if (requestId !== state.verifyRequestId) return;
+      state.queue = state.queue.filter(function (row) {
+        return (row.patientVisitKind || 'new') === visitKind;
+      });
+    }
     Object.keys(state.selectedCodes).forEach(function (code) {
       if (!state.queue.some(function (row) { return (row.code || row.id) === code; })) {
         delete state.selectedCodes[code];
       }
     });
     renderVerifyTable();
+    state.loadingVerify = false;
   }
 
   function renderVerifyTable() {
@@ -807,11 +849,12 @@
       '<th class="po-check-col"><label class="po-check-wrap">' +
       '<input type="checkbox" id="verifySelectAll" aria-label="Select all vouchers">' +
       '</label></th>' +
-      '<th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Amount</th><th>Status</th><th></th>' +
+      '<th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Project contribution</th><th>Client co-payment</th><th>Total</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' +
       state.queue.map(function (row) {
         var code = row.code || row.id;
-        var amount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
+        var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
+        var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
         return '<tr data-code="' + escapeHtml(code) + '">' +
           '<td><input type="checkbox" class="form-check-input verify-check" data-code="' + escapeHtml(code) + '"' +
           (state.selectedCodes[code] ? ' checked' : '') + ' aria-label="Select ' + escapeHtml(code) + '"></td>' +
@@ -819,7 +862,9 @@
           '<td>' + escapeHtml(row.patientNameSnapshot || '—') + '</td>' +
           '<td>' + escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td>' +
           '<td>' + escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td>' +
-          '<td>' + formatMoney(amount) + '</td>' +
+          '<td>' + formatMoney(projectAmount) + '</td>' +
+          '<td>' + formatMoney(clientAmount) + '</td>' +
+          '<td>' + formatMoney(projectAmount + clientAmount) + '</td>' +
           '<td>' + statusBadge(row.status) +
           (row.status === 'paid' && row.paymentProofAttached
             ? '<span class="po-proof-chip">Proof</span>'
@@ -1125,18 +1170,6 @@
     if (state.page === 'dashboard') await loadDashboardStats();
   }
 
-  async function resetScorecards() {
-    var confirmed = window.confirm(
-      'Reset all dashboard scorecards to zero? Use this after deleting vouchers for a clean test slate.'
-    );
-    if (!confirmed) return;
-    var result = await service().resetPeriodStats();
-    byId('dashList').innerHTML = '<div class="po-empty">Tap a status card to list vouchers</div>';
-    state.dashStatusFilter = null;
-    await loadDashboardStats();
-    showMessage('Scorecards reset (' + (result.deleted || 0) + ' period records cleared).', 'success');
-  }
-
   async function loadAllocations() {
     state.allocations = await service().getAllocations();
     state.allocationsLoaded = true;
@@ -1318,7 +1351,7 @@
     ['dashYear', 'dashMonth', 'dashVisitKind'].forEach(function (id) {
       byId(id).addEventListener('change', function () {
         state.dashStatusFilter = null;
-        loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+        scheduleDashboardStats();
       });
     });
     document.addEventListener('click', function (event) {
@@ -1341,7 +1374,7 @@
         if (!event.target.matches('input[type="checkbox"]')) return;
         updateMultiToggle(root);
         state.dashStatusFilter = null;
-        loadDashboardStats().catch(function (error) { showMessage(error.message, 'error'); });
+        scheduleDashboardStats();
       });
     });
     byId('dashList').addEventListener('click', function (event) {
@@ -1404,6 +1437,9 @@
       loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
     });
     byId('verifyStatus').addEventListener('change', function () {
+      loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
+    });
+    byId('verifyVisitKind').addEventListener('change', function () {
       loadVerifyQueue().catch(function (error) { showMessage(error.message, 'error'); });
     });
     ['outcomeLab', 'outcomeYear', 'outcomeMonth'].forEach(function (id) {
@@ -1521,10 +1557,6 @@
         showMessage(error.message, 'error');
       });
     });
-    byId('resetScorecardsBtn').addEventListener('click', function () {
-      resetScorecards().catch(function (error) { showMessage(error.message, 'error'); });
-    });
-
     byId('editPoSignBtn').addEventListener('click', function () {
       setSignatureEditMode(true);
       if (state.poPad) state.poPad.clear();
