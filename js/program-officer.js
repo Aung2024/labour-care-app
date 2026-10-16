@@ -779,16 +779,20 @@
         rows.map(function (row) {
           var code = row.code || row.id;
           var visitKind = row.patientVisitKind === 'old' ? 'Old' : 'New';
+          var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
+          var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
+          var totalAmount = row.totals && row.totals.regularPriceMinor != null
+            ? Number(row.totals.regularPriceMinor) / 100
+            : projectAmount + clientAmount;
           return '<tr class="po-dash-row" data-code="' + escapeHtml(code) +
             '" tabindex="0" role="button" aria-label="Preview voucher ' + escapeHtml(code) + '">' +
             '<td>' + escapeHtml(code) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
             escapeHtml(visitKind) + '</td><td>' +
             escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td><td>' +
             escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td><td>' +
-            formatMoney(((row.totals && row.totals.projectContributionMinor) || 0) / 100) + '</td><td>' +
-            formatMoney(((row.totals && row.totals.clientCopayMinor) || 0) / 100) + '</td><td>' +
-            formatMoney((((row.totals && row.totals.projectContributionMinor) || 0) +
-              ((row.totals && row.totals.clientCopayMinor) || 0)) / 100) + '</td></tr>';
+            formatMoney(projectAmount) + '</td><td>' +
+            formatMoney(clientAmount) + '</td><td>' +
+            formatMoney(totalAmount) + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '<div class="po-empty">No ' + escapeHtml(status) + ' vouchers for this filter.</div>';
   }
@@ -855,6 +859,9 @@
         var code = row.code || row.id;
         var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
         var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
+        var totalAmount = row.totals && row.totals.regularPriceMinor != null
+          ? Number(row.totals.regularPriceMinor) / 100
+          : projectAmount + clientAmount;
         return '<tr data-code="' + escapeHtml(code) + '">' +
           '<td><input type="checkbox" class="form-check-input verify-check" data-code="' + escapeHtml(code) + '"' +
           (state.selectedCodes[code] ? ' checked' : '') + ' aria-label="Select ' + escapeHtml(code) + '"></td>' +
@@ -864,7 +871,7 @@
           '<td>' + escapeHtml(row.issuerNameSnapshot || row.midwifeId || '—') + '</td>' +
           '<td>' + formatMoney(projectAmount) + '</td>' +
           '<td>' + formatMoney(clientAmount) + '</td>' +
-          '<td>' + formatMoney(projectAmount + clientAmount) + '</td>' +
+          '<td>' + formatMoney(totalAmount) + '</td>' +
           '<td>' + statusBadge(row.status) +
           (row.status === 'paid' && row.paymentProofAttached
             ? '<span class="po-proof-chip">Proof</span>'

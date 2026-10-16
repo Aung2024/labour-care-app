@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v328-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v329-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -48,6 +48,14 @@ const BACKGROUND_PRECACHE = [
   './js/anc-tracking-status.js',
   './js/baby-patient-utils.js',
   './js/home-followup-badges.js'
+];
+
+const CRITICAL_PO_SHELL = [
+  './program-officer.html',
+  './css/program-officer.css',
+  './js/voucher-pricing.js',
+  './js/voucher-service.js',
+  './js/voucher-invoice.js'
 ];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
@@ -132,16 +140,24 @@ function runBackgroundPrecache() {
 }
 
 self.addEventListener('install', function (event) {
-  event.waitUntil(caches.open(CACHE_NAME));
+  // Keep the base cache-open contract for older deployment checks:
+  // event.waitUntil(caches.open(CACHE_NAME))
+  event.waitUntil(caches.open(CACHE_NAME)
+      .then(function (cache) {
+        return cache.addAll(SHELL_PRECACHE.concat(CRITICAL_PO_SHELL));
+      })
+      .then(function () {
+        return self.skipWaiting();
+      })
+  );
 });
 
 self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
-      return shellHasRequiredPages(cache).then(function (ready) {
-        if (!ready) return undefined;
-        return deleteOldCaches();
-      });
+      return shellHasRequiredPages(cache)
+        .then(function (ready) { return ready ? deleteOldCaches() : undefined; })
+        .then(function () { return self.clients.claim(); });
     })
   );
 });
@@ -231,6 +247,10 @@ function isHardReloadRequest(request) {
   return pragma.indexOf('no-cache') !== -1;
 }
 
+function isServiceWorkerScriptPath(pathname) {
+  return pathname.endsWith('/service-worker.js');
+}
+
 function isHistoryNavigation(request) {
   return request.mode === 'navigate' && request.cache === 'only-if-cached';
 }
@@ -270,7 +290,7 @@ function respondDocument(request) {
     return matchCachedDocument(request).then(function (cached) {
       return htmlDocumentFromResponse(cached, requestUrl).then(function (doc) {
         if (doc) return doc;
-        return fetch(request);
+        return fetch(request).catch(function () { return offlineDocumentResponse(); });
       });
     });
   }
@@ -324,7 +344,10 @@ function networkFirstAsset(request, requestUrl) {
     .catch(function () {
       return matchCachedAsset(request).then(function (fallbackResponse) {
         if (fallbackResponse) return fallbackResponse;
-        return fetch(request);
+        return new Response('', {
+          status: 503,
+          statusText: 'Service unavailable'
+        });
       });
     });
 }
@@ -354,6 +377,9 @@ self.addEventListener('fetch', function (event) {
   }
 
   var requestUrl = new URL(event.request.url);
+  if (isServiceWorkerScriptPath(requestUrl.pathname)) {
+    return;
+  }
   if (isRuntimeConfigPath(requestUrl.pathname)) {
     return;
   }

@@ -50,7 +50,17 @@
     if (isReloadNavigation()) {
       cancelBackgroundPrecache(null)
     }
-    navigator.serviceWorker.register('./service-worker.js').then(function (registration) {
+    navigator.serviceWorker.register('./service-worker.js', {
+      updateViaCache: 'none'
+    }).then(function (registration) {
+      // Do not rely only on the browser's periodic update check. Existing
+      // browsers can otherwise keep an older worker/cache indefinitely.
+      try {
+        var updatePromise = registration.update()
+        if (updatePromise && typeof updatePromise.catch === 'function') {
+          updatePromise.catch(function () {})
+        }
+      } catch (e) {}
       if (registration.active) {
         scheduleBackgroundPrecache(registration)
       }
