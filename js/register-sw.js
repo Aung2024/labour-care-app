@@ -8,7 +8,7 @@
   if (!global.navigator || !('serviceWorker' in global.navigator)) return;
   if (global.__mnchServiceWorkerRegistration) return;
 
-  var showUpdateNotice = function () {
+  var showUpdateNotice = function (registration) {
     if (!global.document || global.document.getElementById('mnchUpdateNotice')) return;
 
     var notice = global.document.createElement('div');
@@ -34,31 +34,65 @@
     ].join(';');
 
     var message = global.document.createElement('span');
-    message.textContent = 'A newer MNCH App version is ready. Finish your current work, then close and reopen the app.';
+    message.textContent = 'A newer MNCH App version is available. Tap Update to prepare it safely.';
     message.style.flex = '1';
 
-    var dismiss = global.document.createElement('button');
-    dismiss.type = 'button';
-    dismiss.textContent = 'Dismiss';
-    dismiss.setAttribute('aria-label', 'Dismiss app update notice');
-    dismiss.style.cssText = [
+    var updateButton = global.document.createElement('button');
+    updateButton.type = 'button';
+    updateButton.textContent = 'Update';
+    updateButton.setAttribute('aria-label', 'Prepare the latest MNCH App update');
+    updateButton.style.cssText = [
       'min-width:44px',
       'min-height:44px',
-      'padding:8px',
+      'padding:8px 14px',
       'border:1px solid #16a34a',
       'border-radius:8px',
-      'background:#fff',
-      'color:#166534',
+      'background:#16a34a',
+      'color:#fff',
       'font:inherit',
       'cursor:pointer',
       'touch-action:manipulation'
     ].join(';');
-    dismiss.addEventListener('click', function () {
-      notice.remove();
+    updateButton.addEventListener('click', function () {
+      updateButton.disabled = true;
+      updateButton.textContent = 'Preparing…';
+      updateButton.style.opacity = '0.7';
+      message.textContent = 'Preparing the latest MNCH App update. Your current work will not be interrupted.';
+
+      var finishSafely = function () {
+        message.textContent = 'Update ready. Continue your current work; the new version will apply automatically the next time the app starts.';
+        updateButton.textContent = 'Ready';
+        updateButton.setAttribute('aria-label', 'MNCH App update is ready');
+      };
+
+      if (registration.waiting) {
+        finishSafely();
+        try {
+          var refreshCheck = registration.update();
+          if (refreshCheck && typeof refreshCheck.catch === 'function') {
+            refreshCheck.catch(function () {});
+          }
+        } catch (error) {}
+        return;
+      }
+
+      registration.update().then(function () {
+        if (registration.waiting) {
+          finishSafely();
+          return;
+        }
+        message.textContent = 'This device already has the latest MNCH App version.';
+        updateButton.textContent = 'Up to date';
+      }).catch(function () {
+        message.textContent = 'The update could not be checked. Keep working and try Update again when the connection is stable.';
+        updateButton.disabled = false;
+        updateButton.textContent = 'Try Update';
+        updateButton.style.opacity = '1';
+      });
     });
 
     notice.appendChild(message);
-    notice.appendChild(dismiss);
+    notice.appendChild(updateButton);
     (global.document.body || global.document.documentElement).appendChild(notice);
   };
 
@@ -66,9 +100,11 @@
     var notifyIfWaiting = function () {
       if (registration.waiting) {
         if (global.document && global.document.body) {
-          showUpdateNotice();
+          showUpdateNotice(registration);
         } else if (global.document) {
-          global.document.addEventListener('DOMContentLoaded', showUpdateNotice, { once: true });
+          global.document.addEventListener('DOMContentLoaded', function () {
+            showUpdateNotice(registration);
+          }, { once: true });
         }
       }
     };

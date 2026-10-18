@@ -29,11 +29,13 @@ HRT, KMC, labour, postnatal, newborn, reports, transfers, administration, dashbo
 1. Open the production URL once while the connection is stable.
 2. Sign in and open the Home and patient-list pages.
 3. Leave the presentation tab open; do not deploy another version during the presentation.
-4. If the app shows an update notice, finish the current workflow, close the app, and reopen it before presenting.
+4. If the app shows an update notice, tap **Update**. Wait for **Ready**, finish the current workflow, and open the app normally before presenting.
 5. Keep a second connection available, such as mobile data, when possible.
 
 ## Important update behavior
 
 The app does not forcibly activate a new service worker or reload an open page. This protects Firestore live connections and prevents data-entry interruption. An installed PWA may therefore continue using its current worker until its open pages are closed naturally.
+
+The **Update** button downloads and verifies the waiting release without replacing code in the middle of a clinical workflow. The browser applies it automatically on a later app start after the old page is no longer active. Users do not need to clear browser data or reinstall the PWA.
 
 The service worker cache release identifier must change whenever application HTML or JavaScript changes. The new worker validates its required shell before removing old application caches.

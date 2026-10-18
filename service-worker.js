@@ -2,17 +2,18 @@
  * MNCH v2 stable PWA shell.
  *
  * Contract:
- * - HTML and application assets are network-first with a bounded timeout.
- * - Cached responses are used only when the network cannot answer.
+ * - HTML is network-first with browser navigation preload and a bounded timeout.
+ * - Versioned application assets are cache-first to avoid mobile request fan-out.
  * - API and runtime Firebase configuration requests are never intercepted.
  * - Updates never force-reload an open page or claim an active client.
  */
 // Bump this release identifier whenever application HTML or JavaScript changes.
 // A new namespace lets the worker validate the new shell before removing legacy
 // caches, while the active worker remains in control of open pages.
-const RELEASE_ID = '20261018-offline-scope';
+const RELEASE_ID = '20261018-navigation-stability';
 const CACHE_NAME = `mnch-v2-shell-${RELEASE_ID}`;
 const NETWORK_TIMEOUT_MS = 8000;
+const CACHE_BATCH_SIZE = 6;
 const OFFLINE_PAGE = '/offline.html';
 
 const REQUIRED_SHELL = [
@@ -80,6 +81,11 @@ const REQUIRED_SHELL = [
 
 const OPTIONAL_SHELL = [
   '/patient-care-hub.html',
+  '/high-risk-tracking.html',
+  '/kmc-tracking.html',
+  '/vaccine-home.html',
+  '/immediate-newborn-care.html',
+  '/newborn-care-page.html',
   '/css/compact-app-bar.css',
   '/images/moh-logo.png'
 ];
@@ -128,10 +134,27 @@ const fetchWithTimeout = (request, timeoutMs) => {
   });
 };
 
+const cacheInBatches = async (cache, urls) => {
+  for (let index = 0; index < urls.length; index += CACHE_BATCH_SIZE) {
+    const batch = urls.slice(index, index + CACHE_BATCH_SIZE);
+    await Promise.all(batch.map((url) => cache.add(url)));
+  }
+};
+
+const cacheOptionalInBatches = async (cache, urls) => {
+  for (let index = 0; index < urls.length; index += CACHE_BATCH_SIZE) {
+    const batch = urls.slice(index, index + CACHE_BATCH_SIZE);
+    await Promise.all(batch.map((url) => {
+      return cache.add(url).catch((error) => {
+        console.warn('[SW] Optional shell item unavailable:', url, error);
+      });
+    }));
+  }
+};
+
 const cacheRequiredShell = async () => {
   const cache = await caches.open(CACHE_NAME);
-  await cache.addAll(REQUIRED_SHELL);
-
+  await cacheInBatches(cache, REQUIRED_SHELL);
   const requiredMatches = await Promise.all(
     REQUIRED_SHELL.map((url) => cache.match(url))
   );
@@ -139,13 +162,7 @@ const cacheRequiredShell = async () => {
     throw new Error('required-shell-incomplete');
   }
 
-  await Promise.all(
-    OPTIONAL_SHELL.map((url) => {
-      return cache.add(url).catch((error) => {
-        console.warn('[SW] Optional shell item unavailable:', url, error);
-      });
-    })
-  );
+  await cacheOptionalInBatches(cache, OPTIONAL_SHELL);
 };
 
 const hasCompleteRequiredShell = async () => {
@@ -168,16 +185,38 @@ const deleteLegacyCaches = async () => {
   );
 };
 
+const cacheResponse = async (cacheKey, response) => {
+  if (!isCacheableResponse(response)) return;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(cacheKey, response.clone());
+  } catch (cacheError) {
+    console.warn('[SW] Response was delivered but could not be cached', {
+      pathname: new URL(cacheKey.url).pathname,
+      cache: CACHE_NAME
+    });
+  }
+};
+
 const networkFirst = async (request, options) => {
   const requestUrl = new URL(request.url);
   const cacheKey = cacheKeyForRequest(requestUrl, options.isDocument);
 
   try {
-    const networkResponse = await fetchWithTimeout(request, NETWORK_TIMEOUT_MS);
-    if (isCacheableResponse(networkResponse)) {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(cacheKey, networkResponse.clone());
+    let networkResponse = null;
+    if (options.preloadResponse) {
+      try {
+        networkResponse = await options.preloadResponse;
+      } catch (preloadError) {
+        console.warn('[SW] Navigation preload unavailable; using worker fetch', {
+          pathname: requestUrl.pathname
+        });
+      }
     }
+    if (!networkResponse) {
+      networkResponse = await fetchWithTimeout(request, NETWORK_TIMEOUT_MS);
+    }
+    await cacheResponse(cacheKey, networkResponse);
     return networkResponse;
   } catch (networkError) {
     const cachedResponse = await caches.match(cacheKey);
@@ -216,6 +255,26 @@ const networkFirst = async (request, options) => {
   }
 };
 
+const cacheFirst = async (request) => {
+  const requestUrl = new URL(request.url);
+  const cacheKey = cacheKeyForRequest(requestUrl, false);
+  const cachedResponse = await caches.match(cacheKey);
+  if (cachedResponse) return cachedResponse;
+
+  try {
+    const networkResponse = await fetchWithTimeout(request, NETWORK_TIMEOUT_MS);
+    await cacheResponse(cacheKey, networkResponse);
+    return networkResponse;
+  } catch (networkError) {
+    console.warn('[SW] Static asset unavailable', {
+      pathname: requestUrl.pathname,
+      reason: networkError && networkError.name === 'AbortError' ? 'timeout' : 'network-error',
+      cache: CACHE_NAME
+    });
+    return Response.error();
+  }
+};
+
 self.addEventListener('install', (event) => {
   event.waitUntil(cacheRequiredShell());
 });
@@ -226,7 +285,10 @@ self.addEventListener('activate', (event) => {
       if (!isComplete) {
         throw new Error('required-shell-incomplete-on-activate');
       }
-      return deleteLegacyCaches();
+      return deleteLegacyCaches().then(() => {
+        if (!self.registration.navigationPreload) return undefined;
+        return self.registration.navigationPreload.enable();
+      });
     })
   );
 });
@@ -256,5 +318,13 @@ self.addEventListener('fetch', (event) => {
 
   if (!isDocument && !isStaticAsset) return;
 
-  event.respondWith(networkFirst(request, { isDocument }));
+  if (isDocument) {
+    event.respondWith(networkFirst(request, {
+      isDocument: true,
+      preloadResponse: event.preloadResponse
+    }));
+    return;
+  }
+
+  event.respondWith(cacheFirst(request));
 });

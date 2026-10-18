@@ -26,8 +26,9 @@ test('stable worker has an atomic core shell and bounded network requests', () =
     assert.match(sw, new RegExp(requiredPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
 
-  assert.match(sw, /cache\.addAll\(REQUIRED_SHELL\)/)
-  assert.match(sw, /RELEASE_ID = '20261018-offline-scope'/)
+  assert.match(sw, /cacheInBatches\(cache, REQUIRED_SHELL\)/)
+  assert.match(sw, /CACHE_BATCH_SIZE = 6/)
+  assert.match(sw, /RELEASE_ID = '20261018-navigation-stability'/)
   assert.match(sw, /required-shell-incomplete/)
   assert.match(sw, /fetchWithTimeout/)
   assert.match(sw, /AbortController/)
@@ -35,6 +36,10 @@ test('stable worker has an atomic core shell and bounded network requests', () =
   assert.match(sw, /caches\.match\(OFFLINE_PAGE\)/)
   assert.match(sw, /Serving offline fallback/)
   assert.match(sw, /network-error/)
+  assert.match(sw, /navigationPreload\.enable/)
+  assert.match(sw, /preloadResponse: event\.preloadResponse/)
+  assert.match(sw, /event\.respondWith\(cacheFirst\(request\)\)/)
+  assert.match(sw, /Response was delivered but could not be cached/)
   assert.doesNotMatch(sw, /skipWaiting/)
   assert.doesNotMatch(sw, /clients\.claim/)
   assert.doesNotMatch(sw, /location\.reload/)
@@ -60,7 +65,10 @@ test('registration has one owner and never reloads an active page', () => {
   assert.match(registerSw, /registration\.update/)
   assert.match(registerSw, /registration\.waiting/)
   assert.match(registerSw, /mnchUpdateNotice/)
-  assert.match(registerSw, /Finish your current work/)
+  assert.match(registerSw, /Tap Update to prepare it safely/)
+  assert.match(registerSw, /Update ready/)
+  assert.match(registerSw, /current work will not be interrupted/)
+  assert.doesNotMatch(registerSw, /Dismiss/)
   assert.doesNotMatch(registerSw, /unregister/)
   assert.doesNotMatch(registerSw, /controllerchange/)
   assert.doesNotMatch(registerSw, /location\.reload/)
@@ -84,6 +92,22 @@ test('stable shell includes Login, Home, List, and update dependencies', () => {
 
   requiredPaths.forEach((requiredPath) => {
     assert.match(sw, new RegExp(requiredPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  })
+})
+
+test('common online clinical routes have optional cached page shells', () => {
+  const sw = readAppFile('service-worker.js')
+  const optionalRoutes = [
+    '/patient-care-hub.html',
+    '/high-risk-tracking.html',
+    '/kmc-tracking.html',
+    '/vaccine-home.html',
+    '/immediate-newborn-care.html',
+    '/newborn-care-page.html'
+  ]
+
+  optionalRoutes.forEach((route) => {
+    assert.match(sw, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
 })
 
