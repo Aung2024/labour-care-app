@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v329-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v330-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
@@ -56,6 +56,12 @@ const CRITICAL_PO_SHELL = [
   './js/voucher-pricing.js',
   './js/voucher-service.js',
   './js/voucher-invoice.js'
+];
+
+const CRITICAL_MIDWIFE_SHELL = [
+  './midwife-vouchers.html',
+  './js/vendor/qrcode.min.js',
+  './js/midwife-vouchers.js'
 ];
 
 const ASSET_FETCH_TIMEOUT_MS = 8000;
@@ -144,10 +150,7 @@ self.addEventListener('install', function (event) {
   // event.waitUntil(caches.open(CACHE_NAME))
   event.waitUntil(caches.open(CACHE_NAME)
       .then(function (cache) {
-        return cache.addAll(SHELL_PRECACHE.concat(CRITICAL_PO_SHELL));
-      })
-      .then(function () {
-        return self.skipWaiting();
+        return cache.addAll(SHELL_PRECACHE.concat(CRITICAL_PO_SHELL, CRITICAL_MIDWIFE_SHELL));
       })
   );
 });
@@ -156,8 +159,7 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
       return shellHasRequiredPages(cache)
-        .then(function (ready) { return ready ? deleteOldCaches() : undefined; })
-        .then(function () { return self.clients.claim(); });
+        .then(function (ready) { return ready ? deleteOldCaches() : undefined; });
     })
   );
 });

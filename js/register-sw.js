@@ -5,41 +5,71 @@
 (function () {
   if (!('serviceWorker' in navigator)) return
 
-  var reloading = false
-  var hadController = !!navigator.serviceWorker.controller
-  var pageStartedAt = Date.now()
+  var updateAcknowledged = false
 
-  var isReloadNavigation = function () {
-    try {
-      var entries = performance.getEntriesByType('navigation')
-      return !!(entries && entries[0] && entries[0].type === 'reload')
-    } catch (e) {
-      return false
+  var showUpdateNotice = function (registration) {
+    if (updateAcknowledged || document.getElementById('mnchUpdateNotice')) return
+    var notice = document.createElement('aside')
+    notice.id = 'mnchUpdateNotice'
+    notice.setAttribute('role', 'status')
+    notice.style.cssText = [
+      'position:fixed', 'left:12px', 'right:12px',
+      'bottom:max(12px, env(safe-area-inset-bottom))',
+      'z-index:2147483647', 'display:flex', 'align-items:center',
+      'gap:12px', 'min-height:56px', 'padding:12px 14px',
+      'border:1px solid #93c5fd', 'border-radius:12px',
+      'background:#eff6ff', 'color:#1e3a8a',
+      'box-shadow:0 8px 24px rgba(30,64,175,.2)',
+      'font:600 14px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
+    ].join(';')
+    var message = document.createElement('span')
+    message.textContent = 'A newer app version is ready. Update when you finish, then close and reopen this tab.'
+    message.style.flex = '1'
+    var updateButton = document.createElement('button')
+    updateButton.type = 'button'
+    updateButton.textContent = 'Update'
+    updateButton.setAttribute('aria-label', 'Prepare the latest app update')
+    updateButton.style.cssText = [
+      'min-width:44px', 'min-height:44px', 'padding:8px 14px',
+      'border:1px solid #2563eb', 'border-radius:8px',
+      'background:#2563eb', 'color:#fff', 'font:inherit',
+      'cursor:pointer', 'touch-action:manipulation'
+    ].join(';')
+    updateButton.addEventListener('click', function () {
+      updateAcknowledged = true
+      updateButton.disabled = true
+      updateButton.textContent = 'Ready'
+      message.textContent = 'Update ready. Close this tab and reopen the app for the safest upgrade.'
+      try {
+        var updatePromise = registration.update()
+        if (updatePromise && typeof updatePromise.catch === 'function') {
+          updatePromise.catch(function () {})
+        }
+      } catch (e) {}
+      window.setTimeout(function () { notice.remove() }, 6000)
+    })
+    notice.appendChild(message)
+    notice.appendChild(updateButton)
+    ;(document.body || document.documentElement).appendChild(notice)
+  }
+
+  var watchForWaitingWorker = function (registration) {
+    var notify = function () {
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateNotice(registration)
+      }
     }
+    notify()
+    registration.addEventListener('updatefound', function () {
+      var installing = registration.installing
+      if (!installing) return
+      installing.addEventListener('statechange', function () {
+        if (installing.state === 'installed') notify()
+      })
+    })
   }
-
-  var cancelBackgroundPrecache = function (registration) {
-    var worker = (registration && registration.active) ||
-      (navigator.serviceWorker && navigator.serviceWorker.controller)
-    if (!worker) return
-    try {
-      worker.postMessage({ type: 'CANCEL_PRECACHE' })
-    } catch (e) {}
-  }
-
-  navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (!hadController || reloading) return
-    if (isReloadNavigation()) return
-    if (Date.now() - pageStartedAt < 5000) return
-    reloading = true
-    window.location.reload()
-  })
 
   var scheduleBackgroundPrecache = function (registration) {
-    if (isReloadNavigation()) {
-      cancelBackgroundPrecache(registration)
-      return
-    }
     if (!registration || !registration.active) return
     try {
       registration.active.postMessage({ type: 'PRECACHE_BACKGROUND' })
@@ -47,12 +77,10 @@
   }
 
   var register = function () {
-    if (isReloadNavigation()) {
-      cancelBackgroundPrecache(null)
-    }
     navigator.serviceWorker.register('./service-worker.js', {
       updateViaCache: 'none'
     }).then(function (registration) {
+      watchForWaitingWorker(registration)
       // Do not rely only on the browser's periodic update check. Existing
       // browsers can otherwise keep an older worker/cache indefinitely.
       try {
@@ -71,7 +99,7 @@
         var worker = registration.installing
         if (!worker) return
         worker.addEventListener('statechange', function () {
-          if (worker.state === 'activated' && !isReloadNavigation()) {
+          if (worker.state === 'activated') {
             scheduleBackgroundPrecache(registration)
           }
         })
