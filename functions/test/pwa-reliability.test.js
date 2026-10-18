@@ -27,11 +27,14 @@ test('stable worker has an atomic core shell and bounded network requests', () =
   })
 
   assert.match(sw, /cache\.addAll\(REQUIRED_SHELL\)/)
+  assert.match(sw, /RELEASE_ID = '20261018-pwa-stability'/)
   assert.match(sw, /required-shell-incomplete/)
   assert.match(sw, /fetchWithTimeout/)
   assert.match(sw, /AbortController/)
   assert.match(sw, /caches\.match\(cacheKey\)/)
   assert.match(sw, /caches\.match\(OFFLINE_PAGE\)/)
+  assert.match(sw, /Serving offline fallback/)
+  assert.match(sw, /network-error/)
   assert.doesNotMatch(sw, /skipWaiting/)
   assert.doesNotMatch(sw, /clients\.claim/)
   assert.doesNotMatch(sw, /location\.reload/)
@@ -55,10 +58,30 @@ test('registration has one owner and never reloads an active page', () => {
   assert.match(registerSw, /serviceWorker\.register/)
   assert.match(registerSw, /updateViaCache:\s*'none'/)
   assert.match(registerSw, /registration\.update/)
+  assert.match(registerSw, /registration\.waiting/)
+  assert.match(registerSw, /mnchUpdateNotice/)
+  assert.match(registerSw, /Finish your current work/)
   assert.doesNotMatch(registerSw, /unregister/)
   assert.doesNotMatch(registerSw, /controllerchange/)
   assert.doesNotMatch(registerSw, /location\.reload/)
   assert.doesNotMatch(authGuard, /serviceWorker|getRegistrations|caches\.keys/)
+})
+
+test('stable shell includes Login, Home, List, and update dependencies', () => {
+  const sw = readAppFile('service-worker.js')
+  const requiredPaths = [
+    '/js/consent-manager.js',
+    '/js/session-manager.js',
+    '/js/status-manager.js',
+    '/js/sync-manager.js',
+    '/js/ui-dialogs.js',
+    '/js/service-closure.js',
+    '/css/compact-app-bar.css'
+  ]
+
+  requiredPaths.forEach((requiredPath) => {
+    assert.match(sw, new RegExp(requiredPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  })
 })
 
 test('entry router is synchronous and login can render before Firebase', () => {
@@ -84,7 +107,18 @@ test('cache headers keep HTML and the worker fresh', () => {
 
   assert.match(netlify, /for = "\/\*\.html"[\s\S]*no-cache, must-revalidate/)
   assert.match(netlify, /for = "\/service-worker\.js"[\s\S]*no-store, no-cache, must-revalidate/)
+  assert.match(netlify, /for = "\/manifest\.json"[\s\S]*no-store, no-cache, must-revalidate/)
+  assert.match(netlify, /for = "\/css\/style\.css"[\s\S]*no-cache, must-revalidate/)
   assert.match(netlify, /for = "\/firebase\.runtime-config\.json"[\s\S]*no-store, no-cache/)
+})
+
+test('offline fallback explains request failure without claiming all connectivity is lost', () => {
+  const offline = readAppFile('offline.html')
+
+  assert.match(offline, /data-fallback-reason="unknown"/)
+  assert.match(offline, /This page could not be loaded/)
+  assert.match(offline, /does not necessarily mean your device is fully offline/)
+  assert.match(offline, /home\.html/)
 })
 
 test('offline readiness is recorded only after a completed mirror pull', () => {

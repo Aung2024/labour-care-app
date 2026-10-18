@@ -7,7 +7,11 @@
  * - API and runtime Firebase configuration requests are never intercepted.
  * - Updates never force-reload an open page or claim an active client.
  */
-const CACHE_NAME = 'mnch-v2-shell-v1-20261015-refer-backfill';
+// Bump this release identifier whenever application HTML or JavaScript changes.
+// A new namespace lets the worker validate the new shell before removing legacy
+// caches, while the active worker remains in control of open pages.
+const RELEASE_ID = '20261018-pwa-stability';
+const CACHE_NAME = `mnch-v2-shell-${RELEASE_ID}`;
 const NETWORK_TIMEOUT_MS = 8000;
 const OFFLINE_PAGE = '/offline.html';
 
@@ -28,10 +32,30 @@ const REQUIRED_SHELL = [
   '/js/register-sw.js',
   '/js/auth-guard.js',
   '/js/user-cache.js',
+  '/js/consent-manager.js',
+  '/js/audit-logger.js',
+  '/js/password-policy.js',
+  '/js/session-manager.js',
   '/js/offline-store.js',
   '/js/offline-sync.js',
   '/js/offline-manager.js',
   '/js/offline-status-bar.js',
+  '/js/status-manager.js',
+  '/js/high-risk-utils.js',
+  '/js/anc-tracking-status.js',
+  '/js/kmc-utils.js',
+  '/js/birth-delivery-anchor.js',
+  '/js/tracking-reader.js',
+  '/js/home-followup-badges.js',
+  '/js/analytics-refresh-queue.js',
+  '/js/sync-manager.js',
+  '/js/ui-dialogs.js',
+  '/js/page-performance.js',
+  '/js/rbac-manager.js',
+  '/js/role-display.js',
+  '/js/baby-patient-utils.js',
+  '/js/service-closure.js',
+  '/css/compact-app-bar.css',
   '/icons/icon-192.png',
   '/icons/icon-512.png'
 ];
@@ -139,11 +163,35 @@ const networkFirst = async (request, options) => {
     return networkResponse;
   } catch (networkError) {
     const cachedResponse = await caches.match(cacheKey);
-    if (cachedResponse) return cachedResponse;
+    if (cachedResponse) {
+      console.warn('[SW] Serving cached response after network failure', {
+        pathname: requestUrl.pathname,
+        reason: networkError && networkError.name === 'AbortError' ? 'timeout' : 'network-error',
+        cache: CACHE_NAME
+      });
+      return cachedResponse;
+    }
 
     if (options.isDocument) {
       const offlineResponse = await caches.match(OFFLINE_PAGE);
-      if (offlineResponse) return offlineResponse;
+      if (offlineResponse) {
+        console.warn('[SW] Serving offline fallback', {
+          pathname: requestUrl.pathname,
+          reason: networkError && networkError.name === 'AbortError' ? 'timeout' : 'network-error',
+          cache: CACHE_NAME
+        });
+        const offlineHtml = await offlineResponse.text();
+        const fallbackReason = networkError && networkError.name === 'AbortError'
+          ? 'timeout'
+          : 'network-error';
+        return new Response(
+          offlineHtml.replace('data-fallback-reason="unknown"', `data-fallback-reason="${fallbackReason}"`),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          }
+        );
+      }
     }
 
     return Response.error();
