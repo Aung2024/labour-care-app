@@ -8,6 +8,25 @@
   if (!global.navigator || !('serviceWorker' in global.navigator)) return;
   if (global.__mnchServiceWorkerRegistration) return;
 
+  var UPDATE_ACK_KEY = 'mnchServiceWorkerUpdateAcknowledged';
+  var hasAcknowledgedUpdate = function () {
+    try {
+      return global.localStorage.getItem(UPDATE_ACK_KEY) === 'true';
+    } catch (error) {
+      return false;
+    }
+  };
+  var acknowledgeUpdate = function () {
+    try {
+      global.localStorage.setItem(UPDATE_ACK_KEY, 'true');
+    } catch (error) {}
+  };
+  var clearAcknowledgedUpdate = function () {
+    try {
+      global.localStorage.removeItem(UPDATE_ACK_KEY);
+    } catch (error) {}
+  };
+
   var showUpdateNotice = function (registration) {
     if (!global.document || global.document.getElementById('mnchUpdateNotice')) return;
 
@@ -60,9 +79,13 @@
       message.textContent = 'Preparing the latest MNCH App update. Your current work will not be interrupted.';
 
       var finishSafely = function () {
+        acknowledgeUpdate();
         message.textContent = 'Update ready. Continue your current work; the new version will apply automatically the next time the app starts.';
         updateButton.textContent = 'Ready';
         updateButton.setAttribute('aria-label', 'MNCH App update is ready');
+        global.setTimeout(function () {
+          notice.remove();
+        }, 3500);
       };
 
       if (registration.waiting) {
@@ -83,6 +106,9 @@
         }
         message.textContent = 'This device already has the latest MNCH App version.';
         updateButton.textContent = 'Up to date';
+        global.setTimeout(function () {
+          notice.remove();
+        }, 2500);
       }).catch(function () {
         message.textContent = 'The update could not be checked. Keep working and try Update again when the connection is stable.';
         updateButton.disabled = false;
@@ -98,14 +124,17 @@
 
   var watchForWaitingWorker = function (registration) {
     var notifyIfWaiting = function () {
-      if (registration.waiting) {
-        if (global.document && global.document.body) {
+      if (!registration.waiting) {
+        clearAcknowledgedUpdate();
+        return;
+      }
+      if (hasAcknowledgedUpdate()) return;
+      if (global.document && global.document.body) {
+        showUpdateNotice(registration);
+      } else if (global.document) {
+        global.document.addEventListener('DOMContentLoaded', function () {
           showUpdateNotice(registration);
-        } else if (global.document) {
-          global.document.addEventListener('DOMContentLoaded', function () {
-            showUpdateNotice(registration);
-          }, { once: true });
-        }
+        }, { once: true });
       }
     };
 
