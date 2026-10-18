@@ -1130,6 +1130,10 @@
   }
 
   function hydrateVoucherTests(voucher, sheet) {
+    // Issued vouchers are historical invoices. Their stored line items and
+    // totals already include the project ceiling that was active at issue
+    // time, so never rebuild them from the current price sheet.
+    if (rowHasStoredTotals(voucher)) return voucher;
     var percents = sheet ? { clientPercent: sheet.clientPercent, projectPercent: sheet.projectPercent } : null;
     var ceilingMinor = resolveProjectCeilingMinor(sheet, null);
     if (sheet && Array.isArray(voucher.selectedServiceIds) && voucher.selectedServiceIds.length) {

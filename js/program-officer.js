@@ -781,9 +781,7 @@
           var visitKind = row.patientVisitKind === 'old' ? 'Old' : 'New';
           var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
           var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
-          var totalAmount = row.totals && row.totals.regularPriceMinor != null
-            ? Number(row.totals.regularPriceMinor) / 100
-            : projectAmount + clientAmount;
+          var totalAmount = projectAmount + clientAmount;
           return '<tr class="po-dash-row" data-code="' + escapeHtml(code) +
             '" tabindex="0" role="button" aria-label="Preview voucher ' + escapeHtml(code) + '">' +
             '<td>' + escapeHtml(code) + '</td><td>' + statusBadge(row.status) + '</td><td>' +
@@ -859,9 +857,7 @@
         var code = row.code || row.id;
         var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
         var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
-        var totalAmount = row.totals && row.totals.regularPriceMinor != null
-          ? Number(row.totals.regularPriceMinor) / 100
-          : projectAmount + clientAmount;
+        var totalAmount = projectAmount + clientAmount;
         return '<tr data-code="' + escapeHtml(code) + '">' +
           '<td><input type="checkbox" class="form-check-input verify-check" data-code="' + escapeHtml(code) + '"' +
           (state.selectedCodes[code] ? ' checked' : '') + ' aria-label="Select ' + escapeHtml(code) + '"></td>' +
