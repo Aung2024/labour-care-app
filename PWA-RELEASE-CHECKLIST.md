@@ -14,6 +14,16 @@ Use this checklist before presenting the MNCH App or releasing a production chan
    - One patient record or Firestore read
 5. Confirm the browser console has no service-worker install or required-shell errors.
 
+## Supported offline workflows
+
+The supported offline workflows are limited to:
+
+- Registering a new patient
+- Selecting a patient already prepared on that device
+- Creating a new ANC visit for that patient
+
+HRT, KMC, labour, postnatal, newborn, reports, transfers, administration, dashboards, and other workflows require an active internet connection. They may load their cached interface, but they must not create offline records.
+
 ## Before a ministry presentation
 
 1. Open the production URL once while the connection is stable.

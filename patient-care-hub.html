@@ -1075,6 +1075,7 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/offline-store.js"></script>
   <script src="js/offline-sync.js"></script>
+  <script src="js/offline-manager.js"></script>
   <script src="js/user-cache.js"></script>
   <script src="js/joint-care-utils.js"></script>
   <script src="js/page-performance.js"></script>
@@ -2074,8 +2075,18 @@
 
     // Navigate to care section
     function navigateToCare(careType) {
-      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      const onlineOnlyCareTypes = ['labour', 'baby', 'vaccine-home', 'vaccine-schedule', 'overall-report'];
+      const isOffline = window.OfflineManager && typeof OfflineManager.isOfflineActive === 'function'
+        ? OfflineManager.isOfflineActive()
+        : (typeof navigator !== 'undefined' && navigator.onLine === false);
+      const onlineOnlyCareTypes = [
+        'labour',
+        'baby',
+        'newborn',
+        'postnatal',
+        'vaccine-home',
+        'vaccine-schedule',
+        'overall-report'
+      ];
       if (isOffline && onlineOnlyCareTypes.includes(careType)) {
         alert('This feature is available online only. Please reconnect to the internet and try again.');
         return;
@@ -2084,7 +2095,9 @@
       // Patient is already in session, so just navigate
       switch(careType) {
         case 'antenatal':
-          window.location.href = 'antenatal-care.html';
+          window.location.href = isOffline
+            ? 'antenatal-form.html?patient=' + encodeURIComponent(selectedPatient.id)
+            : 'antenatal-care.html';
           break;
         case 'labour':
           window.location.href = 'summary.html?patient=' + selectedPatient.id;

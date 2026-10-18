@@ -20,6 +20,15 @@
   ];
 
   const CACHED_PATIENTS_STORE = 'cached_patients';
+  const OFFLINE_SUPPORTED_WORKFLOWS = Object.freeze([
+    'registration',
+    'patient-selection',
+    'antenatal-care'
+  ]);
+  const OFFLINE_SUPPORTED_STORES = Object.freeze([
+    'pending_patients',
+    'pending_anc_visits'
+  ]);
 
   let dbInstance = null;
 
@@ -61,6 +70,24 @@
 
   function shouldQueueForSync() {
     return isOfflineMode() || (typeof navigator !== 'undefined' && navigator.onLine === false);
+  }
+
+  function isOfflineActive() {
+    return shouldQueueForSync();
+  }
+
+  function isOfflineWorkflowSupported(workflow) {
+    return OFFLINE_SUPPORTED_WORKFLOWS.indexOf(String(workflow || '')) !== -1;
+  }
+
+  function isOfflineStoreSupported(storeName) {
+    return OFFLINE_SUPPORTED_STORES.indexOf(String(storeName || '')) !== -1;
+  }
+
+  function assertOfflineStoreSupported(storeName) {
+    if (isOfflineActive() && !isOfflineStoreSupported(storeName)) {
+      throw new Error('This feature is not available offline. Reconnect to the internet and try again.');
+    }
   }
 
   function normalizeQueuedPayload(data, storeName) {
@@ -142,6 +169,7 @@
   }
 
   async function saveOfflineRecord(storeName, data) {
+    assertOfflineStoreSupported(storeName);
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const normalizedData = normalizeQueuedPayload(data, storeName);
@@ -174,8 +202,17 @@
    * 3) Marks as synced and removes queue item on success
    */
   async function saveLocalFirstAndTryCloud(storeName, data, cloudWriteFn) {
+    const offlineStoreSupported = isOfflineStoreSupported(storeName);
+    if (isOfflineActive() && !offlineStoreSupported) {
+      throw new Error('This feature is not available offline. Reconnect to the internet and try again.');
+    }
+
     const queued = await saveOfflineRecord(storeName, data);
     if (shouldQueueForSync() || typeof cloudWriteFn !== 'function') {
+      if (!offlineStoreSupported) {
+        await deleteRecord(storeName, queued.localId);
+        throw new Error('This feature requires an active internet connection.');
+      }
       return { local: true, cloud: false, queued: true, localId: queued.localId };
     }
 
@@ -185,6 +222,10 @@
       await deleteRecord(storeName, queued.localId);
       return { local: true, cloud: true, queued: false, localId: queued.localId, cloudMeta: cloudMeta || null };
     } catch (error) {
+      if (!offlineStoreSupported) {
+        await deleteRecord(storeName, queued.localId);
+        throw new Error('This feature requires an active internet connection.');
+      }
       console.warn('[OfflineManager] Cloud write failed, keeping queued record:', error);
       return { local: true, cloud: false, queued: true, localId: queued.localId, error };
     }
@@ -738,7 +779,10 @@
 
   window.OfflineManager = {
     isOfflineMode,
+    isOfflineActive,
     setOfflineMode,
+    isOfflineWorkflowSupported,
+    isOfflineStoreSupported,
     saveOfflineRecord,
     saveLocalFirstAndTryCloud,
     shouldQueueForSync,

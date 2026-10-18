@@ -10,7 +10,7 @@
 // Bump this release identifier whenever application HTML or JavaScript changes.
 // A new namespace lets the worker validate the new shell before removing legacy
 // caches, while the active worker remains in control of open pages.
-const RELEASE_ID = '20261018-pwa-stability';
+const RELEASE_ID = '20261018-offline-scope';
 const CACHE_NAME = `mnch-v2-shell-${RELEASE_ID}`;
 const NETWORK_TIMEOUT_MS = 8000;
 const OFFLINE_PAGE = '/offline.html';
@@ -20,6 +20,9 @@ const REQUIRED_SHELL = [
   '/login.html',
   '/home.html',
   '/list.html',
+  '/patient-enhanced.html',
+  '/patient-consent.html',
+  '/antenatal-form.html',
   OFFLINE_PAGE,
   '/manifest.json',
   '/css/vendor/bootstrap.min.css',
@@ -55,6 +58,21 @@ const REQUIRED_SHELL = [
   '/js/role-display.js',
   '/js/baby-patient-utils.js',
   '/js/service-closure.js',
+  '/js/clinical-validator.js',
+  '/js/duplicate-detector.js',
+  '/js/submit-guard.js',
+  '/js/data-linkage.js',
+  '/js/joint-care-utils.js',
+  '/js/offline-visit-number.js',
+  '/js/anc-workflow-utils.js',
+  '/js/clinical-refer-flow.js',
+  '/js/choice-controls.js',
+  '/js/delivery-notes-utils.js',
+  '/js/lang-apply.js',
+  '/js/quality-scoring.js',
+  '/js/quality-improvement.js',
+  '/js/quality-target-banner.js',
+  '/js/other-facility-visits-ui.js',
   '/css/compact-app-bar.css',
   '/icons/icon-192.png',
   '/icons/icon-512.png'

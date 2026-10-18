@@ -27,7 +27,7 @@ test('stable worker has an atomic core shell and bounded network requests', () =
   })
 
   assert.match(sw, /cache\.addAll\(REQUIRED_SHELL\)/)
-  assert.match(sw, /RELEASE_ID = '20261018-pwa-stability'/)
+  assert.match(sw, /RELEASE_ID = '20261018-offline-scope'/)
   assert.match(sw, /required-shell-incomplete/)
   assert.match(sw, /fetchWithTimeout/)
   assert.match(sw, /AbortController/)
@@ -70,6 +70,9 @@ test('registration has one owner and never reloads an active page', () => {
 test('stable shell includes Login, Home, List, and update dependencies', () => {
   const sw = readAppFile('service-worker.js')
   const requiredPaths = [
+    '/patient-enhanced.html',
+    '/patient-consent.html',
+    '/antenatal-form.html',
     '/js/consent-manager.js',
     '/js/session-manager.js',
     '/js/status-manager.js',
@@ -82,6 +85,19 @@ test('stable shell includes Login, Home, List, and update dependencies', () => {
   requiredPaths.forEach((requiredPath) => {
     assert.match(sw, new RegExp(requiredPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
+})
+
+test('offline storage allowlist supports registration and ANC only', () => {
+  const offlineManager = readAppFile('js/offline-manager.js')
+  const patientHub = readAppFile('patient-care-hub.html')
+
+  assert.match(offlineManager, /pending_patients/)
+  assert.match(offlineManager, /pending_anc_visits/)
+  assert.match(offlineManager, /isOfflineStoreSupported/)
+  assert.match(offlineManager, /This feature is not available offline/)
+  assert.match(patientHub, /antenatal-form\.html\?patient=/)
+  assert.match(patientHub, /'postnatal'/)
+  assert.match(patientHub, /'newborn'/)
 })
 
 test('entry router is synchronous and login can render before Firebase', () => {
