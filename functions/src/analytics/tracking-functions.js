@@ -97,6 +97,16 @@ function stringFilter(data, field) {
   return value;
 }
 
+function projectionPatientIsArchived(row) {
+  const status = String(row && row.patientRecordStatus || '').trim().toLowerCase();
+  return row && (
+    row.patientDeleted === true ||
+    row.patientIsDeleted === true ||
+    status === 'deleted' ||
+    status === 'duplicate_archived'
+  );
+}
+
 function applyRoleScope(query, user) {
   if (['super admin', 'central', 'admin'].includes(user.role)) return query;
   if (user.role === 'regional officer') {
@@ -132,14 +142,22 @@ function applyPatientRosterScope(query, user) {
 
 async function countScopedBabyPatients(user) {
   // Firestore does not allow NOT_IN together with the OR scope used for
-  // midwife ownership. Count the scoped baby roster directly instead of
-  // failing the whole denominator calculation.
-  const query = applyPatientRosterScope(
-    db().collection('patients').where('patient_type', '==', 'baby'),
-    user
-  );
+  // midwife ownership. Count the scoped roster directly, then subtract the
+  // two archive statuses with compatible equality queries.
+  const baseQuery = db().collection('patients').where('patient_type', '==', 'baby');
+  const query = applyPatientRosterScope(baseQuery, user);
   const snapshot = await query.count().get();
-  return snapshot.data().count;
+  const archivedCounts = await Promise.all(['deleted', 'duplicate_archived'].map((status) => {
+    const archivedQuery = applyPatientRosterScope(
+      db().collection('patients')
+        .where('patient_type', '==', 'baby')
+        .where('status', '==', status),
+      user
+    );
+    return archivedQuery.count().get().then((result) => result.data().count);
+  }));
+  const archivedTotal = archivedCounts.reduce((total, count) => total + count, 0);
+  return Math.max(0, snapshot.data().count - archivedTotal);
 }
 
 function validateFilters(input) {
@@ -233,7 +251,8 @@ async function queryProjectionRows(collectionName, request) {
     lastScanned = snapshot.docs[snapshot.docs.length - 1];
     snapshot.docs.forEach((item) => {
       const row = item.data();
-      if ((!filters.region || row.region === filters.region) &&
+      if (!projectionPatientIsArchived(row) &&
+          (!filters.region || row.region === filters.region) &&
           (!filters.township || row.township === filters.township) &&
           (!filters.department || row.department === filters.department) &&
           (!filters.facilityTypes.length ||

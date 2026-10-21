@@ -804,8 +804,19 @@
         name: data.name || data.patientName || 'Unknown',
         patientUniqueId: data.patient_unique_id || data.patientUniqueId || '',
         age: data.age != null && data.age !== '' ? data.age : null,
-        status: data.status || 'registered'
+        status: data.status || 'registered',
+        deleted: data.deleted === true,
+        isDeleted: data.isDeleted === true
       };
+    }
+
+    function isActiveTransferPatient(patient) {
+      if (!patient) return false;
+      const status = String(patient.status || '').trim().toLowerCase();
+      return patient.deleted !== true &&
+        patient.isDeleted !== true &&
+        status !== 'deleted' &&
+        status !== 'duplicate_archived';
     }
 
     function formatPatientAge(p) {
@@ -898,7 +909,8 @@
         );
         if (snap && snap.exists) {
           p = slimPatient(snap.id, snap.data() || {});
-          allPatients = [p];
+          if (isActiveTransferPatient(p)) allPatients = [p];
+          else p = null;
           patientsLoaded = true;
         }
       }
@@ -913,15 +925,6 @@
     }
 
     async function loadMyPatients() {
-      const cacheKey = 'transferPatientPicker:v2:' + currentUser.uid;
-      const cached = TransferLoadUtils.cacheRead
-        ? TransferLoadUtils.cacheRead(cacheKey, PATIENT_LIST_CACHE_MS)
-        : null;
-      if (cached && cached.length) {
-        allPatients = cached;
-        return;
-      }
-
       const db = firebase.firestore();
       const uid = currentUser.uid;
       const map = new Map();
@@ -929,7 +932,8 @@
       const mergeSnap = (snap) => {
         if (!snap || snap.empty || typeof snap.forEach !== 'function') return;
         snap.forEach((d) => {
-          if (d && d.id) map.set(d.id, slimPatient(d.id, d.data() || {}));
+          const patient = d && d.id ? slimPatient(d.id, d.data() || {}) : null;
+          if (patient && isActiveTransferPatient(patient)) map.set(d.id, patient);
         });
       };
 
@@ -941,9 +945,6 @@
       results.forEach(mergeSnap);
 
       allPatients = Array.from(map.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-      if (TransferLoadUtils.cacheWrite) {
-        TransferLoadUtils.cacheWrite(cacheKey, allPatients);
-      }
     }
 
     async function openPatientModal() {

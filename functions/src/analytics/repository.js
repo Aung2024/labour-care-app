@@ -195,6 +195,15 @@ async function loadClinicalFacts(db, patientId) {
 
 function normalizeClinicalFacts(patientId, loaded) {
   if (!loaded.patient) return null;
+  const status = String(loaded.patient.status || '').trim().toLowerCase();
+  if (
+    loaded.patient.deleted === true ||
+    loaded.patient.isDeleted === true ||
+    status === 'deleted' ||
+    status === 'duplicate_archived'
+  ) {
+    return null;
+  }
   const activity = loaded.activity || {};
   const facilityCode = loaded.patient.facility_code || loaded.patient.facilityCode || '';
   const taxonomy = facilityTaxonomy(facilityCode);

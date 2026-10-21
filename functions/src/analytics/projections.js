@@ -133,6 +133,9 @@ function patientFields(facts) {
     patientCode: profile.patient_id || profile.patientId || facts.id || '',
     patientPhone: profile.phone || profile.phoneNumber || '',
     patientAge: resolvePatientAge(profile),
+    patientRecordStatus: profile.status || '',
+    patientDeleted: profile.deleted === true,
+    patientIsDeleted: profile.isDeleted === true,
     infectionFlags: facts.infectionFlags || {}
   };
 }

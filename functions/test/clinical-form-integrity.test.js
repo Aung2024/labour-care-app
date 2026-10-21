@@ -89,7 +89,8 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   assert.match(source, /kmc-weight-spark/);
   assert.match(source, /function weightSparklineSvg/);
   assert.match(source, /function enrichKmcRowWeights/);
-  assert.match(source, /await enrichKmcRowWeights\(result\.rows\.map\(projectionKmcRow\)\)/);
+  assert.match(source, /var mapped = result\.rows\.map\(projectionKmcRow\)/);
+  assert.match(source, /mapped = await filterArchivedKmcRows\(mapped\)/);
   assert.match(source, /function canonicalKmcKey/);
   assert.match(source, /visit\.current_weight_gram \|\| visit\.currentWeightGram/);
   assert.match(source, /serialCol/);
@@ -294,6 +295,9 @@ test('transfer hub hides deleted patients and returns from overall report', () =
   assert.match(form, /Application အသုံးမပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
   assert.match(form, /id="referralFacilityType"/);
   assert.match(form, /referralData\.destinationFacilityCode/);
+  assert.match(form, /function isActiveTransferPatient/);
+  assert.match(form, /if \(patient && isActiveTransferPatient\(patient\)\)/);
+  assert.match(form, /status !== 'duplicate_archived'/);
   assert.match(requests, /destInternal/);
   assert.match(requests, /Application အသုံးပြုသော ဆေးရုံ\/ကျန်းမာရေးဌာန/);
 });
@@ -530,8 +534,13 @@ test('registration and KMC labels expose the simplified age and denominator work
   assert.ok(kmc.includes("totalKmc + ' / ' + potential"));
   assert.ok(kmc.includes("potential + ' / ' +"));
   assert.match(kmc, /KMC babies \/ LBW-Preterm/);
-  assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /rosterCounts/);
+  assert.match(kmc, /function filterArchivedKmcRows/);
+  assert.match(kmc, /isArchivedKmcPatient/);
+  const trackingFunctions = readAppFile('functions/src/analytics/tracking-functions.js');
+  assert.match(trackingFunctions, /rosterCounts/);
   assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /countScopedBabyPatients/);
+  assert.match(trackingFunctions, /duplicate_archived/);
+  assert.match(readAppFile('functions/src/analytics/repository.js'), /loaded\.patient\.deleted === true/);
   assert.match(editPatient, /function archivePatient/);
   assert.match(editPatient, /AppDialog\.confirm/);
   assert.match(editPatient, /AppDialog\.alert/);

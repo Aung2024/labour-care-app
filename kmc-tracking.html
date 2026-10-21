@@ -1939,6 +1939,9 @@
         patientName: row.patientName,
         patient_id: row.patientCode,
         phone: row.patientPhone,
+        status: row.patientRecordStatus || '',
+        deleted: row.patientDeleted === true,
+        isDeleted: row.patientIsDeleted === true,
         infectionFlags: row.infectionFlags || {}
       };
       var completionAction = row.status === 'complete' ? [{
@@ -1967,6 +1970,43 @@
         kmcActions: completionAction,
         completed: row.status === 'complete'
       });
+    }
+
+    function isArchivedKmcPatient(patient) {
+      patient = patient || {};
+      var status = String(patient.status || '').trim().toLowerCase();
+      return patient.deleted === true ||
+        patient.isDeleted === true ||
+        status === 'deleted' ||
+        status === 'duplicate_archived';
+    }
+
+    async function filterArchivedKmcRows(rows) {
+      var candidates = rows || [];
+      if (!window.firebase || !firebase.firestore) return candidates;
+      var db = firebase.firestore();
+      var activeRows = [];
+      for (var i = 0; i < candidates.length; i += 8) {
+        var batch = candidates.slice(i, i + 8);
+        var results = await Promise.all(batch.map(async function (row) {
+          if (isArchivedKmcPatient(row.patient)) return null;
+          if (row.patient && row.patient.status) return row;
+          try {
+            var snapshot = await smartFirestoreQuery(
+              Promise.resolve(db.collection('patients').doc(row.patientId)),
+              { preferCache: /iPhone|iPad|iPod/.test(navigator.userAgent), timeout: 5000, retries: 0 }
+            );
+            if (snapshot && snapshot.exists && isArchivedKmcPatient(snapshot.data() || {})) {
+              return null;
+            }
+          } catch (error) {
+            // Keep the projection visible when the patient status read is unavailable.
+          }
+          return row;
+        }));
+        activeRows.push.apply(activeRows, results.filter(Boolean));
+      }
+      return activeRows;
     }
 
     function setKmcPageState(state, message) {
@@ -2008,7 +2048,9 @@
         if (!append && result.rosterCounts) {
           window._kmcRosterCounts = result.rosterCounts;
         }
-        var mapped = await enrichKmcRowWeights(result.rows.map(projectionKmcRow));
+        var mapped = result.rows.map(projectionKmcRow);
+        mapped = await filterArchivedKmcRows(mapped);
+        mapped = await enrichKmcRowWeights(mapped);
         window._kmcRows = dedupeKmcRows(append ? (window._kmcRows || []).concat(mapped) : mapped);
         _kmcNextPageToken = result.nextPageToken || null;
         if (!append) {
