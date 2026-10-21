@@ -790,6 +790,21 @@
       }
     }
 
+    function archiveWriteWithTimeout(writePromise, label, timeoutMs) {
+      return new Promise(function (resolve, reject) {
+        var timer = setTimeout(function () {
+          reject(new Error((label || 'Archive request') + ' timed out. The connection to Firestore may be unavailable.'));
+        }, timeoutMs || 12000);
+        Promise.resolve(writePromise).then(function (value) {
+          clearTimeout(timer);
+          resolve(value);
+        }).catch(function (error) {
+          clearTimeout(timer);
+          reject(error);
+        });
+      });
+    }
+
     async function archivePatient() {
       const confirmationMessage = "Archive this patient from the active list? Clinical records will be preserved and the patient can be restored by an administrator.";
       const confirmed = window.AppDialog
@@ -808,20 +823,30 @@
           archiveButton.disabled = true;
         }
 
-        await db.collection("patients").doc(patientId).set({
+        await archiveWriteWithTimeout(db.collection("patients").doc(patientId).set({
           deleted: true,
           isDeleted: true,
           status: 'deleted',
           deleted_at: firebase.firestore.FieldValue.serverTimestamp(),
           deleted_by: currentUser && currentUser.uid ? currentUser.uid : null,
           deletion_reason: 'Archived from Edit Patient'
-        }, { merge: true });
+        }, { merge: true }), 'Archive request', 12000);
 
+        var motherCleanupWarning = false;
         if (currentPatient && currentPatient.mother_patient_id) {
-          await db.collection("patients").doc(currentPatient.mother_patient_id).set({
-            baby_patient_ids: firebase.firestore.FieldValue.arrayRemove(patientId),
-            updated_at: firebase.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
+          try {
+            await archiveWriteWithTimeout(
+              db.collection("patients").doc(currentPatient.mother_patient_id).set({
+                baby_patient_ids: firebase.firestore.FieldValue.arrayRemove(patientId),
+                updated_at: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true }),
+              'Mother record cleanup',
+              8000
+            );
+          } catch (cleanupError) {
+            motherCleanupWarning = true;
+            console.warn('Archived baby, but mother record cleanup could not be confirmed:', cleanupError);
+          }
         }
 
         if (window.AnalyticsRefreshQueue) {
@@ -832,16 +857,27 @@
         }
 
         if (window.AppDialog) {
-          await AppDialog.alert("Patient archived. Clinical records were preserved.", {
+          await AppDialog.alert(
+            "Patient archived. Clinical records were preserved." +
+            (motherCleanupWarning ? " The mother link will be cleaned up when the connection is restored." : ""),
+            {
             title: 'Patient archived'
-          });
+            }
+          );
         } else {
           window.alert("Patient archived. Clinical records were preserved.");
         }
         window.location.href = "list.html";
       } catch (error) {
         console.error("Error archiving patient:", error);
-        alert("Error archiving patient: " + error.message);
+        if (window.AppDialog) {
+          await AppDialog.alert(
+            "The patient was not confirmed as archived. Please reconnect to Firestore and try again.",
+            { title: 'Archive could not be confirmed' }
+          );
+        } else {
+          window.alert("The patient was not confirmed as archived. Please reconnect to Firestore and try again.");
+        }
         if (archiveButton) {
           archiveButton.innerHTML = originalText;
           archiveButton.disabled = false;
