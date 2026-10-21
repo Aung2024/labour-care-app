@@ -5,6 +5,37 @@
 (function (global) {
   'use strict';
 
+  // The current testing branch intentionally runs without PWA caching so that
+  // HTML, CSS, JavaScript, and image changes are visible immediately during
+  // development and client review. Re-enable this only for the approved
+  // production/midwife release.
+  var SERVICE_WORKER_ENABLED = false;
+  var APP_CACHE_PATTERN = /^(?:labour-care-|mch-care-|mnch-v2-)/;
+
+  if (!SERVICE_WORKER_ENABLED) {
+    if (!global.navigator || !('serviceWorker' in global.navigator)) return;
+
+    global.navigator.serviceWorker.getRegistrations().then(function (registrations) {
+      return Promise.all(registrations.map(function (registration) {
+        var worker = registration.active || registration.waiting || registration.installing;
+        var scriptUrl = worker && worker.scriptURL;
+        if (!scriptUrl || scriptUrl.indexOf('/service-worker.js') === -1) return false;
+        return registration.unregister();
+      }));
+    }).then(function () {
+      return global.caches && global.caches.keys
+        ? global.caches.keys().then(function (cacheNames) {
+          return Promise.all(cacheNames
+            .filter(function (cacheName) { return APP_CACHE_PATTERN.test(cacheName); })
+            .map(function (cacheName) { return global.caches.delete(cacheName); }));
+        })
+        : undefined;
+    }).catch(function (error) {
+      console.warn('[SW] Testing mode could not fully remove the app worker/cache', error);
+    });
+    return;
+  }
+
   if (!global.navigator || !('serviceWorker' in global.navigator)) return;
   if (global.__mnchServiceWorkerRegistration) return;
 
