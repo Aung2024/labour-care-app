@@ -506,9 +506,9 @@
             <i class="fas fa-save"></i>
             <span>Update Patient Data</span>
           </button>
-          <button type="button" class="btn-action btn-delete" onclick="deletePatient()">
-            <i class="fas fa-trash-alt"></i>
-            <span>Delete Patient</span>
+          <button type="button" class="btn-action btn-delete" onclick="archivePatient()">
+            <i class="fas fa-box-archive"></i>
+            <span>Archive Patient</span>
           </button>
         </div>
       </div>
@@ -789,66 +789,48 @@
       }
     }
 
-    async function deletePatient() {
-      // Double confirmation for delete action
-      const firstConfirm = confirm("⚠️ WARNING: This will permanently delete the patient record and ALL associated data (ANC visits, lab tests, labour care records, etc.).\n\nAre you sure you want to continue?");
-      
-      if (!firstConfirm) return;
-      
-      const secondConfirm = confirm("🔴 FINAL WARNING: This action cannot be undone!\n\nType 'DELETE' to confirm permanent deletion of patient record.");
-      
-      if (!secondConfirm) return;
-      
-      const userInput = prompt("To confirm deletion, please type 'DELETE' exactly:");
-      
-      if (userInput !== 'DELETE') {
-        alert("Deletion cancelled. Patient record remains intact.");
-        return;
-      }
-
+    async function archivePatient() {
+      const confirmed = confirm("Archive this patient from the active list? Clinical records will be preserved and the patient can be restored by an administrator.");
+      if (!confirmed) return;
+      const archiveButton = document.querySelector('.btn-delete');
+      const originalText = archiveButton ? archiveButton.innerHTML : '';
       try {
-        // Show loading state
-        const deleteButton = document.querySelector('.btn-delete');
-        const originalText = deleteButton.innerHTML;
-        deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Deleting...</span>';
-        deleteButton.disabled = true;
+        if (archiveButton) {
+          archiveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Archiving...</span>';
+          archiveButton.disabled = true;
+        }
 
-        // Delete the main patient document
-        await db.collection("patients").doc(patientId).delete();
-        
-        // Delete all subcollections (ANC visits, lab tests, etc.)
-        const subcollections = ['antenatal_visits', 'testRecords', 'labour_care', 'postpartum_visits', 'baby_records'];
-        
-        for (const subcollection of subcollections) {
-          try {
-            const snapshot = await db.collection("patients").doc(patientId).collection(subcollection).get();
-            const batch = db.batch();
-            snapshot.docs.forEach(doc => {
-              batch.delete(doc.ref);
-            });
-            if (!snapshot.empty) {
-              await batch.commit();
-            }
-          } catch (error) {
-            console.log(`Subcollection ${subcollection} may not exist or already deleted:`, error);
+        await db.collection("patients").doc(patientId).set({
+          deleted: true,
+          isDeleted: true,
+          status: 'deleted',
+          deleted_at: firebase.firestore.FieldValue.serverTimestamp(),
+          deleted_by: currentUser && currentUser.uid ? currentUser.uid : null,
+          deletion_reason: 'Archived from Edit Patient'
+        }, { merge: true });
+
+        if (currentPatient && currentPatient.mother_patient_id) {
+          await db.collection("patients").doc(currentPatient.mother_patient_id).set({
+            baby_patient_ids: firebase.firestore.FieldValue.arrayRemove(patientId),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+
+        if (window.AnalyticsRefreshQueue) {
+          await AnalyticsRefreshQueue.requestSafely(patientId, 'patient_archived');
+          if (currentPatient && currentPatient.mother_patient_id) {
+            await AnalyticsRefreshQueue.requestSafely(currentPatient.mother_patient_id, 'baby_patient_archived');
           }
         }
 
-        // Success message
-        alert("✅ Patient record and all associated data have been permanently deleted.");
-        
-        // Redirect to patient list
+        alert("Patient archived. Clinical records were preserved.");
         window.location.href = "list.html";
-        
       } catch (error) {
-        console.error("Error deleting patient:", error);
-        alert("❌ Error deleting patient: " + error.message);
-        
-        // Reset button state
-        const deleteButton = document.querySelector('.btn-delete');
-        if (deleteButton) {
-          deleteButton.innerHTML = originalText;
-          deleteButton.disabled = false;
+        console.error("Error archiving patient:", error);
+        alert("Error archiving patient: " + error.message);
+        if (archiveButton) {
+          archiveButton.innerHTML = originalText;
+          archiveButton.disabled = false;
         }
       }
     }

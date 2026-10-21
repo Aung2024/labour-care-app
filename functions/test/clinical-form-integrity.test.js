@@ -490,10 +490,15 @@ test('patient registration uses explicit type selection and guarded baby identit
   assert.match(source, /name="patientType" id="patientTypeMother"/);
   assert.match(source, /name="patientType" id="patientTypeBaby"/);
   assert.match(source, /return document\.querySelector\('input\[name="patientType"\]:checked'\)\?\.value === 'baby'/);
-  assert.match(source, /id="motherPatientSearch"/);
+  assert.doesNotMatch(source, /id="motherPatientSearch"/);
   assert.match(source, /id="motherPatientId"/);
-  assert.match(source, /checkExistingBabyRegistration/);
+  assert.match(source, /findExistingMotherPatient/);
+  assert.match(source, /openDelivery=1/);
   assert.match(source, /motherUnavailableReason/);
+  assert.match(source, /data-mm="မိခင် မသိပါ"/);
+  assert.match(source, /id="babyHasGuardian"/);
+  assert.match(source, /id="guardianName"/);
+  assert.match(source, /id="ageFieldGroup"/);
   assert.doesNotMatch(source, /raw\.length < 2/);
 });
 
@@ -508,6 +513,20 @@ test('patient list and home expose consistent mother and baby count concepts', (
   assert.match(home, /data-type="mothers"/);
   assert.match(home, /data-type="babies"/);
   assert.match(home, /patientStats\.total\+\+/);
+});
+
+test('registration and KMC labels expose the simplified age and denominator workflow', () => {
+  const registration = readAppFile('patient-enhanced.html');
+  const kmc = readAppFile('kmc-tracking.html');
+  const editPatient = readAppFile('edit-patient.html');
+  assert.match(registration, /id="babyAgeDisplay"/);
+  assert.doesNotMatch(registration, /babyAgeYearsHint/);
+  assert.doesNotMatch(registration, /babyPatientPrompt/);
+  assert.ok(kmc.includes("totalKmc + ' / ' + potential"));
+  assert.match(kmc, /KMC babies \/ LBW-Preterm/);
+  assert.match(editPatient, /function archivePatient/);
+  assert.doesNotMatch(editPatient, /function deletePatient/);
+  assert.match(editPatient, /deleted_at/);
 });
 
 test('baby backfill supports scoped dry-run reconciliation without broad scans', () => {

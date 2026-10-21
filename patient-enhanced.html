@@ -2666,7 +2666,6 @@
               <div class="alert alert-warning">
                 <i class="fas fa-exclamation-triangle"></i>
                 <strong>Warning:</strong> Your township is not set. 
-                <br><small class="text-muted">Patients created without a township may not display properly.</small>
               </div>
             `;
             }
@@ -2872,10 +2871,8 @@
 
     function updateBabyAgeDisplayFromBirthDate() {
       const display = document.getElementById('babyAgeDisplay');
-      const hint = document.getElementById('babyAgeYearsHint');
       const ageInput = document.getElementById('age');
       const babyMode = isBabyRegistration();
-      if (hint) hint.style.display = babyMode ? 'block' : 'none';
       if (!display) return;
       const dob = getBirthDateFromParts();
       if (!babyMode) {
@@ -2918,12 +2915,12 @@
     function updatePatientTypeFields() {
       const babyMode = isBabyRegistration();
       const babyFields = document.getElementById('babyPatientFields');
-      const prompt = document.getElementById('babyPatientPrompt');
+      const ageFieldGroup = document.getElementById('ageFieldGroup');
       const paritySection = document.getElementById('motherParitySection');
       const husbandNameSection = document.getElementById('husbandNameSection');
       const patientTypeOptions = document.querySelectorAll('.patient-type-option');
       if (babyFields) babyFields.style.display = babyMode ? '' : 'none';
-      if (prompt) prompt.style.display = babyMode ? 'block' : 'none';
+      if (ageFieldGroup) ageFieldGroup.style.display = babyMode ? 'none' : '';
       if (paritySection) paritySection.style.display = babyMode ? 'none' : '';
       if (husbandNameSection) husbandNameSection.style.display = babyMode ? 'none' : '';
       patientTypeOptions.forEach(function (option) {
@@ -2938,13 +2935,16 @@
       });
       const motherUnavailable = document.getElementById('motherUnavailable');
       const motherUnavailableReason = document.getElementById('motherUnavailableReason');
+      const guardianCheckbox = document.getElementById('babyHasGuardian');
+      const guardianFields = document.getElementById('guardianFields');
+      const guardianName = document.getElementById('guardianName');
       const ageInput = document.getElementById('age');
       if (ageInput) {
         ageInput.required = !babyMode;
         ageInput.readOnly = babyMode;
       }
       if (motherUnavailable) motherUnavailable.required = false;
-      ['motherName', 'motherPatientSearch'].forEach(function (id) {
+      ['motherName'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.required = babyMode && !motherUnavailableChecked;
       });
@@ -2952,6 +2952,9 @@
         motherUnavailableReason.required = babyMode && motherUnavailableChecked;
         motherUnavailableReason.style.display = babyMode && motherUnavailableChecked ? 'block' : 'none';
       }
+      const hasGuardian = babyMode && !!guardianCheckbox?.checked;
+      if (guardianFields) guardianFields.style.display = hasGuardian ? '' : 'none';
+      if (guardianName) guardianName.required = hasGuardian;
       ['gravidaSelect', 'parityPrimarySelect'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.required = !babyMode;
@@ -2962,137 +2965,8 @@
     function clearMotherSelection() {
       const idInput = document.getElementById('motherPatientId');
       const serialInput = document.getElementById('motherPatientSerial');
-      const hint = document.getElementById('selectedMotherHint');
       if (idInput) idInput.value = '';
       if (serialInput) serialInput.value = '';
-      if (hint) {
-        hint.textContent = '';
-        hint.style.display = 'none';
-      }
-    }
-
-    function escapeHtml(value) {
-      return String(value || '').replace(/[&<>"']/g, function (character) {
-        return {
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;'
-        }[character];
-      });
-    }
-
-    function renderMotherSearchResults(results) {
-      const container = document.getElementById('motherSearchResults');
-      const searchInput = document.getElementById('motherPatientSearch');
-      if (!container) return;
-      container.innerHTML = '';
-      if (searchInput) searchInput.setAttribute('aria-expanded', results.length ? 'true' : 'false');
-      results.forEach(function (result) {
-        const data = result.data || result;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'list-group-item list-group-item-action text-start';
-        button.setAttribute('role', 'option');
-        const patientId = data.patient_unique_id || data.patientUniqueId || result.id || '';
-        const facility = data.facility_name || data.facilityName || data.facility_code || '';
-        const phone = data.phone || data.phoneNumber || '';
-        button.innerHTML = '<strong>' + escapeHtml(data.name || data.patientName || 'Mother') + '</strong>' +
-          '<br><small>' + escapeHtml(patientId) +
-          ' · ' + escapeHtml(data.township || '') +
-          (facility ? ' · ' + escapeHtml(facility) : '') +
-          (phone ? ' · ' + escapeHtml(phone) : '') + '</small>';
-        button.addEventListener('click', function () {
-          const idInput = document.getElementById('motherPatientId');
-          const serialInput = document.getElementById('motherPatientSerial');
-          const motherNameInput = document.getElementById('motherName');
-          const hint = document.getElementById('selectedMotherHint');
-          if (idInput) idInput.value = result.id || '';
-          if (serialInput) serialInput.value = data.patient_unique_id || data.patientUniqueId || '';
-          if (motherNameInput) motherNameInput.value = data.name || data.patientName || '';
-          if (searchInput) {
-            searchInput.value = data.name || data.patientName || '';
-            searchInput.setAttribute('aria-expanded', 'false');
-          }
-          if (hint) {
-            hint.textContent = (currentLanguage === 'mm' ? 'ရွေးထားသော မိခင်: ' : 'Selected mother: ') +
-              (data.patient_unique_id || data.patientUniqueId || result.id || '');
-            hint.style.display = 'block';
-          }
-          container.innerHTML = '';
-          updatePatientTypeFields();
-        });
-        container.appendChild(button);
-      });
-    }
-
-    async function searchMotherPatients() {
-      const input = document.getElementById('motherPatientSearch');
-      const queryText = String(input?.value || '').trim();
-      const container = document.getElementById('motherSearchResults');
-      if (!container || queryText.length < 2 || isOfflineNow()) {
-        renderMotherSearchResults([]);
-        return;
-      }
-      const db = firebase.firestore();
-      const queries = [
-        db.collection('patients').where('patient_unique_id', '==', queryText).limit(10),
-        db.collection('patients').where('name', '==', queryText).limit(10),
-        db.collection('patients').where('phone', '==', queryText).limit(10)
-      ];
-      try {
-        const snapshots = await Promise.all(queries.map(function (query) {
-          return query.get().catch(function () { return null; });
-        }));
-        const seen = new Set();
-        const results = [];
-        snapshots.forEach(function (snapshot) {
-          if (!snapshot || !snapshot.forEach) return;
-          snapshot.forEach(function (doc) {
-            const data = doc.data() || {};
-            if (seen.has(doc.id) || (data.patient_type || 'mother') === 'baby') return;
-            seen.add(doc.id);
-            results.push({ id: doc.id, data: data });
-          });
-        });
-        renderMotherSearchResults(results);
-      } catch (error) {
-        console.warn('Mother search failed:', error);
-        renderMotherSearchResults([]);
-      }
-    }
-
-    async function checkExistingBabyRegistration(motherId, babyData) {
-      if (!motherId || !babyData || isOfflineNow() || !window.BabyPatientUtils) return null;
-      try {
-        return await BabyPatientUtils.findMatchingBabyPatient(
-          firebase.firestore(),
-          motherId,
-          { date_of_birth: babyData.date_of_birth, birth_order: 1 },
-          1,
-          null
-        );
-      } catch (error) {
-        console.warn('Existing baby lookup failed:', error);
-        return null;
-      }
-    }
-
-    async function resolveMotherPatientIdForBaby(data) {
-      const serial = (data.motherPatientSerial || '').trim();
-      if (!serial || isOfflineNow() || !window.firebase || !firebase.firestore) return null;
-      try {
-        const snap = await firebase.firestore()
-          .collection('patients')
-          .where('patient_unique_id', '==', serial)
-          .limit(1)
-          .get();
-        if (!snap.empty) return snap.docs[0].id;
-      } catch (e) {
-        console.warn('Mother serial lookup failed:', e);
-      }
-      return null;
     }
 
     const liveDuplicateState = {
@@ -3206,21 +3080,16 @@
           evaluateAgeRisk();
         });
       });
-      const motherSearchInput = document.getElementById('motherPatientSearch');
-      if (motherSearchInput) {
-        let motherSearchTimer = null;
-        motherSearchInput.addEventListener('input', function () {
-          clearMotherSelection();
-          if (motherSearchTimer) clearTimeout(motherSearchTimer);
-          motherSearchTimer = setTimeout(searchMotherPatients, 300);
-        });
-      }
       const motherUnavailableInput = document.getElementById('motherUnavailable');
       if (motherUnavailableInput) {
         motherUnavailableInput.addEventListener('change', function () {
           if (motherUnavailableInput.checked) clearMotherSelection();
           updatePatientTypeFields();
         });
+      }
+      const guardianCheckbox = document.getElementById('babyHasGuardian');
+      if (guardianCheckbox) {
+        guardianCheckbox.addEventListener('change', updatePatientTypeFields);
       }
       updatePatientTypeFields();
       
@@ -3549,29 +3418,33 @@
 
       const motherUnavailable = data.motherUnavailable === 'true';
       if (registeringBaby && (!getBirthDateFromParts() || !data.babySex ||
-        (!data.motherPatientId && !motherUnavailable) ||
+        (!data.motherName && !motherUnavailable) ||
+        (data.babyHasGuardian === 'true' && !(data.guardianName || '').trim()) ||
         (motherUnavailable && !(data.motherUnavailableReason || '').trim()))) {
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
           (currentLanguage === 'mm'
-            ? 'ကလေးလူနာအတွက် မွေးဖွားရက်၊ ကျား/မနှင့် ရှိပြီးသား မိခင်ကို ရွေးပါ။ မိခင်မရရှိနိုင်ပါက အကြောင်းပြချက် ဖြည့်ပါ။'
-            : 'Baby patients require birth date, sex, and an existing mother selection. If the mother is unavailable, enter a reason.') + '</div>';
+            ? 'ကလေးအတွက် မွေးဖွားရက်၊ ကျား/မနှင့် မိခင်အမည် ဖြည့်ပါ။ မိခင်မသိပါက အကြောင်းပြချက် ဖြည့်ပါ။'
+            : 'Baby patients require birth date, sex, and mother information. If the mother is unknown, enter a reason.') + '</div>';
         return;
       }
 
-      if (registeringBaby && !isOfflineNow()) {
-        const existingBaby = await checkExistingBabyRegistration(
-          data.motherPatientId,
-          { date_of_birth: getBirthDateFromParts() }
+      const motherCheckDeferred = registeringBaby && !motherUnavailable &&
+        !data.motherPatientId && isOfflineNow();
+      if (registeringBaby && !motherUnavailable && !isOfflineNow() && window.BabyPatientUtils) {
+        const existingMother = await BabyPatientUtils.findExistingMotherPatient(
+          firebase.firestore(),
+          data.motherName,
+          await getRegistrationDuplicateOptions()
         );
-        if (existingBaby && existingBaby.id) {
+        if (existingMother && existingMother.id) {
           messageDiv.innerHTML = '<div class="alert alert-warning">' +
             '<i class="fas fa-triangle-exclamation me-2"></i>' +
             (currentLanguage === 'mm'
-              ? 'ဤမိခင်အတွက် ဤမွေးဖွားရက်ရှိသော ကလေးမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။ '
-              : 'A baby with this mother and birth date already exists. ') +
+              ? 'ဤမိခင်သည် လူနာစာရင်းတွင် ရှိပြီးသားဖြစ်ပါသည်။ ကလေးကို Delivery Note မှတစ်ဆင့် မှတ်တမ်းတင်ပါ။ '
+              : 'This mother already has a patient record. Register the baby through the mother’s Delivery Note.') +
             '<a class="btn btn-sm btn-warning ms-2" href="patient-care-hub.html?patient=' +
-            encodeURIComponent(existingBaby.id) + '">' +
-            (currentLanguage === 'mm' ? 'ရှိပြီးသားမှတ်တမ်း ဖွင့်ရန်' : 'Open existing baby') +
+            encodeURIComponent(existingMother.id) + '&openDelivery=1">' +
+            (currentLanguage === 'mm' ? 'Delivery Note ဖွင့်ရန်' : 'Open Delivery Note') +
             '</a></div>';
           return;
         }
@@ -3789,10 +3662,23 @@
           mother_patient_serial: linkedMotherSerial,
           mother_name: registeringBaby ? (data.motherName || null) : null,
           mother_link_status: registeringBaby
-            ? (linkedMotherPatientId ? 'linked' : (motherUnavailable ? 'unknown' : 'unresolved'))
+            ? (linkedMotherPatientId
+              ? 'linked'
+              : (motherUnavailable
+                ? 'unknown'
+                : (motherCheckDeferred ? 'pending_review' : 'not_registered')))
             : null,
           mother_unavailable_reason: registeringBaby && motherUnavailable
             ? (data.motherUnavailableReason || null)
+            : null,
+          guardian_name: registeringBaby && data.babyHasGuardian === 'true'
+            ? (data.guardianName || null)
+            : null,
+          guardian_relationship: registeringBaby && data.babyHasGuardian === 'true'
+            ? (data.guardianRelationship || null)
+            : null,
+          guardian_phone: registeringBaby && data.babyHasGuardian === 'true'
+            ? (data.guardianPhone || null)
             : null,
           date_of_birth: babyDob,
           birth_time: babyBirthTime,
@@ -3874,6 +3760,9 @@
           mother_name: processedData.mother_name || null,
           mother_link_status: processedData.mother_link_status || null,
           mother_unavailable_reason: processedData.mother_unavailable_reason || null,
+          guardian_name: processedData.guardian_name || null,
+          guardian_relationship: processedData.guardian_relationship || null,
+          guardian_phone: processedData.guardian_phone || null,
           date_of_birth: processedData.date_of_birth || null,
           birth_time: processedData.birth_time || null,
           sex: processedData.sex || null,
@@ -3914,14 +3803,18 @@
           const motherTypeInput = document.getElementById('patientTypeMother');
           if (motherTypeInput) motherTypeInput.checked = true;
           clearMotherSelection();
-          const motherSearchInput = document.getElementById('motherPatientSearch');
-          const motherSearchResults = document.getElementById('motherSearchResults');
           const motherUnavailableInput = document.getElementById('motherUnavailable');
           const motherUnavailableReason = document.getElementById('motherUnavailableReason');
-          if (motherSearchInput) motherSearchInput.value = '';
-          if (motherSearchResults) motherSearchResults.innerHTML = '';
+          const guardianCheckbox = document.getElementById('babyHasGuardian');
+          const guardianName = document.getElementById('guardianName');
+          const guardianRelationship = document.getElementById('guardianRelationship');
+          const guardianPhone = document.getElementById('guardianPhone');
           if (motherUnavailableInput) motherUnavailableInput.checked = false;
           if (motherUnavailableReason) motherUnavailableReason.value = '';
+          if (guardianCheckbox) guardianCheckbox.checked = false;
+          if (guardianName) guardianName.value = '';
+          if (guardianRelationship) guardianRelationship.value = '';
+          if (guardianPhone) guardianPhone.value = '';
           updatePatientTypeFields();
           updateParityField();
           toggleYoungestChildFields();
@@ -4072,7 +3965,6 @@
                       <span><i class="fas fa-baby me-2"></i><span class="lang-text" data-en="Baby / Child" data-mm="ကလေး">Baby / Child</span></span>
                     </label>
                   </div>
-                  <small class="form-text lang-text" data-en="Choose the patient type first. A low maternal age will show a warning but will not change this selection." data-mm="လူနာအမျိုးအစားကို အရင်ရွေးပါ။ မိခင်အသက်ငယ်ပါက သတိပေးချက်ပြမည်ဖြစ်သော်လည်း ရွေးချယ်မှုကို မပြောင်းပါ။">Choose the patient type first. A low maternal age will show a warning but will not change this selection.</small>
                 </fieldset>
               </div>
             </div>
@@ -4089,20 +3981,14 @@
               </div>
             </div>
             <div class="col-md-6">
-              <div class="form-group">
+              <div class="form-group" id="ageFieldGroup">
                 <label for="age" class="form-label required-field">
                   <i class="fas fa-calendar-alt"></i><span class="lang-text" data-en="Age" data-mm="အသက်">Age</span>
                 </label>
                 <input type="number" name="age" id="age" class="form-control" required min="0" max="110" pattern="[0-9]*" inputmode="numeric">
-                <p id="babyAgeDisplay" class="form-text text-primary mb-1" style="display: none;" aria-live="polite"></p>
-                <small id="babyAgeYearsHint" class="text-muted lang-text" style="display: none;" data-en="For babies, use birth date below for exact age. Years shown here are for reports only." data-mm="ကလေးလူနာအတွက် အတိအကျ အသက်ကို အောက်ပါ မွေးဖွားရက်မှ တွက်ပါသည်။ ဤနေရာရှိ အသက် (နှစ်) သည် အစီရင်ခံစာအတွက်သာ ဖြစ်သည်။">For babies, use birth date below for exact age. Years shown here are for reports only.</small>
                 <div id="ageRiskAlert" class="alert alert-danger hide" style="display: none;">
                   <i class="fas fa-exclamation-triangle me-2"></i>
                   <span>Age risk alert will appear here.</span>
-                </div>
-                <div id="babyPatientPrompt" class="alert alert-info hide" style="display: none;">
-                  <i class="fas fa-baby me-2"></i>
-                  <span class="lang-text" data-en="Baby/Child mode is selected. Please complete the birth date and mother details below." data-mm="ကလေးအမျိုးအစားကို ရွေးထားပါသည်။ အောက်တွင် မွေးဖွားရက်နှင့် မိခင်အချက်အလက်များ ဖြည့်ပါ။">Baby/Child mode is selected. Please complete the birth date and mother details below.</span>
                 </div>
               </div>
             </div>
@@ -4121,7 +4007,7 @@
                   </label>
                   <input type="hidden" name="birthDate" id="birthDate">
                   <input type="date" name="birthDatePicker" id="birthDatePicker" class="form-control" aria-label="Birth date">
-                  <small class="text-muted lang-text" data-en="Select the baby's date of birth. Age is calculated automatically." data-mm="ကလေး၏ မွေးဖွားရက်ကို ရွေးချယ်ပါ။ အသက်ကို အလိုအလျောက် တွက်ပေးပါသည်။">Select the baby's date of birth. Age is calculated automatically.</small>
+                  <p id="babyAgeDisplay" class="form-text text-primary mb-1" style="display: none;" aria-live="polite"></p>
                   <div id="birthDateHint" class="alert alert-warning hide mt-2 mb-0" style="display: none;">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     <span class="lang-text" data-en="Please choose a valid birth date that is not in the future." data-mm="မွေးဖွားရက် မှန်ကန်ပြီး အနာဂတ်ရက် မဖြစ်ရပါ။">Please choose a valid birth date that is not in the future.</span>
@@ -4153,34 +4039,48 @@
               </div>
               <div class="col-md-6">
                 <div class="form-group">
-                  <label for="motherPatientSearch" class="form-label">
-                    <i class="fas fa-user-check"></i><span class="lang-text" data-en="Find existing mother" data-mm="ရှိပြီးသား မိခင်ကို ရှာရန်">Find existing mother</span>
-                    <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
-                  </label>
-                  <input type="search" id="motherPatientSearch" class="form-control" autocomplete="off" aria-controls="motherSearchResults" aria-expanded="false" placeholder="Search by mother name, patient ID, or phone">
-                  <div id="motherSearchResults" class="list-group mt-2" role="listbox" aria-label="Mother search results"></div>
                   <input type="hidden" name="motherPatientId" id="motherPatientId">
                   <input type="hidden" name="motherPatientSerial" id="motherPatientSerial">
-                  <small id="selectedMotherHint" class="form-text text-success" style="display: none;" aria-live="polite"></small>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="form-group">
                   <label for="motherName" class="form-label">
                     <i class="fas fa-person-breastfeeding"></i><span class="lang-text" data-en="Mother Name" data-mm="မိခင်အမည်">Mother Name</span>
                     <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
                   </label>
                   <input type="text" name="motherName" id="motherName" class="form-control">
-                  <small class="form-text lang-text" data-en="Select the mother above. This name is kept as a readable copy." data-mm="အထက်တွင် မိခင်ကို ရွေးပါ။ ဤအမည်ကို ဖတ်ရှုရန်အတွက် သိမ်းပါမည်။">Select the mother above. This name is kept as a readable copy.</small>
                 </div>
               </div>
             </div>
             <div class="form-group mt-2">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="motherUnavailable" name="motherUnavailable" value="true">
-                <label class="form-check-label lang-text" for="motherUnavailable" data-en="Mother is unavailable or unknown" data-mm="မိခင် မရရှိနိုင်ပါ သို့မဟုတ် မသိပါ">Mother is unavailable or unknown</label>
+                <label class="form-check-label lang-text" for="motherUnavailable" data-en="Mother unknown" data-mm="မိခင် မသိပါ">Mother unknown</label>
               </div>
-              <textarea id="motherUnavailableReason" name="motherUnavailableReason" class="form-control mt-2" rows="2" style="display: none;" placeholder="Reason"></textarea>
+              <textarea id="motherUnavailableReason" name="motherUnavailableReason" class="form-control mt-2" rows="2" style="display: none;" aria-label="Reason"></textarea>
+            </div>
+            <div class="form-group mt-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="babyHasGuardian" name="babyHasGuardian" value="true">
+                <label class="form-check-label lang-text" for="babyHasGuardian" data-en="Baby came with another guardian" data-mm="ကလေးကို အခြားအုပ်ထိန်းသူနှင့် လာရောက်သည်">Baby came with another guardian</label>
+              </div>
+              <div id="guardianFields" class="row g-2 mt-1" style="display: none;">
+                <div class="col-md-4">
+                  <label for="guardianName" class="form-label">
+                    <span class="lang-text" data-en="Guardian name" data-mm="အုပ်ထိန်းသူအမည်">Guardian name</span>
+                  </label>
+                  <input type="text" name="guardianName" id="guardianName" class="form-control">
+                </div>
+                <div class="col-md-4">
+                  <label for="guardianRelationship" class="form-label">
+                    <span class="lang-text" data-en="Relationship" data-mm="တော်စပ်ပုံ">Relationship</span>
+                  </label>
+                  <input type="text" name="guardianRelationship" id="guardianRelationship" class="form-control">
+                </div>
+                <div class="col-md-4">
+                  <label for="guardianPhone" class="form-label">
+                    <span class="lang-text" data-en="Guardian phone" data-mm="အုပ်ထိန်းသူဖုန်း">Guardian phone</span>
+                  </label>
+                  <input type="tel" name="guardianPhone" id="guardianPhone" class="form-control">
+                </div>
+              </div>
             </div>
           </div>
           <div class="row">

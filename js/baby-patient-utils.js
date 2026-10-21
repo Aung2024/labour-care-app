@@ -122,6 +122,16 @@
           if (seen[doc.id]) return;
           var data = doc.data() || {};
           if (isBabyPatient(data)) return;
+          if (options.userRole && String(options.userRole).toLowerCase().replace(/\s+/g, ' ') === 'midwife' &&
+            options.userId) {
+            var careTeamIds = Array.isArray(data.care_team_midwife_ids)
+              ? data.care_team_midwife_ids
+              : [];
+            var belongsToMidwife = data.created_by === options.userId ||
+              data.createdBy === options.userId ||
+              careTeamIds.indexOf(options.userId) !== -1;
+            if (!belongsToMidwife) return;
+          }
           if (options.township && data.township && data.township !== options.township) return;
           if (options.region && data.region && data.region !== options.region) return;
           seen[doc.id] = true;
