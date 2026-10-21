@@ -109,16 +109,10 @@
 
   async function fetchScopedMotherCandidates(db, options) {
     options = options || {};
-    var queries = [];
-    if (options.userRole === 'Midwife' && options.userId) {
-      queries.push(db.collection('patients').where('created_by', '==', options.userId).limit(500));
-    } else if (options.township) {
-      queries.push(db.collection('patients').where('township', '==', options.township).limit(500));
-    } else if (options.region) {
-      queries.push(db.collection('patients').where('region', '==', options.region).limit(500));
-    } else {
-      queries.push(db.collection('patients').limit(500));
-    }
+    var queries = [
+      db.collection('patients').where('name', '==', options.motherName || '').limit(25),
+      db.collection('patients').where('patientName', '==', options.motherName || '').limit(25)
+    ];
     var seen = {};
     var patients = [];
     for (var i = 0; i < queries.length; i++) {
@@ -126,8 +120,12 @@
         var snap = await queries[i].get();
         snap.forEach(function (doc) {
           if (seen[doc.id]) return;
+          var data = doc.data() || {};
+          if (isBabyPatient(data)) return;
+          if (options.township && data.township && data.township !== options.township) return;
+          if (options.region && data.region && data.region !== options.region) return;
           seen[doc.id] = true;
-          patients.push({ id: doc.id, data: doc.data() || {} });
+          patients.push({ id: doc.id, data: data });
         });
       } catch (e) {
         console.warn('Mother lookup query failed:', e);
@@ -140,7 +138,10 @@
     if (!db || !motherName) return null;
     var normalizedTarget = normalizePersonName(motherName);
     if (!normalizedTarget) return null;
-    var candidates = await fetchScopedMotherCandidates(db, options || {});
+    var candidates = await fetchScopedMotherCandidates(db, {
+      ...(options || {}),
+      motherName: motherName
+    });
     var matches = candidates.filter(function (item) {
       if (isBabyPatient(item.data)) return false;
       return normalizePersonName(item.data.name || item.data.patientName) === normalizedTarget;
@@ -639,13 +640,37 @@
     var db = firebase.firestore();
     var limit = parseInt(options.limit, 10) || 50;
     var dryRun = options.dryRun !== false;
-    var snap = await db.collection('patients').limit(limit).get();
-    var results = { scanned: 0, eligibleMothers: 0, createdOrUpdatedBabies: 0, dryRun: dryRun, errors: [] };
-    for (var i = 0; i < snap.docs.length; i++) {
-      var doc = snap.docs[i];
+    var sourceDocs = new Map();
+    var sourceQueries = options.userId
+      ? [
+        db.collection('patients').where('created_by', '==', options.userId).limit(limit),
+        db.collection('patients').where('createdBy', '==', options.userId).limit(limit),
+        db.collection('patients').where('care_team_midwife_ids', 'array-contains', options.userId).limit(limit)
+      ]
+      : [db.collection('patients').limit(limit)];
+    var sourceSnapshots = await Promise.all(sourceQueries.map(function (query) {
+      return query.get();
+    }));
+    sourceSnapshots.forEach(function (sourceSnapshot) {
+      sourceSnapshot.forEach(function (sourceDoc) {
+        if (!sourceDocs.has(sourceDoc.id)) sourceDocs.set(sourceDoc.id, sourceDoc);
+      });
+    });
+    var sourceDocuments = Array.from(sourceDocs.values()).slice(0, limit);
+    var results = {
+      scanned: sourceDocuments.length,
+      eligibleMothers: 0,
+      createdOrUpdatedBabies: 0,
+      dryRun: dryRun,
+      missingBabyPatientCount: 0,
+      candidates: [],
+      updatedMotherIds: [],
+      errors: []
+    };
+    for (var i = 0; i < sourceDocuments.length; i++) {
+      var doc = sourceDocuments[i];
       var data = doc.data() || {};
       if (isBabyPatient(data)) continue;
-      results.scanned += 1;
       try {
         var notes = null;
         if (global.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes) {
@@ -659,11 +684,33 @@
         }
         if (!notes) continue;
         results.eligibleMothers += 1;
+        var sourceBabies = ((notes.deliveryDetails || {}).babies || []).filter(function (baby) {
+          return String(baby.outcome || 'alive').toLowerCase() !== 'stillbirth';
+        });
+        var missingForMother = 0;
+        for (var babyIndex = 0; babyIndex < sourceBabies.length; babyIndex++) {
+          var sourceBaby = sourceBabies[babyIndex];
+          var birthOrder = parseInt(sourceBaby.babyIndex, 10) || (babyIndex + 1);
+          var identity = canonicalBabyIdentity(doc.id, sourceBaby, birthOrder, birthGroupId(doc.id, { deliveryDetails: { babies: sourceBabies } }));
+          var existingBaby = await findMatchingBabyPatient(db, doc.id, sourceBaby, birthOrder, identity.birthGroupId);
+          if (!existingBaby) {
+            missingForMother += 1;
+            results.missingBabyPatientCount += 1;
+          }
+        }
+        results.candidates.push({
+          motherId: doc.id,
+          motherName: data.name || data.patientName || null,
+          sourceBabyCount: sourceBabies.length,
+          linkedBabyIds: Array.isArray(data.baby_patient_ids) ? data.baby_patient_ids.slice() : [],
+          missingBabyPatientCount: missingForMother
+        });
         if (!dryRun) {
           var ids = await createOrUpdateBabiesFromDeliveryNotes(doc.id, notes, options.userId || null, {
             motherData: data
           });
           results.createdOrUpdatedBabies += ids.length;
+          if (ids.length) results.updatedMotherIds.push(doc.id);
           var copied = await copyLegacyBabyCareToBabyPatients(doc.id, ids);
           results.copiedNewbornCare = (results.copiedNewbornCare || 0) + copied.newborn;
           results.copiedVaccinations = (results.copiedVaccinations || 0) + copied.vaccinations;

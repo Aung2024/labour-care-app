@@ -109,14 +109,6 @@ async function searchDuplicatesByPhone(phoneNumber, options = {}) {
       }
     }
 
-    const scopedPatients = await fetchScopedPatientsForDuplicateCheck(options);
-    scopedPatients.forEach(patient => {
-      if (!seenIds.has(patient.id) && phoneMatchesPatient(patient, normalizedPhone)) {
-        seenIds.add(patient.id);
-        allMatches.push(patient);
-      }
-    });
-    
     return allMatches;
   } catch (error) {
     console.error('Error in searchDuplicatesByPhone:', error);
@@ -342,10 +334,33 @@ async function fetchScopedPatientsForDuplicateCheck(options = {}) {
 }
 
 async function searchDuplicatesByExactName(name, options = {}) {
-  const normalizedName = normalizeName(name);
-  if (!normalizedName) return [];
-  const patients = await fetchScopedPatientsForDuplicateCheck(options);
-  return patients.filter(patient => normalizeName(patient.name || patient.patientName || '') === normalizedName);
+  const exactName = String(name || '').trim();
+  if (!exactName) return [];
+  const db = firebase.firestore();
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+  const queries = [
+    db.collection('patients').where('name', '==', exactName).limit(25),
+    db.collection('patients').where('patientName', '==', exactName).limit(25)
+  ];
+  const matches = [];
+  const seenIds = new Set();
+  for (const query of queries) {
+    try {
+      const snapshot = await smartFirestoreQuery(
+        Promise.resolve(query),
+        { preferCache: isIOS, timeout: 8000, retries: 1, fallbackToCache: true }
+      );
+      if (!snapshot || snapshot.empty) continue;
+      snapshot.forEach(doc => {
+        if (seenIds.has(doc.id)) return;
+        seenIds.add(doc.id);
+        matches.push({ id: doc.id, ...doc.data() });
+      });
+    } catch (error) {
+      console.warn('Error fetching exact-name duplicates:', error);
+    }
+  }
+  return matches;
 }
 
 /**

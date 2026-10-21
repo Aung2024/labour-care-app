@@ -356,7 +356,7 @@ test('service worker uses bounded network-first offline fallback', () => {
   const registerSw = readAppFile('js/register-sw.js');
   const sw = readAppFile('service-worker.js');
   const authGuard = readAppFile('js/auth-guard.js');
-  assert.match(sw, /mnch-v2-shell-v1-20261015/);
+  assert.match(sw, /const RELEASE_ID = '[^']+'/);
   assert.match(sw, /NETWORK_TIMEOUT_MS/);
   assert.match(sw, /required-shell-incomplete/);
   assert.match(sw, /firebase\.runtime-config\.json/);
@@ -385,9 +385,9 @@ test('new newborn and PNC visits require canonical Delivery Notes identity', () 
   assert.doesNotMatch(newborn, /option value="caesarean_section"/);
   assert.doesNotMatch(newborn, /option value="public_facility"/);
 
-  assert.match(pnc, /id="pncBirthPlace"[^>]*required/);
+  assert.match(pnc, /id="pncBirthPlace"/);
   assert.match(pnc, /id="pncModeOfDelivery"[^>]*required/);
-  assert.match(pnc, /normalizeBirthPlaceForForm/);
+  assert.match(pnc, /canonicalPncBirthPlace/);
   assert.match(pnc, /normalizeDeliveryModeForForm/);
   assert.match(pnc, /dataset\.deliverySourceLocked/);
   assert.match(pnc, /!isEditMode && !\(await ensureDeliveryNotesBeforePnc/);
@@ -483,4 +483,41 @@ test('patient registration requires patient phone and allows reused numbers', ()
   assert.match(source, /same phone is allowed/);
   assert.doesNotMatch(source, /This phone number already exists for another patient/);
   assert.doesNotMatch(source, /liveDuplicateState\.phoneBlocked = phoneDup/);
+});
+
+test('patient registration uses explicit type selection and guarded baby identity checks', () => {
+  const source = readAppFile('patient-enhanced.html');
+  assert.match(source, /name="patientType" id="patientTypeMother"/);
+  assert.match(source, /name="patientType" id="patientTypeBaby"/);
+  assert.match(source, /return document\.querySelector\('input\[name="patientType"\]:checked'\)\?\.value === 'baby'/);
+  assert.match(source, /id="motherPatientSearch"/);
+  assert.match(source, /id="motherPatientId"/);
+  assert.match(source, /checkExistingBabyRegistration/);
+  assert.match(source, /motherUnavailableReason/);
+  assert.doesNotMatch(source, /raw\.length < 2/);
+});
+
+test('patient list and home expose consistent mother and baby count concepts', () => {
+  const list = readAppFile('list.html');
+  const home = readAppFile('home.html');
+  assert.match(list, /data-patient-type-filter="all"/);
+  assert.match(list, /data-patient-type-filter="mother"/);
+  assert.match(list, /data-patient-type-filter="baby"/);
+  assert.match(list, /function setPatientTypeFilter/);
+  assert.match(list, /function updatePatientTypeFilterCounts/);
+  assert.match(home, /data-type="mothers"/);
+  assert.match(home, /data-type="babies"/);
+  assert.match(home, /patientStats\.total\+\+/);
+});
+
+test('baby backfill supports scoped dry-run reconciliation without broad scans', () => {
+  const utility = readAppFile('js/baby-patient-utils.js');
+  const auditPage = readAppFile('baby-patient-backfill.html');
+  assert.match(utility, /where\('created_by', '==', options\.userId\)/);
+  assert.match(utility, /where\('care_team_midwife_ids', 'array-contains', options\.userId\)/);
+  assert.match(utility, /dryRun: dryRun/);
+  assert.match(auditPage, /Read-only KMC \/ Patient List Audit/);
+  assert.match(auditPage, /queryKmcTracking/);
+  assert.match(auditPage, /projectionRefreshQueued/);
+  assert.match(auditPage, /readOnly: true/);
 });

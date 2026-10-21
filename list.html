@@ -132,7 +132,21 @@
 
     .patient-type-chips {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .filter-count {
+      min-width: 1.35rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.08);
+      font-size: 0.72rem;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .filter-chip.active .filter-count {
+      background: rgba(255, 255, 255, 0.22);
     }
 
     .status-filter-chips {
@@ -1161,12 +1175,18 @@
       </div>
       <div class="filter-panel">
         <div class="filter-chips patient-type-chips" aria-label="Patient type filter">
-          <div class="filter-chip active" data-patient-type-filter="mother" onclick="togglePatientTypeFilter('mother', event)">
-            <i class="fas fa-person-breastfeeding"></i> <span class="lang-text" data-en="Mom" data-mm="မိခင်">Mom</span>
-          </div>
-          <div class="filter-chip active" data-patient-type-filter="baby" onclick="togglePatientTypeFilter('baby', event)">
-            <i class="fas fa-baby"></i> <span class="lang-text" data-en="Baby" data-mm="ကလေး">Baby</span>
-          </div>
+          <button type="button" class="filter-chip active" data-patient-type-filter="all" onclick="setPatientTypeFilter('all', event)" aria-pressed="true">
+            <i class="fas fa-users"></i> <span class="lang-text" data-en="All" data-mm="အားလုံး">All</span>
+            <span class="filter-count" data-filter-count="all">0</span>
+          </button>
+          <button type="button" class="filter-chip" data-patient-type-filter="mother" onclick="setPatientTypeFilter('mother', event)" aria-pressed="false">
+            <i class="fas fa-person-breastfeeding"></i> <span class="lang-text" data-en="Mothers" data-mm="မိခင်များ">Mothers</span>
+            <span class="filter-count" data-filter-count="mother">0</span>
+          </button>
+          <button type="button" class="filter-chip" data-patient-type-filter="baby" onclick="setPatientTypeFilter('baby', event)" aria-pressed="false">
+            <i class="fas fa-baby"></i> <span class="lang-text" data-en="Babies" data-mm="ကလေးများ">Babies</span>
+            <span class="filter-count" data-filter-count="baby">0</span>
+          </button>
         </div>
         <div class="filter-chips status-filter-chips mother-status-chips" style="display: none;" aria-label="Mother status filter">
           <div class="filter-chip active" data-mother-filter="all" onclick="setMotherStatusFilter('all', event)">
@@ -1353,6 +1373,7 @@
   <script src="js/status-manager.js"></script>
   <script src="js/anc-tracking-status.js"></script>
   <script src="js/baby-patient-utils.js"></script>
+  <script src="js/patient-roster.js"></script>
   <script src="js/ui-dialogs.js"></script>
   <script src="js/service-closure.js"></script>
 
@@ -1595,35 +1616,14 @@
       };
     }
 
-    function mergePatientDocs(patientMap, snapshot) {
-      if (!snapshot || typeof snapshot.forEach !== 'function' || snapshot.empty) return;
-      snapshot.forEach(function (doc) {
-        if (doc && doc.id && doc.data && !patientMap.has(doc.id)) {
-          patientMap.set(doc.id, { id: doc.id, ...doc.data() });
-        }
-      });
-    }
-
     async function loadPatientsForMidwifeUid(db, uid, isIOS) {
-      const patientMap = new Map();
-      const queries = [
-        db.collection('patients').where('created_by', '==', uid),
-        db.collection('patients').where('createdBy', '==', uid),
-        db.collection('patients').where('care_team_midwife_ids', 'array-contains', uid)
-      ];
-      const snapshots = await Promise.all(queries.map(function (query) {
+      if (!window.PatientRoster) return [];
+      return PatientRoster.loadMidwifePatients(db, uid, function (query) {
         return listSmartQuery(
           query,
           { preferCache: true, timeout: 3000, retries: 1, fallbackToCache: true }
-        ).catch(function (err) {
-          console.warn('Patient ownership query failed:', err);
-          return null;
-        });
-      }));
-      snapshots.forEach(function (snapshot) {
-        mergePatientDocs(patientMap, snapshot);
+        );
       });
-      return Array.from(patientMap.values());
     }
 
     async function hydrateLinkedBabyPatients(db, patients, isIOS) {
@@ -2190,8 +2190,38 @@
     function syncPatientTypeChips() {
       document.querySelectorAll('[data-patient-type-filter]').forEach(function (chip) {
         const type = chip.getAttribute('data-patient-type-filter');
-        const on = type === 'mother' ? patientTypeMotherOn : patientTypeBabyOn;
+        const mode = getPatientTypeFilterMode();
+        const on = type === mode;
         chip.classList.toggle('active', on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      updatePatientTypeFilterCounts();
+    }
+
+    function setPatientTypeFilter(type, event) {
+      if (event) event.stopPropagation();
+      const nextType = ['all', 'mother', 'baby'].includes(type) ? type : 'all';
+      patientTypeMotherOn = nextType === 'all' || nextType === 'mother';
+      patientTypeBabyOn = nextType === 'all' || nextType === 'baby';
+      syncPatientTypeChips();
+      updateStatusFilterPanels();
+      resetMotherStatusChips();
+      resetBabyStatusChips();
+      updateSectionTitle();
+      filterPatients();
+    }
+
+    function updatePatientTypeFilterCounts() {
+      const counts = { all: 0, mother: 0, baby: 0 };
+      allPatients.forEach(function (patient) {
+        if (patient.status === 'duplicate_archived' || patient.deleted === true || patient.isDeleted === true) return;
+        const type = patientTypeOf(patient);
+        counts[type] += 1;
+        counts.all += 1;
+      });
+      Object.keys(counts).forEach(function (type) {
+        const count = document.querySelector('[data-filter-count="' + type + '"]');
+        if (count) count.textContent = String(counts[type]);
       });
     }
 
@@ -2504,31 +2534,7 @@
     }
 
     function togglePatientTypeFilter(type, event) {
-      if (event) event.stopPropagation();
-      const isMother = type === 'mother';
-      if (isMother) {
-        if (patientTypeMotherOn && patientTypeBabyOn) {
-          patientTypeBabyOn = false;
-        } else if (patientTypeMotherOn && !patientTypeBabyOn) {
-          patientTypeBabyOn = true;
-        } else {
-          patientTypeMotherOn = true;
-        }
-      } else {
-        if (patientTypeMotherOn && patientTypeBabyOn) {
-          patientTypeMotherOn = false;
-        } else if (!patientTypeMotherOn && patientTypeBabyOn) {
-          patientTypeMotherOn = true;
-        } else {
-          patientTypeBabyOn = true;
-        }
-      }
-      syncPatientTypeChips();
-      updateStatusFilterPanels();
-      resetMotherStatusChips();
-      resetBabyStatusChips();
-      updateSectionTitle();
-      filterPatients();
+      setPatientTypeFilter(type, event);
     }
 
     function updateSectionTitle() {
@@ -2892,6 +2898,7 @@
       list.innerHTML = '';
       
       // Update patient count badge
+      updatePatientTypeFilterCounts();
       updatePatientCountBadge();
       
       if (filteredPatients.length === 0) {
@@ -3410,7 +3417,7 @@
       const mode = getPatientTypeFilterMode();
 
       filteredPatients = allPatients.filter(function (patient) {
-        if (patient.status === 'duplicate_archived') return false;
+        if (patient.status === 'duplicate_archived' || patient.deleted === true || patient.isDeleted === true) return false;
         const type = patientTypeOf(patient);
         if (mode === 'mother' && type !== 'mother') return false;
         if (mode === 'baby' && type !== 'baby') return false;

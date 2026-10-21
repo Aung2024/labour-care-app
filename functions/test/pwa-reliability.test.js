@@ -56,7 +56,7 @@ test('worker bypasses sensitive and non-app traffic', () => {
   assert.match(sw, /pathname === '\/service-worker\.js'/)
 })
 
-test('registration has one owner and never reloads an active page', () => {
+test('registration keeps active pages stable and disables the worker on testing branch', () => {
   const registerSw = readAppFile('js/register-sw.js')
   const authGuard = readAppFile('js/auth-guard.js')
 
@@ -72,7 +72,8 @@ test('registration has one owner and never reloads an active page', () => {
   assert.match(registerSw, /hasAcknowledgedUpdate/)
   assert.match(registerSw, /clearAcknowledgedUpdate/)
   assert.doesNotMatch(registerSw, /Dismiss/)
-  assert.doesNotMatch(registerSw, /unregister/)
+  assert.match(registerSw, /SERVICE_WORKER_ENABLED\s*=\s*false/)
+  assert.match(registerSw, /registration\.unregister/)
   assert.doesNotMatch(registerSw, /controllerchange/)
   assert.doesNotMatch(registerSw, /location\.reload/)
   assert.doesNotMatch(authGuard, /serviceWorker|getRegistrations|caches\.keys/)

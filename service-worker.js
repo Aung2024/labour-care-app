@@ -58,6 +58,7 @@ const REQUIRED_SHELL = [
   '/js/rbac-manager.js',
   '/js/role-display.js',
   '/js/baby-patient-utils.js',
+  '/js/patient-roster.js',
   '/js/service-closure.js',
   '/js/clinical-validator.js',
   '/js/duplicate-detector.js',

@@ -808,10 +808,18 @@
           <h3 class="care-title"><span class="lang-text" data-en="Select Patient for Care" data-mm="လူနာရွေးချယ်ရန်">Select Patient for Care</span></h3>
         </div>
         <div class="care-card-body">
-          <div class="care-stats">
+          <div class="care-stats care-stats-breakdown">
+            <div class="stat-item">
+              <div class="stat-number" data-type="mothers">0</div>
+              <div class="stat-label"><span class="lang-text" data-en="Mothers" data-mm="မိခင်များ">Mothers</span></div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number" data-type="babies">0</div>
+              <div class="stat-label"><span class="lang-text" data-en="Babies" data-mm="ကလေးများ">Babies</span></div>
+            </div>
             <div class="stat-item">
               <div class="stat-number" data-type="total">0</div>
-              <div class="stat-label"><span class="lang-text" data-en="Total Patients" data-mm="စုစုပေါင်း လူနာများ">Total Patients</span></div>
+              <div class="stat-label"><span class="lang-text" data-en="Total" data-mm="စုစုပေါင်း">Total</span></div>
             </div>
           </div>
         </div>
@@ -1059,6 +1067,7 @@
   <script src="js/high-risk-utils.js"></script>
   <script src="js/anc-tracking-status.js"></script>
   <script src="js/kmc-utils.js"></script>
+  <script src="js/patient-roster.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
   <script src="js/tracking-reader.js"></script>
   <script src="js/home-followup-badges.js"></script>
@@ -1788,7 +1797,8 @@
           antenatal: 0,
           labour: 0,
           postnatal: 0,
-          baby: 0,
+          mothers: 0,
+          babies: 0,
           other: 0,
           transferred: 0,
           total: 0
@@ -1871,26 +1881,28 @@
             return;
           }
         } else if (userRole === "Midwife" || userRole === "midwife") {
-          // Midwife sees only patients they created using canonical created_by field.
-          let midwifeSnap;
+          // Keep Home's roster scope aligned with Patient List: include both
+          // legacy ownership fields and shared-care team membership.
           try {
-            const midwifeQuery = db.collection("patients").where("created_by", "==", currentUser.uid);
-            midwifeSnap = await homeSmartQuery(
-              midwifeQuery,
-              { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
+            const midwifePatients = await PatientRoster.loadMidwifePatients(
+              db,
+              currentUser.uid,
+              function (query) {
+                return homeSmartQuery(query, {
+                  preferCache: isIOSDevice,
+                  timeout: 5000,
+                  retries: 1,
+                  fallbackToCache: true
+                })
+              }
             );
+            midwifePatients.forEach(function (patient) {
+              tallyHomePatientStats(patient);
+            });
           } catch (error) {
             console.warn('Could not load midwife patients:', error);
-            midwifeSnap = { forEach: () => {}, docs: [], empty: true };
           }
 
-          if (!isCurrentPatientStatsRun(runToken)) return;
-
-          // Stage 1: fast stats render without deep per-patient subcollection reads.
-          const docsArray = midwifeSnap && !midwifeSnap.empty ? midwifeSnap.docs : [];
-          docsArray.forEach(function (doc) {
-            tallyHomePatientStats(doc && doc.data ? doc.data() : {});
-          });
           if (!isCurrentPatientStatsRun(runToken)) return;
           updateStatsDisplay();
           return;
@@ -1930,9 +1942,11 @@
       data = data || {};
       if (data.status === 'duplicate_archived' || data.deleted === true || data.isDeleted === true) return;
       if (isHomeBabyPatient(data)) {
-        patientStats.baby++;
+        patientStats.babies++;
+        patientStats.total++;
         return;
       }
+      patientStats.mothers++;
       let status = data.status || data.treatmentStatus || 'antenatal';
       if (status === 'active') status = 'antenatal';
       if (status === 'baby' || status === 'transferred' || status === 'other' || status === 'birthed' || status === 'postpartum') {
