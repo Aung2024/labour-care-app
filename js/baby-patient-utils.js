@@ -145,9 +145,14 @@
   }
 
   async function findExistingMotherPatient(db, motherName, options) {
-    if (!db || !motherName) return null;
+    var matches = await findExistingMotherPatients(db, motherName, options);
+    return matches.length ? matches[0] : null;
+  }
+
+  async function findExistingMotherPatients(db, motherName, options) {
+    if (!db || !motherName) return [];
     var normalizedTarget = normalizePersonName(motherName);
-    if (!normalizedTarget) return null;
+    if (!normalizedTarget) return [];
     var candidates = await fetchScopedMotherCandidates(db, {
       ...(options || {}),
       motherName: motherName
@@ -156,16 +161,17 @@
       if (isBabyPatient(item.data)) return false;
       return normalizePersonName(item.data.name || item.data.patientName) === normalizedTarget;
     });
-    if (!matches.length) return null;
+    if (!matches.length) return [];
     matches.sort(function (a, b) {
       return motherCandidateScore(b.data) - motherCandidateScore(a.data);
     });
-    var best = matches[0];
-    return {
-      id: best.id,
-      data: best.data,
-      serial: best.data.patient_unique_id || best.data.patientUniqueId || null
-    };
+    return matches.map(function (match) {
+      return {
+        id: match.id,
+        data: match.data,
+        serial: match.data.patient_unique_id || match.data.patientUniqueId || null
+      };
+    });
   }
 
   function babyDisplayName(motherName, birthOrder, explicitName, totalBabies) {
@@ -890,6 +896,7 @@
     formatBabyAgeFromBirthDate: formatBabyAgeFromBirthDate,
     formatBabyAgeFromDiffDays: formatBabyAgeFromDiffDays,
     findExistingMotherPatient: findExistingMotherPatient,
+    findExistingMotherPatients: findExistingMotherPatients,
     listBabiesForMother: listBabiesForMother,
     keepMotherSelectedForPnc: keepMotherSelectedForPnc,
     normalizePersonName: normalizePersonName

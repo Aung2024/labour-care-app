@@ -334,7 +334,7 @@
         <div class="kmc-stat-card kmc-stat-card-clickable danger selected" data-filter="potential" onclick="setKmcCardFilter('potential')" role="button" tabindex="0">
           <span class="stat-icon"><i class="fas fa-baby-carriage"></i></span>
           <span class="stat-value" id="statTotalPotentialKmc">0</span>
-          <span class="stat-label" id="statTotalPotentialKmcLabel">Total LBW/Preterm babies</span>
+          <span class="stat-label" id="statTotalPotentialKmcLabel">Preterm/LBW babies / Total babies</span>
         </div>
         <div class="kmc-stat-card kmc-stat-card-clickable danger" data-filter="all" onclick="setKmcCardFilter('all')" role="button" tabindex="0">
           <span class="stat-icon"><i class="fas fa-baby"></i></span>
@@ -476,7 +476,7 @@
         searchPlaceholder: 'Search baby, mother, or serial…',
         serialCol: 'No.',
         showingCount: 'Showing {n} babies',
-        statPotential: 'Total LBW/Preterm babies',
+        statPotential: 'Preterm/LBW babies / Total babies',
         statTotal: 'KMC babies / LBW-Preterm',
         statActive: 'Active KMC',
         statOverdue: 'Overdue',
@@ -545,7 +545,7 @@
         searchPlaceholder: 'ကလေး၊ မိခင် သို့မဟုတ် စဉ် ရှာပါ…',
         serialCol: 'စဉ်',
         showingCount: '{n} ဦး ပြသထားသည်',
-        statPotential: 'ပေါင်ချိန်မပြည့်/လမစေ့ ကလေး စုစုပေါင်း',
+        statPotential: 'ပေါင်ချိန်မပြည့်/လမစေ့ ကလေး / ကလေး စုစုပေါင်း',
         statTotal: 'KMC ကလေး / LBW-Preterm',
         statActive: 'ရက်ချိန်းမှန်သော KMC',
         statOverdue: 'ရက်ချိန်းလွန်',
@@ -1281,11 +1281,15 @@
       var rows = allRows || [];
       var potential = rows.filter(function (r) { return rowMatchesCardFilter(r, 'potential'); }).length;
       var totalKmc = rows.filter(function (r) { return rowMatchesCardFilter(r, 'all'); }).length;
+      var totalBabies = window._kmcRosterCounts && Number.isFinite(Number(window._kmcRosterCounts.totalBabies))
+        ? Number(window._kmcRosterCounts.totalBabies)
+        : null;
       var onTrack = rows.filter(function (r) { return rowMatchesCardFilter(r, 'on_track'); }).length;
       var overdue = rows.filter(function (r) { return rowMatchesCardFilter(r, 'overdue_followup'); }).length;
       var lost = rows.filter(function (r) { return rowMatchesCardFilter(r, 'lost_to_followup'); }).length;
       var completed = rows.filter(function (r) { return rowMatchesCardFilter(r, 'complete'); }).length;
-      document.getElementById('statTotalPotentialKmc').textContent = potential;
+      document.getElementById('statTotalPotentialKmc').textContent = potential + ' / ' +
+        (totalBabies == null ? '—' : totalBabies);
       document.getElementById('statTotalKmc').textContent = totalKmc + ' / ' + potential;
       document.getElementById('statActiveKmc').textContent = onTrack;
       document.getElementById('statOverdueKmc').textContent = overdue;
@@ -2001,6 +2005,9 @@
         if (result.schemaVersion !== 'tracking-kmc-v1' || !Array.isArray(result.rows)) {
           throw new Error('Unexpected KMC tracking response.');
         }
+        if (!append && result.rosterCounts) {
+          window._kmcRosterCounts = result.rosterCounts;
+        }
         var mapped = await enrichKmcRowWeights(result.rows.map(projectionKmcRow));
         window._kmcRows = dedupeKmcRows(append ? (window._kmcRows || []).concat(mapped) : mapped);
         _kmcNextPageToken = result.nextPageToken || null;
@@ -2063,6 +2070,7 @@
       _kmcFilters = controls.filters;
       TrackingReader.restoreUrl(_kmcFilters);
       window._kmcRows = [];
+      window._kmcRosterCounts = null;
       window._kmcFilterQuery = '';
       await loadAllKmcProjections();
       return true;
@@ -2110,6 +2118,11 @@
           if (filterForm) filterForm.remove();
         }
         var patients = await fetchPatientsForRole(db, user, userRole);
+        window._kmcRosterCounts = {
+          totalBabies: patients.filter(function (patient) {
+            return window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(patient);
+          }).length
+        };
         var candidates = patients.filter(function (p) {
           if (window.BabyPatientUtils && BabyPatientUtils.isBabyPatient(p)) return true;
           if (Array.isArray(p.baby_patient_ids) && p.baby_patient_ids.length) return false;
@@ -2117,6 +2130,7 @@
         });
 
         window._kmcRows = [];
+        window._kmcRosterCounts = null;
         window._kmcFilterQuery = '';
         _kmcCardFilter = 'potential';
         document.querySelectorAll('.kmc-stat-card-clickable').forEach(function (el) {

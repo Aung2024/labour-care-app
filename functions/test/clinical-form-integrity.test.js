@@ -492,12 +492,15 @@ test('patient registration uses explicit type selection and guarded baby identit
   assert.match(source, /return document\.querySelector\('input\[name="patientType"\]:checked'\)\?\.value === 'baby'/);
   assert.doesNotMatch(source, /id="motherPatientSearch"/);
   assert.match(source, /id="motherPatientId"/);
-  assert.match(source, /findExistingMotherPatient/);
+  assert.match(source, /findExistingMotherPatients/);
   assert.match(source, /openDelivery=1/);
+  assert.match(source, /id="existingMotherAlert"/);
+  assert.match(source, /continueWithDifferentMother/);
   assert.match(source, /motherUnavailableReason/);
   assert.match(source, /data-mm="မိခင် မသိပါ"/);
   assert.match(source, /id="babyHasGuardian"/);
   assert.match(source, /id="guardianName"/);
+  assert.match(source, /guardianCheckbox\.checked = false/);
   assert.match(source, /id="ageFieldGroup"/);
   assert.doesNotMatch(source, /raw\.length < 2/);
 });
@@ -523,7 +526,10 @@ test('registration and KMC labels expose the simplified age and denominator work
   assert.doesNotMatch(registration, /babyAgeYearsHint/);
   assert.doesNotMatch(registration, /babyPatientPrompt/);
   assert.ok(kmc.includes("totalKmc + ' / ' + potential"));
+  assert.ok(kmc.includes("potential + ' / ' +"));
   assert.match(kmc, /KMC babies \/ LBW-Preterm/);
+  assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /rosterCounts/);
+  assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /countScopedBabyPatients/);
   assert.match(editPatient, /function archivePatient/);
   assert.doesNotMatch(editPatient, /function deletePatient/);
   assert.match(editPatient, /deleted_at/);

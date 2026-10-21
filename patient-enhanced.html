@@ -427,6 +427,43 @@
       min-width: 180px;
     }
 
+    .registration-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+      background: rgba(15, 23, 42, 0.58);
+    }
+
+    .registration-modal[hidden] {
+      display: none;
+    }
+
+    .registration-modal-card {
+      width: min(100%, 34rem);
+      max-height: min(90dvh, 42rem);
+      overflow: auto;
+      padding: 1.25rem;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.28);
+    }
+
+    .existing-mother-match {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.75rem 0;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .existing-mother-match:first-child {
+      border-top: 0;
+    }
+
     /* Loading animation */
     .loading {
       display: inline-block;
@@ -2969,6 +3006,80 @@
       if (serialInput) serialInput.value = '';
     }
 
+    let motherReviewConfirmed = false;
+
+    function closeExistingMotherAlert() {
+      const modal = document.getElementById('existingMotherAlert');
+      if (modal) modal.hidden = true;
+    }
+
+    function showExistingMotherAlert(matches) {
+      const modal = document.getElementById('existingMotherAlert');
+      const list = document.getElementById('existingMotherMatches');
+      const title = document.getElementById('existingMotherAlertTitle');
+      const message = document.getElementById('existingMotherAlertMessage');
+      if (!modal || !list) return;
+
+      const isMyanmar = currentLanguage === 'mm';
+      if (title) title.textContent = isMyanmar ? 'မိခင်မှတ်တမ်း ရှိပြီးသားဖြစ်နိုင်ပါသည်' : 'Existing mother record found';
+      if (message) {
+        message.textContent = isMyanmar
+          ? 'အောက်ပါမှတ်တမ်းများထဲမှ မိခင်နှင့် ကိုက်ညီပါက Delivery Note မှတစ်ဆင့် ကလေးကို မှတ်တမ်းတင်ပါ။ မတူညီသော မိခင်ဖြစ်ပါက ဆက်လက်မှတ်ပုံတင်နိုင်ပါသည်။'
+          : 'If one of these records is the mother, create the baby through her Delivery Note. If this is a different mother, you may continue registering the baby.';
+      }
+      list.innerHTML = '';
+      matches.forEach(function (match) {
+        const data = match.data || {};
+        const row = document.createElement('div');
+        row.className = 'existing-mother-match';
+
+        const details = document.createElement('div');
+        const name = document.createElement('strong');
+        name.textContent = data.name || data.patientName || 'Mother';
+        const meta = document.createElement('div');
+        meta.className = 'small text-muted';
+        const serial = data.patient_unique_id || data.patientUniqueId || match.id || '';
+        const location = [data.township, data.facility_name || data.facilityName || data.facility_code]
+          .filter(Boolean)
+          .join(' · ');
+        const phone = data.phone || data.phoneNumber || '';
+        meta.textContent = [serial, location, phone ? '••••' + String(phone).slice(-4) : '']
+          .filter(Boolean)
+          .join(' · ');
+        details.appendChild(name);
+        details.appendChild(meta);
+
+        const deliveryLink = document.createElement('a');
+        deliveryLink.className = 'btn btn-sm btn-warning';
+        deliveryLink.href = 'patient-care-hub.html?patient=' +
+          encodeURIComponent(match.id) + '&openDelivery=1';
+        deliveryLink.textContent = isMyanmar ? 'Delivery Note' : 'Open Delivery Note';
+        deliveryLink.setAttribute('aria-label', (isMyanmar ? 'Delivery Note ဖွင့်ရန် ' : 'Open Delivery Note for ') +
+          (data.name || data.patientName || 'mother'));
+
+        row.appendChild(details);
+        row.appendChild(deliveryLink);
+        list.appendChild(row);
+      });
+
+      modal.hidden = false;
+      const continueButton = document.getElementById('continueDifferentMother');
+      if (continueButton) continueButton.focus();
+    }
+
+    function continueWithDifferentMother() {
+      motherReviewConfirmed = true;
+      closeExistingMotherAlert();
+      const messageDiv = document.getElementById('message');
+      if (messageDiv) {
+        messageDiv.innerHTML = '<div class="alert alert-info">' +
+          (currentLanguage === 'mm'
+            ? 'မိခင်သည် မတူညီသောသူဖြစ်ကြောင်း အတည်ပြုပြီး ဆက်လက်မှတ်ပုံတင်နိုင်ပါသည်။'
+            : 'Different mother confirmed. You may continue registration.') +
+          '</div>';
+      }
+    }
+
     const liveDuplicateState = {
       phoneBlocked: false,
       nameWarning: false,
@@ -3073,6 +3184,7 @@
       if (birthDatePicker) birthDatePicker.addEventListener('change', onBirthDatePartChanged);
       document.querySelectorAll('input[name="patientType"]').forEach(function (input) {
         input.addEventListener('change', function () {
+          motherReviewConfirmed = false;
           if (input.value === 'mother') {
             clearMotherSelection();
           }
@@ -3083,13 +3195,31 @@
       const motherUnavailableInput = document.getElementById('motherUnavailable');
       if (motherUnavailableInput) {
         motherUnavailableInput.addEventListener('change', function () {
-          if (motherUnavailableInput.checked) clearMotherSelection();
+          motherReviewConfirmed = false;
+          if (motherUnavailableInput.checked) {
+            clearMotherSelection();
+            if (guardianCheckbox) guardianCheckbox.checked = false;
+          }
           updatePatientTypeFields();
+        });
+      }
+      const motherNameInput = document.getElementById('motherName');
+      if (motherNameInput) {
+        motherNameInput.addEventListener('input', function () {
+          motherReviewConfirmed = false;
+          closeExistingMotherAlert();
         });
       }
       const guardianCheckbox = document.getElementById('babyHasGuardian');
       if (guardianCheckbox) {
-        guardianCheckbox.addEventListener('change', updatePatientTypeFields);
+        guardianCheckbox.addEventListener('change', function () {
+          if (guardianCheckbox.checked && motherUnavailableInput) {
+            motherUnavailableInput.checked = false;
+            const reason = document.getElementById('motherUnavailableReason');
+            if (reason) reason.value = '';
+          }
+          updatePatientTypeFields();
+        });
       }
       updatePatientTypeFields();
       
@@ -3431,21 +3561,13 @@
       const motherCheckDeferred = registeringBaby && !motherUnavailable &&
         !data.motherPatientId && isOfflineNow();
       if (registeringBaby && !motherUnavailable && !isOfflineNow() && window.BabyPatientUtils) {
-        const existingMother = await BabyPatientUtils.findExistingMotherPatient(
+        const existingMothers = await BabyPatientUtils.findExistingMotherPatients(
           firebase.firestore(),
           data.motherName,
           await getRegistrationDuplicateOptions()
         );
-        if (existingMother && existingMother.id) {
-          messageDiv.innerHTML = '<div class="alert alert-warning">' +
-            '<i class="fas fa-triangle-exclamation me-2"></i>' +
-            (currentLanguage === 'mm'
-              ? 'ဤမိခင်သည် လူနာစာရင်းတွင် ရှိပြီးသားဖြစ်ပါသည်။ ကလေးကို Delivery Note မှတစ်ဆင့် မှတ်တမ်းတင်ပါ။ '
-              : 'This mother already has a patient record. Register the baby through the mother’s Delivery Note.') +
-            '<a class="btn btn-sm btn-warning ms-2" href="patient-care-hub.html?patient=' +
-            encodeURIComponent(existingMother.id) + '&openDelivery=1">' +
-            (currentLanguage === 'mm' ? 'Delivery Note ဖွင့်ရန်' : 'Open Delivery Note') +
-            '</a></div>';
+        if (existingMothers.length && !motherReviewConfirmed) {
+          showExistingMotherAlert(existingMothers);
           return;
         }
       }
@@ -3815,6 +3937,8 @@
           if (guardianName) guardianName.value = '';
           if (guardianRelationship) guardianRelationship.value = '';
           if (guardianPhone) guardianPhone.value = '';
+          motherReviewConfirmed = false;
+          closeExistingMotherAlert();
           updatePatientTypeFields();
           updateParityField();
           toggleYoungestChildFields();
@@ -4308,6 +4432,25 @@
 
       <!-- Message Display -->
       <div id="message" class="mt-4"></div>
+
+      <div id="existingMotherAlert" class="registration-modal" role="dialog" aria-modal="true" aria-labelledby="existingMotherAlertTitle" hidden>
+        <div class="registration-modal-card">
+          <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+            <h2 id="existingMotherAlertTitle" class="h5 mb-0">Existing mother record found</h2>
+            <button type="button" class="btn-close" aria-label="Close" onclick="closeExistingMotherAlert()"></button>
+          </div>
+          <p id="existingMotherAlertMessage" class="text-muted mb-3">
+            If one of these records is the mother, create the baby through her Delivery Note.
+          </p>
+          <div id="existingMotherMatches" class="mb-3"></div>
+          <div class="d-flex flex-wrap justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" onclick="closeExistingMotherAlert()">Cancel</button>
+            <button type="button" id="continueDifferentMother" class="btn btn-primary" onclick="continueWithDifferentMother()">
+              Continue — different mother
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -113,6 +113,34 @@ function applyRoleScope(query, user) {
   ));
 }
 
+function applyPatientRosterScope(query, user) {
+  if (['super admin', 'central', 'admin'].includes(user.role)) return query;
+  if (user.role === 'regional officer') {
+    if (!user.region) throw new HttpsError('permission-denied', 'Region is not configured.');
+    return query.where('region', '==', user.region);
+  }
+  if (['tmo', 'township medical officer'].includes(user.role)) {
+    if (!user.township) throw new HttpsError('permission-denied', 'Township is not configured.');
+    return query.where('township', '==', user.township);
+  }
+  return query.where(Filter.or(
+    Filter.where('created_by', '==', user.uid),
+    Filter.where('createdBy', '==', user.uid),
+    Filter.where('care_team_midwife_ids', 'array-contains', user.uid)
+  ));
+}
+
+async function countScopedBabyPatients(user) {
+  const query = applyPatientRosterScope(
+    db().collection('patients')
+      .where('patient_type', '==', 'baby')
+      .where('status', 'not-in', ['deleted', 'duplicate_archived']),
+    user
+  );
+  const snapshot = await query.count().get();
+  return snapshot.data().count;
+}
+
 function validateFilters(input) {
   const data = input || {};
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(
@@ -231,11 +259,22 @@ async function queryProjectionRows(collectionName, request) {
   const rows = await attachLivePatientAges(
     page.map((item) => ({ id: item.id, ...item.data() }))
   );
+  let rosterCounts = null;
+  if (collectionName === KMC_COLLECTION && !filters.pageToken) {
+    try {
+      rosterCounts = {
+        totalBabies: await countScopedBabyPatients(user)
+      };
+    } catch (error) {
+      console.warn('Could not calculate KMC patient denominator:', error);
+    }
+  }
   return {
     schemaVersion: collectionName === HRT_COLLECTION
       ? 'tracking-hrt-v1' : 'tracking-kmc-v1',
     rows,
-    nextPageToken: cursorSnapshot ? encodePageToken(cursorSnapshot) : null
+    nextPageToken: cursorSnapshot ? encodePageToken(cursorSnapshot) : null,
+    rosterCounts
   };
 }
 
