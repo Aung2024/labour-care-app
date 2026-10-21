@@ -66,16 +66,27 @@
     var months = Math.floor(days / 30);
     var years = Math.floor(months / 12);
     var remainingMonths = months % 12;
+    var remainingDays = days % 30;
     var dayOfLife = days + 1;
     var lang = language || 'en';
     if (lang === 'mm') {
-      if (years > 0) return years + ' နှစ်' + (remainingMonths ? ' ' + remainingMonths + ' လ' : '');
-      if (months > 0) return months + ' လ';
-      return 'နေ့ ' + dayOfLife;
+      if (years > 0) {
+        return years + ' နှစ်' +
+          (remainingMonths ? ' ' + remainingMonths + ' လ' : '') +
+          (remainingDays ? ' ' + remainingDays + ' ရက်' : '');
+      }
+      if (months > 0) {
+        return months + ' လ' + (remainingDays ? ' ' + remainingDays + ' ရက်' : '');
+      }
+      return dayOfLife + ' ရက်';
     }
-    if (years > 0) return years + 'y' + (remainingMonths ? ' ' + remainingMonths + 'm' : '');
-    if (months > 0) return months + 'm';
-    return 'Day ' + dayOfLife;
+    if (years > 0) {
+      return years + 'y' +
+        (remainingMonths ? ' ' + remainingMonths + 'm' : '') +
+        (remainingDays ? ' ' + remainingDays + 'd' : '');
+    }
+    if (months > 0) return months + 'm' + (remainingDays ? ' ' + remainingDays + 'd' : '');
+    return dayOfLife + ' days';
   }
 
   function formatBabyAgeDisplay(patient, language) {

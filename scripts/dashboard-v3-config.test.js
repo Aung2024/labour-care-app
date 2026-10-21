@@ -72,6 +72,15 @@ test('approved primary delivery and newborn scorecards use truth paths', () => {
   )
 
   const newborn = config.definitionsForSection('Newborn')
+  const newbornTotal = newborn.find((definition) => definition.key === 'newborn_total')
+  assert.deepEqual(newbornTotal.detailCalculations, [
+    { label: 'Delivered babies', path: 'delivery.babiesInNotes' },
+    {
+      label: 'Registered only',
+      minuendPath: 'registration.babies',
+      subtrahendPath: 'delivery.babiesInNotes'
+    }
+  ])
   assert.deepEqual(
     newborn.map((definition) => definition.label),
     [

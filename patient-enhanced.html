@@ -2925,7 +2925,7 @@
         return;
       }
       const lang = localStorage.getItem('appLanguage') || 'mm';
-      const label = lang === 'mm' ? 'အတိအကျ အသက်: ' : 'Exact age: ';
+      const label = lang === 'mm' ? 'ကလေးအသက် : ' : 'Child age: ';
       display.textContent = label + BabyPatientUtils.formatBabyAgeFromBirthDate(dob, lang);
       display.style.display = 'block';
     }
@@ -3127,9 +3127,10 @@
         return;
       }
 
-      const name = (document.getElementById('name')?.value || '').trim();
+      const babyRegistration = isBabyRegistration();
+      const name = (document.getElementById(babyRegistration ? 'motherName' : 'name')?.value || '').trim();
       const phone = (document.getElementById('phone')?.value || '').trim();
-      const ageRaw = parseInt(document.getElementById('age')?.value, 10);
+      const ageRaw = babyRegistration ? null : parseInt(document.getElementById('age')?.value, 10);
 
       if (!name && !phone) {
         liveDuplicateState.phoneBlocked = false;
@@ -3208,7 +3209,9 @@
         motherNameInput.addEventListener('input', function () {
           motherReviewConfirmed = false;
           closeExistingMotherAlert();
+          scheduleLiveDuplicateCheck();
         });
+        motherNameInput.addEventListener('change', scheduleLiveDuplicateCheck);
       }
       const guardianCheckbox = document.getElementById('babyHasGuardian');
       if (guardianCheckbox) {
@@ -3588,9 +3591,10 @@
       if (window.DuplicateDetector && !isOfflineNow()) {
         console.log('🔍 Checking for duplicate patients...');
         
+        const duplicateName = registeringBaby ? data.motherName : data.name;
         const duplicateCheck = await window.DuplicateDetector.check({
-          name: data.name,
-          age: parseInt(data.age),
+          name: duplicateName,
+          age: registeringBaby ? null : parseInt(data.age),
           phone: data.phone || data.phoneNumber
         }, await getRegistrationDuplicateOptions());
         
@@ -3603,8 +3607,8 @@
           liveDuplicateState.nameWarning = true;
           toggleInlineDuplicateAlert('nameDuplicateAlert', true);
           await window.DuplicateDetector.logCheck('checked', {
-            name: data.name,
-            age: parseInt(data.age),
+            name: duplicateName,
+            age: registeringBaby ? null : parseInt(data.age),
             phone: data.phone
           }, duplicateCheck.nameMatches, 'name_warning_continue');
         } else {
@@ -3838,7 +3842,7 @@
         // Log duplicate check result (no duplicates found)
         if (window.DuplicateDetector) {
           await window.DuplicateDetector.logCheck('checked', {
-            name: processedData.name,
+            name: registeringBaby ? processedData.mother_name : processedData.name,
             age: processedData.age,
             phone: processedData.phone
           }, [], 'no_duplicates');

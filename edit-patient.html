@@ -18,6 +18,7 @@
   <script src="js/session-manager.js"></script>
   <script src="js/audit-logger.js"></script>
   <script src="js/analytics-refresh-queue.js"></script>
+  <script src="js/ui-dialogs.js"></script>
   <style>
     :root {
       --primary-color: #3b82f6;
@@ -790,7 +791,14 @@
     }
 
     async function archivePatient() {
-      const confirmed = confirm("Archive this patient from the active list? Clinical records will be preserved and the patient can be restored by an administrator.");
+      const confirmationMessage = "Archive this patient from the active list? Clinical records will be preserved and the patient can be restored by an administrator.";
+      const confirmed = window.AppDialog
+        ? await AppDialog.confirm(confirmationMessage, {
+          title: 'Archive patient',
+          okLabel: 'Archive',
+          cancelLabel: 'Cancel'
+        })
+        : window.confirm(confirmationMessage);
       if (!confirmed) return;
       const archiveButton = document.querySelector('.btn-delete');
       const originalText = archiveButton ? archiveButton.innerHTML : '';
@@ -817,13 +825,19 @@
         }
 
         if (window.AnalyticsRefreshQueue) {
-          await AnalyticsRefreshQueue.requestSafely(patientId, 'patient_archived');
+          AnalyticsRefreshQueue.requestSafely(patientId, 'patient_archived');
           if (currentPatient && currentPatient.mother_patient_id) {
-            await AnalyticsRefreshQueue.requestSafely(currentPatient.mother_patient_id, 'baby_patient_archived');
+            AnalyticsRefreshQueue.requestSafely(currentPatient.mother_patient_id, 'baby_patient_archived');
           }
         }
 
-        alert("Patient archived. Clinical records were preserved.");
+        if (window.AppDialog) {
+          await AppDialog.alert("Patient archived. Clinical records were preserved.", {
+            title: 'Patient archived'
+          });
+        } else {
+          window.alert("Patient archived. Clinical records were preserved.");
+        }
         window.location.href = "list.html";
       } catch (error) {
         console.error("Error archiving patient:", error);

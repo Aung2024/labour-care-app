@@ -195,6 +195,20 @@
 
   function detailText(definition) {
     var details = []
+    if (definition.detailCalculations) {
+      definition.detailCalculations.forEach(function (calculation) {
+        var value = calculation.path
+          ? number(calculation.path)
+          : Math.max(
+            0,
+            number(calculation.minuendPath) - number(calculation.subtrahendPath)
+          )
+        details.push(
+          escapeHtml(calculation.label) + ' <strong>' +
+          value.toLocaleString() + '</strong>'
+        )
+      })
+    }
     if (definition.detailPaths) {
       definition.detailPaths.forEach(function (path, index) {
         details.push(

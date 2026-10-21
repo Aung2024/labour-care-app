@@ -454,12 +454,20 @@
     }),
     metric(null, 'Newborn', 'newborn_total', 'Total Newborns', 'registration.babies', '', {
       presentationOrder: 44,
+      detailCalculations: [
+        { label: 'Delivered babies', path: 'delivery.babiesInNotes' },
+        {
+          label: 'Registered only',
+          minuendPath: 'registration.babies',
+          subtrahendPath: 'delivery.babiesInNotes'
+        }
+      ],
       detailPaths: ['newborn.preterm', 'newborn.lowBirthWeight'],
       detailLabels: ['Preterm', 'LBW'],
-      definition: 'Counts registered baby profiles included in the selected reporting period and scope. Preterm and low-birth-weight counts are shown as a breakdown and can overlap.',
+      definition: 'Counts registered baby profiles included in the selected reporting period and scope. Delivered babies are those recorded in Delivery Notes; Registered only is the remaining registered-baby count.',
       countedAs: 'Unique registered baby profiles',
       numeratorLabel: 'Registered newborns',
-      formula: 'Total Newborns = registration.babies; Preterm = newborn.preterm; LBW = newborn.lowBirthWeight'
+      formula: 'Total Newborns = registration.babies; Delivered babies = delivery.babiesInNotes; Registered only = registration.babies − delivery.babiesInNotes'
     }),
     metric(null, 'Newborn', 'newborn_nbc_clients', 'Total NBC Headcount', 'newborn.clients', '', {
       presentationOrder: 46.1,

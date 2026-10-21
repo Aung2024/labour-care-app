@@ -501,6 +501,8 @@ test('patient registration uses explicit type selection and guarded baby identit
   assert.match(source, /id="babyHasGuardian"/);
   assert.match(source, /id="guardianName"/);
   assert.match(source, /guardianCheckbox\.checked = false/);
+  assert.match(source, /const duplicateName = registeringBaby \? data\.motherName : data\.name/);
+  assert.match(source, /document\.getElementById\(babyRegistration \? 'motherName' : 'name'\)/);
   assert.match(source, /id="ageFieldGroup"/);
   assert.doesNotMatch(source, /raw\.length < 2/);
 });
@@ -531,6 +533,9 @@ test('registration and KMC labels expose the simplified age and denominator work
   assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /rosterCounts/);
   assert.match(readAppFile('functions/src/analytics/tracking-functions.js'), /countScopedBabyPatients/);
   assert.match(editPatient, /function archivePatient/);
+  assert.match(editPatient, /AppDialog\.confirm/);
+  assert.match(editPatient, /AppDialog\.alert/);
+  assert.match(editPatient, /AnalyticsRefreshQueue\.requestSafely\(patientId, 'patient_archived'\)/);
   assert.doesNotMatch(editPatient, /function deletePatient/);
   assert.match(editPatient, /deleted_at/);
 });

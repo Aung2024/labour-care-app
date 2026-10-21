@@ -131,10 +131,11 @@ function applyPatientRosterScope(query, user) {
 }
 
 async function countScopedBabyPatients(user) {
+  // Firestore does not allow NOT_IN together with the OR scope used for
+  // midwife ownership. Count the scoped baby roster directly instead of
+  // failing the whole denominator calculation.
   const query = applyPatientRosterScope(
-    db().collection('patients')
-      .where('patient_type', '==', 'baby')
-      .where('status', 'not-in', ['deleted', 'duplicate_archived']),
+    db().collection('patients').where('patient_type', '==', 'baby'),
     user
   );
   const snapshot = await query.count().get();
