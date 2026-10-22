@@ -363,27 +363,39 @@ function birthWeightKg(patient) {
 
 function normalizeNewbornOutcome(value) {
   const outcome = String(value || '').toLowerCase().trim();
+  if (!outcome) return null;
+  if (['alive', 'live', 'living'].includes(outcome)) return 'alive';
   if (['stillbirth', 'still_birth'].includes(outcome)) return 'stillbirth';
   if (['neonatal_death', 'neonatal death', 'neonataldeath', 'death', 'dead'].includes(outcome)) return 'neonatal_death';
-  return 'alive';
+  return null;
 }
 
 function newbornOutcome(patient) {
+  const canonical = patient.newbornOutcome?.value || patient.newborn_outcome ||
+    patient.birth_outcome;
+  if (canonical) return normalizeNewbornOutcome(canonical);
   const notes = unwrap(patient.deliveryNotes);
   const babies = (notes.deliveryDetails || {}).babies || notes.babies || [];
   if (babies.length) {
     for (const baby of babies) {
-      const outcome = normalizeNewbornOutcome(baby.outcome);
+      const outcome = normalizeNewbornOutcome(
+        baby.newbornOutcome?.value || baby.newborn_outcome || baby.outcome
+      );
       if (outcome !== 'alive') return outcome;
     }
     return 'alive';
   }
   const newborn = unwrap(patient.newbornCare);
   if (Object.keys(newborn).length) {
-    const direct = normalizeNewbornOutcome(newborn.baby_outcome || newborn.outcome);
+    const direct = normalizeNewbornOutcome(
+      newborn.newbornOutcome?.value || newborn.newborn_outcome ||
+      newborn.baby_outcome || newborn.outcome
+    );
     if (direct !== 'alive') return direct;
     for (const baby of newborn.babies || []) {
-      const outcome = normalizeNewbornOutcome(baby.outcome || baby.baby_outcome);
+      const outcome = normalizeNewbornOutcome(
+        baby.newbornOutcome?.value || baby.newborn_outcome || baby.outcome || baby.baby_outcome
+      );
       if (outcome !== 'alive') return outcome;
     }
     return 'alive';
@@ -391,7 +403,9 @@ function newbornOutcome(patient) {
   const birth = unwrap(patient.birthRecord);
   if (Object.keys(birth).length) return normalizeNewbornOutcome(birth.newbornOutcome || birth.newbornStatus);
   const profile = patient.profile || patient.registration || {};
-  return profile.birth_outcome ? normalizeNewbornOutcome(profile.birth_outcome) : null;
+  return profile.newbornOutcome?.value
+    ? normalizeNewbornOutcome(profile.newbornOutcome.value)
+    : (profile.birth_outcome ? normalizeNewbornOutcome(profile.birth_outcome) : null);
 }
 
 function firstPncDays(first, patient) {
@@ -725,10 +739,27 @@ function calculatePatientMetrics(entry, periodDescriptor) {
   }
   if (pncVisits.length) {
     townshipMetrics.newPncPatients++; metrics.pncReceived++;
-    const maternal = String(latestPnc.maternalOutcome || latestPnc.maternal_outcome || '').toLowerCase();
-    if (maternal !== 'dead') metrics.maternalOutcomeAlive++;
-    else {
-      const deathType = String(latestPnc.maternalDeathType || latestPnc.maternal_death_type || '').toLowerCase();
+    const maternal = String(
+      patient.maternalOutcome?.value ||
+      patient.maternal_outcome ||
+      latestPnc.maternalOutcome?.value ||
+      latestPnc.maternal_outcome ||
+      latestPnc.maternalOutcome ||
+      ''
+    ).toLowerCase();
+    if (maternal === 'alive' || maternal === 'live' || maternal === 'living') {
+      metrics.maternalOutcomeAlive++;
+    } else if (maternal === 'dead' || maternal === 'death' || maternal === 'maternal_death') {
+      const deathType = String(
+        patient.maternalOutcome?.cause ||
+        patient.maternalOutcome?.deathCause ||
+        patient.maternalDeathCause ||
+        latestPnc.maternalOutcome?.cause ||
+        latestPnc.maternalDeathCause ||
+        latestPnc.maternalDeathType ||
+        latestPnc.maternal_death_type ||
+        ''
+      ).toLowerCase();
       metrics[deathType === 'other' || deathType.includes('non') || deathType.includes('incidental') ?
         'maternalOutcomeDeadOther' : 'maternalOutcomeDeadObstetric']++;
     }
@@ -743,12 +774,23 @@ function calculatePatientMetrics(entry, periodDescriptor) {
   }
   const endTreatment = unwrap(patient.endTreatment);
   if (Object.keys(endTreatment).length) {
-    if (String(endTreatment.maternalOutcome).toLowerCase() === 'dead') metrics.maternalDead++;
-    else if (String(endTreatment.maternalOutcome).toLowerCase() === 'alive' || Object.keys(birth).length) metrics.maternalAlive++;
-  } else if (Object.keys(birth).length) metrics.maternalAlive++;
+    const maternalOutcome = String(
+      patient.maternalOutcome?.value ||
+      patient.maternal_outcome ||
+      endTreatment.maternalOutcome ||
+      ''
+    ).toLowerCase();
+    if (['dead', 'death', 'maternal_death'].includes(maternalOutcome)) metrics.maternalDead++;
+    else if (['alive', 'live', 'living'].includes(maternalOutcome)) metrics.maternalAlive++;
+  } else if (['alive', 'live', 'living'].includes(String(
+    patient.maternalOutcome?.value || patient.maternal_outcome || ''
+  ).toLowerCase())) {
+    metrics.maternalAlive++;
+  }
   if (Object.keys(birth).length) {
-    if (String(birth.newbornOutcome).toLowerCase() === 'dead' || String(birth.newbornStatus).toLowerCase() === 'dead') metrics.newbornDead++;
-    else metrics.newbornAlive++;
+    const outcome = newbornOutcome(patient);
+    if (outcome === 'neonatal_death') metrics.newbornDead++;
+    else if (outcome === 'alive') metrics.newbornAlive++;
   }
   return metrics;
 }

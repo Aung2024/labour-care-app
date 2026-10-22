@@ -24,6 +24,9 @@
 
   function normalizeOutcome(value) {
     var v = String(value || '').toLowerCase();
+    if (global.OutcomeSystem && global.OutcomeSystem.normalizeNewborn) {
+      return global.OutcomeSystem.normalizeNewborn(v);
+    }
     if (v === 'dead' || v === 'death' || v === 'neonatal_death') return 'death';
     if (v === 'stillbirth' || v === 'still_birth') return 'stillbirth';
     return v === 'alive' ? 'alive' : '';
@@ -41,6 +44,38 @@
     if (v === 'alive' || v === 'live' || v === 'အသက်ရှင်') return 'alive';
     if (v === 'dead' || v === 'death' || v === 'deceased' || v === 'သေဆုံး') return 'dead';
     return '';
+  }
+
+  function normalizeMaternalOutcome(value, source) {
+    if (global.OutcomeSystem && global.OutcomeSystem.fromLegacy) {
+      var canonical = source && source.maternalOutcome;
+      if (canonical && typeof canonical === 'object') {
+        value = canonical.value || value;
+        source = Object.assign({}, source, canonical);
+      }
+      return global.OutcomeSystem.fromLegacy({
+        value: value,
+        maternalCondition: value,
+        maternalOutcome: source && source.maternalOutcome,
+        maternal_outcome: source && source.maternal_outcome,
+        period: source && (source.period || source.deathPeriod || source.death_period),
+        deathPeriod: source && (source.period || source.deathPeriod || source.death_period),
+        cause: source && (source.cause || source.deathCause || source.death_cause),
+        deathCause: source && (source.cause || source.deathCause || source.death_cause),
+        reason: source && (source.reason || source.detail || source.deathDetail),
+        detail: source && (source.reason || source.detail || source.deathDetail)
+      }, 'maternal', 'delivery');
+    }
+    var condition = normalizeMaternalCondition(value);
+    return {
+      subject: 'maternal',
+      value: condition === 'dead' ? 'maternal_death' : condition,
+      period: condition === 'dead' ? 'intrapartum' : null,
+      cause: null,
+      reason: '',
+      source: 'delivery',
+      eventDate: null
+    };
   }
 
   function normalizeBooleanDecision(value) {
@@ -334,15 +369,30 @@
   function normalizeBaby(raw, index) {
     raw = raw || {};
     index = typeof index === 'number' ? index : 0;
+    var canonicalOutcome = raw.newbornOutcome && typeof raw.newbornOutcome === 'object'
+      ? raw.newbornOutcome
+      : {};
+    var newbornOutcome = global.OutcomeSystem && global.OutcomeSystem.fromLegacy
+      ? global.OutcomeSystem.fromLegacy({
+        value: canonicalOutcome.value || raw.outcome || raw.birth_outcome,
+        period: canonicalOutcome.period || raw.newbornOutcomePeriod || raw.newborn_death_period,
+        cause: canonicalOutcome.cause || raw.deathCause || raw.death_cause,
+        reason: canonicalOutcome.reason || raw.causeOfDeath || raw.cause_of_death,
+        causeOfDeath: canonicalOutcome.reason || raw.causeOfDeath || raw.cause_of_death,
+        source: canonicalOutcome.source || 'delivery',
+        eventDate: canonicalOutcome.eventDate || raw.birthTime || raw.birth_time
+      }, 'newborn', 'delivery')
+      : null;
     return {
       babyIndex: index + 1,
       babyName: firstOf(raw.babyName, raw.baby_name, raw.name),
-      outcome: normalizeOutcome(raw.outcome),
+      outcome: normalizeOutcome(canonicalOutcome.value || raw.outcome || raw.birth_outcome),
       gender: normalizeGender(firstOf(raw.gender, raw.sex)),
       anusPresent: firstOf(raw.anusPresent, raw.anus_present),
       birthWeightGram: toNumber(firstOf(raw.birthWeightGram, raw.birth_weight_gram, raw.body_weight_gram)),
       birthTime: firstOf(raw.birthTime, raw.birth_time),
-      causeOfDeath: firstOf(raw.causeOfDeath, raw.cause_of_death)
+      causeOfDeath: firstOf(raw.causeOfDeath, raw.cause_of_death),
+      newbornOutcome: newbornOutcome
     };
   }
 
@@ -376,6 +426,17 @@
     if (pregnancyType === 'twins' && babies.length < 2) babies = defaultBabies(2).map(function (baby, index) {
       return babies[index] || baby;
     });
+    var maternalOutcome = normalizeMaternalOutcome(
+      firstOf(
+        details.maternalOutcome && details.maternalOutcome.value,
+        data.maternalOutcome && data.maternalOutcome.value,
+        details.maternalCondition,
+        details.maternal_condition,
+        data.maternalCondition,
+        data.maternal_condition
+      ),
+      Object.assign({}, details, data)
+    );
     return {
       thirdStage: {
         oxytocinGiven: normalizeBooleanDecision(firstOf(data.thirdStage && data.thirdStage.oxytocinGiven, data.oxytocinGiven)),
@@ -394,6 +455,7 @@
           data.maternalCondition,
           data.maternal_condition
         )),
+        maternalOutcome: maternalOutcome,
         babies: babies
       },
       updatedAt: data.updatedAt || data.timestamp || null,
@@ -421,6 +483,7 @@
       mode_of_delivery: normalizeDeliveryModeForNewborn(notes.deliveryDetails.modeOfDelivery) || null,
       birthplace: normalizeBirthPlaceForNewborn(notes.deliveryDetails.birthPlace) || null,
       maternal_condition: notes.deliveryDetails.maternalCondition || null,
+      maternal_outcome: notes.deliveryDetails.maternalOutcome ? notes.deliveryDetails.maternalOutcome.value : null,
       gestational_week: notes.deliveryDetails.gestationalWeek,
       anus_present: firstBaby.anusPresent || notes.deliveryDetails.anusPresent || null,
       birth_provider: notes.deliveryDetails.birthProvider || null
@@ -513,8 +576,21 @@
     if (legacy.birthplace) updates.birthplace = legacy.birthplace;
     if (legacy.mode_of_delivery) updates.mode_of_delivery = legacy.mode_of_delivery;
     if (legacy.maternal_condition) updates.maternal_condition = legacy.maternal_condition;
+    if (legacy.maternal_outcome) {
+      updates.maternal_outcome = legacy.maternal_outcome;
+      updates.maternalOutcome = normalizedMaternalOutcomeForPatient(notes);
+    }
     if (legacy.pregnancy_type) updates.pregnancy_type = legacy.pregnancy_type;
     await firebase.firestore().collection('patients').doc(patientId).set(updates, { merge: true });
+  }
+
+  function normalizedMaternalOutcomeForPatient(notes) {
+    var details = notes && notes.deliveryDetails || {};
+    var outcome = details.maternalOutcome || normalizeMaternalOutcome(details.maternalCondition, details);
+    return Object.assign({}, outcome, {
+      source: outcome.source || 'delivery',
+      updatedAt: nowServer()
+    });
   }
 
   async function saveDeliveryNotes(patientId, notes, userId, options) {
@@ -527,6 +603,7 @@
     var payload = {
       thirdStage: normalized.thirdStage,
       deliveryDetails: normalized.deliveryDetails,
+      maternalOutcome: normalized.deliveryDetails.maternalOutcome,
       updatedAt: nowServer(),
       updatedBy: userId || null
     };
@@ -561,6 +638,18 @@
       await syncDeliverySummaryToPatient(patientId, normalized);
     } catch (e) {
       console.warn('[DeliveryNotes] could not sync summary to patient:', e);
+    }
+    if (global.OutcomeSystem && normalized.deliveryDetails.maternalOutcome &&
+        normalized.deliveryDetails.maternalOutcome.value) {
+      try {
+        await global.OutcomeSystem.persistPatientOutcome(
+          patientId,
+          normalized.deliveryDetails.maternalOutcome,
+          userId
+        );
+      } catch (outcomeError) {
+        console.warn('[DeliveryNotes] could not sync maternal outcome:', outcomeError);
+      }
     }
     try {
       await syncLegacyFieldsToNewbornIfEmpty(patientId, normalized);
@@ -599,6 +688,7 @@
     defaultBabies: defaultBabies,
     normalizeBaby: normalizeBaby,
     normalizeMaternalCondition: normalizeMaternalCondition,
+    normalizeMaternalOutcome: normalizeMaternalOutcome,
     normalizeDeliveryModeForNewborn: normalizeDeliveryModeForNewborn,
     normalizeDeliveryModeForForm: normalizeDeliveryModeForForm,
     normalizeBirthPlaceForNewborn: normalizeBirthPlaceForNewborn,

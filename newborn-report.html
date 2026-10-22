@@ -552,7 +552,7 @@
                 <th class="lang-text" data-en="RR" data-mm="အသက်ရှု">RR</th>
                 <th class="lang-text" data-en="Breathing" data-mm="အသက်ရှူရခက်">Breathing</th>
                 <th class="lang-text" data-en="Feeding" data-mm="နို့တိုက်">Feeding</th>
-                <th class="lang-text" data-en="Outcome" data-mm="ရလဒ်">Outcome</th>
+                <th class="lang-text" data-en="Newborn Outcome" data-mm="ကလေးရလဒ်">Newborn Outcome</th>
                 <th class="lang-text" data-en="Notes" data-mm="မှတ်ချက်">Notes</th>
               </tr>
             </thead>
@@ -641,7 +641,7 @@
       exclusiveBreastfeeding: { en: 'Exclusive Breastfeeding:', mm: 'မိခင်နို့ တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း:' },
       followUpDate: { en: 'Follow-up Date:', mm: 'နောက်ဆက်တွဲ ပြန်လည်ပြသရမည့်ရက်:' },
       clinicalNotes: { en: 'Clinical Notes:', mm: 'Clinical Notes:' },
-      outcome: { en: 'Outcome:', mm: 'ရလဒ်:' },
+      outcome: { en: 'Newborn Outcome:', mm: 'ကလေးရလဒ်:' },
       causeOfDeath: { en: 'Cause of Death:', mm: 'သေဆုံးရခြင်း အကြောင်းရင်း:' },
       referral: { en: 'Referral:', mm: 'လွှဲပြောင်းညွှန်းပို့ခြင်း:' },
       apgar1min: { en: 'APGAR Score (1 min):', mm: 'APGAR အမှတ် (၁ မိနစ်):' },
@@ -686,6 +686,7 @@
       resuscitation_alive: { en: 'Alive', mm: 'အရှင်' },
       resuscitation_death: { en: 'Death', mm: 'အသေ' },
       resuscitation_referred: { en: 'Referred', mm: 'လွှဲပြောင်း' },
+      newbornOutcome: { en: 'Newborn Outcome', mm: 'ကလေးရလဒ်' },
       skin_to_skin_contact: { en: 'Skin-to-skin contact', mm: 'မိခင်နှင့် အရေပြားခြင်း ထိကပ်ထားခြင်း' },
       delayed_cord_clamping: { en: 'Delayed cord clamping', mm: 'အချိန်ဆိုင်း၍ ချက်ကြိုးဖြတ်ခြင်း' },
       support_early_exclusive_breastfeeding: { en: 'Support for early & exclusive breast feeding', mm: 'စောလျင်စွာ မိခင်နို့ တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း' },
@@ -1081,6 +1082,18 @@
       }
       html += '</ul>';
 
+      const newbornOutcomeValue = immediateCareData.newbornOutcome?.value ||
+        immediateCareData.newborn_outcome ||
+        immediateCareData.outcome;
+      if (newbornOutcomeValue) {
+        html += '<p><strong>' + escapeHtml(i18nEntry(PROCEDURE_I18N, 'newbornOutcome')) +
+          ':</strong> ' + escapeHtml(formatVisitOutcome({ newborn_outcome: newbornOutcomeValue })) + '</p>';
+        if (newbornOutcomeValue === 'death' && immediateCareData.newbornOutcome?.reason) {
+          html += '<p><strong>' + escapeHtml(t('causeOfDeath')) + ':</strong> ' +
+            escapeHtml(immediateCareData.newbornOutcome.reason) + '</p>';
+        }
+      }
+
       if (procedureDone(immediateCareData.gasping_or_no_breathing)) {
         html += '<p style="margin-top: 10px;"><strong>' + escapeHtml(i18nEntry(PROCEDURE_I18N, 'resuscitation_outcome')) + ':</strong> ';
         const methods = [];
@@ -1238,7 +1251,7 @@
       if (visitHadPotentialKmc(visit) && visit.kmc_selected) {
         html += '<p><strong>KMC:</strong> ' + escapeHtml(String(visit.kmc_selected).toUpperCase()) + '</p>';
       }
-      const outcomeRaw = visit.outcome || visit.baby_outcome || '';
+      const outcomeRaw = visit.newbornOutcome?.value || visit.newborn_outcome || visit.outcome || visit.baby_outcome || '';
       if (outcomeRaw) {
         html += '<p><strong>' + t('outcome') + '</strong> ' + escapeHtml(formatVisitOutcome(visit)) + '</p>';
       }
@@ -1268,7 +1281,7 @@
     }
 
     function formatVisitOutcome(visit) {
-      var raw = visit && (visit.outcome || visit.baby_outcome) || '';
+      var raw = visit && (visit.newbornOutcome?.value || visit.newborn_outcome || visit.outcome || visit.baby_outcome) || '';
       if (raw === 'dead' || raw === 'death') return t('dead');
       if (raw === 'stillbirth' || raw === 'still_birth') return t('stillbirth');
       if (raw === 'alive') return t('alive');
@@ -1276,7 +1289,7 @@
     }
 
     function visitHasDeathOutcome(visit) {
-      var raw = String((visit && (visit.outcome || visit.baby_outcome)) || '').toLowerCase();
+      var raw = String((visit && (visit.newbornOutcome?.value || visit.newborn_outcome || visit.outcome || visit.baby_outcome)) || '').toLowerCase();
       return raw === 'dead' || raw === 'death' || raw === 'stillbirth' || raw === 'still_birth' || raw === 'neonatal_death';
     }
 

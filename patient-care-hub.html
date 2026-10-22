@@ -1084,6 +1084,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/ui-dialogs.js?v=299"></script>
   <script src="js/high-risk-utils.js"></script>
+  <script src="js/outcome-system.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js?v=299"></script>
   <script src="js/infection-alerts.js"></script>
@@ -2274,7 +2275,16 @@
           document.getElementById('deliveryBirthProvider').value = mapDeliveryBirthProvider(notes.deliveryDetails.birthProvider);
           document.getElementById('deliveryMode').value = mapDeliveryMode(notes.deliveryDetails.modeOfDelivery);
           document.getElementById('deliveryBirthPlace').value = mapDeliveryBirthPlace(notes.deliveryDetails.birthPlace);
-          document.getElementById('deliveryMaternalCondition').value = notes.deliveryDetails.maternalCondition || '';
+          document.getElementById('deliveryMaternalOutcome').value = notes.deliveryDetails.maternalOutcome
+            ? notes.deliveryDetails.maternalOutcome.value
+            : (notes.deliveryDetails.maternalCondition === 'dead' ? 'maternal_death' : notes.deliveryDetails.maternalCondition || '');
+          document.getElementById('deliveryMaternalOutcomeCause').value = notes.deliveryDetails.maternalOutcome
+            ? notes.deliveryDetails.maternalOutcome.cause || ''
+            : '';
+          document.getElementById('deliveryMaternalOutcomeReason').value = notes.deliveryDetails.maternalOutcome
+            ? notes.deliveryDetails.maternalOutcome.reason || ''
+            : '';
+          handleDeliveryMaternalOutcomeChange();
           renderDeliveryBabyRows(notes.deliveryDetails.babies || DeliveryNotesUtils.defaultBabies(1));
         } else {
           document.getElementById('thirdStageOxytocin').value = '';
@@ -2283,7 +2293,10 @@
           document.getElementById('deliveryBirthProvider').value = '';
           document.getElementById('deliveryMode').value = '';
           document.getElementById('deliveryBirthPlace').value = '';
-          document.getElementById('deliveryMaternalCondition').value = '';
+          document.getElementById('deliveryMaternalOutcome').value = '';
+          document.getElementById('deliveryMaternalOutcomeCause').value = '';
+          document.getElementById('deliveryMaternalOutcomeReason').value = '';
+          handleDeliveryMaternalOutcomeChange();
           renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         }
         await applyDeliveryGestationalWeek(
@@ -2296,7 +2309,10 @@
         document.getElementById('thirdStageOxytocin').value = '';
         document.getElementById('thirdStageCCT').value = '';
         document.getElementById('deliveryPregnancyType').value = 'single';
-        document.getElementById('deliveryMaternalCondition').value = '';
+        document.getElementById('deliveryMaternalOutcome').value = '';
+        document.getElementById('deliveryMaternalOutcomeCause').value = '';
+        document.getElementById('deliveryMaternalOutcomeReason').value = '';
+        handleDeliveryMaternalOutcomeChange();
         renderDeliveryBabyRows(DeliveryNotesUtils.defaultBabies(1));
         try {
           await applyDeliveryGestationalWeek(selectedPatient.id, '');
@@ -2505,7 +2521,6 @@
                 <select data-field="outcome" required onchange="handleDeliveryOutcomeChange(this)">
                   <option value="">-</option>
                   <option value="alive" class="lang-text" data-en="Alive" data-mm="ရှင်" ${baby.outcome === 'alive' ? 'selected' : ''}>Alive</option>
-                  <option value="death" class="lang-text" data-en="Death" data-mm="သေ" ${baby.outcome === 'death' ? 'selected' : ''}>Death</option>
                   <option value="stillbirth" class="lang-text" data-en="Stillbirth" data-mm="သေမွေး" ${baby.outcome === 'stillbirth' ? 'selected' : ''}>Stillbirth</option>
                 </select>
               </div>
@@ -2561,11 +2576,28 @@
       if (!row) return;
       const wrap = row.querySelector('[data-cause-of-death-wrap]');
       const input = row.querySelector('[data-field="causeOfDeath"]');
-      const needsCause = selectEl.value === 'death' || selectEl.value === 'stillbirth';
+      const needsCause = selectEl.value === 'stillbirth';
       if (wrap) wrap.style.display = needsCause ? '' : 'none';
       if (input) {
         input.required = needsCause;
         if (!needsCause) input.value = '';
+      }
+    }
+
+    function handleDeliveryMaternalOutcomeChange() {
+      const outcome = document.getElementById('deliveryMaternalOutcome');
+      const cause = document.getElementById('deliveryMaternalOutcomeCause');
+      const reason = document.getElementById('deliveryMaternalOutcomeReason');
+      const wrap = document.getElementById('deliveryMaternalOutcomeFollowup');
+      const isDeath = outcome && outcome.value === 'maternal_death';
+      if (wrap) wrap.hidden = !isDeath;
+      if (cause) cause.required = isDeath;
+      if (reason) {
+        reason.required = isDeath && ['pregnancy_related', 'other'].includes(cause && cause.value);
+        if (!isDeath) {
+          cause.value = '';
+          reason.value = '';
+        }
       }
     }
 
@@ -2596,7 +2628,9 @@
       const providerEl = document.getElementById('deliveryBirthProvider');
       const modeEl = document.getElementById('deliveryMode');
       const placeEl = document.getElementById('deliveryBirthPlace');
-      const maternalConditionEl = document.getElementById('deliveryMaternalCondition');
+      const maternalOutcomeEl = document.getElementById('deliveryMaternalOutcome');
+      const maternalOutcomeCauseEl = document.getElementById('deliveryMaternalOutcomeCause');
+      const maternalOutcomeReasonEl = document.getElementById('deliveryMaternalOutcomeReason');
       const oxytocinEl = document.getElementById('thirdStageOxytocin');
       const cctEl = document.getElementById('thirdStageCCT');
 
@@ -2638,10 +2672,23 @@
         focusDeliveryField(placeEl);
         return false;
       }
-      if (!maternalConditionEl || !maternalConditionEl.value) {
-        alert(isMm ? 'မိခင်အခြေအနေ ရွေးချယ်ပါ။' : 'Please select maternal condition.');
-        focusDeliveryField(maternalConditionEl);
+      if (!maternalOutcomeEl || !maternalOutcomeEl.value) {
+        alert(isMm ? 'မိခင်ရလဒ် ရွေးချယ်ပါ။' : 'Please select maternal outcome.');
+        focusDeliveryField(maternalOutcomeEl);
         return false;
+      }
+      if (maternalOutcomeEl.value === 'maternal_death') {
+        if (!maternalOutcomeCauseEl || !maternalOutcomeCauseEl.value) {
+          alert(isMm ? 'သေဆုံးရသည့် အကြောင်းရင်း ရွေးချယ်ပါ။' : 'Please select cause of death.');
+          focusDeliveryField(maternalOutcomeCauseEl);
+          return false;
+        }
+        if (['pregnancy_related', 'other'].includes(maternalOutcomeCauseEl.value) &&
+            (!maternalOutcomeReasonEl || !maternalOutcomeReasonEl.value.trim())) {
+          alert(isMm ? 'သေဆုံးရသည့် အကြောင်းရင်း အသေးစိတ် ရေးပါ။' : 'Please enter cause of death details.');
+          focusDeliveryField(maternalOutcomeReasonEl);
+          return false;
+        }
       }
 
       const babyRows = Array.from(document.querySelectorAll('#deliveryBabyRows [data-baby-row]'));
@@ -2697,7 +2744,7 @@
           focusDeliveryField(timeEl);
           return false;
         }
-        if ((outcomeEl.value === 'death' || outcomeEl.value === 'stillbirth') &&
+        if (outcomeEl.value === 'stillbirth' &&
             (!causeOfDeathEl || !causeOfDeathEl.value.trim())) {
           alert(isMm
             ? ('ကလေး ' + babyNo + ' အတွက် သေဆုံးရသည့် အကြောင်းရင်း ထည့်ပါ။')
@@ -2793,7 +2840,16 @@
             birthProvider: document.getElementById('deliveryBirthProvider').value,
             modeOfDelivery: document.getElementById('deliveryMode').value,
             birthPlace: document.getElementById('deliveryBirthPlace').value,
-            maternalCondition: document.getElementById('deliveryMaternalCondition').value,
+            maternalCondition: document.getElementById('deliveryMaternalOutcome').value === 'maternal_death' ? 'dead' : 'alive',
+            maternalOutcome: {
+              subject: 'maternal',
+              value: document.getElementById('deliveryMaternalOutcome').value,
+              period: document.getElementById('deliveryMaternalOutcome').value === 'maternal_death' ? 'intrapartum' : null,
+              cause: document.getElementById('deliveryMaternalOutcomeCause').value || null,
+              reason: document.getElementById('deliveryMaternalOutcomeReason').value || '',
+              source: 'delivery',
+              eventDate: (collectDeliveryBabies()[0] || {}).birthTime || null
+            },
             babies: collectDeliveryBabies()
           }
         };
@@ -2995,13 +3051,23 @@
               </select>
             </div>
             <div class="delivery-field">
-              <label for="deliveryMaternalCondition" class="lang-text" data-en="Maternal condition *" data-mm="မိခင်အခြေအနေ *">Maternal condition *</label>
-              <select id="deliveryMaternalCondition" required>
+              <label for="deliveryMaternalOutcome" class="lang-text" data-en="Maternal Outcome *" data-mm="မိခင်ရလဒ် *">Maternal Outcome *</label>
+              <select id="deliveryMaternalOutcome" required onchange="handleDeliveryMaternalOutcomeChange()">
                 <option value="">-</option>
                 <option value="alive" class="lang-text" data-en="Alive" data-mm="အသက်ရှင်">Alive</option>
-                <option value="dead" class="lang-text" data-en="Dead" data-mm="သေဆုံး">Dead</option>
+                <option value="maternal_death" class="lang-text" data-en="Death" data-mm="သေဆုံး">Death</option>
               </select>
             </div>
+          </div>
+          <div id="deliveryMaternalOutcomeFollowup" class="delivery-field" hidden>
+            <label for="deliveryMaternalOutcomeCause" class="lang-text" data-en="Cause of death *" data-mm="သေဆုံးရသည့် အကြောင်းအရင်း *">Cause of death *</label>
+            <select id="deliveryMaternalOutcomeCause" onchange="handleDeliveryMaternalOutcomeChange()">
+              <option value="">-</option>
+              <option value="pregnancy_related" class="lang-text" data-en="Pregnancy-related disease" data-mm="သားဖွားခြင်းဆိုင်ရာရောဂါ">Pregnancy-related disease</option>
+              <option value="injury" class="lang-text" data-en="Injury, accident, suicide, or homicide" data-mm="ထိခိုက်ဒဏ်ရာ ရရှိခြင်း မတော်တဆမှုများနှင့် မိမိကိုယ်ကိုသတ်သေခြင်း၊ အသတ်ခံရခြင်း">Injury, accident, suicide, or homicide</option>
+              <option value="other" class="lang-text" data-en="Other disease" data-mm="အခြားရောဂါ">Other disease</option>
+            </select>
+            <input id="deliveryMaternalOutcomeReason" type="text" class="form-control mt-2" placeholder="Details if required">
           </div>
           <div id="deliveryBabyRows"></div>
           <button type="button" id="deliveryAddBabyBtn" class="delivery-add-btn" style="display:none;" onclick="addDeliveryBabyRow()">

@@ -235,6 +235,45 @@ test('supports plain nested records and HRT completion outcomes', () => {
   assert.equal(contribution.hrtCompletedTransfer, 1);
 });
 
+test('prefers canonical outcomes and leaves missing outcomes uncounted', () => {
+  const metrics = calculatePatientMetrics({
+    id: 'canonical-outcomes',
+    profile: {
+      status: 'postnatal_newborn_care',
+      createdAt: '2026-08-01',
+      township: 'Hlaing'
+    },
+    maternalOutcome: {
+      subject: 'maternal',
+      value: 'maternal_death',
+      cause: 'other'
+    },
+    newbornOutcome: {
+      subject: 'newborn',
+      value: 'stillbirth'
+    },
+    birthRecord: wrapped({ deliveryDate: '2026-08-10' }),
+    deliveryNotes: wrapped({
+      deliveryDetails: {
+        maternalOutcome: { value: 'alive' },
+        babies: [{ outcome: 'alive' }]
+      }
+    }),
+    postpartumVisits: [
+      wrapped({
+        visitDate: '2026-08-11',
+        maternalOutcome: 'alive'
+      })
+    ]
+  }, { key: '2026-08' });
+
+  assert.equal(metrics.maternalOutcomeAlive, 0);
+  assert.equal(metrics.maternalOutcomeDeadOther, 1);
+  assert.equal(metrics.newbornOutcomeAlive, 0);
+  assert.equal(metrics.newbornOutcomeStillbirth, 1);
+  assert.equal(metrics.newbornOutcomeNeonatalDeath, 0);
+});
+
 test('period filtering excludes out-of-period records and inactive patients', () => {
   const metrics = calculateMetrics([
     {

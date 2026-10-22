@@ -298,6 +298,14 @@
       gender: baby.gender || baby.sex || null,
       birth_weight_gram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.birth_weight_gram || null),
       birth_outcome: baby.outcome || null,
+      newbornOutcome: global.OutcomeSystem && global.OutcomeSystem.fromLegacy
+        ? global.OutcomeSystem.fromLegacy({
+          value: baby.outcome,
+          causeOfDeath: baby.causeOfDeath || baby.cause_of_death,
+          source: 'delivery',
+          eventDate: baby.birthTime || baby.birth_time
+        }, 'newborn', 'delivery')
+        : null,
       maternal_edd: firstOf(ancContext.maternal_edd, mother.edd, mother.manualEdd, mother.manual_edd) || null,
       gestational_age_at_birth: firstOf(ancContext.gestational_age_at_birth, mother.gestational_age, mother.gestationalAge) || null,
       maternal_edd_source: ancContext.maternal_edd_source || (mother.edd ? 'mother_patient' : null),
@@ -311,6 +319,20 @@
       updated_at: nowServer(),
       updated_by: userId || null
     };
+    var newbornOutcome = payload.newbornOutcome || {};
+    if (newbornOutcome.value === 'stillbirth' || newbornOutcome.value === 'death') {
+      payload.serviceClosure = {
+        status: 'closed',
+        outcome: newbornOutcome.value,
+        deathPeriod: newbornOutcome.period || null,
+        deathCause: null,
+        detail: newbornOutcome.reason || '',
+        source: 'clinical_outcome',
+        closedAt: nowServer(),
+        closedBy: userId || null
+      };
+      payload.rosterStatus = 'closed';
+    }
     Object.assign(payload, copyMotherScopeFields(mother));
     if (!payload.township && mother.township) payload.township = mother.township;
     if (!payload.region && mother.region) payload.region = mother.region;
@@ -487,10 +509,7 @@
 
     var details = (notes && notes.deliveryDetails) || {};
     var rawBabies = Array.isArray(details.babies) ? details.babies : [];
-    var babies = rawBabies.filter(function (baby) {
-      var outcome = String(baby.outcome || 'alive').toLowerCase();
-      return outcome !== 'stillbirth' && outcome !== 'still_birth';
-    }).map(function (baby, index) {
+    var babies = rawBabies.map(function (baby, index) {
       return global.DeliveryNotesUtils && DeliveryNotesUtils.normalizeBaby
         ? DeliveryNotesUtils.normalizeBaby(baby, index)
         : baby;
@@ -556,6 +575,9 @@
         payload.createdAt = nowServer();
       }
       await babyRef.set(payload, { merge: true });
+      if (global.OutcomeSystem && payload.newbornOutcome && payload.newbornOutcome.value) {
+        await global.OutcomeSystem.persistPatientOutcome(babyId, payload.newbornOutcome, userId);
+      }
       ids.push(babyId);
     }
 
@@ -711,9 +733,7 @@
         }
         if (!notes) continue;
         results.eligibleMothers += 1;
-        var sourceBabies = ((notes.deliveryDetails || {}).babies || []).filter(function (baby) {
-          return String(baby.outcome || 'alive').toLowerCase() !== 'stillbirth';
-        });
+        var sourceBabies = ((notes.deliveryDetails || {}).babies || []);
         var missingForMother = 0;
         for (var babyIndex = 0; babyIndex < sourceBabies.length; babyIndex++) {
           var sourceBaby = sourceBabies[babyIndex];

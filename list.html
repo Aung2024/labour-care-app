@@ -745,6 +745,28 @@
       cursor: pointer;
     }
 
+    .service-complete-reminder {
+      margin-top: 0.65rem;
+      padding: 0.7rem 0.8rem;
+      border: 1px solid #f59e0b;
+      border-left-width: 4px;
+      border-radius: 10px;
+      background: #fffbeb;
+      color: #92400e;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .service-complete-reminder strong {
+      display: block;
+      color: #78350f;
+    }
+
+    .patient-highlight-grid .service-complete-reminder {
+      grid-column: 1 / -1;
+    }
+
     .service-close-backdrop[hidden],
     #serviceReopenBtn[hidden] {
       display: none !important;
@@ -1204,6 +1226,10 @@
             <i class="fas fa-baby"></i> <span class="lang-text" data-en="Babies" data-mm="ကလေးများ">Babies</span>
             <span class="filter-count" data-filter-count="baby">0</span>
           </button>
+          <button type="button" class="filter-chip" id="completedPatientsToggle" onclick="toggleClosedPatients(event)" aria-pressed="false">
+            <i class="fas fa-check-double"></i>
+            <span class="lang-text" data-en="Show completed" data-mm="ပြီးမြောက်ပြီးသူများ ပြရန်">Show completed</span>
+          </button>
         </div>
         <div class="filter-chips status-filter-chips mother-status-chips" style="display: none;" aria-label="Mother status filter">
           <div class="filter-chip active" data-mother-filter="all" onclick="setMotherStatusFilter('all', event)">
@@ -1392,6 +1418,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/anc-tracking-status.js"></script>
+  <script src="js/outcome-system.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/patient-roster.js"></script>
   <script src="js/ui-dialogs.js"></script>
@@ -1410,6 +1437,7 @@
     let suggestedPatientTypeFilter = null;
     let currentMotherStatusFilter = 'all';
     let currentBabyStatusFilter = 'all';
+    let showClosedPatients = false;
     let listLoadMessageTimer = null;
     let patientLoadPromise = null;
     let patientLoadGeneration = 0;
@@ -1466,6 +1494,8 @@
         selectPatient: 'Select Patient',
         serviceClose: 'Complete care',
         serviceClosed: 'Care completed',
+        showCompleted: 'Show completed',
+        hideCompleted: 'Hide completed',
         inServiceEmpty: 'No patients are still in service. Completed patients are hidden.',
         allMidwives: 'All Midwives',
         selectedMidwife: 'Selected Midwife',
@@ -1528,6 +1558,8 @@
         selectPatient: 'လူနာရွေးရန်',
         serviceClose: 'စောင့်ရှောက်မှု ပြီးမြောက်',
         serviceClosed: 'စောင့်ရှောက်မှု ပြီးမြောက်ပြီး',
+        showCompleted: 'ပြီးမြောက်ပြီးသူများ ပြရန်',
+        hideCompleted: 'ပြီးမြောက်ပြီးသူများ ဖျောက်ရန်',
         inServiceEmpty: 'စောင့်ရှောက်မှု ဆက်လုပ်ဆဲ လူနာ မရှိပါ။ ပြီးမြောက်ပြီးသော လူနာများကို ဖျောက်ထားသည်။',
         allMidwives: 'သားဖွားဆရာမအားလုံး',
         selectedMidwife: 'ရွေးထားသော သားဖွားဆရာမ',
@@ -1596,6 +1628,7 @@
       updateStatusFilterPanels();
       updatePatientCountBadge();
       updateMidwifeFilterLanguage();
+      updateClosedPatientsToggle();
       if (allPatients.length) {
         displayPatients();
         if (trackingPanelOpen) renderTrackingPanel();
@@ -1608,6 +1641,27 @@
       if (window.AncTrackingStatus && allPatients.length) {
         loadPatientTrackingStatuses();
       }
+    }
+
+    function updateClosedPatientsToggle() {
+      const toggle = document.getElementById('completedPatientsToggle');
+      if (!toggle) return;
+      const label = toggle.querySelector('.lang-text');
+      toggle.classList.toggle('active', showClosedPatients);
+      toggle.setAttribute('aria-pressed', showClosedPatients ? 'true' : 'false');
+      if (label) {
+        const key = showClosedPatients ? 'hideCompleted' : 'showCompleted';
+        label.setAttribute('data-en', LIST_I18N.en[key]);
+        label.setAttribute('data-mm', LIST_I18N.mm[key]);
+        label.textContent = listT(key);
+      }
+    }
+
+    function toggleClosedPatients(event) {
+      if (event) event.stopPropagation();
+      showClosedPatients = !showClosedPatients;
+      updateClosedPatientsToggle();
+      filterPatients();
     }
 
     function isAppleMobileOrTablet() {
@@ -2267,6 +2321,34 @@
         ? listT('dueToday')
         : (getListLang() === 'en' ? (daysLate + listT('lateDays')) : (daysLate + ' ' + listT('lateDays')));
       return [visitText, dueText, lateText].filter(Boolean).join(' · ');
+    }
+
+    function serviceCompletionReminder(patient) {
+      if (!patient || (window.ServiceClosure && ServiceClosure.isClosed(patient))) return '';
+      const isBaby = patientTypeOf(patient) === 'baby';
+      const rawDate = isBaby
+        ? (patient.date_of_birth || patient.birth_time || patient.birthTime)
+        : (patient.deliveredDateTime || patient.birth_time || patient.birthTime || patient.edd);
+      if (!rawDate) return '';
+      const start = rawDate && typeof rawDate.toDate === 'function' ? rawDate.toDate() : new Date(String(rawDate).split('T')[0]);
+      if (isNaN(start.getTime())) return '';
+      const due = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      due.setDate(due.getDate() + (isBaby ? 42 : 90));
+      const today = new Date();
+      const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      if (currentDay < due) return '';
+      return isBaby
+        ? 'ကလေးအသက် ၄၂ ရက် ပြည့်ပါပြီ။ ပြီးမြောက်ခလုတ် ကိုနှိပ်၍ ပြီးမြောက်မှု မှတ်တမ်းတင်ပါ။'
+        : 'မွေးဖွားပြီး ရက် ၉၀ ပြည့်ပါပြီ။ ပြီးမြောက်ခလုတ် ကိုနှိပ်၍ ပြီးမြောက်မှု မှတ်တမ်းတင်ပါ။';
+    }
+
+    function serviceCompletionReminderHtml(patient) {
+      const message = serviceCompletionReminder(patient);
+      if (!message) return '';
+      return '<div class="service-complete-reminder" role="status" aria-live="polite">' +
+        '<strong>' + (patientTypeOf(patient) === 'baby' ? 'Newborn service reminder' : 'Maternal service reminder') + '</strong>' +
+        escapeHtml(message) +
+        '</div>';
     }
 
     function normalizeListStatus(status) {
@@ -3176,6 +3258,7 @@
             : '<span class="status-badge ' + statusInfo.className + '">' + escapeHtml(statusInfo.label) + '</span>'}
         </div>
       <div class="patient-highlight-grid">
+        ${serviceCompletionReminderHtml(patient)}
         <div class="info-chip">
           <span>${escapeHtml(isBaby ? listT('age') : listT('age'))}</span>
           <strong>${isBaby ? babyAgeDisplay : ageDisplay}</strong>
@@ -3242,6 +3325,7 @@
           <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(rowMeta)}</div>
           ${isBaby ? '' : trackingBadgeHtml(patient.id)}
           ${infectionListBadgeHtml(patient)}
+          ${serviceCompletionReminderHtml(patient)}
         </td>
         ${isBaby ? babyInfoCellHtml(patient.id) : `<td>
           <span class="status-pill ${statusInfo.className}">
@@ -3440,9 +3524,9 @@
         ? 'This marks the patient as finished on your list. It does not change HRT, KMC, or PNC outcomes.'
         : 'ဤသည်မှာ လူနာစာရင်းမှ ပြီးမြောက်ကြောင်း မှတ်ခြင်းဖြစ်သည်။ HRT၊ KMC၊ PNC ရလဒ်များကို မပြောင်းပါ။';
       document.getElementById('serviceCloseOutcomeLabel').textContent = lang === 'en' ? 'Outcome' : 'ရလဒ်';
-      document.getElementById('serviceCloseDeathPeriodWrap').querySelector('label').textContent = lang === 'en'
-        ? 'Period of death'
-        : 'သေဆုံးချိန်၌ ကိုယ်ဝန်အဆင့်';
+      document.getElementById('serviceCloseDeathPeriodWrap').querySelector('label').textContent = kind === 'baby'
+        ? (lang === 'en' ? 'Time of death' : 'သေဆုံးသည့်အချိန်')
+        : (lang === 'en' ? 'Period of death' : 'သေဆုံးချိန်၌ ကိုယ်ဝန်အဆင့်');
       document.getElementById('serviceCloseDeathCauseWrap').querySelector('label').textContent = lang === 'en'
         ? 'Cause of death'
         : 'သေဆုံးရသည့် အကြောင်းရင်း';
@@ -3451,7 +3535,13 @@
       backdrop.querySelector('.btn-outline-secondary').textContent = lang === 'en' ? 'Cancel' : 'ပယ်ဖျက်';
       backdrop.querySelector('.btn-primary').textContent = lang === 'en' ? 'Save' : 'သိမ်းမည်';
       fillServiceCloseSelect(document.getElementById('serviceCloseOutcome'), ServiceClosure.outcomesFor(kind), closure.outcome || '');
-      fillServiceCloseSelect(document.getElementById('serviceCloseDeathPeriod'), ServiceClosure.deathPeriods, closure.deathPeriod || '');
+      fillServiceCloseSelect(
+        document.getElementById('serviceCloseDeathPeriod'),
+        kind === 'baby'
+          ? ServiceClosure.deathPeriods.filter(function (item) { return ['neonatal_7', 'neonatal_7_28'].includes(item.value); })
+          : ServiceClosure.deathPeriods.filter(function (item) { return ['antepartum', 'intrapartum', 'postpartum_42'].includes(item.value); }),
+        closure.deathPeriod || ''
+      );
       fillServiceCloseSelect(document.getElementById('serviceCloseDeathCause'), ServiceClosure.deathCauses, closure.deathCause || '');
       document.getElementById('serviceCloseDetail').value = closure.detail || '';
       document.getElementById('serviceCloseNote').value = closure.note || '';
@@ -3483,18 +3573,20 @@
       const patient = allPatients.find(function (item) { return item.id === serviceClosePatientId; });
       const outcome = document.getElementById('serviceCloseOutcome').value;
       const cause = document.getElementById('serviceCloseDeathCause').value;
-      const death = outcome === 'maternal_death';
+      const kind = ServiceClosure.kindOf(patient);
+      const maternalDeath = outcome === 'maternal_death';
+      const babyDeath = kind === 'baby' && outcome === 'death';
+      const death = maternalDeath || babyDeath;
       document.getElementById('serviceCloseDeathPeriodWrap').hidden = !death;
-      document.getElementById('serviceCloseDeathCauseWrap').hidden = !death;
+      document.getElementById('serviceCloseDeathCauseWrap').hidden = !maternalDeath;
       const causeOption = ServiceClosure.deathCauses.find(function (item) { return item.value === cause; });
-      const needsDetail = outcome === 'other' || (death && causeOption && causeOption.needsDetail);
+      const needsDetail = outcome === 'other' || babyDeath || (maternalDeath && causeOption && causeOption.needsDetail);
       const detailWrap = document.getElementById('serviceCloseDetailWrap');
       detailWrap.hidden = !needsDetail;
       const lang = serviceCloseLang();
       detailWrap.querySelector('label').textContent = outcome === 'other'
         ? (lang === 'en' ? 'Other outcome' : 'အခြား ရလဒ်')
         : (lang === 'en' ? 'Details' : 'အသေးစိတ်');
-      if (patient) ServiceClosure.kindOf(patient);
     }
 
     async function saveServiceClosure() {
@@ -3516,15 +3608,34 @@
       }
       const db = firebase.firestore();
       const user = firebase.auth().currentUser;
-      await db.collection('patients').doc(patient.id).set({
-        serviceClosure: Object.assign({}, result.record, {
-          closedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          closedBy: user ? user.uid : null
-        }),
+      const kind = ServiceClosure.kindOf(patient);
+      const closureRecord = Object.assign({}, result.record, {
+        source: 'manual_service_closure',
+        closedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        closedBy: user ? user.uid : null
+      });
+      const patientPatch = {
+        serviceClosure: closureRecord,
         rosterStatus: 'closed',
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      patient.serviceClosure = Object.assign({}, result.record, { status: 'closed' });
+      };
+      if (window.OutcomeSystem &&
+          ((kind === 'mother' && ['abortion', 'maternal_death'].includes(result.record.outcome)) ||
+           (kind === 'baby' && ['stillbirth', 'death'].includes(result.record.outcome)))) {
+        patientPatch[kind === 'baby' ? 'newbornOutcome' : 'maternalOutcome'] = {
+          subject: kind === 'baby' ? 'newborn' : 'maternal',
+          value: result.record.outcome,
+          period: result.record.deathPeriod || null,
+          cause: result.record.deathCause || null,
+          reason: result.record.detail || '',
+          source: 'patient_list',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedBy: user ? user.uid : null
+        };
+        patientPatch[kind === 'baby' ? 'newborn_outcome' : 'maternal_outcome'] = result.record.outcome;
+      }
+      await db.collection('patients').doc(patient.id).set(patientPatch, { merge: true });
+      patient.serviceClosure = Object.assign({}, closureRecord, { status: 'closed' });
       patient.rosterStatus = 'closed';
       closeServiceClosure();
       filterPatients();
@@ -3564,6 +3675,7 @@
 
       filteredPatients = allPatients.filter(function (patient) {
         if (patient.status === 'duplicate_archived' || patient.deleted === true || patient.isDeleted === true) return false;
+        if (!showClosedPatients && window.ServiceClosure && ServiceClosure.isClosed(patient)) return false;
         const type = patientTypeOf(patient);
         if (mode === 'mother' && type !== 'mother') return false;
         if (mode === 'baby' && type !== 'baby') return false;

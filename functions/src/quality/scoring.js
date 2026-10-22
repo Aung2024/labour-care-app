@@ -177,8 +177,8 @@ const ANC_INDICATOR_DEFS = Object.freeze([
     id: 'anc_diagnosis',
     domain: 'antenatal',
     source: 'anc_visit',
-    en: 'Provisional diagnosis recorded',
-    mm: 'ယာယီရောဂါသတ်မှတ်ချက် မှတ်တမ်းတင်ခြင်း',
+    en: 'Maternal outcome recorded',
+    mm: 'မိခင်ရလဒ် မှတ်တမ်းတင်ခြင်း',
     defaultTarget: 80
   },
   {
@@ -544,11 +544,18 @@ function hasHighRiskDocumented(visit) {
   return false;
 }
 
-function hasProvisionalDiagnosis(visit) {
-  const type = String((visit && visit.provisionalDiagnosisType) || '').trim();
+function hasMaternalOutcome(visit) {
+  const type = String((visit && (visit.maternalOutcome || visit.maternalOutcomeValue || visit.provisionalDiagnosisType)) || '').trim();
   if (!type) return false;
   if (type.toLowerCase() === 'other') {
     return !!String((visit && visit.provisionalDiagnosisOther) || '').trim();
+  }
+  const cause = String((visit && (visit.maternalOutcomeCause || visit.deathCause)) || '').trim();
+  if (type === 'maternal_death' || type.toLowerCase() === 'death' || type.toLowerCase() === 'dead') {
+    if (!cause) return false;
+    if (cause === 'pregnancy_related' || cause === 'other') {
+      return !!String((visit && (visit.maternalOutcomeReason || visit.deathDetail)) || '').trim();
+    }
   }
   return true;
 }
@@ -572,7 +579,7 @@ function evaluateAncIndicator(indicatorId, record, patient) {
   }
   if (indicatorId === 'anc_high_risk') return hasHighRiskDocumented(record);
   if (indicatorId === 'anc_next_visit') return !!(record && (record.nextVisitDate || record.next_visit_date));
-  if (indicatorId === 'anc_diagnosis') return hasProvisionalDiagnosis(record);
+  if (indicatorId === 'anc_outcome' || indicatorId === 'anc_diagnosis') return hasMaternalOutcome(record);
   if (indicatorId === 'anc_hiv_syphilis') {
     return hasLabResult(record && record.hivResult) &&
       hasLabResult(record && (record.syphilisResult || record.vdrlResult));

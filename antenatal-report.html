@@ -12,6 +12,7 @@
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/auth-guard.js"></script>
+  <script src="js/outcome-system.js"></script>
   <script src="js/anc-tracking-status.js"></script>
   <script src="js/account-names.js"></script>
   <script src="js/facility-config.js"></script>
@@ -2086,6 +2087,12 @@
     function buildVisitRowData(visit, index) {
       const visitNumber = visit.visitNumber || index + 1;
       const ga = computeVisitGA(visit);
+      const maternalOutcome = visit.maternalOutcome && typeof visit.maternalOutcome === 'object'
+        ? visit.maternalOutcome.value
+        : (visit.maternalOutcome || visit.maternalOutcomeValue);
+      const maternalOutcomeOption = window.OutcomeSystem && OutcomeSystem.findOption
+        ? OutcomeSystem.findOption(OutcomeSystem.maternalOutcomes, maternalOutcome)
+        : null;
       const temperature = visit.temperature
         ? `${visit.temperature}${visit.temperatureUnit === 'F' ? '°F' : '°C'}`
         : '-';
@@ -2111,9 +2118,10 @@
         vitaminB1: formatMedicationVisitCell(visit.vitaminB1, visit.vitaminB1Frequency, visit.vitaminB1TotalTablets),
         micronutrients: formatMedicationVisitCell(visit.micronutrientsTablet, visit.micronutrientsFrequency, visit.micronutrientsTotalTablets),
         td: visit.tetanusToxoid || visit.td || '-',
-        provisionalDiagnosis: visit.provisionalDiagnosisType
-          ? (visit.provisionalDiagnosisType + (visit.provisionalDiagnosisOther ? ': ' + visit.provisionalDiagnosisOther : ''))
-          : '-',
+        maternalOutcome: maternalOutcomeOption
+          ? OutcomeSystem.labelFor(maternalOutcomeOption, reportLang)
+          : maternalOutcome ||
+          (visit.provisionalDiagnosisType === 'Routine ANC' ? 'Alive/Routine ANC' : visit.provisionalDiagnosisType === 'Abortion' ? 'Abortion' : '-'),
         nextVisitDate: visit.nextVisitDate ? formatReportDate(visit.nextVisitDate) : '-',
         initial: visit.initial || '-',
         hasData: true
@@ -2249,7 +2257,7 @@
             <dt class="lang-text" data-en="Vitamin B1" data-mm="ဗီတာမင်ဘီဝမ်း">Vit B1</dt><dd>${escapeHtml(d.vitaminB1)}</dd>
             <dt class="lang-text" data-en="Micronutrients" data-mm="အဏုအာဟာရဆေးပြား">Micronut</dt><dd>${escapeHtml(d.micronutrients)}</dd>
             <dt class="lang-text" data-en="Tetanus Diphtheria (TD)" data-mm="မေးခိုင်၊ ဆုံဆို့နာ">TD</dt><dd>${escapeHtml(d.td)}</dd>
-            <dt class="lang-text" data-en="Provisional Diagnosis" data-mm="ယာယီရောဂါသတ်မှတ်ချက်">Diagnosis</dt><dd>${escapeHtml(d.provisionalDiagnosis)}</dd>
+            <dt class="lang-text" data-en="Maternal Outcome" data-mm="မိခင်ရလဒ်">Outcome</dt><dd>${escapeHtml(d.maternalOutcome)}</dd>
             <dt class="lang-text" data-en="Next ANC visit" data-mm="နောက်တစ်ကြိမ် ANC ပြန်ပြရက်">Next visit</dt><dd>${escapeHtml(d.nextVisitDate)}</dd>
             <dt class="lang-text" data-en="Initial" data-mm="လက်မှတ်">Initial</dt><dd>${escapeHtml(d.initial)}</dd>
           </dl>

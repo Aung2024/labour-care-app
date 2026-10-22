@@ -28,6 +28,7 @@
   <script src="js/ui-dialogs.js"></script>
   <script src="js/clinical-refer-flow.js"></script>
   <script src="js/birth-delivery-anchor.js"></script>
+  <script src="js/outcome-system.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/delivery-notes-utils.js"></script>
   <script src="js/infection-alerts.js"></script>
@@ -1348,20 +1349,28 @@
         <div class="row g-3 mb-3">
           <div class="col-md-6">
             <label for="baby_outcome" class="form-label">
-              <span class="lang-text" data-en="Baby outcome" data-mm="ကလေး ရလဒ်">Baby outcome</span><span class="required-marker" aria-hidden="true">*</span>
+              <span class="lang-text" data-en="Newborn Outcome" data-mm="ကလေးရလဒ်">Newborn Outcome</span><span class="required-marker" aria-hidden="true">*</span>
             </label>
             <select class="form-control" id="baby_outcome" name="baby_outcome" onchange="toggleOutcomeFollowup()" data-choice required>
               <option value="" data-en="Select outcome" data-mm="ရလဒ် ရွေးချယ်ရန်">Select outcome</option>
               <option value="alive" data-en="Alive" data-mm="အသက်ရှင်">Alive</option>
-              <option value="death" data-en="Dead" data-mm="သေဆုံး">Dead</option>
+              <option value="death" data-en="Death" data-mm="သေဆုံး">Death</option>
             </select>
           </div>
         </div>
         <div class="followup-section mb-3" id="outcomeFollowup" style="display: none;">
-          <label for="cause_of_death" class="form-label">
-            <span class="lang-text" data-en="Cause of death" data-mm="သေဆုံးရသည့် အကြောင်းအရင်း">Cause of death</span>
+          <label for="newborn_death_period" class="form-label">
+            <span class="lang-text" data-en="Time of death *" data-mm="သေဆုံးသည့်အချိန် *">Time of death *</span>
           </label>
-          <textarea class="form-control" id="cause_of_death" name="cause_of_death" rows="3" placeholder=""></textarea>
+          <select class="form-control mb-2" id="newborn_death_period" name="newborn_death_period">
+            <option value="">Select</option>
+            <option value="neonatal_7" data-en="Within 7 days after birth" data-mm="မွေးပြီး(၇)ရက်အတွင်း">Within 7 days after birth</option>
+            <option value="neonatal_7_28" data-en="From day 7 to day 28 after birth" data-mm="မွေးပြီး(၇)ရက်မှ (၂၈)ရက်အတွင်း">From day 7 to day 28 after birth</option>
+          </select>
+          <label for="cause_of_death" class="form-label">
+            <span class="lang-text" data-en="Disease name or reason for death *" data-mm="သေဆုံးရသည့် အကြောင်းအရင်း/ရောဂါအမည် *">Disease name or reason for death *</span>
+          </label>
+          <textarea class="form-control" id="cause_of_death" name="cause_of_death" rows="3" placeholder="" required></textarea>
         </div>
       </div>
 
@@ -1483,7 +1492,7 @@
       'gender', 'birth_time', 'body_weight_gram', 'birth_length_cm', 'head_circumference_cm',
       'current_weight_gram',
       'temperature', 'temperature_unit', 'heart_rate', 'respiration_rate', 'eye_care_status',
-      'follow_up_appointment_date', 'clinical_notes', 'cause_of_death', 'baby_outcome',
+      'follow_up_appointment_date', 'clinical_notes', 'cause_of_death', 'baby_outcome', 'newborn_death_period',
       'discharge_date', 'kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day',
       'kmc_total_hours', 'feeding_type', 'feeding_method'
     ];
@@ -2021,6 +2030,8 @@
       const outcomeVal = state.baby_outcome || (state.outcome === 'dead' ? 'death' : (state.outcome || ''));
       const outcomeEl = document.getElementById('baby_outcome');
       if (outcomeEl) outcomeEl.value = outcomeVal;
+      const periodEl = document.getElementById('newborn_death_period');
+      if (periodEl) periodEl.value = state.newborn_death_period || '';
       setRadioValue('outcome', state.outcome || null);
       setRadioValue('difficult_breathing', state.difficult_breathing || null);
       setRadioValue('eye_infection_status', state.eye_infection_status || null);
@@ -2462,7 +2473,8 @@
           kmc_total_hours: '',
           feeding_type: baby.feeding_type || visit1Data.feeding_type || '',
           feeding_method: baby.feeding_method || visit1Data.feeding_method || '',
-          cause_of_death: ''
+        cause_of_death: '',
+        newborn_death_period: ''
         });
       });
       inheritVisitBirthMeasurementsToStates(visit1Data);
@@ -2565,7 +2577,8 @@
         gender: currentPatient.sex || currentPatient.gender || '',
         birthTime: currentPatient.birth_time || (currentPatient.date_of_birth ? (currentPatient.date_of_birth + 'T00:00') : ''),
         birthWeightGram: currentPatient.birth_weight_gram || '',
-        outcome: currentPatient.birth_outcome || 'alive'
+        outcome: currentPatient.newbornOutcome?.value || currentPatient.newborn_outcome ||
+          currentPatient.birth_outcome || ''
       };
       const pregnancyType = document.getElementById('pregnancy_type');
       if (pregnancyType) pregnancyType.value = 'single';
@@ -3541,10 +3554,12 @@
       if (data.cord_care && document.getElementById(`cord_care_${data.cord_care}`)) {
         document.getElementById(`cord_care_${data.cord_care}`).checked = true;
       }
-      if (data.outcome) {
+      if (data.outcome || data.newbornOutcome || data.newborn_outcome) {
         const outcomeEl = document.getElementById('baby_outcome');
         if (outcomeEl) {
-          outcomeEl.value = data.outcome === 'dead' ? 'death' : data.outcome;
+          outcomeEl.value = data.newbornOutcome?.value || data.newborn_outcome || (data.outcome === 'dead' ? 'death' : data.outcome);
+          const periodEl = document.getElementById('newborn_death_period');
+          if (periodEl) periodEl.value = data.newbornOutcome?.period || data.newborn_death_period || '';
           toggleOutcomeFollowup();
         }
       }
@@ -3580,7 +3595,9 @@
         toggleNewbornFollowUpOverride();
       }
       if (data.clinical_notes) document.getElementById('clinical_notes').value = data.clinical_notes;
-      if (data.cause_of_death) document.getElementById('cause_of_death').value = data.cause_of_death;
+      if (data.cause_of_death || data.newbornOutcome?.reason) {
+        document.getElementById('cause_of_death').value = data.newbornOutcome?.reason || data.cause_of_death;
+      }
       if (data.discharge_date) document.getElementById('discharge_date').value = data.discharge_date;
       if (data.kmc_selected && document.getElementById(`kmc_selected_${data.kmc_selected}`)) {
         document.getElementById(`kmc_selected_${data.kmc_selected}`).checked = true;
@@ -3990,6 +4007,17 @@
           clinical_notes: document.getElementById('clinical_notes').value || null,
           danger_signs: collectNewbornDangerSigns(),
           outcome: firstBaby.outcome === 'death' ? 'dead' : (firstBaby.outcome || null),
+          newborn_outcome: firstBaby.outcome || null,
+          newbornOutcome: window.OutcomeSystem
+            ? (OutcomeSystem.validate('newborn', {
+              value: firstBaby.outcome,
+              period: document.getElementById('newborn_death_period').value || null,
+              reason: document.getElementById('cause_of_death').value || '',
+              source: 'newborn_care',
+              eventDate: document.getElementById('visit_date').value
+            }).record || null)
+            : null,
+          newborn_death_period: document.getElementById('newborn_death_period').value || null,
           cause_of_death: firstBaby.causeOfDeath || firstBaby.cause_of_death || document.getElementById('cause_of_death').value || null,
           visitDate: document.getElementById('visit_date').value,
           potential_kmc: potentialKmc,
@@ -4068,14 +4096,37 @@
             }
 
             const patientPatch = {
-              lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+              lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+              newbornOutcome: cloudData.newbornOutcome || null,
+              newborn_outcome: cloudData.newborn_outcome || null,
+              birth_outcome: cloudData.newborn_outcome || null
             };
+            if (cloudData.newborn_outcome === 'death' || cloudData.newborn_outcome === 'stillbirth') {
+              patientPatch.serviceClosure = {
+                status: 'closed',
+                outcome: cloudData.newborn_outcome,
+                deathPeriod: cloudData.newborn_death_period || null,
+                deathCause: null,
+                detail: cloudData.cause_of_death || '',
+                source: 'clinical_outcome',
+                closedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                closedBy: currentUser.uid
+              };
+              patientPatch.rosterStatus = 'closed';
+            }
             if (cloudData.follow_up_appointment_date) {
               patientPatch.newborn_follow_up_date = cloudData.follow_up_appointment_date;
               patientPatch.next_action_date = cloudData.follow_up_appointment_date;
               patientPatch.next_action_type = 'newborn_follow_up';
             }
             await firebase.firestore().collection('patients').doc(getNewbornCareStoragePatientId()).update(patientPatch);
+            if (window.OutcomeSystem && cloudData.newbornOutcome) {
+              await OutcomeSystem.persistPatientOutcome(
+                getNewbornCareStoragePatientId(),
+                cloudData.newbornOutcome,
+                currentUser.uid
+              );
+            }
 
             if (cloudData.birth_time && window.BirthDeliveryAnchor) {
               await BirthDeliveryAnchor.syncDatetimeToNewbornCare(getNewbornCareStoragePatientId(), cloudData.birth_time);
@@ -4238,7 +4289,18 @@
     function toggleOutcomeFollowup() {
       const followup = document.getElementById('outcomeFollowup');
       const val = document.getElementById('baby_outcome')?.value || '';
-      followup.style.display = (val === 'death') ? 'block' : 'none';
+      const period = document.getElementById('newborn_death_period');
+      const reason = document.getElementById('cause_of_death');
+      const isDeath = val === 'death';
+      if (followup) followup.style.display = isDeath ? 'block' : 'none';
+      if (period) period.required = isDeath;
+      if (reason) {
+        reason.required = isDeath;
+        if (!isDeath) {
+          period.value = '';
+          reason.value = '';
+        }
+      }
     }
 
     // Helper functions

@@ -57,6 +57,14 @@
     ];
   }
 
+  function normalizeMaternalOutcome(value) {
+    var raw = String(value || '').toLowerCase().trim();
+    if (raw === 'routine anc' || raw === 'alive' || raw === 'live') return 'alive';
+    if (raw === 'abortion' || raw === 'miscarriage') return 'abortion';
+    if (raw === 'death' || raw === 'dead' || raw === 'maternal_death') return 'maternal_death';
+    return raw;
+  }
+
   function numberChoices(min, max) {
     var options = [];
     for (var i = min; i <= max; i++) options.push(choice(String(i), String(i), String(i)));
@@ -412,8 +420,11 @@
       vitaminB1: { key: 'vitaminB1', path: ['vitaminB1'], type: 'select', labelEn: 'Vitamin B1', labelMm: 'ဘီဝမ်း', options: medicationOptions(), normalize: normalizeMedication },
       deworming: { key: 'deworming', path: ['deworming'], type: 'select', labelEn: 'Deworming', labelMm: 'သန်ချဆေးပြား', options: medicationOptions(), normalize: normalizeMedication },
       tetanusToxoid: { key: 'tetanusToxoid', path: ['tetanusToxoid'], aliases: [['td']], type: 'select', labelEn: 'Tetanus diphtheria', labelMm: 'မေးခိုင်၊ ဆုံဆို့နာကာကွယ်ဆေး', options: tdOptions(), normalize: normalizeTd, sync: function (value) { return { td: value }; } },
-      provisionalDiagnosisType: { key: 'provisionalDiagnosisType', path: ['provisionalDiagnosisType'], aliases: [['provisionalDiagnosis']], type: 'select', labelEn: 'Provisional diagnosis', labelMm: 'ယာယီရောဂါသတ်မှတ်ချက်', options: diagnosisOptions() },
-      provisionalDiagnosisOther: { key: 'provisionalDiagnosisOther', path: ['provisionalDiagnosisOther'], type: 'text', labelEn: 'Other diagnosis', labelMm: 'အခြားရောဂါအမည်' },
+      maternalOutcome: { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternalOutcomeValue'], ['provisionalDiagnosisType'], ['provisionalDiagnosis']], type: 'select', labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive/Routine ANC', 'အသက်ရှင်/ပုံမှန် ANC'), choice('maternal_death', 'Death', 'သေဆုံး'), choice('abortion', 'Abortion', 'ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ')], normalize: normalizeMaternalOutcome },
+      maternalOutcomeCause: { key: 'maternalOutcomeCause', path: ['maternalOutcomeCause'], aliases: [['deathCause'], ['maternalDeathCause']], type: 'select', labelEn: 'Maternal death cause', labelMm: 'မိခင်သေဆုံးရသည့် အကြောင်းရင်း', options: [choice('pregnancy_related', 'Pregnancy-related disease', 'သားဖွားခြင်းဆိုင်ရာရောဂါ'), choice('injury', 'Injury/accident/suicide/homicide', 'ထိခိုက်ဒဏ်ရာ၊ မတော်တဆမှု၊ မိမိကိုယ်ကိုသတ်သေမှု၊ အသတ်ခံရမှု'), choice('other', 'Other disease', 'အခြားရောဂါ')] },
+      maternalOutcomeReason: { key: 'maternalOutcomeReason', path: ['maternalOutcomeReason'], aliases: [['deathDetail'], ['maternalDeathReason']], type: 'text', labelEn: 'Maternal outcome details', labelMm: 'မိခင်ရလဒ် အသေးစိတ်' },
+      provisionalDiagnosisType: { key: 'provisionalDiagnosisType', path: ['provisionalDiagnosisType'], aliases: [['provisionalDiagnosis']], type: 'select', labelEn: 'Legacy provisional diagnosis', labelMm: 'ယာယီရောဂါသတ်မှတ်ချက်', options: diagnosisOptions() },
+      provisionalDiagnosisOther: { key: 'provisionalDiagnosisOther', path: ['provisionalDiagnosisOther'], type: 'text', labelEn: 'Legacy other diagnosis', labelMm: 'အခြားရောဂါအမည်' },
       cleanDeliveryKit: { key: 'cleanDeliveryKit', path: ['cleanDeliveryKitStatus'], type: 'cdk', labelEn: 'Clean delivery kit', labelMm: 'တစ်ခါသုံးမွေးဖွားအိတ်' }
     };
     return fields[key];
@@ -435,7 +446,7 @@
 
   function pncFields() {
     return [
-      { key: 'maternalOutcome', path: ['maternalOutcome'], type: 'select', required: true, labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('dead', 'Dead', 'သေဆုံး')] },
+      { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternal_outcome']], type: 'select', required: true, labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('maternal_death', 'Death', 'သေဆုံး')] },
       { key: 'otherVisits', path: ['otherVisits'], type: 'other-visits', required: false, labelEn: 'Other-facility visits', labelMm: 'အခြားဌာနတွင် ပြသခဲ့သောအကြိမ်များ' }
     ];
   }
@@ -468,8 +479,9 @@
       anatomy_abnormalities: { key: 'anatomy_abnormalities', path: ['anatomy_abnormalities'], type: 'checkbox', labelEn: 'Anatomy abnormalities', labelMm: 'ခန္ဓာကိုယ်အစိတ်အပိုင်းများ ပုံမှန်မရှိခြင်း' },
       anatomy_abnormality_details: { key: 'anatomy_abnormality_details', path: ['anatomy_abnormality_details'], type: 'text', labelEn: 'Abnormality details', labelMm: 'ပုံမမှန်မှု အသေးစိတ်' },
       exclusive_breastfeeding_on_demand: { key: 'exclusive_breastfeeding_on_demand', path: ['exclusive_breastfeeding_on_demand'], type: 'checkbox', labelEn: 'Exclusive breastfeeding on demand', labelMm: 'မိခင်နို့တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း' },
-      baby_outcome: { key: 'baby_outcome', path: ['baby_outcome'], aliases: [['outcome']], type: 'select', labelEn: 'Outcome', labelMm: 'ရလဒ်', normalize: normalizeOutcome, options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('death', 'Death', 'သေဆုံး')], sync: function (value) { return { outcome: value === 'death' ? 'dead' : value }; } },
-      cause_of_death: { key: 'cause_of_death', path: ['cause_of_death'], type: 'text', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း' }
+      baby_outcome: { key: 'baby_outcome', path: ['baby_outcome'], aliases: [['newborn_outcome'], ['outcome']], type: 'select', labelEn: 'Newborn outcome', labelMm: 'ကလေးရလဒ်', normalize: normalizeOutcome, options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('death', 'Death', 'သေဆုံး')], sync: function (value) { return { outcome: value === 'death' ? 'dead' : value, newborn_outcome: value }; } },
+      newborn_death_period: { key: 'newborn_death_period', path: ['newborn_death_period'], aliases: [['deathPeriod']], type: 'select', labelEn: 'Time of death', labelMm: 'သေဆုံးသည့်အချိန်', options: [choice('neonatal_7', 'Within 7 days after birth', 'မွေးပြီး(၇)ရက်အတွင်း'), choice('neonatal_7_28', 'From day 7 to day 28 after birth', 'မွေးပြီး(၇)ရက်မှ (၂၈)ရက်အတွင်း')] },
+      cause_of_death: { key: 'cause_of_death', path: ['cause_of_death'], aliases: [['newbornOutcomeReason']], type: 'text', labelEn: 'Disease name or reason for death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း/ရောဂါအမည်' }
     };
     return fields[key];
   }
@@ -481,6 +493,8 @@
       { key: 'tactile_stimulation', path: ['tactile_stimulation'], type: 'checkbox', labelEn: 'Tactile stimulation', labelMm: 'အသက်ရှူစေရန် နှိုးဆွခြင်း' },
       { key: 'bag_and_mask', path: ['bag_and_mask'], type: 'checkbox', labelEn: 'Bag and mask', labelMm: 'လေအိတ်နှင့် မျက်နှာဖုံး' },
       { key: 'resuscitation_outcome', path: ['resuscitation_outcome'], type: 'select', labelEn: 'Baby condition after resuscitation', labelMm: 'ကလေးအခြေအနေ', options: [choice('alive', 'Alive', 'အရှင်'), choice('death', 'Death', 'အသေ'), choice('referred', 'Referred', 'လွှဲပြောင်း')] },
+      { key: 'newborn_outcome', path: ['newborn_outcome'], aliases: [['newbornOutcome']], type: 'select', required: true, labelEn: 'Newborn outcome', labelMm: 'ကလေးရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('death', 'Death', 'သေဆုံး'), choice('referred', 'Referred', 'လွှဲပြောင်း')] },
+      { key: 'newborn_outcome_reason', path: ['newbornOutcomeReason'], aliases: [['cause_of_death']], type: 'text', labelEn: 'Newborn death reason', labelMm: 'ကလေးသေဆုံးရသည့် အကြောင်းရင်း' },
       { key: 'skin_to_skin_contact', path: ['skin_to_skin_contact'], type: 'checkbox', labelEn: 'Skin-to-skin contact', labelMm: 'မိခင်နှင့် အရေပြားခြင်း ထိကပ်ထားခြင်း' },
       { key: 'delayed_cord_clamping', path: ['delayed_cord_clamping'], type: 'checkbox', labelEn: 'Delayed cord clamping', labelMm: 'အချိန်ဆိုင်း၍ ချက်ကြိုးဖြတ်ခြင်း' },
       { key: 'support_early_exclusive_breastfeeding', path: ['support_early_exclusive_breastfeeding'], type: 'checkbox', labelEn: 'Early exclusive breastfeeding', labelMm: 'စောလျင်စွာ မိခင်နို့ တစ်မျိုးတည်းသာ တိုက်ကျွေးခြင်း' },
@@ -531,11 +545,11 @@
     var map = {};
     var lists = {
       registration: registrationFields(),
-      anc: ['visitDate', 'previousObstetricHistory', 'lastPregnancyOutcome', 'goiterStatus', 'tbSymptoms', 'otherMedicalConditionName', 'ironFolicAcid', 'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid', 'provisionalDiagnosisType', 'provisionalDiagnosisOther', 'cleanDeliveryKit'].map(ancField),
+      anc: ['visitDate', 'previousObstetricHistory', 'lastPregnancyOutcome', 'goiterStatus', 'tbSymptoms', 'otherMedicalConditionName', 'ironFolicAcid', 'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid', 'maternalOutcome', 'maternalOutcomeCause', 'maternalOutcomeReason', 'cleanDeliveryKit'].map(ancField),
       pnc: pncFields(),
       test: testFields(),
       delivery: deliveryFieldDefs(),
-      newborn: ['visitDate', 'current_weight_gram', 'head_circumference_cm', 'birth_length_cm', 'otherVisits', 'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care', 'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand', 'baby_outcome', 'cause_of_death'].map(newbornField),
+      newborn: ['visitDate', 'current_weight_gram', 'head_circumference_cm', 'birth_length_cm', 'otherVisits', 'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care', 'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand', 'baby_outcome', 'newborn_death_period', 'cause_of_death'].map(newbornField),
       immediate: immediateFields()
     };
     (lists[moduleName] || []).forEach(function (field) { map[field.key] = field; });
@@ -818,14 +832,20 @@
       hintMm: 'TD သည် ရှေ့သို့သာ တက်ရမည်။ မထိုးရသေး → TD1 → TD2 → ပြီးမြောက်ပြီ။'
     }));
 
-    category.groups.push(multiFieldGroup('diagnosis', ['provisionalDiagnosisType', 'provisionalDiagnosisOther'], visits, {
-      labelEn: 'Provisional diagnosis',
-      labelMm: 'ယာယီရောဂါသတ်မှတ်ချက်',
-      hintEn: 'Use the same diagnosis for all visits, or change it per visit. Other needs a name.',
-      hintMm: 'အကြိမ်အားလုံး တူညီစွာ သုံးနိုင်သည်။ Other ရွေးလျှင် အမည်ဖြည့်ပါ။'
+    category.groups.push(multiFieldGroup('diagnosis', ['maternalOutcome', 'maternalOutcomeCause', 'maternalOutcomeReason', 'provisionalDiagnosisType', 'provisionalDiagnosisOther'], visits, {
+      labelEn: 'Maternal outcome',
+      labelMm: 'မိခင်ရလဒ်',
+      hintEn: 'Use the outcome recorded for this ANC visit. Death uses the antepartum period.',
+      hintMm: 'ဤ ANC အကြိမ်အတွက် မိခင်ရလဒ်ကို ဖြည့်ပါ။ သေဆုံးပါက မီးမဖွားမီဟု သတ်မှတ်သည်။'
     }, function (visit, values) {
-      if (!values.provisionalDiagnosisType) return false;
-      if (values.provisionalDiagnosisType === 'Other') return !!text(values.provisionalDiagnosisOther);
+      if (!values.maternalOutcome) return false;
+      if (String(values.maternalOutcome).toLowerCase() === 'other') {
+        return !!text(values.provisionalDiagnosisOther);
+      }
+      if (values.maternalOutcome === 'maternal_death' && !values.maternalOutcomeCause) return false;
+      if (values.maternalOutcome === 'maternal_death' &&
+          ['pregnancy_related', 'other'].indexOf(values.maternalOutcomeCause) !== -1 &&
+          !text(values.maternalOutcomeReason)) return false;
       return true;
     }));
 

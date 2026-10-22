@@ -30,7 +30,12 @@ test('service closure stays separate from clinical outcomes and validates mother
   assert.equal(saved.record.detail, 'PPH');
   assert.equal(saved.record.outcome, 'maternal_death');
 
-  const baby = api.validate('baby', { outcome: 'child_death' });
+  const baby = api.validate('baby', {
+    outcome: 'death',
+    deathPeriod: 'neonatal_7',
+    detail: 'Respiratory distress'
+  });
   assert.equal(baby.ok, true);
+  assert.equal(api.validate('baby', { outcome: 'stillbirth' }).ok, true);
   assert.equal(api.kindOf({ mother_patient_id: 'mother-1' }), 'baby');
 });

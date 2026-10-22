@@ -74,8 +74,8 @@ test('delivery notes lock after save and reuse ANC gestational age', () => {
   assert.doesNotMatch(source, /C-section \(legacy/);
   assert.doesNotMatch(source, /Public Facility \(legacy\)/);
   assert.doesNotMatch(source, /နောက်ဆုံး ANC မှ ယူထားပြီး ကိုယ်ဝန်ပတ် ထပ်မထည့်နိုင်အောင် ပိတ်ထားသည်/);
-  assert.match(source, /id="deliveryMaternalCondition" required/);
-  assert.match(source, /maternalCondition: document\.getElementById\('deliveryMaternalCondition'\)\.value/);
+  assert.match(source, /id="deliveryMaternalOutcome" required/);
+  assert.match(source, /maternalOutcome: \{/);
   assert.match(source, /id="thirdStageOxytocin"[^>]*required/);
   assert.match(source, /id="thirdStageCCT"[^>]*required/);
   assert.match(source, /data-field="causeOfDeath"/);
@@ -522,6 +522,28 @@ test('patient list and home expose consistent mother and baby count concepts', (
   assert.match(home, /data-type="mothers"/);
   assert.match(home, /data-type="babies"/);
   assert.match(home, /patientStats\.total\+\+/);
+});
+
+test('outcome controls use canonical values and hide completed patients by default', () => {
+  const list = readAppFile('list.html');
+  const anc = readAppFile('antenatal-form.html');
+  const delivery = readAppFile('patient-care-hub.html');
+  const pnc = readAppFile('postpartum-form.html');
+  const immediate = readAppFile('immediate-newborn-care-form.html');
+  const newborn = readAppFile('newborn-care-page.html');
+
+  assert.match(list, /function toggleClosedPatients/);
+  assert.match(list, /!showClosedPatients && window\.ServiceClosure && ServiceClosure\.isClosed\(patient\)/);
+  assert.match(list, /ကလေးအသက် ၄၂ ရက် ပြည့်ပါပြီ/);
+  assert.match(list, /မွေးဖွားပြီး ရက် ၉၀ ပြည့်ပါပြီ/);
+  assert.match(anc, /id="maternalOutcome"[^>]*required/);
+  assert.match(delivery, /id="deliveryMaternalOutcome" required/);
+  assert.match(pnc, /id="maternalOutcome"[^>]*required/);
+  assert.match(immediate, /id="newbornOutcome"[^>]*required/);
+  assert.match(newborn, /id="baby_outcome"[^>]*required/);
+  [anc, delivery, pnc, immediate, newborn].forEach((source) => {
+    assert.match(source, /js\/outcome-system\.js/);
+  });
 });
 
 test('registration and KMC labels expose the simplified age and denominator workflow', () => {

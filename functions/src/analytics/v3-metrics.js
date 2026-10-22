@@ -216,11 +216,18 @@ const deliveryFacts = (facts) => {
       place: normalizeBirthPlace(details.birthPlace || details.birthplace),
       mode: normalizeDeliveryMode(details.modeOfDelivery || details.mode_of_delivery),
       maternalOutcome: normalizeOutcome(
+        (facts.maternalOutcome && (facts.maternalOutcome.value || facts.maternalOutcome)) ||
+        facts.maternal_outcome ||
+        (details.maternalOutcome && details.maternalOutcome.value) ||
+        notes.maternalOutcome?.value ||
         details.maternalCondition || details.maternal_condition
       ) || 'unknown',
       babies: babies.map((baby, index) => ({
         babyIndex: numeric(baby.babyIndex || baby.baby_index) || index + 1,
-        outcome: normalizeOutcome(baby.outcome) || 'unknown',
+        outcome: normalizeOutcome(
+          (baby.newbornOutcome && baby.newbornOutcome.value) ||
+          baby.newborn_outcome || baby.outcome
+        ) || 'unknown',
         weightGram: numeric(
           baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram
         ) || null,
@@ -256,11 +263,15 @@ const deliveryFacts = (facts) => {
     place: normalizeBirthPlace(newborn.birthplace || birth.birthplace),
     mode: normalizeDeliveryMode(newborn.mode_of_delivery || birth.mode_of_delivery),
     maternalOutcome: normalizeOutcome(
-      newborn.maternal_condition || birth.maternalOutcome
+      (newborn.maternalOutcome && newborn.maternalOutcome.value) ||
+      newborn.maternal_condition ||
+      (birth.maternalOutcome && birth.maternalOutcome.value) ||
+      birth.maternalOutcome
     ) || 'unknown',
     babies: babies.map((baby, index) => ({
       babyIndex: numeric(baby.babyIndex || baby.baby_index) || index + 1,
-      outcome: normalizeOutcome(baby.outcome || baby.baby_outcome ||
+      outcome: normalizeOutcome((baby.newbornOutcome && baby.newbornOutcome.value) ||
+        baby.newborn_outcome || baby.outcome || baby.baby_outcome ||
         birth.newbornOutcome) || 'unknown',
       weightGram: numeric(
         baby.birthWeightGram || baby.birth_weight_gram || baby.body_weight_gram

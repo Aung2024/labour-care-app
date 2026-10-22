@@ -37,7 +37,7 @@ function firstDate(record, fields) {
 function normalizeOutcome(value) {
   const key = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['alive', 'live', 'living', 'discharged_alive'].includes(key)) return 'alive';
-  if (['death', 'dead', 'died', 'maternal_death', 'newborn_death'].includes(key)) return 'death';
+  if (['death', 'dead', 'died', 'maternal_death', 'newborn_death', 'child_death'].includes(key)) return 'death';
   if (['stillbirth', 'still_birth', 'stillborn'].includes(key)) return 'stillbirth';
   if (['transfer', 'transferred', 'referred'].includes(key)) return 'transfer';
   if (['abortion', 'miscarriage', 'pregnancy_loss'].includes(key)) return 'abortion';
@@ -45,6 +45,15 @@ function normalizeOutcome(value) {
     return 'loss_of_contact';
   }
   return key || null;
+}
+
+function normalizeClinicalOutcome(record, subject) {
+  const data = unwrap(record) || {};
+  const candidate = subject === 'newborn'
+    ? data.newbornOutcome || data.newborn_outcome || data.birth_outcome || data.baby_outcome || data.outcome
+    : data.maternalOutcome || data.maternal_outcome || data.maternalCondition || data.maternal_condition;
+  const value = candidate && typeof candidate === 'object' ? candidate.value : candidate;
+  return normalizeOutcome(value);
 }
 
 function normalizeInfectionResult(value) {
@@ -170,6 +179,7 @@ module.exports = {
   toDate,
   firstDate,
   normalizeOutcome,
+  normalizeClinicalOutcome,
   normalizeInfectionResult,
   infectionFlags,
   deliveryNoteBirthDate,

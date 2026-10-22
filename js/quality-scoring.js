@@ -318,11 +318,11 @@
       id: 'anc_diagnosis',
       domain: 'antenatal',
       source: 'anc_visit',
-      formHighlight: 'provisionalDiagnosisType',
-      en: 'Provisional diagnosis recorded',
-      mm: 'ယာယီရောဂါသတ်မှတ်ချက် မှတ်တမ်းတင်ခြင်း',
-      shortEn: 'Provisional diagnosis',
-      shortMm: 'ယာယီရောဂါသတ်မှတ်ချက်',
+      formHighlight: 'maternalOutcome',
+      en: 'Maternal outcome recorded',
+      mm: 'မိခင်ရလဒ် မှတ်တမ်းတင်ခြင်း',
+      shortEn: 'Maternal outcome',
+      shortMm: 'မိခင်ရလဒ်',
       defaultTarget: 80,
       dataSourceEn: 'ANC visit',
       dataSourceMm: 'ANC ပြသမှတ်တမ်း'
@@ -736,11 +736,17 @@
     return false;
   }
 
-  function hasProvisionalDiagnosis(visit) {
-    var type = String((visit && visit.provisionalDiagnosisType) || '').trim();
+  function hasMaternalOutcome(visit) {
+    var type = String((visit && (visit.maternalOutcome || visit.maternalOutcomeValue || visit.provisionalDiagnosisType)) || '').trim();
     if (!type) return false;
     if (type.toLowerCase() === 'other') {
       return !!String((visit && visit.provisionalDiagnosisOther) || '').trim();
+    }
+    if (type === 'maternal_death' || type.toLowerCase() === 'death' || type.toLowerCase() === 'dead') {
+      if (!String((visit && (visit.maternalOutcomeCause || visit.deathCause)) || '').trim()) return false;
+      if (['pregnancy_related', 'other'].indexOf(String((visit && (visit.maternalOutcomeCause || visit.deathCause)) || '').trim()) !== -1) {
+        return !!String((visit && (visit.maternalOutcomeReason || visit.deathDetail)) || '').trim();
+      }
     }
     return true;
   }
@@ -764,7 +770,7 @@
     }
     if (indicatorId === 'anc_high_risk') return hasHighRiskDocumented(record);
     if (indicatorId === 'anc_next_visit') return !!(record && (record.nextVisitDate || record.next_visit_date));
-    if (indicatorId === 'anc_diagnosis') return hasProvisionalDiagnosis(record);
+    if (indicatorId === 'anc_outcome' || indicatorId === 'anc_diagnosis') return hasMaternalOutcome(record);
     if (indicatorId === 'anc_hiv_syphilis') {
       return hasLabResult(record && record.hivResult) &&
         hasLabResult(record && (record.syphilisResult || record.vdrlResult));

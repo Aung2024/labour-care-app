@@ -20,6 +20,7 @@
   <script src="js/offline-sync.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/clinical-validator.js"></script>
+  <script src="js/outcome-system.js"></script>
   <script src="js/data-linkage.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/joint-care-utils.js"></script>
@@ -2373,13 +2374,20 @@
 
         <div class="row g-3 mt-1">
           <div class="col-12">
-            <label for="provisionalDiagnosisType" class="form-label lang-text" data-en="Provisional Diagnosis *" data-mm="ယာယီရောဂါသတ်မှတ်ချက် *">Provisional Diagnosis *</label>
-            <select id="provisionalDiagnosisType" name="provisionalDiagnosisType" class="form-control" required onchange="toggleProvisionalDiagnosisOther()">
-              <option value="">Select</option><option value="Routine ANC">Routine ANC</option><option value="Abortion">Abortion</option><option value="Other">Other</option>
+            <label for="maternalOutcome" class="form-label lang-text" data-en="Maternal Outcome *" data-mm="မိခင်ရလဒ် *">Maternal Outcome *</label>
+            <select id="maternalOutcome" name="maternalOutcome" class="form-control" required onchange="toggleMaternalOutcomeFollowup()">
+              <option value="">Select</option><option value="alive" class="lang-text" data-en="Alive/Routine ANC" data-mm="အသက်ရှင်/ပုံမှန် ANC">Alive/Routine ANC</option><option value="maternal_death" class="lang-text" data-en="Death" data-mm="သေဆုံး">Death</option><option value="abortion" class="lang-text" data-en="Abortion (before 22 weeks)" data-mm="ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ">Abortion (before 22 weeks)</option>
             </select>
-            <div id="provisionalDiagnosisOtherGroup" class="mt-2" style="display:none;">
-              <label for="provisionalDiagnosisOther" class="form-label lang-text" data-en="Specify other diagnosis *" data-mm="အခြားရောဂါသတ်မှတ်ချက် ဖော်ပြပါ *">Specify other diagnosis *</label>
-              <input type="text" id="provisionalDiagnosisOther" name="provisionalDiagnosisOther" class="form-control">
+            <div id="maternalOutcomeFollowup" class="mt-2" style="display:none;">
+              <label for="maternalOutcomeCause" class="form-label lang-text" data-en="Cause of death *" data-mm="သေဆုံးရသည့် အကြောင်းအရင်း *">Cause of death *</label>
+              <select id="maternalOutcomeCause" name="maternalOutcomeCause" class="form-control" onchange="toggleMaternalOutcomeFollowup()">
+                <option value="">Select</option>
+                <option value="pregnancy_related" class="lang-text" data-en="Pregnancy-related disease" data-mm="သားဖွားခြင်းဆိုင်ရာရောဂါ">Pregnancy-related disease</option>
+                <option value="injury" class="lang-text" data-en="Injury, accident, suicide, or homicide" data-mm="ထိခိုက်ဒဏ်ရာ ရရှိခြင်း မတော်တဆမှုများနှင့် မိမိကိုယ်ကိုသတ်သေခြင်း၊ အသတ်ခံရခြင်း">Injury, accident, suicide, or homicide</option>
+                <option value="other" class="lang-text" data-en="Other disease" data-mm="အခြားရောဂါ">Other disease</option>
+              </select>
+              <input type="hidden" id="maternalOutcomePeriod" value="antepartum">
+              <input type="text" id="maternalOutcomeReason" name="maternalOutcomeReason" class="form-control mt-2" placeholder="Details if required">
             </div>
           </div>
           <div class="col-12 col-md-6">
@@ -2695,8 +2703,14 @@
       loadedRiskNotes = data.risk_notes || null;
       setValue('otherMedications', data.otherMedications);
       setValue('initial', data.initial);
-      setValue('provisionalDiagnosisType', data.provisionalDiagnosisType || data.provisionalDiagnosis);
-      setValue('provisionalDiagnosisOther', data.provisionalDiagnosisOther);
+      const storedMaternalOutcome = data.maternalOutcome && typeof data.maternalOutcome === 'object'
+        ? data.maternalOutcome
+        : {};
+      setValue('maternalOutcome', storedMaternalOutcome.value || data.maternalOutcome || data.maternalOutcomeValue ||
+        (data.provisionalDiagnosisType === 'Routine ANC' ? 'alive' : data.provisionalDiagnosisType === 'Abortion' ? 'abortion' : ''));
+      setValue('maternalOutcomeCause', storedMaternalOutcome.cause || data.maternalOutcomeCause || data.deathCause);
+      setValue('maternalOutcomeReason', storedMaternalOutcome.reason || data.maternalOutcomeReason || data.deathDetail);
+      toggleMaternalOutcomeFollowup();
       setValue('otherMedicalConditionName', data.otherMedicalConditionName);
       setValue('lastPregnancyOutcome', data.lastPregnancyOutcome);
       setValue('lastPregnancyDate', data.lastPregnancyDate);
@@ -2737,7 +2751,7 @@
       toggleHighRiskDetails();
       toggleGBVDetails();
       toggleOtherMedicalConditionName();
-      toggleProvisionalDiagnosisOther();
+      toggleMaternalOutcomeFollowup();
       updateTwinFields();
       updateFetalRiskStyles();
       updateSectionCompletion();
@@ -4563,15 +4577,18 @@
       updateSectionCompletion();
     }
 
-    function toggleProvisionalDiagnosisOther() {
-      const isOther = document.getElementById('provisionalDiagnosisType')?.value === 'Other';
-      const group = document.getElementById('provisionalDiagnosisOtherGroup');
-      const input = document.getElementById('provisionalDiagnosisOther');
-      if (group) group.style.display = isOther ? '' : 'none';
-      if (input) {
-        input.required = isOther;
-        input.setAttribute('aria-required', isOther ? 'true' : 'false');
-        if (!isOther) input.value = '';
+    function toggleMaternalOutcomeFollowup() {
+      const outcome = document.getElementById('maternalOutcome')?.value;
+      const isDeath = outcome === 'maternal_death';
+      const group = document.getElementById('maternalOutcomeFollowup');
+      const cause = document.getElementById('maternalOutcomeCause');
+      const reason = document.getElementById('maternalOutcomeReason');
+      if (group) group.style.display = isDeath ? '' : 'none';
+      if (cause) cause.required = isDeath;
+      const needsReason = isDeath && ['pregnancy_related', 'other'].includes(cause?.value);
+      if (reason) {
+        reason.required = needsReason;
+        if (!isDeath) reason.value = '';
       }
       updateSectionCompletion();
     }
@@ -4701,7 +4718,7 @@
           'urineProtein', 'urineSugar', 'anemiaStatus', 'pittingEdema',
           'tbSymptoms', 'ironFolicAcid',
           'micronutrientsTablet', 'vitaminB1', 'deworming', 'tetanusToxoid',
-          'nextVisitDate', 'provisionalDiagnosisType', 'initial'
+          'nextVisitDate', 'maternalOutcome', 'initial'
         ].forEach(function (id) {
           setRequiredState(document.getElementById(id), true);
         });
@@ -4729,7 +4746,10 @@
         setRequiredState(document.getElementById('pastHistoryNotes'), !!document.getElementById('pastHistoryStatusRisk')?.checked);
         setRequiredState(document.getElementById('coinfectionNotes'), false);
         setRequiredState(document.getElementById('otherMedicalConditionName'), !!document.getElementById('riskOtherMedicalConditions')?.checked);
-        setRequiredState(document.getElementById('provisionalDiagnosisOther'), document.getElementById('provisionalDiagnosisType')?.value === 'Other');
+        setRequiredState(document.getElementById('maternalOutcomeCause'), document.getElementById('maternalOutcome')?.value === 'maternal_death');
+        setRequiredState(document.getElementById('maternalOutcomeReason'),
+          document.getElementById('maternalOutcome')?.value === 'maternal_death' &&
+          ['pregnancy_related', 'other'].includes(document.getElementById('maternalOutcomeCause')?.value));
 
         [
           'ironFolicAcidFrequency', 'ironFolicAcidTotalTablets',
@@ -4975,7 +4995,7 @@
       toggleDangerSignsDetails();
       toggleGBVDetails();
       toggleOtherMedicalConditionName();
-      toggleProvisionalDiagnosisOther();
+      toggleMaternalOutcomeFollowup();
       updateTwinFields();
       updateFetalRiskStyles();
       updateSectionCompletion();
@@ -5432,8 +5452,21 @@
             return checked ? checked.value : '';
           })(),
           otherMedications: getValue('otherMedications'),
-          provisionalDiagnosisType: getValue('provisionalDiagnosisType'),
-          provisionalDiagnosisOther: getValue('provisionalDiagnosisOther') || null,
+          maternalOutcome: getValue('maternalOutcome'),
+          maternalOutcomeValue: getValue('maternalOutcome'),
+          maternalOutcomePeriod: getValue('maternalOutcome') === 'maternal_death' ? 'antepartum' : null,
+          maternalOutcomeCause: getValue('maternalOutcomeCause') || null,
+          maternalOutcomeReason: getValue('maternalOutcomeReason') || null,
+          maternalOutcomeRecord: window.OutcomeSystem
+            ? (OutcomeSystem.validate('maternal', {
+              value: getValue('maternalOutcome'),
+              period: 'antepartum',
+              cause: getValue('maternalOutcomeCause'),
+              reason: getValue('maternalOutcomeReason'),
+              source: 'anc',
+              eventDate: getValue('visitDate')
+            }).record || null)
+            : null,
           
           patientId: patientId,
           recordedBy: currentUser?.uid || '',
@@ -5460,6 +5493,9 @@
             user: currentUser,
             approvalId: editApprovalId
           }, updateData);
+          if (window.OutcomeSystem && visitData.maternalOutcomeRecord) {
+            await OutcomeSystem.persistPatientOutcome(patientId, visitData.maternalOutcomeRecord, currentUser?.uid || '');
+          }
 
           await firebase.firestore().collection('patients').doc(patientId).update({
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
@@ -5545,6 +5581,9 @@
             assumeVisitRecorded: true,
             reason: saveResult.cloud ? 'ANC visit recorded' : 'ANC visit saved offline'
           });
+        }
+        if (saveResult.cloud && window.OutcomeSystem && visitData.maternalOutcomeRecord) {
+          await OutcomeSystem.persistPatientOutcome(patientId, visitData.maternalOutcomeRecord, currentUser?.uid || '');
         }
 
         var successMsg = saveResult.cloud
@@ -5648,8 +5687,9 @@
       clearField('pastHistoryNotes');
       clearField('otherMedications');
       clearField('otherMedicalConditionName');
-      clearField('provisionalDiagnosisType');
-      clearField('provisionalDiagnosisOther');
+      clearField('maternalOutcome');
+      clearField('maternalOutcomeCause');
+      clearField('maternalOutcomeReason');
       clearField('initial');
       applyOtherVisitsToUi([]);
       applyPreviousObstetricHistory([]);
@@ -5713,7 +5753,7 @@
       toggleNextVisitOverride();
       updateAncVisitSchedule();
       toggleOtherMedicalConditionName();
-      toggleProvisionalDiagnosisOther();
+      toggleMaternalOutcomeFollowup();
       updateTwinFields();
       updateSectionCompletion();
 
