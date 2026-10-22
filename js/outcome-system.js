@@ -7,7 +7,7 @@
 
   var MATERNAL_OUTCOMES = [
     { value: 'alive', en: 'Alive/Routine ANC', mm: 'အသက်ရှင်/ပုံမှန် ANC' },
-    { value: 'abortion', en: 'Abortion (before 22 weeks)', mm: 'ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ' },
+    { value: 'abortion', en: 'Abortion (before 22 weeks)', mm: 'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)' },
     { value: 'maternal_death', en: 'Death', mm: 'သေဆုံး' },
     { value: 'other', en: 'Other', mm: 'အခြား' }
   ];
@@ -49,14 +49,14 @@
   ];
 
   var CLOSURE_MOTHER_OUTCOMES = [
-    { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှု ပြီးမြောက်' },
-    { value: 'abortion', en: 'Abortion (before 22 weeks)', mm: 'ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ' },
+    { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှုပြီးမြောက်' },
+    { value: 'abortion', en: 'Abortion (before 22 weeks)', mm: 'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)' },
     { value: 'maternal_death', en: 'Maternal Death', mm: 'မိခင်သေဆုံး' },
     { value: 'other', en: 'Other', mm: 'အခြား' }
   ];
 
   var CLOSURE_BABY_OUTCOMES = [
-    { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှု ပြီးမြောက်' },
+    { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှုပြီးမြောက်' },
     { value: 'stillbirth', en: 'Stillbirth', mm: 'အသေမွေး' },
     { value: 'death', en: 'Death', mm: 'ကလေးသေဆုံး' },
     { value: 'other', en: 'Other', mm: 'အခြား' }

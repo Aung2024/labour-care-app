@@ -7,6 +7,10 @@ test('normalizes the shared maternal and newborn vocabularies', () => {
   assert.equal(OutcomeSystem.normalizeMaternal('dead'), 'maternal_death')
   assert.equal(OutcomeSystem.normalizeNewborn('still_birth'), 'stillbirth')
   assert.equal(OutcomeSystem.normalizeNewborn('child_death'), 'death')
+  assert.equal(
+    OutcomeSystem.maternalOutcomes.find((option) => option.value === 'abortion').mm,
+    'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)'
+  )
 })
 
 test('applies the clinical stage death periods', () => {

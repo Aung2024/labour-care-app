@@ -524,6 +524,16 @@ test('patient list and home expose consistent mother and baby count concepts', (
   assert.match(home, /patientStats\.total\+\+/);
 });
 
+test('patient list keeps secondary filters compact and native on smaller screens', () => {
+  const list = readAppFile('list.html');
+  assert.match(list, /<details id="secondaryFilters" class="secondary-filters">/);
+  assert.match(list, /<summary>/);
+  assert.match(list, /function updateSecondaryFilterSummary/);
+  assert.match(list, /\.secondary-filters-body \{/);
+  assert.match(list, /@media \(max-width: 768px\)/);
+  assert.match(list, /\.secondary-filter-actions \{/);
+});
+
 test('outcome controls use canonical values and hide completed patients by default', () => {
   const list = readAppFile('list.html');
   const anc = readAppFile('antenatal-form.html');
@@ -537,6 +547,7 @@ test('outcome controls use canonical values and hide completed patients by defau
   assert.match(list, /ကလေးအသက် ၄၂ ရက် ပြည့်ပါပြီ/);
   assert.match(list, /မွေးဖွားပြီး ရက် ၉၀ ပြည့်ပါပြီ/);
   assert.match(anc, /id="maternalOutcome"[^>]*required/);
+  assert.match(anc, /data-mm="Abortion \(ကိုယ်ဝန်\(၂၂\)ပတ်မတိုင်မီ\)"/);
   assert.match(delivery, /id="deliveryMaternalOutcome" required/);
   assert.match(pnc, /id="maternalOutcome"[^>]*required/);
   assert.match(immediate, /id="newbornOutcome"[^>]*required/);

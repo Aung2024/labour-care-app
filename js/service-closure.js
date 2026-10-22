@@ -14,8 +14,8 @@
   var MOTHER_OUTCOMES = outcomeSystem
     ? outcomeSystem.closureMotherOutcomes
     : [
-      { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှု ပြီးမြောက်' },
-      { value: 'abortion', en: 'Abortion', mm: 'သားပျက်' },
+      { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှုပြီးမြောက်' },
+      { value: 'abortion', en: 'Abortion', mm: 'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)' },
       { value: 'maternal_death', en: 'Maternal Death', mm: 'မိခင်သေဆုံး' },
       { value: 'other', en: 'Other', mm: 'အခြား' }
     ];
@@ -23,7 +23,7 @@
   var BABY_OUTCOMES = outcomeSystem
     ? outcomeSystem.closureBabyOutcomes
     : [
-      { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှု ပြီးမြောက်' },
+      { value: 'service_complete', en: 'Service Complete', mm: 'စောင့်ရှောက်မှုပြီးမြောက်' },
       { value: 'death', en: 'Death', mm: 'ကလေးသေဆုံး' },
       { value: 'stillbirth', en: 'Stillbirth', mm: 'အသေမွေး' },
       { value: 'other', en: 'Other', mm: 'အခြား' }
