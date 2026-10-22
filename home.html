@@ -846,6 +846,12 @@
               <div class="stat-label"><span class="lang-text" data-en="Total" data-mm="စုစုပေါင်း">Total</span></div>
             </div>
           </div>
+          <p id="patientStatsStatus" class="small text-muted mb-0 mt-2" role="status" aria-live="polite">
+            Loading patient totals...
+          </p>
+          <button type="button" id="patientStatsRetryButton" class="btn btn-outline-primary btn-sm px-3 mt-1" style="min-height:44px" hidden onclick="loadPatientStats({ force: true })">
+            Retry
+          </button>
         </div>
         <a href="#" class="care-action primary" onclick="event.preventDefault(); navigateToCare('select-patient');">
           <i class="fas fa-hand-pointer"></i><span class="lang-text" data-en="Select Patient" data-mm="လူနာ ရွေးချယ်ရန်">Select Patient</span>
@@ -1393,6 +1399,7 @@
 
     let patientStatsLoadToken = 0;
     let patientStatsDebounceTimer = null;
+    let patientStatsRefreshPromise = null;
 
     function scheduleLoadPatientStats() {
       if (patientStatsDebounceTimer) {
@@ -1406,6 +1413,25 @@
 
     function isCurrentPatientStatsRun(runToken) {
       return runToken === patientStatsLoadToken;
+    }
+
+    function setPatientStatsState(state) {
+      const status = document.getElementById('patientStatsStatus');
+      const retry = document.getElementById('patientStatsRetryButton');
+      if (!status || !retry) return;
+      const messages = currentLanguage === 'mm'
+        ? {
+          loading: 'လူနာအရေအတွက်ကို ဖတ်နေသည်...',
+          error: 'လူနာအရေအတွက် မရရှိသေးပါ။ ပြန်လည်စမ်းပါ။',
+          ready: ''
+        }
+        : {
+          loading: 'Loading patient totals...',
+          error: 'Patient totals are temporarily unavailable.',
+          ready: ''
+        };
+      status.textContent = messages[state] || '';
+      retry.hidden = state !== 'error';
     }
 
     async function homeSmartQuery(queryOrDocRef, options = {}) {
@@ -1476,7 +1502,7 @@
           const userQuery = db.collection("users").doc(currentUser.uid);
           const doc = await homeSmartQuery(
             userQuery,
-            { preferCache: isIOSDevice, timeout: 8000, retries: 1 }
+            { preferCache: true, cacheFirst: true, timeout: 8000, retries: 1, fallbackToCache: true }
           );
           userData = doc && doc.exists ? doc.data() : null;
         }
@@ -1805,7 +1831,7 @@
       }
     }
 
-    async function loadPatientStats() {
+    async function loadPatientStats(options = {}) {
       // Don't load stats if page not initialized
       if (!pageInitialized) {
         console.log('⏳ Page not initialized, deferring stats load');
@@ -1830,9 +1856,11 @@
         
         // Show loading state
         updateStatsDisplay(); // Show zeros initially
+        setPatientStatsState('loading');
 
         if (!currentUser || !userRole) {
           console.log('User not loaded yet, skipping stats');
+          setPatientStatsState('error');
           return;
         }
 
@@ -1851,6 +1879,7 @@
           }
           if (!isCurrentPatientStatsRun(runToken)) return;
           updateStatsDisplay();
+          setPatientStatsState('ready');
           LabourCareOffline.setOfflineBanner(true, 'Working offline — showing saved data. Tap Sync when connected.');
           return;
         }
@@ -1863,7 +1892,7 @@
             const userQuery = db.collection("users").doc(currentUser.uid);
             const userDoc = await homeSmartQuery(
               userQuery,
-              { preferCache: isIOSDevice, timeout: 5000, retries: 1 }
+              { preferCache: true, cacheFirst: true, timeout: 5000, retries: 1, fallbackToCache: true }
             );
             if (userDoc && userDoc.exists) {
               const d = userDoc.data();
@@ -1881,16 +1910,18 @@
         // OPTIMIZED: Use shorter timeouts and batch processing
         if (userRole === "Super Admin" || userRole === "admin") {
           updateStatsDisplay();
+          setPatientStatsState('ready');
           return;
         } else if (userRole === "TMO") {
           if (userTownship) {
             const patientsQuery = db.collection("patients").where("township", "==", userTownship).limit(250);
             querySnapshot = await homeSmartQuery(
               patientsQuery,
-              { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
+              { preferCache: true, cacheFirst: true, timeout: 6000, retries: 1, fallbackToCache: true }
             );
           } else {
             updateStatsDisplay();
+            setPatientStatsState('error');
             return;
           }
         } else if (userRole && userRole.toLowerCase().replace(/\s+/g, " ") === "regional officer") {
@@ -1898,10 +1929,11 @@
             const patientsQuery = db.collection("patients").where("region", "==", userRegion).limit(250);
             querySnapshot = await homeSmartQuery(
               patientsQuery,
-              { preferCache: isIOSDevice, timeout: 6000, retries: 1 }
+              { preferCache: true, cacheFirst: true, timeout: 6000, retries: 1, fallbackToCache: true }
             );
           } else {
             updateStatsDisplay();
+            setPatientStatsState('error');
             return;
           }
         } else if (userRole === "Midwife" || userRole === "midwife") {
@@ -1911,28 +1943,76 @@
             const midwifePatients = await PatientRoster.loadMidwifePatients(
               db,
               currentUser.uid,
-              function (query) {
-                return homeSmartQuery(query, {
-                  preferCache: isIOSDevice,
+              function (query, queryOptions) {
+                return homeSmartQuery(query, Object.assign({
+                  preferCache: true,
+                  cacheFirst: true,
                   timeout: 5000,
                   retries: 1,
                   fallbackToCache: true
-                })
-              }
+                }, queryOptions || {}))
+              },
+              { preferCache: true, cacheFirst: true, timeout: 5000, retries: 1 }
             );
+            if (midwifePatients._smartQuerySource === 'failed' ||
+                midwifePatients._smartQuerySource === 'unavailable') {
+              setPatientStatsState('error');
+              return;
+            }
             midwifePatients.forEach(function (patient) {
               tallyHomePatientStats(patient);
             });
+            if (midwifePatients._smartQuerySource === 'cache') {
+              if (!patientStatsRefreshPromise) {
+                patientStatsRefreshPromise = PatientRoster.loadMidwifePatients(
+                  db,
+                  currentUser.uid,
+                  function (query, queryOptions) {
+                    return homeSmartQuery(query, Object.assign({
+                      preferCache: false,
+                      timeout: 8000,
+                      retries: 1,
+                      fallbackToCache: false
+                    }, queryOptions || {}));
+                  },
+                  { preferCache: false, timeout: 8000, retries: 1, fallbackToCache: false }
+                ).then(function (freshPatients) {
+                  if (!isCurrentPatientStatsRun(runToken) ||
+                      !Array.isArray(freshPatients) ||
+                      freshPatients._smartQuerySource === 'failed') return;
+                  patientStats = {
+                    antenatal: 0,
+                    labour: 0,
+                    postnatal: 0,
+                    mothers: 0,
+                    babies: 0,
+                    other: 0,
+                    transferred: 0,
+                    total: 0
+                  };
+                  freshPatients.forEach(function (patient) {
+                    tallyHomePatientStats(patient);
+                  });
+                  updateStatsDisplay();
+                }).catch(function (error) {
+                  console.warn('Background patient totals refresh failed; keeping cached totals.', error);
+                }).finally(function () {
+                  patientStatsRefreshPromise = null;
+                });
+              }
+            }
           } catch (error) {
             console.warn('Could not load midwife patients:', error);
           }
 
           if (!isCurrentPatientStatsRun(runToken)) return;
           updateStatsDisplay();
+          setPatientStatsState('ready');
           return;
         } else {
           // No access for other roles
           updateStatsDisplay();
+          setPatientStatsState('error');
           return;
         }
 
@@ -1940,6 +2020,7 @@
 
         if (!querySnapshot || querySnapshot.empty) {
           updateStatsDisplay();
+          setPatientStatsState('ready');
           return;
         }
         querySnapshot.forEach(function (doc) {
@@ -1947,10 +2028,12 @@
         });
         if (!isCurrentPatientStatsRun(runToken)) return;
         updateStatsDisplay();
+        setPatientStatsState('ready');
       } catch (error) {
         console.error('Error loading patient stats:', error);
         if (!isCurrentPatientStatsRun(runToken)) return;
         updateStatsDisplay();
+        setPatientStatsState('error');
       }
     }
 

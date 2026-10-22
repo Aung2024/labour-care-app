@@ -1347,6 +1347,9 @@
       <p class="empty-text">
         <span id="emptyMessage">There are no patients registered yet.</span>
       </p>
+      <button type="button" class="btn btn-outline-light btn-lg mb-3" id="retryPatientLoadButton" hidden onclick="loadPatients({ force: true })">
+        <i class="fas fa-rotate-right me-2"></i><span id="retryPatientLoadLabel">Retry loading</span>
+      </button>
       <p class="empty-text" id="emptyFilterHint" style="display: none;"></p>
       <button type="button" class="btn btn-outline-light btn-sm mb-3" id="emptyFilterSwitchBtn" style="display: none;" onclick="switchToSuggestedPatientTypeFilter()">
         <span id="emptyFilterSwitchLabel"></span>
@@ -1408,6 +1411,10 @@
     let currentMotherStatusFilter = 'all';
     let currentBabyStatusFilter = 'all';
     let listLoadMessageTimer = null;
+    let patientLoadPromise = null;
+    let patientLoadGeneration = 0;
+    let patientListHasLoaded = false;
+    let rosterRefreshPromise = null;
     let currentView = 'list';
     let selectedMidwifeId = 'all'; // For Super Admin midwife filter
     let allMidwives = []; // Store all midwives for Super Admin
@@ -1428,6 +1435,7 @@
         intrapartumPatients: 'Intrapartum Patients',
         postnatalPatients: 'Postnatal & Newborn Patients',
         loadingPatients: 'Loading patients...',
+        retryLoading: 'Retry loading',
         noPatientsFound: 'No Patients Found',
         noPatientsRegistered: 'There are no patients registered yet. Click "Register New Patient" to get started.',
         unableToLoad: 'Unable to load patients. Please check your internet connection, ensure VPN is working, or try using mobile data instead of WiFi. Then refresh the page.',
@@ -1489,6 +1497,7 @@
         intrapartumPatients: 'မွေးဖွားနေဆဲ',
         postnatalPatients: 'မွေးပြီးမိခင်',
         loadingPatients: 'လူနာများ ဖတ်နေသည်...',
+        retryLoading: 'ပြန်လည်ဖတ်ရန်',
         noPatientsFound: 'လူနာမတွေ့ပါ',
         noPatientsRegistered: 'မှတ်ပုံတင်ထားသော လူနာ မရှိသေးပါ။ လူနာအသစ် မှတ်ပုံတင်ရန် နှိပ်ပါ။',
         unableToLoad: 'လူနာများ ဖတ်၍မရပါ။ အင်တာနက်/VPN စစ်ဆေးပြီး ပြန်လည် refresh လုပ်ပါ။',
@@ -1578,6 +1587,8 @@
       if (searchInput) searchInput.placeholder = listT('searchPlaceholder');
       const loadingText = document.getElementById('loadingPatientsText');
       if (loadingText) loadingText.textContent = listT('loadingPatients');
+      const retryLabel = document.getElementById('retryPatientLoadLabel');
+      if (retryLabel) retryLabel.textContent = listT('retryLoading');
       const emptyTitle = document.getElementById('emptyTitle');
       if (emptyTitle) emptyTitle.textContent = listT('noPatientsFound');
       updateSectionTitle();
@@ -1633,14 +1644,48 @@
       };
     }
 
-    async function loadPatientsForMidwifeUid(db, uid, isIOS) {
+    async function loadPatientsForMidwifeUid(db, uid, isIOS, options = {}) {
       if (!window.PatientRoster) return [];
-      return PatientRoster.loadMidwifePatients(db, uid, function (query) {
-        return listSmartQuery(
-          query,
-          { preferCache: true, timeout: 3000, retries: 1, fallbackToCache: true }
-        );
+      return PatientRoster.loadMidwifePatients(db, uid, function (query, queryOptions) {
+        return listSmartQuery(query, Object.assign({
+          preferCache: true,
+          cacheFirst: true,
+          timeout: 5000,
+          retries: 1,
+          fallbackToCache: true
+        }, queryOptions || {}));
+      }, options);
+    }
+
+    function refreshMidwifeRosterInBackground(db, uid, isIOS) {
+      if (rosterRefreshPromise) return rosterRefreshPromise;
+      rosterRefreshPromise = loadPatientsForMidwifeUid(
+        db,
+        uid,
+        isIOS,
+        { preferCache: false, timeout: 8000, retries: 1 }
+      ).then(function (freshPatients) {
+        if (!Array.isArray(freshPatients) || freshPatients._smartQuerySource === 'failed') {
+          return;
+        }
+        allPatients = freshPatients;
+        allPatients.sort(function (a, b) {
+          const dateA = a.created_at
+            ? (a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at))
+            : new Date(0);
+          const dateB = b.created_at
+            ? (b.created_at.toDate ? b.created_at.toDate() : new Date(b.created_at))
+            : new Date(0);
+          return dateB - dateA;
+        });
+        filteredPatients = [...allPatients];
+        filterPatients();
+      }).catch(function (error) {
+        console.warn('[list] Background patient refresh failed; keeping cached roster.', error);
+      }).finally(function () {
+        rosterRefreshPromise = null;
       });
+      return rosterRefreshPromise;
     }
 
     async function hydrateLinkedBabyPatients(db, patients, isIOS) {
@@ -1836,19 +1881,73 @@
       }
     }
 
+    function hidePatientListRetry() {
+      const retryButton = document.getElementById('retryPatientLoadButton');
+      if (retryButton) retryButton.hidden = true;
+    }
+
+    function showPatientListLoadError(error) {
+      stopListLoadingMessages();
+      const loadingContainer = document.getElementById('loadingContainer');
+      const emptyState = document.getElementById('emptyState');
+      const emptyMessage = document.getElementById('emptyMessage');
+      const retryButton = document.getElementById('retryPatientLoadButton');
+      if (loadingContainer) loadingContainer.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'block';
+      if (emptyMessage) {
+        emptyMessage.textContent = listT('unableToLoad');
+      }
+      if (retryButton) retryButton.hidden = false;
+      console.warn('[list] Patient roster is unavailable; retry is available.', error || '');
+    }
+
+    // Patient roster reads are bounded as a complete page operation. Individual
+    // Firestore requests already have their own timeouts, but this outer guard
+    // prevents a stalled auth/transport/page lifecycle from leaving the user
+    // on an endless loading screen.
+    function loadPatients(options = {}) {
+      if (patientLoadPromise && !options.force) return patientLoadPromise;
+
+      const generation = ++patientLoadGeneration;
+      const work = Promise.race([
+        loadPatientsInternal(generation),
+        new Promise(function (_, reject) {
+          setTimeout(function () {
+            reject(new Error('Patient list loading exceeded the page deadline.'));
+          }, 20000);
+        })
+      ]).catch(function (error) {
+        if (patientLoadGeneration === generation) {
+          showPatientListLoadError(error);
+        }
+      }).finally(function () {
+        if (patientLoadGeneration === generation) {
+          patientLoadPromise = null;
+        }
+      });
+
+      patientLoadPromise = work;
+      return work;
+    }
+
     // Load patients from Firestore with optimization
-    async function loadPatients() {
+    async function loadPatientsInternal(loadGeneration) {
       try {
         startListLoadingMessages();
+        hidePatientListRetry();
         console.log('Loading patients...', 'User Role:', userRole, 'User ID:', currentUser?.uid);
         const db = firebase.firestore();
         const isIOS = isAppleMobileOrTablet();
+        let patientReadFailed = false;
         let query = db.collection('patients');
 
         if (typeof navigator !== 'undefined' && navigator.onLine === false && window.LabourCareOffline) {
           const scope = userRole === 'Regional Officer' ? currentUserRegion : currentUserTownship;
           allPatients = await LabourCareOffline.getMirroredPatientList(currentUser.uid, userRole, scope);
+          if (loadGeneration !== patientLoadGeneration) return;
+          patientListHasLoaded = true;
           stopListLoadingMessages();
+          hidePatientListRetry();
           document.getElementById('loadingContainer').style.display = 'none';
           if (allPatients.length === 0) {
             document.getElementById('emptyState').style.display = 'block';
@@ -1869,8 +1968,20 @@
         if (userRole === 'Midwife' || userRole === 'midwife' || !userRole) {
           console.log('Loading as Midwife using created_by, createdBy, and care team...');
           try {
-            allPatients = await loadPatientsForMidwifeUid(db, currentUser.uid, isIOS);
+            allPatients = await loadPatientsForMidwifeUid(
+              db,
+              currentUser.uid,
+              isIOS,
+              { preferCache: true, cacheFirst: true, timeout: 5000, retries: 1 }
+            );
             console.log('✅ Loaded', allPatients.length, 'patients for midwife');
+            if (allPatients._smartQuerySource === 'failed' ||
+                allPatients._smartQuerySource === 'unavailable') {
+              patientReadFailed = true;
+            }
+            if (allPatients._smartQuerySource === 'cache') {
+              refreshMidwifeRosterInBackground(db, currentUser.uid, isIOS);
+            }
             if (allPatients.length === 0) {
               console.warn('⚠️ No patients found. Possible reasons:');
               console.warn('  1. User has not created any patients yet');
@@ -1882,6 +1993,7 @@
             console.error('Error loading midwife patients:', error);
             console.error('Error details:', error.message, error.code);
             allPatients = [];
+            patientReadFailed = true;
           }
         } else if (userRole === 'Regional Officer') {
           try {
@@ -1892,8 +2004,11 @@
               query = query.where('region', '==', userRegion);
                 const snapshot = await listSmartQuery(
                   query,
-                  { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+                  { preferCache: true, cacheFirst: true, timeout: 10000, retries: 2, fallbackToCache: true }
                 );
+                if (snapshot && ['failed', 'unavailable'].includes(snapshot._smartQuerySource)) {
+                  patientReadFailed = true;
+                }
                 allPatients = [];
                 if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
                   snapshot.forEach(doc => {
@@ -1913,6 +2028,7 @@
             console.error('❌ Error loading Regional Officer patients:', error);
             console.error('Error details:', error.message, error.code);
             allPatients = [];
+            patientReadFailed = true;
           }
         } else if (userRole === 'TMO') {
           try {
@@ -1924,8 +2040,11 @@
               
               const snapshot = await listSmartQuery(
                 query,
-                { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+                { preferCache: true, cacheFirst: true, timeout: 10000, retries: 2, fallbackToCache: true }
               );
+              if (snapshot && ['failed', 'unavailable'].includes(snapshot._smartQuerySource)) {
+                patientReadFailed = true;
+              }
         
         allPatients = [];
               if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
@@ -1946,6 +2065,7 @@
             console.error('❌ Error loading TMO patients:', error);
             console.error('Error details:', error.message, error.code);
             allPatients = [];
+            patientReadFailed = true;
           }
         } else if (userRole === 'Super Admin' || userRole === 'admin') {
           console.log('Loading as Super Admin (all patients)...');
@@ -1954,18 +2074,27 @@
           if (selectedMidwifeId && selectedMidwifeId !== 'all') {
             console.log('Filtering by selected midwife:', selectedMidwifeId);
             try {
-              allPatients = await loadPatientsForMidwifeUid(db, selectedMidwifeId, isIOS);
+              allPatients = await loadPatientsForMidwifeUid(
+                db,
+                selectedMidwifeId,
+                isIOS,
+                { preferCache: true, cacheFirst: true, timeout: 5000, retries: 1 }
+              );
               console.log('✅ Loaded', allPatients.length, 'patients for selected midwife');
             } catch (error) {
               console.error('❌ Error loading patients for selected midwife:', error);
               allPatients = [];
+              patientReadFailed = true;
             }
           } else {
             // Super Admin sees all patients when "All Midwives" is selected
             const snapshot = await listSmartQuery(
               query,
-              { preferCache: isIOS, timeout: 10000, retries: 2, fallbackToCache: true }
+              { preferCache: true, cacheFirst: true, timeout: 10000, retries: 2, fallbackToCache: true }
             );
+            if (snapshot && ['failed', 'unavailable'].includes(snapshot._smartQuerySource)) {
+              patientReadFailed = true;
+            }
             
             allPatients = [];
             if (snapshot && typeof snapshot.forEach === 'function' && !snapshot.empty) {
@@ -1985,6 +2114,12 @@
           allPatients = [];
         }
 
+        if (loadGeneration !== patientLoadGeneration) return;
+        if (patientReadFailed && allPatients.length === 0) {
+          showPatientListLoadError(new Error('Firestore patient roster read failed.'));
+          return;
+        }
+        patientListHasLoaded = true;
         console.log('✅ Loaded', allPatients.length, 'patients total');
 
         const shouldHydrateBabies = userRole === 'Midwife' || userRole === 'midwife' || !userRole ||
@@ -2007,9 +2142,11 @@
         }
         
         stopListLoadingMessages();
+        hidePatientListRetry();
         document.getElementById('loadingContainer').style.display = 'none';
         
         if (allPatients.length === 0) {
+          hidePatientListRetry();
           console.warn('⚠️ No patients found. Possible reasons:');
           console.warn('1. User has no patients created yet');
           console.warn('2. Network issue - cache is empty and server query failed');
@@ -2061,17 +2198,9 @@
         
       } catch (error) {
         console.error('Error loading patients:', error);
-        stopListLoadingMessages();
-        document.getElementById('loadingContainer').style.display = 'none';
-        
-        // Show user-friendly error message
-          const isIOSDevice = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        const errorMsg = isIOSDevice 
-          ? listT('unableToLoad')
-          : 'Error loading patients: ' + error.message;
-        
-        document.getElementById('emptyState').style.display = 'block';
-        document.getElementById('emptyMessage').textContent = errorMsg;
+        if (loadGeneration === patientLoadGeneration) {
+          showPatientListLoadError(error);
+        }
       }
     }
 
@@ -3761,6 +3890,25 @@
         year: 'numeric'
       });
     }
+
+    function recoverPatientListOnResume() {
+      if (!currentUser || document.hidden) return;
+      const loadingContainer = document.getElementById('loadingContainer');
+      const isStillLoading = loadingContainer && loadingContainer.style.display !== 'none';
+      if (isStillLoading || !patientListHasLoaded) {
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) emptyState.style.display = 'none';
+        loadPatients({ force: true });
+      }
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) recoverPatientListOnResume();
+    });
+
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) recoverPatientListOnResume();
+    });
   </script>
 </body>
 </html>

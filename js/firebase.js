@@ -348,21 +348,36 @@ function isUsableCacheResult(cacheResult) {
   return cacheResult.empty === false;
 }
 
-function emptySmartQueryResult() {
-  return {
+function markSmartQueryResult(result, source) {
+  if (!result) return result;
+  try {
+    Object.defineProperty(result, "_smartQuerySource", {
+      value: source,
+      configurable: true,
+      enumerable: false
+    });
+  } catch (error) {
+    result._smartQuerySource = source;
+  }
+  return result;
+}
+
+function emptySmartQueryResult(source) {
+  return markSmartQueryResult({
     _smartQueryFailed: true,
     empty: true,
     size: 0,
     exists: undefined,
     forEach: function () {},
     docs: []
-  };
+  }, source || "failed");
 }
 
 // --- Smart query function (kept as-is, just slightly cleaned) ---
 window.smartFirestoreQuery = async function (queryPromise, options = {}) {
   const {
     preferCache = false,
+    cacheFirst = false,
     timeout = 10000,
     retries = 2,
     fallbackToCache = true
@@ -379,26 +394,29 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
         ]);
         if (isUsableCacheResult(cacheResult)) {
           console.log("✅ Loaded from cache (offline/unavailable)");
-          return cacheResult;
+          return markSmartQueryResult(cacheResult, "cache");
         }
       } catch (cacheError) {}
     }
-    return emptySmartQueryResult();
+    return emptySmartQueryResult("unavailable");
   }
 
-  // Prefer cache on iOS if requested
-  if (preferCache && isIOSDetected) {
+  // Prefer cache on iOS for existing callers, or on any browser when the
+  // caller explicitly requests cacheFirst. This keeps ordinary clinical
+  // reads server-first while allowing roster/navigation reads to render
+  // immediately from the persisted Firestore cache.
+  if (cacheFirst || (preferCache && isIOSDetected)) {
     try {
       const cacheResult = await Promise.race([
         queryPromise.then((q) => q.get({ source: "cache" })),
         new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 2000))
       ]);
       if (cacheResult && !cacheResult.empty) {
-        console.log("✅ Loaded from cache (iOS)");
-        return cacheResult;
+        console.log("✅ Loaded from cache (cache-first)");
+        return markSmartQueryResult(cacheResult, "cache");
       }
     } catch (cacheError) {
-      // cache miss, continue to server
+      // Cache miss, continue to the bounded server path.
     }
   }
 
@@ -410,7 +428,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
         new Promise((_, reject) => setTimeout(() => reject(new Error("Server timeout")), timeout))
       ]);
       console.log("✅ Loaded from server");
-      return result;
+      return markSmartQueryResult(result, "server");
     } catch (error) {
       const isLastAttempt = attempt === retries;
 
@@ -441,7 +459,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
             ]);
             if (isUsableCacheResult(cacheResult)) {
               console.log("✅ Loaded from cache (fallback) -", cacheResult.size != null ? cacheResult.size : 1, "documents");
-              return cacheResult;
+              return markSmartQueryResult(cacheResult, "cache");
             } else if (cacheResult) {
               console.log("⚠️ Cache is empty (no cached data available)");
             }
@@ -468,7 +486,7 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
 
         console.error("❌ All query attempts failed. Returning empty result.");
         console.error("Error:", error.message, error.code);
-        return emptySmartQueryResult();
+        return emptySmartQueryResult("failed");
       }
 
       if (isFirestoreLikelyUnavailable()) {
@@ -478,10 +496,12 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
               queryPromise.then((q) => q.get({ source: "cache" })),
               new Promise((_, reject) => setTimeout(() => reject(new Error("Cache timeout")), 1500))
             ]);
-            if (isUsableCacheResult(cacheResult)) return cacheResult;
+            if (isUsableCacheResult(cacheResult)) {
+              return markSmartQueryResult(cacheResult, "cache");
+            }
           } catch (cacheError) {}
         }
-        return emptySmartQueryResult();
+        return emptySmartQueryResult("unavailable");
       }
 
       // exponential backoff between retries

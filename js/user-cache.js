@@ -112,7 +112,6 @@ async function getUserData(userId, forceRefresh = false) {
   // Fetch from Firestore
   // iOS/SAFARI COMPATIBLE: Use smartFirestoreQuery instead of direct .get()
   try {
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "");
     const userQuery = firebase.firestore()
       .collection('users')
       .doc(userId);
@@ -121,7 +120,8 @@ async function getUserData(userId, forceRefresh = false) {
     const userDoc = await smartFirestoreQuery(
       Promise.resolve(userQuery),
       { 
-        preferCache: forceRefresh ? false : isIOS, 
+        preferCache: forceRefresh ? false : true,
+        cacheFirst: forceRefresh ? false : true,
         timeout: 8000, 
         retries: 2, 
         fallbackToCache: forceRefresh ? false : true
