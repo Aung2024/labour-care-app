@@ -435,7 +435,8 @@
       }
       return Promise.all([
         runQuery(db.collection("patients").where("created_by", "==", uid)),
-        runQuery(db.collection("patients").where("createdBy", "==", uid))
+        runQuery(db.collection("patients").where("createdBy", "==", uid)),
+        runQuery(db.collection("patients").where("care_team_midwife_ids", "array-contains", uid))
       ]).then(function (results) {
         const map = {};
         results.forEach(function (snap) {

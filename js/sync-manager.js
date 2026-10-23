@@ -7,6 +7,10 @@
 
   let syncInProgress = false;
   const syncedAncPatientIds = new Set();
+  const isSupportedOfflineStore = (storeName) => {
+    return !window.OfflinePolicy ||
+      window.OfflinePolicy.isStoreSupported(storeName);
+  };
 
   async function requestAnalyticsRefresh(patientId, reason) {
     if (window.AnalyticsRefreshQueue) {
@@ -209,36 +213,44 @@
         { assignVisitNumber: true }
       );
 
-      // Step 3: Sync PNC visits
-      report('pnc', 'Syncing PNC visits...');
-      await syncSubRecords(
-        'pending_pnc_visits', 'postpartum_visits',
-        tempIdToRealId, results.pncVisits, report,
-        { assignVisitNumber: true }
-      );
+      // PNC, laboratory, LCG, and newborn queues are intentionally outside
+      // the approved offline workflow. Their forms write directly online;
+      // keeping these sync steps disabled prevents unsupported records from
+      // being silently uploaded later.
+      if (isSupportedOfflineStore('pending_pnc_visits')) {
+        report('pnc', 'Syncing PNC visits...');
+        await syncSubRecords(
+          'pending_pnc_visits', 'postpartum_visits',
+          tempIdToRealId, results.pncVisits, report,
+          { assignVisitNumber: true }
+        );
+      }
 
-      // Step 4: Sync Lab test records
-      report('lab', 'Syncing lab tests...');
-      await syncSubRecords(
-        'pending_lab_tests', 'testRecords',
-        tempIdToRealId, results.labTests, report
-      );
+      if (isSupportedOfflineStore('pending_lab_tests')) {
+        report('lab', 'Syncing lab tests...');
+        await syncSubRecords(
+          'pending_lab_tests', 'testRecords',
+          tempIdToRealId, results.labTests, report
+        );
+      }
 
-      // Step 5: Sync LCG records
-      report('lcg', 'Syncing LCG records...');
-      await syncLCGRecords(tempIdToRealId, results.lcgRecords, report);
+      if (isSupportedOfflineStore('pending_lcg_records')) {
+        report('lcg', 'Syncing LCG records...');
+        await syncLCGRecords(tempIdToRealId, results.lcgRecords, report);
+      }
 
-      // Step 6: Sync newborn records
-      report('newborn', 'Syncing newborn records...');
-      await syncSubRecords(
-        'pending_newborn_records', 'immediate_newborn_care',
-        tempIdToRealId, results.newbornRecords, report,
-        {
-          collectionResolver: function (_record, visitData, fallbackCollection) {
-            return visitData._collection || fallbackCollection;
+      if (isSupportedOfflineStore('pending_newborn_records')) {
+        report('newborn', 'Syncing newborn records...');
+        await syncSubRecords(
+          'pending_newborn_records', 'immediate_newborn_care',
+          tempIdToRealId, results.newbornRecords, report,
+          {
+            collectionResolver: function (_record, visitData, fallbackCollection) {
+              return visitData._collection || fallbackCollection;
+            }
           }
-        }
-      );
+        );
+      }
 
       if (syncedAncPatientIds.size > 0) {
         if (window.StatusManager && typeof window.StatusManager.reconcileAntenatalStatuses === 'function') {

@@ -20,15 +20,12 @@
   ];
 
   const CACHED_PATIENTS_STORE = 'cached_patients';
-  const OFFLINE_SUPPORTED_WORKFLOWS = Object.freeze([
-    'registration',
-    'patient-selection',
-    'antenatal-care'
-  ]);
-  const OFFLINE_SUPPORTED_STORES = Object.freeze([
-    'pending_patients',
-    'pending_anc_visits'
-  ]);
+  const OFFLINE_SUPPORTED_WORKFLOWS = window.OfflinePolicy
+    ? window.OfflinePolicy.supportedWorkflows
+    : Object.freeze(['registration', 'patient-selection', 'antenatal-care']);
+  const OFFLINE_SUPPORTED_STORES = window.OfflinePolicy
+    ? window.OfflinePolicy.supportedStores
+    : Object.freeze(['pending_patients', 'pending_anc_visits']);
 
   let dbInstance = null;
 
@@ -86,7 +83,9 @@
 
   function assertOfflineStoreSupported(storeName) {
     if (isOfflineActive() && !isOfflineStoreSupported(storeName)) {
-      throw new Error('This feature is not available offline. Reconnect to the internet and try again.');
+      throw new Error(window.OfflinePolicy
+        ? window.OfflinePolicy.unsupportedMessage
+        : 'This feature is not available offline. Reconnect to the internet and try again.');
     }
   }
 
@@ -203,16 +202,21 @@
    */
   async function saveLocalFirstAndTryCloud(storeName, data, cloudWriteFn) {
     const offlineStoreSupported = isOfflineStoreSupported(storeName);
-    if (isOfflineActive() && !offlineStoreSupported) {
-      throw new Error('This feature is not available offline. Reconnect to the internet and try again.');
+    if (!offlineStoreSupported) {
+      if (isOfflineActive()) {
+        throw new Error(window.OfflinePolicy
+          ? window.OfflinePolicy.unsupportedMessage
+          : 'This feature is not available offline. Reconnect to the internet and try again.');
+      }
+      if (typeof cloudWriteFn !== 'function') {
+        throw new Error('This feature requires an active internet connection.');
+      }
+      const cloudMeta = await cloudWriteFn(data, null);
+      return { local: false, cloud: true, queued: false, localId: null, cloudMeta: cloudMeta || null };
     }
 
     const queued = await saveOfflineRecord(storeName, data);
     if (shouldQueueForSync() || typeof cloudWriteFn !== 'function') {
-      if (!offlineStoreSupported) {
-        await deleteRecord(storeName, queued.localId);
-        throw new Error('This feature requires an active internet connection.');
-      }
       return { local: true, cloud: false, queued: true, localId: queued.localId };
     }
 
@@ -222,10 +226,6 @@
       await deleteRecord(storeName, queued.localId);
       return { local: true, cloud: true, queued: false, localId: queued.localId, cloudMeta: cloudMeta || null };
     } catch (error) {
-      if (!offlineStoreSupported) {
-        await deleteRecord(storeName, queued.localId);
-        throw new Error('This feature requires an active internet connection.');
-      }
       console.warn('[OfflineManager] Cloud write failed, keeping queued record:', error);
       return { local: true, cloud: false, queued: true, localId: queued.localId, error };
     }

@@ -18,6 +18,9 @@ test('stable worker has an atomic core shell and bounded network requests', () =
     '/list.html',
     '/offline.html',
     '/js/firebase.js',
+    '/js/pwa-route-manifest.js',
+    '/js/app-navigation.js',
+    '/pwa-release-config.json',
     '/js/offline-store.js',
     '/js/offline-sync.js'
   ]
@@ -38,6 +41,9 @@ test('stable worker has an atomic core shell and bounded network requests', () =
   assert.match(sw, /network-error/)
   assert.match(sw, /navigationPreload\.enable/)
   assert.match(sw, /preloadResponse: event\.preloadResponse/)
+  assert.match(sw, /importScripts\('\/js\/pwa-route-manifest\.js'\)/)
+  assert.match(sw, /preferCache: true/)
+  assert.match(sw, /WARM_ROUTES/)
   assert.match(sw, /event\.respondWith\(cacheFirst\(request\)\)/)
   assert.match(sw, /Response was delivered but could not be cached/)
   assert.doesNotMatch(sw, /skipWaiting/)
@@ -54,6 +60,7 @@ test('worker bypasses sensitive and non-app traffic', () => {
   assert.match(sw, /pathname === '\/api'/)
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/)
   assert.match(sw, /pathname === '\/service-worker\.js'/)
+  assert.match(sw, /pwa-release-config\.json/)
 })
 
 test('registration keeps active pages stable and disables the worker on testing branch', () => {
@@ -73,6 +80,8 @@ test('registration keeps active pages stable and disables the worker on testing 
   assert.match(registerSw, /clearAcknowledgedUpdate/)
   assert.doesNotMatch(registerSw, /Dismiss/)
   assert.match(registerSw, /SERVICE_WORKER_ENABLED\s*=\s*false/)
+  assert.match(registerSw, /pwa-release-config\.json/)
+  assert.match(registerSw, /setTimeout\(function \(\) \{[\s\S]*1500/)
   assert.match(registerSw, /registration\.unregister/)
   assert.match(registerSw, /hadControllingWorker/)
   assert.match(registerSw, /deleteAppCaches/)
@@ -92,6 +101,30 @@ test('Firestore does not persist Chrome-only state or suppress unrelated reads',
   assert.doesNotMatch(firebaseInit, /noteFirestoreBackendIssue/)
   assert.match(firebaseInit, /navigator\.onLine === false/)
   assert.doesNotMatch(dashboardData, /noteFirestoreBackendIssue/)
+})
+
+test('route manifest covers home and clinical navigation targets', () => {
+  const manifestSource = readAppFile('js/pwa-route-manifest.js')
+  const navigation = readAppFile('js/app-navigation.js')
+
+  assert.match(manifestSource, /"\/list\.html"/)
+  assert.match(manifestSource, /"\/patient-enhanced\.html"/)
+  assert.match(manifestSource, /"\/antenatal-form\.html"/)
+  assert.match(navigation, /caches\.match/)
+  assert.match(navigation, /showNavigationFailure/)
+  assert.match(navigation, /warmRoutes/)
+})
+
+test('testing release keeps the worker disabled and production build is explicit', () => {
+  const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
+  const netlify = readAppFile('netlify.toml')
+  const buildScript = readAppFile('scripts/build-pwa-release.js')
+
+  assert.equal(releaseConfig.enabled, false)
+  assert.match(netlify, /scripts\/generate-pwa-manifest\.js/)
+  assert.match(netlify, /scripts\/build-pwa-release\.js/)
+  assert.match(buildScript, /PWA_RELEASE_MODE/)
+  assert.match(buildScript, /PWA_RELEASE_ID/)
 })
 
 test('stable shell includes Login, Home, List, and update dependencies', () => {
@@ -115,7 +148,7 @@ test('stable shell includes Login, Home, List, and update dependencies', () => {
 })
 
 test('common online clinical routes have optional cached page shells', () => {
-  const sw = readAppFile('service-worker.js')
+  const manifest = readAppFile('js/pwa-route-manifest.js')
   const optionalRoutes = [
     '/patient-care-hub.html',
     '/high-risk-tracking.html',
@@ -126,7 +159,7 @@ test('common online clinical routes have optional cached page shells', () => {
   ]
 
   optionalRoutes.forEach((route) => {
-    assert.match(sw, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.match(manifest, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
 })
 
@@ -136,6 +169,9 @@ test('offline storage allowlist supports registration and ANC only', () => {
 
   assert.match(offlineManager, /pending_patients/)
   assert.match(offlineManager, /pending_anc_visits/)
+  assert.match(readAppFile('js/offline-policy.js'), /supportedStores/)
+  assert.match(readAppFile('js/sync-manager.js'), /isSupportedOfflineStore/)
+  assert.match(readAppFile('js/offline-sync.js'), /care_team_midwife_ids/)
   assert.match(offlineManager, /isOfflineStoreSupported/)
   assert.match(offlineManager, /This feature is not available offline/)
   assert.match(patientHub, /antenatal-form\.html\?patient=/)
@@ -169,6 +205,7 @@ test('cache headers keep HTML and the worker fresh', () => {
   assert.match(netlify, /for = "\/manifest\.json"[\s\S]*no-store, no-cache, must-revalidate/)
   assert.match(netlify, /for = "\/css\/style\.css"[\s\S]*no-cache, must-revalidate/)
   assert.match(netlify, /for = "\/firebase\.runtime-config\.json"[\s\S]*no-store, no-cache/)
+  assert.match(netlify, /for = "\/pwa-release-config\.json"[\s\S]*no-store, no-cache/)
 })
 
 test('offline fallback explains request failure without claiming all connectivity is lost', () => {

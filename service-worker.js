@@ -10,6 +10,8 @@
 // Bump this release identifier whenever application HTML or JavaScript changes.
 // A new namespace lets the worker validate the new shell before removing legacy
 // caches, while the active worker remains in control of open pages.
+importScripts('/js/pwa-route-manifest.js');
+
 const RELEASE_ID = '20261018-navigation-stability';
 const CACHE_NAME = `mnch-v2-shell-${RELEASE_ID}`;
 const NETWORK_TIMEOUT_MS = 8000;
@@ -34,6 +36,9 @@ const REQUIRED_SHELL = [
   '/js/vendor/firebase-firestore.js',
   '/js/firebase.js',
   '/js/register-sw.js',
+  '/js/pwa-route-manifest.js',
+  '/js/app-navigation.js',
+  '/js/offline-policy.js',
   '/js/auth-guard.js',
   '/js/user-cache.js',
   '/js/consent-manager.js',
@@ -77,19 +82,19 @@ const REQUIRED_SHELL = [
   '/js/other-facility-visits-ui.js',
   '/css/compact-app-bar.css',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  '/pwa-release-config.json'
 ];
 
-const OPTIONAL_SHELL = [
-  '/patient-care-hub.html',
-  '/high-risk-tracking.html',
-  '/kmc-tracking.html',
-  '/vaccine-home.html',
-  '/immediate-newborn-care.html',
-  '/newborn-care-page.html',
+const ROUTE_MANIFEST = self.MNCH_PWA_MANIFEST || {};
+const OPTIONAL_SHELL = Array.from(new Set([
+  ...(ROUTE_MANIFEST.homeRoutes || []),
+  ...(ROUTE_MANIFEST.clinicalRoutes || []),
+  ...(ROUTE_MANIFEST.htmlRoutes || []),
+  ...(ROUTE_MANIFEST.staticAssets || []),
   '/css/compact-app-bar.css',
   '/images/moh-logo.png'
-];
+]));
 
 const STATIC_ASSET_PATTERN = /\.(?:js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|json)$/i;
 const LEGACY_CACHE_PATTERN = /^(?:labour-care-|mch-care-|mnch-v2-)/;
@@ -202,6 +207,14 @@ const cacheResponse = async (cacheKey, response) => {
 const networkFirst = async (request, options) => {
   const requestUrl = new URL(request.url);
   const cacheKey = cacheKeyForRequest(requestUrl, options.isDocument);
+  const cachedResponse = await caches.match(cacheKey);
+
+  // A validated shell is the primary protection against a transient static
+  // host failure. Keeping a cached route for this release also prevents new
+  // HTML from being paired with an older worker's cached application assets.
+  if (options.preferCache && cachedResponse) {
+    return cachedResponse;
+  }
 
   try {
     let networkResponse = null;
@@ -220,7 +233,6 @@ const networkFirst = async (request, options) => {
     await cacheResponse(cacheKey, networkResponse);
     return networkResponse;
   } catch (networkError) {
-    const cachedResponse = await caches.match(cacheKey);
     if (cachedResponse) {
       console.warn('[SW] Serving cached response after network failure', {
         pathname: requestUrl.pathname,
@@ -276,6 +288,11 @@ const cacheFirst = async (request) => {
   }
 };
 
+const warmRoutes = async (routes) => {
+  const cache = await caches.open(CACHE_NAME);
+  await cacheOptionalInBatches(cache, Array.isArray(routes) ? routes : []);
+};
+
 self.addEventListener('install', (event) => {
   event.waitUntil(cacheRequiredShell());
 });
@@ -294,6 +311,11 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'WARM_ROUTES') return;
+  event.waitUntil(warmRoutes(event.data.routes));
+});
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (!request || request.method !== 'GET') return;
@@ -305,6 +327,7 @@ self.addEventListener('fetch', (event) => {
   if (
     pathname === '/service-worker.js' ||
     pathname.endsWith('/firebase.runtime-config.json') ||
+    pathname.endsWith('/pwa-release-config.json') ||
     pathname === '/api' ||
     pathname.startsWith('/api/')
   ) {
@@ -322,6 +345,7 @@ self.addEventListener('fetch', (event) => {
   if (isDocument) {
     event.respondWith(networkFirst(request, {
       isDocument: true,
+      preferCache: true,
       preloadResponse: event.preloadResponse
     }));
     return;

@@ -9,10 +9,12 @@
   // HTML, CSS, JavaScript, and image changes are visible immediately during
   // development and client review. Re-enable this only for the approved
   // production/midwife release.
+  // The testing branch stays disabled by default. A production build enables
+  // the worker through pwa-release-config.json without changing this source.
   var SERVICE_WORKER_ENABLED = false;
   var APP_CACHE_PATTERN = /^(?:labour-care-|mch-care-|mnch-v2-)/;
 
-  if (!SERVICE_WORKER_ENABLED) {
+  var retireLegacyWorker = function () {
     if (!global.navigator || !('serviceWorker' in global.navigator)) return;
 
     var hadControllingWorker = !!global.navigator.serviceWorker.controller;
@@ -55,11 +57,11 @@
     }).then(function () {
       return deleteAppCaches();
     }).then(scheduleFinalCacheCleanup).catch(reportRetirementError);
-    return;
-  }
+  };
 
-  if (!global.navigator || !('serviceWorker' in global.navigator)) return;
-  if (global.__mnchServiceWorkerRegistration) return;
+  var startRegistration = function () {
+    if (!global.navigator || !('serviceWorker' in global.navigator)) return;
+    if (global.__mnchServiceWorkerRegistration) return;
 
   var UPDATE_ACK_KEY = 'mnchServiceWorkerUpdateAcknowledged';
   var hasAcknowledgedUpdate = function () {
@@ -203,7 +205,7 @@
     });
   };
 
-  global.__mnchServiceWorkerRegistration = global.navigator.serviceWorker.register(
+    global.__mnchServiceWorkerRegistration = global.navigator.serviceWorker.register(
     '/service-worker.js',
     {
       scope: '/',
@@ -220,8 +222,38 @@
       /* Registration is still usable when an explicit update check fails. */
     }
     return registration;
-  }).catch(function (error) {
-    console.warn('[SW] Registration failed; app will continue online', error);
-    return null;
+    }).catch(function (error) {
+      console.warn('[SW] Registration failed; app will continue online', error);
+      return null;
+    });
+  };
+
+  var loadReleaseConfig = function () {
+    if (SERVICE_WORKER_ENABLED) return Promise.resolve({ enabled: true });
+    if (!global.fetch) return Promise.resolve({ enabled: false });
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = global.setTimeout(function () {
+      if (controller) controller.abort();
+    }, 1500);
+    return global.fetch('/pwa-release-config.json', {
+      cache: 'no-store',
+      signal: controller ? controller.signal : undefined
+    }).then(function (response) {
+      if (!response || !response.ok) return { enabled: false };
+      return response.json();
+    }).catch(function () {
+      return { enabled: false };
+    }).then(function (config) {
+      global.clearTimeout(timer);
+      return config && config.enabled === true ? config : { enabled: false };
+    });
+  };
+
+  loadReleaseConfig().then(function (config) {
+    if (config.enabled) {
+      startRegistration();
+      return;
+    }
+    retireLegacyWorker();
   });
 })(typeof window !== 'undefined' ? window : this);

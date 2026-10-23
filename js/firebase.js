@@ -24,6 +24,10 @@ var MOH_FIREBASE_CONFIG = {
 };
 
 var RUNTIME_CONFIG_CACHE_KEY = "labourcare-firebase-runtime-config";
+var MOH_DEPLOY_HOSTS = [
+  "mnch-v2.netlify.app",
+  "www.mnch-v2.netlify.app"
+];
 
 function currentHostname() {
   try {
@@ -35,7 +39,7 @@ function currentHostname() {
 
 function isMohDeployHost(hostname) {
   hostname = String(hostname || currentHostname());
-  return hostname === "mnch-v2.netlify.app" || hostname === "www.mnch-v2.netlify.app";
+  return MOH_DEPLOY_HOSTS.indexOf(hostname) !== -1;
 }
 
 function isLocalHost(hostname) {
@@ -130,6 +134,10 @@ function loadRuntimeFirebaseConfig() {
 var defaultFirebaseConfig = hostDefaultFirebaseConfig();
 var runtimeFirebaseConfig = loadRuntimeFirebaseConfig();
 var firebaseConfig = runtimeFirebaseConfig || defaultFirebaseConfig;
+if (typeof window !== "undefined") {
+  window.__MNCH_MOH_DEPLOY__ = isMohDeployHost();
+  window.__MNCH_MOH_DEPLOY_HOSTS__ = MOH_DEPLOY_HOSTS.slice();
+}
 
 if (runtimeFirebaseConfig && runtimeFirebaseConfig.projectId) {
   console.log("✅ Runtime Firebase config loaded for project:", runtimeFirebaseConfig.projectId);
