@@ -74,9 +74,24 @@ test('registration keeps active pages stable and disables the worker on testing 
   assert.doesNotMatch(registerSw, /Dismiss/)
   assert.match(registerSw, /SERVICE_WORKER_ENABLED\s*=\s*false/)
   assert.match(registerSw, /registration\.unregister/)
+  assert.match(registerSw, /hadControllingWorker/)
+  assert.match(registerSw, /deleteAppCaches/)
+  assert.match(registerSw, /addEventListener\('load', cleanAfterLoad/)
+  assert.match(registerSw, /setTimeout\(cleanAfterLoad, 5000\)/)
   assert.doesNotMatch(registerSw, /controllerchange/)
   assert.doesNotMatch(registerSw, /location\.reload/)
   assert.doesNotMatch(authGuard, /serviceWorker|getRegistrations|caches\.keys/)
+})
+
+test('Firestore does not persist Chrome-only state or suppress unrelated reads', () => {
+  const firebaseInit = readAppFile('js/firebase.js')
+  const dashboardData = readAppFile('js/dashboard-data.js')
+
+  assert.doesNotMatch(firebaseInit, /enablePersistence\s*\(/)
+  assert.doesNotMatch(firebaseInit, /firestoreBackendUnavailableUntil/)
+  assert.doesNotMatch(firebaseInit, /noteFirestoreBackendIssue/)
+  assert.match(firebaseInit, /navigator\.onLine === false/)
+  assert.doesNotMatch(dashboardData, /noteFirestoreBackendIssue/)
 })
 
 test('stable shell includes Login, Home, List, and update dependencies', () => {

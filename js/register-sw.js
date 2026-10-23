@@ -15,6 +15,36 @@
   if (!SERVICE_WORKER_ENABLED) {
     if (!global.navigator || !('serviceWorker' in global.navigator)) return;
 
+    var hadControllingWorker = !!global.navigator.serviceWorker.controller;
+    var deleteAppCaches = function () {
+      if (!global.caches || !global.caches.keys) return Promise.resolve();
+      return global.caches.keys().then(function (cacheNames) {
+        return Promise.all(cacheNames
+          .filter(function (cacheName) { return APP_CACHE_PATTERN.test(cacheName); })
+          .map(function (cacheName) { return global.caches.delete(cacheName); }));
+      });
+    };
+    var reportRetirementError = function (error) {
+      console.warn('[SW] Testing mode could not fully remove the app worker/cache', error);
+    };
+    var scheduleFinalCacheCleanup = function () {
+      if (!hadControllingWorker) return;
+
+      // unregister() cannot detach the worker from the document it already
+      // controls. That legacy worker can recreate its cache while this page's
+      // remaining scripts load, so clean once after load and once after
+      // deferred startup work without reloading or interrupting Firestore.
+      var cleanAfterLoad = function () {
+        deleteAppCaches().catch(reportRetirementError);
+      };
+      if (global.document && global.document.readyState !== 'complete') {
+        global.addEventListener('load', cleanAfterLoad, { once: true });
+      } else {
+        global.setTimeout(cleanAfterLoad, 0);
+      }
+      global.setTimeout(cleanAfterLoad, 5000);
+    };
+
     global.navigator.serviceWorker.getRegistrations().then(function (registrations) {
       return Promise.all(registrations.map(function (registration) {
         var worker = registration.active || registration.waiting || registration.installing;
@@ -23,16 +53,8 @@
         return registration.unregister();
       }));
     }).then(function () {
-      return global.caches && global.caches.keys
-        ? global.caches.keys().then(function (cacheNames) {
-          return Promise.all(cacheNames
-            .filter(function (cacheName) { return APP_CACHE_PATTERN.test(cacheName); })
-            .map(function (cacheName) { return global.caches.delete(cacheName); }));
-        })
-        : undefined;
-    }).catch(function (error) {
-      console.warn('[SW] Testing mode could not fully remove the app worker/cache', error);
-    });
+      return deleteAppCaches();
+    }).then(scheduleFinalCacheCleanup).catch(reportRetirementError);
     return;
   }
 

@@ -216,7 +216,7 @@
       try {
         snapshot = await query.get({ source: 'cache' })
         if (!snapshot || snapshot.empty) {
-          if (navigator.onLine && !(global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable())) {
+          if (navigator.onLine) {
             snapshot = await query.get({ source: 'server' })
           }
         }
@@ -434,8 +434,7 @@
       console.warn('Dashboard cache read failed:', cacheError)
     }
 
-    var firestoreOffline = !navigator.onLine ||
-      (global.isFirestoreLikelyUnavailable && isFirestoreLikelyUnavailable())
+    var firestoreOffline = !navigator.onLine
 
     if (firestoreOffline) {
       if (cached && cached.complete) {
@@ -455,7 +454,6 @@
       )
     } catch (error) {
       serverError = error
-      if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(error)
     }
 
     if ((!server || !server.complete) && serverError) {
@@ -468,7 +466,6 @@
         serverError = null
       } catch (retryError) {
         serverError = retryError
-        if (global.noteFirestoreBackendIssue) noteFirestoreBackendIssue(retryError)
       }
     }
 

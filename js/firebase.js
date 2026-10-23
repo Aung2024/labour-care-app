@@ -177,12 +177,6 @@ const db = firebase.firestore();
 // --- Browser detection ---
 const ua = navigator.userAgent || "";
 const isIOS = /iPhone|iPad|iPod/.test(ua);
-const isSafariDesktop =
-  /Safari/.test(ua) &&
-  !/Chrome/.test(ua) &&
-  !/Edge/.test(ua) &&
-  !/Chromium/.test(ua);
-const isSafariBrowser = isSafariDesktop || isIOS;
 
 function isAppleMobileOrTablet() {
   return /iPhone|iPad|iPod/i.test(ua) ||
@@ -205,27 +199,11 @@ try {
   console.warn("⚠️ Firestore settings error (non-critical):", error);
 }
 
-// --- Offline persistence ---
-// Safari / iOS IndexedDB persistence can be unstable and may break page loading.
-// Keep Safari/iOS on network-only Firestore for reliability.
-try {
-  if (isSafariBrowser) {
-    console.log("ℹ️ Skipping Firestore persistence on Safari/iOS for compatibility.");
-  } else {
-    db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      if (err.code === "failed-precondition") {
-        console.warn("Persistence can only be enabled in one tab at a time.");
-      } else if (err.code === "unimplemented") {
-        console.warn("Persistence is not supported in this browser.");
-      } else {
-        console.warn("Error enabling persistence:", err);
-      }
-    });
-  }
-} catch (error) {
-  console.warn("Persistence initialization error (non-critical):", error);
-  // App continues without persistence
-}
+// Use Firestore's in-memory cache consistently in every browser. Durable
+// offline clinical data is managed by LabourCareOffline, so enabling a second
+// IndexedDB cache here only lets Chrome retain stale query/profile state that
+// Safari never reads.
+console.log("ℹ️ Firestore persistent cache is disabled; using the in-memory cache.");
 
 // --- Domain connectivity test (unchanged, but SAFE) ---
 window.testFirebaseDomains = async function () {
@@ -316,8 +294,6 @@ window.testFirebaseDomains = async function () {
   return results;
 };
 
-var firestoreBackendUnavailableUntil = 0;
-
 function isLikelyFirestoreUnavailableError(error) {
   if (!error) return false;
   var message = String(error.message || "");
@@ -330,15 +306,8 @@ function isLikelyFirestoreUnavailableError(error) {
     message.indexOf("Failed to get document") !== -1;
 }
 
-function noteFirestoreBackendIssue(error) {
-  if (isLikelyFirestoreUnavailableError(error)) {
-    firestoreBackendUnavailableUntil = Date.now() + 12000;
-  }
-}
-
 function isFirestoreLikelyUnavailable() {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-  return Date.now() < firestoreBackendUnavailableUntil;
+  return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
 function isUsableCacheResult(cacheResult) {
@@ -401,10 +370,8 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
     return emptySmartQueryResult("unavailable");
   }
 
-  // Prefer cache on iOS for existing callers, or on any browser when the
-  // caller explicitly requests cacheFirst. This keeps ordinary clinical
-  // reads server-first while allowing roster/navigation reads to render
-  // immediately from the persisted Firestore cache.
+  // Prefer the current session's memory cache on iOS for existing callers, or
+  // on any browser when the caller explicitly requests cacheFirst.
   if (cacheFirst || (preferCache && isIOSDetected)) {
     try {
       const cacheResult = await Promise.race([
@@ -446,8 +413,6 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
           error.message.includes("network") ||
           error.code === "unavailable" ||
           error.code === "deadline-exceeded");
-
-      noteFirestoreBackendIssue(error);
 
       if (isLastAttempt) {
         if (fallbackToCache) {
@@ -513,7 +478,6 @@ window.smartFirestoreQuery = async function (queryPromise, options = {}) {
 };
 
 window.isFirestoreLikelyUnavailable = isFirestoreLikelyUnavailable;
-window.noteFirestoreBackendIssue = noteFirestoreBackendIssue;
 window.isLikelyFirestoreUnavailableError = isLikelyFirestoreUnavailableError;
 
 (function (global) {
