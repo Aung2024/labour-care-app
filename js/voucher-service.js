@@ -2009,10 +2009,11 @@
       if (!snapshot.exists) throw new Error('Voucher was not found.');
       var voucher = snapshot.data() || {};
       var patientId = voucher.patientId || '';
-      var patientStatsRef = patientId
+      var shouldUpdatePatientStats = isRedeemedVoucher(voucher);
+      var patientStatsRef = patientId && shouldUpdatePatientStats
         ? context.db.collection(COLLECTIONS.PATIENT_STATS).doc(patientId)
         : null;
-      var patientVouchersQuery = patientId
+      var patientVouchersQuery = patientId && shouldUpdatePatientStats
         ? context.db.collection(COLLECTIONS.VOUCHERS).where('patientId', '==', patientId)
         : null;
       return (patientVouchersQuery ? patientVouchersQuery.get() : Promise.resolve({ docs: [] })).then(function (patientSnapshot) {

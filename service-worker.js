@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'mch-care-v330-labourcare-2481a-vouchers';
+const CACHE_NAME = 'mch-care-v331-labourcare-2481a-vouchers';
 
 // Installed in background after first session (not in install.waitUntil).
 const SHELL_PRECACHE = [
