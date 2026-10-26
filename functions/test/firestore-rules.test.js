@@ -447,6 +447,22 @@ test('Dashboard V3.2 preserves scope boundaries and server-only internals', asyn
   ));
 });
 
+test('Dashboard V4 contributions and caches remain server-only', async () => {
+  const superDb = environment.authenticatedContext('super').firestore();
+  await assertFails(getDoc(doc(
+    superDb,
+    'analytics_v4_contributions', '2026-01_patient-a'
+  )));
+  await assertFails(getDoc(doc(
+    superDb,
+    'analytics_v4_range_cache', 'cache-key'
+  )));
+  await assertFails(setDoc(
+    doc(superDb, 'analytics_v4_jobs', 'job'),
+    { status: 'running' }
+  ));
+});
+
 test('Dashboard V3 facility metadata queries require the caller geography', async () => {
   const tmoDb = environment.authenticatedContext('tmo-a').firestore();
   const regionalDb = environment.authenticatedContext('regional').firestore();

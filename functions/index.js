@@ -336,3 +336,16 @@ exports.dashboardV32ReconciliationWorker =
 const jointCareIndexFunctions = require('./src/analytics/joint-care-index');
 exports.jointCareIndexRefreshWorker =
   jointCareIndexFunctions.jointCareIndexRefreshWorker;
+
+// Dashboard V4 exact-range analytics. V3.2 remains deployed for rollback and
+// parity checks while the new aggregate contract is validated.
+const analyticsV4Functions = require('./src/analytics/v4-functions');
+exports.queryDashboardV4 = analyticsV4Functions.queryDashboardV4;
+exports.requestDashboardV4Export = analyticsV4Functions.requestDashboardV4Export;
+exports.getDashboardV4Result = analyticsV4Functions.getDashboardV4Result;
+exports.reconcileDashboardV4Cache =
+  analyticsV4Functions.reconcileDashboardV4Cache;
+exports.startDashboardV4Backfill =
+  analyticsV4Functions.startDashboardV4Backfill;
+exports.dashboardV4BackfillWorker =
+  analyticsV4Functions.dashboardV4BackfillWorker;

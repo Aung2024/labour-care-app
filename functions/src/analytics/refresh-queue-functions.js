@@ -34,6 +34,10 @@ const {
   refreshPatientAnalyticsV32
 } = require('./v3-service')
 const {
+  refreshPatientAnalyticsV4,
+  deletePatientAnalyticsV4
+} = require('./v4-service')
+const {
   JOINT_CARE_INDEX_COLLECTION
 } = require('./joint-care-index')
 
@@ -177,7 +181,12 @@ const normalizeLoadedClinicalFacts = async (db, patientId, loaded) => {
       ? jointCareSnapshot.get('activeProviderIds') || []
       : []
     facts.jointCareFacts = {
-      activeProviderIds: Array.from(new Set(activeProviderIds.filter(Boolean)))
+      activeProviderIds: Array.from(new Set(activeProviderIds.filter(Boolean))),
+      receivingProviders: await Promise.all(
+        Array.from(new Set(activeProviderIds.filter(Boolean))).map((providerId) =>
+          loadProvider(db, providerId)
+        )
+      )
     }
     facts.scope.activeJointCareProviderIds =
       facts.jointCareFacts.activeProviderIds
@@ -218,6 +227,7 @@ const refreshLoadedClinicalProducts = async (
     }
   } else {
     await deletePatientProjections(db, patientId)
+    await deletePatientAnalyticsV4(db, patientId)
   }
   await recomputeLoadedPatientMonths(
     db,
@@ -247,6 +257,9 @@ const refreshLoadedClinicalProducts = async (
     patientId,
     generation: options && options.generation || 'live'
   })
+  if (facts) {
+    await refreshPatientAnalyticsV4(db, facts)
+  }
   return {
     patientId,
     periods: Array.from(periods),

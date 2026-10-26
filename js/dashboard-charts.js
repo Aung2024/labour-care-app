@@ -7,6 +7,9 @@
   var observedWidths = {}
   var renderedSections = new Set()
   var currentMetrics = {}
+  var currentSeries = {}
+  var selectedMetricBySection = {}
+  var activeTrendMode = 'month'
   var resizeObserver = null
   var intersectionObserver = null
   var resizeTimer = null
@@ -25,7 +28,7 @@
   }
 
   function chartId(definition) {
-    return 'dashboard-chart-' + definition.key
+    return 'dashboard-chart-' + sectionId(definition.section)
   }
 
   function requestFrame(callback) {
@@ -124,10 +127,24 @@
       tab.setAttribute('role', 'tab')
       tab.setAttribute('aria-controls', id)
       tab.setAttribute('aria-selected', index === 0 ? 'true' : 'false')
+      tab.setAttribute('tabindex', index === 0 ? '0' : '-1')
       tab.textContent = section
       tab.addEventListener('click', function () {
         selectSection(section)
         if (typeof onSelect === 'function') onSelect(section)
+      })
+      tab.addEventListener('keydown', function (event) {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        var targetIndex = event.key === 'Home' ? 0
+          : event.key === 'End' ? DashboardMetricsConfig.sections.length - 1
+            : (index + (event.key === 'ArrowRight' ? 1 : -1) +
+              DashboardMetricsConfig.sections.length) % DashboardMetricsConfig.sections.length
+        var target = tabs.children[targetIndex]
+        if (target) {
+          target.focus()
+          target.click()
+        }
       })
       tabs.appendChild(tab)
 
@@ -155,6 +172,7 @@
       var tab = document.getElementById(id + '-tab')
       var panel = document.getElementById(id)
       if (tab) tab.setAttribute('aria-selected', active ? 'true' : 'false')
+      if (tab) tab.setAttribute('tabindex', active ? '0' : '-1')
       if (panel) panel.classList.toggle('is-active', active)
     })
     renderSection(section)
@@ -168,10 +186,18 @@
   }
 
   function numeratorDisplay(definition) {
-    var numerator = number(definition.numerator)
+    var rawNumerator = DashboardMetricsConfig.valueAtPath(currentMetrics, definition.numerator)
+    var numerator = definition.format === 'map'
+      ? Object.keys(rawNumerator || {}).reduce(function (total, key) {
+        return total + Number(rawNumerator[key] || 0)
+      }, 0)
+      : number(definition.numerator)
     var denominator = definition.denominator ? number(definition.denominator) : 0
     if (definition.format === 'average') {
       return denominator > 0 ? (numerator / denominator).toFixed(1) : '—'
+    }
+    if (definition.format === 'averageGrams') {
+      return denominator > 0 ? Math.round(numerator / denominator).toLocaleString() + ' g' : '—'
     }
     if (definition.format === 'percent') {
       return denominator > 0 ? ((numerator / denominator) * 100).toFixed(1) + '%' : '—'
@@ -184,7 +210,7 @@
     var numerator = number(definition.numerator)
     var denominator = number(definition.denominator)
     var percentage = denominator > 0 ? ((numerator / denominator) * 100).toFixed(1) + '%' : '—'
-    if (definition.format === 'average') {
+    if (definition.format === 'average' || definition.format === 'averageGrams') {
       return numerator.toLocaleString() + ' visits / ' + denominator.toLocaleString() + ' clients'
     }
     if (definition.format === 'percent') {
@@ -222,38 +248,22 @@
     return details.join(' · ')
   }
 
-  function scorecardStatus(definition, metrics) {
-    if (!definition.denominator || definition.format === 'average') return null
-    var source = metrics || currentMetrics
-    var denominator = DashboardMetricsConfig.numberAtPath(source, definition.denominator)
-    if (denominator <= 0) return null
-    var numerator = DashboardMetricsConfig.numberAtPath(source, definition.numerator)
-    var percentage = (numerator / denominator) * 100
-    if (percentage < 20) {
-      return { className: 'is-status-low', label: 'Below 20%' }
-    }
-    if (percentage <= 60) {
-      return { className: 'is-status-medium', label: '20–60%' }
-    }
-    return { className: 'is-status-high', label: 'Above 60%' }
-  }
-
   function renderKpi(definition) {
     var detail = detailText(definition)
-    var status = scorecardStatus(definition)
     var supplementalClass = definition.supplemental ? ' is-supplemental' : ''
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
       : ''
     return '<article class="dashboard-kpi' + supplementalClass + '">' +
       supplementalBadge +
-      '<p class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</p>' +
-      '<div class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</div>' +
+      '<button class="dashboard-kpi-select" type="button" data-metric-key="' + escapeHtml(definition.key) +
+      '" aria-pressed="false">' +
+      '<span class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</span>' +
+      '<span class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</span>' +
       (detail
-        ? '<div class="dashboard-kpi-detail' +
-          (status ? ' has-status ' + status.className + '" aria-label="Percentage range: ' +
-            escapeHtml(status.label) : '') + '">' + detail + '</div>'
+        ? '<span class="dashboard-kpi-detail">' + detail + '</span>'
         : '') +
+      '</button>' +
       '<button class="dashboard-info-button" type="button" data-indicator-key="' +
       escapeHtml(definition.key) + '" aria-label="View calculation for ' +
       escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>' +
@@ -283,6 +293,25 @@
 
   function entriesForDefinition(definition, metrics) {
     var source = metrics || {}
+    var series = currentSeries[activeTrendMode] || []
+    if (series.length && definition.chart === 'trend' && definition.format !== 'map') {
+      return series.map(function (item) {
+        return [item.label, DashboardMetricsConfig.numberAtPath(item.metrics || {}, definition.numerator)]
+      })
+    }
+    if (series.length && definition.chart === 'comparison' && definition.comparison) {
+      return definition.comparison.map(function (item) {
+        var totals = series.reduce(function (result, entry) {
+          return {
+            numerator: result.numerator +
+              DashboardMetricsConfig.numberAtPath(entry.metrics || {}, item.numerator),
+            denominator: result.denominator +
+              DashboardMetricsConfig.numberAtPath(entry.metrics || {}, item.denominator)
+          }
+        }, { numerator: 0, denominator: 0 })
+        return [item.label, totals.denominator ? totals.numerator / totals.denominator : 0]
+      })
+    }
     if (definition.chartValues) {
       return definition.chartValues.map(function (item) {
         return [item.label, DashboardMetricsConfig.numberAtPath(source, item.path)]
@@ -337,9 +366,10 @@
     var labels = entries.map(function (item) { return item[0] })
     var values = entries.map(function (item) { return item[1] })
     var donut = definition.chart === 'donut'
+    var line = definition.chart === 'trend'
     var options = {
       chart: {
-        type: donut ? 'donut' : 'bar',
+        type: donut ? 'donut' : line ? 'line' : 'bar',
         height: 270,
         fontFamily: 'inherit',
         toolbar: { show: false },
@@ -423,6 +453,11 @@
     if (!horizontal) {
       options.yaxis.min = 0
       options.yaxis.forceNiceScale = true
+    }
+    if (line) {
+      options.stroke = { curve: 'smooth', width: 3 }
+      options.markers = { size: 4 }
+      options.fill = { type: 'gradient', gradient: { opacityFrom: 0.3, opacityTo: 0.05 } }
     }
     options.plotOptions = {
       bar: {
@@ -542,6 +577,16 @@
         showDefinition(button.getAttribute('data-indicator-key'))
       })
     })
+    panel.querySelectorAll('[data-metric-key]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var grid = panel.querySelector('.dashboard-kpi-grid')
+        var section = grid && grid.getAttribute('data-section')
+        if (!section) return
+        selectedMetricBySection[section] = button.getAttribute('data-metric-key')
+        renderedSections.delete(section)
+        renderSection(section)
+      })
+    })
   }
 
   function showDefinition(key) {
@@ -591,21 +636,23 @@
     }
     var definitions = DashboardMetricsConfig.definitionsForSection(section)
     var kpis = definitions.filter(function (definition) {
-      return !definition.chartOnly &&
-        definition.format !== 'map' &&
-        definition.format !== 'series'
+      return !definition.chartOnly
     })
-    var charts = definitions.filter(function (definition) {
-      return definition.format === 'map' ||
-        definition.format === 'series' ||
-        definition.detailMap ||
-        definition.chartOnly
-    })
+    var selectedKey = selectedMetricBySection[section] || (kpis[0] && kpis[0].key)
+    var selected = kpis.find(function (definition) {
+      return definition.key === selectedKey
+    }) || kpis[0]
+    if (!selected) return
     unobserveCharts(panel)
-    panel.querySelector('.dashboard-kpi-grid').innerHTML = kpis.map(renderKpi).join('')
-    panel.querySelector('.dashboard-chart-grid').innerHTML = charts.map(chartCard).join('')
+    var grid = panel.querySelector('.dashboard-kpi-grid')
+    grid.setAttribute('data-section', section)
+    grid.innerHTML = kpis.map(function (definition) {
+      return renderKpi(definition).replace('aria-pressed="false"', 'aria-pressed="' +
+        (definition.key === selected.key ? 'true' : 'false') + '"')
+    }).join('')
+    panel.querySelector('.dashboard-chart-grid').innerHTML = chartCard(selected)
     attachDefinitionButtons(panel)
-    charts.forEach(renderChart)
+    renderChart(selected)
     renderedSections.add(section)
   }
 
@@ -613,6 +660,30 @@
     currentMetrics = metrics || {}
     renderedSections.clear()
     destroyAllCharts()
+    var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
+    var activeSection = active
+      ? DashboardMetricsConfig.sections.find(function (section) {
+        return active.id === sectionId(section) + '-tab'
+      })
+      : 'Overview'
+    renderSection(activeSection || 'Overview')
+  }
+
+  function setSeries(series) {
+    currentSeries = series || {}
+    renderedSections.clear()
+    var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
+    var activeSection = active
+      ? DashboardMetricsConfig.sections.find(function (section) {
+        return active.id === sectionId(section) + '-tab'
+      })
+      : 'Overview'
+    renderSection(activeSection || 'Overview')
+  }
+
+  function setTrendMode(mode) {
+    activeTrendMode = mode || 'month'
+    renderedSections.clear()
     var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
     var activeSection = active
       ? DashboardMetricsConfig.sections.find(function (section) {
@@ -640,11 +711,12 @@
     initializeSections: initializeSections,
     selectSection: selectSection,
     setMetrics: setMetrics,
+    setSeries: setSeries,
+    setTrendMode: setTrendMode,
     renderSection: renderSection,
     showDefinition: showDefinition,
     entriesForDefinition: entriesForDefinition,
     emptyTextForDefinition: emptyTextForDefinition,
-    optionsForDefinition: baseChartOptions,
-    scorecardStatus: scorecardStatus
+    optionsForDefinition: baseChartOptions
   })
 })(typeof window !== 'undefined' ? window : globalThis)

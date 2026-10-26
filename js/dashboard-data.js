@@ -73,23 +73,37 @@
     if (select.value !== (selected || '')) select.value = ''
   }
 
+  function localDateKey(date) {
+    var value = date || new Date()
+    var year = value.getFullYear()
+    var month = String(value.getMonth() + 1).padStart(2, '0')
+    var day = String(value.getDate()).padStart(2, '0')
+    return year + '-' + month + '-' + day
+  }
+
   function initializePeriodOptions(now) {
-    var year = document.getElementById('dashboardYear')
-    var month = document.getElementById('dashboardMonth')
-    var currentYear = (now || new Date()).getFullYear()
-    var years = []
-    for (var value = currentYear; value >= currentYear - 7; value -= 1) {
-      years.push({ value: String(value), label: String(value) })
+    if (!document.getElementById('dashboardPreset')) {
+      var legacyYear = document.getElementById('dashboardYear')
+      var legacyMonth = document.getElementById('dashboardMonth')
+      if (legacyYear && legacyMonth) {
+        replaceOptions(legacyYear, [], 'All time', '')
+        replaceOptions(legacyMonth, [], 'All months', '')
+        legacyMonth.disabled = true
+      }
+      return
     }
-    replaceOptions(year, years, 'All time', '')
-    var monthNames = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ]
-    replaceOptions(month, monthNames.map(function (name, index) {
-      return { value: String(index + 1).padStart(2, '0'), label: name }
-    }), 'All months', '')
-    month.disabled = true
+    var current = now || new Date()
+    var first = new Date(current.getFullYear(), current.getMonth(), 1)
+    var last = new Date(current.getFullYear(), current.getMonth() + 1, 0)
+    var preset = document.getElementById('dashboardPreset')
+    var start = document.getElementById('dashboardStartDate')
+    var end = document.getElementById('dashboardEndDate')
+    if (!preset || !start || !end) return
+    preset.value = 'this_month'
+    start.value = localDateKey(first)
+    end.value = localDateKey(last)
+    start.max = localDateKey(current)
+    end.max = localDateKey(current)
   }
 
   function initializeRegions(profile) {
@@ -192,13 +206,17 @@
 
   function readFilterValues() {
     return {
-      year: document.getElementById('dashboardYear').value,
-      month: document.getElementById('dashboardMonth').value,
+      preset: document.getElementById('dashboardPreset').value,
+      startDate: document.getElementById('dashboardStartDate').value,
+      endDate: document.getElementById('dashboardEndDate').value,
       region: document.getElementById('dashboardRegion').value,
       township: document.getElementById('dashboardTownship').value,
       department: document.getElementById('dashboardDepartment').value,
       facilityCode: document.getElementById('dashboardFacility').value,
-      facilityTypes: selectedFacilityTypes()
+      facilityTypes: selectedFacilityTypes(),
+      trendMode: document.getElementById('dashboardTrendMode')
+        ? document.getElementById('dashboardTrendMode').value
+        : 'month'
     }
   }
 
@@ -296,9 +314,13 @@
   }
 
   function periodKey(filters) {
-    if (!filters.year) return 'all'
-    if (filters.month) return filters.year + '-' + filters.month
-    return filters.year
+    if (Object.prototype.hasOwnProperty.call(filters, 'year') ||
+        Object.prototype.hasOwnProperty.call(filters, 'month')) {
+      if (!filters.year) return 'all'
+      if (filters.month) return filters.year + '-' + filters.month
+      return filters.year
+    }
+    return (filters.startDate || '') + '/' + (filters.endDate || '')
   }
 
   function resolveGeography(profile, filters) {
@@ -419,7 +441,104 @@
     }))
   }
 
+  function callableUrl(name) {
+    var configured = global.firebaseConfig && firebaseConfig.functionUrls || {}
+    if (configured[name]) return configured[name]
+    var projectId = global.firebaseConfig && firebaseConfig.projectId
+    if (!projectId && global.firebase && firebase.app) projectId = firebase.app().options.projectId
+    return projectId
+      ? 'https://us-central1-' + encodeURIComponent(projectId) +
+        '.cloudfunctions.net/' + encodeURIComponent(name)
+      : ''
+  }
+
+  async function callDashboardV4(name, payload) {
+    if (!global.firebase || !firebase.auth || !firebase.auth().currentUser) {
+      throw new Error('Your dashboard session has expired.')
+    }
+    var token = await firebase.auth().currentUser.getIdToken()
+    var url = callableUrl(name)
+    if (!url) throw new Error('Dashboard service URL is not configured.')
+    var response = await fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token
+      },
+      body: JSON.stringify({ data: payload })
+    })
+    var body = await response.json().catch(function () { return {} })
+    if (!response.ok || (body.error && body.error.status)) {
+      var error = new Error(body.error && body.error.message || 'Dashboard service unavailable.')
+      error.code = body.error && body.error.status || String(response.status)
+      throw error
+    }
+    return body.result || body
+  }
+
+  async function loadV4Summary(profile, filters) {
+    if (!filters.startDate || !filters.endDate) {
+      throw new Error('Choose both a start date and an end date.')
+    }
+    var request = {
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      region: filters.region,
+      township: filters.township,
+      department: filters.department,
+      facilityCode: filters.facilityCode,
+      facilityTypes: filters.facilityTypes,
+      trendMode: filters.trendMode
+    }
+    var cacheKey = 'dashboard-v4:' + JSON.stringify({
+      uid: profile.uid,
+      scope: resolveGeography(profile, filters),
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      department: filters.department,
+      facilityCode: filters.facilityCode,
+      facilityTypes: filters.facilityTypes,
+      trendMode: filters.trendMode
+    })
+    var cached = null
+    try {
+      cached = JSON.parse(localStorage.getItem(cacheKey) || 'null')
+    } catch (error) {}
+    var result
+    if (!navigator.onLine && cached) {
+      result = Object.assign({}, cached, { source: 'cache' })
+    } else {
+      try {
+        result = await callDashboardV4('queryDashboardV4', request)
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(result))
+        } catch (cacheError) {}
+      } catch (error) {
+        if (!cached) throw error
+        result = Object.assign({}, cached, { source: 'cache' })
+      }
+    }
+    return {
+      source: result.source || 'server',
+      metrics: result.metrics || {},
+      seriesByDimension: result.seriesByDimension || {},
+      calculatedAt: safeDate(result.calculatedAt),
+      patientContributionCount: Number(result.contributionCount || 0),
+      complete: result.complete !== false,
+      schemaVersion: result.schemaVersion,
+      definitionVersion: result.definitionVersion,
+      range: { startDate: filters.startDate, endDate: filters.endDate },
+      geography: resolveGeography(profile, filters)
+    }
+  }
+
   async function loadSummary(profile, filters, onCached) {
+    if (global.DashboardMetricsConfig &&
+        String(DashboardMetricsConfig.schemaVersion || '').indexOf('analytics-v4') === 0) {
+      return loadV4Summary(profile, filters)
+    }
     var request = summaryReferences(profile, filters)
     var cached = null
     try {
@@ -513,6 +632,8 @@
     readFilterValues: readFilterValues,
     selectedFacilityTypes: selectedFacilityTypes,
     loadSummary: loadSummary,
+    loadV4Summary: loadV4Summary,
+    callDashboardV4: callDashboardV4,
     periodKey: periodKey,
     initializePeriodOptions: initializePeriodOptions,
     resolveGeography: resolveGeography,

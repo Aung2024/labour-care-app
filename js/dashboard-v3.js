@@ -5,6 +5,7 @@
   var hasRenderedSummary = false
   var renderedFilterKey = ''
   var requestSequence = 0
+  var latestSummary = null
 
   function element(id) {
     return document.getElementById(id)
@@ -101,6 +102,8 @@
     renderedFilterKey = filterKey(filters)
     element('dashboardSections').hidden = false
     DashboardCharts.setMetrics(summary.metrics || {})
+    DashboardCharts.setTrendMode(filters.trendMode || 'month')
+    DashboardCharts.setSeries(summary.seriesByDimension || {})
     showScope(filters)
     formatFreshness(summary)
   }
@@ -166,6 +169,23 @@
     await DashboardData.refreshFacilityOptions(selected)
   }
 
+  function initializeTrendModes(profile) {
+    var select = element('dashboardTrendMode')
+    if (!select) return
+    var modes = ['month']
+    if (DashboardData.isTmoRole(profile.role)) modes.push('facility')
+    if (DashboardData.isRegionalRole(profile.role)) modes.push('facility', 'township')
+    if (DashboardData.isCentralRole(profile.role)) modes.push('facility', 'township', 'region')
+    select.innerHTML = ''
+    modes.filter(function (mode, index) { return modes.indexOf(mode) === index }).forEach(function (mode) {
+      var option = document.createElement('option')
+      option.value = mode
+      option.textContent = mode.charAt(0).toUpperCase() + mode.slice(1)
+      select.appendChild(option)
+    })
+    select.value = 'month'
+  }
+
   function attachFilterEvents() {
     var filterPanel = document.querySelector('.dashboard-filter-panel')
     var filterToggle = element('dashboardFilterToggle')
@@ -189,10 +209,29 @@
       loadDashboard()
     })
 
-    element('dashboardYear').addEventListener('change', function () {
-      var month = element('dashboardMonth')
-      month.disabled = !this.value
-      if (!this.value) month.value = ''
+    element('dashboardPreset').addEventListener('change', function () {
+      var start = element('dashboardStartDate')
+      var end = element('dashboardEndDate')
+      if (!start || !end || this.value === 'custom') return
+      var now = new Date()
+      var first
+      if (this.value === 'this_year') {
+        first = new Date(now.getFullYear(), 0, 1)
+      } else if (this.value === 'last_30_days') {
+        first = new Date(now)
+        first.setDate(first.getDate() - 29)
+      } else {
+        first = new Date(now.getFullYear(), now.getMonth(), 1)
+      }
+      var last = this.value === 'this_year'
+        ? new Date(now.getFullYear(), 11, 31)
+        : new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      var toKey = function (date) {
+        return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') +
+          '-' + String(date.getDate()).padStart(2, '0')
+      }
+      start.value = toKey(first)
+      end.value = toKey(last > now ? now : last)
     })
 
     element('dashboardRegion').addEventListener('change', async function () {
@@ -209,8 +248,10 @@
     })
 
     element('dashboardFacilityTypes').addEventListener('change', refreshDependentFacilities)
+    element('dashboardTrendMode').addEventListener('change', loadDashboard)
     element('dashboardRefreshButton').addEventListener('click', loadDashboard)
     element('dashboardRetryButton').addEventListener('click', loadDashboard)
+    element('dashboardExportButton').addEventListener('click', exportDashboard)
     element('dashboardLogoutButton').addEventListener('click', async function () {
       await firebase.auth().signOut()
       location.href = 'login.html'
@@ -223,13 +264,50 @@
     global.addEventListener('offline', updateOfflineNotice)
   }
 
+  async function exportDashboard() {
+    var button = element('dashboardExportButton')
+    var status = element('dashboardExportStatus')
+    var filters = DashboardData.readFilterValues()
+    if (!filters.startDate || !filters.endDate) {
+      status.textContent = 'Choose a valid date range before exporting.'
+      return
+    }
+    button.disabled = true
+    status.textContent = 'Preparing Excel export…'
+    try {
+      var result = await DashboardData.callDashboardV4('requestDashboardV4Export', {
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        region: filters.region,
+        township: filters.township,
+        department: filters.department,
+        facilityCode: filters.facilityCode,
+        facilityTypes: filters.facilityTypes
+      })
+      var bytes = Uint8Array.from(atob(result.base64), function (character) {
+        return character.charCodeAt(0)
+      })
+      var blob = new Blob([bytes], { type: result.contentType })
+      var link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = result.fileName
+      link.click()
+      URL.revokeObjectURL(link.href)
+      status.textContent = 'Excel export ready.'
+    } catch (error) {
+      status.textContent = error.message || 'Excel export failed.'
+    } finally {
+      button.disabled = false
+    }
+  }
+
   function profileFromUserData(user, data) {
     data = data || {}
     return {
       uid: user.uid,
       email: data.email || user.email || '',
       name: data.name || data.midwife_name || data.displayName || '',
-      role: data.role || localStorage.getItem('role') || '',
+      role: data.role || '',
       township: data.township || localStorage.getItem('userTownship') || '',
       region: data.region || (
         global.getRegionFromTownship ? getRegionFromTownship(data.township) : ''
@@ -252,9 +330,6 @@
     } catch (error) {
       snapshot = await reference.get({ source: 'cache' })
     }
-    if ((!snapshot || !snapshot.exists) && localStorage.getItem('role')) {
-      return profileFromUserData(user, {})
-    }
     if (!snapshot || !snapshot.exists) {
       throw new Error('Your user profile could not be loaded.')
     }
@@ -268,10 +343,14 @@
       viewer = await userProfile(user)
       updateHeader(viewer)
       updateOfflineNotice()
+      initializeTrendModes(viewer)
       DashboardCharts.initializeSections(function (section) {
         DashboardCharts.renderSection(section)
       })
       await DashboardData.initializeFilters(viewer)
+      var exportButton = element('dashboardExportButton')
+      var role = String(viewer.role || '').toLowerCase()
+      if (exportButton) exportButton.hidden = role === 'midwife'
       attachFilterEvents()
       await loadDashboard()
     } catch (error) {

@@ -1,0 +1,390 @@
+'use strict'
+
+const admin = require('firebase-admin')
+const { FieldPath, FieldValue } = require('firebase-admin/firestore')
+const { onCall, HttpsError } = require('firebase-functions/v2/https')
+const { onSchedule } = require('firebase-functions/v2/scheduler')
+const { loadPatientActivity } = require('../leaderboard/repository')
+const {
+  normalizeLoadedClinicalFacts
+} = require('./refresh-queue-functions')
+const {
+  ANALYTICS_V4_SCHEMA_VERSION,
+  ANALYTICS_V4_DEFINITION_VERSION
+} = require('./v4-registry')
+const {
+  CONTRIBUTION_COLLECTION,
+  CACHE_COLLECTION,
+  monthsBetween,
+  aggregateContributions,
+  cacheKey
+} = require('./v4-service')
+const {
+  refreshPatientAnalyticsV4,
+  deletePatientAnalyticsV4
+} = require('./v4-service')
+
+const REGION = 'us-central1'
+const ALLOWED_ROLES = new Set([
+  'midwife',
+  'tmo',
+  'township medical officer',
+  'regional officer',
+  'central',
+  'super admin',
+  'admin'
+])
+const ALLOWED_DEPARTMENTS = new Set(['', 'doph', 'doms', 'other'])
+const MAX_RANGE_DAYS = 3660
+const BACKFILL_JOB_ID = 'dashboard-v4-backfill'
+const BACKFILL_BATCH_SIZE = 25
+const BACKFILL_MAX_RUNTIME_MS = 480000
+
+const db = () => admin.firestore()
+const roleKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+const backfillJobRef = (database = db()) =>
+  database.collection('analytics_v4_jobs').doc(BACKFILL_JOB_ID)
+
+const requireSuperAdmin = async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in is required.')
+  const snapshot = await db().collection('users').doc(request.auth.uid).get()
+  if (!snapshot.exists || roleKey(snapshot.get('role')) !== 'super admin') {
+    throw new HttpsError('permission-denied', 'Only Super Admin can start the v4 backfill.')
+  }
+  return snapshot.data() || {}
+}
+
+const startDashboardV4Backfill = onCall({ region: REGION }, async (request) => {
+  await requireSuperAdmin(request)
+  const ref = backfillJobRef()
+  const force = Boolean(request.data && request.data.force)
+  const result = await db().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref)
+    const current = snapshot.exists ? snapshot.data() : {}
+    if (!force && current.status === 'running') {
+      return { status: 'running', processedPatients: Number(current.processedPatients || 0) }
+    }
+    const generation = Number(current.generation || 0) + 1
+    transaction.set(ref, {
+      type: 'analytics-v4-backfill',
+      status: 'running',
+      generation,
+      cursor: null,
+      processedPatients: 0,
+      failedPatients: 0,
+      lastErrors: {},
+      requestedBy: request.auth.uid,
+      startedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      completedAt: FieldValue.delete()
+    }, { merge: true })
+    return { status: 'running', generation, processedPatients: 0 }
+  })
+  return result
+})
+
+const processDashboardV4BackfillBatch = async (database = db()) => {
+  const ref = backfillJobRef(database)
+  const snapshot = await ref.get()
+  if (!snapshot.exists || snapshot.get('status') !== 'running') return { status: 'idle' }
+  const job = snapshot.data() || {}
+  let query = database.collection('patients')
+    .orderBy(FieldPath.documentId())
+    .limit(BACKFILL_BATCH_SIZE)
+  if (job.cursor) query = query.startAfter(job.cursor)
+  const patients = await query.get()
+  if (patients.empty) {
+    await ref.set({
+      status: 'complete',
+      completedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true })
+    return { status: 'complete', processed: 0 }
+  }
+
+  let processed = 0
+  let failed = 0
+  const errors = {}
+  for (const patient of patients.docs) {
+    try {
+      const loaded = await loadPatientActivity(database, patient.id)
+      const facts = await normalizeLoadedClinicalFacts(database, patient.id, loaded)
+      if (facts) await refreshPatientAnalyticsV4(database, facts)
+      else await deletePatientAnalyticsV4(database, patient.id)
+      processed += 1
+    } catch (error) {
+      failed += 1
+      errors[patient.id] = String(error && error.message || error).slice(0, 500)
+    }
+  }
+  const lastId = patients.docs[patients.docs.length - 1].id
+  await ref.set({
+    cursor: lastId,
+    processedPatients: FieldValue.increment(processed),
+    failedPatients: FieldValue.increment(failed),
+    lastErrors: errors,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true })
+  return { status: 'running', processed, failed, cursor: lastId }
+}
+
+const dashboardV4BackfillWorker = onSchedule({
+  schedule: 'every 5 minutes',
+  timeZone: 'Asia/Yangon',
+  region: REGION,
+  timeoutSeconds: 540,
+  memory: '1GiB',
+  maxInstances: 1,
+  concurrency: 1
+}, async () => {
+  const started = Date.now()
+  let result = await processDashboardV4BackfillBatch()
+  while (result.status === 'running' && Date.now() - started < BACKFILL_MAX_RUNTIME_MS) {
+    result = await processDashboardV4BackfillBatch()
+  }
+  return result
+})
+
+const validDate = (value, field) => {
+  const text = String(value || '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new HttpsError('invalid-argument', `${field} must be YYYY-MM-DD.`)
+  }
+  const parsed = new Date(`${text}T00:00:00+06:30`)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpsError('invalid-argument', `${field} is not a real calendar date.`)
+  }
+  return text
+}
+
+const dateDistance = (start, end) =>
+  Math.floor((new Date(`${end}T00:00:00+06:30`) - new Date(`${start}T00:00:00+06:30`)) / 86400000)
+
+const authorizedUser = async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in is required.')
+  const snapshot = await db().collection('users').doc(request.auth.uid).get()
+  if (!snapshot.exists) throw new HttpsError('permission-denied', 'User profile not found.')
+  const profile = snapshot.data() || {}
+  const role = roleKey(profile.role)
+  if (!ALLOWED_ROLES.has(role)) throw new HttpsError('permission-denied', 'Role cannot access the dashboard.')
+  return { ...profile, uid: request.auth.uid, role }
+}
+
+const allowedScope = (user, input) => {
+  const data = input || {}
+  if (user.role === 'midwife') {
+    return { scopeProviderId: user.uid }
+  }
+  if (['tmo', 'township medical officer'].includes(user.role)) {
+    if (!user.township) throw new HttpsError('permission-denied', 'Township is not configured.')
+    return { scopeTownship: user.township }
+  }
+  if (user.role === 'regional officer') {
+    if (!user.region) throw new HttpsError('permission-denied', 'Region is not configured.')
+    return { scopeRegion: user.region }
+  }
+  if (data.facilityCode) return { scopeFacilityCode: String(data.facilityCode) }
+  if (data.township) return { scopeTownship: String(data.township) }
+  if (data.region) return { scopeRegion: String(data.region) }
+  return {}
+}
+
+const validateInput = (input) => {
+  const data = input || {}
+  const startDate = validDate(data.startDate, 'startDate')
+  const endDate = validDate(data.endDate, 'endDate')
+  if (startDate > endDate) throw new HttpsError('invalid-argument', 'startDate must not be after endDate.')
+  if (dateDistance(startDate, endDate) > MAX_RANGE_DAYS) {
+    throw new HttpsError('invalid-argument', `Date ranges may not exceed ${MAX_RANGE_DAYS} days.`)
+  }
+  const department = String(data.department || '')
+  if (!ALLOWED_DEPARTMENTS.has(department)) {
+    throw new HttpsError('invalid-argument', 'Unsupported department.')
+  }
+  const facilityTypes = data.facilityTypes || []
+  if (!Array.isArray(facilityTypes) || facilityTypes.length > 10 ||
+    facilityTypes.some((value) => typeof value !== 'string' || value.length > 80)) {
+    throw new HttpsError('invalid-argument', 'facilityTypes accepts up to 10 values.')
+  }
+  return { ...data, startDate, endDate, department, facilityTypes }
+}
+
+const contributionMatches = (contribution, scope, input) => {
+  const scoped = Object.entries(scope).every(([key, value]) => !value || contribution[key] === value)
+  if (!scoped) return false
+  if (input.department && contribution.scopeDepartment !== input.department) return false
+  if (input.facilityTypes.length &&
+    !input.facilityTypes.includes(contribution.scopeFacilityType)) return false
+  if (input.facilityCode && contribution.scopeFacilityCode !== input.facilityCode) return false
+  return true
+}
+
+const groupKeyFor = (contribution, mode) => {
+  if (mode === 'facility') return contribution.scopeFacilityCode || 'Unknown facility'
+  if (mode === 'township') return contribution.scopeTownship || 'Unknown township'
+  if (mode === 'region') return contribution.scopeRegion || 'Unknown region'
+  return contribution.month
+}
+
+const readContributions = async (input, scope) => {
+  const startMonth = input.startDate.slice(0, 7)
+  const endMonth = input.endDate.slice(0, 7)
+  const snapshot = await db().collection(CONTRIBUTION_COLLECTION)
+    .where('month', '>=', startMonth)
+    .where('month', '<=', endMonth)
+    .get()
+  return snapshot.docs.map((doc) => doc.data()).filter((item) =>
+    contributionMatches(item, scope, input)
+  )
+}
+
+const buildResult = (input, contributions, scope) => {
+  const metrics = aggregateContributions(contributions, input.startDate, input.endDate)
+  const modes = input.allowedModes || ['month']
+  const seriesByDimension = {}
+  modes.forEach((mode) => {
+    const groups = new Map()
+    contributions.forEach((contribution) => {
+      const key = groupKeyFor(contribution, mode)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(contribution)
+    })
+    seriesByDimension[mode] = Array.from(groups.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([label, items]) => ({
+        label,
+        metrics: aggregateContributions(items, input.startDate, input.endDate)
+      }))
+  })
+  return {
+    schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
+    definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    scope,
+    metrics,
+    seriesByDimension,
+    contributionCount: contributions.length,
+    calculatedAt: new Date().toISOString(),
+    complete: true
+  }
+}
+
+const queryDashboardV4 = onCall({ region: REGION, timeoutSeconds: 60 }, async (request) => {
+  const user = await authorizedUser(request)
+  const input = validateInput(request.data)
+  const scope = allowedScope(user, input)
+  const key = cacheKey({ ...input, scope })
+  const cacheRef = db().collection(CACHE_COLLECTION).doc(key)
+  const cached = await cacheRef.get()
+  if (cached.exists && cached.get('expiresAt') &&
+    cached.get('expiresAt').toMillis && cached.get('expiresAt').toMillis() > Date.now()) {
+    return { ...cached.data(), cacheKey: key, source: 'cache' }
+  }
+  const contributions = await readContributions(input, scope)
+  const roleModes = user.role === 'midwife'
+    ? ['month']
+    : user.role === 'tmo' || user.role === 'township medical officer'
+      ? ['month', 'facility']
+      : user.role === 'regional officer'
+        ? ['month', 'facility', 'township']
+        : ['month', 'facility', 'township', 'region']
+  const result = buildResult({ ...input, allowedModes: roleModes }, contributions, scope)
+  await cacheRef.set({
+    ...result,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+  })
+  return { ...result, cacheKey: key, source: 'server' }
+})
+
+const requestDashboardV4Export = onCall({ region: REGION, timeoutSeconds: 60 }, async (request) => {
+  const user = await authorizedUser(request)
+  if (user.role === 'midwife') {
+    throw new HttpsError('permission-denied', 'Excel export is available to TMO and above.')
+  }
+  const input = validateInput(request.data)
+  const scope = allowedScope(user, input)
+  const contributions = await readContributions(input, scope)
+  const forcedMode = user.role === 'tmo' || user.role === 'township medical officer'
+    ? 'facility'
+    : user.role === 'regional officer' ? 'township' : 'region'
+  const result = buildResult({ ...input, allowedModes: [forcedMode] }, contributions, scope)
+  let ExcelJS
+  try {
+    ExcelJS = require('exceljs')
+  } catch (error) {
+    throw new HttpsError('failed-precondition', 'Excel export is not available on this server yet.')
+  }
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'MNCH Dashboard'
+  workbook.created = new Date()
+  const summary = workbook.addWorksheet('Summary')
+  summary.addRows([
+    ['Dashboard export', 'MNCH Dashboard'],
+    ['Date range', `${input.startDate} to ${input.endDate}`],
+    ['Scope', JSON.stringify(scope)],
+    ['Generated at', result.calculatedAt]
+  ])
+  const trend = workbook.addWorksheet('Trend')
+  trend.addRow(['Group', 'Total Clients', 'ANC Clients', 'PNC Clients', 'Deliveries', 'Finalized Outcomes'])
+  ;(result.seriesByDimension[forcedMode] || []).forEach((item) => trend.addRow([
+    item.label,
+    item.metrics.registration && item.metrics.registration.total || 0,
+    item.metrics.anc && item.metrics.anc.clients || 0,
+    item.metrics.pnc && item.metrics.pnc.clients || 0,
+    item.metrics.delivery && item.metrics.delivery.completedNotes || 0,
+    item.metrics.serviceClosure && item.metrics.serviceClosure.total || 0
+  ]))
+  const definitions = workbook.addWorksheet('Definitions')
+  definitions.addRows([
+    ['Schema', ANALYTICS_V4_SCHEMA_VERSION],
+    ['Definition version', ANALYTICS_V4_DEFINITION_VERSION],
+    ['Aggregation', `Role-fixed ${forcedMode} rows; no patient identifiers`]
+  ])
+  const buffer = await workbook.xlsx.writeBuffer()
+  return {
+    fileName: `mnch-dashboard-${input.startDate}-${input.endDate}.xlsx`,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    base64: Buffer.from(buffer).toString('base64'),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  }
+})
+
+const getDashboardV4Result = onCall({ region: REGION }, async (request) => {
+  await authorizedUser(request)
+  const key = String(request.data && request.data.cacheKey || '')
+  if (!/^[a-f0-9]{64}$/.test(key)) throw new HttpsError('invalid-argument', 'Invalid dashboard result key.')
+  const snapshot = await db().collection(CACHE_COLLECTION).doc(key).get()
+  if (!snapshot.exists) return { status: 'building' }
+  return { status: 'ready', ...snapshot.data() }
+})
+
+const reconcileDashboardV4Cache = onSchedule({
+  region: REGION,
+  schedule: 'every 15 minutes'
+}, async () => {
+  const expired = await db().collection(CACHE_COLLECTION)
+    .where('expiresAt', '<', new Date())
+    .limit(100)
+    .get()
+  const writer = db().bulkWriter()
+  expired.docs.forEach((doc) => writer.delete(doc.ref))
+  await writer.close()
+})
+
+module.exports = {
+  queryDashboardV4,
+  requestDashboardV4Export,
+  getDashboardV4Result,
+  reconcileDashboardV4Cache,
+  startDashboardV4Backfill,
+  dashboardV4BackfillWorker,
+  processDashboardV4BackfillBatch,
+  authorizedUser,
+  validateInput,
+  allowedScope,
+  buildResult,
+  contributionMatches,
+  monthsBetween
+}

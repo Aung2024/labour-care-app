@@ -19,7 +19,9 @@ var MOH_FIREBASE_CONFIG = {
   functionUrls: {
     queryHrtTracking: "/api/query-hrt-tracking",
     queryKmcTracking: "/api/query-kmc-tracking",
-    sendHrtSms: "/api/send-hrt-sms"
+    sendHrtSms: "/api/send-hrt-sms",
+    queryDashboardV4: "/api/query-dashboard-v4",
+    requestDashboardV4Export: "/api/request-dashboard-v4-export"
   }
 };
 

@@ -212,21 +212,13 @@ test('chart options omit incompatible axes and add donut center totals', () => {
   assertNoUndefined(donut)
 })
 
-test('scorecard ratio status uses inclusive approved thresholds', () => {
-  const definition = {
-    numerator: 'value',
-    denominator: 'total',
-    format: 'ratio'
-  }
-  const status = global.DashboardCharts.scorecardStatus
-  assert.equal(status(definition, { value: 19, total: 100 }).className, 'is-status-low')
-  assert.equal(status(definition, { value: 20, total: 100 }).className, 'is-status-medium')
-  assert.equal(status(definition, { value: 60, total: 100 }).className, 'is-status-medium')
-  assert.equal(status(definition, { value: 61, total: 100 }).className, 'is-status-high')
-  assert.equal(
-    status({ ...definition, format: 'average' }, { value: 61, total: 100 }),
-    null
+test('dashboard does not apply generic clinical percentage bands', () => {
+  assert.equal(global.DashboardCharts.scorecardStatus, undefined)
+  const chartSource = fs.readFileSync(
+    path.join(__dirname, '..', 'js', 'dashboard-charts.js'),
+    'utf8'
   )
+  assert.doesNotMatch(chartSource, /Below 20%|Above 60%/)
 })
 
 test('every dashboard indicator explains its clinical calculation', () => {
@@ -308,54 +300,22 @@ test('dashboard periods use all, year, or month summary keys only', () => {
   )
 })
 
-test('dashboard period controls default to All Time with Month disabled', () => {
-  const createSelect = () => {
-    const select = {
-      options: [],
-      disabled: false,
-      _value: '',
-      appendChild(option) {
-        this.options.push(option)
-      }
-    }
-    Object.defineProperty(select, 'innerHTML', {
-      set() {
-        select.options = []
-        select._value = ''
-      }
-    })
-    Object.defineProperty(select, 'value', {
-      get() {
-        return select._value
-      },
-      set(value) {
-        select._value = select.options.some((option) => option.value === value)
-          ? value
-          : ''
-      }
-    })
-    return select
-  }
-
+test('dashboard period controls default to the current exact month', () => {
   const previousDocument = global.document
-  const year = createSelect()
-  const month = createSelect()
+  const preset = { value: '', innerHTML: '' }
+  const start = { value: '' }
+  const end = { value: '' }
   global.document = {
     getElementById(id) {
-      return id === 'dashboardYear' ? year : month
+      return { dashboardPreset: preset, dashboardStartDate: start, dashboardEndDate: end }[id]
     },
-    createElement() {
-      return { value: '', textContent: '' }
-    }
   }
 
   try {
     global.DashboardData.initializePeriodOptions(new Date('2026-09-24T00:00:00Z'))
-    assert.equal(year.value, '')
-    assert.equal(month.value, '')
-    assert.equal(month.disabled, true)
-    assert.equal(year.options[0].textContent, 'All time')
-    assert.equal(month.options[0].textContent, 'All months')
+    assert.equal(preset.value, 'this_month')
+    assert.equal(start.value, '2026-09-01')
+    assert.equal(end.value, '2026-09-30')
   } finally {
     if (previousDocument === undefined) delete global.document
     else global.document = previousDocument

@@ -159,6 +159,7 @@ self.MNCH_PWA_MANIFEST = {
     "/js/dashboard-data.js",
     "/js/dashboard-metrics-config.js",
     "/js/dashboard-v3.js",
+    "/js/dashboard-v4-config.js",
     "/js/data-linkage.js",
     "/js/data-masking.js",
     "/js/delivery-notes-utils.js",
