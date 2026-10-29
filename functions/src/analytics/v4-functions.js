@@ -16,6 +16,7 @@ const {
 const {
   CONTRIBUTION_COLLECTION,
   CACHE_COLLECTION,
+  UNDATED_MONTH,
   monthsBetween,
   aggregateContributions,
   cacheKey
@@ -316,17 +317,30 @@ const groupKeyFor = (contribution, mode) => {
 const readContributions = async (input, scope) => {
   const startMonth = input.startDate.slice(0, 7)
   const endMonth = input.endDate.slice(0, 7)
-  const snapshot = await db().collection(CONTRIBUTION_COLLECTION)
+  const collection = db().collection(CONTRIBUTION_COLLECTION)
+  const queries = [collection
     .where('month', '>=', startMonth)
     .where('month', '<=', endMonth)
-    .get()
-  return snapshot.docs.map((doc) => doc.data()).filter((item) =>
+    .get()]
+  if (input.periodMode === 'all_time') {
+    queries.push(collection.where('month', '==', UNDATED_MONTH).get())
+  }
+  const snapshots = await Promise.all(queries)
+  return snapshots.flatMap((snapshot) => snapshot.docs.map((doc) => doc.data())).filter((item) =>
     contributionMatches(item, scope, input)
   )
 }
 
 const buildResult = (input, contributions, scope) => {
-  const metrics = aggregateContributions(contributions, input.startDate, input.endDate)
+  const aggregationOptions = {
+    includeUndated: input.periodMode === 'all_time'
+  }
+  const metrics = aggregateContributions(
+    contributions,
+    input.startDate,
+    input.endDate,
+    aggregationOptions
+  )
   const modes = input.allowedModes || ['month']
   const seriesByDimension = {}
   modes.forEach((mode) => {
@@ -340,7 +354,12 @@ const buildResult = (input, contributions, scope) => {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([label, items]) => ({
         label,
-        metrics: aggregateContributions(items, input.startDate, input.endDate)
+        metrics: aggregateContributions(
+          items,
+          input.startDate,
+          input.endDate,
+          aggregationOptions
+        )
       }))
   })
   return {

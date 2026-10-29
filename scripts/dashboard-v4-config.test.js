@@ -50,6 +50,8 @@ test('dashboard markup uses exact date controls and export action', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8')
   assert.match(html, /dashboardStartDate/)
   assert.match(html, /dashboardEndDate/)
+  assert.match(html, /dashboardStartDate[^>]+min="2025-01"/)
+  assert.match(html, /dashboardEndDate[^>]+min="2025-01"/)
   assert.match(html, /dashboardExportButton/)
   assert.match(html, /dashboard-v4-config\.js/)
 })

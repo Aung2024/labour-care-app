@@ -5,7 +5,10 @@ const assert = require('node:assert/strict')
 const {
   aggregateContributions,
   cacheKey,
-  contributionId
+  contributionId,
+  candidateMonths,
+  buildV4Contribution,
+  UNDATED_MONTH
 } = require('../src/analytics/v4-service')
 
 const contribution = (patientId, month, dates) => ({
@@ -50,4 +53,55 @@ test('cache keys include exact range and authorized scope inputs', () => {
   assert.match(first, /^[a-f0-9]{64}$/)
   assert.notEqual(first, second)
   assert.equal(contributionId('2026-01', 'patient/1'), '2026-01_patient%2F1')
+})
+
+test('candidate months include dates inside normalized activity entries', () => {
+  assert.deepEqual(candidateMonths({
+    profile: { registration_date: '2025-01-15' },
+    antenatalVisits: [
+      { id: 'anc-1', data: { visitDate: '2025-02-02' } },
+      { id: 'anc-2', data: { otherVisits: [{ visitDate: '2025-03-03' }] } }
+    ],
+    postpartumVisits: [
+      { id: 'pnc-1', data: { visitDate: '2025-04-04' } }
+    ],
+    hrtActions: [
+      { id: 'hrt-1', data: { recordedAt: '2025-05-05' } }
+    ],
+    deliveryNotes: {
+      data: {
+        deliveryDetails: { deliveredDateTime: '2025-06-06T10:00:00+06:30' }
+      }
+    }
+  }), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06'])
+})
+
+test('undated registrations are included only in all-time aggregation', () => {
+  const undated = buildV4Contribution({
+    id: 'undated-baby',
+    profile: { patient_type: 'baby' },
+    antenatalVisits: [],
+    postpartumVisits: [],
+    newbornVisits: [],
+    immediateNewbornCare: [],
+    hrtActions: [],
+    kmcActions: [],
+    scope: {}
+  }, UNDATED_MONTH)
+
+  const monthResult = aggregateContributions(
+    [undated],
+    '2025-01-01',
+    '2026-10-29'
+  )
+  assert.equal(monthResult.registration ? monthResult.registration.total : 0, 0)
+  assert.equal(
+    aggregateContributions(
+      [undated],
+      '2025-01-01',
+      '2026-10-29',
+      { includeUndated: true }
+    ).registration.babies,
+    1
+  )
 })

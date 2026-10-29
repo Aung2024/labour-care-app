@@ -6,6 +6,7 @@ const {
   validateInput,
   allowedScope,
   contributionMatches,
+  buildResult,
   processDashboardV4BackfillBatch,
   processDashboardV4DailyRefreshBatch
 } = require('../src/analytics/v4-functions')
@@ -140,4 +141,23 @@ test('daily v4 refresh is idle without queued clinical changes', async () => {
     await processDashboardV4DailyRefreshBatch(database),
     { status: 'idle', processed: 0, failed: 0 }
   )
+})
+
+test('all-time result aggregation includes undated registration contributions', () => {
+  const result = buildResult({
+    periodMode: 'all_time',
+    startDate: '2025-01-01',
+    endDate: '2026-10-29',
+    allowedModes: ['month']
+  }, [{
+    patientId: 'undated-baby',
+    month: 'undated',
+    dailyMetrics: [{
+      date: null,
+      metrics: { registration: { total: 1, babies: 1 } }
+    }]
+  }], {})
+
+  assert.equal(result.metrics.registration.total, 1)
+  assert.equal(result.metrics.registration.babies, 1)
 })

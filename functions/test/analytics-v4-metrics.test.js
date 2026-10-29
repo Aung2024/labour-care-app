@@ -101,6 +101,20 @@ test('counts institutional delivery independently of the birth provider', () => 
   assert.equal(delivery.provider, 'other')
 })
 
+test('accepts legacy delivery date aliases for range aggregation', () => {
+  const delivery = deliveryRecord(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveredDateTime: '2026-01-19T10:00:00+06:30',
+        birthPlace: 'government hospital',
+        birthProvider: 'other',
+        babies: []
+      }
+    }
+  }))
+  assert.equal(delivery.date, '2026-01-19T10:00:00+06:30')
+})
+
 test('classifies structured newborn transfers as baby referrals', () => {
   const metrics = calculateV4Metrics(facts({
     profile: { patient_type: 'baby', registration_date: '2026-01-01' },

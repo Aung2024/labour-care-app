@@ -314,8 +314,10 @@ test('dashboard period controls default to all time with month-range support', (
   try {
     global.DashboardData.initializePeriodOptions(new Date('2026-09-24T00:00:00Z'))
     assert.equal(preset.value, 'all_time')
-    assert.equal(start.value, '1970-01')
+    assert.equal(start.value, '2025-01')
+    assert.equal(start.min, '2025-01')
     assert.equal(end.value, '2026-09')
+    assert.equal(end.min, '2025-01')
     assert.equal(start.disabled, true)
     assert.equal(end.disabled, true)
   } finally {

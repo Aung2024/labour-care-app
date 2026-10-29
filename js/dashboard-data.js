@@ -52,6 +52,7 @@
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
     if (typeof value.toDate === 'function') return safeDate(value.toDate())
     if (typeof value.seconds === 'number') return new Date(value.seconds * 1000)
+    if (typeof value._seconds === 'number') return new Date(value._seconds * 1000)
     var parsed = new Date(value)
     return Number.isNaN(parsed.getTime()) ? null : parsed
   }
@@ -118,9 +119,11 @@
     var end = document.getElementById('dashboardEndDate')
     if (!preset || !start || !end) return
     preset.value = 'all_time'
-    start.value = '1970-01'
+    start.value = '2025-01'
     end.value = localMonthKey(current)
+    start.min = '2025-01'
     start.max = localMonthKey(current)
+    end.min = '2025-01'
     end.max = localMonthKey(current)
     setPeriodInputState()
   }
@@ -233,7 +236,7 @@
       periodMode: allTime ? 'all_time' : 'months',
       startMonth: startMonth,
       endMonth: endMonth,
-      startDate: allTime ? '1970-01-01' : (startMonth + '-01'),
+      startDate: allTime ? '2025-01-01' : (startMonth + '-01'),
       endDate: allTime ? localDateKey(new Date()) : lastDayOfMonth(endMonth),
       region: document.getElementById('dashboardRegion').value,
       township: document.getElementById('dashboardTownship').value,
@@ -541,7 +544,10 @@
       cached = JSON.parse(localStorage.getItem(cacheKey) || 'null')
     } catch (error) {}
     if (cached && typeof onCached === 'function') {
-      onCached(Object.assign({}, cached, { source: 'cache' }))
+      onCached(Object.assign({}, cached, {
+        source: 'cache',
+        calculatedAt: safeDate(cached.calculatedAt)
+      }))
     }
     var result
     if (!navigator.onLine && cached) {

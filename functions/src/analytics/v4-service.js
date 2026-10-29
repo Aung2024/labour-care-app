@@ -14,6 +14,7 @@ const {
 
 const CONTRIBUTION_COLLECTION = 'analytics_v4_contributions'
 const CACHE_COLLECTION = 'analytics_v4_range_cache'
+const UNDATED_MONTH = 'undated'
 const ADDITIVE_PATHS = new Set([
   'anc.services',
   'pnc.visits',
@@ -65,23 +66,68 @@ const candidateMonths = (facts) => {
     const month = monthKey(value)
     if (month) values.push(month)
   }
-  add(facts.profile && (facts.profile.registration_date || facts.profile.createdAt))
-  ;[
-    facts.antenatalVisits,
-    facts.postpartumVisits,
-    facts.newbornVisits,
-    facts.hrtActions,
-    facts.kmcActions
-  ].forEach((items) => (items || []).forEach((item) => add(
-    item.visitDate || item.visit_date || item.recordedAt || item.createdAt
-  )))
+  const unwrap = (item) => item && item.data && typeof item.data === 'object'
+    ? item.data
+    : (item || {})
+  const addItems = (items, fields) => (items || []).forEach((item) => {
+    const data = unwrap(item)
+    fields.forEach((field) => add(data[field]))
+    ;(data.otherVisits || []).forEach((visit) => {
+      const external = unwrap(visit)
+      fields.forEach((field) => add(external[field]))
+    })
+  })
+
+  add(facts.profile && (
+    facts.profile.registration_date ||
+    facts.profile.registrationDate ||
+    facts.profile.createdAt ||
+    facts.profile.created_at
+  ))
+  addItems(facts.antenatalVisits, [
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+  ])
+  addItems(facts.postpartumVisits, [
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+  ])
+  addItems(facts.newbornVisits, [
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+  ])
+  addItems(facts.immediateNewbornCare, [
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+  ])
+  addItems(facts.hrtActions, [
+    'recordedAt', 'recorded_at', 'completedAt', 'completed_at', 'createdAt'
+  ])
+  addItems(facts.kmcActions, [
+    'recordedAt', 'recorded_at', 'completedAt', 'completed_at', 'createdAt'
+  ])
   const delivery = facts.deliveryNotes && (facts.deliveryNotes.data || facts.deliveryNotes)
-  add(delivery && (delivery.deliveryDate || delivery.delivery_date || delivery.createdAt))
+  const deliveryDetails = delivery && (
+    delivery.deliveryDetails ||
+    delivery.delivery_details ||
+    delivery
+  )
+  add(deliveryDetails && (
+    deliveryDetails.deliveryDate ||
+    deliveryDetails.delivery_date ||
+    deliveryDetails.deliveryDateTime ||
+    deliveryDetails.delivery_datetime ||
+    deliveryDetails.birthDate ||
+    deliveryDetails.birth_date ||
+    deliveryDetails.birthTime ||
+    deliveryDetails.birth_time ||
+    deliveryDetails.deliveredDateTime ||
+    deliveryDetails.delivered_datetime ||
+    deliveryDetails.createdAt
+  ))
+  add(delivery && (delivery.deliveryDate || delivery.createdAt))
   const closure = facts.profile && facts.profile.serviceClosure
   add(closure && (closure.closedAt || closure.closed_at))
   const referral = facts.transferRecord && (facts.transferRecord.data || facts.transferRecord)
   add(referral && (referral.referralTime || referral.timestamp || referral.createdAt))
-  return Array.from(new Set(values)).sort()
+  const months = Array.from(new Set(values)).sort()
+  return months.length ? months : [UNDATED_MONTH]
 }
 
 const pathEntries = (value, prefix = '') => {
@@ -102,6 +148,15 @@ const setAtPath = (target, path, value) => {
 }
 
 const dailyMetricsForMonth = (facts, month) => {
+  if (month === UNDATED_MONTH) {
+    return [{
+      date: null,
+      metrics: calculateV4Metrics(facts, {
+        startDate: '2025-01-01',
+        endDate: '2025-01-01'
+      })
+    }]
+  }
   const days = []
   const end = monthEnd(month)
   for (let day = 1; day <= Number(end.slice(-2)); day += 1) {
@@ -216,12 +271,18 @@ const materializeState = (state) => {
   return metrics
 }
 
-const aggregateContributions = (contributions, startDate, endDate) => {
+const aggregateContributions = (
+  contributions,
+  startDate,
+  endDate,
+  options = {}
+) => {
   const state = { additive: {}, unique: {}, maps: {} }
   contributions.forEach((contribution) => {
     const patientState = { additive: {}, unique: {}, maps: {} }
     ;(contribution.dailyMetrics || []).forEach((day) => {
-      if (day.date < startDate || day.date > endDate) return
+      if (!day.date && !options.includeUndated) return
+      if (day.date && (day.date < startDate || day.date > endDate)) return
       reduceMetrics(patientState, day.metrics || {}, contribution.patientId)
     })
     reduceMetrics(state, materializeState(patientState), contribution.patientId)
@@ -240,6 +301,7 @@ const matchesScope = (contribution, scope) => {
 module.exports = {
   CONTRIBUTION_COLLECTION,
   CACHE_COLLECTION,
+  UNDATED_MONTH,
   contributionId,
   contributionRef,
   monthsBetween,

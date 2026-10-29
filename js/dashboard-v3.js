@@ -70,6 +70,18 @@
   function formatFreshness(summary) {
     var freshness = element('dashboardFreshness')
     var date = summary.calculatedAt
+    if (!(date instanceof Date)) {
+      if (date && typeof date.toDate === 'function') {
+        date = date.toDate()
+      } else if (date && typeof date.seconds === 'number') {
+        date = new Date(date.seconds * 1000)
+      } else if (date && typeof date._seconds === 'number') {
+        date = new Date(date._seconds * 1000)
+      } else if (date) {
+        date = new Date(date)
+      }
+    }
+    if (!date || Number.isNaN(date.getTime())) date = null
     var stale = !date || (Date.now() - date.getTime()) > 48 * 60 * 60 * 1000
     freshness.classList.toggle('is-stale', stale)
     if (!date) {

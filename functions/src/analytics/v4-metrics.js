@@ -198,7 +198,18 @@ const deliveryRecord = (facts) => {
   )
   return {
     exists: Boolean(facts.deliveryNotes),
-    date: details.deliveryDate || details.delivery_date || notes.deliveryDate || notes.createdAt,
+    date: details.deliveryDate ||
+      details.delivery_date ||
+      details.deliveryDateTime ||
+      details.delivery_datetime ||
+      details.birthDate ||
+      details.birth_date ||
+      details.birthTime ||
+      details.birth_time ||
+      details.deliveredDateTime ||
+      details.delivered_datetime ||
+      notes.deliveryDate ||
+      notes.createdAt,
     provider: normalizeProvider(details.birthProvider || details.birth_provider),
     place: normalizeFacilityPlace(details.birthPlace || details.birthplace),
     mode: asText(details.modeOfDelivery || details.mode_of_delivery) || 'Other/Unknown',
