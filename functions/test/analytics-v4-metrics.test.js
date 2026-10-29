@@ -66,6 +66,29 @@ test('deduplicates copied external ANC visits', () => {
   assert.equal(visits.length, 1)
 })
 
+test('early ANC supports LMP and legacy gestational-age fields', () => {
+  const metrics = calculateV4Metrics(facts({
+    profile: {
+      patient_type: 'mother',
+      registration_date: '2026-01-01',
+      lmp: '2025-12-01',
+      lmpStatus: 'known'
+    },
+    antenatalVisits: [{
+      visitDate: '2025-12-20',
+      gestational_age: 3
+    }]
+  }), { startDate: '2025-12-01', endDate: '2025-12-31' })
+  assert.equal(metrics.anc.early, 1)
+})
+
+test('newborn birth-time aliases identify newborn clients', () => {
+  const metrics = calculateV4Metrics(facts({
+    newbornVisits: [{ birth_time: '2026-01-20T10:00:00+06:30' }]
+  }), { startDate: '2026-01-01', endDate: '2026-01-31' })
+  assert.equal(metrics.newborn.clients, 1)
+})
+
 test('calculates the v4 clinical contract from normalized patient facts', () => {
   const metrics = calculateV4Metrics(facts(), {
     startDate: '2026-01-01',

@@ -91,10 +91,12 @@ const candidateMonths = (facts) => {
     'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
   ])
   addItems(facts.newbornVisits, [
-    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp',
+    'createdAt', 'created_at', 'birthTime', 'birth_time'
   ])
   addItems(facts.immediateNewbornCare, [
-    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+    'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp',
+    'createdAt', 'created_at', 'birthTime', 'birth_time'
   ])
   addItems(facts.hrtActions, [
     'recordedAt', 'recorded_at', 'completedAt', 'completed_at', 'createdAt'
@@ -121,6 +123,15 @@ const candidateMonths = (facts) => {
     deliveryDetails.delivered_datetime ||
     deliveryDetails.createdAt
   ))
+  ;(deliveryDetails && deliveryDetails.babies || []).forEach((baby) => {
+    const birth = unwrap(baby)
+    add(
+      birth.birthTime ||
+      birth.birth_time ||
+      birth.birthDate ||
+      birth.birth_date
+    )
+  })
   add(delivery && (delivery.deliveryDate || delivery.createdAt))
   const closure = facts.profile && facts.profile.serviceClosure
   add(closure && (closure.closedAt || closure.closed_at))

@@ -7,6 +7,7 @@ const {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const KMC_WEIGHT_GRAM = 2000
+const EARLY_ANC_MAX_DAYS = 12 * 7
 
 const asText = (value) => String(value == null ? '' : value).trim()
 
@@ -159,7 +160,8 @@ const bump = (map, key, amount = 1) => {
 }
 
 const visitDate = (visit) => visit.visitDate || visit.visit_date ||
-  visit.recordedAt || visit.timestamp || visit.createdAt
+  visit.recordedAt || visit.recorded_at || visit.timestamp || visit.createdAt ||
+  visit.created_at || visit.birthTime || visit.birth_time
 
 const externalAncVisits = (visits) => {
   const output = []
@@ -196,6 +198,14 @@ const deliveryRecord = (facts) => {
   const babies = Array.isArray(details.babies) ? details.babies : (
     Array.isArray(notes.babies) ? notes.babies : []
   )
+  const firstBaby = babies.find((baby) =>
+    baby && (
+      baby.birthTime ||
+      baby.birth_time ||
+      baby.birthDate ||
+      baby.birth_date
+    )
+  )
   return {
     exists: Boolean(facts.deliveryNotes),
     date: details.deliveryDate ||
@@ -209,7 +219,13 @@ const deliveryRecord = (facts) => {
       details.deliveredDateTime ||
       details.delivered_datetime ||
       notes.deliveryDate ||
-      notes.createdAt,
+      notes.createdAt ||
+      (firstBaby && (
+        firstBaby.birthTime ||
+        firstBaby.birth_time ||
+        firstBaby.birthDate ||
+        firstBaby.birth_date
+      )),
     provider: normalizeProvider(details.birthProvider || details.birth_provider),
     place: normalizeFacilityPlace(details.birthPlace || details.birthplace),
     mode: asText(details.modeOfDelivery || details.mode_of_delivery) || 'Other/Unknown',
@@ -306,9 +322,27 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (ancInPeriod.some((visit) => ordinal(visit) >= 4)) metrics.anc.atLeast4 = 1
     if (ancInPeriod.some((visit) => ordinal(visit) >= 8)) metrics.anc.atLeast8 = 1
     const first = anc[0]
-    if (first && inPeriod(first.visitDate, period) &&
-      numeric(first.gestationalAge || first.gestational_age) <= 12 &&
-      numeric(first.gestationalAge || first.gestational_age) > 0) metrics.anc.early = 1
+    if (first && inPeriod(first.visitDate, period)) {
+      const firstVisitDate = dateOnly(visitDate(first))
+      const lmpDate = dateOnly(first.lmp || profile.lmp)
+      const lmpStatus = asText(first.lmpStatus || profile.lmpStatus).toLowerCase()
+      const lmpDays = lmpDate && firstVisitDate
+        ? Math.floor((firstVisitDate - lmpDate) / DAY_MS)
+        : null
+      const gestationalAge = numeric(
+        first.gestationalAge ||
+        first.gestational_age ||
+        first.ga_weeks ||
+        first.manualGestationalAge
+      )
+      metrics.anc.early = (lmpDays !== null &&
+        lmpDays >= 0 &&
+        lmpDays < EARLY_ANC_MAX_DAYS &&
+        lmpStatus !== 'unknown') ||
+        (lmpDays === null && gestationalAge > 0 && gestationalAge < 12)
+        ? 1
+        : 0
+    }
     if (ancInPeriod.some((visit) => affirmative(visit.ironFolicAcid) ||
       affirmative(visit.micronutrientsTablet))) metrics.anc.ironFolate = 1
     const td = anc
