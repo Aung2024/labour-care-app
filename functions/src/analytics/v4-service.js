@@ -50,6 +50,8 @@ const monthEnd = (month) => {
   return new Date(Date.UTC(year, value, 0)).toISOString().slice(0, 10)
 }
 
+const monthStart = (month) => `${month}-01`
+
 const monthsBetween = (start, end) => {
   const first = new Date(`${start}-01T00:00:00Z`)
   const last = new Date(`${end}-01T00:00:00Z`)
@@ -180,6 +182,11 @@ const dailyMetricsForMonth = (facts, month) => {
   return days
 }
 
+const periodMetricsForMonth = (facts, month) => calculateV4Metrics(facts, {
+  startDate: month === UNDATED_MONTH ? '2025-01-01' : monthStart(month),
+  endDate: month === UNDATED_MONTH ? '2025-01-01' : monthEnd(month)
+})
+
 const buildV4Contribution = (facts, month) => ({
   schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
   definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
@@ -192,6 +199,7 @@ const buildV4Contribution = (facts, month) => ({
   scopeFacilityCode: facts.scope && facts.scope.facilityCode || '',
   scopeDepartment: facts.scope && facts.scope.department || '',
   scopeFacilityType: facts.scope && facts.scope.facilityType || '',
+  periodMetrics: periodMetricsForMonth(facts, month),
   dailyMetrics: dailyMetricsForMonth(facts, month),
   sourceHash: facts.sourceHash || '',
   updatedAt: new Date().toISOString()
@@ -281,6 +289,16 @@ const contributionMetricsForRange = (
   endDate,
   options = {}
 ) => {
+  if (contribution.periodMetrics) {
+    if (contribution.month === UNDATED_MONTH && options.includeUndated) {
+      return contribution.periodMetrics
+    }
+    if (contribution.month !== UNDATED_MONTH &&
+      startDate <= monthStart(contribution.month) &&
+      endDate >= monthEnd(contribution.month)) {
+      return contribution.periodMetrics
+    }
+  }
   const patientState = createAggregationState()
   ;(contribution.dailyMetrics || []).forEach((day) => {
     if (!day.date && !options.includeUndated) return
@@ -356,6 +374,8 @@ module.exports = {
   contributionRef,
   monthsBetween,
   candidateMonths,
+  monthStart,
+  monthEnd,
   buildV4Contribution,
   refreshPatientAnalyticsV4,
   deletePatientAnalyticsV4,

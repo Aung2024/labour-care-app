@@ -48,7 +48,18 @@ const DAILY_REFRESH_BATCH_SIZE = 100
 const DAILY_REFRESH_CONCURRENCY = 5
 const DAILY_REFRESH_MAX_RUNTIME_MS = 480000
 const V4_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const CONTRIBUTION_PAGE_SIZE = 100
+const CONTRIBUTION_PAGE_SIZE = 500
+const CONTRIBUTION_PROJECTION = [
+  'month',
+  'patientId',
+  'scopeProviderId',
+  'scopeTownship',
+  'scopeRegion',
+  'scopeFacilityCode',
+  'scopeDepartment',
+  'scopeFacilityType',
+  'periodMetrics'
+]
 
 const db = () => admin.firestore()
 const roleKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -325,11 +336,13 @@ const readContributionPages = async function* (input, scope) {
     while (true) {
       let query = createQuery()
       if (cursor) query = query.startAfter(cursor)
-      const snapshot = await query.get()
+      const snapshot = await query.select(...CONTRIBUTION_PROJECTION).get()
       if (snapshot.empty) return
-      const page = snapshot.docs
-        .map((doc) => doc.data())
-        .filter((item) => contributionMatches(item, scope, input))
+      const page = (await Promise.all(snapshot.docs.map(async (doc) => {
+        const item = doc.data()
+        if (item.periodMetrics) return item
+        return (await doc.ref.get()).data()
+      }))).filter((item) => contributionMatches(item, scope, input))
       if (page.length) yield page
       if (snapshot.size < CONTRIBUTION_PAGE_SIZE) return
       cursor = snapshot.docs[snapshot.docs.length - 1]
@@ -599,8 +612,6 @@ module.exports = {
   validateInput,
   allowedScope,
   buildResult,
-  buildResultFromPages,
-  readContributionPages,
   contributionMatches,
   monthsBetween
 }
