@@ -212,26 +212,16 @@
     element('dashboardPreset').addEventListener('change', function () {
       var start = element('dashboardStartDate')
       var end = element('dashboardEndDate')
-      if (!start || !end || this.value === 'custom') return
-      var now = new Date()
-      var first
-      if (this.value === 'this_year') {
-        first = new Date(now.getFullYear(), 0, 1)
-      } else if (this.value === 'last_30_days') {
-        first = new Date(now)
-        first.setDate(first.getDate() - 29)
-      } else {
-        first = new Date(now.getFullYear(), now.getMonth(), 1)
+      if (!start || !end) return
+      if (this.value === 'months' && (!start.value || !end.value)) {
+        var now = new Date()
+        var currentMonth = now.getFullYear() + '-' +
+          String(now.getMonth() + 1).padStart(2, '0')
+        start.value = currentMonth
+        end.value = currentMonth
       }
-      var last = this.value === 'this_year'
-        ? new Date(now.getFullYear(), 11, 31)
-        : new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      var toKey = function (date) {
-        return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') +
-          '-' + String(date.getDate()).padStart(2, '0')
-      }
-      start.value = toKey(first)
-      end.value = toKey(last > now ? now : last)
+      start.disabled = this.value === 'all_time'
+      end.disabled = this.value === 'all_time'
     })
 
     element('dashboardRegion').addEventListener('change', async function () {

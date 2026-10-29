@@ -160,6 +160,7 @@ const cacheKey = (request) => crypto.createHash('sha256').update(JSON.stringify(
   schema: ANALYTICS_V4_SCHEMA_VERSION,
   definition: ANALYTICS_V4_DEFINITION_VERSION,
   scope: request.scope,
+  periodMode: request.periodMode || 'months',
   startDate: request.startDate,
   endDate: request.endDate,
   department: request.department || '',

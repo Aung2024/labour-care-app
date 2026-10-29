@@ -17,6 +17,15 @@ test('v4 callable validates exact inclusive date ranges and filters', () => {
     facilityTypes: ['rhc']
   })
   assert.equal(input.startDate, '2026-01-01')
+  assert.equal(input.periodMode, 'months')
+  assert.equal(
+    validateInput({
+      periodMode: 'all_time',
+      startDate: '1970-01-01',
+      endDate: '2026-10-29'
+    }).periodMode,
+    'all_time'
+  )
   assert.throws(() => validateInput({
     startDate: '2026-02-01',
     endDate: '2026-01-31'

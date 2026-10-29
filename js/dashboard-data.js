@@ -81,6 +81,26 @@
     return year + '-' + month + '-' + day
   }
 
+  function localMonthKey(date) {
+    var value = date || new Date()
+    return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0')
+  }
+
+  function lastDayOfMonth(monthKey) {
+    var parts = String(monthKey || '').split('-').map(Number)
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return ''
+    return localDateKey(new Date(parts[0], parts[1], 0))
+  }
+
+  function setPeriodInputState() {
+    var preset = document.getElementById('dashboardPreset')
+    var start = document.getElementById('dashboardStartDate')
+    var end = document.getElementById('dashboardEndDate')
+    var monthSelection = !preset || preset.value !== 'all_time'
+    if (start) start.disabled = !monthSelection
+    if (end) end.disabled = !monthSelection
+  }
+
   function initializePeriodOptions(now) {
     if (!document.getElementById('dashboardPreset')) {
       var legacyYear = document.getElementById('dashboardYear')
@@ -93,17 +113,16 @@
       return
     }
     var current = now || new Date()
-    var first = new Date(current.getFullYear(), current.getMonth(), 1)
-    var last = new Date(current.getFullYear(), current.getMonth() + 1, 0)
     var preset = document.getElementById('dashboardPreset')
     var start = document.getElementById('dashboardStartDate')
     var end = document.getElementById('dashboardEndDate')
     if (!preset || !start || !end) return
-    preset.value = 'this_month'
-    start.value = localDateKey(first)
-    end.value = localDateKey(last)
-    start.max = localDateKey(current)
-    end.max = localDateKey(current)
+    preset.value = 'all_time'
+    start.value = '1970-01'
+    end.value = localMonthKey(current)
+    start.max = localMonthKey(current)
+    end.max = localMonthKey(current)
+    setPeriodInputState()
   }
 
   function initializeRegions(profile) {
@@ -205,10 +224,17 @@
   }
 
   function readFilterValues() {
+    var preset = document.getElementById('dashboardPreset').value
+    var startMonth = document.getElementById('dashboardStartDate').value
+    var endMonth = document.getElementById('dashboardEndDate').value
+    var allTime = preset === 'all_time'
     return {
-      preset: document.getElementById('dashboardPreset').value,
-      startDate: document.getElementById('dashboardStartDate').value,
-      endDate: document.getElementById('dashboardEndDate').value,
+      preset: preset,
+      periodMode: allTime ? 'all_time' : 'months',
+      startMonth: startMonth,
+      endMonth: endMonth,
+      startDate: allTime ? '1970-01-01' : (startMonth + '-01'),
+      endDate: allTime ? localDateKey(new Date()) : lastDayOfMonth(endMonth),
       region: document.getElementById('dashboardRegion').value,
       township: document.getElementById('dashboardTownship').value,
       department: document.getElementById('dashboardDepartment').value,
@@ -314,6 +340,12 @@
   }
 
   function periodKey(filters) {
+    if (filters.periodMode === 'all_time' || filters.preset === 'all_time') {
+      return 'all-time'
+    }
+    if (filters.startMonth || filters.endMonth) {
+      return (filters.startMonth || '') + '/' + (filters.endMonth || '')
+    }
     if (Object.prototype.hasOwnProperty.call(filters, 'year') ||
         Object.prototype.hasOwnProperty.call(filters, 'month')) {
       if (!filters.year) return 'all'
@@ -478,11 +510,12 @@
     return body.result || body
   }
 
-  async function loadV4Summary(profile, filters) {
+  async function loadV4Summary(profile, filters, onCached) {
     if (!filters.startDate || !filters.endDate) {
       throw new Error('Choose both a start date and an end date.')
     }
     var request = {
+      periodMode: filters.periodMode,
       startDate: filters.startDate,
       endDate: filters.endDate,
       region: filters.region,
@@ -495,6 +528,7 @@
     var cacheKey = 'dashboard-v4:' + JSON.stringify({
       uid: profile.uid,
       scope: resolveGeography(profile, filters),
+      periodMode: filters.periodMode,
       startDate: filters.startDate,
       endDate: filters.endDate,
       department: filters.department,
@@ -506,6 +540,9 @@
     try {
       cached = JSON.parse(localStorage.getItem(cacheKey) || 'null')
     } catch (error) {}
+    if (cached && typeof onCached === 'function') {
+      onCached(Object.assign({}, cached, { source: 'cache' }))
+    }
     var result
     if (!navigator.onLine && cached) {
       result = Object.assign({}, cached, { source: 'cache' })
@@ -537,7 +574,7 @@
   async function loadSummary(profile, filters, onCached) {
     if (global.DashboardMetricsConfig &&
         String(DashboardMetricsConfig.schemaVersion || '').indexOf('analytics-v4') === 0) {
-      return loadV4Summary(profile, filters)
+      return loadV4Summary(profile, filters, onCached)
     }
     var request = summaryReferences(profile, filters)
     var cached = null

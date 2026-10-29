@@ -192,10 +192,14 @@ const allowedScope = (user, input) => {
 
 const validateInput = (input) => {
   const data = input || {}
+  const periodMode = String(data.periodMode || 'months')
+  if (!['all_time', 'months'].includes(periodMode)) {
+    throw new HttpsError('invalid-argument', 'Unsupported period mode.')
+  }
   const startDate = validDate(data.startDate, 'startDate')
   const endDate = validDate(data.endDate, 'endDate')
   if (startDate > endDate) throw new HttpsError('invalid-argument', 'startDate must not be after endDate.')
-  if (dateDistance(startDate, endDate) > MAX_RANGE_DAYS) {
+  if (periodMode !== 'all_time' && dateDistance(startDate, endDate) > MAX_RANGE_DAYS) {
     throw new HttpsError('invalid-argument', `Date ranges may not exceed ${MAX_RANGE_DAYS} days.`)
   }
   const department = String(data.department || '')
@@ -207,7 +211,7 @@ const validateInput = (input) => {
     facilityTypes.some((value) => typeof value !== 'string' || value.length > 80)) {
     throw new HttpsError('invalid-argument', 'facilityTypes accepts up to 10 values.')
   }
-  return { ...data, startDate, endDate, department, facilityTypes }
+  return { ...data, periodMode, startDate, endDate, department, facilityTypes }
 }
 
 const contributionMatches = (contribution, scope, input) => {
@@ -271,7 +275,11 @@ const buildResult = (input, contributions, scope) => {
   }
 }
 
-const queryDashboardV4 = onCall({ region: REGION, timeoutSeconds: 60 }, async (request) => {
+const queryDashboardV4 = onCall({
+  region: REGION,
+  timeoutSeconds: 60,
+  memory: '1GiB'
+}, async (request) => {
   const user = await authorizedUser(request)
   const input = validateInput(request.data)
   const scope = allowedScope(user, input)
@@ -298,7 +306,11 @@ const queryDashboardV4 = onCall({ region: REGION, timeoutSeconds: 60 }, async (r
   return { ...result, cacheKey: key, source: 'server' }
 })
 
-const requestDashboardV4Export = onCall({ region: REGION, timeoutSeconds: 60 }, async (request) => {
+const requestDashboardV4Export = onCall({
+  region: REGION,
+  timeoutSeconds: 60,
+  memory: '1GiB'
+}, async (request) => {
   const user = await authorizedUser(request)
   if (user.role === 'midwife') {
     throw new HttpsError('permission-denied', 'Excel export is available to TMO and above.')

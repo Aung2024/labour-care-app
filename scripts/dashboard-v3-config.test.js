@@ -300,11 +300,11 @@ test('dashboard periods use all, year, or month summary keys only', () => {
   )
 })
 
-test('dashboard period controls default to the current exact month', () => {
+test('dashboard period controls default to all time with month-range support', () => {
   const previousDocument = global.document
   const preset = { value: '', innerHTML: '' }
-  const start = { value: '' }
-  const end = { value: '' }
+  const start = { value: '', disabled: false }
+  const end = { value: '', disabled: false }
   global.document = {
     getElementById(id) {
       return { dashboardPreset: preset, dashboardStartDate: start, dashboardEndDate: end }[id]
@@ -313,9 +313,43 @@ test('dashboard period controls default to the current exact month', () => {
 
   try {
     global.DashboardData.initializePeriodOptions(new Date('2026-09-24T00:00:00Z'))
-    assert.equal(preset.value, 'this_month')
-    assert.equal(start.value, '2026-09-01')
-    assert.equal(end.value, '2026-09-30')
+    assert.equal(preset.value, 'all_time')
+    assert.equal(start.value, '1970-01')
+    assert.equal(end.value, '2026-09')
+    assert.equal(start.disabled, true)
+    assert.equal(end.disabled, true)
+  } finally {
+    if (previousDocument === undefined) delete global.document
+    else global.document = previousDocument
+  }
+})
+
+test('dashboard month selection sends an inclusive multi-month range', () => {
+  const previousDocument = global.document
+  const values = {
+    dashboardPreset: { value: 'months' },
+    dashboardStartDate: { value: '2024-01' },
+    dashboardEndDate: { value: '2024-03' },
+    dashboardRegion: { value: '' },
+    dashboardTownship: { value: '' },
+    dashboardDepartment: { value: '' },
+    dashboardFacility: { value: '' },
+    dashboardTrendMode: { value: 'month' }
+  }
+  global.document = {
+    getElementById(id) {
+      return values[id]
+    },
+    querySelectorAll() {
+      return []
+    }
+  }
+
+  try {
+    const filters = global.DashboardData.readFilterValues()
+    assert.equal(filters.periodMode, 'months')
+    assert.equal(filters.startDate, '2024-01-01')
+    assert.equal(filters.endDate, '2024-03-31')
   } finally {
     if (previousDocument === undefined) delete global.document
     else global.document = previousDocument
