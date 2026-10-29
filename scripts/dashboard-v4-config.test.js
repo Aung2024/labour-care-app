@@ -39,6 +39,19 @@ test('v4 dashboard contains the requested clinical cards', () => {
   assert.equal(all.find((item) => item.key === 'kmc_weight_gain').format, 'averageGrams')
 })
 
+test('overview uses readable chart roles and keeps joint care compact', () => {
+  const all = global.DashboardMetricsConfig.allDefinitions
+  const totalClients = all.find((item) => item.key === 'total_clients')
+  assert.deepEqual(
+    totalClients.charts.map((chart) => [chart.dimension, chart.type]),
+    [['month', 'trend'], ['facility', 'bar'], ['township', 'donut']]
+  )
+  assert.deepEqual(
+    all.find((item) => item.key === 'joint_care_patients').charts,
+    []
+  )
+})
+
 test('v4 display helpers distinguish zero from missing denominators', () => {
   const config = global.DashboardMetricsConfig
   const coverage = config.allDefinitions.find((item) => item.key === 'pnc_coverage')

@@ -550,6 +550,10 @@
       trendMode: filters.trendMode
     }
     var cacheKey = 'dashboard-v4:' + JSON.stringify({
+      schemaVersion: global.DashboardMetricsConfig &&
+        DashboardMetricsConfig.schemaVersion,
+      definitionVersion: global.DashboardMetricsConfig &&
+        DashboardMetricsConfig.definitionVersion,
       uid: profile.uid,
       scope: resolveGeography(profile, filters),
       periodMode: filters.periodMode,

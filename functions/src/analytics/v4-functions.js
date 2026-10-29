@@ -63,6 +63,7 @@ const CONTRIBUTION_PROJECTION = [
 
 const db = () => admin.firestore()
 const roleKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+const geographyValue = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
 
 const backfillJobRef = (database = db()) =>
   database.collection('analytics_v4_jobs').doc(BACKFILL_JOB_ID)
@@ -316,7 +317,13 @@ const validateInput = (input) => {
 }
 
 const contributionMatches = (contribution, scope, input) => {
-  const scoped = Object.entries(scope).every(([key, value]) => !value || contribution[key] === value)
+  const scoped = Object.entries(scope).every(([key, value]) => {
+    if (!value) return true
+    if (key === 'scopeTownship' || key === 'scopeRegion') {
+      return geographyValue(contribution[key]) === geographyValue(value)
+    }
+    return contribution[key] === value
+  })
   if (!scoped) return false
   if (input.department && contribution.scopeDepartment !== input.department) return false
   if (input.facilityTypes.length &&

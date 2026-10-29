@@ -387,10 +387,13 @@
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
       : ''
+    var dimensionClass = chartSpec && chartSpec.dimension
+      ? ' dashboard-chart-card--' + chartSpec.dimension
+      : ''
     var title = chartSpec && chartSpec.title
       ? definition.label + ' · ' + chartSpec.title
       : definition.label
-    return '<article class="dashboard-chart-card' + supplementalClass + '">' +
+    return '<article class="dashboard-chart-card' + supplementalClass + dimensionClass + '">' +
       supplementalBadge +
       '<h3 class="dashboard-chart-title">' + escapeHtml(title) + '</h3>' +
       (definition.helperText
@@ -401,7 +404,7 @@
       '</article>'
   }
 
-  function baseChartOptions(definition, entries, chartType) {
+  function baseChartOptions(definition, entries, chartType, chartSpec) {
     var labels = entries.map(function (item) { return item[0] })
     var values = entries.map(function (item) { return item[1] })
     var selectedChartType = chartType || definition.chart
@@ -469,7 +472,8 @@
       return options
     }
 
-    var horizontal = labels.some(function (label) { return String(label).length > 20 })
+    var horizontal = Boolean(chartSpec && chartSpec.dimension === 'facility') ||
+      labels.some(function (label) { return String(label).length > 20 })
     var formatAxisLabel = function (value) {
       if (typeof value === 'string' && value.trim() && Number.isNaN(Number(value))) return value
       var number = Number(value)
@@ -506,7 +510,7 @@
         horizontal: horizontal
       }
     }
-    if (horizontal) options.chart.height = Math.max(270, labels.length * 34)
+    if (horizontal) options.chart.height = Math.max(300, labels.length * 34)
     options.dataLabels = { enabled: false }
     return options
   }
@@ -547,7 +551,12 @@
     try {
       chart = new global.ApexCharts(
         element,
-        baseChartOptions(definition, entries, chartSpec.type || definition.chart)
+        baseChartOptions(
+          definition,
+          entries,
+          chartSpec.type || definition.chart,
+          chartSpec
+        )
       )
       chartInstances[id] = chart
       var renderResult = chart.render()

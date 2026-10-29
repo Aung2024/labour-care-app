@@ -78,6 +78,14 @@ test('contribution filters cannot widen a role scope', () => {
     ),
     false
   )
+  assert.equal(
+    contributionMatches(
+      { scopeRegion: 'Nay  Pyi  Taw', scopeTownship: ' PYINMANA ' },
+      { scopeRegion: 'nay pyi taw', scopeTownship: 'Pyinmana' },
+      { department: '', facilityTypes: [], facilityCode: '' }
+    ),
+    true
+  )
 })
 
 test('v4 backfill completes an empty job without touching patient records', async () => {

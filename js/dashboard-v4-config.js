@@ -33,8 +33,8 @@
       detailLabels: ['Mothers', 'Babies'],
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'donut', dimension: 'facility', title: 'Total Clients by Facility' },
-        { type: 'bar', dimension: 'township', title: 'Total Clients by Township' }
+        { type: 'bar', dimension: 'facility', title: 'Total Clients by Facility' },
+        { type: 'donut', dimension: 'township', title: 'Total Clients by TSP' }
       ]
     }),
     metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
@@ -55,7 +55,7 @@
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),
     metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: []
     }),
     metric('Overview', 'finalized_outcomes', 'Finalized Service Outcomes', 'serviceClosure.total', '', {
       charts: [{ type: 'outcome', dimension: 'outcomes', title: 'Service Outcomes' }]
