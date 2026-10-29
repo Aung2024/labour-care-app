@@ -18,7 +18,9 @@ const {
   CACHE_COLLECTION,
   UNDATED_MONTH,
   monthsBetween,
-  aggregateContributions,
+  createAggregationState,
+  addContributionToAggregationState,
+  materializeState,
   cacheKey
 } = require('./v4-service')
 const {
@@ -45,6 +47,7 @@ const DAILY_REFRESH_BATCH_SIZE = 100
 const DAILY_REFRESH_CONCURRENCY = 5
 const DAILY_REFRESH_MAX_RUNTIME_MS = 480000
 const V4_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const CONTRIBUTION_PAGE_SIZE = 100
 
 const db = () => admin.firestore()
 const roleKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -314,52 +317,51 @@ const groupKeyFor = (contribution, mode) => {
   return contribution.month
 }
 
-const readContributions = async (input, scope) => {
+const contributionMonthsForInput = (input) => {
   const startMonth = input.startDate.slice(0, 7)
   const endMonth = input.endDate.slice(0, 7)
-  const collection = db().collection(CONTRIBUTION_COLLECTION)
-  const queries = [collection
-    .where('month', '>=', startMonth)
-    .where('month', '<=', endMonth)
-    .get()]
-  if (input.periodMode === 'all_time') {
-    queries.push(collection.where('month', '==', UNDATED_MONTH).get())
-  }
-  const snapshots = await Promise.all(queries)
-  return snapshots.flatMap((snapshot) => snapshot.docs.map((doc) => doc.data())).filter((item) =>
-    contributionMatches(item, scope, input)
-  )
+  const months = monthsBetween(startMonth, endMonth)
+  if (input.periodMode === 'all_time') months.push(UNDATED_MONTH)
+  return months
 }
 
-const buildResult = (input, contributions, scope) => {
-  const aggregationOptions = {
-    includeUndated: input.periodMode === 'all_time'
+const readContributionPages = async function* (input, scope) {
+  const collection = db().collection(CONTRIBUTION_COLLECTION)
+  for (const month of contributionMonthsForInput(input)) {
+    let cursor = null
+    while (true) {
+      let query = collection
+        .where('month', '==', month)
+        .orderBy(FieldPath.documentId())
+        .limit(CONTRIBUTION_PAGE_SIZE)
+      if (cursor) query = query.startAfter(cursor)
+      const snapshot = await query.get()
+      if (snapshot.empty) break
+      const page = snapshot.docs
+        .map((doc) => doc.data())
+        .filter((item) => contributionMatches(item, scope, input))
+      if (page.length) yield page
+      if (snapshot.size < CONTRIBUTION_PAGE_SIZE) break
+      cursor = snapshot.docs[snapshot.docs.length - 1]
+    }
   }
-  const metrics = aggregateContributions(
-    contributions,
-    input.startDate,
-    input.endDate,
-    aggregationOptions
-  )
-  const modes = input.allowedModes || ['month']
+}
+
+const resultFromAggregationStates = (
+  input,
+  scope,
+  modes,
+  overallState,
+  modeStates,
+  contributionCount
+) => {
   const seriesByDimension = {}
   modes.forEach((mode) => {
-    const groups = new Map()
-    contributions.forEach((contribution) => {
-      const key = groupKeyFor(contribution, mode)
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key).push(contribution)
-    })
-    seriesByDimension[mode] = Array.from(groups.entries())
+    seriesByDimension[mode] = Array.from(modeStates[mode].entries())
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([label, items]) => ({
+      .map(([label, state]) => ({
         label,
-        metrics: aggregateContributions(
-          items,
-          input.startDate,
-          input.endDate,
-          aggregationOptions
-        )
+        metrics: materializeState(state)
       }))
   })
   return {
@@ -368,12 +370,92 @@ const buildResult = (input, contributions, scope) => {
     startDate: input.startDate,
     endDate: input.endDate,
     scope,
-    metrics,
+    metrics: materializeState(overallState),
     seriesByDimension,
-    contributionCount: contributions.length,
+    contributionCount,
     calculatedAt: new Date().toISOString(),
     complete: true
   }
+}
+
+const buildResult = (input, contributions, scope) => {
+  const aggregationOptions = {
+    includeUndated: input.periodMode === 'all_time'
+  }
+  const modes = input.allowedModes || ['month']
+  const overallState = createAggregationState()
+  const modeStates = Object.fromEntries(modes.map((mode) => [mode, new Map()]))
+  contributions.forEach((contribution) => {
+    addContributionToAggregationState(
+      overallState,
+      contribution,
+      input.startDate,
+      input.endDate,
+      aggregationOptions
+    )
+    modes.forEach((mode) => {
+      const key = groupKeyFor(contribution, mode)
+      const state = modeStates[mode].get(key) || createAggregationState()
+      addContributionToAggregationState(
+        state,
+        contribution,
+        input.startDate,
+        input.endDate,
+        aggregationOptions
+      )
+      modeStates[mode].set(key, state)
+    })
+  })
+  return resultFromAggregationStates(
+    input,
+    scope,
+    modes,
+    overallState,
+    modeStates,
+    contributions.length
+  )
+}
+
+const buildResultFromPages = async (input, pages, scope) => {
+  const aggregationOptions = {
+    includeUndated: input.periodMode === 'all_time'
+  }
+  const modes = input.allowedModes || ['month']
+  const overallState = createAggregationState()
+  const modeStates = Object.fromEntries(modes.map((mode) => [mode, new Map()]))
+  let contributionCount = 0
+  for await (const page of pages) {
+    contributionCount += page.length
+    page.forEach((contribution) => {
+      addContributionToAggregationState(
+        overallState,
+        contribution,
+        input.startDate,
+        input.endDate,
+        aggregationOptions
+      )
+      modes.forEach((mode) => {
+        const key = groupKeyFor(contribution, mode)
+        const state = modeStates[mode].get(key) || createAggregationState()
+        addContributionToAggregationState(
+          state,
+          contribution,
+          input.startDate,
+          input.endDate,
+          aggregationOptions
+        )
+        modeStates[mode].set(key, state)
+      })
+    })
+  }
+  return resultFromAggregationStates(
+    input,
+    scope,
+    modes,
+    overallState,
+    modeStates,
+    contributionCount
+  )
 }
 
 const queryDashboardV4 = onCall({
@@ -391,7 +473,6 @@ const queryDashboardV4 = onCall({
     cached.get('expiresAt').toMillis && cached.get('expiresAt').toMillis() > Date.now()) {
     return { ...cached.data(), cacheKey: key, source: 'cache' }
   }
-  const contributions = await readContributions(input, scope)
   const roleModes = user.role === 'midwife'
     ? ['month']
     : user.role === 'tmo' || user.role === 'township medical officer'
@@ -399,7 +480,11 @@ const queryDashboardV4 = onCall({
       : user.role === 'regional officer'
         ? ['month', 'facility', 'township']
         : ['month', 'facility', 'township', 'region']
-  const result = buildResult({ ...input, allowedModes: roleModes }, contributions, scope)
+  const result = await buildResultFromPages(
+    { ...input, allowedModes: roleModes },
+    readContributionPages(input, scope),
+    scope
+  )
   await cacheRef.set({
     ...result,
     expiresAt: new Date(Date.now() + V4_CACHE_TTL_MS)
@@ -418,11 +503,14 @@ const requestDashboardV4Export = onCall({
   }
   const input = validateInput(request.data)
   const scope = allowedScope(user, input)
-  const contributions = await readContributions(input, scope)
   const forcedMode = user.role === 'tmo' || user.role === 'township medical officer'
     ? 'facility'
     : user.role === 'regional officer' ? 'township' : 'region'
-  const result = buildResult({ ...input, allowedModes: [forcedMode] }, contributions, scope)
+  const result = await buildResultFromPages(
+    { ...input, allowedModes: [forcedMode] },
+    readContributionPages(input, scope),
+    scope
+  )
   let ExcelJS
   try {
     ExcelJS = require('exceljs')

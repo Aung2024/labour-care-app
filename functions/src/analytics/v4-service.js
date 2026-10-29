@@ -265,6 +265,28 @@ const reduceMetrics = (state, metrics, patientId) => {
   })
 }
 
+const createAggregationState = () => ({
+  additive: {},
+  unique: {},
+  maps: {}
+})
+
+const addContributionToAggregationState = (
+  state,
+  contribution,
+  startDate,
+  endDate,
+  options = {}
+) => {
+  const patientState = createAggregationState()
+  ;(contribution.dailyMetrics || []).forEach((day) => {
+    if (!day.date && !options.includeUndated) return
+    if (day.date && (day.date < startDate || day.date > endDate)) return
+    reduceMetrics(patientState, day.metrics || {}, contribution.patientId)
+  })
+  reduceMetrics(state, materializeState(patientState), contribution.patientId)
+}
+
 const materializeState = (state) => {
   const metrics = {}
   Object.entries(state.additive).forEach(([path, value]) => setAtPath(metrics, path, value))
@@ -288,15 +310,15 @@ const aggregateContributions = (
   endDate,
   options = {}
 ) => {
-  const state = { additive: {}, unique: {}, maps: {} }
+  const state = createAggregationState()
   contributions.forEach((contribution) => {
-    const patientState = { additive: {}, unique: {}, maps: {} }
-    ;(contribution.dailyMetrics || []).forEach((day) => {
-      if (!day.date && !options.includeUndated) return
-      if (day.date && (day.date < startDate || day.date > endDate)) return
-      reduceMetrics(patientState, day.metrics || {}, contribution.patientId)
-    })
-    reduceMetrics(state, materializeState(patientState), contribution.patientId)
+    addContributionToAggregationState(
+      state,
+      contribution,
+      startDate,
+      endDate,
+      options
+    )
   })
   return materializeState(state)
 }
@@ -321,6 +343,9 @@ module.exports = {
   refreshPatientAnalyticsV4,
   deletePatientAnalyticsV4,
   cacheKey,
+  createAggregationState,
+  addContributionToAggregationState,
+  materializeState,
   aggregateContributions,
   matchesScope,
   mergeNumericTrees
