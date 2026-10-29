@@ -271,8 +271,11 @@ const createAggregationState = () => ({
   maps: {}
 })
 
-const addContributionToAggregationState = (
-  state,
+const addMetricsToAggregationState = (state, metrics, patientId) => {
+  reduceMetrics(state, metrics, patientId)
+}
+
+const contributionMetricsForRange = (
   contribution,
   startDate,
   endDate,
@@ -284,7 +287,21 @@ const addContributionToAggregationState = (
     if (day.date && (day.date < startDate || day.date > endDate)) return
     reduceMetrics(patientState, day.metrics || {}, contribution.patientId)
   })
-  reduceMetrics(state, materializeState(patientState), contribution.patientId)
+  return materializeState(patientState)
+}
+
+const addContributionToAggregationState = (
+  state,
+  contribution,
+  startDate,
+  endDate,
+  options = {}
+) => {
+  addMetricsToAggregationState(
+    state,
+    contributionMetricsForRange(contribution, startDate, endDate, options),
+    contribution.patientId
+  )
 }
 
 const materializeState = (state) => {
@@ -344,6 +361,8 @@ module.exports = {
   deletePatientAnalyticsV4,
   cacheKey,
   createAggregationState,
+  addMetricsToAggregationState,
+  contributionMetricsForRange,
   addContributionToAggregationState,
   materializeState,
   aggregateContributions,

@@ -19,7 +19,8 @@ const {
   UNDATED_MONTH,
   monthsBetween,
   createAggregationState,
-  addContributionToAggregationState,
+  addMetricsToAggregationState,
+  contributionMetricsForRange,
   materializeState,
   cacheKey
 } = require('./v4-service')
@@ -317,33 +318,38 @@ const groupKeyFor = (contribution, mode) => {
   return contribution.month
 }
 
-const contributionMonthsForInput = (input) => {
-  const startMonth = input.startDate.slice(0, 7)
-  const endMonth = input.endDate.slice(0, 7)
-  const months = monthsBetween(startMonth, endMonth)
-  if (input.periodMode === 'all_time') months.push(UNDATED_MONTH)
-  return months
-}
-
 const readContributionPages = async function* (input, scope) {
   const collection = db().collection(CONTRIBUTION_COLLECTION)
-  for (const month of contributionMonthsForInput(input)) {
+  const queryPages = async function* (createQuery) {
     let cursor = null
     while (true) {
-      let query = collection
-        .where('month', '==', month)
-        .orderBy(FieldPath.documentId())
-        .limit(CONTRIBUTION_PAGE_SIZE)
+      let query = createQuery()
       if (cursor) query = query.startAfter(cursor)
       const snapshot = await query.get()
-      if (snapshot.empty) break
+      if (snapshot.empty) return
       const page = snapshot.docs
         .map((doc) => doc.data())
         .filter((item) => contributionMatches(item, scope, input))
       if (page.length) yield page
-      if (snapshot.size < CONTRIBUTION_PAGE_SIZE) break
+      if (snapshot.size < CONTRIBUTION_PAGE_SIZE) return
       cursor = snapshot.docs[snapshot.docs.length - 1]
     }
+  }
+  const startMonth = input.startDate.slice(0, 7)
+  const endMonth = input.endDate.slice(0, 7)
+  const rangedPages = queryPages(() => collection
+    .where('month', '>=', startMonth)
+    .where('month', '<=', endMonth)
+    .orderBy('month')
+    .orderBy(FieldPath.documentId())
+    .limit(CONTRIBUTION_PAGE_SIZE))
+  for await (const page of rangedPages) yield page
+  if (input.periodMode === 'all_time') {
+    const undatedPages = queryPages(() => collection
+      .where('month', '==', UNDATED_MONTH)
+      .orderBy(FieldPath.documentId())
+      .limit(CONTRIBUTION_PAGE_SIZE))
+    for await (const page of undatedPages) yield page
   }
 }
 
@@ -386,22 +392,24 @@ const buildResult = (input, contributions, scope) => {
   const overallState = createAggregationState()
   const modeStates = Object.fromEntries(modes.map((mode) => [mode, new Map()]))
   contributions.forEach((contribution) => {
-    addContributionToAggregationState(
-      overallState,
+    const metrics = contributionMetricsForRange(
       contribution,
       input.startDate,
       input.endDate,
       aggregationOptions
     )
+    addMetricsToAggregationState(
+      overallState,
+      metrics,
+      contribution.patientId
+    )
     modes.forEach((mode) => {
       const key = groupKeyFor(contribution, mode)
       const state = modeStates[mode].get(key) || createAggregationState()
-      addContributionToAggregationState(
+      addMetricsToAggregationState(
         state,
-        contribution,
-        input.startDate,
-        input.endDate,
-        aggregationOptions
+        metrics,
+        contribution.patientId
       )
       modeStates[mode].set(key, state)
     })
@@ -427,22 +435,24 @@ const buildResultFromPages = async (input, pages, scope) => {
   for await (const page of pages) {
     contributionCount += page.length
     page.forEach((contribution) => {
-      addContributionToAggregationState(
-        overallState,
+      const metrics = contributionMetricsForRange(
         contribution,
         input.startDate,
         input.endDate,
         aggregationOptions
       )
+      addMetricsToAggregationState(
+        overallState,
+        metrics,
+        contribution.patientId
+      )
       modes.forEach((mode) => {
         const key = groupKeyFor(contribution, mode)
         const state = modeStates[mode].get(key) || createAggregationState()
-        addContributionToAggregationState(
+        addMetricsToAggregationState(
           state,
-          contribution,
-          input.startDate,
-          input.endDate,
-          aggregationOptions
+          metrics,
+          contribution.patientId
         )
         modeStates[mode].set(key, state)
       })
@@ -589,6 +599,8 @@ module.exports = {
   validateInput,
   allowedScope,
   buildResult,
+  buildResultFromPages,
+  readContributionPages,
   contributionMatches,
   monthsBetween
 }
