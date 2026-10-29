@@ -109,6 +109,29 @@ test('calculates the v4 clinical contract from normalized patient facts', () => 
   assert.equal(metrics.serviceClosure.total, 1)
 })
 
+test('overview metrics include default service outcome and maternal demographics', () => {
+  const metrics = calculateV4Metrics(facts({
+    profile: {
+      patient_type: 'mother',
+      registration_date: '2026-01-01',
+      age: '29',
+      gravida_value: 3,
+      parity_primary: 2,
+      parity_secondary: 1
+    }
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.serviceClosure.total, 1)
+  assert.equal(metrics.serviceClosure.outcomes['In service'], 1)
+  assert.equal(metrics.registration.ageGroups['18-35'], 1)
+  assert.equal(metrics.registration.gravidaTotal, 3)
+  assert.equal(metrics.registration.gravidaCount, 1)
+  assert.equal(metrics.registration.parityTotal, 3)
+  assert.equal(metrics.registration.parityCount, 1)
+})
+
 test('counts institutional delivery independently of the birth provider', () => {
   const delivery = deliveryRecord(facts({
     deliveryNotes: {

@@ -48,18 +48,17 @@ test('v4 display helpers distinguish zero from missing denominators', () => {
 
 test('dashboard markup uses exact date controls and export action', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'dashboard.html'), 'utf8')
-  assert.match(html, /dashboardStartDate/)
-  assert.match(html, /dashboardEndDate/)
-  assert.match(html, /dashboardStartDate[^>]+min="2025-01"/)
-  assert.match(html, /dashboardEndDate[^>]+min="2025-01"/)
+  assert.match(html, /<select[^>]+id="dashboardStartDate"/)
+  assert.match(html, /<select[^>]+id="dashboardEndDate"/)
+  assert.doesNotMatch(html, /dashboardTrendMode/)
   assert.match(html, /dashboardExportButton/)
   assert.match(html, /dashboard-v4-config\.js/)
 })
 
-test('dashboard chart controller supports selectable KPI cards and trend modes', () => {
+test('dashboard chart controller uses fixed scorecard-led charts', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard-charts.js'), 'utf8')
-  assert.match(source, /data-metric-key/)
-  assert.match(source, /aria-pressed/)
-  assert.match(source, /setTrendMode/)
-  assert.match(source, /currentSeries\[activeTrendMode\]/)
+  assert.match(source, /chartSpec\.dimension/)
+  assert.match(source, /facilityLabel/)
+  assert.doesNotMatch(source, /data-metric-key/)
+  assert.doesNotMatch(source, /dashboard-info-button/)
 })

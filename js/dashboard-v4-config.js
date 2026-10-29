@@ -28,15 +28,65 @@
   }
 
   var definitions = [
-    metric('Overview', 'total_clients', 'Total Clients', 'registration.total', '', { detailPaths: ['registration.mothers', 'registration.babies'], detailLabels: ['Mothers', 'Babies'] }),
-    metric('Overview', 'anc_clients', 'ANC Clients', 'anc.clients'),
-    metric('Overview', 'high_risk_identified', 'High Risks Identified Among All ANC', 'highRisk.clients'),
-    metric('Overview', 'institutional_deliveries', 'Institutional Deliveries', 'delivery.institutional'),
-    metric('Overview', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba'),
-    metric('Overview', 'pnc_clients', 'PNC Clients', 'pnc.clients'),
-    metric('Overview', 'newborn_care_clients', 'Newborn Care Clients', 'newborn.clients'),
-    metric('Overview', 'baby_referrals', 'Baby Referrals', 'referral.baby.total'),
-    metric('Overview', 'finalized_outcomes', 'Finalized Service Outcomes', 'serviceClosure.total', '', { chart: 'outcome' }),
+    metric('Overview', 'total_clients', 'Total Clients', 'registration.total', '', {
+      detailPaths: ['registration.mothers', 'registration.babies'],
+      detailLabels: ['Mothers', 'Babies'],
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'donut', dimension: 'facility', title: 'Total Clients by Facility' },
+        { type: 'bar', dimension: 'township', title: 'Total Clients by Township' }
+      ]
+    }),
+    metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'newborn_care_clients', 'Newborn Care Headcount', 'newborn.clients', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'pnc_clients', 'PNC Headcount', 'pnc.clients', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'hrt_completed', 'HRT', 'highRisk.completion.completed', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'referrals', 'Referrals', 'referral.total', '', {
+      detailPaths: ['referral.maternal.total', 'referral.baby.total'],
+      detailLabels: ['Mother referrals', 'Baby referrals'],
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'finalized_outcomes', 'Finalized Service Outcomes', 'serviceClosure.total', '', {
+      charts: [{ type: 'outcome', dimension: 'outcomes', title: 'Service Outcomes' }]
+    }),
+    metric('Overview', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    metric('Overview', 'institutional_deliveries', 'Institutional Deliveries', 'delivery.institutional', '', {
+      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+    }),
+    {
+      section: 'Overview',
+      key: 'age_demographics',
+      label: 'Age Demographics',
+      numerator: 'registration.ageGroups',
+      format: 'map',
+      chartOnly: true,
+      charts: [{ type: 'bar', dimension: 'ageGroups', title: 'Registered Mothers by Age' }]
+    },
+    {
+      section: 'Overview',
+      key: 'average_gp',
+      label: 'Average Gravida and Parity',
+      format: 'average',
+      chartOnly: true,
+      chartValues: [
+        { label: 'Average Gravida', path: 'registration.gravidaTotal', denominator: 'registration.gravidaCount' },
+        { label: 'Average Parity', path: 'registration.parityTotal', denominator: 'registration.parityCount' }
+      ],
+      charts: [{ type: 'bar', dimension: 'gp', title: 'Average Gravida and Parity' }]
+    },
 
     metric('ANC', 'anc_clients', 'ANC Clients', 'anc.clients'),
     metric('ANC', 'anc_visits', 'ANC Visits', 'anc.services'),

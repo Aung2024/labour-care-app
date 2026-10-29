@@ -35,6 +35,7 @@ const MAP_PATHS = new Set([
   'referral.baby.byStage',
   'referral.baby.byDestination',
   'jointCare.byReceivingFacilityType',
+  'serviceClosure.outcomes',
   'serviceClosure.mother.byOutcome',
   'serviceClosure.baby.byOutcome'
 ])

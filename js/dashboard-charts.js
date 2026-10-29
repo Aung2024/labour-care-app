@@ -8,7 +8,6 @@
   var renderedSections = new Set()
   var currentMetrics = {}
   var currentSeries = {}
-  var selectedMetricBySection = {}
   var activeTrendMode = 'month'
   var resizeObserver = null
   var intersectionObserver = null
@@ -27,8 +26,10 @@
     return 'dashboard-section-' + section.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   }
 
-  function chartId(definition) {
-    return 'dashboard-chart-' + sectionId(definition.section)
+  function chartId(definition, chartSpec, index) {
+    var suffix = chartSpec && (chartSpec.dimension || chartSpec.type) || 'default'
+    return 'dashboard-chart-' + sectionId(definition.section) + '-' +
+      definition.key + '-' + suffix + '-' + Number(index || 0)
   }
 
   function requestFrame(callback) {
@@ -69,21 +70,31 @@
       resizeObserver = new global.ResizeObserver(function (entries) {
         entries.forEach(function (entry) {
           var element = entry.target
-          var definition = chartDefinitions[element.id]
-          if (!definition || !isChartVisible(element)) return
+          var chartDefinition = chartDefinitions[element.id]
+          if (!chartDefinition || !isChartVisible(element)) return
           var width = Math.round(entry.contentRect.width)
           if (!width || Math.abs(width - Number(observedWidths[element.id] || 0)) < 8) return
           observedWidths[element.id] = width
-          scheduleChartRender(definition, true)
+          scheduleChartRender(
+            chartDefinition.definition,
+            chartDefinition.chartSpec,
+            chartDefinition.index,
+            true
+          )
         })
       })
     }
     if (!intersectionObserver && typeof global.IntersectionObserver === 'function') {
       intersectionObserver = new global.IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
-          var definition = chartDefinitions[entry.target.id]
-          if (entry.isIntersecting && definition && !chartInstances[entry.target.id]) {
-            scheduleChartRender(definition, false)
+          var chartDefinition = chartDefinitions[entry.target.id]
+          if (entry.isIntersecting && chartDefinition && !chartInstances[entry.target.id]) {
+            scheduleChartRender(
+              chartDefinition.definition,
+              chartDefinition.chartSpec,
+              chartDefinition.index,
+              false
+            )
           }
         })
       })
@@ -256,17 +267,11 @@
       : ''
     return '<article class="dashboard-kpi' + supplementalClass + '">' +
       supplementalBadge +
-      '<button class="dashboard-kpi-select" type="button" data-metric-key="' + escapeHtml(definition.key) +
-      '" aria-pressed="false">' +
       '<span class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</span>' +
       '<span class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</span>' +
       (detail
         ? '<span class="dashboard-kpi-detail">' + detail + '</span>'
         : '') +
-      '</button>' +
-      '<button class="dashboard-info-button" type="button" data-indicator-key="' +
-      escapeHtml(definition.key) + '" aria-label="View calculation for ' +
-      escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>' +
       '</article>'
   }
 
@@ -291,12 +296,35 @@
     return 0
   }
 
-  function entriesForDefinition(definition, metrics) {
+  function facilityLabel(value) {
+    var facility = global.FacilityConfig &&
+      FacilityConfig.getFacilityByCode(value)
+    return facility
+      ? FacilityConfig.getFacilityLabel(facility, 'en')
+      : String(value || 'Unknown facility')
+  }
+
+  function entriesForDefinition(definition, metrics, chartSpec) {
     var source = metrics || {}
-    var series = currentSeries[activeTrendMode] || []
-    if (series.length && definition.chart === 'trend' && definition.format !== 'map') {
+    var dimension = chartSpec && chartSpec.dimension
+    var series = currentSeries[dimension || activeTrendMode] || []
+    if (['facility', 'township', 'region'].includes(dimension) &&
+        !Object.prototype.hasOwnProperty.call(currentSeries, dimension)) {
+      return []
+    }
+    if (dimension === 'month' || (!dimension && definition.chart === 'trend' && definition.format !== 'map')) {
       return series.map(function (item) {
         return [item.label, DashboardMetricsConfig.numberAtPath(item.metrics || {}, definition.numerator)]
+      })
+    }
+    if (dimension === 'facility' || dimension === 'township' || dimension === 'region') {
+      return series.map(function (item) {
+        return [
+          dimension === 'facility' ? facilityLabel(item.label) : item.label,
+          DashboardMetricsConfig.numberAtPath(item.metrics || {}, definition.numerator)
+        ]
+      }).sort(function (left, right) {
+        return right[1] - left[1] || left[0].localeCompare(right[0])
       })
     }
     if (series.length && definition.chart === 'comparison' && definition.comparison) {
@@ -314,7 +342,20 @@
     }
     if (definition.chartValues) {
       return definition.chartValues.map(function (item) {
-        return [item.label, DashboardMetricsConfig.numberAtPath(source, item.path)]
+        var numerator = DashboardMetricsConfig.numberAtPath(source, item.path)
+        var denominator = item.denominator
+          ? DashboardMetricsConfig.numberAtPath(source, item.denominator)
+          : 1
+        return [item.label, denominator ? numerator / denominator : 0]
+      })
+    }
+    if (dimension === 'outcomes') {
+      return sortedMapEntries(source.serviceClosure && source.serviceClosure.outcomes)
+    }
+    if (dimension === 'ageGroups') {
+      var ageGroups = source.registration && source.registration.ageGroups || {}
+      return ['Under 18', '18-35', 'Over 35', 'Unknown'].map(function (label) {
+        return [label, Number(ageGroups[label] || 0)]
       })
     }
     if (definition.mapCategories) {
@@ -341,32 +382,31 @@
     )
   }
 
-  function chartCard(definition) {
-    var infoButton =
-      '<button class="dashboard-info-button dashboard-chart-info-button" type="button" data-indicator-key="' +
-      escapeHtml(definition.key) + '" aria-label="View calculation for ' +
-      escapeHtml(definition.label) + '"><i class="fas fa-info-circle" aria-hidden="true"></i></button>'
+  function chartCard(definition, chartSpec, index) {
     var supplementalClass = definition.supplemental ? ' is-supplemental' : ''
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
       : ''
+    var title = chartSpec && chartSpec.title
+      ? definition.label + ' · ' + chartSpec.title
+      : definition.label
     return '<article class="dashboard-chart-card' + supplementalClass + '">' +
       supplementalBadge +
-      '<h3 class="dashboard-chart-title">' + escapeHtml(definition.label) + '</h3>' +
+      '<h3 class="dashboard-chart-title">' + escapeHtml(title) + '</h3>' +
       (definition.helperText
         ? '<p class="dashboard-chart-note">' + escapeHtml(definition.helperText) + '</p>'
         : '') +
-      infoButton +
-      '<div id="' + chartId(definition) + '" class="dashboard-chart" role="img" aria-label="' +
-      escapeHtml(definition.label) + ' chart"></div>' +
+      '<div id="' + chartId(definition, chartSpec, index) + '" class="dashboard-chart" role="img" aria-label="' +
+      escapeHtml(title) + ' chart"></div>' +
       '</article>'
   }
 
-  function baseChartOptions(definition, entries) {
+  function baseChartOptions(definition, entries, chartType) {
     var labels = entries.map(function (item) { return item[0] })
     var values = entries.map(function (item) { return item[1] })
-    var donut = definition.chart === 'donut'
-    var line = definition.chart === 'trend'
+    var selectedChartType = chartType || definition.chart
+    var donut = selectedChartType === 'donut'
+    var line = selectedChartType === 'trend'
     var options = {
       chart: {
         type: donut ? 'donut' : line ? 'line' : 'bar',
@@ -471,8 +511,8 @@
     return options
   }
 
-  function chartEntries(definition) {
-    return entriesForDefinition(definition, currentMetrics)
+  function chartEntries(definition, chartSpec) {
+    return entriesForDefinition(definition, currentMetrics, chartSpec)
   }
 
   function renderChartFallback(element, definition, entries) {
@@ -493,8 +533,8 @@
     )
   }
 
-  function performChartRender(definition, entries) {
-    var id = chartId(definition)
+  function performChartRender(definition, chartSpec, index, entries) {
+    var id = chartId(definition, chartSpec, index)
     var element = document.getElementById(id)
     if (!element || !global.ApexCharts || !isChartVisible(element)) return
 
@@ -505,7 +545,10 @@
 
     var chart
     try {
-      chart = new global.ApexCharts(element, baseChartOptions(definition, entries))
+      chart = new global.ApexCharts(
+        element,
+        baseChartOptions(definition, entries, chartSpec.type || definition.chart)
+      )
       chartInstances[id] = chart
       var renderResult = chart.render()
       Promise.resolve(renderResult).catch(function (error) {
@@ -526,12 +569,16 @@
     }
   }
 
-  function scheduleChartRender(definition, force) {
-    var id = chartId(definition)
+  function scheduleChartRender(definition, chartSpec, index, force) {
+    var id = chartId(definition, chartSpec, index)
     var element = document.getElementById(id)
     if (!element) return
-    var entries = chartEntries(definition)
-    observeChart(element, definition)
+    var entries = chartEntries(definition, chartSpec)
+    observeChart(element, {
+      definition: definition,
+      chartSpec: chartSpec,
+      index: index
+    })
 
     if (!hasRecordedEntries(entries)) {
       destroyChart(id)
@@ -548,12 +595,12 @@
     if (chartInstances[id] && !force) return
     requestFrame(function () {
       if (!isChartVisible(element)) return
-      performChartRender(definition, entries)
+      performChartRender(definition, chartSpec, index, entries)
     })
   }
 
-  function renderChart(definition) {
-    scheduleChartRender(definition, false)
+  function renderChart(definition, chartSpec, index) {
+    scheduleChartRender(definition, chartSpec, index, false)
   }
 
   function refreshChartsInSection(section, force) {
@@ -561,31 +608,20 @@
     if (!panel || !panel.classList.contains('is-active')) return
     panel.querySelectorAll('.dashboard-chart').forEach(function (element) {
       var definition = chartDefinitions[element.id]
-      if (definition) scheduleChartRender(definition, force)
+      if (definition) {
+        scheduleChartRender(
+          definition.definition,
+          definition.chartSpec,
+          definition.index,
+          force
+        )
+      }
     })
   }
 
   function refreshVisibleCharts(force) {
     DashboardMetricsConfig.sections.forEach(function (section) {
       refreshChartsInSection(section, force)
-    })
-  }
-
-  function attachDefinitionButtons(panel) {
-    panel.querySelectorAll('[data-indicator-key]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        showDefinition(button.getAttribute('data-indicator-key'))
-      })
-    })
-    panel.querySelectorAll('[data-metric-key]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        var grid = panel.querySelector('.dashboard-kpi-grid')
-        var section = grid && grid.getAttribute('data-section')
-        if (!section) return
-        selectedMetricBySection[section] = button.getAttribute('data-metric-key')
-        renderedSections.delete(section)
-        renderSection(section)
-      })
     })
   }
 
@@ -638,21 +674,31 @@
     var kpis = definitions.filter(function (definition) {
       return !definition.chartOnly
     })
-    var selectedKey = selectedMetricBySection[section] || (kpis[0] && kpis[0].key)
-    var selected = kpis.find(function (definition) {
-      return definition.key === selectedKey
-    }) || kpis[0]
-    if (!selected) return
     unobserveCharts(panel)
     var grid = panel.querySelector('.dashboard-kpi-grid')
     grid.setAttribute('data-section', section)
-    grid.innerHTML = kpis.map(function (definition) {
-      return renderKpi(definition).replace('aria-pressed="false"', 'aria-pressed="' +
-        (definition.key === selected.key ? 'true' : 'false') + '"')
+    grid.innerHTML = kpis.map(renderKpi).join('')
+    var chartDefinitions = []
+    definitions.forEach(function (definition) {
+      var charts = definition.charts || [{
+        type: definition.chart === 'trend' ? 'trend' : definition.chart,
+        dimension: definition.chart === 'trend' ? 'month' : ''
+      }]
+      charts.forEach(function (chartSpec, index) {
+        if (chartSpec.dimension &&
+            chartSpec.dimension !== 'month' &&
+            !Object.prototype.hasOwnProperty.call(currentSeries, chartSpec.dimension)) {
+          return
+        }
+        chartDefinitions.push({ definition: definition, chartSpec: chartSpec, index: chartDefinitions.length })
+      })
+    })
+    panel.querySelector('.dashboard-chart-grid').innerHTML = chartDefinitions.map(function (item) {
+      return chartCard(item.definition, item.chartSpec, item.index)
     }).join('')
-    panel.querySelector('.dashboard-chart-grid').innerHTML = chartCard(selected)
-    attachDefinitionButtons(panel)
-    renderChart(selected)
+    chartDefinitions.forEach(function (item) {
+      renderChart(item.definition, item.chartSpec, item.index)
+    })
     renderedSections.add(section)
   }
 

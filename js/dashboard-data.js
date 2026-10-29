@@ -87,6 +87,32 @@
     return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0')
   }
 
+  function monthLabel(month) {
+    var parts = String(month || '').split('-').map(Number)
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return month
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'long',
+      year: 'numeric'
+    }).format(new Date(parts[0], parts[1] - 1, 1))
+  }
+
+  function monthOptions(now) {
+    var current = now || new Date()
+    var cursor = new Date(2025, 0, 1)
+    var options = []
+    while (cursor <= current) {
+      var value = localMonthKey(cursor)
+      options.push({ value: value, label: monthLabel(value) })
+      cursor.setMonth(cursor.getMonth() + 1)
+    }
+    return options
+  }
+
+  function replaceMonthOptions(select, options, selected) {
+    if (!select) return
+    replaceOptions(select, options, 'Select month', selected)
+  }
+
   function lastDayOfMonth(monthKey) {
     var parts = String(monthKey || '').split('-').map(Number)
     if (parts.length !== 2 || !parts[0] || !parts[1]) return ''
@@ -118,13 +144,10 @@
     var start = document.getElementById('dashboardStartDate')
     var end = document.getElementById('dashboardEndDate')
     if (!preset || !start || !end) return
+    var options = monthOptions(current)
     preset.value = 'all_time'
-    start.value = '2025-01'
-    end.value = localMonthKey(current)
-    start.min = '2025-01'
-    start.max = localMonthKey(current)
-    end.min = '2025-01'
-    end.max = localMonthKey(current)
+    replaceMonthOptions(start, options, '2025-01')
+    replaceMonthOptions(end, options, localMonthKey(current))
     setPeriodInputState()
   }
 
@@ -243,9 +266,7 @@
       department: document.getElementById('dashboardDepartment').value,
       facilityCode: document.getElementById('dashboardFacility').value,
       facilityTypes: selectedFacilityTypes(),
-      trendMode: document.getElementById('dashboardTrendMode')
-        ? document.getElementById('dashboardTrendMode').value
-        : 'month'
+      trendMode: 'month'
     }
   }
 

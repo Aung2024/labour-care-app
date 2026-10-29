@@ -67,6 +67,37 @@ const numeric = (value) => {
   return Number.isFinite(result) ? result : 0
 }
 
+const numericOrNull = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const result = Number(value)
+  return Number.isFinite(result) ? result : null
+}
+
+const maternalParity = (profile) => {
+  const primary = numericOrNull(profile.parity_primary)
+  const secondary = numericOrNull(profile.parity_secondary)
+  if (primary !== null || secondary !== null) {
+    return (primary || 0) + (secondary || 0)
+  }
+  const raw = asText(profile.parity)
+  if (!raw) return null
+  if (raw.includes('+')) {
+    const values = raw.split('+').map(numericOrNull)
+    if (values.every((value) => value !== null)) {
+      return values.reduce((total, value) => total + value, 0)
+    }
+  }
+  return numericOrNull(raw)
+}
+
+const normalizeServiceOutcome = (value) => {
+  const raw = asText(value).toLowerCase()
+  if (['alive', 'live', 'living'].includes(raw)) return 'Alive'
+  if (['dead', 'death', 'died', 'maternal_death'].includes(raw)) return 'Dead'
+  if (['service_complete', 'complete', 'completed'].includes(raw)) return 'Service complete'
+  return raw ? 'Other' : 'In service'
+}
+
 const affirmative = (value) => ['yes', 'true', '1', 'given', 'completed', 'received'].includes(
   asText(value).toLowerCase()
 )
@@ -112,7 +143,16 @@ const sorted = (items, fields) => items
   .map(({ item }) => item)
 
 const emptyMetrics = () => ({
-  registration: { total: 0, mothers: 0, babies: 0 },
+  registration: {
+    total: 0,
+    mothers: 0,
+    babies: 0,
+    ageGroups: { 'Under 18': 0, '18-35': 0, 'Over 35': 0, Unknown: 0 },
+    gravidaTotal: 0,
+    gravidaCount: 0,
+    parityTotal: 0,
+    parityCount: 0
+  },
   anc: {
     clients: 0, services: 0, atLeast4: 0, atLeast8: 0, early: 0,
     ironFolate: 0, td: { protected: 0, byLatestStatus: {} },
@@ -141,6 +181,7 @@ const emptyMetrics = () => ({
     mothersWithAnc4: 0, mothersWithAnc8: 0, ironFolate: 0, vitaminB1: 0, pph: 0
   },
   referral: {
+    total: 0,
     maternal: { total: 0, byStage: {}, byDestination: {} },
     baby: { total: 0, byStage: {}, byDestination: {} }
   },
@@ -150,7 +191,7 @@ const emptyMetrics = () => ({
   },
   serviceClosure: {
     total: 0, mother: { total: 0, byOutcome: {} },
-    baby: { total: 0, byOutcome: {} }, undated: 0
+    baby: { total: 0, byOutcome: {} }, outcomes: {}, undated: 0
   }
 })
 
@@ -315,6 +356,26 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     else metrics.registration.mothers = 1
   }
 
+  if (metrics.registration.mothers) {
+    const age = numericOrNull(
+      profile.age || profile.age_years || profile.patient_age || profile.mother_age
+    )
+    const ageBand = age === null || age <= 0 || age >= 120
+      ? 'Unknown'
+      : age < 18 ? 'Under 18' : age <= 35 ? '18-35' : 'Over 35'
+    metrics.registration.ageGroups[ageBand] += 1
+    const gravida = numericOrNull(profile.gravida || profile.gravida_value)
+    const parity = maternalParity(profile)
+    if (gravida !== null) {
+      metrics.registration.gravidaTotal += gravida
+      metrics.registration.gravidaCount += 1
+    }
+    if (parity !== null) {
+      metrics.registration.parityTotal += parity
+      metrics.registration.parityCount += 1
+    }
+  }
+
   if (ancInPeriod.length) {
     metrics.anc.clients = 1
     metrics.anc.services = ancInPeriod.length
@@ -459,6 +520,7 @@ const calculateV4Metrics = (facts, inputPeriod) => {
   if (referral && inPeriod(referral.date, period)) {
     const target = referral.baby ? metrics.referral.baby : metrics.referral.maternal
     target.total = 1
+    metrics.referral.total = 1
     bump(target.byStage, referral.stage)
     bump(target.byDestination, referral.destination)
   }
@@ -475,6 +537,26 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     } else if (!closedAt) {
       metrics.serviceClosure.undated = 1
     }
+  }
+
+  const hasIncludedPatient = Boolean(
+    metrics.registration.total ||
+    metrics.anc.clients ||
+    metrics.highRisk.clients ||
+    metrics.highRisk.completion.completed ||
+    metrics.delivery.completedNotes ||
+    metrics.newborn.clients ||
+    metrics.pnc.clients ||
+    metrics.referral.maternal.total ||
+    metrics.referral.baby.total ||
+    metrics.jointCare.clients
+  )
+  if (hasIncludedPatient) {
+    metrics.serviceClosure.total = 1
+    const outcome = closure.status === 'closed'
+      ? normalizeServiceOutcome(closure.outcome)
+      : 'In service'
+    bump(metrics.serviceClosure.outcomes, outcome)
   }
 
   const activeProviders = Array.from(new Set(

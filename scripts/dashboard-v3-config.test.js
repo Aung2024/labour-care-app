@@ -302,22 +302,29 @@ test('dashboard periods use all, year, or month summary keys only', () => {
 
 test('dashboard period controls default to all time with month-range support', () => {
   const previousDocument = global.document
-  const preset = { value: '', innerHTML: '' }
-  const start = { value: '', disabled: false }
-  const end = { value: '', disabled: false }
+  const makeSelect = () => ({
+    value: '',
+    disabled: false,
+    innerHTML: '',
+    appendChild() {}
+  })
+  const preset = makeSelect()
+  const start = makeSelect()
+  const end = makeSelect()
   global.document = {
     getElementById(id) {
       return { dashboardPreset: preset, dashboardStartDate: start, dashboardEndDate: end }[id]
     },
+    createElement() {
+      return { value: '', textContent: '' }
+    }
   }
 
   try {
     global.DashboardData.initializePeriodOptions(new Date('2026-09-24T00:00:00Z'))
     assert.equal(preset.value, 'all_time')
     assert.equal(start.value, '2025-01')
-    assert.equal(start.min, '2025-01')
     assert.equal(end.value, '2026-09')
-    assert.equal(end.min, '2025-01')
     assert.equal(start.disabled, true)
     assert.equal(end.disabled, true)
   } finally {

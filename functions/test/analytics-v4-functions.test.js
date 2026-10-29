@@ -52,6 +52,13 @@ test('role scope is derived from the authenticated profile', () => {
     allowedScope({ role: 'regional officer', region: 'Nay Pyi Taw' }, {}),
     { scopeRegion: 'Nay Pyi Taw' }
   )
+  assert.deepEqual(
+    allowedScope(
+      { role: 'regional officer', region: 'Nay Pyi Taw' },
+      { township: 'Pyinmana' }
+    ),
+    { scopeRegion: 'Nay Pyi Taw', scopeTownship: 'Pyinmana' }
+  )
 })
 
 test('contribution filters cannot widen a role scope', () => {

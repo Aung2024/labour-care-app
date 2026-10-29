@@ -181,23 +181,6 @@
     await DashboardData.refreshFacilityOptions(selected)
   }
 
-  function initializeTrendModes(profile) {
-    var select = element('dashboardTrendMode')
-    if (!select) return
-    var modes = ['month']
-    if (DashboardData.isTmoRole(profile.role)) modes.push('facility')
-    if (DashboardData.isRegionalRole(profile.role)) modes.push('facility', 'township')
-    if (DashboardData.isCentralRole(profile.role)) modes.push('facility', 'township', 'region')
-    select.innerHTML = ''
-    modes.filter(function (mode, index) { return modes.indexOf(mode) === index }).forEach(function (mode) {
-      var option = document.createElement('option')
-      option.value = mode
-      option.textContent = mode.charAt(0).toUpperCase() + mode.slice(1)
-      select.appendChild(option)
-    })
-    select.value = 'month'
-  }
-
   function attachFilterEvents() {
     var filterPanel = document.querySelector('.dashboard-filter-panel')
     var filterToggle = element('dashboardFilterToggle')
@@ -236,6 +219,16 @@
       end.disabled = this.value === 'all_time'
     })
 
+    element('dashboardStartDate').addEventListener('change', function () {
+      var end = element('dashboardEndDate')
+      if (end.value && this.value > end.value) end.value = this.value
+    })
+
+    element('dashboardEndDate').addEventListener('change', function () {
+      var start = element('dashboardStartDate')
+      if (start.value && this.value < start.value) start.value = this.value
+    })
+
     element('dashboardRegion').addEventListener('change', async function () {
       DashboardData.refreshTownshipOptions(viewer)
       await refreshDependentFacilities()
@@ -250,7 +243,6 @@
     })
 
     element('dashboardFacilityTypes').addEventListener('change', refreshDependentFacilities)
-    element('dashboardTrendMode').addEventListener('change', loadDashboard)
     element('dashboardRefreshButton').addEventListener('click', loadDashboard)
     element('dashboardRetryButton').addEventListener('click', loadDashboard)
     element('dashboardExportButton').addEventListener('click', exportDashboard)
@@ -345,7 +337,6 @@
       viewer = await userProfile(user)
       updateHeader(viewer)
       updateOfflineNotice()
-      initializeTrendModes(viewer)
       DashboardCharts.initializeSections(function (section) {
         DashboardCharts.renderSection(section)
       })

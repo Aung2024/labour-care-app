@@ -280,7 +280,10 @@ const allowedScope = (user, input) => {
   }
   if (user.role === 'regional officer') {
     if (!user.region) throw new HttpsError('permission-denied', 'Region is not configured.')
-    return { scopeRegion: user.region }
+    return {
+      scopeRegion: user.region,
+      ...(data.township ? { scopeTownship: String(data.township) } : {})
+    }
   }
   if (data.facilityCode) return { scopeFacilityCode: String(data.facilityCode) }
   if (data.township) return { scopeTownship: String(data.township) }
