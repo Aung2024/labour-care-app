@@ -461,6 +461,14 @@ test('Dashboard V4 contributions and caches remain server-only', async () => {
     doc(superDb, 'analytics_v4_jobs', 'job'),
     { status: 'running' }
   ));
+  await assertFails(getDoc(doc(
+    superDb,
+    'dashboard_v4_refresh_queue', 'patient-a'
+  )));
+  await assertFails(setDoc(
+    doc(superDb, 'dashboard_v4_refresh_queue', 'patient-a'),
+    { patientId: 'patient-a' }
+  ));
 });
 
 test('Dashboard V3 facility metadata queries require the caller geography', async () => {

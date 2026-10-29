@@ -202,6 +202,15 @@ async function startRebuildJob(months, requestedBy) {
   return jobRef;
 }
 
+function scheduledRebuildPeriods(count = 12) {
+  const currentYear = Number(monthKeyForDate(new Date()).slice(0, 4));
+  const years = Array.from({ length: 5 }, (_, offset) => String(currentYear - offset));
+  return Array.from(new Set([
+    ...periodsWithAllTime(recentMonthKeys(count)),
+    ...years
+  ]));
+}
+
 async function processActiveRebuildBatch() {
   const database = db();
   const jobRef = database.collection(JOB_COLLECTION).doc(JOB_ID);
@@ -327,12 +336,7 @@ const startLeaderboardRebuild = onCall({
   await requireSuperAdmin(request);
   const requestedCount = Number(request.data && request.data.months || 4);
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
-  const currentYear = Number(monthKeyForDate(new Date()).slice(0, 4));
-  const years = Array.from({ length: 5 }, (_, offset) => String(currentYear - offset));
-  const months = Array.from(new Set([
-    ...periodsWithAllTime(recentMonthKeys(count)),
-    ...years
-  ]));
+  const months = scheduledRebuildPeriods(count);
   await startRebuildJob(months, request.auth.uid);
   // Return as soon as the job is queued. Processing a patient batch here can
   // exceed the callable timeout because Firestore is in Bangkok while the
@@ -349,7 +353,7 @@ const getLeaderboardCustomRange = onCall({
 }, queryLeaderboardRange);
 
 const leaderboardNightlyReconciliation = onSchedule({
-  schedule: 'every 24 hours',
+  schedule: 'every 48 hours',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
@@ -360,11 +364,8 @@ const leaderboardNightlyReconciliation = onSchedule({
   if (jobSnapshot.exists && jobSnapshot.data().status === 'running') {
     return processActiveRebuildBatch();
   }
-  // Dashboard V2's combined reconciliation now loads every patient's
-  // clinical facts once and refreshes both analytics products. Keep this
-  // schedule only as a safe continuation path for an already-running legacy
-  // leaderboard job so the daily schedules never duplicate full scans.
-  return { status: 'idle', owner: 'combinedAnalyticsReconciliation' };
+  await startRebuildJob(scheduledRebuildPeriods(), '48-hour-scheduler');
+  return processActiveRebuildBatch();
 });
 
 const leaderboardReconciliationWorker = onSchedule({

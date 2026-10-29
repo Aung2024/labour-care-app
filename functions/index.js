@@ -283,16 +283,8 @@ exports.leaderboardNightlyReconciliation =
 exports.leaderboardReconciliationWorker =
   leaderboardFunctions.leaderboardReconciliationWorker;
 
-// Dashboard V2 backend. Deploy these named functions only after the active
-// leaderboard rebuild has completed.
-const analyticsFunctions = require('./src/analytics/functions');
-exports.startDashboardV2Rebuild = analyticsFunctions.startDashboardV2Rebuild;
-exports.dashboardV2ReconciliationWorker =
-  analyticsFunctions.dashboardV2ReconciliationWorker;
-exports.combinedAnalyticsReconciliation =
-  analyticsFunctions.combinedAnalyticsReconciliation;
-
-// HRT/KMC server projections. These exports are independent of Dashboard V2.
+// HRT/KMC server projections. These exports are independent of Dashboard
+// analytics and remain live for the clinical tracking pages.
 const trackingFunctions = require('./src/analytics/tracking-functions');
 exports.queryHrtTracking = trackingFunctions.queryHrtTracking;
 exports.queryKmcTracking = trackingFunctions.queryKmcTracking;
@@ -313,39 +305,17 @@ const refreshQueueFunctions = require('./src/analytics/refresh-queue-functions')
 exports.unifiedClinicalRefreshWorker =
   refreshQueueFunctions.unifiedClinicalRefreshWorker;
 
-// Dashboard V3 is isolated from analytics_v2 so the previous contract remains
-// available for rollback during the summary-dashboard migration.
-const analyticsV3Functions = require('./src/analytics/v3-functions');
-exports.startDashboardV3Reconciliation =
-  analyticsV3Functions.startDashboardV3Reconciliation;
-exports.dashboardV3ReconciliationWorker =
-  analyticsV3Functions.dashboardV3ReconciliationWorker;
-
-const analyticsV31Functions = require('./src/analytics/v31-functions');
-exports.startDashboardV31Reconciliation =
-  analyticsV31Functions.startDashboardV31Reconciliation;
-exports.dashboardV31ReconciliationWorker =
-  analyticsV31Functions.dashboardV31ReconciliationWorker;
-
-const analyticsV32Functions = require('./src/analytics/v32-functions');
-exports.startDashboardV32Reconciliation =
-  analyticsV32Functions.startDashboardV32Reconciliation;
-exports.dashboardV32ReconciliationWorker =
-  analyticsV32Functions.dashboardV32ReconciliationWorker;
-
 const jointCareIndexFunctions = require('./src/analytics/joint-care-index');
 exports.jointCareIndexRefreshWorker =
   jointCareIndexFunctions.jointCareIndexRefreshWorker;
 
-// Dashboard V4 exact-range analytics. V3.2 remains deployed for rollback and
-// parity checks while the new aggregate contract is validated.
+// Dashboard V4 exact-range analytics. V4 refreshes are queue-driven and
+// reconciled once per day; historical legacy analytics data is retained.
 const analyticsV4Functions = require('./src/analytics/v4-functions');
 exports.queryDashboardV4 = analyticsV4Functions.queryDashboardV4;
 exports.requestDashboardV4Export = analyticsV4Functions.requestDashboardV4Export;
 exports.getDashboardV4Result = analyticsV4Functions.getDashboardV4Result;
 exports.reconcileDashboardV4Cache =
   analyticsV4Functions.reconcileDashboardV4Cache;
-exports.startDashboardV4Backfill =
-  analyticsV4Functions.startDashboardV4Backfill;
-exports.dashboardV4BackfillWorker =
-  analyticsV4Functions.dashboardV4BackfillWorker;
+exports.dashboardV4DailyRefreshWorker =
+  analyticsV4Functions.dashboardV4DailyRefreshWorker;

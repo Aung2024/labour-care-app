@@ -8,7 +8,6 @@ const {
   loadPatientActivity,
   loadProvider
 } = require('../leaderboard/repository')
-const { recomputeLoadedPatientMonths } = require('../leaderboard/service')
 const {
   buildPatientAchievements,
   monthKeyForDate
@@ -29,20 +28,12 @@ const {
   projectionHash
 } = require('./tracking-repository')
 const {
-  refreshPatientAnalyticsV3,
-  refreshPatientAnalyticsV31,
-  refreshPatientAnalyticsV32
-} = require('./v3-service')
-const {
-  refreshPatientAnalyticsV4,
-  deletePatientAnalyticsV4
-} = require('./v4-service')
-const {
   JOINT_CARE_INDEX_COLLECTION
 } = require('./joint-care-index')
 
 const REGION = 'us-central1'
 const UNIFIED_QUEUE = 'clinical_refresh_v1_queue'
+const V4_REFRESH_QUEUE = 'dashboard_v4_refresh_queue'
 const TRACKING_QUEUE = 'tracking_v2_refresh_queue'
 const LEADERBOARD_QUEUE = 'leaderboard_v3_refresh_queue'
 const COMPATIBILITY_QUEUES = Object.freeze([
@@ -55,6 +46,19 @@ const REFRESH_CONCURRENCY = 10
 const WORKER_LOCK_COLLECTION = 'clinical_refresh_v1_locks'
 const WORKER_LOCK_ID = 'unified-worker'
 const WORKER_LEASE_MS = 9 * 60 * 1000
+
+const enqueueDashboardV4Refresh = async (database, patientId, reason) => {
+  if (!patientId) return null
+  const db = database || admin.firestore()
+  const ref = db.collection(V4_REFRESH_QUEUE).doc(patientId)
+  await ref.set({
+    patientId,
+    reason: String(reason || 'clinical-write'),
+    requestedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true })
+  return ref
+}
 
 const mapInChunks = async (items, size, worker) => {
   const results = []
@@ -206,14 +210,6 @@ const refreshLoadedClinicalProducts = async (
   options
 ) => {
   const periods = new Set(periodsForLoadedPatient(loaded, now))
-  const existingLeaderboard = await db.collection('leaderboard_v2_contributions')
-    .where('patientId', '==', patientId)
-    .get()
-  existingLeaderboard.forEach((doc) => {
-    const month = doc.get('month')
-    if (month) periodsWithAllTime([month]).forEach((period) => periods.add(period))
-  })
-
   const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
 
   if (facts) {
@@ -227,14 +223,7 @@ const refreshLoadedClinicalProducts = async (
     }
   } else {
     await deletePatientProjections(db, patientId)
-    await deletePatientAnalyticsV4(db, patientId)
   }
-  await recomputeLoadedPatientMonths(
-    db,
-    patientId,
-    Array.from(periods),
-    loaded
-  )
   const qualityMonths = Array.from(periods).filter((period) =>
     period === 'all' || /^\d{4}-\d{2}$/.test(period)
   )
@@ -245,68 +234,16 @@ const refreshLoadedClinicalProducts = async (
     loaded,
     now
   )
-  await refreshPatientAnalyticsV3(db, facts, {
+  await enqueueDashboardV4Refresh(
+    db,
     patientId,
-    generation: options && options.generation || 'live'
-  })
-  await refreshPatientAnalyticsV31(db, facts, {
-    patientId,
-    generation: options && options.generation || 'live'
-  })
-  await refreshPatientAnalyticsV32(db, facts, {
-    patientId,
-    generation: options && options.generation || 'live'
-  })
-  if (facts) {
-    await refreshPatientAnalyticsV4(db, facts)
-  }
+    options && options.reason || 'clinical-write'
+  )
   return {
     patientId,
     periods: Array.from(periods),
     deleted: !facts
   }
-}
-
-const refreshPatientAnalyticsV3Only = async (
-  database,
-  patientId,
-  options
-) => {
-  const db = database || admin.firestore()
-  const loaded = await loadPatientActivity(db, patientId)
-  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
-  return refreshPatientAnalyticsV3(db, facts, {
-    patientId,
-    generation: options && options.generation || 'reconciliation'
-  })
-}
-
-const refreshPatientAnalyticsV31Only = async (
-  database,
-  patientId,
-  options
-) => {
-  const db = database || admin.firestore()
-  const loaded = await loadPatientActivity(db, patientId)
-  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
-  return refreshPatientAnalyticsV31(db, facts, {
-    patientId,
-    generation: options && options.generation || 'reconciliation'
-  })
-}
-
-const refreshPatientAnalyticsV32Only = async (
-  database,
-  patientId,
-  options
-) => {
-  const db = database || admin.firestore()
-  const loaded = await loadPatientActivity(db, patientId)
-  const facts = await normalizeLoadedClinicalFacts(db, patientId, loaded)
-  return refreshPatientAnalyticsV32(db, facts, {
-    patientId,
-    generation: options && options.generation || 'reconciliation'
-  })
 }
 
 const refreshClinicalPatient = async (database, patientId, now, options) => {
@@ -408,9 +345,8 @@ module.exports = {
   releaseWorkerLease,
   normalizeLoadedClinicalFacts,
   refreshLoadedClinicalProducts,
-  refreshPatientAnalyticsV3Only,
-  refreshPatientAnalyticsV31Only,
-  refreshPatientAnalyticsV32Only,
+  V4_REFRESH_QUEUE,
+  enqueueDashboardV4Refresh,
   refreshClinicalPatient,
   processUnifiedRefreshQueue,
   processTrackingRefreshBatch,

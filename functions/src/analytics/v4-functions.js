@@ -6,7 +6,8 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler')
 const { loadPatientActivity } = require('../leaderboard/repository')
 const {
-  normalizeLoadedClinicalFacts
+  normalizeLoadedClinicalFacts,
+  V4_REFRESH_QUEUE
 } = require('./refresh-queue-functions')
 const {
   ANALYTICS_V4_SCHEMA_VERSION,
@@ -39,6 +40,10 @@ const MAX_RANGE_DAYS = 3660
 const BACKFILL_JOB_ID = 'dashboard-v4-backfill'
 const BACKFILL_BATCH_SIZE = 25
 const BACKFILL_MAX_RUNTIME_MS = 480000
+const DAILY_REFRESH_BATCH_SIZE = 100
+const DAILY_REFRESH_CONCURRENCY = 5
+const DAILY_REFRESH_MAX_RUNTIME_MS = 480000
+const V4_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const db = () => admin.firestore()
 const roleKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -144,6 +149,83 @@ const dashboardV4BackfillWorker = onSchedule({
     result = await processDashboardV4BackfillBatch()
   }
   return result
+})
+
+const processDashboardV4DailyRefreshBatch = async (database = db()) => {
+  const queue = await database.collection(V4_REFRESH_QUEUE)
+    .orderBy(FieldPath.documentId())
+    .limit(DAILY_REFRESH_BATCH_SIZE)
+    .get()
+  if (queue.empty) return { status: 'idle', processed: 0, failed: 0 }
+
+  let processed = 0
+  let failed = 0
+  const refreshOne = async (queueDocument) => {
+    const patientId = queueDocument.id
+    try {
+      const loaded = await loadPatientActivity(database, patientId)
+      const facts = await normalizeLoadedClinicalFacts(database, patientId, loaded)
+      if (facts) await refreshPatientAnalyticsV4(database, facts)
+      else await deletePatientAnalyticsV4(database, patientId)
+      await queueDocument.ref.delete()
+      processed += 1
+    } catch (error) {
+      failed += 1
+      await queueDocument.ref.set({
+        status: 'failed',
+        lastError: String(error && error.message || error).slice(0, 500),
+        failedAt: FieldValue.serverTimestamp()
+      }, { merge: true })
+    }
+  }
+
+  for (let offset = 0; offset < queue.docs.length; offset += DAILY_REFRESH_CONCURRENCY) {
+    await Promise.all(queue.docs
+      .slice(offset, offset + DAILY_REFRESH_CONCURRENCY)
+      .map(refreshOne))
+  }
+  return {
+    status: queue.size === DAILY_REFRESH_BATCH_SIZE && failed === 0 ? 'running' : 'idle',
+    processed,
+    failed
+  }
+}
+
+const clearDashboardV4Cache = async (database = db()) => {
+  let deleted = 0
+  while (true) {
+    const snapshot = await database.collection(CACHE_COLLECTION).limit(500).get()
+    if (snapshot.empty) break
+    const writer = database.bulkWriter()
+    snapshot.docs.forEach((doc) => writer.delete(doc.ref))
+    await writer.close()
+    deleted += snapshot.size
+    if (snapshot.size < 500) break
+  }
+  return deleted
+}
+
+const dashboardV4DailyRefreshWorker = onSchedule({
+  schedule: 'every 24 hours',
+  timeZone: 'Asia/Yangon',
+  region: REGION,
+  timeoutSeconds: 540,
+  memory: '1GiB',
+  maxInstances: 1,
+  concurrency: 1
+}, async () => {
+  const started = Date.now()
+  let processed = 0
+  let failed = 0
+  let result = { status: 'idle', processed: 0, failed: 0 }
+  while (Date.now() - started < DAILY_REFRESH_MAX_RUNTIME_MS) {
+    result = await processDashboardV4DailyRefreshBatch()
+    processed += result.processed
+    failed += result.failed
+    if (result.status !== 'running') break
+  }
+  const deletedCacheEntries = processed ? await clearDashboardV4Cache() : 0
+  return { ...result, processed, failed, deletedCacheEntries }
 })
 
 const validDate = (value, field) => {
@@ -301,7 +383,7 @@ const queryDashboardV4 = onCall({
   const result = buildResult({ ...input, allowedModes: roleModes }, contributions, scope)
   await cacheRef.set({
     ...result,
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+    expiresAt: new Date(Date.now() + V4_CACHE_TTL_MS)
   })
   return { ...result, cacheKey: key, source: 'server' }
 })
@@ -374,7 +456,7 @@ const getDashboardV4Result = onCall({ region: REGION }, async (request) => {
 
 const reconcileDashboardV4Cache = onSchedule({
   region: REGION,
-  schedule: 'every 15 minutes'
+  schedule: 'every 24 hours'
 }, async () => {
   const expired = await db().collection(CACHE_COLLECTION)
     .where('expiresAt', '<', new Date())
@@ -390,6 +472,9 @@ module.exports = {
   requestDashboardV4Export,
   getDashboardV4Result,
   reconcileDashboardV4Cache,
+  dashboardV4DailyRefreshWorker,
+  processDashboardV4DailyRefreshBatch,
+  clearDashboardV4Cache,
   startDashboardV4Backfill,
   dashboardV4BackfillWorker,
   processDashboardV4BackfillBatch,

@@ -6,7 +6,8 @@ const {
   validateInput,
   allowedScope,
   contributionMatches,
-  processDashboardV4BackfillBatch
+  processDashboardV4BackfillBatch,
+  processDashboardV4DailyRefreshBatch
 } = require('../src/analytics/v4-functions')
 
 test('v4 callable validates exact inclusive date ranges and filters', () => {
@@ -117,4 +118,26 @@ test('v4 backfill completes an empty job without touching patient records', asyn
     completedAt: writes[0].completedAt,
     updatedAt: writes[0].updatedAt
   }])
+})
+
+test('daily v4 refresh is idle without queued clinical changes', async () => {
+  const database = {
+    collection(name) {
+      assert.equal(name, 'dashboard_v4_refresh_queue')
+      return {
+        orderBy: () => ({
+          limit: () => ({
+            async get() {
+              return { empty: true, docs: [] }
+            }
+          })
+        })
+      }
+    }
+  }
+
+  assert.deepEqual(
+    await processDashboardV4DailyRefreshBatch(database),
+    { status: 'idle', processed: 0, failed: 0 }
+  )
 })
