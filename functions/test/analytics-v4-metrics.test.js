@@ -97,6 +97,8 @@ test('calculates the v4 clinical contract from normalized patient facts', () => 
   assert.equal(metrics.anc.clients, 1)
   assert.equal(metrics.anc.services, 5)
   assert.equal(metrics.anc.atLeast4, 1)
+  assert.equal(metrics.anc.td.td1Completed, 1)
+  assert.equal(metrics.anc.td.td2Completed, 1)
   assert.equal(metrics.anc.td.protected, 1)
   assert.equal(metrics.highRisk.completion.completed, 1)
   assert.equal(metrics.delivery.homeSba, 1)
@@ -107,6 +109,30 @@ test('calculates the v4 clinical contract from normalized patient facts', () => 
   assert.equal(metrics.newborn.kmcWeightGain.babiesWithTwoWeights, 1)
   assert.equal(metrics.pnc.ironFolate, 1)
   assert.equal(metrics.serviceClosure.total, 1)
+})
+
+test('ANC milestones include external-facility visits and PMTCT lab results', () => {
+  const metrics = calculateV4Metrics(facts({
+    antenatalVisits: [
+      { visitDate: '2026-01-02', visitNumber: 1 },
+      { visitDate: '2026-01-05', visitNumber: 2 },
+      { visitDate: '2026-01-10', visitNumber: 3, otherVisits: [
+        { visitDate: '2026-01-08', visitNumber: 4, facilityName: 'Other facility' },
+        { visitDate: '2026-01-09', visitNumber: 5, facilityName: 'Other facility' }
+      ] }
+    ],
+    testRecords: [
+      { testDate: '2026-01-12', hivResult: 'Non-reactive' },
+      { testDate: '2026-01-20', hivResult: 'Reactive' }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.anc.atLeast4, 1)
+  assert.equal(metrics.anc.atLeast8, 0)
+  assert.equal(metrics.anc.hivTested, 1)
+  assert.equal(metrics.anc.pmtctReactive, 1)
 })
 
 test('overview metrics include default service outcome and maternal demographics', () => {

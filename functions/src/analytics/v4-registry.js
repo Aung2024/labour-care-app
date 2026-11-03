@@ -53,14 +53,14 @@ const DASHBOARD_METRICS = Object.freeze([
   definition('ANC', 'anc_at_least_8', 'ANC ≥8 Visits', 'anc.atLeast8', 'anc.clients'),
   definition('ANC', 'early_anc', 'Early ANC', 'anc.early', 'anc.clients'),
   definition('ANC', 'anc_iron_folate', 'Iron/Folate (ANC)', 'anc.ironFolate', 'anc.clients'),
-  definition('ANC', 'anc_td_protected', 'TD Protected', 'anc.td.protected', 'anc.clients', {
-    chart: 'td',
-    detailMap: 'anc.td.byLatestStatus'
-  }),
+  definition('ANC', 'anc_td1_completion', 'TD1 Completion Rate', 'anc.td.td1Completed', 'anc.clients'),
+  definition('ANC', 'anc_td2_completion', 'TD2 Completion Rate', 'anc.td.td2Completed', 'anc.clients'),
   definition('ANC', 'anc_b1', 'B1 (ANC)', 'anc.vitaminB1', 'anc.clients'),
   definition('ANC', 'anc_deworming', 'Deworming', 'anc.deworming', 'anc.clients'),
   definition('ANC', 'anc_gbv', 'GBV Suspected', 'anc.gbv', 'anc.clients'),
-  definition('ANC', 'anc_pmtct', 'ANC with PMTCT', 'anc.pmtctTested', 'anc.clients'),
+  definition('ANC', 'anc_pmtct_reactive', 'ANC with PMTCT', 'anc.pmtctReactive', 'anc.clients'),
+  definition('ANC', 'anc_hiv_testing', 'HIV Testing', 'anc.hivTested', 'anc.clients'),
+  definition('ANC', 'anc_hiv_reactive', 'HIV Reactive Cases', 'anc.pmtctReactive', 'anc.hivTested'),
   definition('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
 
   definition('High-Risk', 'high_risk_clients', 'High Risks Identified Among All ANC', 'highRisk.clients'),

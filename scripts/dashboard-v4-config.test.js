@@ -23,7 +23,8 @@ test('v4 dashboard contains the requested clinical cards', () => {
   const all = global.DashboardMetricsConfig.allDefinitions
   const keys = new Set(all.map((item) => item.key))
   ;[
-    'anc_td_protected',
+    'anc_td1_completion',
+    'anc_td2_completion',
     'hrt_completed',
     'high_risk_anc_average',
     'skilled_birth_attendant_rate',
@@ -35,7 +36,7 @@ test('v4 dashboard contains the requested clinical cards', () => {
     'baby_referrals',
     'joint_care_facilities'
   ].forEach((key) => assert.ok(keys.has(key), key))
-  assert.equal(all.find((item) => item.key === 'anc_td_protected').chart, 'td')
+  assert.equal(all.find((item) => item.key === 'anc_td1_completion').format, 'percent')
   assert.equal(all.find((item) => item.key === 'kmc_weight_gain').format, 'averageGrams')
 })
 

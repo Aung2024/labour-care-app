@@ -164,11 +164,44 @@
     metric('ANC', 'anc_at_least_8', 'ANC ≥8 Visits', 'anc.atLeast8', 'anc.clients'),
     metric('ANC', 'early_anc', 'Early ANC', 'anc.early', 'anc.clients'),
     metric('ANC', 'anc_iron_folate', 'Iron/Folate (ANC)', 'anc.ironFolate', 'anc.clients'),
-    metric('ANC', 'anc_td_protected', 'TD Protected', 'anc.td.protected', 'anc.clients', { chart: 'td', detailMap: 'anc.td.byLatestStatus' }),
+    metric('ANC', 'anc_td1_completion', 'TD1 Completion Rate', 'anc.td.td1Completed', 'anc.clients', {
+      definition: 'Shows the percentage of ANC mothers with TD1, TD2, or Completed recorded in an ANC visit during the selected period.',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'Mothers with TD1 completed',
+      charts: [{ type: 'trend', dimension: 'month', title: 'TD1 Completion Rate' }, { type: 'bar', dimension: 'facility', title: 'TD1 by Facility' }]
+    }),
+    metric('ANC', 'anc_td2_completion', 'TD2 Completion Rate', 'anc.td.td2Completed', 'anc.clients', {
+      definition: 'Shows the percentage of ANC mothers with TD2 or Completed recorded in an ANC visit during the selected period.',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'Mothers with TD2 completed',
+      charts: [{ type: 'trend', dimension: 'month', title: 'TD2 Completion Rate' }, { type: 'bar', dimension: 'facility', title: 'TD2 by Facility' }]
+    }),
     metric('ANC', 'anc_b1', 'B1 (ANC)', 'anc.vitaminB1', 'anc.clients'),
     metric('ANC', 'anc_deworming', 'Deworming', 'anc.deworming', 'anc.clients'),
     metric('ANC', 'anc_gbv', 'GBV Suspected', 'anc.gbv', 'anc.clients'),
-    metric('ANC', 'anc_pmtct', 'ANC with PMTCT', 'anc.pmtctTested', 'anc.clients'),
+    metric('ANC', 'anc_pmtct_reactive', 'ANC with PMTCT', 'anc.pmtctReactive', 'anc.clients', {
+      definition: 'Counts ANC mothers with a reactive HIV result in the selected period. The percentage compares reactive cases with the ANC headcount.',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'ANC mothers with reactive HIV result',
+      detailPaths: ['anc.clients', 'anc.hivTested'],
+      detailLabels: ['Total ANC headcount', 'HIV tests recorded'],
+      charts: [{ type: 'trend', dimension: 'month', title: 'ANC with PMTCT' }, { type: 'bar', dimension: 'facility', title: 'PMTCT by Facility' }]
+    }),
+    metric('ANC', 'anc_hiv_testing', 'HIV Testing', 'anc.hivTested', 'anc.clients', {
+      definition: 'Counts ANC mothers with any HIV test result recorded in the selected period, including reactive, non-reactive, and indeterminate results.',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'ANC mothers with HIV testing',
+      detailPaths: ['anc.pmtctReactive'],
+      detailLabels: ['Reactive HIV cases'],
+      charts: [{ type: 'trend', dimension: 'month', title: 'HIV Testing' }, { type: 'bar', dimension: 'facility', title: 'HIV Testing by Facility' }]
+    }),
+    metric('ANC', 'anc_hiv_reactive', 'HIV Reactive Cases', 'anc.pmtctReactive', 'anc.hivTested', {
+      definition: 'Shows the percentage of ANC mothers with reactive HIV results among mothers who received HIV testing in the selected period.',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'Reactive HIV cases',
+      denominatorLabel: 'ANC mothers with HIV testing',
+      charts: [{ type: 'trend', dimension: 'month', title: 'HIV Reactive Cases' }, { type: 'bar', dimension: 'facility', title: 'HIV Reactive by Facility' }]
+    }),
     metric('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
 
     metric('High-Risk', 'high_risk_clients', 'High Risks Identified Among All ANC', 'highRisk.clients'),
@@ -225,6 +258,38 @@
     metric('Referral & Joint Care', 'joint_care_facilities', 'Receiving Facilities', 'jointCare.receivingFacilityCount'),
     metric('Referral & Joint Care', 'joint_care_breakdown', 'Joint Care: Hospital vs Other', 'jointCare.byReceivingFacilityType', '', { format: 'map', chart: 'bar' })
   ]
+
+  var ancClientExplanations = {
+    anc_clients: 'Counts each mother once when at least one ANC visit is recorded in the selected period.',
+    anc_visits: 'Counts all ANC visits recorded during the selected period. One mother may contribute multiple visits.',
+    anc_at_least_4: 'Counts mothers whose ANC history reaches four or more visits, including visits recorded at another facility.',
+    anc_at_least_8: 'Counts mothers whose ANC history reaches eight or more visits, including visits recorded at another facility.',
+    early_anc: 'Counts mothers whose first ANC contact occurred before 12 weeks of pregnancy.',
+    anc_iron_folate: 'Counts ANC mothers with iron or folic-acid supplementation recorded in the selected period.',
+    anc_b1: 'Counts ANC mothers with vitamin B1 recorded in the selected period.',
+    anc_deworming: 'Counts ANC mothers with deworming recorded in the selected period.',
+    anc_gbv: 'Counts ANC mothers with suspected gender-based violence recorded in the selected period.',
+    anc_tb: 'Counts ANC mothers with TB symptoms or suspected TB recorded in the selected period.'
+  }
+  definitions.filter(function (definition) {
+    return definition.section === 'ANC'
+  }).forEach(function (definition) {
+    if (ancClientExplanations[definition.key]) {
+      definition.definition = ancClientExplanations[definition.key]
+      definition.countedAs = definition.key === 'anc_visits'
+        ? 'Recorded ANC visits'
+        : 'Unique ANC mothers'
+      definition.numeratorLabel = definition.key === 'anc_visits'
+        ? 'ANC visits'
+        : 'ANC mothers'
+    }
+    if (!definition.charts) {
+      definition.charts = [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: definition.label + ' by Facility' }
+      ]
+    }
+  })
 
   function valueAtPath(source, path) {
     return String(path || '').split('.').reduce(function (value, key) {

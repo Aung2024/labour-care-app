@@ -111,6 +111,15 @@ const normalizeTd = (value) => {
   return raw ? 'Unknown' : ''
 }
 
+const hivResultIsTested = (value) => {
+  const raw = asText(value).toLowerCase()
+  return Boolean(raw && !['no test yet', 'not tested', 'not_tested'].includes(raw))
+}
+
+const hivResultIsReactive = (value) => ['reactive', 'positive', 'detected'].includes(
+  asText(value).toLowerCase()
+)
+
 const normalizeOutcome = (value) => {
   const raw = asText(value).toLowerCase()
   if (['alive', 'live', 'living'].includes(raw)) return 'alive'
@@ -155,8 +164,20 @@ const emptyMetrics = () => ({
   },
   anc: {
     clients: 0, services: 0, atLeast4: 0, atLeast8: 0, early: 0,
-    ironFolate: 0, td: { protected: 0, byLatestStatus: {} },
-    vitaminB1: 0, deworming: 0, gbv: 0, pmtctTested: 0, tb: 0
+    ironFolate: 0,
+    td: {
+      protected: 0,
+      td1Completed: 0,
+      td2Completed: 0,
+      byLatestStatus: {}
+    },
+    vitaminB1: 0,
+    deworming: 0,
+    gbv: 0,
+    hivTested: 0,
+    pmtctReactive: 0,
+    pmtctTested: 0,
+    tb: 0
   },
   highRisk: {
     clients: 0, factors: {}, completion: { completed: 0, byReason: {} },
@@ -412,11 +433,30 @@ const calculateV4Metrics = (facts, inputPeriod) => {
       .filter(Boolean)
       .pop() || 'Unknown'
     bump(metrics.anc.td.byLatestStatus, td)
+    const tdStatuses = ancInPeriod
+      .map((visit) => normalizeTd(visit.tetanusToxoid || visit.td))
+      .filter(Boolean)
+    if (tdStatuses.includes('TD1') || tdStatuses.includes('TD2') ||
+      tdStatuses.includes('Completed')) {
+      metrics.anc.td.td1Completed = 1
+    }
+    if (tdStatuses.includes('TD2') || tdStatuses.includes('Completed')) {
+      metrics.anc.td.td2Completed = 1
+    }
     if (['TD2', 'Completed'].includes(td)) metrics.anc.td.protected = 1
     if (ancInPeriod.some((visit) => affirmative(visit.vitaminB1))) metrics.anc.vitaminB1 = 1
     if (ancInPeriod.some((visit) => affirmative(visit.deworming))) metrics.anc.deworming = 1
     if (ancInPeriod.some((visit) => affirmative(visit.gbvSuspected))) metrics.anc.gbv = 1
-    if (ancInPeriod.some((visit) => visit.hivResult || visit.hiv_result)) metrics.anc.pmtctTested = 1
+    const labTestsInPeriod = records(facts.testRecords).filter((test) =>
+      inPeriod(test.testDate || test.test_date || test.recordedAt || test.createdAt, period)
+    )
+    const hivResults = labTestsInPeriod
+      .map((test) => test.hivResult || test.hiv_result)
+      .concat(ancInPeriod.map((visit) => visit.hivResult || visit.hiv_result))
+      .filter(Boolean)
+    if (hivResults.some(hivResultIsTested)) metrics.anc.hivTested = 1
+    if (hivResults.some(hivResultIsReactive)) metrics.anc.pmtctReactive = 1
+    if (hivResults.length) metrics.anc.pmtctTested = 1
     if (ancInPeriod.some((visit) => affirmative(visit.tbSymptoms) || affirmative(visit.tbSuspected))) metrics.anc.tb = 1
 
     const highRisk = anc.some((visit) => affirmative(visit.high_risk || visit.highRisk))
