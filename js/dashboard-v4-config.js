@@ -42,21 +42,36 @@
       visibleRoles: ['tmo', 'regional officer', 'central', 'super admin', 'admin']
     }),
     metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'ANC by Facility' }
+      ]
     }),
     metric('Overview', 'newborn_care_clients', 'Newborn Care Headcount', 'newborn.clients', '', {
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Newborn Care by Facility' }
+      ]
     }),
     metric('Overview', 'pnc_clients', 'PNC Headcount', 'pnc.clients', '', {
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'PNC by Facility' }
+      ]
     }),
     metric('Overview', 'hrt_patients', 'HRT Patients', 'highRisk.clients', '', {
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'HRT by Facility' }
+      ]
     }),
     metric('Overview', 'referrals', 'Referrals', 'referral.total', '', {
       detailPaths: ['referral.maternal.total', 'referral.baby.total'],
       detailLabels: ['Mother referrals', 'Baby referrals'],
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Referrals by Facility' }
+      ]
     }),
     metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
       charts: []

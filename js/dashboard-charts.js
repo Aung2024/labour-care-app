@@ -720,8 +720,10 @@
         dimension: definition.chart === 'trend' ? 'month' : ''
       }]
       charts.forEach(function (chartSpec, index) {
-        if (chartSpec.dimension &&
-            chartSpec.dimension !== 'month' &&
+        var remoteDimension = ['facility', 'township', 'region'].includes(
+          chartSpec.dimension
+        )
+        if (remoteDimension &&
             !Object.prototype.hasOwnProperty.call(currentSeries, chartSpec.dimension)) {
           return
         }

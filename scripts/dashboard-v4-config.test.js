@@ -48,6 +48,17 @@ test('overview uses readable chart roles and keeps joint care compact', () => {
   )
   assert.equal(all.find((item) => item.key === 'hrt_patients').numerator, 'highRisk.clients')
   assert.equal(all.find((item) => item.key === 'facility_count').visibleRoles.includes('midwife'), false)
+  ;['anc_clients', 'newborn_care_clients', 'pnc_clients', 'hrt_patients', 'referrals']
+    .forEach((key) => {
+      assert.ok(
+        all.find((item) => item.key === key).charts.some(
+          (chart) => chart.dimension === 'facility'
+        ),
+        key
+      )
+    })
+  assert.equal(all.find((item) => item.key === 'mother_service_outcomes').chartOnly, true)
+  assert.equal(all.find((item) => item.key === 'baby_service_outcomes').chartOnly, true)
   assert.deepEqual(
     all.find((item) => item.key === 'joint_care_patients').charts,
     []
