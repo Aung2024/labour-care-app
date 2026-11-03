@@ -88,3 +88,10 @@ test('dashboard chart controller uses fixed scorecard-led charts', () => {
   assert.doesNotMatch(source, /data-metric-key/)
   assert.doesNotMatch(source, /dashboard-info-button/)
 })
+
+test('scorecards expose client-facing calculation explanations', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard-charts.js'), 'utf8')
+  assert.match(source, /dashboard-kpi-clickable/)
+  assert.match(source, /How ' \+ definition\.label \+ ' is calculated/)
+  assert.doesNotMatch(source, /Formula<\/dt>/)
+})

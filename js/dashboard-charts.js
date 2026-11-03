@@ -270,7 +270,8 @@
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
       : ''
-    return '<article class="dashboard-kpi' + supplementalClass + '">' +
+    return '<article class="dashboard-kpi dashboard-kpi-clickable' + supplementalClass + '" role="button" tabindex="0" aria-label="Explain ' +
+      escapeHtml(definition.label) + '">' +
       supplementalBadge +
       '<span class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</span>' +
       '<span class="dashboard-kpi-value">' + escapeHtml(numeratorDisplay(definition)) + '</span>' +
@@ -665,7 +666,7 @@
     })
     if (!definition) return
     document.getElementById('dashboardDefinitionTitle').textContent =
-      definition.label + ' calculation'
+      'How ' + definition.label + ' is calculated'
     var numerator = definition.format === 'map'
       ? entriesForDefinition(definition, currentMetrics).reduce(function (total, item) {
         return total + Number(item[1] || 0)
@@ -675,13 +676,17 @@
     var result = definition.format === 'map'
       ? numerator.toLocaleString()
       : numeratorDisplay(definition)
+    var scopeLabel = document.getElementById('dashboardScopeLabel')
+    var context = scopeLabel && scopeLabel.textContent
+      ? '<p class="dashboard-definition-context"><strong>Current view:</strong> ' +
+        escapeHtml(scopeLabel.textContent) + '</p>'
+      : ''
     document.getElementById('dashboardDefinitionBody').innerHTML =
       '<p>' + escapeHtml(definition.definition) + '</p>' +
+      context +
       '<dl class="row mb-0">' +
       '<dt class="col-5">Counted as</dt><dd class="col-7">' +
       escapeHtml(definition.countedAs) + '</dd>' +
-      '<dt class="col-5">Formula</dt><dd class="col-7">' +
-      escapeHtml(DashboardMetricsConfig.formulaForDefinition(definition)) + '</dd>' +
       '<dt class="col-5">' + escapeHtml(definition.numeratorLabel) +
       '</dt><dd class="col-7">' + numerator.toLocaleString() + '</dd>' +
       (denominator == null ? '' : '<dt class="col-5">' +
@@ -713,6 +718,18 @@
     var grid = panel.querySelector('.dashboard-kpi-grid')
     grid.setAttribute('data-section', section)
     grid.innerHTML = kpis.map(renderKpi).join('')
+    grid.querySelectorAll('.dashboard-kpi-clickable').forEach(function (card, index) {
+      var definition = kpis[index]
+      var handleOpenDefinition = function () {
+        showDefinition(definition.key)
+      }
+      card.addEventListener('click', handleOpenDefinition)
+      card.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        handleOpenDefinition()
+      })
+    })
     var chartDefinitions = []
     definitions.forEach(function (definition) {
       var charts = definition.charts || [{

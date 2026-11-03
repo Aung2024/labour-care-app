@@ -29,6 +29,9 @@
 
   var definitions = [
     metric('Overview', 'total_clients', 'Total Clients', 'registration.total', '', {
+      definition: 'Counts every registered mother and baby once in the selected period. This includes registered records and baby records automatically created from delivery documentation.',
+      countedAs: 'Unique registered clients',
+      numeratorLabel: 'Registered mothers and babies',
       detailPaths: ['registration.mothers', 'registration.babies'],
       detailLabels: ['Mothers', 'Babies'],
       charts: [
@@ -38,34 +41,52 @@
       ]
     }),
     metric('Overview', 'facility_count', 'Total Facilities', 'facilityCount', '', {
+      definition: 'Counts facilities in the selected scope that have at least one registered client in the selected period.',
+      countedAs: 'Facilities with registered clients',
+      numeratorLabel: 'Facilities with registered clients',
       charts: [],
       visibleRoles: ['tmo', 'regional officer', 'central', 'super admin', 'admin']
     }),
     metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
+      definition: 'Counts each client once when at least one antenatal care visit is recorded in the selected period.',
+      countedAs: 'Unique ANC clients',
+      numeratorLabel: 'Clients with ANC',
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'ANC by Facility' }
       ]
     }),
     metric('Overview', 'newborn_care_clients', 'Newborn Care Headcount', 'newborn.clients', '', {
+      definition: 'Counts each baby once when newborn care is recorded in the selected period.',
+      countedAs: 'Unique newborn-care clients',
+      numeratorLabel: 'Babies receiving newborn care',
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'Newborn Care by Facility' }
       ]
     }),
     metric('Overview', 'pnc_clients', 'PNC Headcount', 'pnc.clients', '', {
+      definition: 'Counts each mother once when at least one postnatal care visit is recorded in the selected period.',
+      countedAs: 'Unique PNC clients',
+      numeratorLabel: 'Mothers with PNC',
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'PNC by Facility' }
       ]
     }),
     metric('Overview', 'hrt_patients', 'HRT Patients', 'highRisk.clients', '', {
+      definition: 'Counts each mother once when an ANC record identifies the pregnancy as high risk. Completion status does not change this count.',
+      countedAs: 'Unique high-risk pregnancies',
+      numeratorLabel: 'Mothers identified as high risk',
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'HRT by Facility' }
       ]
     }),
     metric('Overview', 'referrals', 'Referrals', 'referral.total', '', {
+      definition: 'Counts each recorded maternal or baby referral once when the referral is dated in the selected period.',
+      countedAs: 'Unique referred clients',
+      numeratorLabel: 'Maternal and baby referrals',
       detailPaths: ['referral.maternal.total', 'referral.baby.total'],
       detailLabels: ['Mother referrals', 'Baby referrals'],
       charts: [
@@ -74,6 +95,9 @@
       ]
     }),
     metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
+      definition: 'Counts each client once when an active joint-care relationship is recorded in the selected scope.',
+      countedAs: 'Unique joint-care clients',
+      numeratorLabel: 'Active joint-care clients',
       charts: []
     }),
     {
@@ -82,6 +106,9 @@
       label: 'Mother Service Outcomes',
       numerator: 'serviceClosure.mother.byOutcome',
       format: 'map',
+      definition: 'Shows the service outcome assigned to each included mother. Mothers without a finalized outcome are shown as In service.',
+      countedAs: 'Unique mothers with service records',
+      numeratorLabel: 'Mother outcome categories',
       chartOnly: true,
       charts: [{ type: 'donut', dimension: 'motherOutcomes', title: 'Mother Service Outcomes' }]
     },
@@ -91,13 +118,22 @@
       label: 'Baby Service Outcomes',
       numerator: 'serviceClosure.baby.byOutcome',
       format: 'map',
+      definition: 'Shows the service outcome assigned to each included baby. Babies without a finalized outcome are shown as In service.',
+      countedAs: 'Unique babies with service records',
+      numeratorLabel: 'Baby outcome categories',
       chartOnly: true,
       charts: [{ type: 'donut', dimension: 'babyOutcomes', title: 'Baby Service Outcomes' }]
     },
     metric('Overview', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba', '', {
+      definition: 'Counts each delivery once when the delivery location is home and a skilled birth attendant is recorded.',
+      countedAs: 'Unique home deliveries with SBA',
+      numeratorLabel: 'Home deliveries attended by SBA',
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),
     metric('Overview', 'institutional_deliveries', 'Institutional Deliveries', 'delivery.institutional', '', {
+      definition: 'Counts each delivery once when the delivery location is a public or private health facility.',
+      countedAs: 'Unique facility deliveries',
+      numeratorLabel: 'Deliveries at health facilities',
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),
     {
