@@ -26,7 +26,15 @@ test('v4 dashboard contains the requested clinical cards', () => {
     'anc_td1_completion',
     'anc_td2_completion',
     'hrt_completed',
+    'hrt_total',
+    'hrt_active',
+    'hrt_overdue',
+    'hrt_defaulted',
     'high_risk_anc_average',
+    'normal_anc_average',
+    'high_risk_rate',
+    'high_risk_factors',
+    'other_medical_conditions',
     'skilled_birth_attendant_rate',
     'preterm_babies',
     'kmc_completion',
@@ -38,6 +46,21 @@ test('v4 dashboard contains the requested clinical cards', () => {
   ].forEach((key) => assert.ok(keys.has(key), key))
   assert.equal(all.find((item) => item.key === 'anc_td1_completion').format, 'percent')
   assert.equal(all.find((item) => item.key === 'kmc_weight_gain').format, 'averageGrams')
+})
+
+test('high-risk dashboard uses client-facing rate, averages, and chart-only breakdowns', () => {
+  const all = global.DashboardMetricsConfig.allDefinitions
+  const rate = all.find((item) => item.key === 'high_risk_rate')
+  assert.equal(rate.numerator, 'highRisk.clients')
+  assert.equal(rate.denominator, 'anc.clients')
+  assert.equal(rate.format, 'percent')
+  assert.deepEqual(rate.charts.map((chart) => chart.dimension), ['month', 'facility'])
+  assert.deepEqual(all.find((item) => item.key === 'hrt_completed').charts, [])
+  assert.equal(all.find((item) => item.key === 'high_risk_factors').chartOnly, true)
+  assert.equal(all.find((item) => item.key === 'other_medical_conditions').chartOnly, true)
+  assert.equal(all.find((item) => item.key === 'high_risk_factors').label, 'High Risk Factors')
+  assert.equal(all.find((item) => item.key === 'hrt_total').numerator, 'highRisk.tracking.total')
+  assert.equal(all.find((item) => item.key === 'hrt_completed').numerator, 'highRisk.tracking.completed')
 })
 
 test('overview uses readable chart roles and keeps joint care compact', () => {

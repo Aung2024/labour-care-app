@@ -204,17 +204,83 @@
     }),
     metric('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
 
-    metric('High-Risk', 'high_risk_clients', 'High Risks Identified Among All ANC', 'highRisk.clients'),
-    metric('High-Risk', 'high_risk_factors', 'Risk Factors Documented', 'highRisk.factors', '', { format: 'map', chart: 'bar' }),
-    metric('High-Risk', 'hrt_completed', 'High-Risk Completion', 'highRisk.completion.completed', '', { chart: 'completion', detailMap: 'highRisk.completion.byReason' }),
-    metric('High-Risk', 'high_risk_anc_average', 'Average ANC Visits — High Risk', 'highRisk.ancAverage.highRisk.visits', 'highRisk.ancAverage.highRisk.clients', {
-      format: 'average',
-      chart: 'comparison',
-      comparison: [
-        { label: 'High Risk', numerator: 'highRisk.ancAverage.highRisk.visits', denominator: 'highRisk.ancAverage.highRisk.clients' },
-        { label: 'Non-High Risk', numerator: 'highRisk.ancAverage.nonHighRisk.visits', denominator: 'highRisk.ancAverage.nonHighRisk.clients' }
+    metric('High-Risk', 'hrt_total', 'Total HRT Patients', 'highRisk.tracking.total', '', {
+      definition: 'Counts all high-risk mothers currently represented in the HRT tracking list for the user’s authorized scope.',
+      countedAs: 'Unique HRT tracking patients',
+      numeratorLabel: 'HRT patients',
+      charts: []
+    }),
+    metric('High-Risk', 'hrt_active', 'Active HRT', 'highRisk.tracking.active', '', {
+      definition: 'Counts HRT patients whose next follow-up is currently on track.',
+      countedAs: 'Unique active HRT patients',
+      numeratorLabel: 'Active HRT patients',
+      charts: []
+    }),
+    metric('High-Risk', 'hrt_overdue', 'Overdue HRT', 'highRisk.tracking.overdue', '', {
+      definition: 'Counts HRT patients whose next follow-up date has passed but is still within the follow-up threshold.',
+      countedAs: 'Unique overdue HRT patients',
+      numeratorLabel: 'Overdue HRT patients',
+      charts: []
+    }),
+    metric('High-Risk', 'hrt_defaulted', 'Defaulted HRT', 'highRisk.tracking.defaulted', '', {
+      definition: 'Counts HRT patients whose follow-up is beyond the allowed threshold and has not been marked complete.',
+      countedAs: 'Unique defaulted HRT patients',
+      numeratorLabel: 'Defaulted HRT patients',
+      charts: []
+    }),
+    metric('High-Risk', 'high_risk_rate', 'High Risk Factor Rate', 'highRisk.clients', 'anc.clients', {
+      definition: 'Shows the percentage of ANC mothers identified as high risk during the selected period.',
+      countedAs: 'Unique high-risk ANC mothers',
+      numeratorLabel: 'High-risk ANC mothers',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'High Risks Identified Among All ANC' },
+        { type: 'bar', dimension: 'facility', title: 'High Risks Identified Among All ANC by Facility' }
       ]
     }),
+    metric('High-Risk', 'hrt_completed', 'Completed HRT', 'highRisk.tracking.completed', '', {
+      definition: 'Counts HRT patients that a midwife explicitly marked complete. Completion is not automatic.',
+      countedAs: 'Unique completed HRT patients',
+      numeratorLabel: 'Completed HRT patients',
+      charts: []
+    }),
+    metric('High-Risk', 'high_risk_anc_average', 'Average ANC Visits — High Risk', 'highRisk.ancAverage.highRisk.visits', 'highRisk.ancAverage.highRisk.clients', {
+      definition: 'Average number of ANC visits recorded for mothers identified as high risk in the selected period.',
+      countedAs: 'High-risk ANC mothers',
+      numeratorLabel: 'High-risk ANC visits',
+      format: 'average',
+      charts: []
+    }),
+    metric('High-Risk', 'normal_anc_average', 'Average ANC Visits — Normal Patients', 'highRisk.ancAverage.nonHighRisk.visits', 'highRisk.ancAverage.nonHighRisk.clients', {
+      definition: 'Average number of ANC visits recorded for mothers not identified as high risk in the selected period.',
+      countedAs: 'Normal-risk ANC mothers',
+      numeratorLabel: 'Normal-risk ANC visits',
+      format: 'average',
+      charts: []
+    }),
+    {
+      section: 'High-Risk',
+      key: 'high_risk_factors',
+      label: 'High Risk Factors',
+      numerator: 'highRisk.factors',
+      format: 'map',
+      chartOnly: true,
+      definition: 'Breaks down the high-risk factors recorded in ANC visits. A mother may appear under more than one factor.',
+      countedAs: 'Recorded high-risk factor assignments',
+      numeratorLabel: 'High-risk factor assignments',
+      charts: [{ type: 'bar', dimension: 'riskFactors', title: 'High Risk Factors' }]
+    },
+    {
+      section: 'High-Risk',
+      key: 'other_medical_conditions',
+      label: 'Other Medical Conditions',
+      numerator: 'highRisk.otherMedicalConditions',
+      format: 'map',
+      chartOnly: true,
+      definition: 'Shows the other medical condition names entered manually in high-risk ANC records.',
+      countedAs: 'Recorded manual condition names',
+      numeratorLabel: 'Other medical condition entries',
+      charts: [{ type: 'bar', dimension: 'otherMedicalConditions', title: 'Other Medical Conditions' }]
+    },
 
     metric('Delivery', 'delivery_total', 'Total Deliveries', 'delivery.completedNotes'),
     metric('Delivery', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba'),

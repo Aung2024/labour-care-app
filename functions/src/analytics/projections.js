@@ -12,6 +12,18 @@ const HRT_COMPLETE_REASONS = new Set([
   'completed', 'delivered_safely', 'death', 'transferred', 'transfer',
   'loss_of_contact', 'lost_to_followup', 'abortion'
 ]);
+const HRT_LONG_FOLLOW_UP_FACTORS = [
+  'diabetes',
+  'hypertension',
+  'heart disease',
+  'kidney disease',
+  'pregnancy induced hypertension',
+  'pre-eclampsia',
+  'preeclampsia',
+  'eclampsia',
+  'pih',
+  'pe'
+];
 const KMC_COMPLETE_TYPES = new Set(['kmc_resolved', 'resolved']);
 
 const HRT_PROJECTION_CONTRACT = Object.freeze({
@@ -147,15 +159,28 @@ function actionDate(action) {
 }
 
 function hrtCompletion(actions) {
-  return (actions || []).map(unwrap).filter((action) =>
-    ['resolved', 'completed'].includes(action.type) && (
-      HRT_COMPLETE_REASONS.has(normalizeOutcome(
-        action.completionReason || action.resolvedReason || action.reason
-      )) ||
-      ['alive', 'death', 'transfer', 'abortion', 'loss_of_contact'].includes(
-        normalizeOutcome(action.outcome)
-      )
-    )).sort((a, b) => (actionDate(b) || 0) - (actionDate(a) || 0))[0] || null;
+  const ordered = (actions || []).map(unwrap).filter(Boolean).sort(
+    (a, b) => (actionDate(a) || 0) - (actionDate(b) || 0)
+  );
+  let completion = null;
+  ordered.forEach((action) => {
+    if (['reopened', 'unresolved', 'active'].includes(
+      normalizeOutcome(action.type)
+    )) {
+      completion = null;
+      return;
+    }
+    if (!['resolved', 'completed'].includes(normalizeOutcome(action.type))) return;
+    const reason = normalizeOutcome(
+      action.completionReason || action.resolvedReason || action.reason
+    );
+    const outcome = normalizeOutcome(action.outcome);
+    if (HRT_COMPLETE_REASONS.has(reason) ||
+      ['alive', 'death', 'transfer', 'abortion', 'loss_of_contact'].includes(outcome)) {
+      completion = action;
+    }
+  });
+  return completion;
 }
 
 function trackingStatus(dueDate, graceDays, asOf) {
@@ -175,7 +200,7 @@ function projectionAsOf(options) {
 function highRiskDetails(facts) {
   const highRiskVisits = (facts.antenatalVisits || []).filter((entry) => {
     const visit = unwrap(entry);
-    return visit && ['yes', 'true'].includes(
+    return visit && ['yes', 'true', '1', 'given', 'completed', 'received'].includes(
       String(visit.high_risk ?? visit.highRisk).toLowerCase()
     );
   });
@@ -188,8 +213,8 @@ function highRiskDetails(facts) {
   const otherMedicalConditionName = String(
     visit && (visit.otherMedicalConditionName || visit.other_medical_condition_name) || ''
   ).trim();
-  const riskFactors = visit && Array.isArray(visit.risk_factors)
-    ? visit.risk_factors
+  const riskFactors = visit && Array.isArray(visit.risk_factors || visit.riskFactors)
+    ? (visit.risk_factors || visit.riskFactors)
     : [];
   const displayRiskFactors = riskFactors.map((factor) => {
         const normalized = String(factor || '').trim().toLowerCase().replace(/_/g, ' ');
@@ -203,7 +228,14 @@ function highRiskDetails(facts) {
     visit,
     riskFactors,
     displayRiskFactors,
-    activeFrom
+    activeFrom,
+    postpartumReminderDays: riskFactors.some((factor) => {
+      const normalized = String(factor || '').trim().toLowerCase()
+        .replace(/[_/()-]+/g, ' ').replace(/\s+/g, ' ');
+      return HRT_LONG_FOLLOW_UP_FACTORS.some((longFactor) =>
+        normalized.includes(longFactor)
+      );
+    }) ? 42 : 7
   };
 }
 
@@ -227,16 +259,16 @@ function buildHrtProjection(facts, options) {
   const birth = facts.birthAnchor && facts.birthAnchor.confirmed
     ? dateOnly(facts.birthAnchor.value) : null;
   const edd = dateOnly(effectiveEdd(facts));
-  const autoDate = addDays(birth || edd, 42);
-  const autoComplete = !explicit && autoDate && asOf >= autoDate;
-  const complete = !!explicit || autoComplete;
+  const reminderDate = birth
+    ? addDays(birth, highRisk.postpartumReminderDays)
+    : null;
+  const complete = !!explicit;
   const tracked = complete
     ? { status: 'complete', daysLate: 0 }
     : trackingStatus(dueDate, visitCount + 1 >= 5 ? 14 : 30, asOf);
   const activeFrom = dateOnly(highRisk.activeFrom) ||
     firstDate(facts.profile || {}, ['createdAt', 'registration_date']) || asOf;
-  const activeTo = complete
-    ? dateOnly(explicit && actionDate(explicit) || autoDate) : null;
+  const activeTo = complete ? dateOnly(actionDate(explicit)) : null;
   const outcome = explicit
     ? normalizeOutcome(explicit.outcome || explicit.resolvedReason) : null;
   return {
@@ -259,9 +291,9 @@ function buildHrtProjection(facts, options) {
     activeTo: isoDate(activeTo),
     activeUntil: isoDate(activeTo) || '9999-12-31',
     explicitCompletion: !!explicit,
-    derivedCompletion: !!autoComplete,
+    derivedCompletion: false,
     completionSource: explicit ? 'clinical_action' :
-      (autoComplete ? (birth ? 'confirmed_birth_plus_42d' : 'edd_plus_42d') : null),
+      null,
     completionDate: complete ? isoDate(activeTo) : null,
     outcome,
     completionReason: explicit ? normalizeOutcome(
@@ -273,7 +305,10 @@ function buildHrtProjection(facts, options) {
     birthAnchorSource: birth && facts.birthAnchor.source || (edd ? 'edd' : null),
     edd: isoDate(edd),
     postpartumAgeDays: birth
-      ? Math.max(0, Math.floor((asOf - birth) / DAY_MS)) : null
+      ? Math.max(0, Math.floor((asOf - birth) / DAY_MS)) : null,
+    postpartumReminderDays: highRisk.postpartumReminderDays,
+    postpartumReminderDate: isoDate(reminderDate),
+    postpartumReminderDue: !!reminderDate && asOf >= reminderDate
   };
 }
 

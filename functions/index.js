@@ -287,6 +287,7 @@ exports.leaderboardReconciliationWorker =
 // analytics and remain live for the clinical tracking pages.
 const trackingFunctions = require('./src/analytics/tracking-functions');
 exports.queryHrtTracking = trackingFunctions.queryHrtTracking;
+exports.queryHrtStatusSummary = trackingFunctions.queryHrtStatusSummary;
 exports.queryKmcTracking = trackingFunctions.queryKmcTracking;
 exports.startTrackingProjectionRepair =
   trackingFunctions.startTrackingProjectionRepair;
@@ -319,3 +320,7 @@ exports.reconcileDashboardV4Cache =
   analyticsV4Functions.reconcileDashboardV4Cache;
 exports.dashboardV4DailyRefreshWorker =
   analyticsV4Functions.dashboardV4DailyRefreshWorker;
+exports.startDashboardV4Backfill =
+  analyticsV4Functions.startDashboardV4Backfill;
+exports.dashboardV4BackfillWorker =
+  analyticsV4Functions.dashboardV4BackfillWorker;

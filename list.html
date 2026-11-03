@@ -3751,10 +3751,74 @@
         : (lang === 'en' ? 'Details' : 'အသေးစိတ်');
     }
 
+    function patientHasHighRiskAnc(patient) {
+      const visits = patient && (patient.antenatalVisits || patient.antenatal_visits);
+      if (!Array.isArray(visits)) return false;
+      return visits.some(function (entry) {
+        const visit = entry && (entry.data || entry);
+        return ['yes', 'true', '1', 'given', 'completed', 'received'].includes(
+          String(visit && (visit.high_risk ?? visit.highRisk) || '').trim().toLowerCase()
+        );
+      });
+    }
+
+    async function isHrtCurrentlyComplete(patient) {
+      const actions = Array.isArray(patient && patient.hrtActions)
+        ? patient.hrtActions
+        : [];
+      if (actions.length) {
+        const latest = actions.slice().sort(function (left, right) {
+          const leftDate = left.recordedAt && left.recordedAt.toMillis
+            ? left.recordedAt.toMillis() : 0;
+          const rightDate = right.recordedAt && right.recordedAt.toMillis
+            ? right.recordedAt.toMillis() : 0;
+          return rightDate - leftDate;
+        })[0];
+        if (latest && ['reopened', 'unresolved', 'active'].includes(
+          String(latest.type || '').toLowerCase()
+        )) return false;
+        if (latest && ['completed', 'resolved'].includes(
+          String(latest.type || '').toLowerCase()
+        )) return true;
+      }
+      const snapshot = await firebase.firestore()
+        .collection('patients').doc(patient.id).collection('hrt_actions')
+        .orderBy('recordedAt', 'desc').limit(20).get();
+      for (const document of snapshot.docs) {
+        const action = document.data() || {};
+        const type = String(action.type || '').toLowerCase();
+        if (['reopened', 'unresolved', 'active'].includes(type)) return false;
+        if (['completed', 'resolved'].includes(type)) return true;
+      }
+      return false;
+    }
+
     async function saveServiceClosure() {
       if (!window.ServiceClosure || !serviceClosePatientId) return;
       const patient = allPatients.find(function (item) { return item.id === serviceClosePatientId; });
       if (!patient) return;
+      if (ServiceClosure.kindOf(patient) === 'mother' &&
+          patientHasHighRiskAnc(patient)) {
+        let hrtComplete = false;
+        try {
+          hrtComplete = await isHrtCurrentlyComplete(patient);
+        } catch (error) {
+          const message = serviceCloseLang() === 'en'
+            ? 'HRT completion could not be verified. Open the High Risk Tracker, confirm completion, and try again.'
+            : 'HRT ပြီးမြောက်မှုကို စစ်ဆေး၍ မရပါ။ High Risk Tracker တွင် ပြီးမြောက်ကြောင်း အတည်ပြုပြီး ထပ်မံကြိုးစားပါ။';
+          if (window.AppDialog && AppDialog.alert) await AppDialog.alert(message);
+          else alert(message);
+          return;
+        }
+        if (!hrtComplete) {
+          const message = serviceCloseLang() === 'en'
+            ? 'This patient is still active in HRT. Mark HRT complete in the High Risk Tracker before marking the final service outcome.'
+            : 'ဤလူနာသည် HRT စောင့်ကြည့်မှုတွင် ဆက်လက်ရှိနေပါသည်။ နောက်ဆုံးဝန်ဆောင်မှု ရလဒ်မမှတ်မီ High Risk Tracker တွင် HRT ပြီးမြောက်ကြောင်း မှတ်ပေးပါ။';
+          if (window.AppDialog && AppDialog.alert) await AppDialog.alert(message);
+          else alert(message);
+          return;
+        }
+      }
       const result = ServiceClosure.validate(ServiceClosure.kindOf(patient), {
         outcome: document.getElementById('serviceCloseOutcome').value,
         deathPeriod: document.getElementById('serviceCloseDeathPeriod').value,

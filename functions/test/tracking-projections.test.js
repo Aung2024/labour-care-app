@@ -227,32 +227,61 @@ test('HRT preserves structured completion reason and outcomes', () => {
   assert.equal(row.newbornOutcome, 'death');
 });
 
-test('HRT derives completion at confirmed birth plus 42 days', () => {
+test('HRT shows a 42-day reminder without auto-completing long-follow-up risks', () => {
   const row = buildHrtProjection(facts({
     birthAnchor: {
       value: new Date('2026-05-01T23:30:00Z'),
       source: 'delivery_notes',
       confirmed: true
-    }
+    },
+    antenatalVisits: [{
+      data: {
+        visitNumber: 1,
+        visitDate: '2026-04-01',
+        high_risk: 'yes',
+        risk_factors: ['Hypertension']
+      }
+    }]
   }), { asOf: '2026-06-12' });
-  assert.equal(row.status, 'complete');
-  assert.equal(row.completionDate, '2026-06-12');
-  assert.equal(row.completionSource, 'confirmed_birth_plus_42d');
+  assert.equal(row.status, 'overdue_followup');
+  assert.equal(row.derivedCompletion, false);
+  assert.equal(row.completionSource, null);
+  assert.equal(row.postpartumReminderDays, 42);
+  assert.equal(row.postpartumReminderDue, true);
   assert.equal(row.postpartumAgeDays, 42);
 });
 
-test('HRT falls back to EDD plus 42 days without a confirmed birth', () => {
+test('HRT uses the seven-day reminder for other and missing risk criteria', () => {
   const row = buildHrtProjection(facts({
-    profile: {
-      name: 'Mother One',
-      lmp: '2026-01-01',
-      edd: '2026-05-01'
-    }
+    birthAnchor: {
+      value: '2026-05-01',
+      source: 'delivery_notes',
+      confirmed: true
+    },
+    antenatalVisits: [{
+      data: {
+        visitNumber: 1,
+        visitDate: '2026-04-01',
+        high_risk: 'yes',
+        risk_factors: []
+      }
+    }]
   }), { asOf: '2026-06-12' });
-  assert.equal(row.status, 'complete');
-  assert.equal(row.completionSource, 'edd_plus_42d');
-  assert.equal(row.birthAnchorSource, 'edd');
-  assert.equal(row.postpartumAgeDays, null);
+  assert.equal(row.status, 'overdue_followup');
+  assert.equal(row.postpartumReminderDays, 7);
+  assert.equal(row.postpartumReminderDue, true);
+});
+
+test('HRT reversal reopens a manually completed patient', () => {
+  const row = buildHrtProjection(facts({
+    hrtActions: [
+      { data: { type: 'completed', recordedAt: '2026-05-10' } },
+      { data: { type: 'reopened', recordedAt: '2026-05-11' } }
+    ]
+  }), { asOf: '2026-05-12' });
+  assert.equal(row.status, 'on_track');
+  assert.equal(row.explicitCompletion, false);
+  assert.equal(row.completionDate, null);
 });
 
 test('KMC emits independent rows and completion for each baby', () => {

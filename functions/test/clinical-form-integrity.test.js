@@ -459,6 +459,33 @@ test('HRT completion reasons exclude risk resolved', () => {
   assert.doesNotMatch(source, /<option value="risk_resolved">/);
 });
 
+test('HRT completion is manual, reversible, and shows postpartum reminders', () => {
+  const source = readAppFile('high-risk-tracking.html');
+  assert.doesNotMatch(source, /id="completionReasonSelect"/);
+  assert.doesNotMatch(source, /id="maternalOutcomeSelect"/);
+  assert.match(source, /type: reversing \? 'reopened' : 'completed'/);
+  assert.match(source, /postpartumReminderDays/);
+  assert.match(source, /completionAlertSeven/);
+  assert.match(source, /completionAlertFortyTwo/);
+});
+
+test('Select Patient blocks final service closure until HRT is complete', () => {
+  const source = readAppFile('list.html');
+  assert.match(source, /patientHasHighRiskAnc/);
+  assert.match(source, /isHrtCurrentlyComplete/);
+  assert.match(source, /High Risk Tracker/);
+  assert.match(source, /HRT စောင့်ကြည့်မှုတွင် ဆက်လက်ရှိနေပါသည်/);
+});
+
+test('dashboard HRT status breakdown uses the role-scoped tracking summary', () => {
+  const tracking = readAppFile('functions/src/analytics/tracking-functions.js');
+  const index = readAppFile('functions/index.js');
+  assert.match(tracking, /const queryHrtStatusSummary = onCall/);
+  assert.match(tracking, /active: active\.data\(\)\.count/);
+  assert.match(tracking, /completed: completed\.data\(\)\.count/);
+  assert.match(index, /exports\.queryHrtStatusSummary/);
+});
+
 test('home page exposes midwife Back Fill without a homepage data scan', () => {
   const source = readAppFile('home.html');
   assert.match(source, /id="backFillCard"/);

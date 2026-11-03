@@ -63,22 +63,21 @@ const DASHBOARD_METRICS = Object.freeze([
   definition('ANC', 'anc_hiv_reactive', 'HIV Reactive Cases', 'anc.pmtctReactive', 'anc.hivTested'),
   definition('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
 
-  definition('High-Risk', 'high_risk_clients', 'High Risks Identified Among All ANC', 'highRisk.clients'),
-  definition('High-Risk', 'high_risk_factors', 'Risk Factors Documented', 'highRisk.factors', null, {
+  definition('High-Risk', 'high_risk_rate', 'High Risk Factor Rate', 'highRisk.clients', 'anc.clients'),
+  definition('High-Risk', 'high_risk_factors', 'High Risk Factors', 'highRisk.factors', null, {
     format: 'map',
     chart: 'bar'
   }),
-  definition('High-Risk', 'hrt_completed', 'High-Risk Completion', 'highRisk.completion.completed', null, {
-    chart: 'completion',
-    detailMap: 'highRisk.completion.byReason'
+  definition('High-Risk', 'other_medical_conditions', 'Other Medical Conditions', 'highRisk.otherMedicalConditions', null, {
+    format: 'map',
+    chart: 'bar'
   }),
+  definition('High-Risk', 'hrt_completed', 'High-Risk Completion', 'highRisk.completion.completed'),
   definition('High-Risk', 'high_risk_anc_average', 'Average ANC Visits — High Risk', 'highRisk.ancAverage.highRisk.visits', 'highRisk.ancAverage.highRisk.clients', {
-    format: 'average',
-    chart: 'comparison',
-    comparison: [
-      { label: 'High Risk', numerator: 'highRisk.ancAverage.highRisk.visits', denominator: 'highRisk.ancAverage.highRisk.clients' },
-      { label: 'Non-High Risk', numerator: 'highRisk.ancAverage.nonHighRisk.visits', denominator: 'highRisk.ancAverage.nonHighRisk.clients' }
-    ]
+    format: 'average'
+  }),
+  definition('High-Risk', 'normal_anc_average', 'Average ANC Visits — Normal Patients', 'highRisk.ancAverage.nonHighRisk.visits', 'highRisk.ancAverage.nonHighRisk.clients', {
+    format: 'average'
   }),
 
   definition('Delivery', 'delivery_total', 'Total Deliveries', 'delivery.completedNotes'),

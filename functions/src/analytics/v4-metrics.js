@@ -180,7 +180,10 @@ const emptyMetrics = () => ({
     tb: 0
   },
   highRisk: {
-    clients: 0, factors: {}, completion: { completed: 0, byReason: {} },
+    clients: 0,
+    factors: {},
+    otherMedicalConditions: {},
+    completion: { completed: 0, byReason: {} },
     ancAverage: {
       highRisk: { visits: 0, clients: 0 },
       nonHighRisk: { visits: 0, clients: 0 }
@@ -304,16 +307,27 @@ const deliveryRecord = (facts) => {
   }
 }
 
-const hrtCompletion = (facts) => sorted(records(facts.hrtActions), ['recordedAt', 'createdAt'])
-  .filter((action) => ['resolved', 'completed'].includes(asText(action.type).toLowerCase()) ||
-    action.completionReason || action.outcome)
-  .map((action) => ({
-    ...action,
-    reason: asText(action.completionReason || action.resolvedReason || action.reason || action.outcome).toLowerCase(),
-    date: action.recordedAt || action.completedAt || action.createdAt
-  }))
-  .filter((action) => action.reason)
-  .pop() || null
+const hrtCompletion = (facts) => {
+  let completion = null
+  sorted(records(facts.hrtActions), ['recordedAt', 'createdAt']).forEach((action) => {
+    const type = asText(action.type).toLowerCase()
+    if (['reopened', 'unresolved', 'active'].includes(type)) {
+      completion = null
+      return
+    }
+    if (!['resolved', 'completed'].includes(type) &&
+      !action.completionReason && !action.outcome) return
+    completion = {
+      ...action,
+      reason: asText(
+        action.completionReason || action.resolvedReason || action.reason ||
+        action.outcome || (type === 'completed' ? 'completed' : '')
+      ).toLowerCase(),
+      date: action.recordedAt || action.completedAt || action.createdAt
+    }
+  })
+  return completion && completion.reason ? completion : null
+}
 
 const kmcActionsForBaby = (facts, babyIndex) => records(facts.kmcActions)
   .filter((action) => numeric(action.babyIndex || action.baby_index || 1) === babyIndex)
@@ -459,15 +473,22 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (hivResults.length) metrics.anc.pmtctTested = 1
     if (ancInPeriod.some((visit) => affirmative(visit.tbSymptoms) || affirmative(visit.tbSuspected))) metrics.anc.tb = 1
 
-    const highRisk = anc.some((visit) => affirmative(visit.high_risk || visit.highRisk))
+    const highRisk = ancInPeriod.some((visit) => affirmative(visit.high_risk || visit.highRisk))
     const group = highRisk ? metrics.highRisk.ancAverage.highRisk : metrics.highRisk.ancAverage.nonHighRisk
     group.clients = 1
     group.visits = ancInPeriod.length
     if (highRisk) {
       metrics.highRisk.clients = 1
-      anc.filter((visit) => affirmative(visit.high_risk || visit.highRisk))
-        .flatMap((visit) => Array.isArray(visit.risk_factors) ? visit.risk_factors : [])
-        .forEach((factor) => bump(metrics.highRisk.factors, factor))
+      ancInPeriod.filter((visit) => affirmative(visit.high_risk || visit.highRisk))
+        .forEach((visit) => {
+          ;(Array.isArray(visit.risk_factors) ? visit.risk_factors : [])
+            .forEach((factor) => bump(metrics.highRisk.factors, factor))
+          const otherCondition = asText(
+            visit.otherMedicalConditionName ||
+            visit.other_medical_condition_name
+          )
+          if (otherCondition) bump(metrics.highRisk.otherMedicalConditions, otherCondition)
+        })
     }
   }
 

@@ -187,6 +187,7 @@ function validateFilters(input) {
     status,
     department,
     facilityTypes: types,
+    facilityCode: stringFilter(data, 'facilityCode'),
     region: stringFilter(data, 'region'),
     township: stringFilter(data, 'township'),
     periodStart: validDate(data.periodStart, 'periodStart'),
@@ -226,7 +227,7 @@ async function queryProjectionRows(collectionName, request) {
   // out of the Firestore query avoids an unsafe combinatorial index matrix.
   // The scan cursor still advances over non-matching rows.
   const extraScan = !!(filters.township || filters.department ||
-    filters.status || filters.facilityTypes.length);
+    filters.facilityCode || filters.status || filters.facilityTypes.length);
   const scanLimit = extraScan
     ? Math.min(500, Math.max(filters.pageSize + 1, filters.pageSize * 10))
     : filters.pageSize + 1;
@@ -255,6 +256,7 @@ async function queryProjectionRows(collectionName, request) {
           (!filters.region || row.region === filters.region) &&
           (!filters.township || row.township === filters.township) &&
           (!filters.department || row.department === filters.department) &&
+          (!filters.facilityCode || row.facilityCode === filters.facilityCode) &&
           (!filters.facilityTypes.length ||
             filters.facilityTypes.includes(row.facilityType)) &&
           (!filters.status || row.status === filters.status)) {
@@ -523,8 +525,44 @@ const trackingWeeklyReconciliation = onSchedule({
   concurrency: 1
 }, () => processActiveTrackingReconciliation());
 
+const queryHrtStatusSummary = onCall({
+  region: REGION, timeoutSeconds: 60, memory: '256MiB', enforceAppCheck: false
+}, async (request) => {
+  const user = await authorizedUser(request);
+  const filters = validateFilters(request.data);
+  const buildQuery = (status) => {
+    let query = applyRoleScope(db().collection(HRT_COLLECTION), user);
+    if (filters.region && ['super admin', 'central', 'admin'].includes(user.role)) {
+      query = query.where('region', '==', filters.region);
+    }
+    if (filters.township) query = query.where('township', '==', filters.township);
+    if (filters.department) query = query.where('department', '==', filters.department);
+    if (filters.facilityCode) query = query.where('facilityCode', '==', filters.facilityCode);
+    if (filters.facilityTypes.length) {
+      query = query.where('facilityType', 'in', filters.facilityTypes);
+    }
+    if (status) query = query.where('status', '==', status);
+    return query;
+  };
+  const [total, active, overdue, defaulted, completed] = await Promise.all([
+    buildQuery().count().get(),
+    buildQuery('on_track').count().get(),
+    buildQuery('overdue_followup').count().get(),
+    buildQuery('lost_to_followup').count().get(),
+    buildQuery('complete').count().get()
+  ]);
+  return {
+    total: total.data().count,
+    active: active.data().count,
+    overdue: overdue.data().count,
+    defaulted: defaulted.data().count,
+    completed: completed.data().count
+  };
+});
+
 module.exports = {
   queryHrtTracking,
+  queryHrtStatusSummary,
   queryKmcTracking,
   startTrackingProjectionRepair,
   trackingProjectionRepairWorker,

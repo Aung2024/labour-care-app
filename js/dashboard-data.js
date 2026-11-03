@@ -534,6 +534,16 @@
     return body.result || body
   }
 
+  async function loadHrtStatusSummary(profile, filters) {
+    return callDashboardV4('queryHrtStatusSummary', {
+      region: filters.region,
+      township: filters.township,
+      department: filters.department,
+      facilityCode: filters.facilityCode,
+      facilityTypes: filters.facilityTypes || []
+    })
+  }
+
   async function loadV4Summary(profile, filters, onCached) {
     if (!filters.startDate || !filters.endDate) {
       throw new Error('Choose both a start date and an end date.')
@@ -588,9 +598,28 @@
         result = Object.assign({}, cached, { source: 'cache' })
       }
     }
+    var metrics = result.metrics || {}
+    if (navigator.onLine) {
+      try {
+        var hrtStatus = await loadHrtStatusSummary(profile, filters)
+        metrics = Object.assign({}, metrics, {
+          highRisk: Object.assign({}, metrics.highRisk || {}, {
+            tracking: {
+              total: Number(hrtStatus.total || 0),
+              active: Number(hrtStatus.active || 0),
+              overdue: Number(hrtStatus.overdue || 0),
+              defaulted: Number(hrtStatus.defaulted || 0),
+              completed: Number(hrtStatus.completed || 0)
+            }
+          })
+        })
+      } catch (error) {
+        console.warn('HRT status summary unavailable:', error)
+      }
+    }
     return {
       source: result.source || 'server',
-      metrics: result.metrics || {},
+      metrics,
       seriesByDimension: result.seriesByDimension || {},
       calculatedAt: safeDate(result.calculatedAt),
       patientContributionCount: Number(result.contributionCount || 0),
@@ -701,6 +730,7 @@
     selectedFacilityTypes: selectedFacilityTypes,
     loadSummary: loadSummary,
     loadV4Summary: loadV4Summary,
+    loadHrtStatusSummary: loadHrtStatusSummary,
     callDashboardV4: callDashboardV4,
     periodKey: periodKey,
     initializePeriodOptions: initializePeriodOptions,

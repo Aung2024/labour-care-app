@@ -160,6 +160,22 @@ test('overview metrics include default service outcome and maternal demographics
   assert.equal(metrics.registration.parityCount, 1)
 })
 
+test('collects manually entered other medical conditions for high-risk ANC visits', () => {
+  const metrics = calculateV4Metrics(facts({
+    antenatalVisits: [
+      { visitDate: '2026-01-02', high_risk: 'Yes', otherMedicalConditionName: 'Asthma' },
+      { visitDate: '2026-01-10', highRisk: true, other_medical_condition_name: 'Asthma' },
+      { visitDate: '2026-01-15', high_risk: 'No', otherMedicalConditionName: 'Diabetes' }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.highRisk.clients, 1)
+  assert.equal(metrics.highRisk.otherMedicalConditions.Asthma, 2)
+  assert.equal(metrics.highRisk.otherMedicalConditions.Diabetes, undefined)
+})
+
 test('counts institutional delivery independently of the birth provider', () => {
   const delivery = deliveryRecord(facts({
     deliveryNotes: {
