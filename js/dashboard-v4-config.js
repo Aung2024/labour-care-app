@@ -33,7 +33,7 @@
       detailLabels: ['Mothers', 'Babies'],
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'donut', dimension: 'facility', title: 'Total Clients by Facility' },
+        { type: 'bar', dimension: 'facility', title: 'Total Clients by Facility' },
         { type: 'donut', dimension: 'township', title: 'Total Clients by TSP' }
       ]
     }),

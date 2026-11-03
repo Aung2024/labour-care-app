@@ -520,11 +520,12 @@
       options.yaxis.forceNiceScale = true
     }
     if (line) {
-      options.stroke = { curve: 'smooth', width: 4, colors: ['#065f46'] }
-      options.markers = { size: 5, hover: { size: 7 } }
+      options.colors = ['#065f46']
+      options.stroke = { curve: 'straight', width: 4 }
+      options.markers = { size: 4, hover: { size: 7 } }
       options.fill = {
-        type: 'gradient',
-        gradient: { opacityFrom: 0.28, opacityTo: 0.04, stops: [0, 90, 100] }
+        type: 'solid',
+        opacity: 0.08
       }
     }
     options.plotOptions = {
@@ -753,7 +754,12 @@
     currentSeries = series || {}
     currentMetrics = Object.assign({}, currentMetrics, {
       facilityCount: Array.isArray(currentSeries.facility)
-        ? currentSeries.facility.length
+        ? currentSeries.facility.filter(function (item) {
+          return DashboardMetricsConfig.numberAtPath(
+            item.metrics || {},
+            'registration.total'
+          ) > 0
+        }).length
         : 0
     })
     renderedSections.clear()
