@@ -33,9 +33,13 @@
       detailLabels: ['Mothers', 'Babies'],
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'bar', dimension: 'facility', title: 'Total Clients by Facility' },
+        { type: 'donut', dimension: 'facility', title: 'Total Clients by Facility' },
         { type: 'donut', dimension: 'township', title: 'Total Clients by TSP' }
       ]
+    }),
+    metric('Overview', 'facility_count', 'Total Facilities', 'facilityCount', '', {
+      charts: [],
+      visibleRoles: ['tmo', 'regional officer', 'central', 'super admin', 'admin']
     }),
     metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
@@ -46,7 +50,7 @@
     metric('Overview', 'pnc_clients', 'PNC Headcount', 'pnc.clients', '', {
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),
-    metric('Overview', 'hrt_completed', 'HRT', 'highRisk.completion.completed', '', {
+    metric('Overview', 'hrt_patients', 'HRT Patients', 'highRisk.clients', '', {
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),
     metric('Overview', 'referrals', 'Referrals', 'referral.total', '', {
@@ -57,9 +61,24 @@
     metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
       charts: []
     }),
-    metric('Overview', 'finalized_outcomes', 'Finalized Service Outcomes', 'serviceClosure.total', '', {
-      charts: [{ type: 'outcome', dimension: 'outcomes', title: 'Service Outcomes' }]
-    }),
+    {
+      section: 'Overview',
+      key: 'mother_service_outcomes',
+      label: 'Mother Service Outcomes',
+      numerator: 'serviceClosure.mother.byOutcome',
+      format: 'map',
+      chartOnly: true,
+      charts: [{ type: 'donut', dimension: 'motherOutcomes', title: 'Mother Service Outcomes' }]
+    },
+    {
+      section: 'Overview',
+      key: 'baby_service_outcomes',
+      label: 'Baby Service Outcomes',
+      numerator: 'serviceClosure.baby.byOutcome',
+      format: 'map',
+      chartOnly: true,
+      charts: [{ type: 'donut', dimension: 'babyOutcomes', title: 'Baby Service Outcomes' }]
+    },
     metric('Overview', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba', '', {
       charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
     }),

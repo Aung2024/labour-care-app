@@ -8,6 +8,7 @@
   var renderedSections = new Set()
   var currentMetrics = {}
   var currentSeries = {}
+  var activeRole = ''
   var activeTrendMode = 'month'
   var resizeObserver = null
   var intersectionObserver = null
@@ -196,6 +197,10 @@
     return DashboardMetricsConfig.numberAtPath(currentMetrics, path)
   }
 
+  function roleKey(role) {
+    return String(role || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
   function numeratorDisplay(definition) {
     var rawNumerator = DashboardMetricsConfig.valueAtPath(currentMetrics, definition.numerator)
     var numerator = definition.format === 'map'
@@ -318,7 +323,7 @@
       })
     }
     if (dimension === 'facility' || dimension === 'township' || dimension === 'region') {
-      return series.map(function (item) {
+      var dimensionEntries = series.map(function (item) {
         return [
           dimension === 'facility' ? facilityLabel(item.label) : item.label,
           DashboardMetricsConfig.numberAtPath(item.metrics || {}, definition.numerator)
@@ -326,6 +331,15 @@
       }).sort(function (left, right) {
         return right[1] - left[1] || left[0].localeCompare(right[0])
       })
+      if (dimension === 'facility' && dimensionEntries.length > 10) {
+        var topFacilities = dimensionEntries.slice(0, 10)
+        var otherTotal = dimensionEntries.slice(10).reduce(function (total, item) {
+          return total + item[1]
+        }, 0)
+        if (otherTotal > 0) topFacilities.push(['Other facilities', otherTotal])
+        return topFacilities
+      }
+      return dimensionEntries
     }
     if (series.length && definition.chart === 'comparison' && definition.comparison) {
       return definition.comparison.map(function (item) {
@@ -349,8 +363,15 @@
         return [item.label, denominator ? numerator / denominator : 0]
       })
     }
-    if (dimension === 'outcomes') {
-      return sortedMapEntries(source.serviceClosure && source.serviceClosure.outcomes)
+    if (dimension === 'outcomes' || dimension === 'motherOutcomes' || dimension === 'babyOutcomes') {
+      var outcomeMap = dimension === 'motherOutcomes'
+        ? source.serviceClosure && source.serviceClosure.mother &&
+          source.serviceClosure.mother.byOutcome
+        : dimension === 'babyOutcomes'
+          ? source.serviceClosure && source.serviceClosure.baby &&
+            source.serviceClosure.baby.byOutcome
+          : source.serviceClosure && source.serviceClosure.outcomes
+      return sortedMapEntries(outcomeMap)
     }
     if (dimension === 'ageGroups') {
       var ageGroups = source.registration && source.registration.ageGroups || {}
@@ -499,9 +520,12 @@
       options.yaxis.forceNiceScale = true
     }
     if (line) {
-      options.stroke = { curve: 'smooth', width: 3 }
-      options.markers = { size: 4 }
-      options.fill = { type: 'gradient', gradient: { opacityFrom: 0.3, opacityTo: 0.05 } }
+      options.stroke = { curve: 'smooth', width: 4, colors: ['#065f46'] }
+      options.markers = { size: 5, hover: { size: 7 } }
+      options.fill = {
+        type: 'gradient',
+        gradient: { opacityFrom: 0.28, opacityTo: 0.04, stops: [0, 90, 100] }
+      }
     }
     options.plotOptions = {
       bar: {
@@ -681,7 +705,8 @@
     }
     var definitions = DashboardMetricsConfig.definitionsForSection(section)
     var kpis = definitions.filter(function (definition) {
-      return !definition.chartOnly
+      return !definition.chartOnly &&
+        (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
     })
     unobserveCharts(panel)
     var grid = panel.querySelector('.dashboard-kpi-grid')
@@ -726,6 +751,11 @@
 
   function setSeries(series) {
     currentSeries = series || {}
+    currentMetrics = Object.assign({}, currentMetrics, {
+      facilityCount: Array.isArray(currentSeries.facility)
+        ? currentSeries.facility.length
+        : 0
+    })
     renderedSections.clear()
     var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
     var activeSection = active
@@ -738,6 +768,18 @@
 
   function setTrendMode(mode) {
     activeTrendMode = mode || 'month'
+    renderedSections.clear()
+    var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
+    var activeSection = active
+      ? DashboardMetricsConfig.sections.find(function (section) {
+        return active.id === sectionId(section) + '-tab'
+      })
+      : 'Overview'
+    renderSection(activeSection || 'Overview')
+  }
+
+  function setViewerRole(role) {
+    activeRole = roleKey(role)
     renderedSections.clear()
     var active = document.querySelector('.dashboard-tab[aria-selected="true"]')
     var activeSection = active
@@ -768,6 +810,7 @@
     setMetrics: setMetrics,
     setSeries: setSeries,
     setTrendMode: setTrendMode,
+    setViewerRole: setViewerRole,
     renderSection: renderSection,
     showDefinition: showDefinition,
     entriesForDefinition: entriesForDefinition,

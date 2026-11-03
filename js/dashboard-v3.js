@@ -337,6 +337,7 @@
       viewer = await userProfile(user)
       updateHeader(viewer)
       updateOfflineNotice()
+      DashboardCharts.setViewerRole(viewer.role)
       DashboardCharts.initializeSections(function (section) {
         DashboardCharts.renderSection(section)
       })

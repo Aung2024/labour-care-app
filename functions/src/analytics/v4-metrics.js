@@ -557,6 +557,11 @@ const calculateV4Metrics = (facts, inputPeriod) => {
       ? normalizeServiceOutcome(closure.outcome)
       : 'In service'
     bump(metrics.serviceClosure.outcomes, outcome)
+    const patientOutcome = patientType === 'baby'
+      ? metrics.serviceClosure.baby
+      : metrics.serviceClosure.mother
+    patientOutcome.total = 1
+    bump(patientOutcome.byOutcome, outcome)
   }
 
   const activeProviders = Array.from(new Set(

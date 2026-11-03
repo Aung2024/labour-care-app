@@ -125,6 +125,8 @@ test('overview metrics include default service outcome and maternal demographics
   })
   assert.equal(metrics.serviceClosure.total, 1)
   assert.equal(metrics.serviceClosure.outcomes['In service'], 1)
+  assert.equal(metrics.serviceClosure.mother.total, 1)
+  assert.equal(metrics.serviceClosure.mother.byOutcome['In service'], 1)
   assert.equal(metrics.registration.ageGroups['18-35'], 1)
   assert.equal(metrics.registration.gravidaTotal, 3)
   assert.equal(metrics.registration.gravidaCount, 1)
