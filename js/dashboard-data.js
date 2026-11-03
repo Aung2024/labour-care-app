@@ -615,6 +615,11 @@
         })
       } catch (error) {
         console.warn('HRT status summary unavailable:', error)
+        metrics = Object.assign({}, metrics, {
+          highRisk: Object.assign({}, metrics.highRisk || {}, {
+            trackingUnavailable: true
+          })
+        })
       }
     }
     return {

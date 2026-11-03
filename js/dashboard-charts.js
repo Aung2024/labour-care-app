@@ -203,6 +203,13 @@
   }
 
   function numeratorDisplay(definition) {
+    var trackingUnavailable = currentMetrics.highRisk &&
+      currentMetrics.highRisk.trackingUnavailable
+    if (trackingUnavailable &&
+        definition.section === 'High-Risk' &&
+        definition.key.indexOf('hrt_') === 0) {
+      return '—'
+    }
     var rawNumerator = DashboardMetricsConfig.valueAtPath(currentMetrics, definition.numerator)
     var numerator = definition.format === 'map'
       ? Object.keys(rawNumerator || {}).reduce(function (total, key) {
@@ -760,7 +767,7 @@
         '</div><div class="dashboard-insight-charts"></div>'
       insightGrid.appendChild(group)
       var chartHost = group.querySelector('.dashboard-insight-charts')
-      definition.charts.forEach(function (chartSpec) {
+      definition.charts.forEach(function (chartSpec, chartIndex) {
         var remoteDimension = ['facility', 'township', 'region'].includes(
           chartSpec.dimension
         )
@@ -774,11 +781,13 @@
           index: chartDefinitions.length
         }
         chartDefinitions.push(item)
-        insightChartDefinitions.push(item)
-        chartHost.insertAdjacentHTML(
-          'beforeend',
-          chartCard(item.definition, item.chartSpec, item.index)
-        )
+        if (chartIndex === 0) {
+          insightChartDefinitions.push(item)
+          chartHost.insertAdjacentHTML(
+            'beforeend',
+            chartCard(item.definition, item.chartSpec, item.index)
+          )
+        }
       })
     })
     panel.querySelectorAll('.dashboard-kpi-clickable').forEach(function (card) {
