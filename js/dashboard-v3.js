@@ -28,7 +28,20 @@
     setVisible('dashboardEmpty', false)
   }
 
+  function setFilterLoading(loading) {
+    var banner = element('dashboardFilterLoading')
+    var applyButton = document.querySelector('.dashboard-filter-apply')
+    if (!banner) return
+    banner.classList.toggle('is-visible', Boolean(loading))
+    banner.setAttribute('aria-busy', loading ? 'true' : 'false')
+    if (applyButton) {
+      applyButton.disabled = Boolean(loading)
+      applyButton.setAttribute('aria-busy', loading ? 'true' : 'false')
+    }
+  }
+
   function showLoading() {
+    setFilterLoading(hasRenderedSummary)
     if (hasRenderedSummary) return
     hideStates()
     element('dashboardSections').hidden = true
@@ -36,6 +49,7 @@
   }
 
   function showError(error) {
+    setFilterLoading(false)
     hideStates()
     element('dashboardSections').hidden = true
     element('dashboardErrorMessage').textContent =
@@ -143,6 +157,7 @@
       })
       if (sequence !== requestSequence) return
       if (summaryIsEmpty(summary)) {
+        setFilterLoading(false)
         hideStates()
         hasRenderedSummary = false
         renderedFilterKey = nextKey
@@ -157,6 +172,7 @@
       if (sequence !== requestSequence) return
       console.error('Dashboard summary load failed:', error)
       if (sameScope && hasRenderedSummary) {
+        setFilterLoading(false)
         hideStates()
         element('dashboardSections').hidden = false
         showScope(filters)
@@ -167,11 +183,13 @@
       }
       hasRenderedSummary = false
       renderedFilterKey = ''
+      setFilterLoading(false)
       showScope(filters)
       showError(error)
     } finally {
       if (sequence === requestSequence) {
         element('dashboardRefreshButton').disabled = false
+        setFilterLoading(false)
       }
     }
   }

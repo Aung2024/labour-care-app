@@ -171,7 +171,8 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
-        '<div class="dashboard-kpi-grid"></div>' +
+        '<div class="dashboard-kpi-grid dashboard-kpi-grid--standalone"></div>' +
+        '<div class="dashboard-insight-grid"></div>' +
         '<div class="dashboard-chart-grid"></div>'
       sections.appendChild(panel)
     })
@@ -270,7 +271,8 @@
     var supplementalBadge = definition.supplemental
       ? '<span class="dashboard-supplemental-badge">Supplemental</span>'
       : ''
-    return '<article class="dashboard-kpi dashboard-kpi-clickable' + supplementalClass + '" role="button" tabindex="0" aria-label="Explain ' +
+    return '<article class="dashboard-kpi dashboard-kpi-clickable' + supplementalClass + '" data-definition-key="' +
+      escapeHtml(definition.key) + '" role="button" tabindex="0" aria-label="Explain ' +
       escapeHtml(definition.label) + '">' +
       supplementalBadge +
       '<span class="dashboard-kpi-label">' + escapeHtml(definition.label) + '</span>' +
@@ -310,7 +312,7 @@
       : String(value || 'Unknown facility')
   }
 
-  function entriesForDefinition(definition, metrics, chartSpec) {
+  function entriesForDefinition(definition, metrics, chartSpec, options) {
     var source = metrics || {}
     var dimension = chartSpec && chartSpec.dimension
     var series = currentSeries[dimension || activeTrendMode] || []
@@ -332,7 +334,8 @@
       }).sort(function (left, right) {
         return right[1] - left[1] || left[0].localeCompare(right[0])
       })
-      if (dimension === 'facility' && dimensionEntries.length > 10) {
+      if (dimension === 'facility' && dimensionEntries.length > 10 &&
+          !(options && options.includeAll)) {
         var topFacilities = dimensionEntries.slice(0, 10)
         var otherTotal = dimensionEntries.slice(10).reduce(function (total, item) {
           return total + item[1]
@@ -415,6 +418,23 @@
     var title = chartSpec && chartSpec.title
       ? definition.label + ' · ' + chartSpec.title
       : definition.label
+    var facilityDetails = ''
+    if (chartSpec && chartSpec.dimension === 'facility') {
+      var allFacilities = entriesForDefinition(
+        definition,
+        currentMetrics,
+        chartSpec,
+        { includeAll: true }
+      )
+      facilityDetails = '<details class="dashboard-facility-details">' +
+        '<summary>View all ' + allFacilities.length + ' facilities</summary>' +
+        '<ol class="dashboard-facility-list">' +
+        allFacilities.map(function (item) {
+          return '<li><span>' + escapeHtml(item[0]) + '</span><strong>' +
+            Number(item[1] || 0).toLocaleString() + '</strong></li>'
+        }).join('') +
+        '</ol></details>'
+    }
     return '<article class="dashboard-chart-card' + supplementalClass + dimensionClass + '">' +
       supplementalBadge +
       '<h3 class="dashboard-chart-title">' + escapeHtml(title) + '</h3>' +
@@ -423,6 +443,7 @@
         : '') +
       '<div id="' + chartId(definition, chartSpec, index) + '" class="dashboard-chart" role="img" aria-label="' +
       escapeHtml(title) + ' chart"></div>' +
+      facilityDetails +
       '</article>'
   }
 
@@ -502,7 +523,6 @@
       return Number.isFinite(number) ? Math.round(number).toLocaleString() : (value == null ? '' : String(value))
     }
     options.xaxis = {
-      categories: labels,
       labels: {
         rotate: horizontal || labels.length <= 5 ? 0 : -35,
         trim: true,
@@ -516,7 +536,11 @@
         formatter: formatAxisLabel
       }
     }
-    if (!horizontal) {
+    if (horizontal) {
+      options.yaxis.categories = labels
+      options.xaxis.labels.rotate = 0
+    } else {
+      options.xaxis.categories = labels
       options.yaxis.min = 0
       options.yaxis.forceNiceScale = true
     }
@@ -715,11 +739,54 @@
         (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
     })
     unobserveCharts(panel)
+    var standaloneDefinitions = kpis.filter(function (definition) {
+      return !(definition.charts && definition.charts.length)
+    })
+    var insightDefinitions = kpis.filter(function (definition) {
+      return definition.charts && definition.charts.length
+    })
     var grid = panel.querySelector('.dashboard-kpi-grid')
     grid.setAttribute('data-section', section)
-    grid.innerHTML = kpis.map(renderKpi).join('')
-    grid.querySelectorAll('.dashboard-kpi-clickable').forEach(function (card, index) {
-      var definition = kpis[index]
+    grid.innerHTML = standaloneDefinitions.map(renderKpi).join('')
+    var insightGrid = panel.querySelector('.dashboard-insight-grid')
+    insightGrid.innerHTML = ''
+    var chartDefinitions = []
+    var insightChartDefinitions = []
+    insightDefinitions.forEach(function (definition) {
+      var group = document.createElement('article')
+      group.className = 'dashboard-insight-card'
+      group.innerHTML = '<div class="dashboard-insight-kpi">' +
+        renderKpi(definition) +
+        '</div><div class="dashboard-insight-charts"></div>'
+      insightGrid.appendChild(group)
+      var chartHost = group.querySelector('.dashboard-insight-charts')
+      definition.charts.forEach(function (chartSpec) {
+        var remoteDimension = ['facility', 'township', 'region'].includes(
+          chartSpec.dimension
+        )
+        if (remoteDimension &&
+            !Object.prototype.hasOwnProperty.call(currentSeries, chartSpec.dimension)) {
+          return
+        }
+        var item = {
+          definition: definition,
+          chartSpec: chartSpec,
+          index: chartDefinitions.length
+        }
+        chartDefinitions.push(item)
+        insightChartDefinitions.push(item)
+        chartHost.insertAdjacentHTML(
+          'beforeend',
+          chartCard(item.definition, item.chartSpec, item.index)
+        )
+      })
+    })
+    panel.querySelectorAll('.dashboard-kpi-clickable').forEach(function (card) {
+      var definitionKey = card.getAttribute('data-definition-key')
+      var definition = kpis.find(function (item) {
+        return item.key === definitionKey
+      })
+      if (!definition) return
       var handleOpenDefinition = function () {
         showDefinition(definition.key)
       }
@@ -730,8 +797,8 @@
         handleOpenDefinition()
       })
     })
-    var chartDefinitions = []
     definitions.forEach(function (definition) {
+      if (insightDefinitions.includes(definition)) return
       var charts = definition.charts || [{
         type: definition.chart === 'trend' ? 'trend' : definition.chart,
         dimension: definition.chart === 'trend' ? 'month' : ''
@@ -748,6 +815,7 @@
       })
     })
     panel.querySelector('.dashboard-chart-grid').innerHTML = chartDefinitions.map(function (item) {
+      if (insightChartDefinitions.includes(item)) return ''
       return chartCard(item.definition, item.chartSpec, item.index)
     }).join('')
     chartDefinitions.forEach(function (item) {
