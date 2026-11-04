@@ -125,13 +125,19 @@
       definition: 'Counts each delivery once when the delivery location is home and a skilled birth attendant is recorded.',
       countedAs: 'Unique home deliveries with SBA',
       numeratorLabel: 'Home deliveries attended by SBA',
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Home Delivery by SBA by Facility' }
+      ]
     }),
     metric('Overview', 'institutional_deliveries', 'Institutional Deliveries', 'delivery.institutional', '', {
       definition: 'Counts each delivery once when the delivery location is a public or private health facility.',
       countedAs: 'Unique facility deliveries',
       numeratorLabel: 'Deliveries at health facilities',
-      charts: [{ type: 'trend', dimension: 'month', title: 'Monthly Trend' }]
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Institutional Deliveries by Facility' }
+      ]
     }),
     {
       section: 'Overview',

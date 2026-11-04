@@ -87,6 +87,15 @@ test('overview uses readable chart roles and keeps joint care in its own section
         key
       )
     })
+  ;['home_delivery_sba', 'institutional_deliveries']
+    .forEach((key) => {
+      assert.ok(
+        all.find((item) => item.key === key).charts.some(
+          (chart) => chart.dimension === 'facility'
+        ),
+        key
+      )
+    })
   assert.equal(all.find((item) => item.key === 'mother_service_outcomes').chartOnly, true)
   assert.equal(all.find((item) => item.key === 'baby_service_outcomes').chartOnly, true)
   assert.equal(all.find((item) => item.key === 'joint_care_patients').section, 'Referral & Joint Care')
