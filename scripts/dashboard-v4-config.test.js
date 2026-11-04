@@ -63,7 +63,7 @@ test('high-risk dashboard uses client-facing rate, averages, and chart-only brea
   assert.equal(all.find((item) => item.key === 'hrt_completed').numerator, 'highRisk.tracking.completed')
 })
 
-test('overview uses readable chart roles and keeps joint care compact', () => {
+test('overview uses readable chart roles and keeps joint care in its own section', () => {
   const all = global.DashboardMetricsConfig.allDefinitions
   const totalClients = all.find((item) => item.key === 'total_clients')
   assert.deepEqual(
@@ -83,10 +83,11 @@ test('overview uses readable chart roles and keeps joint care compact', () => {
     })
   assert.equal(all.find((item) => item.key === 'mother_service_outcomes').chartOnly, true)
   assert.equal(all.find((item) => item.key === 'baby_service_outcomes').chartOnly, true)
-  assert.deepEqual(
-    all.find((item) => item.key === 'joint_care_patients').charts,
-    []
-  )
+  assert.equal(all.find((item) => item.key === 'joint_care_patients').section, 'Referral & Joint Care')
+  assert.equal(all.find((item) => item.key === 'facility_count').compactContext, true)
+  assert.equal(totalClients.charts.find((chart) => chart.dimension === 'township').overviewInsight, true)
+  ;['age_demographics', 'average_gp', 'mother_service_outcomes', 'baby_service_outcomes']
+    .forEach((key) => assert.equal(all.find((item) => item.key === key).overviewInsight, true))
 })
 
 test('v4 display helpers distinguish zero from missing denominators', () => {

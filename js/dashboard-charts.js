@@ -171,8 +171,16 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
+        (section === 'Overview'
+          ? '<div class="dashboard-section-context" id="' + id + '-context"></div>' +
+            '<p class="dashboard-group-label">Service activity</p>'
+          : '') +
         '<div class="dashboard-kpi-grid dashboard-kpi-grid--standalone"></div>' +
         '<div class="dashboard-insight-grid"></div>' +
+        (section === 'Overview'
+          ? '<p class="dashboard-group-label dashboard-overview-insights-label">Overview insights</p>' +
+            '<div class="dashboard-overview-insights"></div>'
+          : '') +
         '<div class="dashboard-chart-grid"></div>'
       sections.appendChild(panel)
     })
@@ -343,12 +351,7 @@
       })
       if (dimension === 'facility' && dimensionEntries.length > 10 &&
           !(options && options.includeAll)) {
-        var topFacilities = dimensionEntries.slice(0, 10)
-        var otherTotal = dimensionEntries.slice(10).reduce(function (total, item) {
-          return total + item[1]
-        }, 0)
-        if (otherTotal > 0) topFacilities.push(['Other facilities', otherTotal])
-        return topFacilities
+        return dimensionEntries.slice(0, 10)
       }
       return dimensionEntries
     }
@@ -741,8 +744,14 @@
       return
     }
     var definitions = DashboardMetricsConfig.definitionsForSection(section)
+    var isOverview = section === 'Overview'
     var kpis = definitions.filter(function (definition) {
       return !definition.chartOnly &&
+        !definition.compactContext &&
+        (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
+    })
+    var compactDefinitions = definitions.filter(function (definition) {
+      return definition.compactContext &&
         (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
     })
     unobserveCharts(panel)
@@ -750,11 +759,22 @@
       return !(definition.charts && definition.charts.length)
     })
     var insightDefinitions = kpis.filter(function (definition) {
-      return definition.charts && definition.charts.length
+      return definition.charts && definition.charts.some(function (chartSpec) {
+        return !isOverview || !chartSpec.overviewInsight
+      })
     })
     var grid = panel.querySelector('.dashboard-kpi-grid')
     grid.setAttribute('data-section', section)
     grid.innerHTML = standaloneDefinitions.map(renderKpi).join('')
+    var context = panel.querySelector('.dashboard-section-context')
+    if (context) {
+      context.innerHTML = compactDefinitions.map(function (definition) {
+        return '<button class="dashboard-context-metric dashboard-kpi-clickable" ' +
+          'type="button" data-definition-key="' + escapeHtml(definition.key) + '">' +
+          '<span>' + escapeHtml(definition.label) + '</span><strong>' +
+          escapeHtml(numeratorDisplay(definition)) + '</strong></button>'
+      }).join('')
+    }
     var insightGrid = panel.querySelector('.dashboard-insight-grid')
     insightGrid.innerHTML = ''
     var chartDefinitions = []
@@ -767,7 +787,11 @@
         '</div><div class="dashboard-insight-charts"></div>'
       insightGrid.appendChild(group)
       var chartHost = group.querySelector('.dashboard-insight-charts')
-      definition.charts.forEach(function (chartSpec, chartIndex) {
+      definition.charts
+        .filter(function (chartSpec) {
+          return !isOverview || !chartSpec.overviewInsight
+        })
+        .forEach(function (chartSpec) {
         var remoteDimension = ['facility', 'township', 'region'].includes(
           chartSpec.dimension
         )
@@ -781,18 +805,49 @@
           index: chartDefinitions.length
         }
         chartDefinitions.push(item)
-        if (chartIndex === 0) {
-          insightChartDefinitions.push(item)
-          chartHost.insertAdjacentHTML(
+        insightChartDefinitions.push(item)
+        chartHost.insertAdjacentHTML(
+          'beforeend',
+          chartCard(item.definition, item.chartSpec, item.index)
+        )
+      })
+    })
+    var overviewInsights = panel.querySelector('.dashboard-overview-insights')
+    if (overviewInsights) {
+      overviewInsights.innerHTML = ''
+      definitions.filter(function (definition) {
+        return (definition.overviewInsight ||
+          (definition.charts || []).some(function (chartSpec) {
+            return chartSpec.overviewInsight
+          })) &&
+          (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
+      }).forEach(function (definition) {
+        ;(definition.charts || []).filter(function (chartSpec) {
+          return definition.overviewInsight || chartSpec.overviewInsight
+        }).forEach(function (chartSpec) {
+          var remoteDimension = ['facility', 'township', 'region'].includes(
+            chartSpec.dimension
+          )
+          if (remoteDimension &&
+              !Object.prototype.hasOwnProperty.call(currentSeries, chartSpec.dimension)) {
+            return
+          }
+          var item = {
+            definition: definition,
+            chartSpec: chartSpec,
+            index: chartDefinitions.length
+          }
+          chartDefinitions.push(item)
+          overviewInsights.insertAdjacentHTML(
             'beforeend',
             chartCard(item.definition, item.chartSpec, item.index)
           )
-        }
+        })
       })
-    })
+    }
     panel.querySelectorAll('.dashboard-kpi-clickable').forEach(function (card) {
       var definitionKey = card.getAttribute('data-definition-key')
-      var definition = kpis.find(function (item) {
+      var definition = definitions.find(function (item) {
         return item.key === definitionKey
       })
       if (!definition) return
@@ -807,8 +862,13 @@
       })
     })
     definitions.forEach(function (definition) {
-      if (insightDefinitions.includes(definition)) return
-      var charts = definition.charts || [{
+      if (insightDefinitions.includes(definition) ||
+          (isOverview && definition.overviewInsight)) return
+      var charts = (isOverview
+        ? (definition.charts || []).filter(function (chartSpec) {
+          return !chartSpec.overviewInsight
+        })
+        : definition.charts) || [{
         type: definition.chart === 'trend' ? 'trend' : definition.chart,
         dimension: definition.chart === 'trend' ? 'month' : ''
       }]

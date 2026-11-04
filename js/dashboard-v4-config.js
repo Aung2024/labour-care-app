@@ -37,7 +37,7 @@
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'Total Clients by Facility' },
-        { type: 'donut', dimension: 'township', title: 'Total Clients by TSP' }
+        { type: 'donut', dimension: 'township', title: 'Total Clients by TSP', overviewInsight: true }
       ]
     }),
     metric('Overview', 'facility_count', 'Total Facilities', 'facilityCount', '', {
@@ -45,6 +45,7 @@
       countedAs: 'Facilities with registered clients',
       numeratorLabel: 'Facilities with registered clients',
       charts: [],
+      compactContext: true,
       visibleRoles: ['tmo', 'regional officer', 'central', 'super admin', 'admin']
     }),
     metric('Overview', 'anc_clients', 'ANC Headcount', 'anc.clients', '', {
@@ -94,12 +95,6 @@
         { type: 'bar', dimension: 'facility', title: 'Referrals by Facility' }
       ]
     }),
-    metric('Overview', 'joint_care_patients', 'Joint Care Patients', 'jointCare.clients', '', {
-      definition: 'Counts each client once when an active joint-care relationship is recorded in the selected scope.',
-      countedAs: 'Unique joint-care clients',
-      numeratorLabel: 'Active joint-care clients',
-      charts: []
-    }),
     {
       section: 'Overview',
       key: 'mother_service_outcomes',
@@ -110,6 +105,7 @@
       countedAs: 'Unique mothers with service records',
       numeratorLabel: 'Mother outcome categories',
       chartOnly: true,
+      overviewInsight: true,
       charts: [{ type: 'donut', dimension: 'motherOutcomes', title: 'Mother Service Outcomes' }]
     },
     {
@@ -122,6 +118,7 @@
       countedAs: 'Unique babies with service records',
       numeratorLabel: 'Baby outcome categories',
       chartOnly: true,
+      overviewInsight: true,
       charts: [{ type: 'donut', dimension: 'babyOutcomes', title: 'Baby Service Outcomes' }]
     },
     metric('Overview', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba', '', {
@@ -143,6 +140,7 @@
       numerator: 'registration.ageGroups',
       format: 'map',
       chartOnly: true,
+      overviewInsight: true,
       charts: [{ type: 'bar', dimension: 'ageGroups', title: 'Registered Mothers by Age' }]
     },
     {
@@ -155,6 +153,7 @@
         { label: 'Average Gravida', path: 'registration.gravidaTotal', denominator: 'registration.gravidaCount' },
         { label: 'Average Parity', path: 'registration.parityTotal', denominator: 'registration.parityCount' }
       ],
+      overviewInsight: true,
       charts: [{ type: 'bar', dimension: 'gp', title: 'Average Gravida and Parity' }]
     },
 
