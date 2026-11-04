@@ -108,9 +108,13 @@ test('dashboard markup uses exact date controls and export action', () => {
 
 test('dashboard chart controller uses fixed scorecard-led charts', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard-charts.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'css', 'dashboard-v3.css'), 'utf8')
   assert.match(source, /chartSpec\.dimension/)
   assert.match(source, /facilityLabel/)
   assert.match(source, /overviewChartDefinitions\.includes\(item\)/)
+  assert.match(source, /ANC service activity/)
+  assert.match(styles, /#dashboard-section-anc \.dashboard-insight-grid/)
+  assert.match(styles, /#dashboard-section-anc \.dashboard-insight-charts/)
   assert.doesNotMatch(source, /data-metric-key/)
   assert.doesNotMatch(source, /dashboard-info-button/)
 })

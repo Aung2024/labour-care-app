@@ -176,8 +176,10 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
-        (section === 'Overview'
-          ? '<p class="dashboard-group-label">Service activity</p>'
+        (section === 'Overview' || section === 'ANC'
+          ? '<p class="dashboard-group-label">' +
+            (section === 'ANC' ? 'ANC service activity' : 'Service activity') +
+            '</p>'
           : '') +
         '<div class="dashboard-kpi-grid dashboard-kpi-grid--standalone"></div>' +
         '<div class="dashboard-insight-grid"></div>' +
