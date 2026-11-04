@@ -25,6 +25,8 @@ test('v4 dashboard contains the requested clinical cards', () => {
   ;[
     'anc_td1_completion',
     'anc_td2_completion',
+    'anemia_in_pregnancy',
+    'anc_outcomes',
     'hrt_completed',
     'hrt_total',
     'hrt_active',
@@ -45,6 +47,8 @@ test('v4 dashboard contains the requested clinical cards', () => {
     'joint_care_facilities'
   ].forEach((key) => assert.ok(keys.has(key), key))
   assert.equal(all.find((item) => item.key === 'anc_td1_completion').format, 'percent')
+  assert.equal(all.find((item) => item.key === 'anemia_in_pregnancy').numerator, 'anc.anemiaClients')
+  assert.equal(all.find((item) => item.key === 'anc_outcomes').chartOnly, true)
   assert.equal(all.find((item) => item.key === 'kmc_weight_gain').format, 'averageGrams')
 })
 

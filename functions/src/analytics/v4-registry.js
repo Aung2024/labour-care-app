@@ -1,7 +1,7 @@
 'use strict'
 
-const ANALYTICS_V4_SCHEMA_VERSION = 'analytics-v4.0.0'
-const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-03'
+const ANALYTICS_V4_SCHEMA_VERSION = 'analytics-v4.1.0'
+const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-04'
 
 const definition = (
   section,
@@ -62,6 +62,11 @@ const DASHBOARD_METRICS = Object.freeze([
   definition('ANC', 'anc_hiv_testing', 'HIV Testing', 'anc.hivTested', 'anc.clients'),
   definition('ANC', 'anc_hiv_reactive', 'HIV Reactive Cases', 'anc.pmtctReactive', 'anc.hivTested'),
   definition('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
+  definition('ANC', 'anemia_in_pregnancy', 'Anemia in Pregnancy', 'anc.anemiaClients'),
+  definition('ANC', 'anc_outcomes', 'ANC Outcome', 'anc.outcomes', null, {
+    format: 'map',
+    chart: 'donut'
+  }),
 
   definition('High-Risk', 'high_risk_rate', 'High Risk Factor Rate', 'highRisk.clients', 'anc.clients'),
   definition('High-Risk', 'high_risk_factors', 'High Risk Factors', 'highRisk.factors', null, {

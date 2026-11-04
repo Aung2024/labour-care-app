@@ -19,8 +19,7 @@ const {
   UNDATED_MONTH,
   monthsBetween,
   createAggregationState,
-  addMetricsToAggregationState,
-  contributionMetricsForRange,
+  addContributionToAggregationState,
   materializeState,
   cacheKey
 } = require('./v4-service')
@@ -58,7 +57,10 @@ const CONTRIBUTION_PROJECTION = [
   'scopeFacilityCode',
   'scopeDepartment',
   'scopeFacilityType',
-  'periodMetrics'
+  'periodMetrics',
+  'dailyMetrics',
+  'ancOutcomeEvents',
+  'anemiaEvents'
 ]
 
 const db = () => admin.firestore()
@@ -117,6 +119,7 @@ const processDashboardV4BackfillBatch = async (database = db()) => {
   if (job.cursor) query = query.startAfter(job.cursor)
   const patients = await query.get()
   if (patients.empty) {
+    await clearDashboardV4Cache(database)
     await ref.set({
       status: 'complete',
       completedAt: FieldValue.serverTimestamp(),
@@ -415,24 +418,22 @@ const buildResult = (input, contributions, scope) => {
   const overallState = createAggregationState()
   const modeStates = Object.fromEntries(modes.map((mode) => [mode, new Map()]))
   contributions.forEach((contribution) => {
-    const metrics = contributionMetricsForRange(
+    addContributionToAggregationState(
+      overallState,
       contribution,
       input.startDate,
       input.endDate,
       aggregationOptions
     )
-    addMetricsToAggregationState(
-      overallState,
-      metrics,
-      contribution.patientId
-    )
     modes.forEach((mode) => {
       const key = groupKeyFor(contribution, mode)
       const state = modeStates[mode].get(key) || createAggregationState()
-      addMetricsToAggregationState(
+      addContributionToAggregationState(
         state,
-        metrics,
-        contribution.patientId
+        contribution,
+        input.startDate,
+        input.endDate,
+        aggregationOptions
       )
       modeStates[mode].set(key, state)
     })
@@ -458,24 +459,22 @@ const buildResultFromPages = async (input, pages, scope) => {
   for await (const page of pages) {
     contributionCount += page.length
     page.forEach((contribution) => {
-      const metrics = contributionMetricsForRange(
+      addContributionToAggregationState(
+        overallState,
         contribution,
         input.startDate,
         input.endDate,
         aggregationOptions
       )
-      addMetricsToAggregationState(
-        overallState,
-        metrics,
-        contribution.patientId
-      )
       modes.forEach((mode) => {
         const key = groupKeyFor(contribution, mode)
         const state = modeStates[mode].get(key) || createAggregationState()
-        addMetricsToAggregationState(
+        addContributionToAggregationState(
           state,
-          metrics,
-          contribution.patientId
+          contribution,
+          input.startDate,
+          input.endDate,
+          aggregationOptions
         )
         modeStates[mode].set(key, state)
       })

@@ -24,6 +24,8 @@ const ADDITIVE_PATHS = new Set([
 ])
 const MAP_PATHS = new Set([
   'anc.td.byLatestStatus',
+  'anc.anemiaBySeverity',
+  'anc.outcomes',
   'highRisk.factors',
   'highRisk.completion.byReason',
   'delivery.modes',
@@ -45,6 +47,65 @@ const contributionId = (month, patientId) =>
 
 const contributionRef = (db, month, patientId) =>
   db.collection(CONTRIBUTION_COLLECTION).doc(contributionId(month, patientId))
+
+const unwrapRecord = (item) => item && item.data && typeof item.data === 'object'
+  ? item.data
+  : (item || {})
+
+const eventDate = (record) => dateKey(
+  record.visitDate ||
+  record.visit_date ||
+  record.testDate ||
+  record.test_date ||
+  record.recordedAt ||
+  record.recorded_at ||
+  record.timestamp ||
+  record.createdAt ||
+  record.created_at
+)
+
+const normalizeAncOutcome = (value) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (['alive', 'live', 'routine anc'].includes(raw)) return 'Alive/Routine ANC'
+  if (['abortion', 'miscarriage'].includes(raw)) return 'Abortion'
+  if (['death', 'dead', 'maternal_death'].includes(raw)) return 'Maternal death'
+  if (raw === 'other') return 'Other'
+  return raw ? 'Other' : ''
+}
+
+const contributionEventsForMonth = (facts, month) => {
+  const inMonth = (date) => month !== UNDATED_MONTH && date.slice(0, 7) === month
+  const ancOutcomeEvents = (facts.antenatalVisits || []).map((item, index) => {
+    const visit = unwrapRecord(item)
+    const date = eventDate(visit)
+    const outcome = normalizeAncOutcome(
+      visit.maternalOutcome ||
+      visit.maternalOutcomeValue ||
+      visit.maternal_outcome ||
+      visit.provisionalDiagnosisType ||
+      visit.provisionalDiagnosis
+    )
+    return date && outcome && inMonth(date)
+      ? { date, order: index, value: outcome }
+      : null
+  }).filter(Boolean)
+  const anemiaEvents = (facts.testRecords || []).map((item, index) => {
+    const test = unwrapRecord(item)
+    const date = eventDate(test)
+    const hemoglobin = Number(
+      test.hemoglobinResult ??
+      test.hemoglobin ??
+      test.hb
+    )
+    const severity = Number.isFinite(hemoglobin) && hemoglobin > 0
+      ? hemoglobin < 7 ? 'Severe' : hemoglobin < 10 ? 'Moderate' : 'Not moderate/severe'
+      : ''
+    return date && severity && inMonth(date)
+      ? { date, order: index, value: severity }
+      : null
+  }).filter(Boolean)
+  return { ancOutcomeEvents, anemiaEvents }
+}
 
 const monthEnd = (month) => {
   const [year, value] = month.split('-').map(Number)
@@ -89,6 +150,10 @@ const candidateMonths = (facts) => {
   ))
   addItems(facts.antenatalVisits, [
     'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+  ])
+  addItems(facts.testRecords, [
+    'testDate', 'test_date', 'recordedAt', 'recorded_at', 'timestamp',
+    'createdAt', 'created_at'
   ])
   addItems(facts.postpartumVisits, [
     'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
@@ -188,23 +253,28 @@ const periodMetricsForMonth = (facts, month) => calculateV4Metrics(facts, {
   endDate: month === UNDATED_MONTH ? '2025-01-01' : monthEnd(month)
 })
 
-const buildV4Contribution = (facts, month) => ({
-  schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
-  definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
-  patientId: facts.id,
-  month,
-  scope: facts.scope || {},
-  scopeProviderId: facts.scope && facts.scope.providerId || '',
-  scopeTownship: facts.scope && facts.scope.township || '',
-  scopeRegion: facts.scope && facts.scope.region || '',
-  scopeFacilityCode: facts.scope && facts.scope.facilityCode || '',
-  scopeDepartment: facts.scope && facts.scope.department || '',
-  scopeFacilityType: facts.scope && facts.scope.facilityType || '',
-  periodMetrics: periodMetricsForMonth(facts, month),
-  dailyMetrics: dailyMetricsForMonth(facts, month),
-  sourceHash: facts.sourceHash || '',
-  updatedAt: new Date().toISOString()
-})
+const buildV4Contribution = (facts, month) => {
+  const events = contributionEventsForMonth(facts, month)
+  return {
+    schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
+    definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
+    patientId: facts.id,
+    month,
+    scope: facts.scope || {},
+    scopeProviderId: facts.scope && facts.scope.providerId || '',
+    scopeTownship: facts.scope && facts.scope.township || '',
+    scopeRegion: facts.scope && facts.scope.region || '',
+    scopeFacilityCode: facts.scope && facts.scope.facilityCode || '',
+    scopeDepartment: facts.scope && facts.scope.department || '',
+    scopeFacilityType: facts.scope && facts.scope.facilityType || '',
+    periodMetrics: periodMetricsForMonth(facts, month),
+    dailyMetrics: dailyMetricsForMonth(facts, month),
+    ancOutcomeEvents: events.ancOutcomeEvents,
+    anemiaEvents: events.anemiaEvents,
+    sourceHash: facts.sourceHash || '',
+    updatedAt: new Date().toISOString()
+  }
+}
 
 const refreshPatientAnalyticsV4 = async (db, facts) => {
   if (!facts || !facts.id) return { deleted: true, months: [] }
@@ -277,7 +347,9 @@ const reduceMetrics = (state, metrics, patientId) => {
 const createAggregationState = () => ({
   additive: {},
   unique: {},
-  maps: {}
+  maps: {},
+  latestAncOutcome: new Map(),
+  latestAnemia: new Map()
 })
 
 const addMetricsToAggregationState = (state, metrics, patientId) => {
@@ -309,6 +381,34 @@ const contributionMetricsForRange = (
   return materializeState(patientState)
 }
 
+const addLatestCategoricalEvents = (
+  state,
+  contribution,
+  startDate,
+  endDate,
+  options = {}
+) => {
+  const addLatest = (target, event) => {
+    if (!event || !event.date || !event.value) return
+    if (event.date < startDate || event.date > endDate) return
+    const sortKey = `${event.date}|${String(event.order || 0).padStart(6, '0')}`
+    const current = target.get(contribution.patientId)
+    if (!current || sortKey >= current.sortKey) {
+      target.set(contribution.patientId, {
+        sortKey,
+        value: event.value
+      })
+    }
+  }
+  if (contribution.month === UNDATED_MONTH && !options.includeUndated) return
+  ;(contribution.ancOutcomeEvents || []).forEach((event) =>
+    addLatest(state.latestAncOutcome, event)
+  )
+  ;(contribution.anemiaEvents || []).forEach((event) =>
+    addLatest(state.latestAnemia, event)
+  )
+}
+
 const addContributionToAggregationState = (
   state,
   contribution,
@@ -320,6 +420,13 @@ const addContributionToAggregationState = (
     state,
     contributionMetricsForRange(contribution, startDate, endDate, options),
     contribution.patientId
+  )
+  addLatestCategoricalEvents(
+    state,
+    contribution,
+    startDate,
+    endDate,
+    options
   )
 }
 
@@ -337,6 +444,24 @@ const materializeState = (state) => {
     })
     setAtPath(metrics, path, map)
   })
+  const outcomeCounts = {}
+  state.latestAncOutcome.forEach((event) => {
+    outcomeCounts[event.value] = Number(outcomeCounts[event.value] || 0) + 1
+  })
+  setAtPath(metrics, 'anc.outcomes', outcomeCounts)
+  const anemiaBySeverity = {}
+  state.latestAnemia.forEach((event) => {
+    if (!['Moderate', 'Severe'].includes(event.value)) return
+    anemiaBySeverity[event.value] = Number(anemiaBySeverity[event.value] || 0) + 1
+  })
+  setAtPath(metrics, 'anc.anemiaBySeverity', anemiaBySeverity)
+  setAtPath(
+    metrics,
+    'anc.anemiaClients',
+    Array.from(state.latestAnemia.values()).filter((event) =>
+      ['Moderate', 'Severe'].includes(event.value)
+    ).length
+  )
   return metrics
 }
 

@@ -68,12 +68,72 @@ test('candidate months include dates inside normalized activity entries', () => 
     hrtActions: [
       { id: 'hrt-1', data: { recordedAt: '2025-05-05' } }
     ],
+    testRecords: [
+      { id: 'lab-1', data: { testDate: '2025-07-07' } }
+    ],
     deliveryNotes: {
       data: {
         deliveryDetails: { deliveredDateTime: '2025-06-06T10:00:00+06:30' }
       }
     }
-  }), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06'])
+  }), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07'])
+})
+
+test('latest in-period ANC outcome and hemoglobin classify each client once', () => {
+  const first = buildV4Contribution({
+    id: 'mother-1',
+    profile: { patient_type: 'mother' },
+    antenatalVisits: [
+      { visitDate: '2026-01-05', maternalOutcome: 'alive' },
+      { visitDate: '2026-02-05', maternalOutcome: 'abortion' }
+    ],
+    testRecords: [
+      { testDate: '2026-01-06', hemoglobinResult: 8.4 },
+      { testDate: '2026-02-06', hemoglobinResult: 6.8 }
+    ],
+    scope: {}
+  }, '2026-01')
+  const second = buildV4Contribution({
+    id: 'mother-1',
+    profile: { patient_type: 'mother' },
+    antenatalVisits: [
+      { visitDate: '2026-01-05', maternalOutcome: 'alive' },
+      { visitDate: '2026-02-05', maternalOutcome: 'abortion' }
+    ],
+    testRecords: [
+      { testDate: '2026-01-06', hemoglobinResult: 8.4 },
+      { testDate: '2026-02-06', hemoglobinResult: 6.8 }
+    ],
+    scope: {}
+  }, '2026-02')
+  const result = aggregateContributions(
+    [first, second],
+    '2026-01-01',
+    '2026-02-28'
+  )
+  assert.deepEqual(result.anc.outcomes, { Abortion: 1 })
+  assert.deepEqual(result.anc.anemiaBySeverity, { Severe: 1 })
+  assert.equal(result.anc.anemiaClients, 1)
+})
+
+test('latest normal hemoglobin removes an earlier in-period anemia classification', () => {
+  const contribution = buildV4Contribution({
+    id: 'mother-2',
+    profile: { patient_type: 'mother' },
+    antenatalVisits: [{ visitDate: '2026-01-05' }],
+    testRecords: [
+      { testDate: '2026-01-06', hemoglobinResult: 8.4 },
+      { testDate: '2026-01-20', hemoglobinResult: 10.5 }
+    ],
+    scope: {}
+  }, '2026-01')
+  const result = aggregateContributions(
+    [contribution],
+    '2026-01-01',
+    '2026-01-31'
+  )
+  assert.deepEqual(result.anc.anemiaBySeverity, {})
+  assert.equal(result.anc.anemiaClients, 0)
 })
 
 test('undated registrations are included only in all-time aggregation', () => {

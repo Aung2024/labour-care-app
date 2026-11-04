@@ -122,6 +122,15 @@ test('v4 backfill completes an empty job without touching patient records', asyn
           })
         }
       }
+      if (name === 'analytics_v4_range_cache') {
+        return {
+          limit: () => ({
+            async get() {
+              return { empty: true, size: 0, docs: [] }
+            }
+          })
+        }
+      }
       throw new Error(`Unexpected collection: ${name}`)
     }
   }

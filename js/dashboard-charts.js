@@ -187,6 +187,9 @@
           ? '<p class="dashboard-group-label dashboard-overview-insights-label">Overview insights</p>' +
             '<div class="dashboard-overview-insights"></div>'
           : '') +
+        (section === 'ANC'
+          ? '<p class="dashboard-group-label dashboard-anc-insights-label">ANC outcomes</p>'
+          : '') +
         '<div class="dashboard-chart-grid"></div>'
       sections.appendChild(panel)
     })

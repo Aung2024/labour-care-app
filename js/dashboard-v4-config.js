@@ -202,6 +202,29 @@
       charts: [{ type: 'trend', dimension: 'month', title: 'HIV Reactive Cases' }, { type: 'bar', dimension: 'facility', title: 'HIV Reactive by Facility' }]
     }),
     metric('ANC', 'anc_tb', 'ANC with TB', 'anc.tb', 'anc.clients'),
+    metric('ANC', 'anemia_in_pregnancy', 'Anemia in Pregnancy', 'anc.anemiaClients', '', {
+      definition: 'Counts each ANC mother once when her latest hemoglobin result in the selected period indicates moderate anemia (7.0–9.9 g/dL) or severe anemia (below 7.0 g/dL).',
+      countedAs: 'Unique ANC mothers',
+      numeratorLabel: 'Mothers with moderate or severe anemia',
+      detailPaths: ['anc.anemiaBySeverity.Moderate', 'anc.anemiaBySeverity.Severe'],
+      detailLabels: ['Moderate anemia', 'Severe anemia'],
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Anemia in Pregnancy by Facility' }
+      ]
+    }),
+    {
+      section: 'ANC',
+      key: 'anc_outcomes',
+      label: 'ANC Outcome',
+      numerator: 'anc.outcomes',
+      format: 'map',
+      chartOnly: true,
+      definition: 'Classifies each ANC mother once using her latest recorded outcome in the selected period. The current maternal outcome field takes priority, with legacy provisional diagnosis used when needed.',
+      countedAs: 'Unique ANC mothers with a recorded outcome',
+      numeratorLabel: 'ANC outcome categories',
+      charts: [{ type: 'donut', dimension: 'ancOutcomes', title: 'Latest ANC Outcome' }]
+    },
 
     metric('High-Risk', 'hrt_total', 'Total HRT Patients', 'highRisk.tracking.total', '', {
       definition: 'Counts all high-risk mothers currently represented in the HRT tracking list for the user’s authorized scope.',
@@ -385,8 +408,8 @@
   }
 
   var config = {
-    schemaVersion: 'analytics-v4.0.0',
-    definitionVersion: 'dashboard-2026-11-03',
+    schemaVersion: 'analytics-v4.1.0',
+    definitionVersion: 'dashboard-2026-11-04',
     sections: sections,
     allDefinitions: definitions,
     definitionsForSection: function (section) {

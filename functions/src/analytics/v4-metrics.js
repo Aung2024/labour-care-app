@@ -177,7 +177,10 @@ const emptyMetrics = () => ({
     hivTested: 0,
     pmtctReactive: 0,
     pmtctTested: 0,
-    tb: 0
+    tb: 0,
+    anemiaClients: 0,
+    anemiaBySeverity: {},
+    outcomes: {}
   },
   highRisk: {
     clients: 0,
