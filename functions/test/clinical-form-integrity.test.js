@@ -309,11 +309,16 @@ test('tracking calls use same-origin Netlify proxies instead of browser Cloud Ru
   assert.equal(runtimeConfig.functionUrls.queryHrtTracking, '/api/query-hrt-tracking');
   assert.equal(runtimeConfig.functionUrls.queryKmcTracking, '/api/query-kmc-tracking');
   assert.equal(runtimeConfig.functionUrls.sendHrtSms, '/api/send-hrt-sms');
+  assert.equal(runtimeConfig.functionUrls.queryHrtStatusSummary, '/api/query-hrt-status-summary');
   assert.match(netlify, /from = "\/api\/query-hrt-tracking"/);
   assert.match(netlify, /to = "https:\/\/queryhrttracking-houbbz2mta-uc\.a\.run\.app"/);
   assert.match(netlify, /from = "\/api\/query-kmc-tracking"/);
   assert.match(netlify, /to = "https:\/\/querykmctracking-houbbz2mta-uc\.a\.run\.app"/);
   assert.match(netlify, /from = "\/api\/send-hrt-sms"/);
+  assert.match(netlify, /from = "\/api\/query-hrt-status-summary"/);
+  assert.match(netlify, /to = "https:\/\/queryhrtstatussummary-houbbz2mta-uc\.a\.run\.app"/);
+  assert.match(readAppFile('js/firebase.js'), /defaultFirebaseConfig\.functionUrls \|\| \{\}/);
+  assert.match(readAppFile('js/firebase.js'), /runtimeFirebaseConfig\.functionUrls \|\| \{\}/);
 });
 
 test('home badges use tracking APIs instead of per-patient scans', () => {

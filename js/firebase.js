@@ -21,6 +21,7 @@ var MOH_FIREBASE_CONFIG = {
     queryKmcTracking: "/api/query-kmc-tracking",
     sendHrtSms: "/api/send-hrt-sms",
     queryDashboardV4: "/api/query-dashboard-v4",
+    queryHrtStatusSummary: "/api/query-hrt-status-summary",
     requestDashboardV4Export: "/api/request-dashboard-v4-export"
   }
 };
@@ -135,7 +136,15 @@ function loadRuntimeFirebaseConfig() {
 
 var defaultFirebaseConfig = hostDefaultFirebaseConfig();
 var runtimeFirebaseConfig = loadRuntimeFirebaseConfig();
-var firebaseConfig = runtimeFirebaseConfig || defaultFirebaseConfig;
+var firebaseConfig = runtimeFirebaseConfig
+  ? Object.assign({}, defaultFirebaseConfig, runtimeFirebaseConfig, {
+      functionUrls: Object.assign(
+        {},
+        defaultFirebaseConfig.functionUrls || {},
+        runtimeFirebaseConfig.functionUrls || {}
+      )
+    })
+  : defaultFirebaseConfig;
 if (typeof window !== "undefined") {
   window.__MNCH_MOH_DEPLOY__ = isMohDeployHost();
   window.__MNCH_MOH_DEPLOY_HOSTS__ = MOH_DEPLOY_HOSTS.slice();
