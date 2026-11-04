@@ -250,13 +250,13 @@
       numeratorLabel: 'Defaulted HRT patients',
       charts: []
     }),
-    metric('High-Risk', 'high_risk_rate', 'High Risk Factor Rate', 'highRisk.clients', 'anc.clients', {
+    metric('High-Risk', 'high_risk_rate', 'High Risk Rate', 'highRisk.clients', 'anc.clients', {
       definition: 'Shows the percentage of ANC mothers identified as high risk during the selected period.',
       countedAs: 'Unique high-risk ANC mothers',
       numeratorLabel: 'High-risk ANC mothers',
       charts: [
-        { type: 'trend', dimension: 'month', title: 'High Risks Identified Among All ANC' },
-        { type: 'bar', dimension: 'facility', title: 'High Risks Identified Among All ANC by Facility' }
+        { type: 'trend', dimension: 'month', title: 'High Risk Rate Trend' },
+        { type: 'bar', dimension: 'facility', title: 'High Risk Rate by Facility' }
       ]
     }),
     metric('High-Risk', 'hrt_completed', 'Completed HRT', 'highRisk.tracking.completed', '', {

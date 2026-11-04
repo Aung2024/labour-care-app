@@ -185,3 +185,15 @@ test('all-time result aggregation includes undated registration contributions', 
   assert.equal(result.metrics.registration.total, 1)
   assert.equal(result.metrics.registration.babies, 1)
 })
+
+test('dashboard query projection excludes memory-heavy daily metric arrays', () => {
+  const source = require('node:fs').readFileSync(
+    require.resolve('../src/analytics/v4-functions'),
+    'utf8'
+  )
+  const projection = source.match(/const CONTRIBUTION_PROJECTION = \[([\s\S]*?)\]/)
+  assert.ok(projection)
+  assert.doesNotMatch(projection[1], /dailyMetrics/)
+  assert.match(projection[1], /ancOutcomeEvents/)
+  assert.match(projection[1], /anemiaEvents/)
+})

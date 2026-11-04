@@ -176,9 +176,13 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
-        (section === 'Overview' || section === 'ANC'
+        (section === 'Overview' || section === 'ANC' || section === 'High-Risk'
           ? '<p class="dashboard-group-label">' +
-            (section === 'ANC' ? 'ANC service activity' : 'Service activity') +
+            (section === 'ANC'
+              ? 'ANC service activity'
+              : section === 'High-Risk'
+                ? 'High-risk service activity'
+                : 'Service activity') +
             '</p>'
           : '') +
         '<div class="dashboard-kpi-grid dashboard-kpi-grid--standalone"></div>' +
@@ -434,9 +438,12 @@
     var dimensionClass = chartSpec && chartSpec.dimension
       ? ' dashboard-chart-card--' + chartSpec.dimension
       : ''
-    var title = chartSpec && chartSpec.title
-      ? definition.label + ' · ' + chartSpec.title
-      : definition.label
+    var title = definition.label
+    if (chartSpec && chartSpec.title) {
+      title = chartSpec.title.indexOf(definition.label) === 0
+        ? chartSpec.title
+        : definition.label + ' · ' + chartSpec.title
+    }
     var facilityDetails = ''
     if (chartSpec && chartSpec.dimension === 'facility') {
       var allFacilities = entriesForDefinition(

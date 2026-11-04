@@ -58,7 +58,6 @@ const CONTRIBUTION_PROJECTION = [
   'scopeDepartment',
   'scopeFacilityType',
   'periodMetrics',
-  'dailyMetrics',
   'ancOutcomeEvents',
   'anemiaEvents'
 ]
