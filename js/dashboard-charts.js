@@ -176,12 +176,14 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
-        (section === 'Overview' || section === 'ANC' || section === 'High-Risk'
+        (section === 'Overview' || section === 'ANC' || section === 'High-Risk' || section === 'Delivery'
           ? '<p class="dashboard-group-label">' +
             (section === 'ANC'
               ? 'ANC service activity'
               : section === 'High-Risk'
                 ? 'High-risk service activity'
+                : section === 'Delivery'
+                  ? 'Delivery service activity'
                 : 'Service activity') +
             '</p>'
           : '') +
@@ -193,6 +195,9 @@
           : '') +
         (section === 'ANC'
           ? '<p class="dashboard-group-label dashboard-anc-insights-label">ANC outcomes</p>'
+          : '') +
+        (section === 'Delivery'
+          ? '<p class="dashboard-group-label dashboard-delivery-insights-label">Delivery insights</p>'
           : '') +
         '<div class="dashboard-chart-grid"></div>'
       sections.appendChild(panel)
@@ -763,6 +768,7 @@
     var kpis = definitions.filter(function (definition) {
       return !definition.chartOnly &&
         !definition.compactContext &&
+        !definition.relatedTo &&
         (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
     })
     var compactDefinitions = definitions.filter(function (definition) {
@@ -798,8 +804,18 @@
     insightDefinitions.forEach(function (definition) {
       var group = document.createElement('article')
       group.className = 'dashboard-insight-card'
-      group.innerHTML = '<div class="dashboard-insight-kpi">' +
+      var relatedDefinitions = definitions.filter(function (item) {
+        return item.relatedTo === definition.key &&
+          (!item.visibleRoles || item.visibleRoles.includes(activeRole))
+      })
+      group.innerHTML = '<div class="dashboard-insight-kpi' +
+        (relatedDefinitions.length ? ' has-related-kpis' : '') + '">' +
         renderKpi(definition) +
+        (relatedDefinitions.length
+          ? '<div class="dashboard-related-kpis">' +
+            relatedDefinitions.map(renderKpi).join('') +
+            '</div>'
+          : '') +
         '</div><div class="dashboard-insight-charts"></div>'
       insightGrid.appendChild(group)
       var chartHost = group.querySelector('.dashboard-insight-charts')

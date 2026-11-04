@@ -69,6 +69,23 @@ test('high-risk dashboard uses client-facing rate, averages, and chart-only brea
   assert.equal(all.find((item) => item.key === 'hrt_completed').numerator, 'highRisk.tracking.completed')
 })
 
+test('delivery dashboard groups primary service charts and keeps breakdowns in insights', () => {
+  const all = global.DashboardMetricsConfig.allDefinitions
+  const total = all.find((item) => item.key === 'delivery_total')
+  const home = all.find((item) => item.key === 'home_delivery_sba')
+  const institutional = all.find((item) => item.key === 'institutional_delivery')
+  const skilled = all.find((item) => item.key === 'skilled_birth_attendant_rate')
+
+  assert.deepEqual(total.charts.map((chart) => chart.dimension), ['month', 'facility'])
+  assert.deepEqual(home.charts.map((chart) => chart.dimension), ['month', 'facility'])
+  assert.deepEqual(institutional.charts.map((chart) => chart.dimension), ['month', 'facility'])
+  assert.equal(skilled.relatedTo, 'home_delivery_sba')
+  ;['delivery_mode', 'birthplace', 'maternal_outcome', 'newborn_outcome']
+    .forEach((key) => assert.equal(all.find((item) => item.key === key).chartOnly, true))
+  assert.equal(all.find((item) => item.key === 'maternal_outcome').label, 'Maternal Outcomes')
+  assert.equal(all.find((item) => item.key === 'newborn_outcome').label, 'Newborn Outcomes')
+})
+
 test('overview uses readable chart roles and keeps joint care in its own section', () => {
   const all = global.DashboardMetricsConfig.allDefinitions
   const totalClients = all.find((item) => item.key === 'total_clients')
@@ -130,8 +147,11 @@ test('dashboard chart controller uses fixed scorecard-led charts', () => {
   assert.match(source, /chartSpec\.title\.indexOf\(definition\.label\) === 0/)
   assert.match(source, /High-risk service activity/)
   assert.match(source, /ANC service activity/)
+  assert.match(source, /Delivery service activity/)
+  assert.match(source, /Delivery insights/)
   assert.match(styles, /#dashboard-section-anc \.dashboard-insight-grid/)
   assert.match(styles, /#dashboard-section-high-risk \.dashboard-insight-grid/)
+  assert.match(styles, /#dashboard-section-delivery \.dashboard-insight-grid/)
   assert.match(styles, /#dashboard-section-anc \.dashboard-insight-charts/)
   assert.doesNotMatch(source, /data-metric-key/)
   assert.doesNotMatch(source, /dashboard-info-button/)

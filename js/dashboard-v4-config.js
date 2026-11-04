@@ -310,16 +310,46 @@
       charts: [{ type: 'bar', dimension: 'otherMedicalConditions', title: 'Other Medical Conditions' }]
     },
 
-    metric('Delivery', 'delivery_total', 'Total Deliveries', 'delivery.completedNotes'),
-    metric('Delivery', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba'),
-    metric('Delivery', 'institutional_delivery', 'Institutional Delivery', 'delivery.institutional'),
-    metric('Delivery', 'skilled_birth_attendant_rate', 'Skilled Birth Attendant Rate', 'delivery.skilledTotal', 'delivery.completedNotes'),
+    metric('Delivery', 'delivery_total', 'Total Deliveries', 'delivery.completedNotes', '', {
+      definition: 'Counts each completed Delivery Note once in the selected period.',
+      countedAs: 'Unique completed delivery notes',
+      numeratorLabel: 'Completed delivery notes',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Total Deliveries by Facility' }
+      ]
+    }),
+    metric('Delivery', 'home_delivery_sba', 'Home Delivery by SBA', 'delivery.homeSba', '', {
+      definition: 'Counts each home delivery once when the recorded birth provider is self, skilled birth attendant, or AMW.',
+      countedAs: 'Unique home deliveries attended by SBA',
+      numeratorLabel: 'Home deliveries attended by SBA',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Home Delivery by SBA by Facility' }
+      ]
+    }),
+    metric('Delivery', 'institutional_delivery', 'Institutional Delivery', 'delivery.institutional', '', {
+      definition: 'Counts each delivery once when the recorded birthplace is a public or private health facility.',
+      countedAs: 'Unique institutional deliveries',
+      numeratorLabel: 'Deliveries at health facilities',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Institutional Deliveries by Facility' }
+      ]
+    }),
+    metric('Delivery', 'skilled_birth_attendant_rate', 'Skilled Birth Attendant Rate', 'delivery.skilledTotal', 'delivery.completedNotes', {
+      relatedTo: 'home_delivery_sba',
+      definition: 'Shows the percentage of completed delivery notes with a skilled birth attendant recorded. Self, skilled birth attendant, and AMW are treated as skilled providers.',
+      countedAs: 'Completed delivery notes',
+      numeratorLabel: 'Deliveries with skilled provider',
+      denominatorLabel: 'Completed delivery notes'
+    }),
     metric('Delivery', 'uterotonic_rate', 'Uterotonic Use Rate', 'delivery.uterotonic', 'delivery.completedNotes'),
     metric('Delivery', 'lcg_usage', 'LCG Usage', 'delivery.lcgUsed', 'delivery.completedNotes'),
-    metric('Delivery', 'delivery_mode', 'Mode of Delivery', 'delivery.modes', '', { format: 'map', chart: 'donut' }),
-    metric('Delivery', 'birthplace', 'Birthplace', 'delivery.places', '', { format: 'map', chart: 'donut' }),
-    metric('Delivery', 'maternal_outcome', 'Delivery-Note Maternal Outcomes', 'delivery.maternalOutcomes', '', { format: 'map', chart: 'bar' }),
-    metric('Delivery', 'newborn_outcome', 'Delivery-Note Newborn Outcomes', 'delivery.newbornOutcomes', '', { format: 'map', chart: 'bar' }),
+    metric('Delivery', 'delivery_mode', 'Mode of Delivery', 'delivery.modes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'donut' }),
+    metric('Delivery', 'birthplace', 'Birthplace', 'delivery.places', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'donut' }),
+    metric('Delivery', 'maternal_outcome', 'Maternal Outcomes', 'delivery.maternalOutcomes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'bar' }),
+    metric('Delivery', 'newborn_outcome', 'Newborn Outcomes', 'delivery.newbornOutcomes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'bar' }),
 
     metric('Newborn & KMC', 'newborn_total', 'Total Newborns', 'registration.babies'),
     metric('Newborn & KMC', 'newborn_clients', 'Newborn Care Clients', 'newborn.clients'),
