@@ -110,6 +110,7 @@ test('dashboard chart controller uses fixed scorecard-led charts', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard-charts.js'), 'utf8')
   assert.match(source, /chartSpec\.dimension/)
   assert.match(source, /facilityLabel/)
+  assert.match(source, /overviewChartDefinitions\.includes\(item\)/)
   assert.doesNotMatch(source, /data-metric-key/)
   assert.doesNotMatch(source, /dashboard-info-button/)
 })

@@ -167,13 +167,17 @@
       panel.setAttribute('aria-labelledby', tab.id)
       var sectionNote = DashboardMetricsConfig.sectionNotes[section]
       panel.innerHTML =
+        '<div class="dashboard-section-title-row">' +
         '<h2 class="dashboard-section-heading">' + escapeHtml(section) + '</h2>' +
+        (section === 'Overview'
+          ? '<div class="dashboard-section-context" id="' + id + '-context"></div>'
+          : '') +
+        '</div>' +
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
         (section === 'Overview'
-          ? '<div class="dashboard-section-context" id="' + id + '-context"></div>' +
-            '<p class="dashboard-group-label">Service activity</p>'
+          ? '<p class="dashboard-group-label">Service activity</p>'
           : '') +
         '<div class="dashboard-kpi-grid dashboard-kpi-grid--standalone"></div>' +
         '<div class="dashboard-insight-grid"></div>' +
@@ -546,11 +550,10 @@
         formatter: formatAxisLabel
       }
     }
+    options.xaxis.categories = labels
     if (horizontal) {
-      options.yaxis.categories = labels
       options.xaxis.labels.rotate = 0
     } else {
-      options.xaxis.categories = labels
       options.yaxis.min = 0
       options.yaxis.forceNiceScale = true
     }
@@ -779,6 +782,7 @@
     insightGrid.innerHTML = ''
     var chartDefinitions = []
     var insightChartDefinitions = []
+    var overviewChartDefinitions = []
     insightDefinitions.forEach(function (definition) {
       var group = document.createElement('article')
       group.className = 'dashboard-insight-card'
@@ -838,6 +842,7 @@
             index: chartDefinitions.length
           }
           chartDefinitions.push(item)
+          overviewChartDefinitions.push(item)
           overviewInsights.insertAdjacentHTML(
             'beforeend',
             chartCard(item.definition, item.chartSpec, item.index)
@@ -884,7 +889,8 @@
       })
     })
     panel.querySelector('.dashboard-chart-grid').innerHTML = chartDefinitions.map(function (item) {
-      if (insightChartDefinitions.includes(item)) return ''
+      if (insightChartDefinitions.includes(item) ||
+          overviewChartDefinitions.includes(item)) return ''
       return chartCard(item.definition, item.chartSpec, item.index)
     }).join('')
     chartDefinitions.forEach(function (item) {
