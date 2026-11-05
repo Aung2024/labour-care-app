@@ -154,6 +154,9 @@
       babyName: baby.babyName || baby.baby_name || twinBabyName(motherName, babyIndex, fallbackCare),
       birthWeightGram: baby.birthWeightGram != null ? baby.birthWeightGram : (baby.birth_weight_gram != null ? baby.birth_weight_gram : (baby.body_weight_gram != null ? baby.body_weight_gram : fallbackCare.body_weight_gram)),
       birthTime: baby.birthTime || baby.birth_time || fallbackCare.birth_time || null,
+      gestationalWeeks: baby.gestationalWeeks || baby.gestationalWeek ||
+        baby.gestational_age_at_birth || fallbackCare.gestationalWeeks ||
+        fallbackCare.gestationalWeek || fallbackCare.gestational_age_at_birth || null,
       gender: baby.gender || baby.sex || fallbackCare.gender || null,
       outcome: baby.outcome || fallbackCare.outcome || null
     };
@@ -189,6 +192,17 @@
     result.babyIndex = baby.babyIndex || 1;
     result.babyName = baby.babyName || result.babyName;
     result.birthWeightGram = baby.birthWeightGram != null && baby.birthWeightGram !== '' ? parseFloat(baby.birthWeightGram) : result.birthWeightGram;
+    var gestationalWeeks = parseFloat(baby.gestationalWeeks || baby.gestationalWeek || baby.gestational_age_at_birth);
+    if (isFinite(gestationalWeeks) && gestationalWeeks > 0 && gestationalWeeks < 37 &&
+        result.reasons.indexOf('preterm') === -1) {
+      result.reasons.push('preterm');
+      result.eligible = true;
+    }
+    var outcome = String(baby.outcome || '').toLowerCase();
+    if (['dead', 'death', 'died', 'stillbirth', 'stillborn'].indexOf(outcome) !== -1) {
+      result.reasons = [];
+      result.eligible = false;
+    }
     result.birthDateStr = baby.birthTime ? getBirthDateStr({ birth_time: baby.birthTime }, null) : result.birthDateStr;
     if (!result.birthDateStr && birthAnchor) result.birthDateStr = getBirthDateStr(null, birthAnchor);
     if (result.birthDateStr && result.edd) result.daysBeforeEdd = daysBeforeEdd(result.birthDateStr, result.edd);
@@ -415,13 +429,20 @@
     var list = (actions || []).slice().sort(function (a, b) {
       var ams = parseVisitDateMs(a) || 0;
       var bms = parseVisitDateMs(b) || 0;
-      return bms - ams;
+      return ams - bms;
     });
-    for (var i = 0; i < list.length; i++) {
-      var a = list[i] || {};
-      if (a.type === 'kmc_resolved' || a.type === 'resolved') return a;
-    }
-    return null;
+    var completion = null;
+    list.forEach(function (action) {
+      var type = String(action && action.type || '').toLowerCase();
+      if (type === 'kmc_reopened' || type === 'reopened' ||
+          type === 'unresolved' || type === 'active') {
+        completion = null;
+      } else if (type === 'kmc_resolved' || type === 'resolved' ||
+          type === 'completed') {
+        completion = action;
+      }
+    });
+    return completion;
   }
 
   function getCompleteActionForBaby(actions, babyIndex) {

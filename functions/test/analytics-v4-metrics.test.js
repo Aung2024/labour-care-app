@@ -111,6 +111,28 @@ test('calculates the v4 clinical contract from normalized patient facts', () => 
   assert.equal(metrics.serviceClosure.total, 1)
 })
 
+test('calculates newborn care timing, early breastfeeding, and shared KMC metrics', () => {
+  const metrics = calculateV4Metrics(facts({
+    immediateNewbornCare: [{
+      recordedAt: '2026-01-19',
+      support_early_exclusive_breastfeeding: 'Yes'
+    }]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.newborn.clients, 1)
+  assert.equal(metrics.newborn.careWithin2Days, 1)
+  assert.equal(metrics.newborn.earlyBreastfeeding, 1)
+  assert.equal(metrics.newborn.aliveBirths, 1)
+  assert.equal(metrics.newborn.kmcEligible, 1)
+  assert.equal(metrics.newborn.kmcLowBirthWeight, 1)
+  assert.equal(metrics.newborn.kmcPreterm, 1)
+  assert.equal(metrics.newborn.kmcPretermAndLowBirthWeight, 1)
+  assert.equal(metrics.newborn.kmcReceived, 1)
+  assert.equal(metrics.newborn.kmcCompleted, 1)
+})
+
 test('ANC milestones include external-facility visits and PMTCT lab results', () => {
   const metrics = calculateV4Metrics(facts({
     antenatalVisits: [

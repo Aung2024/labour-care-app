@@ -4,9 +4,15 @@ const {
   ANALYTICS_V4_SCHEMA_VERSION,
   ANALYTICS_V4_DEFINITION_VERSION
 } = require('./v4-registry')
+const {
+  deriveKmcEligibility,
+  isAliveOutcome,
+  normalizeGestationalWeeks,
+  normalizeWeightGram,
+  resolveKmcCompletion
+} = require('./kmc-kernel')
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const KMC_WEIGHT_GRAM = 2000
 const EARLY_ANC_MAX_DAYS = 12 * 7
 
 const asText = (value) => String(value == null ? '' : value).trim()
@@ -218,7 +224,10 @@ const emptyMetrics = () => ({
   },
   newborn: {
     clients: 0, births: 0, birthWeightMeasured: 0, lowBirthWeight: 0,
-    preterm: 0, careWithin2Days: 0, kmcEligible: 0, kmcCompleted: 0,
+    preterm: 0, careWithin2Days: 0, earlyBreastfeeding: 0,
+    aliveBirths: 0, stillbirths: 0,
+    kmcEligible: 0, kmcLowBirthWeight: 0, kmcPreterm: 0,
+    kmcPretermAndLowBirthWeight: 0, kmcReceived: 0, kmcCompleted: 0,
     kmcWeightGain: { totalGainGrams: 0, babiesWithTwoWeights: 0 }
   },
   pnc: {
@@ -401,6 +410,45 @@ const referralFromFacts = (facts) => {
   }
 }
 
+const newbornEntries = (facts, delivery, profile, patientType) => {
+  if (delivery.babies.length) {
+    return delivery.babies.map((baby, index) => ({
+      index: index + 1,
+      birthDate: baby.birthTime || baby.birth_date || delivery.date,
+      birthWeightGram: baby.weight,
+      gestationalWeeks: baby.gestationalWeek,
+      outcome: baby.outcome,
+      recordedReasons: Array.isArray(baby.kmc_eligible_reasons)
+        ? baby.kmc_eligible_reasons : []
+    }))
+  }
+  if (patientType === 'baby') {
+    return [{
+      index: 1,
+      birthDate: profile.birth_time || profile.birthTime || profile.birth_date ||
+        profile.birthDate || profile.registration_date,
+      birthWeightGram: profile.birth_weight_gram || profile.birthWeightGram ||
+        profile.body_weight_gram,
+      gestationalWeeks: profile.gestational_age_at_birth ||
+        profile.gestationalAgeAtBirth || profile.gestationalWeek,
+      outcome: profile.outcome || profile.birth_outcome,
+      recordedReasons: []
+    }]
+  }
+  return []
+}
+
+const newbornVisitBabyIndex = (visit) => Number(
+  visit.babyIndex || visit.baby_index || visit._kmcSourceBabyIndex || 1
+)
+
+const immediateCareIsEarlyBreastfeeding = (record) => affirmative(
+  record.support_early_exclusive_breastfeeding ||
+  record.supportEarlyExclusiveBreastfeeding ||
+  record.early_breastfeeding ||
+  record.earlyBreastfeeding
+)
+
 const calculateV4Metrics = (facts, inputPeriod) => {
   const period = normalizePeriod(inputPeriod)
   const metrics = emptyMetrics()
@@ -545,6 +593,8 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     delivery.babies.forEach((baby) => {
       metrics.newborn.births += 1
       bump(metrics.delivery.newbornOutcomes, baby.outcome)
+      if (isAliveOutcome(baby.outcome)) metrics.newborn.aliveBirths += 1
+      else metrics.newborn.stillbirths += 1
       if (baby.weight > 0) {
         metrics.newborn.birthWeightMeasured += 1
         if (baby.weight < 2500) metrics.newborn.lowBirthWeight += 1
@@ -576,29 +626,99 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (anc.length >= 8) metrics.pnc.mothersWithAnc8 = 1
   }
 
-  if (records(facts.newbornVisits).some((visit) => inPeriod(visitDate(visit), period))) metrics.newborn.clients = 1
-
-  const kmcYes = records(facts.newbornVisits).some((visit) =>
-    affirmative(visit.kmc_selected || visit.kmcSelected) ||
-    records(visit.kmc_babies || visit.babies).some((baby) =>
-      affirmative(baby.kmc_selected || baby.kmcSelected)
-    )
+  const newbornVisitsInPeriod = records(facts.newbornVisits).filter((visit) =>
+    inPeriod(visitDate(visit), period)
   )
-  const kmcBabyCount = delivery.babies.length || (patientType === 'baby' ? 1 : 0)
-  for (let babyIndex = 1; babyIndex <= kmcBabyCount; babyIndex += 1) {
+  const entries = newbornEntries(facts, delivery, profile, patientType)
+  const reasonsByIndex = new Map()
+  records(facts.newbornVisits).forEach((visit) => {
+    const candidates = records(visit.kmc_babies || visit.babies).length
+      ? records(visit.kmc_babies || visit.babies) : [visit]
+    candidates.forEach((baby) => {
+      const index = Number(baby.babyIndex || baby.baby_index || 1)
+      const reasons = Array.isArray(baby.kmc_eligible_reasons)
+        ? baby.kmc_eligible_reasons : []
+      reasonsByIndex.set(index, Array.from(new Set([
+        ...(reasonsByIndex.get(index) || []), ...reasons
+      ])))
+    })
+  })
+  entries.forEach((entry) => {
+    entry.recordedReasons = Array.from(new Set([
+      ...(entry.recordedReasons || []), ...(reasonsByIndex.get(entry.index) || [])
+    ]))
+  })
+  const careBabyIndexes = new Set(
+    newbornVisitsInPeriod.map((visit) => newbornVisitBabyIndex(visit))
+  )
+  metrics.newborn.clients = careBabyIndexes.size
+  const birthByIndex = new Map(entries.map((entry) => [entry.index, entry]))
+  const careWithinTwoDayIndexes = new Set()
+  newbornVisitsInPeriod.forEach((visit) => {
+    const birth = birthByIndex.get(newbornVisitBabyIndex(visit)) || birthByIndex.get(1)
+    const birthDate = birth && dateOnly(birth.birthDate)
+    const careDate = dateOnly(visitDate(visit))
+    if (!birthDate || !careDate) return
+    const days = Math.floor((careDate - birthDate) / DAY_MS)
+    if (days >= 0 && days <= 2) careWithinTwoDayIndexes.add(newbornVisitBabyIndex(visit))
+  })
+  metrics.newborn.careWithin2Days = careWithinTwoDayIndexes.size
+  const earlyIndexes = new Set()
+  records(facts.immediateNewbornCare).filter((record) =>
+    inPeriod(visitDate(record), period)
+  ).forEach((record) => {
+    if (immediateCareIsEarlyBreastfeeding(record)) {
+      earlyIndexes.add(newbornVisitBabyIndex(record))
+    }
+  })
+  metrics.newborn.earlyBreastfeeding = earlyIndexes.size
+  const kmcBabyEntries = entries.length
+    ? entries
+    : (newbornVisitsInPeriod.length ? [{ index: 1 }] : [])
+  const edd = profile.edd || profile.EDD || profile.maternal_edd ||
+    profile.manualEdd || profile.manual_edd ||
+    (anc.slice().reverse().find((visit) =>
+      visit.edd || visit.EDD || visit.manualEdd || visit.manual_edd
+    ) || {}).edd
+  for (const entry of kmcBabyEntries) {
+    const babyIndex = entry.index
     const history = weightHistoryForBaby(facts, babyIndex, delivery)
-    const birthWeight = history[0] && history[0].grams
-    const eligible = birthWeight > 0 && birthWeight < KMC_WEIGHT_GRAM
+    const birthWeight = history[0] && history[0].grams ||
+      normalizeWeightGram(entry.birthWeightGram)
+    const eligibility = deriveKmcEligibility({
+      birthWeightGram: birthWeight,
+      gestationalWeeks: normalizeGestationalWeeks(entry.gestationalWeeks),
+      birthDate: entry.birthDate,
+      edd,
+      outcome: entry.outcome,
+      recordedReasons: entry.recordedReasons
+    })
+    const eligible = eligibility.eligible
     const actions = kmcActionsForBaby(facts, babyIndex)
-    const completed = actions.find((action) =>
-      ['kmc_resolved', 'resolved'].includes(asText(action.type).toLowerCase()) &&
-      inPeriod(action.recordedAt || action.createdAt, period)
+    const completion = resolveKmcCompletion(actions, babyIndex)
+    const completed = completion && inPeriod(
+      completion.actionDate || completion.recordedAt || completion.createdAt,
+      period
+    )
+    const kmcYesInPeriod = records(facts.newbornVisits).some((visit) =>
+      newbornVisitBabyIndex(visit) === babyIndex &&
+      inPeriod(visitDate(visit), period) &&
+      (affirmative(visit.kmc_selected || visit.kmcSelected) ||
+        records(visit.kmc_babies || visit.babies).some((baby) =>
+          affirmative(baby.kmc_selected || baby.kmcSelected)
+        ))
     )
     if (eligible) {
       metrics.newborn.kmcEligible += 1
+      if (eligibility.lowBirthWeight) metrics.newborn.kmcLowBirthWeight += 1
+      if (eligibility.preterm) metrics.newborn.kmcPreterm += 1
+      if (eligibility.lowBirthWeight && eligibility.preterm) {
+        metrics.newborn.kmcPretermAndLowBirthWeight += 1
+      }
+      if (kmcYesInPeriod) metrics.newborn.kmcReceived += 1
       if (completed) metrics.newborn.kmcCompleted += 1
     }
-    if (kmcYes && history.length >= 2) {
+    if (kmcYesInPeriod && history.length >= 2) {
       const latest = history.filter((point) => inPeriod(point.date, period)).pop() || history[history.length - 1]
       if (latest && latest.grams !== birthWeight) {
         metrics.newborn.kmcWeightGain.totalGainGrams += latest.grams - birthWeight

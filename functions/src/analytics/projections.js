@@ -2,6 +2,13 @@
 
 const { firstDate, normalizeOutcome, toDate, unwrap } =
   require('../shared/clinical-normalizers');
+const {
+  correctedGestationalWeeks,
+  deriveKmcEligibility,
+  deriveReadiness,
+  latestVisit,
+  resolveKmcCompletion
+} = require('./kmc-kernel');
 
 const DAY_MS = 86400000;
 const HRT_SCHEMA_VERSION = 'tracking-hrt-v1';
@@ -24,7 +31,6 @@ const HRT_LONG_FOLLOW_UP_FACTORS = [
   'pih',
   'pe'
 ];
-const KMC_COMPLETE_TYPES = new Set(['kmc_resolved', 'resolved']);
 
 const HRT_PROJECTION_CONTRACT = Object.freeze({
   schemaVersion: HRT_SCHEMA_VERSION,
@@ -383,6 +389,27 @@ function babiesForKmc(facts) {
       byIndex.set(babyIndex, merged);
     });
   });
+  const deliveryNotes = unwrap(facts.deliveryNotes) || {};
+  const deliveryDetails = deliveryNotes.deliveryDetails ||
+    deliveryNotes.delivery_details || deliveryNotes;
+  const deliveryBabies = Array.isArray(deliveryDetails.babies)
+    ? deliveryDetails.babies : [];
+  deliveryBabies.forEach((baby, index) => {
+    const babyIndex = Number(baby.babyIndex || baby.baby_index || index + 1);
+    const existing = byIndex.get(babyIndex) || {};
+    byIndex.set(babyIndex, {
+      ...baby,
+      ...existing,
+      birthTime: existing.birthTime || existing.birth_time ||
+        baby.birthTime || baby.birth_time,
+      birthWeightGram: existing.birthWeightGram ||
+        existing.birth_weight_gram || baby.birthWeightGram ||
+        baby.birth_weight_gram || baby.body_weight_gram,
+      gestationalWeek: existing.gestationalWeek ||
+        existing.gestational_week || baby.gestationalWeek ||
+        baby.gestational_week || baby.gestational_age_at_birth
+    });
+  });
   if (!byIndex.size) byIndex.set(1, care);
   let entries = Array.from(byIndex.entries()).sort((a, b) => a[0] - b[0]);
   if (identity.ownBabyIndex) {
@@ -403,6 +430,11 @@ function babiesForKmc(facts) {
         parseWeightGram(care.body_weight_gram)
       )) ||
       null,
+    gestationalWeeks: Number(
+      baby.gestationalWeek || baby.gestational_week ||
+      baby.gestational_age_at_birth || baby.gestationalAgeAtBirth ||
+      care.gestationalWeek || care.gestational_age_at_birth || 0
+    ) || null,
     latestWeightGram: null,
     birthDate: firstDate(baby, [
       'birthTime', 'birth_time', 'dateOfBirth', 'date_of_birth'
@@ -528,10 +560,7 @@ function visitWeightHistory(facts, babyIndex) {
 }
 
 function kmcCompletion(actions, babyIndex) {
-  return (actions || []).map(unwrap).filter((action) => {
-    const index = Number(action.babyIndex || action.baby_index || 1);
-    return index === babyIndex && KMC_COMPLETE_TYPES.has(action.type);
-  }).sort((a, b) => (actionDate(b) || 0) - (actionDate(a) || 0))[0] || null;
+  return resolveKmcCompletion(actions, babyIndex);
 }
 
 function kmcDueDate(dischargeDate, visits) {
@@ -553,14 +582,15 @@ function buildKmcProjections(facts, options) {
   const edd = dateOnly(effectiveEdd(facts));
   return babiesForKmc(facts).map((baby) => {
     const birth = dateOnly(baby.birthDate);
-    const reasons = [];
-    if (baby.birthWeightGram > 0 && baby.birthWeightGram < 2000) {
-      reasons.push('low_weight');
-    }
-    if (birth && edd && (edd - birth) / DAY_MS >= 21) reasons.push('preterm');
-    baby.recordedReasons.forEach((reason) => {
-      if (reason && !reasons.includes(reason)) reasons.push(reason);
+    const eligibility = deriveKmcEligibility({
+      birthWeightGram: baby.birthWeightGram,
+      gestationalWeeks: baby.gestationalWeeks,
+      birthDate: birth,
+      edd,
+      outcome: baby.outcome,
+      recordedReasons: baby.recordedReasons
     });
+    const reasons = eligibility.reasons;
     const history = visitWeightHistory(facts, baby.babyIndex);
     const birthWeightGram = (history.find((item) => item.visitNumber === 1) || {}).grams ||
       baby.birthWeightGram;
@@ -571,9 +601,27 @@ function buildKmcProjections(facts, options) {
     const enrolled = visits.length > 0;
     if (!reasons.length && !enrolled && !baby.potentialKmc) return null;
     const explicit = kmcCompletion(facts.kmcActions, baby.babyIndex);
-    const autoDate = addCalendarMonths(birth, 2);
-    const autoComplete = !explicit && autoDate && asOf >= autoDate;
-    const complete = !!explicit || autoComplete;
+    const complete = !!explicit;
+    const lastVisit = latestVisit(newbornVisitData(facts))
+    const latestWeight = latestWeightGram
+    const correctedWeeks = correctedGestationalWeeks({
+      gestationalWeeks: baby.gestationalWeeks,
+      birthDate: birth,
+      asOf
+    })
+    const readiness = deriveReadiness({
+      reasons,
+      latestWeightGram: latestWeight,
+      correctedWeeks,
+      feedingMethod: lastVisit && (
+        lastVisit.feeding_method || lastVisit.feedingMethod ||
+        lastVisit.feeding_type || lastVisit.feedingType
+      ),
+      temperature: lastVisit && (
+        lastVisit.temperature || lastVisit.body_temperature ||
+        lastVisit.bodyTemperature
+      )
+    })
     const discharge = baby.dischargeDate ||
       firstDate(visits.slice().reverse()[0], ['discharge_date', 'dischargeDate']);
     const dueDate = kmcDueDate(discharge, visits);
@@ -585,8 +633,7 @@ function buildKmcProjections(facts, options) {
     const activeFrom = birth || firstDate(visits[0], [
       'visitDate', 'visit_date', 'recordedAt'
     ]) || asOf;
-    const activeTo = complete
-      ? dateOnly(explicit && actionDate(explicit) || autoDate) : null;
+    const activeTo = complete ? dateOnly(explicit && actionDate(explicit)) : null;
     return {
       schemaVersion: KMC_SCHEMA_VERSION,
       projectionType: 'kmc',
@@ -599,6 +646,7 @@ function buildKmcProjections(facts, options) {
       ...scopeFields(facts),
       eligible: reasons.length > 0,
       eligibilityReasons: reasons,
+      readiness,
       enrolled,
       birthWeightGram,
       latestWeightGram,
@@ -618,9 +666,8 @@ function buildKmcProjections(facts, options) {
       activeTo: isoDate(activeTo),
       activeUntil: isoDate(activeTo) || '9999-12-31',
       explicitCompletion: !!explicit,
-      derivedCompletion: !!autoComplete,
-      completionSource: explicit ? 'clinical_action' :
-        (autoComplete ? 'birth_plus_2_calendar_months' : null),
+      derivedCompletion: false,
+      completionSource: explicit ? 'clinical_action' : null,
       completionDate: complete ? isoDate(activeTo) : null,
       outcome: explicit
         ? normalizeOutcome(explicit.outcome || explicit.resolvedReason)

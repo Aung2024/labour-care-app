@@ -38,6 +38,14 @@ test('v4 dashboard contains the requested clinical cards', () => {
     'high_risk_factors',
     'other_medical_conditions',
     'skilled_birth_attendant_rate',
+    'early_breastfeeding',
+    'kmc_eligible',
+    'kmc_eligible_rate',
+    'kmc_preterm',
+    'kmc_low_birth_weight',
+    'kmc_preterm_lbw',
+    'kmc_received',
+    'kmc_rate',
     'preterm_babies',
     'kmc_completion',
     'kmc_weight_gain',
@@ -84,6 +92,24 @@ test('delivery dashboard groups primary service charts and keeps breakdowns in i
     .forEach((key) => assert.equal(all.find((item) => item.key === key).chartOnly, true))
   assert.equal(all.find((item) => item.key === 'maternal_outcome').label, 'Maternal Outcomes')
   assert.equal(all.find((item) => item.key === 'newborn_outcome').label, 'Newborn Outcomes')
+})
+
+test('newborn and KMC dashboard uses baby headcounts and shared KMC measures', () => {
+  const all = global.DashboardMetricsConfig.allDefinitions
+  const total = all.find((item) => item.key === 'newborn_total')
+  const care = all.find((item) => item.key === 'newborn_clients')
+  const nbc = all.find((item) => item.key === 'newborn_care_2_days')
+  const kmcRate = all.find((item) => item.key === 'kmc_rate')
+  assert.equal(total.label, 'Total Newborns')
+  assert.equal(care.label, 'Newborn Care Headcount')
+  assert.equal(nbc.denominator, '')
+  assert.equal(kmcRate.denominator, 'newborn.kmcEligible')
+  ;['newborn_total', 'newborn_clients', 'newborn_care_2_days',
+    'early_breastfeeding', 'kmc_eligible', 'kmc_received', 'kmc_completion']
+    .forEach((key) => {
+      const definition = all.find((item) => item.key === key)
+      assert.deepEqual(definition.charts.map((chart) => chart.dimension), ['month', 'facility'], key)
+    })
 })
 
 test('overview uses readable chart roles and keeps joint care in its own section', () => {

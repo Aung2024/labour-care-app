@@ -369,14 +369,116 @@
     metric('Delivery', 'maternal_outcome', 'Maternal Outcomes', 'delivery.maternalOutcomes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'bar' }),
     metric('Delivery', 'newborn_outcome', 'Newborn Outcomes', 'delivery.newbornOutcomes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'bar' }),
 
-    metric('Newborn & KMC', 'newborn_total', 'Total Newborns', 'registration.babies'),
-    metric('Newborn & KMC', 'newborn_clients', 'Newborn Care Clients', 'newborn.clients'),
-    metric('Newborn & KMC', 'birth_weight_recorded', 'Birth Weight Recorded', 'newborn.birthWeightMeasured', 'registration.babies'),
-    metric('Newborn & KMC', 'low_birth_weight', 'Low Birth Weight Babies', 'newborn.lowBirthWeight', 'registration.babies'),
-    metric('Newborn & KMC', 'preterm_babies', 'Preterm Babies', 'newborn.preterm', 'registration.babies'),
-    metric('Newborn & KMC', 'newborn_care_2_days', 'NBC ≤2 Days', 'newborn.careWithin2Days', 'registration.babies'),
-    metric('Newborn & KMC', 'kmc_completion', 'KMC Completion', 'newborn.kmcCompleted', 'newborn.kmcEligible', { chart: 'completion' }),
-    metric('Newborn & KMC', 'kmc_weight_gain', 'Average KMC Weight Gain', 'newborn.kmcWeightGain.totalGainGrams', 'newborn.kmcWeightGain.babiesWithTwoWeights', { format: 'averageGrams' }),
+    metric('Newborn & KMC', 'newborn_total', 'Total Newborns', 'registration.babies', '', {
+      definition: 'Counts registered baby profiles in the selected period. It is different from Newborn Care Headcount because registration does not require a newborn-care visit.',
+      countedAs: 'Registered baby profiles',
+      numeratorLabel: 'Registered newborn profiles',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Total Newborns by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'newborn_clients', 'Newborn Care Headcount', 'newborn.clients', '', {
+      definition: 'Counts unique newborns with at least one newborn-care record in the selected period.',
+      countedAs: 'Unique newborns receiving newborn care',
+      numeratorLabel: 'Newborn-care headcount',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Newborn Care Headcount by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'birth_weight_recorded', 'Birth Weight Recorded', 'newborn.birthWeightMeasured', 'registration.babies', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Birth Weight Recorded by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'low_birth_weight', 'Low Birth Weight Babies', 'newborn.lowBirthWeight', 'registration.babies', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Low Birth Weight Babies by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'preterm_babies', 'Preterm Babies', 'newborn.preterm', 'registration.babies', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Preterm Babies by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'newborn_care_2_days', 'Newborn Care ≤2 Days', 'newborn.careWithin2Days', '', {
+      definition: 'Counts unique newborns whose first newborn-care record was recorded within two days of birth. Delivery Note birth time is preferred, followed by the registered birth time.',
+      countedAs: 'Unique newborns receiving care within 48 hours',
+      numeratorLabel: 'Newborns receiving care within 2 days',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Newborn Care ≤2 Days by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'early_breastfeeding', 'Early Breastfeeding', 'newborn.earlyBreastfeeding', '', {
+      definition: 'Counts newborns with early exclusive breastfeeding recorded in Immediate Newborn Care.',
+      countedAs: 'Newborns with early exclusive breastfeeding recorded',
+      numeratorLabel: 'Early breastfeeding newborns',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Early Breastfeeding by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_eligible', 'KMC Eligible Newborns', 'newborn.kmcEligible', '', {
+      definition: 'Counts alive newborns with birth weight below 2 kg and/or gestational age below 37 weeks.',
+      countedAs: 'Unique alive KMC-eligible newborns',
+      numeratorLabel: 'KMC-eligible newborns',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'KMC Eligible Newborns by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_eligible_rate', 'KMC Eligibility Rate', 'newborn.kmcEligible', 'newborn.aliveBirths', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'KMC Eligibility by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_preterm', 'KMC Preterm', 'newborn.kmcPreterm', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'KMC Preterm by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_low_birth_weight', 'KMC Low Birth Weight', 'newborn.kmcLowBirthWeight', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'KMC Low Birth Weight by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_preterm_lbw', 'KMC Preterm + LBW', 'newborn.kmcPretermAndLowBirthWeight', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'KMC Preterm + LBW by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_received', 'Newborns Receiving KMC', 'newborn.kmcReceived', '', {
+      definition: 'Counts eligible newborns with KMC Yes recorded in a newborn-care visit during the selected period.',
+      countedAs: 'Unique eligible newborns receiving KMC',
+      numeratorLabel: 'Newborns receiving KMC',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Newborns Receiving KMC by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_rate', 'Newborn KMC Rate', 'newborn.kmcReceived', 'newborn.kmcEligible', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Newborn KMC Rate by Facility' }
+      ]
+    }),
+    metric('Newborn & KMC', 'kmc_completion', 'KMC Completion', 'newborn.kmcCompleted', 'newborn.kmcEligible', { format: 'percent', chart: 'completion', charts: [
+      { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+      { type: 'bar', dimension: 'facility', title: 'KMC Completion by Facility' }
+    ] }),
+    metric('Newborn & KMC', 'kmc_weight_gain', 'Average KMC Weight Gain', 'newborn.kmcWeightGain.totalGainGrams', 'newborn.kmcWeightGain.babiesWithTwoWeights', { format: 'averageGrams', charts: [
+      { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+      { type: 'bar', dimension: 'facility', title: 'Average KMC Weight Gain by Facility' }
+    ] }),
 
     metric('PNC', 'pnc_clients', 'Total PNC Headcount', 'pnc.clients'),
     metric('PNC', 'pnc_coverage', 'PNC Coverage', 'pnc.coverageNumerator', 'pnc.deliveredMothers'),

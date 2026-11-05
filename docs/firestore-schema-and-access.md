@@ -96,6 +96,11 @@ Server-only patient projection. Typical fields:
 ### `tracking_v2_kmc/{patientId}_{babyIndex}`
 
 Server-only baby-level KMC projection. Twin identity is part of the document key.
+Completion is manual and reversible: `kmc_resolved` records completion and
+`kmc_reopened` clears it for the same `babyIndex`. Age-based completion is not
+written to this projection. Eligibility, KMC Yes/receiving status, latest
+clinical readiness fields, and completion state are derived from normalized
+clinical facts.
 
 ### Refresh queues
 
@@ -128,6 +133,11 @@ information, and a lease or concurrency guard where workers overlap.
 The browser calls `queryDashboardV4`; it does not read contributions directly.
 Current HRT status breakdowns use the role-scoped
 `queryHrtStatusSummary` callable over HRT projections.
+
+Dashboard V4, KMC, HRT, monthly reporting, and future midwife reporting must
+share the normalized clinical-facts and metric-kernel contract. Aggregate
+clients must use scoped callables or server projections; they must not scan
+patient subcollections in the browser.
 
 ### Leaderboard
 

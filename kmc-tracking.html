@@ -398,15 +398,6 @@
         <div class="modal-body">
           <p class="kmc-info-banner" id="completeModalSummary"></p>
           <div class="kmc-modal-section">
-            <label for="completeOutcomeSelect" id="completeOutcomeLabel">Outcome</label>
-            <select id="completeOutcomeSelect">
-              <option value="alive" id="completeOutcomeAlive">KMC complete & Alive</option>
-              <option value="death" id="completeOutcomeDeath">Dead</option>
-              <option value="discontinuation" id="completeOutcomeDiscontinuation">KMC Discontinuation</option>
-              <option value="transfer" id="completeOutcomeTransfer">Transfer</option>
-            </select>
-          </div>
-          <div class="kmc-modal-section">
             <label for="completeNotesInput" id="completeNotesLabel">Notes (optional)</label>
             <textarea id="completeNotesInput" rows="2"></textarea>
           </div>
@@ -460,6 +451,7 @@
     var _kmcPracticed = '';
     var _completePatientId = null;
     var _completeRow = null;
+    var _completeReopen = false;
     var _kmcRoleLevel = 'provider';
     var _kmcFilters = null;
     var _kmcNextPageToken = null;
@@ -518,11 +510,10 @@
         babyNamesEmpty: 'No babies in this group.',
         motherLabel: 'Mother',
         completeModalTitle: 'Mark KMC complete',
-        completeOutcomeLabel: 'Outcome',
-        completeOutcomeAlive: 'KMC complete & Alive',
-        completeOutcomeDeath: 'Dead',
-        completeOutcomeDiscontinuation: 'KMC Discontinuation',
-        completeOutcomeTransfer: 'Transfer',
+        reopenTitle: 'Reopen KMC',
+        reopen: 'Reopen',
+        completeModalHint: 'This is a manual, reversible completion record. Check the readiness guidance before saving.',
+        completeReady: 'The baby has reached the KMC completion criteria. Please check before marking complete.',
         yes: 'Yes',
         no: 'No',
         cancel: 'Cancel',
@@ -587,11 +578,10 @@
         babyNamesEmpty: 'ဤအုပ်စုတွင် ကလေး မရှိပါ။',
         motherLabel: 'မိခင်',
         completeModalTitle: 'KMC ပြီးမြောက်ရန် မှတ်သားမည်',
-        completeOutcomeLabel: 'ရလဒ်',
-        completeOutcomeAlive: 'KMC ပြီးမြောက်ပြီး အသက်ရှင်',
-        completeOutcomeDeath: 'သေဆုံး',
-        completeOutcomeDiscontinuation: 'KMC ရပ်ဆိုင်း',
-        completeOutcomeTransfer: 'လွှဲပြောင်း',
+        reopenTitle: 'KMC ပြန်ဖွင့်ရန်',
+        reopen: 'ပြန်ဖွင့်ရန်',
+        completeModalHint: 'ဤသည် လက်ဖြင့်မှတ်သားပြီး ပြန်ဖွင့်နိုင်သော ပြီးမြောက်မှုဖြစ်ပါသည်။ မသိမ်းမီ စစ်ဆေးရန် အသိပေးချက်ကို ဖတ်ပါ။',
+        completeReady: 'ကလေးသည် KMC ပြီးမြောက်ရန် သတ်မှတ်ချက်များနှင့် ကိုက်ညီပါသည်။ ပြီးမြောက်ရန် မနှိပ်မီ စစ်ဆေးပါ။',
         yes: 'လုပ်ခဲ့',
         no: 'မလုပ်',
         cancel: 'ပယ်ဖျက်',
@@ -645,16 +635,6 @@
       if (search) search.placeholder = tr('searchPlaceholder');
       var completeTitle = document.getElementById('completeModalTitle');
       if (completeTitle) completeTitle.textContent = tr('completeModalTitle');
-      var outcomeLabel = document.getElementById('completeOutcomeLabel');
-      if (outcomeLabel) outcomeLabel.textContent = tr('completeOutcomeLabel');
-      var outcomeAlive = document.getElementById('completeOutcomeAlive');
-      if (outcomeAlive) outcomeAlive.textContent = tr('completeOutcomeAlive');
-      var outcomeDeath = document.getElementById('completeOutcomeDeath');
-      if (outcomeDeath) outcomeDeath.textContent = tr('completeOutcomeDeath');
-      var outcomeDiscontinuation = document.getElementById('completeOutcomeDiscontinuation');
-      if (outcomeDiscontinuation) outcomeDiscontinuation.textContent = tr('completeOutcomeDiscontinuation');
-      var outcomeTransfer = document.getElementById('completeOutcomeTransfer');
-      if (outcomeTransfer) outcomeTransfer.textContent = tr('completeOutcomeTransfer');
       var notesLabel = document.getElementById('completeNotesLabel');
       if (notesLabel) notesLabel.textContent = tr('visitNotesLabel');
       var cancelBtn = document.getElementById('completeCancelBtn');
@@ -1311,6 +1291,9 @@
           '&kmcVisit=next&babyIndex=' + encodeURIComponent(babyIndex) + '&from=kmc" onclick="event.stopPropagation();"><i class="fas fa-plus"></i><span>' + escapeHtml(tr('recordVisit')) + '</span></a>';
         html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openCompleteModal(\'' +
           escapeHtml(patientId) + '\',' + babyIndex + ')"><i class="fas fa-circle-check"></i><span>' + escapeHtml(tr('markComplete')) + '</span></button>';
+      } else {
+        html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openCompleteModal(\'' +
+          escapeHtml(patientId) + '\',' + babyIndex + ',true)"><i class="fas fa-rotate-left"></i><span>' + escapeHtml(tr('reopen')) + '</span></button>';
       }
       html += '<button type="button" class="kmc-status-btn secondary" onclick="event.stopPropagation(); openNewbornReport(\'' +
         escapeHtml(patientId) + '\',' + babyIndex + ')" title="' + escapeHtml(tr('report')) + '"><i class="fas fa-eye"></i><span>' + escapeHtml(tr('report')) + '</span></button>';
@@ -1461,14 +1444,20 @@
       }
     }
 
-    function openCompleteModal(patientId, babyIndex) {
+    function openCompleteModal(patientId, babyIndex, reopen) {
       babyIndex = parseInt(babyIndex, 10) || 1;
       var row = (window._kmcRows || []).find(function (r) { return (r.patient || {}).id === patientId && ((parseInt(r.babyIndex, 10) || 1) === babyIndex); });
       if (!row) return;
       _completePatientId = patientId;
       _completeRow = row;
-      document.getElementById('completeModalSummary').textContent = (row.babyName || '') + ' · ' + getKmcClientName(row.patient || {});
-      document.getElementById('completeOutcomeSelect').value = 'alive';
+      _completeReopen = Boolean(reopen);
+      document.getElementById('completeModalTitle').textContent = _completeReopen ? tr('reopenTitle') : tr('completeModalTitle');
+      document.getElementById('completeSaveBtn').textContent = _completeReopen ? tr('reopen') : tr('saveComplete');
+      var summary = (row.babyName || '') + ' · ' + getKmcClientName(row.patient || {});
+      if (!_completeReopen && row.readiness && row.readiness.ready) {
+        summary += '\n\n' + tr('completeReady');
+      }
+      document.getElementById('completeModalSummary').textContent = summary;
       document.getElementById('completeNotesInput').value = '';
       bootstrap.Modal.getOrCreateInstance(document.getElementById('completeModal')).show();
     }
@@ -1479,11 +1468,9 @@
       btn.disabled = true;
       btn.textContent = tr('saving');
       try {
-        var outcome = document.getElementById('completeOutcomeSelect').value;
         var notes = document.getElementById('completeNotesInput').value.trim();
         var action = {
-          type: 'kmc_resolved',
-          outcome: outcome,
+          type: _completeReopen ? 'kmc_reopened' : 'kmc_resolved',
           babyIndex: (_completeRow && _completeRow.babyIndex) || 1,
           notes: notes || null,
           recordedBy: _currentUser.uid,
@@ -1497,17 +1484,15 @@
         }
         if (_completeRow) {
           _completeRow.kmcActions = (_completeRow.kmcActions || []).concat([{
-            type: 'kmc_resolved',
-            outcome: outcome,
+            type: action.type,
             babyIndex: (_completeRow && _completeRow.babyIndex) || 1,
             actionDate: action.actionDate
           }]);
-          _completeRow.completed = true;
+          _completeRow.completed = !_completeReopen;
           if (_completeRow._projection) {
-            _completeRow.status = 'complete';
-            _completeRow.explicitCompletion = true;
-            _completeRow.completionSource = 'clinical_action';
-            _completeRow.outcome = outcome;
+            _completeRow.status = _completeReopen ? 'on_track' : 'complete';
+            _completeRow.explicitCompletion = !_completeReopen;
+            _completeRow.completionSource = _completeReopen ? null : 'clinical_action';
           }
         }
         bootstrap.Modal.getInstance(document.getElementById('completeModal')).hide();

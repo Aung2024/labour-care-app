@@ -639,7 +639,7 @@ test('KMC uses guarded legacy body weight only for explicit follow-up visits', (
   assert.deepEqual(row.weightHistory.map((item) => item.grams), [1800, 1950]);
 });
 
-test('KMC derives completion at birth plus two calendar months', () => {
+test('KMC remains active until a manual completion action is recorded', () => {
   const [row] = buildKmcProjections(facts({
     newbornVisits: [{
       data: {
@@ -653,11 +653,30 @@ test('KMC derives completion at birth plus two calendar months', () => {
       }
     }]
   }), { asOf: '2026-03-31' });
-  assert.equal(row.status, 'complete');
-  assert.equal(row.completionDate, '2026-03-31');
-  assert.equal(row.completionSource, 'birth_plus_2_calendar_months');
+  assert.equal(row.status, 'on_track');
+  assert.equal(row.completionDate, null);
+  assert.equal(row.completionSource, null);
   assert.equal(row.postpartumAgeDays, 59);
 });
+
+test('KMC completion can be manually reversed', () => {
+  const [row] = buildKmcProjections(facts({
+    kmcActions: [
+      { type: 'kmc_resolved', babyIndex: 1, actionDate: '2026-03-01' },
+      { type: 'kmc_reopened', babyIndex: 1, actionDate: '2026-03-02' }
+    ],
+    newbornVisits: [{
+      data: {
+        visit_number: 1,
+        birth_time: '2026-01-01T10:00:00Z',
+        body_weight_gram: 1800,
+        kmc_selected: 'yes'
+      }
+    }]
+  }), { asOf: '2026-03-31' });
+  assert.equal(row.status, 'on_track');
+  assert.equal(row.explicitCompletion, false);
+})
 
 test('calendar month addition clamps at month end', () => {
   assert.equal(

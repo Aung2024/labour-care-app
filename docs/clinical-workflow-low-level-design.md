@@ -258,3 +258,38 @@ checkpointed rebuilds; it is not a normal page-load path.
   result exists.
 - A Function timeout must leave a resumable job state, not restart from the
   first patient.
+
+## 11. Shared clinical facts and metrics kernel
+
+Aggregate products use the same normalized clinical facts and server-side
+metric definitions. A clinical write is enqueued once; the unified refresh
+worker rebuilds the relevant derived products:
+
+```mermaid
+flowchart LR
+  clinicalWrite[ClinicalWrite] --> refreshQueue[UnifiedRefreshQueue]
+  refreshQueue --> facts[NormalizedClinicalFacts]
+  facts --> metricKernel[SharedMetricKernel]
+  metricKernel --> tracking[HRTAndKMCProjections]
+  metricKernel --> dashboard[DashboardV4Contributions]
+  metricKernel --> reports[FutureReportsAndMonthlySummaries]
+```
+
+KMC is a baby-level product. Delivery Note babies, registered baby profiles,
+and linked newborn-care visits must resolve to the same mother/baby index,
+including twins. KMC eligibility means an alive newborn is under 2,000 grams
+and/or preterm. KMC completion is an explicit reversible action; age alone
+must not complete a row. The KMC tracker and Dashboard V4 use the same
+eligibility, receiving-care, and completion semantics.
+
+| Consumer | Server product | Read path |
+|---|---|---|
+| KMC tracker | `tracking_v2_kmc` baby projections | `queryKmcTracking` |
+| HRT tracker | `tracking_v2_hrt` patient projections | `queryHrtTracking` |
+| Dashboard V4 | `analytics_v4_contributions` and range cache | `queryDashboardV4` |
+| Monthly and midwife reports | Shared metric kernel and scoped callable/projection | No browser-wide patient scan |
+
+Period indicators are aggregated from Dashboard V4 contributions. Current HRT
+and KMC follow-up status is read from the tracking projections because status
+is not a period total. New aggregate indicators must use this server contract
+instead of adding client-side patient fan-out.

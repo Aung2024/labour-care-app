@@ -102,6 +102,14 @@ test('KMC tracker weight column always draws a sparkline block', () => {
   assert.doesNotMatch(source, /if \(!points \|\| points\.length < 2\) return '';/);
 });
 
+test('KMC completion is manual, reversible, and has no outcome dropdown', () => {
+  const source = readAppFile('kmc-tracking.html');
+  assert.doesNotMatch(source, /id="completeOutcomeSelect"/);
+  assert.match(source, /type: _completeReopen \? 'kmc_reopened' : 'kmc_resolved'/);
+  assert.match(source, /openCompleteModal\([^,]+,[^,]+,true\)/);
+  assert.match(source, /completeReady/);
+});
+
 test('home page exposes a role-gated Quality Improvement card', () => {
   const source = readAppFile('home.html');
   assert.match(source, /id="qiCard"/);

@@ -97,11 +97,19 @@ const DASHBOARD_METRICS = Object.freeze([
   definition('Delivery', 'newborn_outcome', 'Delivery-Note Newborn Outcomes', 'delivery.newbornOutcomes', null, { format: 'map', chart: 'bar' }),
 
   definition('Newborn & KMC', 'newborn_total', 'Total Newborns', 'registration.babies'),
-  definition('Newborn & KMC', 'newborn_clients', 'Newborn Care Clients', 'newborn.clients'),
+  definition('Newborn & KMC', 'newborn_clients', 'Newborn Care Headcount', 'newborn.clients'),
   definition('Newborn & KMC', 'birth_weight_recorded', 'Birth Weight Recorded', 'newborn.birthWeightMeasured', 'registration.babies'),
   definition('Newborn & KMC', 'low_birth_weight', 'Low Birth Weight Babies', 'newborn.lowBirthWeight', 'registration.babies'),
   definition('Newborn & KMC', 'preterm_babies', 'Preterm Babies', 'newborn.preterm', 'registration.babies'),
-  definition('Newborn & KMC', 'newborn_care_2_days', 'NBC ≤2 Days', 'newborn.careWithin2Days', 'registration.babies'),
+  definition('Newborn & KMC', 'newborn_care_2_days', 'Newborn Care ≤2 Days', 'newborn.careWithin2Days'),
+  definition('Newborn & KMC', 'early_breastfeeding', 'Early Breastfeeding', 'newborn.earlyBreastfeeding'),
+  definition('Newborn & KMC', 'kmc_eligible', 'KMC Eligible Newborns', 'newborn.kmcEligible'),
+  definition('Newborn & KMC', 'kmc_eligible_rate', 'KMC Eligibility Rate', 'newborn.kmcEligible', 'newborn.aliveBirths'),
+  definition('Newborn & KMC', 'kmc_preterm', 'KMC Preterm', 'newborn.kmcPreterm'),
+  definition('Newborn & KMC', 'kmc_low_birth_weight', 'KMC Low Birth Weight', 'newborn.kmcLowBirthWeight'),
+  definition('Newborn & KMC', 'kmc_preterm_lbw', 'KMC Preterm + LBW', 'newborn.kmcPretermAndLowBirthWeight'),
+  definition('Newborn & KMC', 'kmc_received', 'Newborns Receiving KMC', 'newborn.kmcReceived'),
+  definition('Newborn & KMC', 'kmc_rate', 'Newborn KMC Rate', 'newborn.kmcReceived', 'newborn.kmcEligible'),
   definition('Newborn & KMC', 'kmc_completion', 'KMC Completion', 'newborn.kmcCompleted', 'newborn.kmcEligible', {
     chart: 'completion'
   }),
