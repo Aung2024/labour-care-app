@@ -191,6 +191,21 @@ test('counts institutional delivery independently of the birth provider', () => 
   assert.equal(delivery.provider, 'other')
 })
 
+test('reads nested uterotonic recording and normalizes delivery modes', () => {
+  const delivery = deliveryRecord(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveryDate: '2026-01-19',
+        mode_of_delivery: 'emergency caesarean section',
+        thirdStage: { oxytocinGiven: true },
+        babies: []
+      }
+    }
+  }))
+  assert.equal(delivery.mode, 'Emergency C-section')
+  assert.equal(delivery.uterotonic, true)
+})
+
 test('accepts legacy delivery date aliases for range aggregation', () => {
   const delivery = deliveryRecord(facts({
     deliveryNotes: {

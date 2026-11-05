@@ -102,6 +102,25 @@ const affirmative = (value) => ['yes', 'true', '1', 'given', 'completed', 'recei
   asText(value).toLowerCase()
 )
 
+const normalizeDeliveryMode = (value) => {
+  const key = asText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (!key) return 'Other/Unknown'
+  if (key.includes('emergency') && (key.includes('section') || key.includes('caesarean') || key.includes('cesarean'))) {
+    return 'Emergency C-section'
+  }
+  if (key.includes('elective') && (key.includes('section') || key.includes('caesarean') || key.includes('cesarean'))) {
+    return 'Elective C-section'
+  }
+  if (key.includes('section') || key.includes('caesarean') || key.includes('cesarean')) {
+    return 'C-section'
+  }
+  if (key.includes('assist') || key.includes('forceps') || key.includes('vacuum')) {
+    return 'Assisted vaginal'
+  }
+  if (key.includes('normal') || key.includes('vaginal')) return 'Normal vaginal'
+  return 'Other/Unknown'
+}
+
 const normalizeTd = (value) => {
   const raw = asText(value).toLowerCase()
   if (raw === 'td1' || raw === 'td 1') return 'TD1'
@@ -296,9 +315,17 @@ const deliveryRecord = (facts) => {
       )),
     provider: normalizeProvider(details.birthProvider || details.birth_provider),
     place: normalizeFacilityPlace(details.birthPlace || details.birthplace),
-    mode: asText(details.modeOfDelivery || details.mode_of_delivery) || 'Other/Unknown',
+    mode: normalizeDeliveryMode(details.modeOfDelivery || details.mode_of_delivery),
     maternalOutcome: normalizeOutcome(details.maternalOutcome || details.maternal_outcome),
-    uterotonic: affirmative(details.oxytocinGiven || details.uterotonic || notes.oxytocinGiven),
+    uterotonic: affirmative(
+      details.oxytocinGiven ||
+      details.uterotonic ||
+      (details.thirdStage && details.thirdStage.oxytocinGiven) ||
+      (details.third_stage && details.third_stage.oxytocinGiven) ||
+      notes.oxytocinGiven ||
+      (notes.thirdStage && notes.thirdStage.oxytocinGiven) ||
+      (notes.third_stage && notes.third_stage.oxytocinGiven)
+    ),
     lcgUsed: Boolean(facts.startingTimeDoc && facts.secondStageDoc),
     babies: babies.map((baby, index) => ({
       ...baby,

@@ -344,8 +344,26 @@
       numeratorLabel: 'Deliveries with skilled provider',
       denominatorLabel: 'Completed delivery notes'
     }),
-    metric('Delivery', 'uterotonic_rate', 'Uterotonic Use Rate', 'delivery.uterotonic', 'delivery.completedNotes'),
-    metric('Delivery', 'lcg_usage', 'LCG Usage', 'delivery.lcgUsed', 'delivery.completedNotes'),
+    metric('Delivery', 'uterotonic_rate', 'Uterotonic Use Rate', 'delivery.uterotonic', 'delivery.completedNotes', {
+      definition: 'Counts completed Delivery Notes where oxytocin or another uterotonic is recorded as given.',
+      countedAs: 'Completed delivery notes',
+      numeratorLabel: 'Deliveries with uterotonic recorded',
+      denominatorLabel: 'Completed delivery notes',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Uterotonic Use by Facility' }
+      ]
+    }),
+    metric('Delivery', 'lcg_usage', 'LCG Usage', 'delivery.lcgUsed', 'delivery.completedNotes', {
+      definition: 'Counts completed Delivery Notes with both Labour Care Guide first-stage and second-stage records.',
+      countedAs: 'Completed delivery notes',
+      numeratorLabel: 'Deliveries with LCG timing documented',
+      denominatorLabel: 'Completed delivery notes',
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'LCG Usage by Facility' }
+      ]
+    }),
     metric('Delivery', 'delivery_mode', 'Mode of Delivery', 'delivery.modes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'donut' }),
     metric('Delivery', 'birthplace', 'Birthplace', 'delivery.places', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'donut' }),
     metric('Delivery', 'maternal_outcome', 'Maternal Outcomes', 'delivery.maternalOutcomes', '', { format: 'map', chartOnly: true, deliveryInsight: true, chart: 'bar' }),
@@ -456,7 +474,6 @@
     displayValue: displayValue,
     formulaForDefinition: formulaForDefinition,
     sectionNotes: {
-      Delivery: 'Institutional Delivery counts public and private facility births. SBA Rate separately counts recorded skilled providers.'
     }
   }
 
