@@ -514,6 +514,11 @@
         reopen: 'Reopen',
         completeModalHint: 'This is a manual, reversible completion record. Check the readiness guidance before saving.',
         completeReady: 'The baby has reached the KMC completion criteria. Please check before marking complete.',
+        completeMissing: 'KMC cannot be marked complete yet. Missing: {items}',
+        completeCriteriaWeight: 'weight reaches 2.5 kg',
+        completeCriteriaAge: 'corrected gestational age reaches 40+ weeks',
+        completeCriteriaFeeding: 'effective breastfeeding or bottle feeding',
+        completeCriteriaTemperature: 'normal temperature for 3 consecutive days',
         yes: 'Yes',
         no: 'No',
         cancel: 'Cancel',
@@ -582,6 +587,11 @@
         reopen: 'ပြန်ဖွင့်ရန်',
         completeModalHint: 'ဤသည် လက်ဖြင့်မှတ်သားပြီး ပြန်ဖွင့်နိုင်သော ပြီးမြောက်မှုဖြစ်ပါသည်။ မသိမ်းမီ စစ်ဆေးရန် အသိပေးချက်ကို ဖတ်ပါ။',
         completeReady: 'ကလေးသည် KMC ပြီးမြောက်ရန် သတ်မှတ်ချက်များနှင့် ကိုက်ညီပါသည်။ ပြီးမြောက်ရန် မနှိပ်မီ စစ်ဆေးပါ။',
+        completeMissing: 'KMC ကို ယခု မပြီးမြောက်သေးပါ။ လိုအပ်ချက်များ: {items}',
+        completeCriteriaWeight: 'ကိုယ်အလေးချိန် ၂.၅ ကီလိုဂရမ် ပြည့်ရန်',
+        completeCriteriaAge: 'ပြင်ဆင်ပြီး ကိုယ်ဝန်ဆောင်အသက် ၄၀+ ပတ် ပြည့်ရန်',
+        completeCriteriaFeeding: 'မိခင်နို့ သို့မဟုတ် ပုလင်းနို့ စို့/မျိုနိုင်ရန်',
+        completeCriteriaTemperature: 'ကိုယ်အပူချိန် ၃ ရက်ဆက်တိုက် ပုံမှန်ဖြစ်ရန်',
         yes: 'လုပ်ခဲ့',
         no: 'မလုပ်',
         cancel: 'ပယ်ဖျက်',
@@ -1340,6 +1350,17 @@
       alert(message);
     }
 
+    function kmcMissingCriteria(row) {
+      var readiness = row && row.readiness;
+      if (!readiness || readiness.ready) return [];
+      var missing = [];
+      if (readiness.weightReady === false) missing.push(tr('completeCriteriaWeight'));
+      if (readiness.gestationalAgeReady === false) missing.push(tr('completeCriteriaAge'));
+      if (readiness.feedingReady === false) missing.push(tr('completeCriteriaFeeding'));
+      if (readiness.temperatureReady === false) missing.push(tr('completeCriteriaTemperature'));
+      return missing;
+    }
+
     function getMaxNewbornVisitNumber(visits) {
       return (visits || []).reduce(function (max, v) {
         var n = parseInt(v.visit_number || v.visitNumber, 10);
@@ -1454,16 +1475,24 @@
       document.getElementById('completeModalTitle').textContent = _completeReopen ? tr('reopenTitle') : tr('completeModalTitle');
       document.getElementById('completeSaveBtn').textContent = _completeReopen ? tr('reopen') : tr('saveComplete');
       var summary = (row.babyName || '') + ' · ' + getKmcClientName(row.patient || {});
-      if (!_completeReopen && row.readiness && row.readiness.ready) {
-        summary += '\n\n' + tr('completeReady');
+      var missing = !_completeReopen ? kmcMissingCriteria(row) : [];
+      if (!_completeReopen) {
+        summary += '\n\n' + (missing.length
+          ? tr('completeMissing').replace('{items}', missing.join(', '))
+          : tr('completeReady'));
       }
       document.getElementById('completeModalSummary').textContent = summary;
       document.getElementById('completeNotesInput').value = '';
+      document.getElementById('completeSaveBtn').disabled = Boolean(!_completeReopen && missing.length);
       bootstrap.Modal.getOrCreateInstance(document.getElementById('completeModal')).show();
     }
 
     async function saveKmcCompletion() {
       if (!_completePatientId || !_currentUser) return;
+      if (!_completeReopen && kmcMissingCriteria(_completeRow).length) {
+        kmcNotice(tr('completeMissing').replace('{items}', kmcMissingCriteria(_completeRow).join(', ')), tr('error') || 'Notice');
+        return;
+      }
       var btn = document.getElementById('completeSaveBtn');
       btn.disabled = true;
       btn.textContent = tr('saving');

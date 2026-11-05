@@ -626,10 +626,19 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (anc.length >= 8) metrics.pnc.mothersWithAnc8 = 1
   }
 
-  const newbornVisitsInPeriod = records(facts.newbornVisits).filter((visit) =>
-    inPeriod(visitDate(visit), period)
-  )
-  const entries = newbornEntries(facts, delivery, profile, patientType)
+  const linkedBabyIds = facts.newbornFacts &&
+    Array.isArray(facts.newbornFacts.babyPatientIds)
+    ? facts.newbornFacts.babyPatientIds.filter(Boolean)
+    : []
+  const ownsNewbornCareMetrics = patientType === 'baby' || linkedBabyIds.length === 0
+  const newbornVisitsInPeriod = ownsNewbornCareMetrics
+    ? records(facts.newbornVisits).filter((visit) =>
+      inPeriod(visitDate(visit), period)
+    )
+    : []
+  const entries = ownsNewbornCareMetrics
+    ? newbornEntries(facts, delivery, profile, patientType)
+    : []
   const reasonsByIndex = new Map()
   records(facts.newbornVisits).forEach((visit) => {
     const candidates = records(visit.kmc_babies || visit.babies).length

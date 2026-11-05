@@ -1394,6 +1394,7 @@
       <div class="hrt-search-bar">
         <input type="search" id="hrtSearchInput" placeholder="" oninput="filterHrtRows()">
       </div>
+      <div id="hrtCompletionAlert" class="alert alert-warning d-none mt-3 mb-0" role="alert"></div>
     </div>
 
     <div id="loadingState" class="card-panel text-center py-5">
@@ -2462,6 +2463,31 @@
       return statusBadgeHtml(status) + (outcome ? '<div>' + outcomeBadgeHtml(outcome) + '</div>' : '') + reminder;
     }
 
+    function renderCompletionAlert(rows) {
+      var alert = document.getElementById('hrtCompletionAlert');
+      if (!alert) return;
+      var dueRows = (rows || []).filter(function (row) {
+        var projection = row && (row._projection || row);
+        return !isCompleted(row) && projection && projection.postpartumReminderDue;
+      });
+      if (!dueRows.length) {
+        alert.classList.add('d-none');
+        alert.textContent = '';
+        return;
+      }
+      var longFollowUp = dueRows.filter(function (row) {
+        var projection = row && (row._projection || row);
+        return Number(projection.postpartumReminderDays) === 42;
+      }).length;
+      var standardFollowUp = dueRows.length - longFollowUp;
+      var detail = [];
+      if (standardFollowUp) detail.push(standardFollowUp + ' × ' + tr('completionAlertSeven'));
+      if (longFollowUp) detail.push(longFollowUp + ' × ' + tr('completionAlertFortyTwo'));
+      alert.innerHTML = '<strong>' + escapeHtml(tr('completionAlertLabel')) + ':</strong> ' +
+        escapeHtml(detail.join(' '));
+      alert.classList.remove('d-none');
+    }
+
     function getLatestRecommendationText(row) {
       var latest = row && row.latestAnc;
       if (!latest) return '';
@@ -2931,6 +2957,7 @@
     /* Render compact tracking rows */
     function renderAll(rows) {
       updateDashboardStats(window._hrtRows || []);
+      renderCompletionAlert(window._hrtRows || []);
       var display = rows || [];
 
       var container = document.getElementById('hrtRows');

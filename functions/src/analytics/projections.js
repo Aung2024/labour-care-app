@@ -620,7 +620,8 @@ function buildKmcProjections(facts, options) {
       temperature: lastVisit && (
         lastVisit.temperature || lastVisit.body_temperature ||
         lastVisit.bodyTemperature
-      )
+      ),
+      temperatureHistory: newbornVisitData(facts)
     })
     const discharge = baby.dischargeDate ||
       firstDate(visits.slice().reverse()[0], ['discharge_date', 'dischargeDate']);

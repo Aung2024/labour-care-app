@@ -133,6 +133,24 @@ test('calculates newborn care timing, early breastfeeding, and shared KMC metric
   assert.equal(metrics.newborn.kmcCompleted, 1)
 })
 
+test('counts linked newborn care on the registered baby owner only', () => {
+  const metrics = calculateV4Metrics(facts({
+    newbornFacts: {
+      patientType: 'mother',
+      babyPatientIds: ['baby-1']
+    },
+    newbornVisits: [{
+      visitDate: '2026-01-20',
+      babies: [{ babyIndex: 1, kmc_selected: 'yes' }]
+    }]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.newborn.clients, 0)
+  assert.equal(metrics.newborn.kmcReceived, 0)
+})
+
 test('ANC milestones include external-facility visits and PMTCT lab results', () => {
   const metrics = calculateV4Metrics(facts({
     antenatalVisits: [

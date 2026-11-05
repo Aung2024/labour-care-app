@@ -47,6 +47,62 @@ const latestField = (visits, fields) => {
   return null
 }
 
+const temperatureValue = (visit) => {
+  if (!visit) return null
+  const value = visit.temperature ?? visit.body_temperature ?? visit.bodyTemperature
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+const temperatureDate = (visit) => firstDate(visit, [
+  'visitDate', 'visit_date', 'recordedAt', 'recorded_at', 'timestamp', 'createdAt'
+])
+
+const consecutiveNormalTemperatureDays = (temperatureHistory) => {
+  const observations = (temperatureHistory || [])
+    .map((entry) => {
+      const visit = unwrap(entry)
+      const date = temperatureDate(visit)
+      const value = temperatureValue(visit)
+      return date && value != null
+        ? { date: dateOnly(date), value }
+        : null
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.date - left.date)
+
+  const unique = []
+  const seenDates = new Set()
+  observations.forEach((observation) => {
+    const key = observation.date.toISOString().slice(0, 10)
+    if (!seenDates.has(key)) {
+      seenDates.add(key)
+      unique.push(observation)
+    }
+  })
+
+  let count = 0
+  for (let index = 0; index < unique.length; index += 1) {
+    const observation = unique[index]
+    const normal = observation.value >= NORMAL_TEMPERATURE_MIN &&
+      observation.value <= NORMAL_TEMPERATURE_MAX
+    if (!normal) break
+    if (index > 0) {
+      const previous = unique[index - 1]
+      const days = (previous.date - observation.date) / DAY_MS
+      if (days !== 1) break
+    }
+    count += 1
+  }
+  return count
+}
+
+const dateOnly = (value) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (!Number.isFinite(date.getTime())) return null
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+}
+
 const correctedGestationalWeeks = ({ gestationalWeeks, birthDate, asOf }) => {
   const weeks = normalizeGestationalWeeks(gestationalWeeks)
   const birth = firstDate({ value: birthDate }, ['value'])
@@ -92,7 +148,8 @@ const deriveReadiness = ({
   latestWeightGram,
   correctedWeeks,
   feedingMethod,
-  temperature
+  temperature,
+  temperatureHistory = []
 }) => {
   const lowBirthWeight = reasons.includes('low_weight')
   const preterm = reasons.includes('preterm')
@@ -101,9 +158,12 @@ const deriveReadiness = ({
   const feeding = text(feedingMethod).replace(/_/g, ' ')
   const feedingReady = ['breastfeeding', 'bottle', 'bottle feeding'].includes(feeding)
   const temperatureNumber = Number(temperature)
-  const temperatureReady = Number.isFinite(temperatureNumber) &&
-    temperatureNumber >= NORMAL_TEMPERATURE_MIN &&
-    temperatureNumber <= NORMAL_TEMPERATURE_MAX
+  const temperatureDays = temperatureHistory.length
+    ? consecutiveNormalTemperatureDays(temperatureHistory)
+    : (Number.isFinite(temperatureNumber) &&
+      temperatureNumber >= NORMAL_TEMPERATURE_MIN &&
+      temperatureNumber <= NORMAL_TEMPERATURE_MAX ? 1 : 0)
+  const temperatureReady = temperatureDays >= 3
   return {
     ready: Boolean((lowBirthWeight || preterm) &&
       weightReady && gestationalAgeReady && feedingReady && temperatureReady),
@@ -111,6 +171,7 @@ const deriveReadiness = ({
     gestationalAgeReady,
     feedingReady,
     temperatureReady,
+    temperatureDays,
     criteria: { lowBirthWeight, preterm }
   }
 }
@@ -141,6 +202,7 @@ module.exports = {
   isAliveOutcome,
   latestVisit,
   latestField,
+  consecutiveNormalTemperatureDays,
   correctedGestationalWeeks,
   deriveKmcEligibility,
   deriveReadiness,
