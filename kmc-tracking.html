@@ -248,6 +248,27 @@
       background: #fff;
       color: #475569;
     }
+    .kmc-attention-row { cursor: default !important; }
+    .kmc-attention-row td {
+      padding: 0.35rem 0.75rem 0.55rem;
+      background: #fffbeb;
+      border-bottom: 1px solid #fde68a;
+    }
+    .kmc-attention {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.65rem;
+      border: 1px solid #fbbf24;
+      border-left: 3px solid #d97706;
+      border-radius: 7px;
+      background: #fff7ed;
+      color: #92400e;
+      font-size: 0.74rem;
+      line-height: 1.35;
+    }
+    .kmc-attention i { flex: 0 0 auto; color: #b45309; }
+    .kmc-attention span { overflow-wrap: anywhere; }
     .hrt-register-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
     .hrt-register-table .col-sms { width: 14%; }
     .hrt-phone-call-btn {
@@ -476,6 +497,7 @@
         statOverdue: 'Overdue',
         statDefaulted: 'Defaulted/Lost',
         statCompleted: 'Completed',
+        attentionLabel: 'KMC follow-up attention',
         babyCol: 'Baby',
         motherCol: 'Mother',
         weightCol: 'Weight (kg)',
@@ -549,6 +571,7 @@
         statOverdue: 'ရက်ချိန်းလွန်',
         statDefaulted: 'အဆက်အသွယ်မရ',
         statCompleted: 'စောင့်ရှောက်မှု ပြီးမြောက်',
+        attentionLabel: 'KMC နောက်ဆက်တွဲ သတိပေးချက်',
         babyCol: 'ကလေး',
         motherCol: 'မိခင်',
         weightCol: 'ကိုယ်အလေးချိန် (kg)',
@@ -1300,6 +1323,15 @@
       } catch (e) { /* ignore */ }
     }
 
+    function kmcAttentionHtml(row) {
+      var status = rowTrackingStatus(row);
+      if (!status || (status.key !== 'overdue_followup' && status.key !== 'lost_to_followup')) return '';
+      return '<div class="kmc-attention" role="status">' +
+        '<i class="fas fa-triangle-exclamation" aria-hidden="true"></i>' +
+        '<strong>' + escapeHtml(tr('attentionLabel')) + ':</strong> ' +
+        '<span>' + escapeHtml(status.label) + '</span></div>';
+    }
+
     async function loadKmcDashboardSummary(filters) {
       if (!window.TrackingReader || !filters) return;
       var today = new Date();
@@ -1461,6 +1493,13 @@
           '<td>' + communicationContactHtml(p, r) + '</td>' +
           (actionCol ? '<td>' + kmcToolsHtml(patientId, r) + '</td>' : '');
         desktopBody.appendChild(trEl);
+        var attention = kmcAttentionHtml(r);
+        if (attention) {
+          var attentionRow = document.createElement('tr');
+          attentionRow.className = 'kmc-attention-row';
+          attentionRow.innerHTML = '<td colspan="' + (actionCol ? '9' : '8') + '">' + attention + '</td>';
+          desktopBody.appendChild(attentionRow);
+        }
 
         var card = document.createElement('div');
         card.className = 'hrt-mobile-card';
@@ -1471,6 +1510,7 @@
               (infections ? '<div class="hrt-mobile-id">' + infections + '</div>' : '') + '</div>' +
               '<div>' + statusBadgeHtml(rowTrackingStatus(r)) + '</div>' +
             '</div>' +
+            kmcAttentionHtml(r) +
             '<div class="hrt-mobile-grid">' +
               '<div class="hrt-mobile-field hrt-mobile-wide"><span class="hrt-mobile-label">' + escapeHtml(tr('weightCol')) + '</span>' +
                 '<div class="hrt-mobile-value">' + weightCellHtml(r) + '</div></div>' +
