@@ -2264,6 +2264,24 @@
       return { key: 'alive', label: tr('outcomeAlive') };
     }
 
+    function hrtReminderProjection(row) {
+      if (!row) return null;
+      if (row._projection === true) return row;
+      if (row._projection && typeof row._projection === 'object') return row._projection;
+      return row;
+    }
+
+    function hrtReminderIsDue(row) {
+      var projection = hrtReminderProjection(row);
+      if (!projection) return false;
+      if (projection.postpartumReminderDue) return true;
+      var reminderDate = parseDateOnlyLocal(projection.postpartumReminderDate);
+      if (!reminderDate) return false;
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return reminderDate.getTime() <= today.getTime();
+    }
+
     function statusBadgeHtml(status) {
       return '<span class="hrt-outcome-badge hrt-outcome-' + status.key + '"><i class="fas fa-circle"></i>' +
         escapeHtml(status.label) + '</span>';
@@ -2451,9 +2469,9 @@
     function statusCellHtml(row) {
       var status = rowTrackingStatus(row);
       var outcome = rowPatientOutcome(row);
-      var projection = row && (row._projection || row);
+      var projection = hrtReminderProjection(row);
       var reminder = '';
-      if (!isCompleted(row) && projection && projection.postpartumReminderDue) {
+      if (!isCompleted(row) && hrtReminderIsDue(row)) {
         var alertKey = Number(projection.postpartumReminderDays) === 42
           ? 'completionAlertFortyTwo' : 'completionAlertSeven';
         reminder = '<div class="alert alert-warning py-1 px-2 mt-1 mb-0 small" role="alert">' +
@@ -2467,8 +2485,7 @@
       var alert = document.getElementById('hrtCompletionAlert');
       if (!alert) return;
       var dueRows = (rows || []).filter(function (row) {
-        var projection = row && (row._projection || row);
-        return !isCompleted(row) && projection && projection.postpartumReminderDue;
+        return !isCompleted(row) && hrtReminderIsDue(row);
       });
       if (!dueRows.length) {
         alert.classList.add('d-none');
@@ -2476,7 +2493,7 @@
         return;
       }
       var longFollowUp = dueRows.filter(function (row) {
-        var projection = row && (row._projection || row);
+        var projection = hrtReminderProjection(row);
         return Number(projection.postpartumReminderDays) === 42;
       }).length;
       var standardFollowUp = dueRows.length - longFollowUp;

@@ -1,7 +1,7 @@
 'use strict'
 
 const ANALYTICS_V4_SCHEMA_VERSION = 'analytics-v4.1.0'
-const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-04'
+const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-05'
 
 const definition = (
   section,

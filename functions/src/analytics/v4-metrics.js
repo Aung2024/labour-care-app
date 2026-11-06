@@ -460,6 +460,14 @@ const calculateV4Metrics = (facts, inputPeriod) => {
   const pncInPeriod = pnc.filter((visit) => inPeriod(visitDate(visit), period))
   const delivery = deliveryRecord(facts)
   const deliveryInPeriod = delivery.exists && inPeriod(delivery.date, period)
+  const linkedBabyIds = facts.newbornFacts &&
+    Array.isArray(facts.newbornFacts.babyPatientIds)
+    ? facts.newbornFacts.babyPatientIds.filter(Boolean)
+    : []
+  const ownsNewbornCareMetrics = patientType === 'baby' || linkedBabyIds.length === 0
+  const entries = ownsNewbornCareMetrics
+    ? newbornEntries(facts, delivery, profile, patientType)
+    : []
 
   const registrationDate = profile.registration_date || profile.registrationDate ||
     profile.createdAt || profile.created_at
@@ -467,6 +475,9 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     metrics.registration.total = 1
     if (patientType === 'baby') metrics.registration.babies = 1
     else metrics.registration.mothers = 1
+  }
+  if (patientType !== 'baby' && linkedBabyIds.length === 0 && deliveryInPeriod) {
+    metrics.registration.babies = entries.length
   }
 
   if (metrics.registration.mothers) {
@@ -626,18 +637,10 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (anc.length >= 8) metrics.pnc.mothersWithAnc8 = 1
   }
 
-  const linkedBabyIds = facts.newbornFacts &&
-    Array.isArray(facts.newbornFacts.babyPatientIds)
-    ? facts.newbornFacts.babyPatientIds.filter(Boolean)
-    : []
-  const ownsNewbornCareMetrics = patientType === 'baby' || linkedBabyIds.length === 0
   const newbornVisitsInPeriod = ownsNewbornCareMetrics
     ? records(facts.newbornVisits).filter((visit) =>
       inPeriod(visitDate(visit), period)
     )
-    : []
-  const entries = ownsNewbornCareMetrics
-    ? newbornEntries(facts, delivery, profile, patientType)
     : []
   const reasonsByIndex = new Map()
   records(facts.newbornVisits).forEach((visit) => {
@@ -673,7 +676,7 @@ const calculateV4Metrics = (facts, inputPeriod) => {
   })
   metrics.newborn.careWithin2Days = careWithinTwoDayIndexes.size
   const earlyIndexes = new Set()
-  records(facts.immediateNewbornCare).filter((record) =>
+  ;(ownsNewbornCareMetrics ? records(facts.immediateNewbornCare) : []).filter((record) =>
     inPeriod(visitDate(record), period)
   ).forEach((record) => {
     if (immediateCareIsEarlyBreastfeeding(record)) {

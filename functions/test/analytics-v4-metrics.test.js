@@ -151,6 +151,48 @@ test('counts linked newborn care on the registered baby owner only', () => {
   assert.equal(metrics.newborn.kmcReceived, 0)
 })
 
+test('counts Delivery Note newborns when no linked baby profiles exist', () => {
+  const metrics = calculateV4Metrics(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveryDate: '2026-01-19',
+        babies: [
+          { babyIndex: 1, birthWeightGram: 1800, outcome: 'alive' },
+          { babyIndex: 2, birthWeightGram: 2100, outcome: 'alive' }
+        ]
+      }
+    },
+    immediateNewbornCare: [
+      { recordedAt: '2026-01-19', babyIndex: 1, early_breastfeeding: true },
+      { recordedAt: '2026-01-19', babyIndex: 2, early_breastfeeding: true }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.registration.babies, 2)
+  assert.equal(metrics.newborn.earlyBreastfeeding, 2)
+})
+
+test('does not count linked mother records a second time for early breastfeeding', () => {
+  const metrics = calculateV4Metrics(facts({
+    newbornFacts: {
+      patientType: 'mother',
+      babyPatientIds: ['baby-1']
+    },
+    immediateNewbornCare: [{
+      recordedAt: '2026-01-19',
+      babyIndex: 1,
+      early_breastfeeding: true
+    }]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.registration.babies, 0)
+  assert.equal(metrics.newborn.earlyBreastfeeding, 0)
+})
+
 test('ANC milestones include external-facility visits and PMTCT lab results', () => {
   const metrics = calculateV4Metrics(facts({
     antenatalVisits: [

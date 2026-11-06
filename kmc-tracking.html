@@ -458,6 +458,7 @@
     var _kmcLoadingPage = false;
     var _kmcPageError = '';
     var _kmcLoadId = 0;
+    var _kmcDashboardMetrics = null;
 
     var I18N = {
       en: {
@@ -1270,10 +1271,16 @@
 
     function updateDashboardStats(allRows) {
       var rows = allRows || [];
-      var potential = rows.filter(function (r) { return rowMatchesCardFilter(r, 'potential'); }).length;
+      var potential = _kmcDashboardMetrics &&
+        Number.isFinite(Number(_kmcDashboardMetrics.kmcEligible))
+        ? Number(_kmcDashboardMetrics.kmcEligible)
+        : rows.filter(function (r) { return rowMatchesCardFilter(r, 'potential'); }).length;
       var totalKmc = rows.filter(function (r) { return rowMatchesCardFilter(r, 'all'); }).length;
-      var totalBabies = window._kmcRosterCounts && Number.isFinite(Number(window._kmcRosterCounts.totalBabies))
-        ? Number(window._kmcRosterCounts.totalBabies)
+      var totalBabies = _kmcDashboardMetrics &&
+        Number.isFinite(Number(_kmcDashboardMetrics.totalNewborns))
+        ? Number(_kmcDashboardMetrics.totalNewborns)
+        : window._kmcRosterCounts && Number.isFinite(Number(window._kmcRosterCounts.totalBabies))
+          ? Number(window._kmcRosterCounts.totalBabies)
         : null;
       var onTrack = rows.filter(function (r) { return rowMatchesCardFilter(r, 'on_track'); }).length;
       var overdue = rows.filter(function (r) { return rowMatchesCardFilter(r, 'overdue_followup'); }).length;
@@ -1291,6 +1298,37 @@
         sessionStorage.setItem('kmcActiveFollowUpCount', String(onTrack + overdue + lost));
         sessionStorage.setItem('kmcActiveFollowUpCountAt', String(Date.now()));
       } catch (e) { /* ignore */ }
+    }
+
+    async function loadKmcDashboardSummary(filters) {
+      if (!window.TrackingReader || !filters) return;
+      var today = new Date();
+      var todayKey = today.getFullYear() + '-' +
+        String(today.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today.getDate()).padStart(2, '0');
+      var allTime = !filters.year;
+      try {
+        var result = await TrackingReader.call('queryDashboardV4', {
+          periodMode: allTime ? 'all_time' : 'months',
+          startDate: allTime ? '2025-01-01' : filters.periodStart,
+          endDate: allTime ? todayKey : filters.periodEnd,
+          region: filters.region || '',
+          township: filters.township || '',
+          department: filters.department || '',
+          facilityTypes: filters.facilityTypes || [],
+          trendMode: 'month'
+        });
+        var metrics = result && result.metrics ? result.metrics : {};
+        var newborn = metrics.newborn || {};
+        var registration = metrics.registration || {};
+        _kmcDashboardMetrics = {
+          totalNewborns: Number(registration.babies || 0),
+          kmcEligible: Number(newborn.kmcEligible || 0)
+        };
+      } catch (error) {
+        console.warn('KMC dashboard summary unavailable', error);
+        _kmcDashboardMetrics = null;
+      }
     }
 
     function kmcToolsHtml(patientId, row) {
@@ -2053,6 +2091,7 @@
       if (!append) setKmcPageState('loading');
       else renderAll(getFilteredKmcRows());
       try {
+        if (!append) await loadKmcDashboardSummary(_kmcFilters);
         var result = await TrackingReader.call(
           'queryKmcTracking',
           TrackingReader.payload(_kmcFilters, append ? _kmcNextPageToken : null, { pageSize: 100 })

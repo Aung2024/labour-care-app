@@ -565,7 +565,7 @@
 
   var config = {
     schemaVersion: 'analytics-v4.1.0',
-    definitionVersion: 'dashboard-2026-11-04',
+    definitionVersion: 'dashboard-2026-11-05',
     sections: sections,
     allDefinitions: definitions,
     definitionsForSection: function (section) {
