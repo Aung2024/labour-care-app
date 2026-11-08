@@ -393,17 +393,13 @@
         { type: 'bar', dimension: 'facility', title: 'Birth Weight Recorded by Facility' }
       ]
     }),
-    metric('Newborn & KMC', 'low_birth_weight', 'Low Birth Weight Babies', 'newborn.lowBirthWeight', 'registration.babies', {
-      charts: [
-        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'bar', dimension: 'facility', title: 'Low Birth Weight Babies by Facility' }
-      ]
+    metric('Newborn & KMC', 'low_birth_weight', 'Total LBW Newborns', 'newborn.lowBirthWeight', 'registration.babies', {
+      charts: [],
+      hidden: true
     }),
-    metric('Newborn & KMC', 'preterm_babies', 'Preterm Babies', 'newborn.preterm', 'registration.babies', {
-      charts: [
-        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'bar', dimension: 'facility', title: 'Preterm Babies by Facility' }
-      ]
+    metric('Newborn & KMC', 'preterm_babies', 'Total Preterm Newborns', 'newborn.preterm', 'registration.babies', {
+      charts: [],
+      hidden: true
     }),
     metric('Newborn & KMC', 'newborn_care_2_days', 'Newborn Care ≤2 Days', 'newborn.careWithin2Days', '', {
       definition: 'Counts unique newborns whose first newborn-care record was recorded within two days of birth. Delivery Note birth time is preferred, followed by the registered birth time.',
@@ -439,18 +435,22 @@
       ]
     }),
     metric('Newborn & KMC', 'kmc_preterm', 'KMC Preterm', 'newborn.kmcPreterm', '', {
+      detailPaths: ['newborn.preterm'],
+      detailLabels: ['Total Preterm Newborns'],
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'KMC Preterm by Facility' }
       ]
     }),
     metric('Newborn & KMC', 'kmc_low_birth_weight', 'KMC Low Birth Weight', 'newborn.kmcLowBirthWeight', '', {
+      detailPaths: ['newborn.lowBirthWeight'],
+      detailLabels: ['Total LBW Newborns'],
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'KMC Low Birth Weight by Facility' }
       ]
     }),
-    metric('Newborn & KMC', 'kmc_preterm_lbw', 'KMC Preterm + LBW', 'newborn.kmcPretermAndLowBirthWeight', '', {
+    metric('Newborn & KMC', 'kmc_preterm_lbw', 'Both Preterm + LBW Babies', 'newborn.kmcPretermAndLowBirthWeight', '', {
       charts: [
         { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
         { type: 'bar', dimension: 'facility', title: 'KMC Preterm + LBW by Facility' }
@@ -466,10 +466,8 @@
       ]
     }),
     metric('Newborn & KMC', 'kmc_rate', 'Newborn KMC Rate', 'newborn.kmcReceived', 'newborn.kmcEligible', {
-      charts: [
-        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
-        { type: 'bar', dimension: 'facility', title: 'Newborn KMC Rate by Facility' }
-      ]
+      relatedTo: 'kmc_received',
+      charts: []
     }),
     metric('Newborn & KMC', 'kmc_completion', 'KMC Completion', 'newborn.kmcCompleted', 'newborn.kmcEligible', { format: 'percent', chart: 'completion', charts: [
       { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
@@ -535,6 +533,51 @@
     }
   })
 
+  var clientExplanations = {
+    birth_weight_recorded: ['Counts newborns with a recorded birth weight in the selected period.', 'Unique newborns with a recorded birth weight', 'Newborns with birth weight', 'Registered newborns'],
+    low_birth_weight: ['Counts newborns below 2,500 grams in the selected period. This raw total is shown under the KMC Low Birth Weight scorecard.', 'Newborns below 2,500 grams', 'LBW newborns', 'Registered newborns'],
+    preterm_babies: ['Counts newborns recorded as preterm in the selected period. This raw total is shown under the KMC Preterm scorecard.', 'Newborns with gestational age below 37 weeks', 'Preterm newborns', 'Registered newborns'],
+    newborn_care_2_days: ['Counts newborns whose newborn-care record was made within two days of birth.', 'Unique newborns receiving care within two days', 'Newborns receiving care within two days', 'Newborn-care newborns'],
+    early_breastfeeding: ['Counts newborns with early exclusive breastfeeding recorded in Immediate Newborn Care.', 'Unique newborns with early exclusive breastfeeding', 'Early breastfeeding newborns', 'Newborns with immediate care'],
+    kmc_eligible: ['Counts alive newborns eligible for KMC because of low birth weight below 2,000 grams and/or prematurity below 37 weeks.', 'Unique KMC-eligible newborns', 'KMC-eligible newborns', 'Newborn cohort'],
+    kmc_eligible_rate: ['Shows KMC-eligible newborns as a percentage of alive newborns in the selected period.', 'KMC eligibility percentage', 'KMC-eligible newborns', 'Alive newborns'],
+    kmc_preterm: ['Counts KMC-eligible newborns whose prematurity is below 37 weeks or supported by the recorded KMC eligibility evidence.', 'Unique KMC-eligible preterm newborns', 'KMC preterm newborns', 'KMC-eligible newborns'],
+    kmc_low_birth_weight: ['Counts KMC-eligible newborns weighing below 2,000 grams at birth.', 'Unique KMC-eligible low-birth-weight newborns', 'KMC low-birth-weight newborns', 'KMC-eligible newborns'],
+    kmc_preterm_lbw: ['Counts KMC-eligible newborns who are both preterm and below 2,000 grams.', 'Unique newborns both preterm and low birth weight', 'Both preterm and LBW newborns', 'KMC-eligible newborns'],
+    kmc_received: ['Counts unique newborns with KMC Yes recorded in a newborn-care visit during the selected period, matching the operational KMC tracker.', 'Unique newborns enrolled in KMC', 'Newborns receiving KMC', 'Newborn cohort'],
+    kmc_rate: ['Shows KMC-enrolled newborns as a percentage of KMC-eligible newborns.', 'KMC enrollment percentage', 'Newborns receiving KMC', 'KMC-eligible newborns'],
+    kmc_completion: ['Shows KMC completion as a percentage of KMC-eligible newborns with a recorded completion action.', 'KMC completion percentage', 'Newborns completing KMC', 'KMC-eligible newborns'],
+    kmc_weight_gain: ['Shows the average recorded weight gain among KMC newborns with at least two weight measurements.', 'Average grams gained per newborn', 'Total recorded weight gain', 'Newborns with two KMC weights'],
+    pnc_clients: ['Counts each mother once when a postnatal-care visit is recorded in the selected period.', 'Unique PNC mothers', 'Mothers with PNC', '—'],
+    pnc_coverage: ['Shows mothers receiving PNC in the selected period as a percentage of mothers who delivered.', 'PNC coverage percentage', 'Mothers receiving PNC', 'Delivered mothers'],
+    average_pnc_visits: ['Shows the average number of PNC visits among mothers with PNC in the selected period.', 'Average PNC visits per mother', 'PNC visits', 'Mothers with PNC'],
+    pnc_at_least_4: ['Counts mothers whose PNC history reaches four or more visits.', 'Unique mothers with at least four PNC visits', 'Mothers with at least four visits', 'Mothers with PNC'],
+    pnc_within_48h: ['Counts delivered mothers whose first PNC visit occurred within 48 hours.', 'Unique mothers receiving PNC within 48 hours', 'Mothers with PNC within 48 hours', 'Delivered mothers'],
+    pnc_within_42d: ['Counts delivered mothers whose first PNC visit occurred within 42 days.', 'Unique mothers receiving PNC within 42 days', 'Mothers with PNC within 42 days', 'Delivered mothers'],
+    pnc_mother_anc_4: ['Counts delivered mothers whose ANC history reaches at least four visits.', 'Unique delivered mothers with at least four ANC visits', 'Delivered mothers with at least four ANC visits', 'Delivered mothers'],
+    pnc_mother_anc_8: ['Counts delivered mothers whose ANC history reaches at least eight visits.', 'Unique delivered mothers with at least eight ANC visits', 'Delivered mothers with at least eight ANC visits', 'Delivered mothers'],
+    pnc_iron_folate: ['Counts PNC mothers with iron or folate supplementation recorded.', 'Unique PNC mothers with iron or folate', 'Mothers with iron or folate', 'Mothers with PNC'],
+    pnc_b1: ['Counts PNC mothers with vitamin B1 recorded within the selected period.', 'Unique PNC mothers with vitamin B1', 'Mothers with vitamin B1', 'Mothers with PNC'],
+    pph_cases: ['Counts delivered mothers with heavy vaginal bleeding recorded during PNC.', 'Unique delivered mothers with PPH evidence', 'Mothers with PPH evidence', 'Delivered mothers'],
+    maternal_referrals: ['Counts mothers with a maternal referral recorded in the selected period.', 'Unique mothers with maternal referrals', 'Maternal referrals', '—'],
+    baby_referrals: ['Counts newborns with a baby referral recorded in the selected period.', 'Unique newborns with baby referrals', 'Baby referrals', '—'],
+    maternal_referral_rate: ['Shows maternal referrals as a percentage of registered mothers.', 'Maternal referral percentage', 'Maternal referrals', 'Registered mothers'],
+    referral_stage: ['Shows maternal referrals grouped by the stage at which referral was recorded.', 'Maternal referrals by stage', 'Maternal referrals', '—'],
+    referral_destination: ['Shows maternal referrals grouped by destination facility.', 'Maternal referrals by destination', 'Maternal referrals', '—'],
+    baby_referral_destination: ['Shows baby referrals grouped by destination facility.', 'Baby referrals by destination', 'Baby referrals', '—'],
+    joint_care_patients: ['Counts patients with an active joint-care record in the selected period.', 'Unique joint-care patients', 'Joint-care patients', '—'],
+    joint_care_facilities: ['Counts receiving facilities recorded in joint-care records.', 'Unique receiving facilities', 'Receiving facilities', '—'],
+    joint_care_breakdown: ['Shows joint-care receiving facilities grouped into hospital and other facility types.', 'Joint-care receiving facilities by type', 'Receiving facilities', '—']
+  }
+  definitions.forEach(function (definition) {
+    var explanation = clientExplanations[definition.key]
+    if (!explanation) return
+    definition.definition = explanation[0]
+    definition.countedAs = explanation[1]
+    definition.numeratorLabel = explanation[2]
+    definition.denominatorLabel = explanation[3]
+  })
+
   function valueAtPath(source, path) {
     return String(path || '').split('.').reduce(function (value, key) {
       return value && Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined
@@ -565,7 +608,7 @@
 
   var config = {
     schemaVersion: 'analytics-v4.1.0',
-    definitionVersion: 'dashboard-2026-11-05',
+    definitionVersion: 'dashboard-2026-11-08',
     sections: sections,
     allDefinitions: definitions,
     definitionsForSection: function (section) {

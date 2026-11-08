@@ -720,6 +720,7 @@ const calculateV4Metrics = (facts, inputPeriod) => {
           affirmative(baby.kmc_selected || baby.kmcSelected)
         ))
     )
+    if (kmcYesInPeriod) metrics.newborn.kmcReceived += 1
     if (eligible) {
       metrics.newborn.kmcEligible += 1
       if (eligibility.lowBirthWeight) metrics.newborn.kmcLowBirthWeight += 1
@@ -727,7 +728,6 @@ const calculateV4Metrics = (facts, inputPeriod) => {
       if (eligibility.lowBirthWeight && eligibility.preterm) {
         metrics.newborn.kmcPretermAndLowBirthWeight += 1
       }
-      if (kmcYesInPeriod) metrics.newborn.kmcReceived += 1
       if (completed) metrics.newborn.kmcCompleted += 1
     }
     if (kmcYesInPeriod && history.length >= 2) {

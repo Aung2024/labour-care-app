@@ -104,11 +104,29 @@ test('newborn and KMC dashboard uses baby headcounts and shared KMC measures', (
   assert.equal(care.label, 'Newborn Care Headcount')
   assert.equal(nbc.denominator, '')
   assert.equal(kmcRate.denominator, 'newborn.kmcEligible')
+  assert.equal(kmcRate.relatedTo, 'kmc_received')
+  assert.deepEqual(kmcRate.charts, [])
+  assert.equal(all.find((item) => item.key === 'low_birth_weight').hidden, true)
+  assert.equal(all.find((item) => item.key === 'preterm_babies').hidden, true)
+  assert.equal(all.find((item) => item.key === 'kmc_preterm').detailLabels[0], 'Total Preterm Newborns')
+  assert.equal(all.find((item) => item.key === 'kmc_low_birth_weight').detailLabels[0], 'Total LBW Newborns')
+  assert.equal(all.find((item) => item.key === 'kmc_preterm_lbw').label, 'Both Preterm + LBW Babies')
   ;['newborn_total', 'newborn_clients', 'newborn_care_2_days',
     'early_breastfeeding', 'kmc_eligible', 'kmc_received', 'kmc_completion']
     .forEach((key) => {
       const definition = all.find((item) => item.key === key)
       assert.deepEqual(definition.charts.map((chart) => chart.dimension), ['month', 'facility'], key)
+    })
+})
+
+test('all rendered scorecards have client-facing explanations', () => {
+  const generic = 'Aggregate clinical indicator for the selected scope and inclusive date range.'
+  global.DashboardMetricsConfig.allDefinitions
+    .filter((definition) => !definition.chartOnly && !definition.hidden)
+    .forEach((definition) => {
+      assert.notEqual(definition.definition, generic, definition.key)
+      assert.ok(definition.countedAs, definition.key)
+      assert.ok(definition.numeratorLabel, definition.key)
     })
 })
 
@@ -171,6 +189,7 @@ test('dashboard chart controller uses fixed scorecard-led charts', () => {
   assert.match(source, /facilityLabel/)
   assert.match(source, /overviewChartDefinitions\.includes\(item\)/)
   assert.match(source, /chartSpec\.title\.indexOf\(definition\.label\) === 0/)
+  assert.match(source, /!definition\.hidden/)
   assert.match(source, /High-risk service activity/)
   assert.match(source, /ANC service activity/)
   assert.match(source, /Delivery service activity/)

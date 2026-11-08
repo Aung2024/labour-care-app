@@ -766,7 +766,8 @@
     var definitions = DashboardMetricsConfig.definitionsForSection(section)
     var isOverview = section === 'Overview'
     var kpis = definitions.filter(function (definition) {
-      return !definition.chartOnly &&
+      return !definition.hidden &&
+        !definition.chartOnly &&
         !definition.compactContext &&
         !definition.relatedTo &&
         (!definition.visibleRoles || definition.visibleRoles.includes(activeRole))
@@ -848,7 +849,8 @@
     if (overviewInsights) {
       overviewInsights.innerHTML = ''
       definitions.filter(function (definition) {
-        return (definition.overviewInsight ||
+        return !definition.hidden &&
+          (definition.overviewInsight ||
           (definition.charts || []).some(function (chartSpec) {
             return chartSpec.overviewInsight
           })) &&
@@ -895,7 +897,8 @@
       })
     })
     definitions.forEach(function (definition) {
-      if (insightDefinitions.includes(definition) ||
+      if (definition.hidden ||
+          insightDefinitions.includes(definition) ||
           (isOverview && definition.overviewInsight)) return
       var charts = (isOverview
         ? (definition.charts || []).filter(function (chartSpec) {

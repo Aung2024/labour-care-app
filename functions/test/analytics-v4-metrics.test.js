@@ -193,6 +193,26 @@ test('does not count linked mother records a second time for early breastfeeding
   assert.equal(metrics.newborn.earlyBreastfeeding, 0)
 })
 
+test('counts KMC Yes newborns consistently with the operational tracker', () => {
+  const metrics = calculateV4Metrics(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveryDate: '2026-01-19',
+        babies: [{ babyIndex: 1, birthWeightGram: 2500, gestationalWeek: 40, outcome: 'alive' }]
+      }
+    },
+    newbornVisits: [{
+      visitDate: '2026-01-20',
+      babies: [{ babyIndex: 1, body_weight_gram: 2500, kmc_selected: 'yes' }]
+    }]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.newborn.kmcEligible, 0)
+  assert.equal(metrics.newborn.kmcReceived, 1)
+})
+
 test('ANC milestones include external-facility visits and PMTCT lab results', () => {
   const metrics = calculateV4Metrics(facts({
     antenatalVisits: [
