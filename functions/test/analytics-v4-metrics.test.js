@@ -213,6 +213,51 @@ test('counts KMC Yes newborns consistently with the operational tracker', () => 
   assert.equal(metrics.newborn.kmcReceived, 1)
 })
 
+test('calculates PNC headcount, timing, outcomes, and all-history thresholds', () => {
+  const metrics = calculateV4Metrics(facts({
+    postpartumVisits: [
+      { visitDate: '2026-01-19', visitNumber: 1, maternalOutcome: 'alive', vaginalBleeding: 'none' },
+      { visitDate: '2026-01-20', visitNumber: 2, maternalOutcome: 'alive' },
+      { visitDate: '2026-01-25', visitNumber: 3, maternalOutcome: 'alive' },
+      { visitDate: '2026-02-20', visitNumber: 4, maternalOutcome: 'maternal_death', vaginalBleeding: 'heavy' }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.pnc.clients, 1)
+  assert.equal(metrics.pnc.visits, 3)
+  assert.equal(metrics.pnc.atLeast4, 1)
+  assert.equal(metrics.pnc.within48Hours, 1)
+  assert.equal(metrics.pnc.within42Days, 1)
+  assert.equal(metrics.pnc.pph, 0)
+  assert.equal(metrics.pnc.outcomes.alive, 3)
+})
+
+test('summarizes joint care by owner, receiver, and facility account type', () => {
+  const metrics = calculateV4Metrics(facts({
+    scope: {
+      facilityName: 'Owner Health Facility',
+      facilityType: 'station_health_unit'
+    },
+    jointCareFacts: {
+      activeProviderIds: ['receiver-1'],
+      receivingProviders: [{
+        providerId: 'receiver-1',
+        facilityName: 'Township Hospital',
+        facilityType: 'township_hospital',
+        facilityCode: 'TH-001'
+      }]
+    }
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.jointCare.clients, 1)
+  assert.equal(metrics.jointCare.byOwnerReceiver['Owner Health Facility → Township Hospital'], 1)
+  assert.equal(metrics.jointCare.byFacilityAccountType['Health Facility ↔ Hospital'], 1)
+})
+
 test('ANC milestones include external-facility visits and PMTCT lab results', () => {
   const metrics = calculateV4Metrics(facts({
     antenatalVisits: [

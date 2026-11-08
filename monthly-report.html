@@ -126,7 +126,39 @@
         try {
           var snapshot = await firebase.firestore().collection('analytics_v32_periods')
             .doc(period).collection('scopes').doc(scopeId).get()
-          metrics = snapshot.exists ? (snapshot.data().metrics || {}) : {}
+          var legacyMetrics = snapshot.exists ? (snapshot.data().metrics || {}) : {}
+          var monthEnd = new Date(Date.UTC(
+            Number(yearSelect.value), Number(monthSelect.value), 0
+          )).toISOString().slice(0, 10)
+          var v4Result = null
+          try {
+            v4Result = await DashboardData.callDashboardV4('queryDashboardV4', {
+              periodMode: 'months',
+              startDate: period + '-01',
+              endDate: monthEnd,
+              department: '',
+              facilityTypes: [],
+              trendMode: 'month'
+            })
+          } catch (v4Error) {
+            console.warn('V4 monthly indicators are not available yet:', v4Error)
+          }
+          var mergeMetrics = function (left, right) {
+            var output = Object.assign({}, left || {})
+            Object.keys(right || {}).forEach(function (key) {
+              var leftValue = output[key]
+              var rightValue = right[key]
+              if (leftValue && rightValue &&
+                  typeof leftValue === 'object' && typeof rightValue === 'object' &&
+                  !Array.isArray(leftValue) && !Array.isArray(rightValue)) {
+                output[key] = mergeMetrics(leftValue, rightValue)
+              } else {
+                output[key] = rightValue
+              }
+            })
+            return output
+          }
+          metrics = mergeMetrics(legacyMetrics, v4Result && v4Result.metrics)
         } catch (error) {
           console.warn('Monthly report summary is not available yet:', error)
           metrics = {}

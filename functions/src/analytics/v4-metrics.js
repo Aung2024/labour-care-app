@@ -233,7 +233,8 @@ const emptyMetrics = () => ({
   pnc: {
     clients: 0, visits: 0, deliveredMothers: 0, coverageNumerator: 0,
     atLeast4: 0, within48Hours: 0, within42Days: 0,
-    mothersWithAnc4: 0, mothersWithAnc8: 0, ironFolate: 0, vitaminB1: 0, pph: 0
+    mothersWithAnc4: 0, mothersWithAnc8: 0, ironFolate: 0, vitaminB1: 0, pph: 0,
+    outcomes: {}
   },
   referral: {
     total: 0,
@@ -242,7 +243,7 @@ const emptyMetrics = () => ({
   },
   jointCare: {
     clients: 0, receivingFacilityCount: 0, receivingProviderCount: 0,
-    byReceivingFacilityType: {}
+    byReceivingFacilityType: {}, byOwnerReceiver: {}, byFacilityAccountType: {}
   },
   serviceClosure: {
     total: 0, mother: { total: 0, byOutcome: {} },
@@ -617,15 +618,24 @@ const calculateV4Metrics = (facts, inputPeriod) => {
   if (pncInPeriod.length) {
     metrics.pnc.clients = 1
     metrics.pnc.visits = pncInPeriod.length
-    if (pncInPeriod.some((visit) => numeric(visit.visitNumber || visit.visit_number) >= 4)) metrics.pnc.atLeast4 = 1
+    if (pnc.length >= 4) metrics.pnc.atLeast4 = 1
     const birth = delivery.date || profile.birth_time || profile.date_of_birth
-    const first = pnc[0]
-    const days = birth && first && Math.floor((dateOnly(visitDate(first)) - dateOnly(birth)) / DAY_MS)
-    if (days >= 0 && days <= 2 && inPeriod(visitDate(first), period)) metrics.pnc.within48Hours = 1
-    if (days >= 0 && days <= 42 && inPeriod(visitDate(first), period)) metrics.pnc.within42Days = 1
+    const pncWithinDays = (daysLimit) => birth && pnc.some((visit) => {
+      if (!inPeriod(visitDate(visit), period)) return false
+      const days = Math.floor((dateOnly(visitDate(visit)) - dateOnly(birth)) / DAY_MS)
+      return days >= 0 && days <= daysLimit
+    })
+    if (pncWithinDays(2)) metrics.pnc.within48Hours = 1
+    if (pncWithinDays(42)) metrics.pnc.within42Days = 1
     if (pncInPeriod.some((visit) => affirmative(visit.ironFolic))) metrics.pnc.ironFolate = 1
     if (pncInPeriod.some((visit) => affirmative(visit.vitaminBComplex) || affirmative(visit.vitaminB1))) metrics.pnc.vitaminB1 = 1
     if (pncInPeriod.some((visit) => asText(visit.vaginalBleeding).toLowerCase().includes('heavy'))) metrics.pnc.pph = 1
+    pncInPeriod.forEach((visit) => {
+      const outcome = asText(
+        visit.maternalOutcome || visit.maternal_outcome || visit.outcome
+      )
+      if (outcome) bump(metrics.pnc.outcomes, outcome)
+    })
   }
   if (deliveryInPeriod) {
     metrics.pnc.deliveredMothers = 1
@@ -803,6 +813,24 @@ const calculateV4Metrics = (facts, inputPeriod) => {
         ? 'Hospital'
         : 'Other Facilities'
       bump(metrics.jointCare.byReceivingFacilityType, type)
+      const ownerLabel = asText(
+        facts.scope && (facts.scope.facilityName || facts.scope.facilityCode)
+      ) || 'Unknown owner'
+      const receiverLabel = asText(
+        provider.facilityName || provider.facility_name || provider.facilityCode ||
+        provider.facility_code || provider.providerId
+      ) || 'Unknown receiver'
+      const ownerType = asText(facts.scope && facts.scope.facilityType)
+        .toLowerCase().includes('hospital') ? 'Hospital' : 'Health Facility'
+      const receiverType = type === 'Hospital' ? 'Hospital' : 'Health Facility'
+      bump(
+        metrics.jointCare.byOwnerReceiver,
+        `${ownerLabel} → ${receiverLabel}`
+      )
+      bump(
+        metrics.jointCare.byFacilityAccountType,
+        `${ownerType} ↔ ${receiverType}`
+      )
     })
     metrics.jointCare.receivingFacilityCount = facilities.size
     metrics.jointCare.receivingProviderCount = activeProviders.length

@@ -478,27 +478,94 @@
       { type: 'bar', dimension: 'facility', title: 'Average KMC Weight Gain by Facility' }
     ] }),
 
-    metric('PNC', 'pnc_clients', 'Total PNC Headcount', 'pnc.clients'),
-    metric('PNC', 'pnc_coverage', 'PNC Coverage', 'pnc.coverageNumerator', 'pnc.deliveredMothers'),
-    metric('PNC', 'average_pnc_visits', 'Average PNC Visits', 'pnc.visits', 'pnc.clients', { format: 'average' }),
-    metric('PNC', 'pnc_at_least_4', 'PNC ≥4 Visits', 'pnc.atLeast4', 'pnc.clients'),
-    metric('PNC', 'pnc_within_48h', 'PNC ≤48h Visits', 'pnc.within48Hours', 'pnc.clients'),
-    metric('PNC', 'pnc_within_42d', 'PNC ≤42d Visits', 'pnc.within42Days', 'pnc.clients'),
-    metric('PNC', 'pnc_mother_anc_4', 'Delivered Mothers with ≥4 ANC', 'pnc.mothersWithAnc4', 'pnc.deliveredMothers'),
-    metric('PNC', 'pnc_mother_anc_8', 'Delivered Mothers with ≥8 ANC', 'pnc.mothersWithAnc8', 'pnc.deliveredMothers'),
-    metric('PNC', 'pnc_iron_folate', 'Iron/Folate (PNC)', 'pnc.ironFolate', 'pnc.clients'),
-    metric('PNC', 'pnc_b1', 'B1 (PNC within 42 days)', 'pnc.vitaminB1', 'pnc.clients'),
-    metric('PNC', 'pph_cases', 'PPH Cases', 'pnc.pph', 'pnc.deliveredMothers'),
+    metric('PNC', 'pnc_clients', 'Total PNC Headcount', 'pnc.clients', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Total PNC Headcount by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_coverage', 'PNC Coverage', 'pnc.coverageNumerator', 'delivery.completedNotes', {
+      relatedTo: 'pnc_clients', charts: []
+    }),
+    metric('PNC', 'average_pnc_visits', 'Average PNC Visits', 'pnc.visits', 'pnc.clients', {
+      relatedTo: 'pnc_clients', format: 'average', charts: []
+    }),
+    metric('PNC', 'pnc_at_least_4', 'PNC with 4 or more Visits', 'pnc.atLeast4', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'PNC with 4 or more Visits by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_within_48h', 'PNC within 48 hr', 'pnc.within48Hours', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'PNC within 48 hr by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_within_42d', 'PNC within 42 Days', 'pnc.within42Days', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'PNC within 42 Days by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_mother_anc_4', 'Delivered Mothers with ≥4 ANC', 'pnc.mothersWithAnc4', 'pnc.deliveredMothers', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Delivered Mothers with ≥4 ANC by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_mother_anc_8', 'Delivered Mothers with ≥8 ANC', 'pnc.mothersWithAnc8', 'pnc.deliveredMothers', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Delivered Mothers with ≥8 ANC by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_iron_folate', 'Iron/Folate (PNC)', 'pnc.ironFolate', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Iron/Folate by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_b1', 'B1 (PNC within 42 days)', 'pnc.vitaminB1', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'B1 by Facility' }
+      ]
+    }),
+    metric('PNC', 'pph_cases', 'PPH Cases', 'pnc.pph', 'pnc.clients', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'PPH Cases by Facility' }
+      ]
+    }),
+    metric('PNC', 'pnc_outcome', 'PNC Outcome', 'pnc.outcomes', '', {
+      format: 'map', chart: 'donut', chartOnly: true
+    }),
 
-    metric('Referral & Joint Care', 'maternal_referrals', 'Maternal Referrals', 'referral.maternal.total'),
-    metric('Referral & Joint Care', 'baby_referrals', 'Baby Referrals', 'referral.baby.total'),
-    metric('Referral & Joint Care', 'maternal_referral_rate', 'Maternal Referral Rate', 'referral.maternal.total', 'registration.mothers'),
-    metric('Referral & Joint Care', 'referral_stage', 'Maternal Referral by Stage', 'referral.maternal.byStage', '', { format: 'map', chart: 'bar' }),
-    metric('Referral & Joint Care', 'referral_destination', 'Maternal Referral Destination', 'referral.maternal.byDestination', '', { format: 'map', chart: 'donut' }),
-    metric('Referral & Joint Care', 'baby_referral_destination', 'Baby Referral Destination', 'referral.baby.byDestination', '', { format: 'map', chart: 'bar' }),
-    metric('Referral & Joint Care', 'joint_care_patients', 'Active Joint-Care Patients', 'jointCare.clients'),
-    metric('Referral & Joint Care', 'joint_care_facilities', 'Receiving Facilities', 'jointCare.receivingFacilityCount'),
-    metric('Referral & Joint Care', 'joint_care_breakdown', 'Joint Care: Hospital vs Other', 'jointCare.byReceivingFacilityType', '', { format: 'map', chart: 'bar' })
+    metric('Referral & Joint Care', 'total_referrals', 'Total Referrals', 'referral.total', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Total Referrals by Sending Facility' }
+      ]
+    }),
+    metric('Referral & Joint Care', 'maternal_referrals', 'Maternal Referrals', 'referral.maternal.total', '', {
+      relatedTo: 'total_referrals', charts: []
+    }),
+    metric('Referral & Joint Care', 'baby_referrals', 'Baby Referrals', 'referral.baby.total', '', {
+      relatedTo: 'total_referrals', charts: []
+    }),
+    metric('Referral & Joint Care', 'joint_care_patients', 'Total Joint Care', 'jointCare.clients', '', {
+      charts: [
+        { type: 'trend', dimension: 'month', title: 'Monthly Trend' },
+        { type: 'bar', dimension: 'facility', title: 'Total Joint Care by Original Owner Facility' }
+      ]
+    }),
+    metric('Referral & Joint Care', 'joint_care_breakdown', 'Joint Care by Facility Account Type', 'jointCare.byFacilityAccountType', '', {
+      format: 'map', chart: 'bar', chartOnly: true
+    }),
+    metric('Referral & Joint Care', 'joint_care_owner_receiver', 'Joint Care: Original Owner and Receiver', 'jointCare.byOwnerReceiver', '', {
+      format: 'map', chart: 'bar', chartOnly: true
+    })
   ]
 
   var ancClientExplanations = {
@@ -559,6 +626,8 @@
     pnc_iron_folate: ['Counts PNC mothers with iron or folate supplementation recorded.', 'Unique PNC mothers with iron or folate', 'Mothers with iron or folate', 'Mothers with PNC'],
     pnc_b1: ['Counts PNC mothers with vitamin B1 recorded within the selected period.', 'Unique PNC mothers with vitamin B1', 'Mothers with vitamin B1', 'Mothers with PNC'],
     pph_cases: ['Counts delivered mothers with heavy vaginal bleeding recorded during PNC.', 'Unique delivered mothers with PPH evidence', 'Mothers with PPH evidence', 'Delivered mothers'],
+    pnc_outcome: ['Shows the outcomes recorded on PNC visits as a pie chart.', 'PNC visit outcomes', 'PNC visit outcomes', '—'],
+    total_referrals: ['Counts all maternal and baby referrals recorded in the selected period.', 'Unique referral records', 'Total referrals', '—'],
     maternal_referrals: ['Counts mothers with a maternal referral recorded in the selected period.', 'Unique mothers with maternal referrals', 'Maternal referrals', '—'],
     baby_referrals: ['Counts newborns with a baby referral recorded in the selected period.', 'Unique newborns with baby referrals', 'Baby referrals', '—'],
     maternal_referral_rate: ['Shows maternal referrals as a percentage of registered mothers.', 'Maternal referral percentage', 'Maternal referrals', 'Registered mothers'],
@@ -566,8 +635,9 @@
     referral_destination: ['Shows maternal referrals grouped by destination facility.', 'Maternal referrals by destination', 'Maternal referrals', '—'],
     baby_referral_destination: ['Shows baby referrals grouped by destination facility.', 'Baby referrals by destination', 'Baby referrals', '—'],
     joint_care_patients: ['Counts patients with an active joint-care record in the selected period.', 'Unique joint-care patients', 'Joint-care patients', '—'],
-    joint_care_facilities: ['Counts receiving facilities recorded in joint-care records.', 'Unique receiving facilities', 'Receiving facilities', '—'],
-    joint_care_breakdown: ['Shows joint-care receiving facilities grouped into hospital and other facility types.', 'Joint-care receiving facilities by type', 'Receiving facilities', '—']
+    joint_care_breakdown: ['Shows joint-care links grouped as Health Facility ↔ Health Facility or Health Facility ↔ Hospital.', 'Joint-care links by account type', 'Joint-care links', '—'],
+    joint_care_owner_receiver: ['Shows joint-care links from the original owner facility to each receiving facility.', 'Joint-care links by owner and receiver', 'Owner-to-receiver links', '—'],
+    joint_care_facilities: ['Counts receiving facilities recorded in joint-care records.', 'Unique receiving facilities', 'Receiving facilities', '—']
   }
   definitions.forEach(function (definition) {
     var explanation = clientExplanations[definition.key]
@@ -608,7 +678,7 @@
 
   var config = {
     schemaVersion: 'analytics-v4.1.0',
-    definitionVersion: 'dashboard-2026-11-08',
+    definitionVersion: 'dashboard-2026-11-08-pnc-referral',
     sections: sections,
     allDefinitions: definitions,
     definitionsForSection: function (section) {

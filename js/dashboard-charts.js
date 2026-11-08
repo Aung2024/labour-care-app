@@ -176,7 +176,8 @@
         (sectionNote
           ? '<p class="dashboard-section-note">' + escapeHtml(sectionNote) + '</p>'
           : '') +
-        (section === 'Overview' || section === 'ANC' || section === 'High-Risk' || section === 'Delivery'
+        (section === 'Overview' || section === 'ANC' || section === 'High-Risk' || section === 'Delivery' ||
+          section === 'PNC' || section === 'Referral & Joint Care'
           ? '<p class="dashboard-group-label">' +
             (section === 'ANC'
               ? 'ANC service activity'
@@ -184,6 +185,10 @@
                 ? 'High-risk service activity'
                 : section === 'Delivery'
                   ? 'Delivery service activity'
+                  : section === 'PNC'
+                    ? 'PNC service activity'
+                    : section === 'Referral & Joint Care'
+                      ? 'Referral and joint-care activity'
                 : 'Service activity') +
             '</p>'
           : '') +

@@ -1,7 +1,7 @@
 'use strict'
 
 const ANALYTICS_V4_SCHEMA_VERSION = 'analytics-v4.1.0'
-const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-08'
+const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-08-pnc-referral'
 
 const definition = (
   section,
@@ -119,26 +119,30 @@ const DASHBOARD_METRICS = Object.freeze([
   }),
 
   definition('PNC', 'pnc_clients', 'Total PNC Headcount', 'pnc.clients'),
-  definition('PNC', 'pnc_coverage', 'PNC Coverage', 'pnc.coverageNumerator', 'pnc.deliveredMothers'),
+  definition('PNC', 'pnc_coverage', 'PNC Coverage', 'pnc.coverageNumerator', 'delivery.completedNotes'),
   definition('PNC', 'average_pnc_visits', 'Average PNC Visits', 'pnc.visits', 'pnc.clients', { format: 'average' }),
-  definition('PNC', 'pnc_at_least_4', 'PNC ≥4 Visits', 'pnc.atLeast4', 'pnc.clients'),
-  definition('PNC', 'pnc_within_48h', 'PNC ≤48h Visits', 'pnc.within48Hours', 'pnc.clients'),
-  definition('PNC', 'pnc_within_42d', 'PNC ≤42d Visits', 'pnc.within42Days', 'pnc.clients'),
+  definition('PNC', 'pnc_at_least_4', 'PNC with 4 or more Visits', 'pnc.atLeast4', 'pnc.clients'),
+  definition('PNC', 'pnc_within_48h', 'PNC within 48 hr', 'pnc.within48Hours', 'pnc.clients'),
+  definition('PNC', 'pnc_within_42d', 'PNC within 42 Days', 'pnc.within42Days', 'pnc.clients'),
   definition('PNC', 'pnc_mother_anc_4', 'Delivered Mothers with ≥4 ANC', 'pnc.mothersWithAnc4', 'pnc.deliveredMothers'),
   definition('PNC', 'pnc_mother_anc_8', 'Delivered Mothers with ≥8 ANC', 'pnc.mothersWithAnc8', 'pnc.deliveredMothers'),
   definition('PNC', 'pnc_iron_folate', 'Iron/Folate (PNC)', 'pnc.ironFolate', 'pnc.clients'),
   definition('PNC', 'pnc_b1', 'B1 (PNC within 42 days)', 'pnc.vitaminB1', 'pnc.clients'),
-  definition('PNC', 'pph_cases', 'PPH Cases', 'pnc.pph', 'pnc.deliveredMothers'),
+  definition('PNC', 'pph_cases', 'PPH Cases', 'pnc.pph', 'pnc.clients'),
+  definition('PNC', 'pnc_outcome', 'PNC Outcome', 'pnc.outcomes', null, {
+    format: 'map',
+    chart: 'donut'
+  }),
 
+  definition('Referral & Joint Care', 'total_referrals', 'Total Referrals', 'referral.total'),
   definition('Referral & Joint Care', 'maternal_referrals', 'Maternal Referrals', 'referral.maternal.total'),
   definition('Referral & Joint Care', 'baby_referrals', 'Baby Referrals', 'referral.baby.total'),
-  definition('Referral & Joint Care', 'maternal_referral_rate', 'Maternal Referral Rate', 'referral.maternal.total', 'registration.mothers'),
-  definition('Referral & Joint Care', 'referral_stage', 'Maternal Referral by Stage', 'referral.maternal.byStage', null, { format: 'map', chart: 'bar' }),
-  definition('Referral & Joint Care', 'referral_destination', 'Maternal Referral Destination', 'referral.maternal.byDestination', null, { format: 'map', chart: 'donut' }),
-  definition('Referral & Joint Care', 'baby_referral_destination', 'Baby Referral Destination', 'referral.baby.byDestination', null, { format: 'map', chart: 'bar' }),
-  definition('Referral & Joint Care', 'joint_care_patients', 'Active Joint-Care Patients', 'jointCare.clients'),
-  definition('Referral & Joint Care', 'joint_care_facilities', 'Receiving Facilities', 'jointCare.receivingFacilityCount'),
-  definition('Referral & Joint Care', 'joint_care_breakdown', 'Joint Care: Hospital vs Other', 'jointCare.byReceivingFacilityType', null, {
+  definition('Referral & Joint Care', 'joint_care_patients', 'Total Joint Care', 'jointCare.clients'),
+  definition('Referral & Joint Care', 'joint_care_breakdown', 'Joint Care by Facility Account Type', 'jointCare.byFacilityAccountType', null, {
+    format: 'map',
+    chart: 'bar'
+  }),
+  definition('Referral & Joint Care', 'joint_care_owner_receiver', 'Joint Care: Original Owner and Receiver', 'jointCare.byOwnerReceiver', null, {
     format: 'map',
     chart: 'bar'
   })

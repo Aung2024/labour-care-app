@@ -51,8 +51,12 @@ test('v4 dashboard contains the requested clinical cards', () => {
     'kmc_weight_gain',
     'pnc_clients',
     'average_pnc_visits',
+    'pnc_outcome',
+    'total_referrals',
     'baby_referrals',
-    'joint_care_facilities'
+    'joint_care_patients',
+    'joint_care_breakdown',
+    'joint_care_owner_receiver'
   ].forEach((key) => assert.ok(keys.has(key), key))
   assert.equal(all.find((item) => item.key === 'anc_td1_completion').format, 'percent')
   assert.equal(all.find((item) => item.key === 'anemia_in_pregnancy').numerator, 'anc.anemiaClients')
@@ -169,8 +173,8 @@ test('overview uses readable chart roles and keeps joint care in its own section
 test('v4 display helpers distinguish zero from missing denominators', () => {
   const config = global.DashboardMetricsConfig
   const coverage = config.allDefinitions.find((item) => item.key === 'pnc_coverage')
-  assert.equal(config.displayValue(coverage, { pnc: { coverageNumerator: 0, deliveredMothers: 10 } }), '0.0%')
-  assert.equal(config.displayValue(coverage, { pnc: { coverageNumerator: 0, deliveredMothers: 0 } }), '—')
+  assert.equal(config.displayValue(coverage, { pnc: { coverageNumerator: 0 }, delivery: { completedNotes: 10 } }), '0.0%')
+  assert.equal(config.displayValue(coverage, { pnc: { coverageNumerator: 0 }, delivery: { completedNotes: 0 } }), '—')
 })
 
 test('dashboard markup uses exact date controls and export action', () => {
