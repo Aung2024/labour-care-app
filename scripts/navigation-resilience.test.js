@@ -22,6 +22,13 @@ test('Home uses cached roster data and exposes a retry state for delayed totals'
   assert.match(home, /loadPatientStats\(\{ force: true \}\)/)
 })
 
+test('Home report actions do not compete with a clickable dashboard card', () => {
+  assert.match(home, /<div class="[^"]*multi-action-card[^"]*" id="dashboardCard"[^>]*>/)
+  assert.doesNotMatch(home, /<div[^>]*id="dashboardCard"[^>]*onclick=/)
+  assert.match(home, /id="homeMonthlyReportBtn"[^>]*onclick="navigateToCare\('monthly-report'\)/)
+  assert.match(home, /id="homeMidwifeReportBtn"[^>]*onclick="navigateToCare\('midwife-report'\)/)
+})
+
 test('Patient List has a page deadline, retry action, deduplication, and resume recovery', () => {
   assert.match(list, /id="retryPatientLoadButton"/)
   assert.match(list, /Patient list loading exceeded the page deadline/)
