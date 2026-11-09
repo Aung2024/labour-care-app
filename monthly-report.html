@@ -38,6 +38,10 @@
       <label for="monthlyYear">ခုနှစ်<select id="monthlyYear"></select></label>
       <label for="monthlyPreparedOn">လချုပ်ပြုလုပ်သည့် ရက်စွဲ<input id="monthlyPreparedOn" type="date"></label>
       <button id="monthlyApply" class="monthly-apply-button" type="button">အစီရင်ခံစာကြည့်ရန်</button>
+      <p id="monthlyLoading" class="monthly-loading" role="status" aria-live="polite" hidden>
+        <span class="monthly-loading-spinner" aria-hidden="true"></span>
+        အချက်အလက်များကို ရယူနေပါသည်…
+      </p>
     </section>
 
     <nav id="monthlyTabs" class="dashboard-tabs no-print" aria-label="လချုပ်စာမျက်နှာများ"></nav>
@@ -59,6 +63,7 @@
       var yearSelect = document.getElementById('monthlyYear')
       var dateInput = document.getElementById('monthlyPreparedOn')
       var applyButton = document.getElementById('monthlyApply')
+      var loadingStatus = document.getElementById('monthlyLoading')
       var now = new Date()
       var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
       months.forEach(function (name, index) {
@@ -161,6 +166,10 @@
 
       async function loadReport() {
         var period = selectedPeriod()
+        applyButton.disabled = true
+        applyButton.setAttribute('aria-busy', 'true')
+        applyButton.textContent = 'ရယူနေပါသည်…'
+        loadingStatus.hidden = false
         try {
           var query = function (startDate, endDate) {
             return DashboardData.callDashboardV4('queryDashboardV4', {
@@ -185,6 +194,11 @@
         } catch (error) {
           console.warn('Monthly report summary is not available yet:', error)
           metrics = { report: {}, yearToDate: {} }
+        } finally {
+          applyButton.disabled = false
+          applyButton.removeAttribute('aria-busy')
+          applyButton.textContent = 'အစီရင်ခံစာကြည့်ရန်'
+          loadingStatus.hidden = true
         }
         paint()
       }
