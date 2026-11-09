@@ -177,7 +177,15 @@
         });
       });
     } else {
-      state.scans.forEach(function (scan) { rows.push(scan); });
+      state.mothers.forEach(function (mother) {
+        rows.push(state.scans.get(mother.id) || {
+          patientId: mother.id,
+          patientName: mother.name || '',
+          age: mother.age == null ? '' : mother.age,
+          gapCount: null,
+          pending: true
+        });
+      });
     }
     rows.sort(function (a, b) { return String(a.patientName).localeCompare(String(b.patientName)); });
     return rows;
