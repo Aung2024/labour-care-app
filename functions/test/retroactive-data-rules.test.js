@@ -28,6 +28,35 @@ function group(scan, id, key) {
   return category(scan, id).groups.find(function (item) { return item.key === key; }) || null;
 }
 
+test('preflight requires every applicable red field before allowing a save', () => {
+  const incomplete = mother({ phone: '', age: '' });
+  const result = rules.preflightWrites({
+    patient: incomplete
+  }, [{
+    module: 'registration',
+    values: { phone: '09999999999' }
+  }], { uid: 'midwife-1', now: '2024-02-01T00:00:00.000Z' });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.plan.operations.length, 0);
+  assert.ok(result.inspection.gapCount >= 1);
+  assert.match(result.plan.errors[0].en, /required/i);
+});
+
+test('preflight projects registration writes and passes when all required fields are complete', () => {
+  const incomplete = mother({ phone: '', age: '' });
+  const result = rules.preflightWrites({
+    patient: incomplete
+  }, [{
+    module: 'registration',
+    values: { phone: '09999999999', age: '28' }
+  }], { uid: 'midwife-1', now: '2024-02-01T00:00:00.000Z' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.inspection.gapCount, 0);
+  assert.equal(result.plan.operations.length, 1);
+});
+
 test('back fill includes only mothers owned by the signed-in midwife', () => {
   assert.equal(rules.isOwnedMother(mother(), 'midwife-1'), true);
   assert.equal(rules.isOwnedMother(mother({ created_by: 'other', createdBy: 'midwife-1' }), 'midwife-1'), true);

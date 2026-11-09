@@ -187,44 +187,63 @@
       throw error;
     }
     bundle = Object.assign({}, bundle, { patient: patient });
-    var plan = rules.planWrites(bundle, requests, { uid: user.uid, now: new Date().toISOString() });
-    if (!plan.ok) {
-      var planError = new Error(plan.errors[0] ? plan.errors[0].en : 'Back fill could not be saved.');
+    var preflight = rules.preflightWrites(bundle, requests, { uid: user.uid, now: new Date().toISOString() });
+    var plan = preflight.plan;
+    if (!preflight.ok) {
+      var planError = new Error(plan.errors[0] ? plan.errors[0].en : 'Complete all required fields before saving.');
       planError.errors = plan.errors;
+      planError.inspection = preflight.inspection;
       throw planError;
     }
 
-    for (var i = 0; i < plan.operations.length; i++) {
-      var operation = plan.operations[i];
-      assertSafeData(operation.data);
-      if (operation.kind === 'delivery') {
-        if (!root.DeliveryNotesUtils || !root.BabyPatientUtils) {
-          throw new Error('Delivery Notes module is not loaded. Refresh and try again.');
+    var completedOperations = 0;
+    try {
+      for (var i = 0; i < plan.operations.length; i++) {
+        var operation = plan.operations[i];
+        assertSafeData(operation.data || operation.notes);
+        if (operation.kind === 'delivery') {
+          if (!root.DeliveryNotesUtils || !root.BabyPatientUtils) {
+            throw new Error('Delivery Notes module is not loaded. Refresh and try again.');
+          }
+          await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
+            allowUpdate: operation.allowUpdate,
+            approvalId: rules.RULE_VERSION,
+            motherData: patient
+          });
+          await db.collection('patients').doc(patient.id).collection('records').doc('deliveryNotes').set({
+            retroactiveSource: rules.RULE_VERSION,
+            retroactiveUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedBy: user.uid
+          }, { merge: true });
+          if (operation.audit && operation.audit.changes.length) {
+            await db.collection('audit_logs').add(auditEntry(user, patient.id, operation.audit));
+          }
+          completedOperations += 1;
+          continue;
         }
-        await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
-          allowUpdate: operation.allowUpdate,
-          approvalId: rules.RULE_VERSION,
-          motherData: patient
-        });
-        await db.collection('patients').doc(patient.id).collection('records').doc('deliveryNotes').set({
-          retroactiveSource: rules.RULE_VERSION,
-          retroactiveUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedBy: user.uid
-        }, { merge: true });
-        if (operation.audit && operation.audit.changes.length) {
-          await db.collection('audit_logs').add(auditEntry(user, patient.id, operation.audit));
-        }
-        continue;
-      }
 
-      var payload = Object.assign({}, operation.data, stamp(user, operation.create));
-      assertSafeData(operation.data);
-      await db.runTransaction(async function (transaction) {
-        transaction.set(db.doc(operation.path), payload, { merge: true });
-        if (operation.audit && operation.audit.changes.length) {
-          transaction.set(db.collection('audit_logs').doc(), auditEntry(user, patient.id, operation.audit));
-        }
-      });
+        var payload = Object.assign({}, operation.data, stamp(user, operation.create));
+        await db.runTransaction(async function (transaction) {
+          transaction.set(db.doc(operation.path), payload, { merge: true });
+          if (operation.audit && operation.audit.changes.length) {
+            transaction.set(db.collection('audit_logs').doc(), auditEntry(user, patient.id, operation.audit));
+          }
+        });
+        completedOperations += 1;
+      }
+    } catch (writeError) {
+      writeError.partialFailure = completedOperations > 0;
+      writeError.completedOperations = completedOperations;
+      writeError.totalOperations = plan.operations.length;
+      writeError.errors = [{
+        en: completedOperations
+          ? 'Some changes were saved, but the rest failed. Reload this patient before trying again.'
+          : (writeError.message || 'Back fill could not be saved.'),
+        mm: completedOperations
+          ? 'ပြောင်းလဲချက်အချို့ သိမ်းပြီး ကျန်အချက်များ မအောင်မြင်ပါ။ ထပ်မလုပ်မီ လူနာကို ပြန်ဖွင့်ပါ။'
+          : 'ပြန်ဖြည့်၍ မရပါ။'
+      }];
+      throw writeError;
     }
 
     var reloaded = await loadBundle(db, patient);

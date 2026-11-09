@@ -1629,6 +1629,76 @@
     return { ok: errors.length === 0, errors: errors, operations: errors.length ? [] : operations, ruleVersion: RULE_VERSION };
   }
 
+  function applyPlannedOperation(bundle, operation) {
+    if (operation.kind === 'delivery') {
+      bundle.delivery = {
+        id: 'deliveryNotes',
+        canonical: true,
+        data: cloneData(operation.notes || {})
+      };
+      return;
+    }
+    var parts = String(operation.path || '').split('/');
+    if (parts.length === 2 && parts[0] === 'patients') {
+      Object.assign(bundle.patient, cloneData(operation.data || {}));
+      return;
+    }
+    var collection = parts[2];
+    var recordId = parts[3];
+    if (!collection || !recordId) return;
+    if (collection === 'patients') {
+      Object.assign(bundle.patient, cloneData(operation.data || {}));
+      return;
+    }
+    var collectionMap = {
+      antenatal_visits: 'ancVisits',
+      postpartum_visits: 'pncVisits',
+      newborn_care: 'newbornVisits',
+      immediate_newborn_care: 'immediateRecords',
+      testRecords: 'testRecords'
+    };
+    var targetKey = collectionMap[collection];
+    if (!targetKey) return;
+    if (!Array.isArray(bundle[targetKey])) bundle[targetKey] = [];
+    var record = bundle[targetKey].find(function (item) { return item.id === recordId; });
+    if (!record) {
+      record = { id: recordId, data: {} };
+      bundle[targetKey].push(record);
+    }
+    Object.assign(record.data, cloneData(operation.data || {}));
+  }
+
+  function preflightWrites(bundle, requests, actor) {
+    var plan = planWrites(bundle, requests, actor);
+    if (!plan.ok) return { ok: false, plan: plan, inspection: null };
+    var candidate = cloneData(bundle || {});
+    plan.operations.forEach(function (operation) {
+      applyPlannedOperation(candidate, operation);
+    });
+    var inspection = scanPatient(candidate);
+    if (inspection.gapCount) {
+      var missing = (inspection.categories || []).reduce(function (items, category) {
+        (category.groups || []).forEach(function (group) {
+          if (group.status === 'missing' && group.required !== false) {
+            items.push(langLabel(group));
+          }
+        });
+        return items;
+      }, []);
+      plan.errors.push(error(
+        'Complete all required red fields before saving. Remaining: ' + missing.slice(0, 8).join(', '),
+        'မသိမ်းမီ အနီရောင်လိုအပ်ချက်များအားလုံး ဖြည့်ပါ။ ကျန်ရှိသည်: ' + missing.slice(0, 8).join('၊ ')
+      ));
+      plan.operations = [];
+      return { ok: false, plan: plan, inspection: inspection };
+    }
+    return { ok: true, plan: plan, inspection: inspection };
+  }
+
+  function langLabel(group) {
+    return text(group && (group.labelEn || group.labelMm)) || 'required field';
+  }
+
   function createTemplate(moduleName) {
     if (moduleName === 'test') {
       return { module: 'test', fields: testFields().filter(function (field) { return field.key === 'testDate'; }) };
@@ -1645,6 +1715,7 @@
     scanPatient: scanPatient,
     createTemplate: createTemplate,
     planWrites: planWrites,
+    preflightWrites: preflightWrites,
     findDuplicateVisit: findDuplicateVisit,
     historicalVisitId: historicalVisitId,
     normalizeBirthPlace: normalizeBirthPlace,

@@ -316,6 +316,14 @@
     document.getElementById('detailMeta').textContent = scan.gapCount
       ? t(scan.gapCount + ' required items left', scan.gapCount + ' ချက် ဖြည့်ရန်ကျန်သည်')
       : t('Required back-fill is complete for this patient.', 'ဤလူနာအတွက် မဖြစ်မနေ ပြန်ဖြည့်ရန် မကျန်တော့ပါ။');
+    var requiredNotice = document.getElementById('requiredNotice');
+    requiredNotice.hidden = !scan.gapCount;
+    if (scan.gapCount) {
+      requiredNotice.textContent = t(
+        'Complete every red Required section before saving. Optional laboratory fields can be left blank.',
+        'မသိမ်းမီ အနီရောင် Required အပိုင်းအားလုံးကို ဖြည့်ပါ။ မဖြစ်မနေမဟုတ်သော ဓာတ်ခွဲစစ်ဆေးချက်များကို ချန်ထားနိုင်သည်။'
+      );
+    }
     scan.categories.forEach(function (category) {
       if (!category.applicable) return;
       host.appendChild(categoryCard(category, bundle, scan));
@@ -1318,13 +1326,40 @@
     var count = selectedRequests().length;
     var button = document.getElementById('saveBtn');
     button.disabled = !count || state.saving;
-    button.textContent = t('Save changes', 'ပြောင်းလဲချက် သိမ်းရန်');
+    button.textContent = state.saving
+      ? t('Saving…', 'သိမ်းနေသည်…')
+      : t('Save changes', 'ပြောင်းလဲချက် သိမ်းရန်');
+  }
+
+  function focusFirstMissingGroup() {
+    var card = document.querySelector('.group-card[data-status="missing"]');
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var firstControl = card.querySelector('input, select, textarea, button');
+    if (firstControl) firstControl.focus({ preventScroll: true });
+  }
+
+  function validateBeforeSave(bundle, requests) {
+    if (!global.RetroactiveDataRules || !global.RetroactiveDataRules.preflightWrites) return null;
+    var result = global.RetroactiveDataRules.preflightWrites(bundle, requests, {
+      uid: state.user.uid,
+      now: new Date().toISOString()
+    });
+    if (!result.ok) {
+      var first = result.plan && result.plan.errors && result.plan.errors[0];
+      setMessage('saveStatus', lang() === 'en' ? (first && first.en) : (first && first.mm));
+      focusFirstMissingGroup();
+      return false;
+    }
+    return true;
   }
 
   async function saveSelected() {
     if (state.saving) return;
     var requests = selectedRequests();
     if (!requests.length) return;
+    var bundle = state.bundles.get(state.activeId);
+    if (!validateBeforeSave(bundle, requests)) return;
     var confirmed = global.AppDialog
       ? await global.AppDialog.confirm(t(
         'Save these back-fill changes? Existing values you replace stay in the audit history. Nothing is deleted.',
@@ -1336,7 +1371,6 @@
     updateReviewCount();
     setMessage('saveStatus', t('Saving…', 'သိမ်းနေသည်…'));
     try {
-      var bundle = state.bundles.get(state.activeId);
       var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests);
       state.bundles.set(state.activeId, result.bundle);
       state.scans.set(state.activeId, result.inspection);
