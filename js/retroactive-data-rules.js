@@ -447,6 +447,8 @@
   function pncFields() {
     return [
       { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternal_outcome']], type: 'select', required: true, labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('maternal_death', 'Death', 'သေဆုံး')] },
+      { key: 'maternalOutcomeCause', path: ['maternalDeathCause'], aliases: [['deathCause'], ['maternalOutcomeCause'], ['maternal_death_cause']], type: 'select', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း', options: [choice('pregnancy_related', 'Pregnancy-related disease', 'သားဖွားခြင်းဆိုင်ရာရောဂါ'), choice('injury', 'Injury, accident, suicide, or homicide', 'ထိခိုက်ဒဏ်ရာ၊ မတော်တဆမှု၊ မိမိကိုယ်ကိုသတ်သေမှု၊ အသတ်ခံရမှု'), choice('other', 'Other disease', 'အခြားရောဂါ')] },
+      { key: 'maternalOutcomeReason', path: ['maternalDeathReason'], aliases: [['deathDetail'], ['maternalOutcomeReason'], ['maternal_death_reason']], type: 'text', labelEn: 'Death details', labelMm: 'သေဆုံးရသည့် အသေးစိတ်' },
       { key: 'otherVisits', path: ['otherVisits'], type: 'other-visits', required: false, labelEn: 'Other-facility visits', labelMm: 'အခြားဌာနတွင် ပြသခဲ့သောအကြိမ်များ' }
     ];
   }
@@ -649,11 +651,17 @@
     return null;
   }
 
-  function babyGaps(babies, twins) {
+  function generatedBabyName(motherName, index, total) {
+    var base = text(motherName) ? 'Baby ' + text(motherName) : 'Baby';
+    return total > 1 ? base + ' ' + index : base;
+  }
+
+  function babyGaps(babies, twins, motherName) {
     var gaps = [];
     var rows = babies.slice();
     if (!rows.length) rows = [{}];
     if (twins && rows.length < 2) rows.push({});
+    var total = rows.length;
     rows.forEach(function (baby, index) {
       [
         ['babyName', 'Baby name', 'ကလေးအမည်', 'text'],
@@ -663,8 +671,10 @@
         ['birthTime', 'Birth time', 'မွေးချိန်', 'datetime'],
         ['anusPresent', 'Anus present', 'စအိုပေါက် ရှိ/မရှိ', 'select']
       ].forEach(function (item) {
-        var missing = item[0] === 'birthWeightGram'
-          ? baby.birthWeightGram == null || baby.birthWeightGram === ''
+        var missing = item[0] === 'babyName'
+          ? !generatedBabyName(motherName, index + 1, total)
+          : item[0] === 'birthWeightGram'
+            ? baby.birthWeightGram == null || baby.birthWeightGram === ''
           : text(baby[item[0]]) === '';
         if (!missing && item[0] === 'outcome' && (baby.outcome === 'death' || baby.outcome === 'stillbirth') && text(baby.causeOfDeath || baby.cause_of_death) === '') {
           gaps.push({ babyIndex: index, babyField: 'causeOfDeath', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့်အကြောင်း', editor: { type: 'text', options: null } });
@@ -965,7 +975,7 @@
     var twins = text(getPath(delivery, ['deliveryDetails', 'pregnancyType']) || delivery.pregnancyType) === 'twins';
     deliveryFieldDefs().forEach(function (field) {
       if (field.key === 'babies') {
-        var gaps = babyGaps(babiesOf(delivery), twins);
+        var gaps = babyGaps(babiesOf(delivery), twins, (bundle.patient || {}).name);
         category.groups.push({
           key: 'babies',
           keys: ['babies'],
@@ -1012,21 +1022,30 @@
       applicable: visits.length > 0
     });
     if (!visits.length) return category;
-    category.groups.push(groupFromVisits({
-      key: 'maternalOutcome', module: 'pnc', mode: 'apply-choice', required: true,
+    category.groups.push(multiFieldGroup('maternalOutcome', ['maternalOutcome', 'maternalOutcomeCause', 'maternalOutcomeReason'], visits, {
+      module: 'pnc',
       labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်',
       hintEn: 'This is already required on the PNC form. Fill any missing visit, or apply one value to all visits.',
       hintMm: 'PNC ဖောင်တွင် မဖြစ်မနေ ဖြည့်ရသည်။ လိုအပ်လျှင် အကြိမ်အားလုံးသို့ တူညီစွာ သုံးပါ။'
-    }, visits, pncFields()[0]));
+    }, function (visit, values) {
+      if (!values.maternalOutcome) return false;
+      if (values.maternalOutcome !== 'maternal_death') return true;
+      if (!values.maternalOutcomeCause) return false;
+      return ['pregnancy_related', 'other'].indexOf(values.maternalOutcomeCause) === -1 || !!text(values.maternalOutcomeReason);
+    }, pncField, 'pnc'));
     var other = groupFromVisits({
       key: 'otherVisits', module: 'pnc', mode: 'once', required: false, optional: true, counts: false,
       labelEn: 'Other-facility visits', labelMm: 'အခြားဌာနတွင် ပြသခဲ့သောအကြိမ်များ',
       hintEn: 'Optional. Fill once if the mother had PNC elsewhere; it is copied to every PNC visit.',
       hintMm: 'မဖြည့်လည်း ရသည်။ အခြားဌာနတွင် PNC ယူခဲ့လျှင် တစ်ကြိမ်သာ ဖြည့်ပါ။'
-    }, visits, pncFields()[1]);
+    }, visits, pncField('otherVisits'));
     other.status = other.filledVisits ? 'ok' : 'optional';
     category.groups.push(other);
     return summarize(category);
+  }
+
+  function pncField(key) {
+    return pncFields().find(function (field) { return field.key === key; });
   }
 
   function scanNewborn(bundle) {
@@ -1557,7 +1576,9 @@
       changes.push({ field: key, before: before === '' ? null : before, after: coerced.value, kind: before === '' || before == null ? 'missing' : 'conflict' });
     });
     if (Array.isArray(values.babies)) {
-      var babies = values.babies.map(function (baby, index) { return sanitizeBaby(baby, index, actor, errors); });
+      var babies = values.babies.map(function (baby, index) {
+        return sanitizeBaby(baby, index, actor, errors, (bundle.patient || {}).name, values.babies.length);
+      });
       if (text(existing.deliveryDetails.pregnancyType) === 'twins' && babies.length < 2) {
         errors.push(error('Twins need two baby rows.', 'အမွှာအတွက် ကလေးနှစ်ဦးစာ ဖြည့်ပါ။'));
       }
@@ -1585,7 +1606,7 @@
     });
   }
 
-  function sanitizeBaby(baby, index, actor, errors) {
+  function sanitizeBaby(baby, index, actor, errors, motherName, totalBabies) {
     baby = baby || {};
     var weight = coerceValue({ type: 'weight', min: 0.3, max: 7, labelEn: 'Birth weight', labelMm: 'မွေးကင်းစကိုယ်အလေးချိန်' }, baby.birthWeightKg != null ? baby.birthWeightKg : (baby.birthWeightGram > 20 ? baby.birthWeightGram / 1000 : baby.birthWeightGram), actor.now);
     if (weight.error) errors.push(weight.error);
@@ -1596,7 +1617,7 @@
     if ((outcome === 'death' || outcome === 'stillbirth') && !text(baby.causeOfDeath)) errors.push(error('Enter the cause of death.', 'သေဆုံးရသည့်အကြောင်း ဖြည့်ပါ။'));
     return {
       babyIndex: index + 1,
-      babyName: text(baby.babyName),
+      babyName: text(baby.babyName) || generatedBabyName(motherName, index + 1, totalBabies || 1),
       gender: text(baby.gender),
       outcome: outcome,
       anusPresent: text(baby.anusPresent),

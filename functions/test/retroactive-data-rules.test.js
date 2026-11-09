@@ -152,6 +152,28 @@ test('PNC without a delivery note requires Delivery Notes, and apply-all copies 
   ]);
 });
 
+test('PNC death outcome requires cause and conditional details', () => {
+  const missing = rules.scanPatient({
+    patient: mother(),
+    pncVisits: [{ id: 'p1', data: { visitDate: '2024-06-01', maternalOutcome: 'maternal_death' } }]
+  });
+  assert.equal(group(missing, 'pnc', 'maternalOutcome').status, 'missing');
+
+  const complete = rules.scanPatient({
+    patient: mother(),
+    pncVisits: [{
+      id: 'p1',
+      data: {
+        visitDate: '2024-06-01',
+        maternalOutcome: 'maternal_death',
+        maternalDeathCause: 'pregnancy_related',
+        maternalDeathReason: 'Severe bleeding'
+      }
+    }]
+  });
+  assert.equal(group(complete, 'pnc', 'maternalOutcome').status, 'ok');
+});
+
 test('equivalent delivery mode values stay complete and unknown places stay blank until chosen', () => {
   const aligned = rules.scanPatient({
     patient: mother(),

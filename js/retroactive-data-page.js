@@ -587,6 +587,8 @@
       key === 'eye_infection_findings' ||
       key === 'anatomy_abnormality_details' ||
       key === 'cause_of_death' ||
+      key === 'maternalOutcomeCause' ||
+      key === 'maternalOutcomeReason' ||
       key === 'tactile_stimulation' ||
       key === 'bag_and_mask' ||
       key === 'resuscitation_outcome';
@@ -654,6 +656,39 @@
       control.addEventListener('change', function () {
         other.hidden = control.value !== 'Other';
       });
+    }
+    if (field.key === 'maternalOutcome') {
+      var causeField = fieldFromGroup(group, 'maternalOutcomeCause', {
+        key: 'maternalOutcomeCause',
+        type: 'select',
+        labelEn: 'Cause of death',
+        labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း',
+        options: [
+          { value: 'pregnancy_related', en: 'Pregnancy-related disease', mm: 'သားဖွားခြင်းဆိုင်ရာရောဂါ' },
+          { value: 'injury', en: 'Injury, accident, suicide, or homicide', mm: 'ထိခိုက်ဒဏ်ရာ၊ မတော်တဆမှု၊ မိမိကိုယ်ကိုသတ်သေမှု၊ အသတ်ခံရမှု' },
+          { value: 'other', en: 'Other disease', mm: 'အခြားရောဂါ' }
+        ]
+      });
+      var cause = fieldEditor(causeField, id + ':cause', firstValue(group || {}, 'maternalOutcomeCause'), group);
+      cause.hidden = String(safeValue) !== 'maternal_death';
+      wrap.appendChild(cause);
+      var reasonField = fieldFromGroup(group, 'maternalOutcomeReason', {
+        key: 'maternalOutcomeReason',
+        type: 'text',
+        labelEn: 'Death details',
+        labelMm: 'သေဆုံးရသည့် အသေးစိတ်'
+      });
+      var reason = fieldEditor(reasonField, id + ':reason', firstValue(group || {}, 'maternalOutcomeReason'), group);
+      reason.hidden = String(firstValue(group || {}, 'maternalOutcomeCause')) !== 'pregnancy_related' &&
+        String(firstValue(group || {}, 'maternalOutcomeCause')) !== 'other';
+      wrap.appendChild(reason);
+      function updateMaternalOutcomeFields() {
+        var isDeath = control.value === 'maternal_death';
+        cause.hidden = !isDeath;
+        reason.hidden = !isDeath || (cause.querySelector('select') && !['pregnancy_related', 'other'].includes(cause.querySelector('select').value));
+      }
+      control.addEventListener('change', updateMaternalOutcomeFields);
+      cause.querySelector('select')?.addEventListener('change', updateMaternalOutcomeFields);
     }
     if (field.key === 'ultrasoundServices') {
       var detailsField = { key: 'ultrasoundDetails', type: 'text', labelEn: 'Ultrasound details', labelMm: 'Ultrasound အသေးစိတ်' };
@@ -1025,7 +1060,10 @@
     var caption = document.createElement('strong');
     caption.textContent = t('Baby ', 'ကလေး ') + index;
     row.appendChild(caption);
-    row.appendChild(textPart('babyName', t('Name', 'အမည်'), data && data.babyName));
+    var mother = state.bundles.get(state.activeId);
+    var motherName = mother && mother.patient && mother.patient.name;
+    var generatedName = motherName ? 'Baby ' + motherName + (index > 1 ? ' ' + index : '') : 'Baby ' + index;
+    row.appendChild(textPart('babyName', t('Name (optional)', 'အမည် (မဖြည့်လည်းရသည်)'), data && data.babyName || generatedName));
     row.appendChild(selectPart('gender', [['', t('Sex', 'ကျား/မ')], ['male', t('Male', 'ကျား')], ['female', t('Female', 'မ')]], data && data.gender));
     row.appendChild(selectPart('outcome', [['', t('Outcome', 'ရလဒ်')], ['alive', t('Alive', 'ရှင်')], ['death', t('Death', 'သေ')], ['stillbirth', t('Stillbirth', 'သေမွေး')]], data && data.outcome));
     var grams = data && (data.birthWeightGram != null ? data.birthWeightGram : data.birth_weight_gram);
@@ -1142,6 +1180,14 @@
     if (fieldKey === 'baby_outcome' && value === 'death') {
       var cause = block.querySelector('[data-field-key="cause_of_death"]');
       if (cause) extra.cause_of_death = readControl(cause.querySelector('[data-input-id], textarea, input'));
+    }
+    if (fieldKey === 'maternalOutcome') {
+      var deathCause = block.querySelector('[data-field-key="maternalOutcomeCause"]');
+      var deathReason = block.querySelector('[data-field-key="maternalOutcomeReason"]');
+      if (value === 'maternal_death' && deathCause) {
+        extra.maternalOutcomeCause = readControl(deathCause.querySelector('[data-input-id], select, textarea, input'));
+        if (deathReason) extra.maternalOutcomeReason = readControl(deathReason.querySelector('[data-input-id], textarea, input'));
+      }
     }
     if (fieldKey === 'breathing_status' && value === 'gasping_or_no_breathing') {
       var resus = block.querySelector('[data-resuscitation]');

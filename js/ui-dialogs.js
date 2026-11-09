@@ -75,6 +75,8 @@
         transform: translateY(1px);
         box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
       }
+      #appAlertModal .app-modal-footer { justify-content: center; }
+      #appAlertModal .app-modal-footer button { min-width: 120px; }
       @media (max-width: 480px) {
         .app-modal { max-width: 100%; }
         .app-modal-body { font-size: 1rem; }
