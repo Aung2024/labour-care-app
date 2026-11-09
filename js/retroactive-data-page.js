@@ -228,7 +228,7 @@
     totalEl.textContent = String(total);
     completeEl.textContent = String(complete);
     remainingEl.textContent = String(Math.max(0, total - complete));
-    percentEl.textContent = percent + '%';
+    percentEl.textContent = complete + ' / ' + total;
     value.style.width = percent + '%';
     progress.setAttribute('aria-valuenow', String(percent));
     var statusText = state.hasMorePatients
