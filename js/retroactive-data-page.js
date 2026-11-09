@@ -11,6 +11,7 @@
     bundles: new Map(),
     cursor: 0,
     pageCursors: {},
+    motherIds: new Set(),
     hasMorePatients: false,
     loadingPatients: false,
     activeId: null,
@@ -103,6 +104,7 @@
       state.bundles = new Map();
       state.mothers = [];
       state.pageCursors = {};
+      state.motherIds = new Set();
       state.hasMorePatients = false;
       setMessage('statusText', t('Finding your patients…', 'လူနာများကို ရှာနေသည်…'));
       await loadPatientPage();
@@ -124,7 +126,11 @@
       var result = await global.RetroactiveDataService.listOwnedMothersPage(
         global.firebase.firestore(), state.user.uid, state.pageCursors, PAGE
       );
-      state.mothers = state.mothers.concat(result.mothers);
+      result.mothers.forEach(function (mother) {
+        if (state.motherIds.has(mother.id)) return;
+        state.motherIds.add(mother.id);
+        state.mothers.push(mother);
+      });
       state.pageCursors = result.cursors;
       state.hasMorePatients = result.hasMore;
       setMessage('statusText', state.hasMorePatients
