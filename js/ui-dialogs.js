@@ -44,7 +44,7 @@
         font-size: 1rem;
         line-height: 1.55;
       }
-      .app-modal-body p { margin: 0; }
+      .app-modal-body p { margin: 0; white-space: pre-line; }
       .app-modal-footer {
         padding: 0.85rem 1.25rem 1.15rem;
         display: flex;

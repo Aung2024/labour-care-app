@@ -1339,15 +1339,46 @@
     if (firstControl) firstControl.focus({ preventScroll: true });
   }
 
-  function validateBeforeSave(bundle, requests) {
+  function missingRequiredLabels(inspection) {
+    var labels = [];
+    (inspection && inspection.categories || []).forEach(function (category) {
+      if (!category.applicable) return;
+      (category.groups || []).forEach(function (group) {
+        if (group.status !== 'missing' || group.required === false) return;
+        labels.push(label(group));
+      });
+    });
+    return labels;
+  }
+
+  async function validateBeforeSave(bundle, requests) {
     if (!global.RetroactiveDataRules || !global.RetroactiveDataRules.preflightWrites) return null;
     var result = global.RetroactiveDataRules.preflightWrites(bundle, requests, {
       uid: state.user.uid,
       now: new Date().toISOString()
     });
     if (!result.ok) {
-      var first = result.plan && result.plan.errors && result.plan.errors[0];
-      setMessage('saveStatus', lang() === 'en' ? (first && first.en) : (first && first.mm));
+      var missing = missingRequiredLabels(result.inspection);
+      var firstError = result.plan && result.plan.errors && result.plan.errors[0];
+      var message = missing.length
+        ? t(
+          'Complete the required data in this order:\n' + missing.map(function (item, index) {
+            return (index + 1) + '. ' + item;
+          }).join('\n'),
+          'အောက်ပါလိုအပ်သောအချက်များကို အစဉ်လိုက် ဖြည့်ပါ:\n' + missing.map(function (item, index) {
+            return (index + 1) + '. ' + item;
+          }).join('\n')
+        )
+        : t(firstError && firstError.en, firstError && firstError.mm) || t('Review the highlighted fields before saving.', 'မသိမ်းမီ အမှတ်အသားပြထားသော အချက်များကို ပြန်စစ်ပါ။');
+      setMessage('saveStatus', '');
+      if (global.AppDialog && global.AppDialog.alert) {
+        await global.AppDialog.alert(message, {
+          title: t('Required data missing', 'လိုအပ်သောအချက်များ မပြည့်စုံပါ'),
+          okLabel: t('OK', 'ကောင်းပြီ')
+        });
+      } else {
+        global.alert(message);
+      }
       focusFirstMissingGroup();
       return false;
     }
@@ -1359,7 +1390,7 @@
     var requests = selectedRequests();
     if (!requests.length) return;
     var bundle = state.bundles.get(state.activeId);
-    if (!validateBeforeSave(bundle, requests)) return;
+    if (!await validateBeforeSave(bundle, requests)) return;
     var confirmed = global.AppDialog
       ? await global.AppDialog.confirm(t(
         'Save these back-fill changes? Existing values you replace stay in the audit history. Nothing is deleted.',
