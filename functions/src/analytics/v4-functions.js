@@ -59,7 +59,8 @@ const CONTRIBUTION_PROJECTION = [
   'scopeFacilityType',
   'periodMetrics',
   'ancOutcomeEvents',
-  'anemiaEvents'
+  'anemiaEvents',
+  'pncOutcomeEvents'
 ]
 
 const db = () => admin.firestore()
@@ -78,33 +79,52 @@ const requireSuperAdmin = async (request) => {
   return snapshot.data() || {}
 }
 
-const startDashboardV4Backfill = onCall({ region: REGION }, async (request) => {
-  await requireSuperAdmin(request)
-  const ref = backfillJobRef()
-  const force = Boolean(request.data && request.data.force)
-  const result = await db().runTransaction(async (transaction) => {
+const ensureDashboardV4BackfillJob = async (
+  database = db(),
+  options = {}
+) => {
+  const ref = backfillJobRef(database)
+  const force = options.force === true
+  return database.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref)
     const current = snapshot.exists ? snapshot.data() : {}
     if (!force && current.status === 'running') {
       return { status: 'running', processedPatients: Number(current.processedPatients || 0) }
+    }
+    if (
+      !force &&
+      current.status === 'complete' &&
+      current.schemaVersion === ANALYTICS_V4_SCHEMA_VERSION &&
+      current.definitionVersion === ANALYTICS_V4_DEFINITION_VERSION
+    ) {
+      return { status: 'complete', processedPatients: Number(current.processedPatients || 0) }
     }
     const generation = Number(current.generation || 0) + 1
     transaction.set(ref, {
       type: 'analytics-v4-backfill',
       status: 'running',
       generation,
+      schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
+      definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
       cursor: null,
       processedPatients: 0,
       failedPatients: 0,
       lastErrors: {},
-      requestedBy: request.auth.uid,
+      requestedBy: options.requestedBy || 'scheduled-schema-upgrade',
       startedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       completedAt: FieldValue.delete()
     }, { merge: true })
     return { status: 'running', generation, processedPatients: 0 }
   })
-  return result
+}
+
+const startDashboardV4Backfill = onCall({ region: REGION }, async (request) => {
+  await requireSuperAdmin(request)
+  return ensureDashboardV4BackfillJob(db(), {
+    force: Boolean(request.data && request.data.force),
+    requestedBy: request.auth.uid
+  })
 })
 
 const processDashboardV4BackfillBatch = async (database = db()) => {
@@ -121,6 +141,8 @@ const processDashboardV4BackfillBatch = async (database = db()) => {
     await clearDashboardV4Cache(database)
     await ref.set({
       status: 'complete',
+      schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
+      definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
       completedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true })
@@ -162,6 +184,7 @@ const dashboardV4BackfillWorker = onSchedule({
   maxInstances: 1,
   concurrency: 1
 }, async () => {
+  await ensureDashboardV4BackfillJob()
   const started = Date.now()
   let result = await processDashboardV4BackfillBatch()
   while (result.status === 'running' && Date.now() - started < BACKFILL_MAX_RUNTIME_MS) {
@@ -615,6 +638,7 @@ module.exports = {
   clearDashboardV4Cache,
   startDashboardV4Backfill,
   dashboardV4BackfillWorker,
+  ensureDashboardV4BackfillJob,
   processDashboardV4BackfillBatch,
   authorizedUser,
   validateInput,

@@ -91,6 +91,7 @@
           '<div><dt>တိုင်းဒေသကြီး / ပြည်နယ်</dt><dd>' + (profile.region || '') + '</dd></div>' +
           '<div><dt>အစီရင်ခံလ</dt><dd>' + monthSelect.selectedOptions[0].textContent + '</dd></div>' +
           '<div><dt>ခုနှစ်</dt><dd>' + yearSelect.value + '</dd></div>' +
+          '<div><dt>အစီရင်ခံကာလ</dt><dd>' + reportPeriodLabel() + '</dd></div>' +
           '<div><dt>လချုပ်ပြုလုပ်သည့် ရက်စွဲ</dt><dd>' + preparedText + '</dd></div>' +
           '</dl>'
       }
@@ -106,7 +107,7 @@
 
       function paint() {
         document.getElementById('monthlyForms').innerHTML =
-          MonthlyReport.renderPages(metrics, facilityName())
+          MonthlyReport.renderPages(metrics.report || {}, facilityName(), metrics.yearToDate || {})
         var head = document.querySelector('#page-1 .monthly-paper-head')
         if (head) head.innerHTML = paperHead()
         var tabs = document.getElementById('monthlyTabs')
@@ -120,48 +121,52 @@
         showPage('page-1')
       }
 
+      function dateKey(date) {
+        return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' +
+          String(date.getDate()).padStart(2, '0')
+      }
+
+      function selectedPeriod() {
+        var year = Number(yearSelect.value)
+        var month = Number(monthSelect.value)
+        var reportEnd = new Date(year, month - 1, 20)
+        var reportStart = new Date(year, month - 2, 21)
+        return {
+          startDate: dateKey(reportStart),
+          endDate: dateKey(reportEnd),
+          yearStartDate: year + '-01-01'
+        }
+      }
+
+      function reportPeriodLabel() {
+        var period = selectedPeriod()
+        return period.startDate + ' – ' + period.endDate
+      }
+
       async function loadReport() {
-        var period = yearSelect.value + '-' + monthSelect.value
-        var scopeId = DashboardData.scopeDocId({ type: 'provider', id: profile.uid }, '', '')
+        var period = selectedPeriod()
         try {
-          var snapshot = await firebase.firestore().collection('analytics_v32_periods')
-            .doc(period).collection('scopes').doc(scopeId).get()
-          var legacyMetrics = snapshot.exists ? (snapshot.data().metrics || {}) : {}
-          var monthEnd = new Date(Date.UTC(
-            Number(yearSelect.value), Number(monthSelect.value), 0
-          )).toISOString().slice(0, 10)
-          var v4Result = null
-          try {
-            v4Result = await DashboardData.callDashboardV4('queryDashboardV4', {
+          var query = function (startDate, endDate) {
+            return DashboardData.callDashboardV4('queryDashboardV4', {
               periodMode: 'months',
-              startDate: period + '-01',
-              endDate: monthEnd,
+              startDate: startDate,
+              endDate: endDate,
               department: '',
               facilityTypes: [],
               trendMode: 'month'
             })
-          } catch (v4Error) {
-            console.warn('V4 monthly indicators are not available yet:', v4Error)
           }
-          var mergeMetrics = function (left, right) {
-            var output = Object.assign({}, left || {})
-            Object.keys(right || {}).forEach(function (key) {
-              var leftValue = output[key]
-              var rightValue = right[key]
-              if (leftValue && rightValue &&
-                  typeof leftValue === 'object' && typeof rightValue === 'object' &&
-                  !Array.isArray(leftValue) && !Array.isArray(rightValue)) {
-                output[key] = mergeMetrics(leftValue, rightValue)
-              } else {
-                output[key] = rightValue
-              }
-            })
-            return output
+          var results = await Promise.all([
+            query(period.startDate, period.endDate),
+            query(period.yearStartDate, period.endDate)
+          ])
+          metrics = {
+            report: results[0].metrics || {},
+            yearToDate: results[1].metrics || {}
           }
-          metrics = mergeMetrics(legacyMetrics, v4Result && v4Result.metrics)
         } catch (error) {
           console.warn('Monthly report summary is not available yet:', error)
-          metrics = {}
+          metrics = { report: {}, yearToDate: {} }
         }
         paint()
       }

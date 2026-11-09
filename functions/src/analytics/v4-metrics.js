@@ -11,6 +11,7 @@ const {
   normalizeWeightGram,
   resolveKmcCompletion
 } = require('./kmc-kernel')
+const { calculateV3Metrics } = require('./v3-metrics')
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const EARLY_ANC_MAX_DAYS = 12 * 7
@@ -248,6 +249,77 @@ const emptyMetrics = () => ({
   serviceClosure: {
     total: 0, mother: { total: 0, byOutcome: {} },
     baby: { total: 0, byOutcome: {} }, outcomes: {}, undated: 0
+  },
+  monthlyReport: {
+    newAnc: 0,
+    earlyAnc: 0,
+    newAncUnder24Months: 0,
+    ancVisits: 0,
+    homeSkilledDeliveries: 0,
+    institutionalSkilledDeliveries: 0,
+    mothersWithAnc4: 0,
+    mothersWithAnc8: 0,
+    pncWithin48Hours: 0,
+    pncAtLeast4: 0,
+    maternalReferrals: 0,
+    highRiskNew: 0,
+    weightMeasuredMale: 0,
+    weightMeasuredFemale: 0,
+    weightMeasuredTotal: 0,
+    lowBirthWeightMale: 0,
+    lowBirthWeightFemale: 0,
+    lowBirthWeightTotal: 0,
+    deworming: 0,
+    ironThreePlusDelivered: 0,
+    ancVitaminB1: 0,
+    pncVitaminB1Within42: 0,
+    pncB1Day43To84: 0,
+    pncVitaminAWithin42: 0,
+    newAncHemoglobin: 0,
+    ancAnemia: 0,
+    earlyBreastfeeding: 0,
+    newbornCareWithin48Hours: 0,
+    notBreathing: 0,
+    bagMask: 0,
+    bagMaskSurvived: 0,
+    kmcEligible: 0,
+    kmcReceived: 0,
+    td1: 0,
+    td2: 0,
+    aliveMale: 0,
+    aliveFemale: 0,
+    stillbirthMale: 0,
+    stillbirthFemale: 0,
+    teenageAliveMale: 0,
+    teenageAliveFemale: 0,
+    teenageStillbirthMale: 0,
+    teenageStillbirthFemale: 0,
+    under15Alive: 0,
+    under15Stillbirth: 0,
+    publicAliveMale: 0,
+    publicAliveFemale: 0,
+    publicStillbirthMale: 0,
+    publicStillbirthFemale: 0,
+    privateAliveMale: 0,
+    privateAliveFemale: 0,
+    privateStillbirthMale: 0,
+    privateStillbirthFemale: 0,
+    skilledAliveMale: 0,
+    skilledAliveFemale: 0,
+    skilledStillbirthMale: 0,
+    skilledStillbirthFemale: 0,
+    pretermAliveMale: 0,
+    pretermAliveFemale: 0,
+    pretermStillbirthMale: 0,
+    pretermStillbirthFemale: 0,
+    abortion: 0,
+    newbornDeathUnder7: 0,
+    newbornDeath7To28: 0,
+    maternalDeathPregnancy: 0,
+    maternalDeathOther: 0,
+    maternalDeathInjury: 0,
+    serviceCompleteMother: 0,
+    serviceCompleteBaby: 0
   }
 })
 
@@ -450,6 +522,92 @@ const immediateCareIsEarlyBreastfeeding = (record) => affirmative(
   record.earlyBreastfeeding
 )
 
+const monthlyReportBabySex = (baby) => {
+  const value = asText(baby && (baby.gender || baby.sex)).toLowerCase()
+  if (['m', 'male', 'boy', 'ကျား'].includes(value)) return 'Male'
+  if (['f', 'female', 'girl', 'မ'].includes(value)) return 'Female'
+  return ''
+}
+
+const buildMonthlyReportMetrics = (facts, period, metrics, delivery, deliveryInPeriod) => {
+  const legacy = calculateV3Metrics(facts, period, {
+    corrected: true,
+    registeredBabyTruth: true
+  })
+  const hmis = legacy.hmis || {}
+  const report = metrics.monthlyReport
+  report.newAnc = legacy.anc && legacy.anc.new || 0
+  report.earlyAnc = legacy.anc && legacy.anc.early || 0
+  report.newAncUnder24Months = hmis.newAncUnder24Months || 0
+  report.ancVisits = metrics.anc.services
+  report.homeSkilledDeliveries = legacy.delivery && legacy.delivery.homeSkilled || 0
+  report.institutionalSkilledDeliveries = hmis.publicSkilledDeliveries || 0
+  report.mothersWithAnc4 = metrics.pnc.mothersWithAnc4
+  report.mothersWithAnc8 = metrics.pnc.mothersWithAnc8
+  report.pncWithin48Hours = metrics.pnc.within48Hours
+  report.pncAtLeast4 = metrics.pnc.atLeast4
+  report.maternalReferrals = metrics.referral.maternal.total
+  report.highRiskNew = legacy.highRisk && legacy.highRisk.clients || 0
+  report.weightMeasuredMale = hmis.weightMeasuredMale || 0
+  report.weightMeasuredFemale = hmis.weightMeasuredFemale || 0
+  report.weightMeasuredTotal = report.weightMeasuredMale + report.weightMeasuredFemale
+  report.lowBirthWeightMale = hmis.lbwAliveMale || 0
+  report.lowBirthWeightFemale = hmis.lbwAliveFemale || 0
+  report.lowBirthWeightTotal = report.lowBirthWeightMale + report.lowBirthWeightFemale
+  report.deworming = metrics.anc.deworming
+  report.ironThreePlusDelivered = hmis.ironThreePlusDelivered || 0
+  report.ancVitaminB1 = metrics.anc.vitaminB1
+  report.pncVitaminB1Within42 = metrics.pnc.vitaminB1
+  report.pncB1Day43To84 = hmis.pncB1Day43To84 || 0
+  report.pncVitaminAWithin42 = hmis.pncVitaminAWithin42 || 0
+  report.newAncHemoglobin = hmis.newAncHemoglobin || 0
+  report.ancAnemia = hmis.ancAnemia || 0
+  report.earlyBreastfeeding = metrics.newborn.earlyBreastfeeding
+  report.newbornCareWithin48Hours = metrics.newborn.careWithin2Days
+  report.notBreathing = hmis.notBreathing || 0
+  report.bagMask = hmis.bagMask || 0
+  report.bagMaskSurvived = hmis.bagMaskSurvived || 0
+  report.kmcEligible = metrics.newborn.kmcEligible
+  report.kmcReceived = metrics.newborn.kmcReceived
+  report.td1 = metrics.anc.td.td1Completed
+  report.td2 = metrics.anc.td.td2Completed
+  report.abortion = hmis.abortion || 0
+  report.newbornDeathUnder7 = hmis.newbornDeathUnder7 || 0
+  report.newbornDeath7To28 = hmis.newbornDeath7To28 || 0
+  report.maternalDeathPregnancy = hmis.maternalDeathPregnancy || 0
+  report.maternalDeathOther = hmis.maternalDeathOther || 0
+  report.maternalDeathInjury = hmis.maternalDeathInjury || 0
+  report.serviceCompleteMother = metrics.serviceClosure.mother.byOutcome['Service complete'] || 0
+  report.serviceCompleteBaby = metrics.serviceClosure.baby.byOutcome['Service complete'] || 0
+
+  if (!deliveryInPeriod || !delivery) return report
+  const maternalAge = Number(facts.profile && (
+    facts.profile.age || facts.profile.age_years || facts.profile.patient_age
+  ))
+  delivery.babies.forEach((baby) => {
+    const sex = monthlyReportBabySex(baby)
+    if (!sex) return
+    const alive = isAliveOutcome(baby.outcome)
+    const outcomeKey = alive ? 'Alive' : 'Stillbirth'
+    report[`${outcomeKey.toLowerCase()}${sex}`] += 1
+    if (maternalAge >= 15 && maternalAge < 20) {
+      report[`teenage${outcomeKey}${sex}`] += 1
+    } else if (maternalAge >= 0 && maternalAge < 15) {
+      report[`under15${outcomeKey}`] += 1
+    }
+    const placeKey = delivery.place === 'Public Health Facility'
+      ? 'public'
+      : delivery.place === 'Private Facility' ? 'private' : ''
+    if (placeKey) report[`${placeKey}${outcomeKey}${sex}`] += 1
+    const skilled = ['self', 'skilled_birth_attendant', 'amw'].includes(delivery.provider)
+    if (skilled) report[`skilled${outcomeKey}${sex}`] += 1
+    if (Number(baby.gestationalWeek) > 0 && Number(baby.gestationalWeek) < 37) {
+      report[`preterm${outcomeKey}${sex}`] += 1
+    }
+  })
+  return report
+}
+
 const calculateV4Metrics = (facts, inputPeriod) => {
   const period = normalizePeriod(inputPeriod)
   const metrics = emptyMetrics()
@@ -630,12 +788,12 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     if (pncInPeriod.some((visit) => affirmative(visit.ironFolic))) metrics.pnc.ironFolate = 1
     if (pncInPeriod.some((visit) => affirmative(visit.vitaminBComplex) || affirmative(visit.vitaminB1))) metrics.pnc.vitaminB1 = 1
     if (pncInPeriod.some((visit) => asText(visit.vaginalBleeding).toLowerCase().includes('heavy'))) metrics.pnc.pph = 1
-    pncInPeriod.forEach((visit) => {
-      const outcome = asText(
-        visit.maternalOutcome || visit.maternal_outcome || visit.outcome
-      )
-      if (outcome) bump(metrics.pnc.outcomes, outcome)
-    })
+    const latestPncVisit = pncInPeriod[pncInPeriod.length - 1]
+    bump(metrics.pnc.outcomes, normalizeOutcome(
+      latestPncVisit.maternalOutcome ||
+      latestPncVisit.maternal_outcome ||
+      latestPncVisit.outcome
+    ))
   }
   if (deliveryInPeriod) {
     metrics.pnc.deliveredMothers = 1
@@ -796,6 +954,8 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     patientOutcome.total = 1
     bump(patientOutcome.byOutcome, outcome)
   }
+
+  buildMonthlyReportMetrics(facts, period, metrics, delivery, deliveryInPeriod)
 
   const activeProviders = Array.from(new Set(
     (facts.jointCareFacts && facts.jointCareFacts.activeProviderIds) ||

@@ -213,7 +213,7 @@ test('counts KMC Yes newborns consistently with the operational tracker', () => 
   assert.equal(metrics.newborn.kmcReceived, 1)
 })
 
-test('calculates PNC headcount, timing, outcomes, and all-history thresholds', () => {
+test('calculates PNC headcount, timing, latest outcome, and all-history thresholds', () => {
   const metrics = calculateV4Metrics(facts({
     postpartumVisits: [
       { visitDate: '2026-01-19', visitNumber: 1, maternalOutcome: 'alive', vaginalBleeding: 'none' },
@@ -231,7 +231,21 @@ test('calculates PNC headcount, timing, outcomes, and all-history thresholds', (
   assert.equal(metrics.pnc.within48Hours, 1)
   assert.equal(metrics.pnc.within42Days, 1)
   assert.equal(metrics.pnc.pph, 0)
-  assert.equal(metrics.pnc.outcomes.alive, 3)
+  assert.deepEqual(metrics.pnc.outcomes, { alive: 1 })
+})
+
+test('classifies a missing latest PNC outcome so outcomes match headcount', () => {
+  const metrics = calculateV4Metrics(facts({
+    postpartumVisits: [
+      { visitDate: '2026-01-19', visitNumber: 1, maternalOutcome: 'alive' },
+      { visitDate: '2026-01-25', visitNumber: 2 }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.pnc.clients, 1)
+  assert.deepEqual(metrics.pnc.outcomes, { unknown: 1 })
 })
 
 test('summarizes joint care by owner, receiver, and facility account type', () => {

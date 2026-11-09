@@ -18,6 +18,7 @@ const UNDATED_MONTH = 'undated'
 const ADDITIVE_PATHS = new Set([
   'anc.services',
   'pnc.visits',
+  'monthlyReport.ancVisits',
   'newborn.births',
   'highRisk.ancAverage.highRisk.visits',
   'highRisk.ancAverage.nonHighRisk.visits'
@@ -76,6 +77,14 @@ const normalizeAncOutcome = (value) => {
   return raw ? 'Other' : ''
 }
 
+const normalizePncOutcome = (value) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (['alive', 'live', 'living'].includes(raw)) return 'Alive'
+  if (['death', 'dead', 'died', 'maternal_death'].includes(raw)) return 'Death'
+  if (['transfer', 'transferred', 'referred'].includes(raw)) return 'Referred'
+  return raw ? 'Other' : 'Unknown'
+}
+
 const contributionEventsForMonth = (facts, month) => {
   const inMonth = (date) => month !== UNDATED_MONTH && date.slice(0, 7) === month
   const ancOutcomeEvents = (facts.antenatalVisits || []).map((item, index) => {
@@ -107,7 +116,23 @@ const contributionEventsForMonth = (facts, month) => {
       ? { date, order: index, value: severity }
       : null
   }).filter(Boolean)
-  return { ancOutcomeEvents, anemiaEvents }
+  const pncOutcomeEvents = (facts.postpartumVisits || []).map((item, index) => {
+    const visit = unwrapRecord(item)
+    const date = eventDate(visit)
+    const visitNumber = Number(visit.visitNumber || visit.visit_number)
+    return date && inMonth(date)
+      ? {
+          date,
+          order: Number.isFinite(visitNumber) ? visitNumber : index,
+          value: normalizePncOutcome(
+            visit.maternalOutcome ||
+            visit.maternal_outcome ||
+            visit.outcome
+          )
+        }
+      : null
+  }).filter(Boolean)
+  return { ancOutcomeEvents, anemiaEvents, pncOutcomeEvents }
 }
 
 const monthEnd = (month) => {
@@ -274,6 +299,7 @@ const buildV4Contribution = (facts, month) => {
     dailyMetrics: dailyMetricsForMonth(facts, month),
     ancOutcomeEvents: events.ancOutcomeEvents,
     anemiaEvents: events.anemiaEvents,
+    pncOutcomeEvents: events.pncOutcomeEvents,
     sourceHash: facts.sourceHash || '',
     updatedAt: new Date().toISOString()
   }
@@ -352,7 +378,8 @@ const createAggregationState = () => ({
   unique: {},
   maps: {},
   latestAncOutcome: new Map(),
-  latestAnemia: new Map()
+  latestAnemia: new Map(),
+  latestPncOutcome: new Map()
 })
 
 const addMetricsToAggregationState = (state, metrics, patientId) => {
@@ -410,6 +437,9 @@ const addLatestCategoricalEvents = (
   ;(contribution.anemiaEvents || []).forEach((event) =>
     addLatest(state.latestAnemia, event)
   )
+  ;(contribution.pncOutcomeEvents || []).forEach((event) =>
+    addLatest(state.latestPncOutcome, event)
+  )
 }
 
 const addContributionToAggregationState = (
@@ -452,6 +482,11 @@ const materializeState = (state) => {
     outcomeCounts[event.value] = Number(outcomeCounts[event.value] || 0) + 1
   })
   setAtPath(metrics, 'anc.outcomes', outcomeCounts)
+  const pncOutcomeCounts = {}
+  state.latestPncOutcome.forEach((event) => {
+    pncOutcomeCounts[event.value] = Number(pncOutcomeCounts[event.value] || 0) + 1
+  })
+  setAtPath(metrics, 'pnc.outcomes', pncOutcomeCounts)
   const anemiaBySeverity = {}
   state.latestAnemia.forEach((event) => {
     if (!['Moderate', 'Severe'].includes(event.value)) return

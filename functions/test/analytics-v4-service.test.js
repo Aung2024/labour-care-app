@@ -116,6 +116,38 @@ test('latest in-period ANC outcome and hemoglobin classify each client once', ()
   assert.equal(result.anc.anemiaClients, 1)
 })
 
+test('latest in-period PNC outcome classifies every PNC mother once', () => {
+  const buildMotherMonths = (patientId, visits) => ['2026-01', '2026-02'].map((month) =>
+    buildV4Contribution({
+      id: patientId,
+      profile: { patient_type: 'mother' },
+      postpartumVisits: visits,
+      scope: {}
+    }, month)
+  )
+  const contributions = [
+    ...buildMotherMonths('mother-1', [
+      { visitDate: '2026-01-05', visitNumber: 1, maternalOutcome: 'alive' },
+      { visitDate: '2026-02-05', visitNumber: 2, maternalOutcome: 'maternal_death' }
+    ]),
+    ...buildMotherMonths('mother-2', [
+      { visitDate: '2026-01-06', visitNumber: 1, maternalOutcome: 'alive' },
+      { visitDate: '2026-02-06', visitNumber: 2 }
+    ])
+  ]
+  const result = aggregateContributions(
+    contributions,
+    '2026-01-01',
+    '2026-02-28'
+  )
+  assert.equal(result.pnc.clients, 2)
+  assert.deepEqual(result.pnc.outcomes, { Death: 1, Unknown: 1 })
+  assert.equal(
+    Object.values(result.pnc.outcomes).reduce((total, count) => total + count, 0),
+    result.pnc.clients
+  )
+})
+
 test('latest normal hemoglobin removes an earlier in-period anemia classification', () => {
   const contribution = buildV4Contribution({
     id: 'mother-2',

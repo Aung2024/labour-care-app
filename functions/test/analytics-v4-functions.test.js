@@ -7,9 +7,14 @@ const {
   allowedScope,
   contributionMatches,
   buildResult,
+  ensureDashboardV4BackfillJob,
   processDashboardV4BackfillBatch,
   processDashboardV4DailyRefreshBatch
 } = require('../src/analytics/v4-functions')
+const {
+  ANALYTICS_V4_SCHEMA_VERSION,
+  ANALYTICS_V4_DEFINITION_VERSION
+} = require('../src/analytics/v4-registry')
 
 test('v4 callable validates exact inclusive date ranges and filters', () => {
   const input = validateInput({
@@ -140,9 +145,43 @@ test('v4 backfill completes an empty job without touching patient records', asyn
   assert.deepEqual(result, { status: 'complete', processed: 0 })
   assert.deepEqual(writes, [{
     status: 'complete',
+    schemaVersion: ANALYTICS_V4_SCHEMA_VERSION,
+    definitionVersion: ANALYTICS_V4_DEFINITION_VERSION,
     completedAt: writes[0].completedAt,
     updatedAt: writes[0].updatedAt
   }])
+})
+
+test('v4 backfill starts once for a new analytics schema', async () => {
+  let current = { status: 'complete', generation: 3 }
+  const ref = {}
+  const database = {
+    collection(name) {
+      assert.equal(name, 'analytics_v4_jobs')
+      return { doc: () => ref }
+    },
+    async runTransaction(handler) {
+      return handler({
+        async get() {
+          return { exists: true, data: () => current }
+        },
+        set(_ref, value) {
+          current = { ...current, ...value }
+        }
+      })
+    }
+  }
+
+  const started = await ensureDashboardV4BackfillJob(database)
+  assert.equal(started.status, 'running')
+  assert.equal(started.generation, 4)
+  assert.equal(current.schemaVersion, ANALYTICS_V4_SCHEMA_VERSION)
+  assert.equal(current.definitionVersion, ANALYTICS_V4_DEFINITION_VERSION)
+
+  current.status = 'complete'
+  const unchanged = await ensureDashboardV4BackfillJob(database)
+  assert.equal(unchanged.status, 'complete')
+  assert.equal(current.generation, 4)
 })
 
 test('daily v4 refresh is idle without queued clinical changes', async () => {

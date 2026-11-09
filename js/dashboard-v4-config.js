@@ -626,7 +626,7 @@
     pnc_iron_folate: ['Counts PNC mothers with iron or folate supplementation recorded.', 'Unique PNC mothers with iron or folate', 'Mothers with iron or folate', 'Mothers with PNC'],
     pnc_b1: ['Counts PNC mothers with vitamin B1 recorded within the selected period.', 'Unique PNC mothers with vitamin B1', 'Mothers with vitamin B1', 'Mothers with PNC'],
     pph_cases: ['Counts delivered mothers with heavy vaginal bleeding recorded during PNC.', 'Unique delivered mothers with PPH evidence', 'Mothers with PPH evidence', 'Delivered mothers'],
-    pnc_outcome: ['Shows the outcomes recorded on PNC visits as a pie chart.', 'PNC visit outcomes', 'PNC visit outcomes', '—'],
+    pnc_outcome: ['Shows each PNC mother once using the outcome from her latest visit in the selected period. Missing historical outcomes are grouped as Unknown.', 'Unique PNC mothers by latest outcome', 'Mothers by latest PNC outcome', 'Mothers with PNC'],
     total_referrals: ['Counts all maternal and baby referrals recorded in the selected period.', 'Unique referral records', 'Total referrals', '—'],
     maternal_referrals: ['Counts mothers with a maternal referral recorded in the selected period.', 'Unique mothers with maternal referrals', 'Maternal referrals', '—'],
     baby_referrals: ['Counts newborns with a baby referral recorded in the selected period.', 'Unique newborns with baby referrals', 'Baby referrals', '—'],
@@ -677,8 +677,8 @@
   }
 
   var config = {
-    schemaVersion: 'analytics-v4.1.0',
-    definitionVersion: 'dashboard-2026-11-08-pnc-referral',
+    schemaVersion: 'analytics-v4.3.0',
+    definitionVersion: 'dashboard-2026-11-09-monthly-report',
     sections: sections,
     allDefinitions: definitions,
     definitionsForSection: function (section) {
