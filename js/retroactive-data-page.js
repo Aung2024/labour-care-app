@@ -1417,7 +1417,7 @@
   function updateReviewCount() {
     var count = selectedRequests().length;
     var button = document.getElementById('saveBtn');
-    button.disabled = !count || state.saving;
+    button.disabled = !state.activeId || state.saving;
     button.textContent = state.saving
       ? t('Saving…', 'သိမ်းနေသည်…')
       : t('Complete', 'ပြည့်စုံပြီး');
@@ -1446,6 +1446,31 @@
     return labels;
   }
 
+  async function showMissingRequirements(inspection, firstError) {
+    var missing = missingRequiredLabels(inspection);
+    var message = missing.length
+      ? t(
+        'Complete the required data in this order:\n' + missing.map(function (item, index) {
+          return (index + 1) + '. ' + item;
+        }).join('\n'),
+        'အောက်ပါလိုအပ်သောအချက်များကို အစဉ်လိုက် ဖြည့်ပါ:\n' + missing.map(function (item, index) {
+          return (index + 1) + '. ' + item;
+        }).join('\n')
+      )
+      : t(firstError && firstError.en, firstError && firstError.mm) || t('Review the highlighted fields before saving.', 'မသိမ်းမီ အမှတ်အသားပြထားသော အချက်များကို ပြန်စစ်ပါ။');
+    setMessage('saveStatus', '');
+    if (global.AppDialog && global.AppDialog.alert) {
+      await global.AppDialog.alert(message, {
+        title: t('Required data missing', 'လိုအပ်သောအချက်များ မပြည့်စုံပါ'),
+        okLabel: t('OK', 'ကောင်းပြီ')
+      });
+    } else {
+      global.alert(message);
+    }
+    focusFirstMissingGroup();
+    return false;
+  }
+
   async function validateBeforeSave(bundle, requests) {
     if (!global.RetroactiveDataRules || !global.RetroactiveDataRules.preflightWrites) return null;
     var result = global.RetroactiveDataRules.preflightWrites(bundle, requests, {
@@ -1453,29 +1478,8 @@
       now: new Date().toISOString()
     });
     if (!result.ok) {
-      var missing = missingRequiredLabels(result.inspection);
       var firstError = result.plan && result.plan.errors && result.plan.errors[0];
-      var message = missing.length
-        ? t(
-          'Complete the required data in this order:\n' + missing.map(function (item, index) {
-            return (index + 1) + '. ' + item;
-          }).join('\n'),
-          'အောက်ပါလိုအပ်သောအချက်များကို အစဉ်လိုက် ဖြည့်ပါ:\n' + missing.map(function (item, index) {
-            return (index + 1) + '. ' + item;
-          }).join('\n')
-        )
-        : t(firstError && firstError.en, firstError && firstError.mm) || t('Review the highlighted fields before saving.', 'မသိမ်းမီ အမှတ်အသားပြထားသော အချက်များကို ပြန်စစ်ပါ။');
-      setMessage('saveStatus', '');
-      if (global.AppDialog && global.AppDialog.alert) {
-        await global.AppDialog.alert(message, {
-          title: t('Required data missing', 'လိုအပ်သောအချက်များ မပြည့်စုံပါ'),
-          okLabel: t('OK', 'ကောင်းပြီ')
-        });
-      } else {
-        global.alert(message);
-      }
-      focusFirstMissingGroup();
-      return false;
+      return showMissingRequirements(result.inspection, firstError);
     }
     return true;
   }
@@ -1524,8 +1528,22 @@
   async function saveSelected() {
     if (state.saving) return;
     var requests = selectedRequests();
-    if (!requests.length) return;
     var bundle = state.bundles.get(state.activeId);
+    var currentScan = state.scans.get(state.activeId);
+    if (!requests.length) {
+      if (currentScan && !currentScan.gapCount) {
+        if (global.AppDialog && global.AppDialog.alert) {
+          await global.AppDialog.alert(
+            t('This patient has all required data completed.', 'ဤလူနာ၏ လိုအပ်သောအချက်အလက်များ အားလုံးပြည့်စုံပါပြီ။'),
+            { title: t('Patient complete', 'လူနာဒေတာ ပြည့်စုံပါပြီ'), okLabel: t('Back to patients', 'လူနာစာရင်းသို့') }
+          );
+        }
+        closeDetail();
+      } else {
+        await showMissingRequirements(currentScan);
+      }
+      return;
+    }
     if (!await validateBeforeSave(bundle, requests)) return;
     var confirmed = global.AppDialog
       ? await global.AppDialog.confirm(t(
