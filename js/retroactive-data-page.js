@@ -106,6 +106,9 @@
       state.hasMorePatients = false;
       setMessage('statusText', t('Finding your patients…', 'လူနာများကို ရှာနေသည်…'));
       await loadPatientPage();
+      loadRemainingPatientPages().catch(function (error) {
+        console.error('Could not load all patient pages', error);
+      });
       return;
     }
     await loadPatientPage();
@@ -137,6 +140,12 @@
         loadMore.hidden = !state.hasMorePatients;
         loadMore.disabled = false;
       }
+    }
+  }
+
+  async function loadRemainingPatientPages() {
+    while (state.hasMorePatients && !state.loadingPatients) {
+      await loadPatientPage();
     }
   }
 
@@ -207,6 +216,7 @@
   }
 
   function updateProgress() {
+    var loaded = state.bundles.size;
     var total = state.mothers.length;
     var checked = state.scans.size;
     var complete = 0;
@@ -225,20 +235,22 @@
     var percentEl = document.getElementById('progressPercent');
     var copy = document.getElementById('progressCopy');
     if (!progress || !value || !totalEl || !remainingEl || !completeEl || !percentEl || !copy) return;
+    var loadedEl = document.getElementById('loadedPatients');
+    if (loadedEl) loadedEl.textContent = String(loaded);
     totalEl.textContent = String(total);
     completeEl.textContent = String(complete);
-    remainingEl.textContent = String(Math.max(0, total - complete));
+    remainingEl.textContent = String(needsBackfill);
     percentEl.textContent = complete + ' / ' + total;
     value.style.width = percent + '%';
     progress.setAttribute('aria-valuenow', String(percent));
     var statusText = state.hasMorePatients
-      ? t('Loaded ' + total + ' patients. More patients are available.',
-        'လူနာ ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။')
-      : t(complete + ' of ' + total + ' patients complete.',
-        'လူနာ ' + total + ' ဦးအနက် ' + complete + ' ဦး ပြည့်စုံပါပြီ။');
+      ? t('Loading the complete client list…',
+        'လူနာစာရင်း အပြည့်အစုံကို ဖွင့်နေပါသည်…')
+      : t(loaded + ' inspected · ' + complete + ' complete · ' + total + ' total clients.',
+        loaded + ' ဦး စစ်ဆေးပြီး · ' + complete + ' ဦး ပြည့်စုံ · လူနာစုစုပေါင်း ' + total + ' ဦး။');
     setMessage('statusText', statusText);
-    copy.textContent = t('Completed patients are counted. Unchecked or incomplete patients remain in the total.',
-      'ပြည့်စုံသော လူနာများကိုသာ ရေတွက်ထားပါသည်။ မစစ်ရသေးသော သို့မဟုတ် မပြည့်စုံသေးသော လူနာများသည် စုစုပေါင်းတွင် ပါဝင်ပါသည်။');
+    copy.textContent = t('Need Back Fill counts inspected incomplete patients. Uninspected clients are not classified yet.',
+      'ပြန်ဖြည့်ရန်လိုအပ်သည့် အရေအတွက်သည် စစ်ဆေးပြီး မပြည့်စုံသေးသော လူနာများကိုသာ ရေတွက်ပါသည်။ မစစ်ရသေးသော လူနာများကို မခွဲခြားရသေးပါ။');
   }
 
   function patientButton(scan) {
