@@ -37,6 +37,7 @@
       <label for="monthlyMonth">အစီရင်ခံလ<select id="monthlyMonth"></select></label>
       <label for="monthlyYear">ခုနှစ်<select id="monthlyYear"></select></label>
       <label for="monthlyPreparedOn">လချုပ်ပြုလုပ်သည့် ရက်စွဲ<input id="monthlyPreparedOn" type="date"></label>
+      <button id="monthlyApply" class="monthly-apply-button" type="button">အစီရင်ခံစာကြည့်ရန်</button>
     </section>
 
     <nav id="monthlyTabs" class="dashboard-tabs no-print" aria-label="လချုပ်စာမျက်နှာများ"></nav>
@@ -57,6 +58,7 @@
       var monthSelect = document.getElementById('monthlyMonth')
       var yearSelect = document.getElementById('monthlyYear')
       var dateInput = document.getElementById('monthlyPreparedOn')
+      var applyButton = document.getElementById('monthlyApply')
       var now = new Date()
       var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
       months.forEach(function (name, index) {
@@ -65,7 +67,11 @@
         option.textContent = name
         monthSelect.appendChild(option)
       })
-      monthSelect.value = String(now.getMonth() + 1).padStart(2, '0')
+      var allTimeOption = document.createElement('option')
+      allTimeOption.value = 'all_time'
+      allTimeOption.textContent = 'All time'
+      monthSelect.insertBefore(allTimeOption, monthSelect.firstChild)
+      monthSelect.value = 'all_time'
       for (var year = now.getFullYear(); year >= now.getFullYear() - 2; year -= 1) {
         var yearOption = document.createElement('option')
         yearOption.value = String(year)
@@ -73,6 +79,7 @@
         yearSelect.appendChild(yearOption)
       }
       dateInput.value = now.toISOString().slice(0, 10)
+      yearSelect.disabled = true
 
       function facilityName() {
         return profile.facility_name || profile.facilityName || profile.name || ''
@@ -90,7 +97,7 @@
           '<div><dt>မြို့နယ်</dt><dd>' + (profile.township || '') + '</dd></div>' +
           '<div><dt>တိုင်းဒေသကြီး / ပြည်နယ်</dt><dd>' + (profile.region || '') + '</dd></div>' +
           '<div><dt>အစီရင်ခံလ</dt><dd>' + monthSelect.selectedOptions[0].textContent + '</dd></div>' +
-          '<div><dt>ခုနှစ်</dt><dd>' + yearSelect.value + '</dd></div>' +
+          '<div><dt>ခုနှစ်</dt><dd>' + (monthSelect.value === 'all_time' ? '—' : yearSelect.value) + '</dd></div>' +
           '<div><dt>အစီရင်ခံကာလ</dt><dd>' + reportPeriodLabel() + '</dd></div>' +
           '<div><dt>လချုပ်ပြုလုပ်သည့် ရက်စွဲ</dt><dd>' + preparedText + '</dd></div>' +
           '</dl>'
@@ -127,6 +134,14 @@
       }
 
       function selectedPeriod() {
+        if (monthSelect.value === 'all_time') {
+          return {
+            mode: 'all_time',
+            startDate: '1900-01-01',
+            endDate: dateKey(now),
+            yearStartDate: '1900-01-01'
+          }
+        }
         var year = Number(yearSelect.value)
         var month = Number(monthSelect.value)
         var reportEnd = new Date(year, month - 1, 20)
@@ -140,6 +155,7 @@
 
       function reportPeriodLabel() {
         var period = selectedPeriod()
+        if (period.mode === 'all_time') return 'All time'
         return period.startDate + ' – ' + period.endDate
       }
 
@@ -148,7 +164,7 @@
         try {
           var query = function (startDate, endDate) {
             return DashboardData.callDashboardV4('queryDashboardV4', {
-              periodMode: 'months',
+              periodMode: period.mode || 'months',
               startDate: startDate,
               endDate: endDate,
               department: '',
@@ -156,13 +172,15 @@
               trendMode: 'month'
             })
           }
-          var results = await Promise.all([
-            query(period.startDate, period.endDate),
-            query(period.yearStartDate, period.endDate)
-          ])
+          var results = period.mode === 'all_time'
+            ? await Promise.all([query(period.startDate, period.endDate)])
+            : await Promise.all([
+              query(period.startDate, period.endDate),
+              query(period.yearStartDate, period.endDate)
+            ])
           metrics = {
             report: results[0].metrics || {},
-            yearToDate: results[1].metrics || {}
+            yearToDate: (results[1] || results[0]).metrics || {}
           }
         } catch (error) {
           console.warn('Monthly report summary is not available yet:', error)
@@ -179,8 +197,10 @@
           window.location.href = 'home.html'
           return
         }
-        monthSelect.addEventListener('change', function () { loadReport() })
-        yearSelect.addEventListener('change', function () { loadReport() })
+        monthSelect.addEventListener('change', function () {
+          yearSelect.disabled = monthSelect.value === 'all_time'
+        })
+        applyButton.addEventListener('click', loadReport)
         dateInput.addEventListener('change', paint)
         document.getElementById('monthlyPrint').addEventListener('click', function () { window.print() })
         window.addEventListener('beforeprint', function () {
