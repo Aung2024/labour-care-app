@@ -64,6 +64,39 @@
     });
   }
 
+  async function listOwnedMothersPage(db, uid, cursors, pageSize) {
+    var limit = Math.max(1, parseInt(pageSize, 10) || PAGE_SIZE);
+    var definitions = [
+      { key: 'created_by', query: db.collection('patients').where('created_by', '==', uid) },
+      { key: 'createdBy', query: db.collection('patients').where('createdBy', '==', uid) }
+    ];
+    var map = new Map();
+    var nextCursors = {};
+    var hasMore = false;
+    for (var i = 0; i < definitions.length; i++) {
+      var definition = definitions[i];
+      if (cursors && cursors[definition.key] === false) continue;
+      var query = definition.query;
+      if (cursors && cursors[definition.key]) query = query.startAfter(cursors[definition.key]);
+      var snap = await query.limit(limit).get();
+      snap.forEach(function (doc) {
+        var patient = Object.assign({ id: doc.id }, doc.data() || {});
+        if (rules.isOwnedMother(patient, uid)) map.set(doc.id, patient);
+      });
+      if (snap.size === limit) {
+        hasMore = true;
+        nextCursors[definition.key] = snap.docs[snap.docs.length - 1];
+      } else nextCursors[definition.key] = false;
+    }
+    return {
+      mothers: Array.from(map.values()).sort(function (a, b) {
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      }),
+      cursors: nextCursors,
+      hasMore: hasMore
+    };
+  }
+
   async function loadBundle(db, patient) {
     var ref = db.collection('patients').doc(patient.id);
     var truncated = false;
@@ -194,15 +227,13 @@
       });
     }
 
-    if (root.AnalyticsRefreshQueue) {
-      await root.AnalyticsRefreshQueue.requestSafely(patient.id, 'retroactive_backfill');
-    }
     var reloaded = await loadBundle(db, patient);
     return { plan: plan, bundle: reloaded, inspection: rules.scanPatient(reloaded) };
   }
 
   root.RetroactiveDataService = {
     listOwnedMothers: listOwnedMothers,
+    listOwnedMothersPage: listOwnedMothersPage,
     loadBundle: loadBundle,
     saveRequests: saveRequests
   };

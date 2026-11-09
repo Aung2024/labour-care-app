@@ -10,6 +10,9 @@
     scans: new Map(),
     bundles: new Map(),
     cursor: 0,
+    pageCursors: {},
+    hasMorePatients: false,
+    loadingPatients: false,
     activeId: null,
     saving: false,
     booted: false
@@ -97,38 +100,44 @@
     if (reset) {
       state.cursor = 0;
       state.scans = new Map();
+      state.bundles = new Map();
       state.mothers = [];
+      state.pageCursors = {};
+      state.hasMorePatients = false;
       setMessage('statusText', t('Finding your patients…', 'လူနာများကို ရှာနေသည်…'));
-      state.mothers = await global.RetroactiveDataService.listOwnedMothers(global.firebase.firestore(), state.user.uid);
-      updateProgress();
-    }
-    await scanMore();
-  }
-
-  async function scanMore() {
-    var next = state.mothers.slice(state.cursor, state.cursor + PAGE);
-    state.cursor += next.length;
-    if (!next.length) {
-      updateProgress();
-      renderList();
+      await loadPatientPage();
       return;
     }
+    await loadPatientPage();
+  }
+
+  async function loadPatientPage() {
+    if (state.loadingPatients) return;
+    state.loadingPatients = true;
     show('loadingState', true);
-    var db = global.firebase.firestore();
-    for (var i = 0; i < next.length; i++) {
-      try {
-        var bundle = await global.RetroactiveDataService.loadBundle(db, next[i]);
-        state.bundles.set(next[i].id, bundle);
-        state.scans.set(next[i].id, global.RetroactiveDataRules.scanPatient(bundle));
-        renderList();
-      } catch (error) {
-        console.error(error);
-        setMessage('statusText', t('Some patients could not be checked. Try again.', 'လူနာအချို့ကို စစ်မရပါ။ ထပ်ကြိုးစားပါ။'));
+    var loadMore = document.getElementById('loadMoreBtn');
+    if (loadMore) loadMore.disabled = true;
+    try {
+      var result = await global.RetroactiveDataService.listOwnedMothersPage(
+        global.firebase.firestore(), state.user.uid, state.pageCursors, PAGE
+      );
+      state.mothers = state.mothers.concat(result.mothers);
+      state.pageCursors = result.cursors;
+      state.hasMorePatients = result.hasMore;
+      setMessage('statusText', state.hasMorePatients
+        ? t('Patient list loaded. More patients are available. Open a patient to check details, or load more.',
+          'လူနာစာရင်း ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။ လူနာတစ်ဦးကို ဖွင့်ပြီး စစ်ဆေးပါ သို့မဟုတ် ထပ်ဖွင့်ပါ။')
+        : t('All patients have been loaded. Open a patient to check its details.',
+          'လူနာအားလုံး ဖွင့်ပြီးပါပြီ။ လူနာတစ်ဦးကို ဖွင့်ပြီး အသေးစိတ်အချက်အလက် စစ်ဆေးပါ။'));
+      renderList();
+    } finally {
+      state.loadingPatients = false;
+      show('loadingState', false);
+      if (loadMore) {
+        loadMore.hidden = !state.hasMorePatients;
+        loadMore.disabled = false;
       }
     }
-    show('loadingState', false);
-    renderList();
-    if (state.cursor < state.mothers.length) await scanMore();
   }
 
   function categoryOf(scan, id) {
@@ -214,12 +223,19 @@
     percentEl.textContent = percent + '%';
     value.style.width = percent + '%';
     progress.setAttribute('aria-valuenow', String(percent));
-    setMessage('statusText', checked === total
-      ? t(complete + ' complete · ' + needsBackfill + ' need backfill', complete + ' ဦး ပြည့်စုံ · ' + needsBackfill + ' ဦး ပြန်ဖြည့်ရန်လို')
-      : t('Checking ' + checked + ' of ' + total + ' patients…', 'လူနာ ' + checked + ' / ' + total + ' ဦးကို စစ်နေသည်…'));
+    var statusText = state.hasMorePatients
+      ? t('Loaded ' + total + ' patients. More patients are available. Open a patient to check details, or load more.',
+        'လူနာ ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။ လူနာကို ဖွင့်စစ်ဆေးပါ သို့မဟုတ် ထပ်ဖွင့်ပါ။')
+      : checked === total
+        ? t(complete + ' complete · ' + needsBackfill + ' need backfill', complete + ' ဦး ပြည့်စုံ · ' + needsBackfill + ' ဦး ပြန်ဖြည့်ရန်လို')
+        : t('All ' + total + ' patients are loaded. ' + checked + ' checked; open the remaining patients to inspect them.',
+          'လူနာအားလုံး ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ ' + checked + ' ဦး စစ်ပြီးပါပြီ။ ကျန်လူနာများကို ဖွင့်စစ်ဆေးပါ။');
+    setMessage('statusText', statusText);
     copy.textContent = checked === total
       ? t(needsBackfill + ' patients still need required data. Completed patients remain editable.', needsBackfill + ' ဦးတွင် မဖြစ်မနေဒေတာ လိုသေးသည်။ ပြည့်စုံပြီးသော လူနာများကိုလည်း ပြင်နိုင်သည်။')
-      : t(checked + ' of ' + total + ' checked. The final remaining count will appear when checking finishes.', total + ' ဦးအနက် ' + checked + ' ဦး စစ်ပြီးပါပြီ။ စစ်ဆေးမှုပြီးသောအခါ ကျန်အရေအတွက် အတိအကျ ပေါ်ပါမည်။');
+      : state.hasMorePatients
+        ? t('Open patients to inspect them, or load the next page.', 'လူနာများကို ဖွင့်စစ်ဆေးပါ သို့မဟုတ် နောက်စာမျက်နှာကို ဖွင့်ပါ။')
+        : t('All patients are loaded. Open each patient to inspect its missing data.', 'လူနာအားလုံး ဖွင့်ပြီးပါပြီ။ လူနာတစ်ဦးချင်းစီကို ဖွင့်ပြီး လိုအပ်သောဒေတာကို စစ်ဆေးပါ။');
   }
 
   function patientButton(scan) {
@@ -1329,6 +1345,7 @@
     search.placeholder = t('Search your patients', 'လူနာအမည် ရှာရန်');
     search.addEventListener('input', renderList);
     document.getElementById('retryBtn').addEventListener('click', function () { loadQueue(true); });
+    document.getElementById('loadMoreBtn').addEventListener('click', function () { loadQueue(false); });
     document.getElementById('backBtn').addEventListener('click', closeDetail);
     document.getElementById('homeBtn').addEventListener('click', function () {
       if (global.AppNavBack) global.AppNavBack.toHome();
