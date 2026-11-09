@@ -1066,14 +1066,21 @@
       return !!user && normalizeRoleKey(user.role) === 'midwife';
     }
 
+    function isNptFacilityAccount(user) {
+      const region = String(user && (user.region || user.region_name) || '').trim().toLowerCase();
+      return ['npt', 'nay pyi taw', 'naypyitaw', 'nay pyi taw union territory'].includes(region);
+    }
+
     function getSelectedEligibleMidwifeIds() {
       const eligibleIds = new Set(allMidwives.filter(isTransferEligibleMidwife).map((u) => u.id));
       return Array.from(selectedMidwifeIds).filter((id) => eligibleIds.has(id)).slice(0, 1);
     }
 
     function applyMidwivesList(users) {
+      const restrictToNpt = normalizeRoleKey(currentUserData && currentUserData.role) === 'midwife';
       allMidwives = users.filter((u) =>
-        u.id !== currentUser.uid && isTransferEligibleMidwife(u)
+        u.id !== currentUser.uid && isTransferEligibleMidwife(u) &&
+        (!restrictToNpt || isNptFacilityAccount(u))
       );
       const eligibleIds = new Set(allMidwives.map((u) => u.id));
       Array.from(selectedMidwifeIds).forEach((id) => {
