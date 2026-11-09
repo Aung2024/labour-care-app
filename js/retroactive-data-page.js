@@ -306,7 +306,7 @@
     renderDetail();
   }
 
-  function renderDetail() {
+  function renderDetail(draft) {
     var scan = state.scans.get(state.activeId);
     var bundle = state.bundles.get(state.activeId);
     var host = document.getElementById('detailBody');
@@ -337,7 +337,41 @@
       el.addEventListener('change', mark);
       el.addEventListener('input', mark);
     });
+    restoreDraft(draft);
     updateReviewCount();
+  }
+
+  function draftKey(element) {
+    var card = element.closest('.group-card');
+    var row = element.closest('.visit-row');
+    var field = element.closest('.field-block');
+    return [
+      card && card.dataset.groupKey || '',
+      row && row.dataset.recordId || '',
+      field && field.dataset.fieldKey || '',
+      element.id || element.dataset.part || element.type
+    ].join('|');
+  }
+
+  function captureDraft() {
+    if (!state.activeId) return {};
+    var draft = {};
+    document.querySelectorAll('#detailBody input, #detailBody select, #detailBody textarea').forEach(function (element) {
+      draft[draftKey(element)] = element.type === 'checkbox' || element.type === 'radio'
+        ? { checked: element.checked }
+        : { value: element.value };
+    });
+    return draft;
+  }
+
+  function restoreDraft(draft) {
+    if (!draft) return;
+    document.querySelectorAll('#detailBody input, #detailBody select, #detailBody textarea').forEach(function (element) {
+      var saved = draft[draftKey(element)];
+      if (!saved) return;
+      if (element.type === 'checkbox' || element.type === 'radio') element.checked = !!saved.checked;
+      else element.value = saved.value;
+    });
   }
 
   function categoryCard(category, bundle, scan) {
@@ -393,6 +427,17 @@
       body.appendChild(groupBlock(group, category));
     });
     if (category.id === 'test') body.appendChild(labAddBlock());
+    if (category.groups.some(function (group) { return group.status !== 'not_needed'; })) {
+      var sectionSave = document.createElement('button');
+      sectionSave.type = 'button';
+      sectionSave.className = 'secondary-btn section-save-btn';
+      sectionSave.textContent = t('Save section', 'အပိုင်း သိမ်းရန်');
+      sectionSave.addEventListener('click', function (event) {
+        event.stopPropagation();
+        saveSection(card);
+      });
+      body.appendChild(sectionSave);
+    }
     card.appendChild(body);
     return card;
   }
@@ -1231,9 +1276,10 @@
     return values;
   }
 
-  function selectedRequests() {
+  function selectedRequests(root) {
+    root = root || document;
     var requests = [];
-    document.querySelectorAll('.group-card').forEach(function (card) {
+    root.querySelectorAll('.group-card').forEach(function (card) {
       if (card.dataset.status === 'not_needed') return;
       if (card.dataset.status === 'ok' && card.dataset.dirty !== '1') return;
       var moduleName = card.dataset.module;
@@ -1374,7 +1420,10 @@
     button.disabled = !count || state.saving;
     button.textContent = state.saving
       ? t('Saving…', 'သိမ်းနေသည်…')
-      : t('Save changes', 'ပြောင်းလဲချက် သိမ်းရန်');
+      : t('Complete', 'ပြည့်စုံပြီး');
+    document.querySelectorAll('.section-save-btn').forEach(function (sectionButton) {
+      sectionButton.disabled = state.saving;
+    });
   }
 
   function focusFirstMissingGroup() {
@@ -1429,6 +1478,47 @@
       return false;
     }
     return true;
+  }
+
+  async function saveSection(sectionCard) {
+    if (state.saving) return;
+    var requests = selectedRequests(sectionCard);
+    if (!requests.length) {
+      if (global.AppDialog && global.AppDialog.alert) {
+        await global.AppDialog.alert(t('No changes in this section.', 'ဤအပိုင်းတွင် ပြောင်းလဲချက်မရှိပါ။'), {
+          title: t('Nothing to save', 'သိမ်းရန်မရှိပါ'),
+          okLabel: t('OK', 'ကောင်းပြီ')
+        });
+      }
+      return;
+    }
+    var draft = captureDraft();
+    state.saving = true;
+    updateReviewCount();
+    try {
+      var bundle = state.bundles.get(state.activeId);
+      var result = await global.RetroactiveDataService.saveRequests(
+        global.firebase.firestore(),
+        state.user,
+        bundle,
+        requests,
+        { requireComplete: false }
+      );
+      state.bundles.set(state.activeId, result.bundle);
+      state.scans.set(state.activeId, result.inspection);
+      setMessage('saveStatus', t('Section saved.', 'အပိုင်းကို သိမ်းပြီးပါပြီ။'));
+      renderDetail(draft);
+      renderList();
+    } catch (error) {
+      console.error(error);
+      var message = error.errors && error.errors[0]
+        ? (lang() === 'en' ? error.errors[0].en : error.errors[0].mm)
+        : error.message;
+      setMessage('saveStatus', message || t('Section save failed.', 'အပိုင်းသိမ်း၍ မရပါ။'));
+    } finally {
+      state.saving = false;
+      updateReviewCount();
+    }
   }
 
   async function saveSelected() {
@@ -1488,7 +1578,7 @@
       var searchBox = document.getElementById('patientSearch');
       if (searchBox) searchBox.placeholder = t('Search your patients', 'လူနာအမည် ရှာရန်');
       renderList();
-      if (state.activeId) renderDetail();
+      if (state.activeId) renderDetail(captureDraft());
     };
     global.firebase.auth().onAuthStateChanged(function (user) {
       if (user) boot();

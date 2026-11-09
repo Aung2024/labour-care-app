@@ -177,7 +177,8 @@
     return payload;
   }
 
-  async function saveRequests(db, user, bundle, requests) {
+  async function saveRequests(db, user, bundle, requests, options) {
+    options = options || {};
     var fresh = await db.collection('patients').doc(bundle.patient.id).get();
     if (!fresh.exists) throw new Error('Patient record was not found.');
     var patient = Object.assign({ id: fresh.id }, fresh.data() || {});
@@ -187,7 +188,10 @@
       throw error;
     }
     bundle = Object.assign({}, bundle, { patient: patient });
-    var preflight = rules.preflightWrites(bundle, requests, { uid: user.uid, now: new Date().toISOString() });
+    var preflight = options.requireComplete === false
+      ? { ok: false, plan: rules.planWrites(bundle, requests, { uid: user.uid, now: new Date().toISOString() }), inspection: null }
+      : rules.preflightWrites(bundle, requests, { uid: user.uid, now: new Date().toISOString() });
+    if (options.requireComplete === false) preflight.ok = preflight.plan.ok;
     var plan = preflight.plan;
     if (!preflight.ok) {
       var planError = new Error(plan.errors[0] ? plan.errors[0].en : 'Complete all required fields before saving.');
