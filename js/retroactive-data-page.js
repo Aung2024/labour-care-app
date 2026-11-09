@@ -125,10 +125,10 @@
       state.pageCursors = result.cursors;
       state.hasMorePatients = result.hasMore;
       setMessage('statusText', state.hasMorePatients
-        ? t('Patient list loaded. More patients are available. Open a patient to check details, or load more.',
-          'လူနာစာရင်း ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။ လူနာတစ်ဦးကို ဖွင့်ပြီး စစ်ဆေးပါ သို့မဟုတ် ထပ်ဖွင့်ပါ။')
-        : t('All patients have been loaded. Open a patient to check its details.',
-          'လူနာအားလုံး ဖွင့်ပြီးပါပြီ။ လူနာတစ်ဦးကို ဖွင့်ပြီး အသေးစိတ်အချက်အလက် စစ်ဆေးပါ။'));
+        ? t('Patient list loaded. More patients are available.',
+          'လူနာစာရင်း ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။')
+        : t('All patients have been loaded.',
+          'လူနာအားလုံး ဖွင့်ပြီးပါပြီ။'));
       renderList();
     } finally {
       state.loadingPatients = false;
@@ -216,7 +216,7 @@
       if (scan.gapCount) needsBackfill += 1;
       else complete += 1;
     });
-    var percent = total ? Math.round((checked / total) * 100) : 0;
+    var percent = total ? Math.round((complete / total) * 100) : 0;
     var progress = document.querySelector('.progress-track');
     var value = document.getElementById('progressValue');
     var totalEl = document.getElementById('totalPatients');
@@ -226,24 +226,19 @@
     var copy = document.getElementById('progressCopy');
     if (!progress || !value || !totalEl || !remainingEl || !completeEl || !percentEl || !copy) return;
     totalEl.textContent = String(total);
-    completeEl.textContent = checked === total ? String(complete) : '—';
-    remainingEl.textContent = checked === total ? String(needsBackfill) : '—';
+    completeEl.textContent = String(complete);
+    remainingEl.textContent = String(Math.max(0, total - complete));
     percentEl.textContent = percent + '%';
     value.style.width = percent + '%';
     progress.setAttribute('aria-valuenow', String(percent));
     var statusText = state.hasMorePatients
-      ? t('Loaded ' + total + ' patients. More patients are available. Open a patient to check details, or load more.',
-        'လူနာ ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။ လူနာကို ဖွင့်စစ်ဆေးပါ သို့မဟုတ် ထပ်ဖွင့်ပါ။')
-      : checked === total
-        ? t(complete + ' complete · ' + needsBackfill + ' need backfill', complete + ' ဦး ပြည့်စုံ · ' + needsBackfill + ' ဦး ပြန်ဖြည့်ရန်လို')
-        : t('All ' + total + ' patients are loaded. ' + checked + ' checked; open the remaining patients to inspect them.',
-          'လူနာအားလုံး ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ ' + checked + ' ဦး စစ်ပြီးပါပြီ။ ကျန်လူနာများကို ဖွင့်စစ်ဆေးပါ။');
+      ? t('Loaded ' + total + ' patients. More patients are available.',
+        'လူနာ ' + total + ' ဦး ဖွင့်ပြီးပါပြီ။ လူနာများ ထပ်ရှိပါသည်။')
+      : t(complete + ' of ' + total + ' patients complete.',
+        'လူနာ ' + total + ' ဦးအနက် ' + complete + ' ဦး ပြည့်စုံပါပြီ။');
     setMessage('statusText', statusText);
-    copy.textContent = checked === total
-      ? t(needsBackfill + ' patients still need required data. Completed patients remain editable.', needsBackfill + ' ဦးတွင် မဖြစ်မနေဒေတာ လိုသေးသည်။ ပြည့်စုံပြီးသော လူနာများကိုလည်း ပြင်နိုင်သည်။')
-      : state.hasMorePatients
-        ? t('Open patients to inspect them, or load the next page.', 'လူနာများကို ဖွင့်စစ်ဆေးပါ သို့မဟုတ် နောက်စာမျက်နှာကို ဖွင့်ပါ။')
-        : t('All patients are loaded. Open each patient to inspect its missing data.', 'လူနာအားလုံး ဖွင့်ပြီးပါပြီ။ လူနာတစ်ဦးချင်းစီကို ဖွင့်ပြီး လိုအပ်သောဒေတာကို စစ်ဆေးပါ။');
+    copy.textContent = t('Completed patients are counted. Unchecked or incomplete patients remain in the total.',
+      'ပြည့်စုံသော လူနာများကိုသာ ရေတွက်ထားပါသည်။ မစစ်ရသေးသော သို့မဟုတ် မပြည့်စုံသေးသော လူနာများသည် စုစုပေါင်းတွင် ပါဝင်ပါသည်။');
   }
 
   function patientButton(scan) {
@@ -262,7 +257,7 @@
     var status = document.createElement('span');
     status.className = 'patient-status ' + (scan.pending ? '' : (isComplete ? 'is-complete' : 'is-missing'));
     status.textContent = scan.pending
-      ? t('Checking', 'စစ်နေသည်')
+      ? t('Not checked yet', 'မစစ်ရသေး')
       : (isComplete ? t('Complete', 'ပြည့်စုံ') : t('Needs backfill', 'ပြန်ဖြည့်ရန်လို'));
     left.appendChild(name);
     left.appendChild(meta);
