@@ -255,6 +255,9 @@
     if (!plan.operations.length) {
       return { plan: plan, bundle: bundle, inspection: rules.scanPatient(bundle) };
     }
+    if (root.AnalyticsRefreshQueue) {
+      await root.AnalyticsRefreshQueue.requestSafely(patient.id, 'retroactive_backfill');
+    }
     // Delivery Notes also create babies and sync mother fields, so only that path needs a server re-read.
     if (deliveryOperations.length) {
       var refreshed = await db.collection('patients').doc(patient.id).get();

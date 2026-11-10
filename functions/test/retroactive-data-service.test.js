@@ -81,11 +81,17 @@ function createFakeFirestore(seed) {
   };
 }
 
-function loadService() {
+function loadService(refreshRequests) {
   const context = {
     console,
     navigator: { userAgent: 'test' },
-    firebase: { firestore: { FieldValue: { serverTimestamp: () => 'SERVER_TIMESTAMP' } } }
+    firebase: { firestore: { FieldValue: { serverTimestamp: () => 'SERVER_TIMESTAMP' } } },
+    AnalyticsRefreshQueue: {
+      requestSafely: async (patientId, reason) => {
+        if (refreshRequests) refreshRequests.push({ patientId, reason });
+        return true;
+      }
+    }
   };
   context.globalThis = context;
   vm.createContext(context);
@@ -137,7 +143,8 @@ test('loadBundle issues one query per subcollection and reports exact truncation
 });
 
 test('saveRequests commits merge writes in one batch and does not re-read the bundle', async () => {
-  const service = loadService();
+  const refreshRequests = [];
+  const service = loadService(refreshRequests);
   const db = createFakeFirestore(seed());
   const bundle = await service.loadBundle(db, Object.assign({ id: 'mother-1' }, motherDoc));
   const readsBefore = db.stats.queries + db.stats.docReads;
@@ -156,10 +163,12 @@ test('saveRequests commits merge writes in one batch and does not re-read the bu
   assert.equal(db.docs.get('patients/mother-1/antenatal_visits/v2').retroactiveSource, result.plan.ruleVersion);
   assert.equal(result.bundle.ancVisits.find((row) => row.id === 'v2').data.tbSymptoms, 'No');
   assert.equal(bundle.ancVisits.find((row) => row.id === 'v2').data.tbSymptoms, undefined);
+  assert.deepEqual(refreshRequests, [{ patientId: 'mother-1', reason: 'retroactive_backfill' }]);
 });
 
 test('saveRequests writes nothing when every submitted value is already stored', async () => {
-  const service = loadService();
+  const refreshRequests = [];
+  const service = loadService(refreshRequests);
   const data = seed();
   data['patients/mother-1/antenatal_visits/v1'].goiterStatus = 'No';
   data['patients/mother-1/antenatal_visits/v2'].goiterStatus = 'No';
@@ -172,4 +181,5 @@ test('saveRequests writes nothing when every submitted value is already stored',
   }], { requireComplete: false });
   assert.equal(db.stats.batchCommits, 0);
   assert.equal(db.stats.adds, 0);
+  assert.equal(refreshRequests.length, 0);
 });
