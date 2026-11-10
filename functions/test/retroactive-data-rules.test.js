@@ -105,7 +105,7 @@ test('ANC shows workbook fields only, hides history for gravida 1, and does not 
   assert.equal(group(multi, 'anc', 'lastPregnancyOutcome').status, 'missing');
 });
 
-test('high-risk Other shows the condition text once, and Other diagnosis needs a name', () => {
+test('high-risk Other shows the condition text once without exposing legacy diagnosis fields', () => {
   const scan = rules.scanPatient({
     patient: mother(),
     ancVisits: [{
@@ -119,6 +119,11 @@ test('high-risk Other shows the condition text once, and Other diagnosis needs a
   });
   assert.equal(group(scan, 'anc', 'otherMedicalConditionName').status, 'missing');
   assert.equal(group(scan, 'anc', 'diagnosis').status, 'missing');
+  assert.deepEqual(group(scan, 'anc', 'diagnosis').fields.map(function (field) { return field.key; }), [
+    'maternalOutcome',
+    'maternalOutcomeCause',
+    'maternalOutcomeReason'
+  ]);
 });
 
 test('PNC without a delivery note requires Delivery Notes, and apply-all copies one ANC value to every visit', () => {
@@ -260,7 +265,7 @@ test('TD cannot move backwards, and missing labs do not keep a complete patient 
         vitaminB1: 'Prescribed',
         deworming: 'Prescribed',
         tetanusToxoid: 'TD1',
-        provisionalDiagnosisType: 'Routine ANC',
+        maternalOutcome: 'alive',
         cleanDeliveryKitStatus: 'not_given'
       }
     }],

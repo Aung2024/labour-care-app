@@ -637,8 +637,7 @@
   }
 
   function nestedField(key) {
-    return key === 'provisionalDiagnosisOther' ||
-      key === 'ultrasoundDetails' ||
+    return key === 'ultrasoundDetails' ||
       key === 'eye_infection_findings' ||
       key === 'anatomy_abnormality_details' ||
       key === 'cause_of_death' ||
@@ -702,15 +701,6 @@
       caption.htmlFor = id;
       wrap.appendChild(caption);
       wrap.appendChild(control);
-    }
-    if (field.key === 'provisionalDiagnosisType') {
-      var otherField = { key: 'provisionalDiagnosisOther', type: 'text', labelEn: 'Other diagnosis', labelMm: 'အခြားရောဂါအမည်' };
-      var other = fieldEditor(otherField, id + ':other', firstValue(group || {}, 'provisionalDiagnosisOther'));
-      other.hidden = String(safeValue) !== 'Other';
-      wrap.appendChild(other);
-      control.addEventListener('change', function () {
-        other.hidden = control.value !== 'Other';
-      });
     }
     if (field.key === 'maternalOutcome') {
       var causeField = fieldFromGroup(group, 'maternalOutcomeCause', {
@@ -1216,10 +1206,6 @@
     if (!control) return null;
     var value = readControl(control);
     var extra = {};
-    if (fieldKey === 'provisionalDiagnosisType') {
-      var other = block.querySelector('[data-field-key="provisionalDiagnosisOther"]');
-      if (other && value === 'Other') extra.provisionalDiagnosisOther = readControl(other.querySelector('[data-input-id], textarea, input'));
-    }
     if (fieldKey === 'ultrasoundServices') {
       var details = block.querySelector('[data-field-key="ultrasoundDetails"]');
       if (details && value === 'Yes') extra.ultrasoundDetails = readControl(details.querySelector('[data-input-id], textarea, input'));
