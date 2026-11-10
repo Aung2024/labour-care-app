@@ -1514,7 +1514,18 @@
       var message = error.errors && error.errors[0]
         ? (lang() === 'en' ? error.errors[0].en : error.errors[0].mm)
         : error.message;
-      setMessage('saveStatus', message || t('Section save failed.', 'အပိုင်းသိမ်း၍ မရပါ။'));
+      message = message || t('Section save failed.', 'အပိုင်းသိမ်း၍ မရပါ။');
+      setMessage('saveStatus', '');
+      if (global.AppDialog && global.AppDialog.alert) {
+        await global.AppDialog.alert(message, {
+          title: t('Section not saved', 'အပိုင်းကို မသိမ်းနိုင်ပါ'),
+          okLabel: t('Review section', 'အပိုင်းကို ပြန်စစ်ရန်')
+        });
+      } else {
+        global.alert(message);
+      }
+      var firstControl = sectionCard.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+      if (firstControl) firstControl.focus();
     } finally {
       state.saving = false;
       updateReviewCount();
