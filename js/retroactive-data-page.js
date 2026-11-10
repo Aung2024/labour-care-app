@@ -1006,10 +1006,14 @@
     return wrap;
   }
 
-  function obstetricField(captionEn, captionMm, control) {
+  function obstetricField(captionEn, captionMm, control, required) {
     var wrap = document.createElement('label');
     wrap.className = 'field-block';
-    wrap.appendChild(document.createTextNode(t(captionEn, captionMm)));
+    wrap.appendChild(document.createTextNode(t(captionEn, captionMm) + (required ? ' *' : '')));
+    if (required) {
+      control.required = true;
+      control.setAttribute('aria-required', 'true');
+    }
     wrap.appendChild(control);
     return wrap;
   }
@@ -1026,7 +1030,7 @@
     year.inputMode = 'numeric';
     year.className = 'field-input';
     if (data && data.year) year.value = data.year;
-    row.appendChild(obstetricField('Previous pregnancies (year)', 'ယခင်ကိုယ်ဝန် (ခုနှစ်)', year));
+    row.appendChild(obstetricField('Previous pregnancies (year)', 'ယခင်ကိုယ်ဝန် (ခုနှစ်)', year, true));
 
     var delivery = document.createElement('select');
     delivery.dataset.part = 'deliveryType';
@@ -1046,7 +1050,7 @@
       ? global.RetroactiveDataRules.mapLegacyDeliveryType(data && (data.deliveryType || data.outcome))
       : (data && data.deliveryType) || '';
     if (mapped) delivery.value = mapped;
-    row.appendChild(obstetricField('Mode of delivery', 'မွေးဖွားပုံ', delivery));
+    row.appendChild(obstetricField('Mode of delivery', 'မွေးဖွားပုံ', delivery, true));
 
     var place = document.createElement('input');
     place.dataset.part = 'birthPlace';
@@ -1115,16 +1119,28 @@
     var motherName = mother && mother.patient && mother.patient.name;
     var generatedName = motherName ? 'Baby ' + motherName + (index > 1 ? ' ' + index : '') : 'Baby ' + index;
     row.appendChild(textPart('babyName', t('Name (optional)', 'အမည် (မဖြည့်လည်းရသည်)'), data && data.babyName || generatedName));
-    row.appendChild(selectPart('gender', [['', t('Sex', 'ကျား/မ')], ['male', t('Male', 'ကျား')], ['female', t('Female', 'မ')]], data && data.gender));
-    row.appendChild(selectPart('outcome', [['', t('Outcome', 'ရလဒ်')], ['alive', t('Alive', 'ရှင်')], ['death', t('Death', 'သေ')], ['stillbirth', t('Stillbirth', 'သေမွေး')]], data && data.outcome));
+    row.appendChild(selectPart('gender', [['', t('Select sex', 'ကျား/မ ရွေးပါ')], ['male', t('Male', 'ကျား')], ['female', t('Female', 'မ')]], data && data.gender));
+    var outcome = selectPart('outcome', [['', t('Select outcome', 'ကလေးရလဒ် ရွေးပါ')], ['alive', t('Alive', 'ရှင်')], ['death', t('Death', 'သေ')], ['stillbirth', t('Stillbirth', 'သေမွေး')]], data && data.outcome);
+    row.appendChild(outcome);
     var grams = data && (data.birthWeightGram != null ? data.birthWeightGram : data.birth_weight_gram);
     var weight = textPart('birthWeightKg', t('Weight kg', 'အလေးချိန် kg'), grams > 20 ? grams / 1000 : grams);
     weight.type = 'number';
     weight.step = '0.001';
     row.appendChild(weight);
     row.appendChild(textPart('birthTime', '', data && (data.birthTime || data.birth_time), 'datetime-local'));
-    row.appendChild(selectPart('anusPresent', [['', t('Anus', 'စအိုပေါက်')], ['yes', t('Yes', 'ရှိ')], ['no', t('No', 'မရှိ')]], data && data.anusPresent));
-    row.appendChild(textPart('causeOfDeath', t('Cause of death if needed', 'သေဆုံးရသည့်အကြောင်း'), data && (data.causeOfDeath || data.cause_of_death)));
+    row.appendChild(selectPart('anusPresent', [['', t('Select anus status', 'စအိုပေါက် ရှိ/မရှိ ရွေးပါ')], ['yes', t('Yes', 'ရှိ')], ['no', t('No', 'မရှိ')]], data && data.anusPresent));
+    var deathReason = textPart('causeOfDeath', t('Cause of death', 'သေဆုံးရသည့်အကြောင်း'), data && (data.causeOfDeath || data.cause_of_death));
+    var syncDeathReason = function (clearWhenNotNeeded) {
+      var needsReason = outcome.value === 'death' || outcome.value === 'stillbirth';
+      deathReason.hidden = !needsReason;
+      deathReason.disabled = !needsReason;
+      deathReason.required = needsReason;
+      deathReason.setAttribute('aria-required', needsReason ? 'true' : 'false');
+      if (!needsReason && clearWhenNotNeeded) deathReason.value = '';
+    };
+    outcome.addEventListener('change', function () { syncDeathReason(true); });
+    syncDeathReason(outcome.value === 'alive');
+    row.appendChild(deathReason);
     return row;
   }
 
@@ -1441,6 +1457,12 @@
       if (!category.applicable) return;
       (category.groups || []).forEach(function (group) {
         if (group.status !== 'missing' || group.required === false) return;
+        if (Array.isArray(group.babyGaps) && group.babyGaps.length) {
+          group.babyGaps.forEach(function (gap) {
+            labels.push(lang() === 'en' ? gap.labelEn : gap.labelMm);
+          });
+          return;
+        }
         labels.push(label(group));
       });
     });

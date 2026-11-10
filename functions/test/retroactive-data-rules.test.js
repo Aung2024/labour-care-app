@@ -490,6 +490,39 @@ test('future dates are rejected and twins require two baby rows', () => {
   assert.equal(twins.ok, false);
 });
 
+test('delivery baby validation requires anus status and drops death reason for a live baby', () => {
+  const bundle = {
+    patient: mother(),
+    delivery: {
+      id: 'deliveryNotes',
+      canonical: true,
+      data: { thirdStage: {}, deliveryDetails: { pregnancyType: 'single', babies: [{}] } }
+    }
+  };
+  const completeBaby = {
+    babyName: 'Baby Aye',
+    gender: 'female',
+    outcome: 'alive',
+    birthWeightKg: '2.8',
+    birthTime: '2024-06-01T08:00',
+    anusPresent: 'yes',
+    causeOfDeath: 'stale reason'
+  };
+  const complete = rules.planWrites(bundle, [{
+    module: 'delivery',
+    values: { babies: [completeBaby] }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(complete.ok, true);
+  assert.equal(complete.operations[0].notes.deliveryDetails.babies[0].causeOfDeath, '');
+
+  const missingAnus = rules.planWrites(bundle, [{
+    module: 'delivery',
+    values: { babies: [Object.assign({}, completeBaby, { anusPresent: '' })] }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(missingAnus.ok, false);
+  assert.match(missingAnus.errors[0].en, /anus/i);
+});
+
 test('unchanged values are not rewritten or audited as conflicts', () => {
   const bundle = {
     patient: mother(),

@@ -670,3 +670,18 @@ test('baby backfill supports scoped dry-run reconciliation without broad scans',
   assert.match(auditPage, /projectionRefreshQueued/);
   assert.match(auditPage, /readOnly: true/);
 });
+
+test('Back Fill explains nested baby requirements and Complete saves unsaved sections directly', () => {
+  const source = readAppFile('js/retroactive-data-page.js');
+  assert.match(source, /Select anus status/);
+  assert.match(source, /deathReason\.hidden = !needsReason/);
+  assert.match(source, /if \(!needsReason && clearWhenNotNeeded\) deathReason\.value = ''/);
+  assert.match(source, /Array\.isArray\(group\.babyGaps\)/);
+  assert.match(source, /control\.setAttribute\('aria-required', 'true'\)/);
+  const completeStart = source.indexOf('async function saveSelected');
+  const completeEnd = source.indexOf('\n  global.', completeStart);
+  const completeSource = source.slice(completeStart, completeEnd);
+  assert.match(completeSource, /var requests = selectedRequests\(\)/);
+  assert.match(completeSource, /validateBeforeSave\(bundle, requests\)/);
+  assert.doesNotMatch(completeSource, /saveSection\(/);
+});

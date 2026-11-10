@@ -1611,18 +1611,23 @@
     if (weight.error) errors.push(weight.error);
     var time = coerceValue({ type: 'datetime', labelEn: 'Birth time', labelMm: 'မွေးချိန်' }, baby.birthTime, actor.now);
     if (time.error) errors.push(time.error);
+    var gender = text(baby.gender).toLowerCase();
+    if (['male', 'female'].indexOf(gender) < 0) errors.push(error('Choose the baby sex.', 'ကလေး ကျား/မ ရွေးပါ။'));
     var outcome = normalizeOutcome(baby.outcome);
     if (['alive', 'death', 'stillbirth'].indexOf(outcome) < 0) errors.push(error('Choose the baby outcome.', 'ကလေးရလဒ် ရွေးပါ။'));
-    if ((outcome === 'death' || outcome === 'stillbirth') && !text(baby.causeOfDeath)) errors.push(error('Enter the cause of death.', 'သေဆုံးရသည့်အကြောင်း ဖြည့်ပါ။'));
+    var needsDeathReason = outcome === 'death' || outcome === 'stillbirth';
+    if (needsDeathReason && !text(baby.causeOfDeath)) errors.push(error('Enter the cause of death.', 'သေဆုံးရသည့်အကြောင်း ဖြည့်ပါ။'));
+    var anusPresent = text(baby.anusPresent).toLowerCase();
+    if (['yes', 'no'].indexOf(anusPresent) < 0) errors.push(error('Choose whether the anus is present.', 'ကလေး စအိုပေါက် ရှိ/မရှိ ရွေးပါ။'));
     return {
       babyIndex: index + 1,
       babyName: text(baby.babyName) || generatedBabyName(motherName, index + 1, totalBabies || 1),
-      gender: text(baby.gender),
+      gender: gender,
       outcome: outcome,
-      anusPresent: text(baby.anusPresent),
+      anusPresent: anusPresent,
       birthWeightGram: weight.value,
       birthTime: time.value,
-      causeOfDeath: text(baby.causeOfDeath)
+      causeOfDeath: needsDeathReason ? text(baby.causeOfDeath) : ''
     };
   }
 
