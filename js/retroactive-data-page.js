@@ -386,8 +386,10 @@
 
   function categoryCard(category, bundle, scan) {
     var card = document.createElement('section');
-    card.className = 'category-card';
+    var sectionComplete = !category.optional && category.missingCount === 0;
+    card.className = 'category-card' + (sectionComplete ? ' is-complete' : '');
     card.dataset.category = category.id;
+    card.dataset.complete = sectionComplete ? '1' : '0';
     var open = category.missingCount > 0 || category.id === 'test';
     var head = document.createElement('button');
     head.type = 'button';
@@ -440,8 +442,12 @@
     if (category.groups.some(function (group) { return group.status !== 'not_needed'; })) {
       var sectionSave = document.createElement('button');
       sectionSave.type = 'button';
-      sectionSave.className = 'secondary-btn section-save-btn';
-      sectionSave.textContent = t('Save section', 'အပိုင်း သိမ်းရန်');
+      sectionSave.className = 'secondary-btn section-save-btn' + (sectionComplete ? ' is-complete' : '');
+      sectionSave.dataset.complete = sectionComplete ? '1' : '0';
+      sectionSave.textContent = sectionComplete
+        ? t('Completed', 'ပြည့်စုံပြီး')
+        : t('Save section', 'အပိုင်း သိမ်းရန်');
+      sectionSave.disabled = sectionComplete;
       sectionSave.addEventListener('click', function (event) {
         event.stopPropagation();
         saveSection(card);
@@ -1417,7 +1423,7 @@
       ? t('Saving…', 'သိမ်းနေသည်…')
       : t('Complete', 'ပြည့်စုံပြီး');
     document.querySelectorAll('.section-save-btn').forEach(function (sectionButton) {
-      sectionButton.disabled = state.saving;
+      sectionButton.disabled = state.saving || sectionButton.dataset.complete === '1';
     });
   }
 

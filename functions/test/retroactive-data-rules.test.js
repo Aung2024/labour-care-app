@@ -538,6 +538,8 @@ test('retroactive services are merge-only and the home card is midwife scoped', 
   assert.match(service, /retroactive_backfill/);
   assert.match(home, /id="backFillCard"/);
   assert.match(page, /Apply to all visits/);
+  assert.match(page, /sectionComplete \? ' is-complete'/);
+  assert.match(page, /t\('Completed', 'ပြည့်စုံပြီး'\)/);
   assert.doesNotMatch(page, /redirect-card/);
   assert.match(page, /မတိုင်းထားပါ/);
   assert.doesNotMatch(page, /မတိုင်းရပါ/);
