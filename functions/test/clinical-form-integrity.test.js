@@ -62,6 +62,12 @@ test('newborn care uses shared alert logic and canonical storage patient ID', ()
   assert.match(fetchSource, /const snap = await collectionRef\.get\(\)/);
   assert.doesNotMatch(fetchSource, /orderBy\(['"]visit_number['"]/);
   assert.match(fetchSource, /data\.visit_number = getNewbornVisitNumber\(data\)/);
+  const patientFetchStart = source.indexOf('async function fetchNewbornCareVisitsForPatient');
+  const patientFetchEnd = source.indexOf('\n    async function ', patientFetchStart + 1);
+  const patientFetchSource = source.slice(patientFetchStart, patientFetchEnd);
+  assert.match(patientFetchSource, /if \(patientId\) visitPatientIds\.push\(patientId\)/);
+  assert.match(patientFetchSource, /visitPatientIds\.push\(storagePatientId\)/);
+  assert.match(patientFetchSource, /Promise\.all\(visitPatientIds\.map\(fetchNewbornCareVisitsFromDoc\)\)/);
 });
 
 test('newborn report hides KMC table and cause of death unless death is recorded', () => {

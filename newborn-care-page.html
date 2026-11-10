@@ -3667,11 +3667,17 @@
       const visits = [];
       const seenIds = new Set();
       const storagePatientId = getNewbornCareStoragePatientId();
-      if (window.OfflineManager && storagePatientId) {
+      const visitPatientIds = [];
+      if (patientId) visitPatientIds.push(patientId);
+      if (storagePatientId && visitPatientIds.indexOf(storagePatientId) === -1) {
+        visitPatientIds.push(storagePatientId);
+      }
+
+      if (window.OfflineManager && visitPatientIds.length) {
         const pending = await OfflineManager.getPendingRecords('pending_newborn_records');
         pending.filter(function (r) {
           const d = r.data || r;
-          return d.patientId === storagePatientId;
+          return visitPatientIds.indexOf(d.patientId) !== -1;
         }).forEach(function (r) {
           const data = Object.assign({}, r.data || r);
           data.visit_number = getNewbornVisitNumber(data);
@@ -3680,11 +3686,13 @@
         });
       }
 
-      const fetched = await fetchNewbornCareVisitsFromDoc(storagePatientId);
-      fetched.forEach(function (item) {
-        if (!item || !item.id || seenIds.has(item.id)) return;
-        seenIds.add(item.id);
-        visits.push(item);
+      const fetchedLists = await Promise.all(visitPatientIds.map(fetchNewbornCareVisitsFromDoc));
+      fetchedLists.forEach(function (fetched) {
+        fetched.forEach(function (item) {
+          if (!item || !item.id || seenIds.has(item.id)) return;
+          seenIds.add(item.id);
+          visits.push(item);
+        });
       });
       return visits;
     }
