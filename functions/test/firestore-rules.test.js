@@ -903,3 +903,38 @@ test('Super Admin can approve users and change their role', async () => {
   const superDb = environment.authenticatedContext('super').firestore();
   await assertSucceeds(updateDoc(doc(superDb, 'users', 'midwife-a'), { approved: true, role: 'TMO', township: 'Beta' }));
 });
+
+test('patient data requires an approved staff profile', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'users', 'pending-user'), { role: 'Midwife', township: 'Alpha', approved: false });
+    await setDoc(doc(database, 'users', 'status-approved'), { role: 'Midwife', township: 'Alpha', approved: false, status: 'approved' });
+    await setDoc(doc(database, 'users', 'approved-user'), { role: 'Midwife', township: 'Alpha', approved: true });
+    await setDoc(doc(database, 'patients', 'patient-a'), { name: 'Patient A', township: 'Alpha' });
+  });
+  const visitPath = ['patients', 'patient-a', 'antenatal_visits', 'visit-1'];
+
+  const pendingDb = environment.authenticatedContext('pending-user').firestore();
+  await assertFails(getDoc(doc(pendingDb, 'patients', 'patient-a')));
+  await assertFails(getDocs(collection(pendingDb, 'patients')));
+  await assertFails(setDoc(doc(pendingDb, ...visitPath), { visitNumber: 1 }));
+
+  const noProfileDb = environment.authenticatedContext('no-profile').firestore();
+  await assertFails(getDoc(doc(noProfileDb, 'patients', 'patient-a')));
+
+  for (const uid of ['midwife-a', 'status-approved', 'approved-user']) {
+    const database = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(database, 'patients', 'patient-a')));
+    await assertSucceeds(setDoc(doc(database, ...visitPath), { visitNumber: 1, createdBy: uid }));
+  }
+});
+
+test('approved staff can commit large Back Fill batches', async () => {
+  const { writeBatch } = require('firebase/firestore');
+  const database = environment.authenticatedContext('midwife-a').firestore();
+  const batch = writeBatch(database);
+  for (let i = 0; i < 200; i++) {
+    batch.set(doc(database, 'patients', 'patient-a', 'antenatal_visits', `visit-${i}`), { visitNumber: i + 1 }, { merge: true });
+  }
+  await assertSucceeds(batch.commit());
+});
