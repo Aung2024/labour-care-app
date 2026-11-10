@@ -604,16 +604,16 @@ test('outcome controls use canonical values and hide completed patients by defau
   });
 });
 
-test('registration and KMC labels expose the simplified age and denominator workflow', () => {
+test('registration and KMC labels expose the simplified age and KMC workflow', () => {
   const registration = readAppFile('patient-enhanced.html');
   const kmc = readAppFile('kmc-tracking.html');
   const editPatient = readAppFile('edit-patient.html');
   assert.match(registration, /id="babyAgeDisplay"/);
   assert.doesNotMatch(registration, /babyAgeYearsHint/);
   assert.doesNotMatch(registration, /babyPatientPrompt/);
-  assert.ok(kmc.includes("totalKmc + ' / ' + potential"));
-  assert.ok(kmc.includes("potential + ' / ' +"));
-  assert.match(kmc, /KMC babies \/ LBW-Preterm/);
+  assert.match(kmc, /statTotalKmc[^]*KMC babies/);
+  assert.doesNotMatch(kmc, /totalKmc \+ ' \/ ' \+ potential/);
+  assert.doesNotMatch(kmc, /KMC babies \/ LBW-Preterm/);
   assert.match(kmc, /function filterArchivedKmcRows/);
   assert.match(kmc, /isArchivedKmcPatient/);
   const trackingFunctions = readAppFile('functions/src/analytics/tracking-functions.js');
