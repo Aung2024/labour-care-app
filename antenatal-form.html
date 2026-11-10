@@ -5566,11 +5566,15 @@
           return;
         }
 
+        visitData._docId = firebase.firestore().collection('patients').doc().id;
+
         const saveResult = await window.OfflineManager.saveLocalFirstAndTryCloud(
           'pending_anc_visits',
           visitData,
           async function (payload) {
             const cloudData = { ...payload };
+            const visitDocId = cloudData._docId;
+            delete cloudData._docId;
             delete cloudData._needsVisitNumber;
             delete cloudData.syncState;
             if (!cloudData.visitNumber) cloudData.visitNumber = visitCount;
@@ -5579,11 +5583,12 @@
             }
             cloudData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
 
-            const visitRef = await firebase.firestore()
+            const visitRef = firebase.firestore()
               .collection('patients')
               .doc(patientId)
               .collection('antenatal_visits')
-              .add(cloudData);
+              .doc(visitDocId);
+            await visitRef.set(cloudData);
 
             await firebase.firestore()
               .collection('patients')
@@ -5633,7 +5638,9 @@
 
         var successMsg = saveResult.cloud
           ? 'ANC visit saved and synced to cloud.'
-          : 'ANC visit saved locally. Please sync when online.';
+          : saveResult.timedOut
+            ? 'Connection is slow. ANC visit saved on this device. Please sync when the connection is better.'
+            : 'ANC visit saved locally. Please sync when online.';
         if (window.AppDialog && AppDialog.alert) {
           await AppDialog.alert(successMsg, { title: 'Saved' });
         } else {

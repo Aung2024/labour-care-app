@@ -361,18 +361,6 @@
         visitData.synced_from_offline = true;
         visitData.offline_created_at = record.createdAt;
 
-        if (opts.assignVisitNumber) {
-          const hasVisitNumber = !isNaN(parseInt(visitData.visitNumber, 10));
-          if (!hasVisitNumber) {
-            const nextVisit = await getNextVisitNumber(patientId, firestoreSubCollection);
-            visitData.visitNumber = nextVisit;
-            if (firestoreSubCollection === 'antenatal_visits') {
-              visitData.totalAncVisits = Math.max(0, nextVisit - 1);
-            }
-          }
-          delete visitData._needsVisitNumber;
-        }
-
         const targetCollection = typeof opts.collectionResolver === 'function'
           ? opts.collectionResolver(record, visitData, firestoreSubCollection)
           : firestoreSubCollection;
@@ -384,9 +372,30 @@
           .collection('patients')
           .doc(patientId)
           .collection(targetCollection);
+
+        // _docId is a create-once id: if the original online save already
+        // landed, re-writing it would duplicate work and could renumber the visit.
+        const alreadyUploaded = targetDocId
+          ? (await subRef.doc(targetDocId).get()).exists
+          : false;
+
+        if (opts.assignVisitNumber && !alreadyUploaded) {
+          const hasVisitNumber = !isNaN(parseInt(visitData.visitNumber, 10));
+          if (!hasVisitNumber) {
+            const nextVisit = await getNextVisitNumber(patientId, firestoreSubCollection);
+            visitData.visitNumber = nextVisit;
+            if (firestoreSubCollection === 'antenatal_visits') {
+              visitData.totalAncVisits = Math.max(0, nextVisit - 1);
+            }
+          }
+          delete visitData._needsVisitNumber;
+        }
+
         let cloudId = null;
-        if (targetDocId) {
-          await subRef.doc(targetDocId).set(visitData, { merge: true });
+        if (alreadyUploaded) {
+          cloudId = targetDocId;
+        } else if (targetDocId) {
+          await subRef.doc(targetDocId).set(visitData);
           cloudId = targetDocId;
         } else {
           const docRef = await subRef.add(visitData);
