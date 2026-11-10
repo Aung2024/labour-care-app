@@ -906,24 +906,24 @@
             <div class="vitals-panel-title lang-text" data-en="Vital Signs" data-mm="Vital Signs">Vital Signs</div>
             <div class="row g-3 align-items-end">
               <div class="col-md-4 col-sm-6">
-                <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate (bpm)" data-mm="သွေးခုန်နှုန်း">Pulse Rate (bpm)</label>
-                <input type="number" class="form-control" id="pulseRate" min="40" max="180" oninput="evaluateVitalAlerts()">
+                <label for="pulseRate" class="form-label lang-text" data-en="Pulse Rate (bpm) *" data-mm="သွေးခုန်နှုန်း *">Pulse Rate (bpm) *</label>
+                <input type="number" class="form-control" id="pulseRate" min="40" max="180" required aria-required="true" oninput="evaluateVitalAlerts()">
                 <div id="pulseRateAlert" class="vital-inline-alert"></div>
               </div>
               <div class="col-md-4 col-sm-6">
-                <label class="form-label lang-text" data-en="Blood Pressure (mm Hg)" data-mm="သွေးပေါင်ချိန် (mm Hg)">Blood Pressure (mm Hg)</label>
+                <label class="form-label lang-text" data-en="Blood Pressure (mm Hg) *" data-mm="သွေးပေါင်ချိန် (mm Hg) *">Blood Pressure (mm Hg) *</label>
                 <div class="bp-input-group">
-                  <input type="number" id="systolicBP" class="form-control" placeholder="120" min="50" max="250" oninput="evaluateVitalAlerts()">
+                  <input type="number" id="systolicBP" class="form-control" placeholder="120" min="50" max="250" required aria-required="true" aria-label="Systolic blood pressure" oninput="evaluateVitalAlerts()">
                   <span class="bp-separator">/</span>
-                  <input type="number" id="diastolicBP" class="form-control" placeholder="80" min="30" max="150" oninput="evaluateVitalAlerts()">
+                  <input type="number" id="diastolicBP" class="form-control" placeholder="80" min="30" max="150" required aria-required="true" aria-label="Diastolic blood pressure" oninput="evaluateVitalAlerts()">
                 </div>
                 <div id="bloodPressureAlert" class="vital-inline-alert"></div>
               </div>
               <div class="col-md-4 col-sm-6">
-                <label for="temperature" class="form-label lang-text" data-en="Temperature" data-mm="ကိုယ်အပူချိန်">Temperature</label>
+                <label for="temperature" class="form-label lang-text" data-en="Temperature *" data-mm="ကိုယ်အပူချိန် *">Temperature *</label>
                 <div class="d-flex gap-2 align-items-stretch">
-                  <input type="number" class="form-control flex-grow-1" id="temperature" step="0.1" min="35" max="42" placeholder="37.0" oninput="evaluateVitalAlerts()">
-                  <select id="temperatureUnit" class="form-control" style="max-width: 88px; flex-shrink: 0;" data-choice data-choice-layout="toggle" onchange="evaluateVitalAlerts()">
+                  <input type="number" class="form-control flex-grow-1" id="temperature" step="0.1" min="35" max="42" placeholder="37.0" required aria-required="true" oninput="evaluateVitalAlerts()">
+                  <select id="temperatureUnit" class="form-control" style="max-width: 88px; flex-shrink: 0;" data-choice data-choice-layout="toggle" onchange="updateTemperatureInputConstraints(); evaluateVitalAlerts()">
                     <option value="C">°C</option>
                     <option value="F">°F</option>
                   </select>
@@ -1570,6 +1570,16 @@
       const unit = document.getElementById('temperatureUnit')?.value || 'C';
       if (isNaN(temp)) return null;
       return unit === 'F' ? ((temp - 32) * 5 / 9) : temp;
+    }
+
+    function updateTemperatureInputConstraints() {
+      const input = document.getElementById('temperature');
+      const unit = document.getElementById('temperatureUnit')?.value || 'C';
+      if (!input) return;
+      const isFahrenheit = unit === 'F';
+      input.min = isFahrenheit ? '95' : '35';
+      input.max = isFahrenheit ? '107.6' : '42';
+      input.placeholder = isFahrenheit ? '98.6' : '37.0';
     }
 
     function setVitalAlert(fieldId, alertId, isAlert, messageEn, messageMm) {
@@ -2295,6 +2305,7 @@
 
       setVal('temperature', data.temperature);
       if (data.temperatureUnit) document.getElementById('temperatureUnit').value = data.temperatureUnit;
+      updateTemperatureInputConstraints();
       setVal('systolicBP', data.systolicBP);
       setVal('diastolicBP', data.diastolicBP);
       setVal('pulseRate', data.pulseRate);
@@ -2349,6 +2360,14 @@
       if (window.ChoiceControls) ChoiceControls.syncAll();
     }
 
+    function clearPncVisitVitals() {
+      ['temperature', 'systolicBP', 'diastolicBP', 'pulseRate'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) field.value = '';
+      });
+      evaluateVitalAlerts();
+    }
+
     async function loadFromPreviousPncVisit() {
       if (!currentPatient || !currentPatient.id) {
         setDefaultPncOutcomesAlive();
@@ -2370,6 +2389,7 @@
         });
         if (prev) {
           applyPncVisitDataToForm(prev);
+          if (!isEditMode) clearPncVisitVitals();
           if (!isEditMode && Array.isArray(prev.otherVisits)) {
             applyOtherVisitsToUi(prev.otherVisits);
           }
@@ -2628,6 +2648,11 @@
       e.preventDefault();
       var navigatedAfterSave = false;
 
+      if (!e.currentTarget.checkValidity()) {
+        e.currentTarget.reportValidity();
+        if (window.ClinicalReferFlow) ClinicalReferFlow.clearReferRedirect();
+        return;
+      }
       if (!validatePncOutcomes()) {
         if (window.ClinicalReferFlow) ClinicalReferFlow.clearReferRedirect();
         return;

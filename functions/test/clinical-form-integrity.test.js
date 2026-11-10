@@ -439,6 +439,18 @@ test('PNC hub links directly to every linked baby without requiring a PNC visit'
   assert.match(source, /sessionStorage\.setItem\('selectedPatientData', JSON\.stringify\(babyData\)\)/);
 });
 
+test('PNC save requires freshly entered maternal vital signs', () => {
+  const source = readAppFile('postpartum-form.html');
+  ['pulseRate', 'systolicBP', 'diastolicBP', 'temperature'].forEach((id) => {
+    assert.match(source, new RegExp(`id="${id}"[^>]*required`));
+  });
+  assert.match(source, /function clearPncVisitVitals/);
+  assert.match(source, /if \(!isEditMode\) clearPncVisitVitals\(\)/);
+  assert.match(source, /if \(!e\.currentTarget\.checkValidity\(\)\)/);
+  assert.match(source, /e\.currentTarget\.reportValidity\(\)/);
+  assert.match(source, /function updateTemperatureInputConstraints/);
+});
+
 test('ANC, newborn, and PNC reports show resolved facility names', () => {
   const anc = readAppFile('antenatal-report.html');
   const newborn = readAppFile('newborn-report.html');
