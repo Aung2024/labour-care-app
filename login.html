@@ -545,7 +545,7 @@
             <option value="">Select your role...</option>
             <option value="Midwife">Midwife</option>
             <option value="TMO">TMO</option>
-            <option value="Superadmin">Superadmin</option>
+            <option value="Regional Officer">Regional Officer</option>
           </select>
         </div>
         
@@ -777,50 +777,32 @@
         console.log('Fetching user profile from Firestore...');
         let userData = null;
         
+        let profileError = null;
         try {
           const userDoc = await db.collection("users").doc(userCred.user.uid).get();
-          console.log('Firestore response:', userDoc.exists ? 'Document found' : 'Document not found');
-          
           if (userDoc.exists) {
             userData = userDoc.data();
-            console.log('User data from Firestore:', userData);
           } else {
-            console.log('User document not found, creating default profile...');
-            // Create a default user profile if document doesn't exist
-            userData = {
-              role: 'Midwife', // Default role
-              approved: true,   // Default to approved for testing
-              email: email,
-              createdAt: new Date().toISOString()
-            };
-            
-            // Try to save the default profile
-            try {
-              await db.collection("users").doc(userCred.user.uid).set(userData);
-              console.log('Default user profile created successfully');
-            } catch (saveError) {
-              console.warn('Could not save default profile:', saveError);
-            }
+            profileError = (localStorage.getItem('language') || 'mm') === 'en'
+              ? 'Your account profile was not found. Please contact your administrator.'
+              : 'သင့်အကောင့် ပရိုဖိုင်ကို မတွေ့ပါ။ ကျေးဇူးပြု၍ စီမံခန့်ခွဲသူနှင့် ဆက်သွယ်ပါ။';
           }
         } catch (firestoreError) {
-          console.warn('Firestore access failed, using default profile:', firestoreError);
-          
-          // Show helpful message about Firestore rules
+          console.warn('Could not load user profile:', firestoreError);
+          profileError = (localStorage.getItem('language') || 'mm') === 'en'
+            ? 'Could not load your account profile. Please check your connection and try again.'
+            : 'သင့်အကောင့် ပရိုဖိုင်ကို ဖွင့်မရပါ။ အင်တာနက်ချိတ်ဆက်မှုကို စစ်ဆေးပြီး ထပ်မံကြိုးစားပါ။';
+        }
+
+        if (profileError) {
+          await firebase.auth().signOut();
+          isLoggingIn = false;
+          submitButton.innerHTML = originalButtonText;
+          submitButton.disabled = false;
           const message = document.getElementById('message');
-          message.innerHTML = `
-            <div class="alert alert-warning">
-              <strong>Firestore Access Issue:</strong> Cannot read user profile due to security rules.<br>
-              <small>Please update Firestore rules or contact administrator.</small>
-            </div>
-          `;
-          
-          // Use default profile if Firestore access fails
-          userData = {
-            role: 'Midwife',
-            approved: true,
-            email: email,
-            createdAt: new Date().toISOString()
-          };
+          message.innerHTML = `<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>${profileError}</div>`;
+          message.className = "mt-3";
+          return;
         }
         
         // Check if user is approved (support both 'approved' and 'status' fields)
@@ -829,6 +811,9 @@
         // Enforce account approval - user must be approved to access the application
         if (!isApproved) {
           await firebase.auth().signOut();
+          isLoggingIn = false;
+          submitButton.innerHTML = originalButtonText;
+          submitButton.disabled = false;
           const message = document.getElementById('message');
           const currentLang = localStorage.getItem('language') || 'mm';
           const errorMsg = currentLang === 'en'

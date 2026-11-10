@@ -870,3 +870,36 @@ test('patient records are not readable without signing in', async () => {
   await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a')));
   await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a', 'records', 'summary')));
 });
+
+test('self-registration starts unapproved with a non-admin role', async () => {
+  const newDb = environment.authenticatedContext('new-user').firestore();
+  const base = { email: 'new@example.com', township: 'Alpha', region: 'North' };
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Super Admin', approved: false }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife', approved: true }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife' }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife', approved: false, status: 'approved' }));
+  await assertFails(setDoc(doc(newDb, 'users', 'someone-else'), { ...base, role: 'Midwife', approved: false }));
+  for (const role of ['Midwife', 'TMO', 'Regional Officer']) {
+    const uid = `new-${role.replace(/\s+/g, '-').toLowerCase()}`;
+    const roleDb = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(setDoc(doc(roleDb, 'users', uid), { ...base, role, approved: false }));
+  }
+});
+
+test('users cannot change their own role, approval, or scope', async () => {
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  const ownRef = doc(midwifeDb, 'users', 'midwife-a');
+  await assertFails(updateDoc(ownRef, { role: 'Super Admin' }));
+  await assertFails(updateDoc(ownRef, { approved: true }));
+  await assertFails(updateDoc(ownRef, { status: 'approved' }));
+  await assertFails(updateDoc(ownRef, { township: 'Beta' }));
+  await assertFails(setDoc(ownRef, { role: 'Super Admin' }, { merge: true }));
+  await assertFails(updateDoc(doc(midwifeDb, 'users', 'midwife-b'), { name: 'Changed' }));
+  await assertSucceeds(updateDoc(ownRef, { name: 'Midwife A', phone: '0912345678' }));
+  await assertSucceeds(setDoc(ownRef, { address: 'Clinic road' }, { merge: true }));
+});
+
+test('Super Admin can approve users and change their role', async () => {
+  const superDb = environment.authenticatedContext('super').firestore();
+  await assertSucceeds(updateDoc(doc(superDb, 'users', 'midwife-a'), { approved: true, role: 'TMO', township: 'Beta' }));
+});

@@ -154,8 +154,33 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      // Allow users to read/write their own data
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Self-registration always starts unapproved with a non-admin role;
+      // only Super Admin can approve or grant other roles.
+      allow create: if
+        request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.get("approved", null) == false
+        && request.resource.data.get("status", "") != "approved"
+        && request.resource.data.get("role", "") in ["Midwife", "TMO", "Regional Officer"];
+
+      // Users may edit their own profile details, but not the fields that
+      // decide their access (role, approval, or geographic scope).
+      allow update: if
+        request.auth != null
+        && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "role",
+          "approved",
+          "status",
+          "township",
+          "region",
+          "facility_code",
+          "provider_type",
+          "department",
+          "facility_type"
+        ]);
       
       // Allow Super Admin to read/write all user data
       allow read, write: if
