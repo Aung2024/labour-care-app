@@ -485,6 +485,42 @@ test('future dates are rejected and twins require two baby rows', () => {
   assert.equal(twins.ok, false);
 });
 
+test('unchanged values are not rewritten or audited as conflicts', () => {
+  const bundle = {
+    patient: mother(),
+    ancVisits: [
+      { id: 'v1', data: { visitNumber: 1, visitDate: '2024-02-01', goiterStatus: 'No' } },
+      { id: 'v2', data: { visitNumber: 2, visitDate: '2024-03-01' } }
+    ]
+  };
+  const plan = rules.planWrites(bundle, [{
+    module: 'anc',
+    applyTo: 'all',
+    values: { goiterStatus: 'No' }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.operations.map(function (item) { return item.path; }), ['patients/mother-1/antenatal_visits/v2']);
+
+  const registration = rules.planWrites(bundle, [{
+    module: 'registration',
+    values: { name: 'Daw Aye', phone: '09222222222' }
+  }], { uid: 'midwife-1', now: '2026-10-10' });
+  assert.equal(registration.ok, true);
+  assert.equal(registration.operations.length, 1);
+  assert.deepEqual(Object.keys(registration.operations[0].data), ['phone']);
+  assert.deepEqual(registration.operations[0].audit.changes.map(function (item) { return item.field; }), ['phone']);
+});
+
+test('applying a created immediate record keeps the owner patient id', () => {
+  const bundle = { patient: mother(), immediateRecords: [] };
+  rules.applyPlannedOperation(bundle, {
+    kind: 'merge',
+    path: 'patients/baby-1/immediate_newborn_care/bf_immediate_1',
+    data: { breathing_status: 'spontaneous' }
+  });
+  assert.equal(bundle.immediateRecords[0].patientId, 'baby-1');
+});
+
 test('retroactive services are merge-only and the home card is midwife scoped', () => {
   const root = path.resolve(__dirname, '../..');
   const service = fs.readFileSync(path.join(root, 'js/retroactive-data-service.js'), 'utf8');

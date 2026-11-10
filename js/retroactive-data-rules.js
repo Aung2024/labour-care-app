@@ -1429,6 +1429,17 @@
     }
   }
 
+  function sameValue(before, after) {
+    if (before === '' || before == null) return false;
+    if (before === after) return true;
+    if (typeof before !== 'object' || typeof after !== 'object' || !after) return false;
+    try {
+      return JSON.stringify(before) === JSON.stringify(after);
+    } catch (error) {
+      return false;
+    }
+  }
+
   function writeField(data, field, coerced, existing) {
     if (field.key === 'youngestChildAge') {
       data.youngest_child_age_years = coerced.value.years;
@@ -1511,6 +1522,7 @@
         errors.push(error('Existing clinical values cannot be cleared.', 'ရှိပြီးသား ဆေးမှတ်တမ်းကို ဖျက်၍ မရပါ။'));
         return;
       }
+      if (!creating && sameValue(before, coerced.value)) return;
       writeField(data, field, coerced, existing && existing.data);
       changes.push({ field: key, before: before === '' ? null : before, after: coerced.value, kind: before === '' || before == null ? 'missing' : 'conflict' });
     });
@@ -1684,6 +1696,7 @@
     var record = bundle[targetKey].find(function (item) { return item.id === recordId; });
     if (!record) {
       record = { id: recordId, data: {} };
+      if (targetKey === 'immediateRecords') record.patientId = parts[1];
       bundle[targetKey].push(record);
     }
     Object.assign(record.data, cloneData(operation.data || {}));
@@ -1737,6 +1750,7 @@
     createTemplate: createTemplate,
     planWrites: planWrites,
     preflightWrites: preflightWrites,
+    applyPlannedOperation: applyPlannedOperation,
     findDuplicateVisit: findDuplicateVisit,
     historicalVisitId: historicalVisitId,
     normalizeBirthPlace: normalizeBirthPlace,

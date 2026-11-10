@@ -1573,6 +1573,7 @@
   <script src="js/audit-logger.js"></script>
   <script src="js/status-manager.js"></script>
   <script src="js/anc-tracking-status.js"></script>
+  <script src="js/analytics-refresh-queue.js"></script>
   <script src="js/outcome-system.js"></script>
   <script src="js/baby-patient-utils.js"></script>
   <script src="js/patient-roster.js"></script>
@@ -2983,27 +2984,33 @@
         ? ['server', 'default']
         : ['default'];
 
+      let anyQuerySucceeded = false;
       for (let s = 0; s < sources.length; s++) {
         const sourceOpt = sources[s] === 'default' ? null : sources[s];
         let visits = [];
 
         let snap = await firestoreCollectionGet(ref.orderBy('visitDate', 'desc').limit(20), sourceOpt);
+        if (snap) anyQuerySucceeded = true;
         visits = snapToVisitList(snap);
 
         if (!visits.length) {
           snap = await firestoreCollectionGet(ref.orderBy('timestamp', 'desc').limit(20), sourceOpt);
+          if (snap) anyQuerySucceeded = true;
           visits = snapToVisitList(snap);
         }
 
         if (!visits.length) {
           snap = await firestoreCollectionGet(ref.limit(20), sourceOpt);
+          if (snap) anyQuerySucceeded = true;
           visits = snapToVisitList(snap);
         }
 
         if (visits.length) return visits;
       }
 
-      return [];
+      const empty = [];
+      if (!anyQuerySucceeded) empty.fetchFailed = true;
+      return empty;
     }
 
     async function resolvePatientIdAliasesForList(patient) {
@@ -3056,8 +3063,84 @@
         if (snap && snap.docs) snap.docs.forEach(function (d) { list.push(d.data() || {}); });
         return list;
       } catch (e) {
-        return [];
+        const empty = [];
+        empty.fetchFailed = true;
+        return empty;
       }
+    }
+
+    const TRACKING_CACHE_TTL_MS = 30 * 60 * 1000;
+
+    function trackingCacheKey() {
+      return 'ancTrackingCache:v1:' + (currentUser && currentUser.uid ? currentUser.uid : 'anon');
+    }
+
+    function localDayKey() {
+      const now = new Date();
+      return now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate();
+    }
+
+    function patientCacheStamp(patient) {
+      const json = JSON.stringify(patient, function (_key, value) {
+        if (value && typeof value.toMillis === 'function') return value.toMillis();
+        return value;
+      }) || '';
+      let hash = 0;
+      for (let i = 0; i < json.length; i++) {
+        hash = ((hash << 5) - hash + json.charCodeAt(i)) | 0;
+      }
+      return json.length + ':' + hash;
+    }
+
+    function readTrackingCache() {
+      try {
+        return JSON.parse(localStorage.getItem(trackingCacheKey()) || '{}') || {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function writeTrackingCache(cache) {
+      try {
+        localStorage.setItem(trackingCacheKey(), JSON.stringify(cache));
+      } catch (e) {
+        try { localStorage.removeItem(trackingCacheKey()); } catch (ignored) {}
+      }
+    }
+
+    async function hasPendingAncVisits() {
+      if (!window.OfflineManager || typeof OfflineManager.getPendingRecords !== 'function') return false;
+      try {
+        const pending = await OfflineManager.getPendingRecords('pending_anc_visits');
+        return Array.isArray(pending) && pending.length > 0;
+      } catch (e) {
+        return true;
+      }
+    }
+
+    // Tracking only changes when the patient doc, her visits/HRT actions, or
+    // the calendar day change. Cross-device HRT actions are bounded by the TTL.
+    function freshTrackingEntry(cache, patient, lang) {
+      const entry = cache[patient.id];
+      if (!entry) return null;
+      const changedAt = window.AnalyticsRefreshQueue && AnalyticsRefreshQueue.lastLocalChangeAt
+        ? AnalyticsRefreshQueue.lastLocalChangeAt(patient.id)
+        : 0;
+      if (entry.day !== localDayKey() ||
+          entry.lang !== lang ||
+          entry.stamp !== patientCacheStamp(patient) ||
+          Date.now() - entry.at > TRACKING_CACHE_TTL_MS ||
+          changedAt >= entry.at) {
+        return null;
+      }
+      return entry;
+    }
+
+    function pruneTrackingCache(cache) {
+      const now = Date.now();
+      Object.keys(cache).forEach(function (id) {
+        if (!cache[id] || now - cache[id].at > TRACKING_CACHE_TTL_MS) delete cache[id];
+      });
     }
 
     async function reconcileRegisteredPatientStatuses() {
@@ -3070,6 +3153,8 @@
 
       var db = typeof firebase !== 'undefined' && firebase.firestore ? firebase.firestore() : null;
       var statusUpdated = false;
+      var lang = getListLang();
+      var cache = (await hasPendingAncVisits()) ? null : readTrackingCache();
 
       for (let i = 0; i < registeredPatients.length; i += TRACKING_CONCURRENCY) {
         const batch = registeredPatients.slice(i, i + TRACKING_CONCURRENCY);
@@ -3078,8 +3163,19 @@
             var hasVisit = false;
 
             if (db && (typeof navigator === 'undefined' || navigator.onLine)) {
+              const cached = cache ? freshTrackingEntry(cache, patient, lang) : null;
+              if (cached && cached.hasVisits === false) return;
               const visits = await fetchAncVisitsIncludingPending(db, patient);
               hasVisit = visits.length > 0;
+              if (cache && !hasVisit && !visits.fetchFailed) {
+                cache[patient.id] = {
+                  stamp: patientCacheStamp(patient),
+                  day: localDayKey(),
+                  lang: lang,
+                  at: Date.now(),
+                  hasVisits: false
+                };
+              }
             } else if (window.OfflineManager) {
               const visits = await fetchAncVisitsIncludingPending(null, patient);
               hasVisit = visits.length > 0;
@@ -3101,6 +3197,11 @@
             console.warn('Status reconciliation failed for', patient.id, err);
           }
         }));
+      }
+
+      if (cache) {
+        pruneTrackingCache(cache);
+        writeTrackingCache(cache);
       }
 
         if (statusUpdated) {
@@ -3155,13 +3256,22 @@
         return AncTrackingStatus.isAntenatalPatient(p);
       });
 
+      const cache = (await hasPendingAncVisits()) ? null : readTrackingCache();
+      const patientsToFetch = [];
       trackablePatients.forEach(function (patient) {
+        const cached = cache ? freshTrackingEntry(cache, patient, lang) : null;
+        if (cached && cached.result) {
+          patientTrackingMap.set(patient.id, cached.result);
+          return;
+        }
         patientTrackingMap.set(patient.id, AncTrackingStatus.defaultAntenatalTracking(lang));
+        patientsToFetch.push(patient);
       });
       displayPatients();
+      updateTrackingBell();
 
-      for (let i = 0; i < trackablePatients.length; i += TRACKING_CONCURRENCY) {
-        const batch = trackablePatients.slice(i, i + TRACKING_CONCURRENCY);
+      for (let i = 0; i < patientsToFetch.length; i += TRACKING_CONCURRENCY) {
+        const batch = patientsToFetch.slice(i, i + TRACKING_CONCURRENCY);
         await Promise.all(batch.map(async function (patient) {
           try {
             const results = await Promise.all([
@@ -3172,13 +3282,29 @@
               visits: results[0],
               actions: results[1]
             }, lang);
-            if (result) patientTrackingMap.set(patient.id, result);
+            if (!result) return;
+            patientTrackingMap.set(patient.id, result);
+            if (cache && !results[0].fetchFailed && !results[1].fetchFailed) {
+              cache[patient.id] = {
+                stamp: patientCacheStamp(patient),
+                day: localDayKey(),
+                lang: lang,
+                at: Date.now(),
+                hasVisits: results[0].length > 0,
+                result: result
+              };
+            }
           } catch (err) {
             console.warn('Tracking status failed for', patient.id, err);
           }
         }));
         updateTrackingBell();
         if (trackingPanelOpen) renderTrackingPanel();
+      }
+
+      if (cache) {
+        pruneTrackingCache(cache);
+        writeTrackingCache(cache);
       }
 
       displayPatients();

@@ -119,23 +119,24 @@ cd ..
 First perform a dry review:
 
 ```bash
-firebase deploy --dry-run --only functions:leaderboardPatientWritten,functions:leaderboardPatientActivityWritten,functions:leaderboardProviderWritten,functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
+firebase deploy --dry-run --only functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
 ```
 
-Confirm that it lists only the six new leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
+Confirm that it lists only these three leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
 
-**Bangkok limitation:** Firestore is in `asia-southeast3`. Google cannot attach document triggers in that region yet, so `leaderboardPatientWritten`, `leaderboardPatientActivityWritten`, and `leaderboardProviderWritten` will fail to create. That is expected. Deploy and keep these three, which do work:
+The leaderboard has no document triggers (Firestore is in `asia-southeast3`, where they are not supported). Scores are updated in two ways:
 
-```bash
-firebase deploy --only functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
-```
+- **Live:** clinical forms queue the patient in `clinical_refresh_v1_queue`. `unifiedClinicalRefreshWorker` (every 5 minutes) already loads that patient's records for tracking and the dashboard, and reuses the same data to update their leaderboard points. Also deploy `functions:unifiedClinicalRefreshWorker`.
+- **Monthly full sweep:** catches what the queue cannot see, such as deleted patients.
 
 After deployment, open Firebase Console → Functions and verify:
 
 - `adminSetUserPassword` and `processPendingPasswordResets` are still present;
 - `startLeaderboardRebuild`, `leaderboardNightlyReconciliation`, and `leaderboardReconciliationWorker` are healthy.
 
-The 15-minute worker continues Super Admin rebuilds. A separate 72-hour job starts all-time plus the current month only when no rebuild is already running, so scores still catch up without live document triggers while limiting Firestore reads.
+`leaderboardNightlyReconciliation` starts the full sweep at 02:00 on the 1st of each month (Asia/Yangon) when none is running. `leaderboardReconciliationWorker` runs every 15 minutes and processes 50-patient batches (8 in parallel) for up to 7 minutes per run, checkpointing after each batch.
+
+Both paths store a per-period fingerprint in `leaderboard_v2_patient_state/{patientId}`. Periods whose calculated score has not changed are skipped with no leaderboard writes. The queue path also re-checks every period the patient was scored in before, so deleting or re-dating a record removes its old points. Super Admin rebuilds ignore fingerprints and recompute every patient.
 
 ## 7. Deploy indexes and additive rules
 
@@ -171,7 +172,7 @@ Use the Netlify branch preview for `version-2-upgrade`. Do not make it the produ
 2. Sign in as Super Admin.
 3. Click **Build all-time and last 4 months**.
 4. Confirm the prompt once.
-5. The request queues the rebuild immediately. The scheduled worker continues every 15 minutes in 10-patient batches and checkpoints after each patient.
+5. The request queues the rebuild immediately. The scheduled worker continues every 15 minutes in 50-patient batches and checkpoints after each batch.
 6. In Firestore Console, inspect `leaderboard_v2_jobs/leaderboard-v2-rebuild`.
 7. Wait until `status` becomes `complete`.
 
