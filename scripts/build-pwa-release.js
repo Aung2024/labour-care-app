@@ -4,7 +4,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '..')
 const mode = process.env.PWA_RELEASE_MODE || 'testing'
 const releaseId = process.env.PWA_RELEASE_ID || '20261018-navigation-stability'
-const enabled = mode === 'production'
+const enabled = mode === 'production' || mode === 'release-candidate'
 
 const config = {
   enabled,

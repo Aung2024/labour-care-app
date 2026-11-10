@@ -10,6 +10,7 @@ const readAppFile = (relativePath) => {
 
 test('stable worker has an atomic core shell and bounded network requests', () => {
   const sw = readAppFile('service-worker.js')
+  const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
 
   const requiredPaths = [
     '/index.html',
@@ -31,7 +32,7 @@ test('stable worker has an atomic core shell and bounded network requests', () =
 
   assert.match(sw, /cacheInBatches\(cache, REQUIRED_SHELL\)/)
   assert.match(sw, /CACHE_BATCH_SIZE = 6/)
-  assert.match(sw, /RELEASE_ID = '20261018-navigation-stability'/)
+  assert.match(sw, new RegExp(`RELEASE_ID = '${releaseConfig.releaseId}'`))
   assert.match(sw, /required-shell-incomplete/)
   assert.match(sw, /fetchWithTimeout/)
   assert.match(sw, /AbortController/)
@@ -115,16 +116,21 @@ test('route manifest covers home and clinical navigation targets', () => {
   assert.match(navigation, /warmRoutes/)
 })
 
-test('testing release keeps the worker disabled and production build is explicit', () => {
+test('release-candidate config explicitly enables the worker with a versioned cache', () => {
   const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
   const netlify = readAppFile('netlify.toml')
   const buildScript = readAppFile('scripts/build-pwa-release.js')
 
-  assert.equal(releaseConfig.enabled, false)
+  assert.equal(releaseConfig.enabled, true)
+  assert.equal(releaseConfig.channel, 'release-candidate')
+  assert.match(releaseConfig.releaseId, /^\d{8}-v2-offline-rc\d+$/)
   assert.match(netlify, /scripts\/generate-pwa-manifest\.js/)
   assert.match(netlify, /scripts\/build-pwa-release\.js/)
+  assert.match(netlify, /PWA_RELEASE_MODE = "release-candidate"/)
+  assert.match(netlify, new RegExp(`PWA_RELEASE_ID = "${releaseConfig.releaseId}"`))
   assert.match(buildScript, /PWA_RELEASE_MODE/)
   assert.match(buildScript, /PWA_RELEASE_ID/)
+  assert.match(buildScript, /mode === 'release-candidate'/)
 })
 
 test('stable shell includes Login, Home, List, and update dependencies', () => {
