@@ -607,6 +607,11 @@
       updatedAt: nowServer(),
       updatedBy: userId || null
     };
+    if (options.extraFields && typeof options.extraFields === 'object') {
+      Object.keys(options.extraFields).forEach(function (key) {
+        if (payload[key] === undefined) payload[key] = options.extraFields[key];
+      });
+    }
     var ref = firebase.firestore()
       .collection('patients')
       .doc(patientId)
