@@ -854,3 +854,19 @@ test('TMO and above can comment on QI plans in scope', async () => {
     doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin')
   ));
 });
+
+test('patient records are not readable without signing in', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'patients', 'patient-a'), { name: 'Patient A', township: 'Alpha' });
+    await setDoc(doc(database, 'patients', 'patient-a', 'records', 'summary'), { notes: 'labour summary' });
+  });
+  const anonymousDb = environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonymousDb, 'patients', 'patient-a')));
+  await assertFails(getDocs(collection(anonymousDb, 'patients')));
+  await assertFails(getDoc(doc(anonymousDb, 'patients', 'patient-a', 'records', 'summary')));
+
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a')));
+  await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a', 'records', 'summary')));
+});
