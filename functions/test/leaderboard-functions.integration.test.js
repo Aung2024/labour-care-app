@@ -8,14 +8,12 @@ const projectId = process.env.GCLOUD_PROJECT || 'mnch-v2-functions-test';
 if (!admin.apps.length) admin.initializeApp({ projectId });
 const database = admin.firestore();
 const {
-  processActiveRebuildBatch
+  processActiveRebuildBatch,
+  processRebuildUntilDeadline
 } = require('../src/leaderboard/functions');
 const {
   processActiveDashboardBatch
 } = require('../src/analytics/functions');
-const {
-  processLeaderboardRefreshQueue
-} = require('../src/analytics/refresh-queue-functions');
 const {
   queryProjectionRows
 } = require('../src/analytics/tracking-functions');
@@ -44,7 +42,19 @@ async function waitForSummary(month, providerId, predicate, timeoutMs) {
   throw new Error('Timed out waiting for leaderboard summary.');
 }
 
-test('refresh queue updates summaries without double-counting and handles deletes', async () => {
+async function runScheduledSweep(months) {
+  await database.collection('leaderboard_v2_jobs').doc('leaderboard-v2-rebuild').set({
+    status: 'running',
+    months,
+    force: false,
+    lastPatientId: null,
+    processedPatients: 0
+  });
+  const result = await processRebuildUntilDeadline(30000);
+  assert.equal(result.status, 'complete');
+}
+
+test('scheduled sweep updates summaries without double-counting and handles deletes', async () => {
   const now = new Date();
   const month = monthOnly(now);
   const today = dateOnly(now);
@@ -76,12 +86,8 @@ test('refresh queue updates summaries without double-counting and handles delete
     lmp: '2026-01-01',
     visitNumber: 1
   });
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  const periods = [month, month.slice(0, 4), 'all'];
+  await runScheduledSweep(periods);
 
   const initial = await waitForSummary(
     month,
@@ -99,12 +105,9 @@ test('refresh queue updates summaries without double-counting and handles delete
     lmp: '2026-01-01',
     visitNumber: 1
   }, { merge: true });
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration-retry'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  await runScheduledSweep(periods);
+  const job = await database.collection('leaderboard_v2_jobs').doc('leaderboard-v2-rebuild').get();
+  assert.equal(job.data().changedPatients, 0);
   const retried = await waitForSummary(
     month,
     providerId,
@@ -113,12 +116,7 @@ test('refresh queue updates summaries without double-counting and handles delete
   assert.equal(retried.score, 6);
 
   await ancRef.delete();
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration-delete'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  await runScheduledSweep(periods);
   const afterDelete = await waitForSummary(
     month,
     providerId,

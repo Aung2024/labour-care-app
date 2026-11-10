@@ -1,14 +1,16 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const admin = require('firebase-admin');
 const { FieldPath, FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
-const functionsV1 = require('firebase-functions/v1');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const {
   ALL_TIME_PERIOD,
   CATEGORY_KEYS,
+  SCORE_VERSION,
+  calculatePatientContribution,
   emptyCategories,
   isLeaderboardPeriod,
   monthKeyForDate,
@@ -16,35 +18,23 @@ const {
   recentMonthKeys
 } = require('./scoring');
 const {
-  recomputePatientMonths,
+  recomputeLoadedPatientMonths,
   rebuildProviderSummariesFromContributions
 } = require('./service');
-const { loadProvider, summaryRef } = require('./repository');
+const { loadPatientActivity } = require('./repository');
 
 const REGION = 'us-central1';
-// Firestore is in asia-southeast3 (Bangkok). Eventarc 2nd-gen document
-// triggers do not support that region yet, so live patient/user triggers
-// use 1st-gen Firestore functions in us-central1, matching the existing
-// admin Functions.
+// The leaderboard is refreshed only by the scheduled sweep below. There are
+// no per-write triggers: Firestore is in asia-southeast3 (Bangkok), where
+// document triggers are not supported, and per-write recomputes are not needed.
 const JOB_ID = 'leaderboard-v2-rebuild';
 const JOB_COLLECTION = 'leaderboard_v2_jobs';
-const PATIENT_BATCH_SIZE = 10;
-const SUPPORTED_SUBCOLLECTIONS = new Set([
-  'antenatal_visits',
-  'postpartum_visits',
-  'testRecords',
-  'immediate_newborn_care',
-  'newborn_care',
-  'records'
-]);
-const SUPPORTED_RECORD_IDS = new Set([
-  'summary',
-  'startingTime',
-  'secondStage',
-  'transferRecord',
-  'deliveryNotes',
-  'thirdStage'
-]);
+const PATIENT_STATE_COLLECTION = 'leaderboard_v2_patient_state';
+const PATIENT_BATCH_SIZE = 50;
+const PATIENT_CONCURRENCY = 8;
+// Leaves headroom inside the 540s worker timeout for the last batch, which can
+// take over a minute when every patient in it needs a full recompute.
+const WORKER_MAX_RUNTIME_MS = 420000;
 const EVENT_DATE_FIELDS = [
   'visitDate',
   'testDate',
@@ -184,7 +174,7 @@ async function queryLeaderboardRange(request) {
   };
 }
 
-async function startRebuildJob(months, requestedBy) {
+async function startRebuildJob(months, requestedBy, options) {
   const monthList = Array.from(new Set(months || [])).filter(isLeaderboardPeriod);
   if (!monthList.length) throw new Error('At least one valid month is required.');
   const jobRef = db().collection(JOB_COLLECTION).doc(JOB_ID);
@@ -194,6 +184,8 @@ async function startRebuildJob(months, requestedBy) {
     status: 'running',
     lastPatientId: null,
     processedPatients: 0,
+    changedPatients: 0,
+    force: Boolean(options && options.force),
     requestedBy: requestedBy || 'scheduler',
     startedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -209,6 +201,50 @@ function scheduledRebuildPeriods(count = 12) {
     ...periodsWithAllTime(recentMonthKeys(count)),
     ...years
   ]));
+}
+
+function contributionFingerprint(providerId, calculated) {
+  return crypto.createHash('sha1')
+    .update(JSON.stringify([SCORE_VERSION, providerId || null, calculated]))
+    .digest('base64');
+}
+
+// Recomputes only the periods whose calculated contribution differs from the
+// fingerprint stored by the previous sweep, so unchanged patients cost no
+// leaderboard writes. `force` ignores stored fingerprints.
+async function sweepPatient(database, patientId, patientData, months, force) {
+  const loaded = await loadPatientActivity(database, patientId, patientData);
+  const patient = loaded.patient;
+  const providerId = patient && (patient.created_by || patient.createdBy) || null;
+  const stateRef = database.collection(PATIENT_STATE_COLLECTION).doc(patientId);
+  const stateSnapshot = force ? null : await stateRef.get();
+  const previous = stateSnapshot && stateSnapshot.exists
+    ? (stateSnapshot.data().fingerprints || {})
+    : {};
+  const fingerprints = {};
+  const changed = [];
+  months.forEach((month) => {
+    const calculated = patient ? calculatePatientContribution(patient, loaded.activity, month) : null;
+    fingerprints[month] = contributionFingerprint(providerId, calculated);
+    if (previous[month] !== fingerprints[month]) changed.push(month);
+  });
+  if (!changed.length) return false;
+  await recomputeLoadedPatientMonths(database, patientId, changed, loaded);
+  await stateRef.set({
+    patientId,
+    scoreVersion: SCORE_VERSION,
+    fingerprints,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return true;
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = [];
+  for (let offset = 0; offset < items.length; offset += concurrency) {
+    results.push(...await Promise.all(items.slice(offset, offset + concurrency).map(worker)));
+  }
+  return results;
 }
 
 async function processActiveRebuildBatch() {
@@ -238,94 +274,30 @@ async function processActiveRebuildBatch() {
     return { status: 'complete', months };
   }
 
-  let processed = 0;
-  for (const patient of patients.docs) {
-    await recomputePatientMonths(database, patient.id, months);
-    processed += 1;
-    // Persist every completed patient so a cross-region timeout retries only
-    // the current patient instead of repeating the whole batch.
-    await jobRef.set({
-      lastPatientId: patient.id,
-      processedPatients: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-  }
+  const changedFlags = await mapWithConcurrency(patients.docs, PATIENT_CONCURRENCY, (patient) =>
+    sweepPatient(database, patient.id, patient.data() || {}, months, Boolean(job.force))
+  );
+  const changed = changedFlags.filter(Boolean).length;
+  // A timeout before this checkpoint repeats at most one batch; sweepPatient
+  // is idempotent because contributions are saved as deltas from the stored value.
   const lastPatientId = patients.docs[patients.docs.length - 1].id;
-  return { status: 'running', processed, lastPatientId };
+  await jobRef.set({
+    lastPatientId,
+    processedPatients: FieldValue.increment(patients.size),
+    changedPatients: FieldValue.increment(changed),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { status: 'running', processed: patients.size, changed, lastPatientId };
 }
 
-const patientWritten = functionsV1
-  .region(REGION)
-  .runWith({
-    failurePolicy: true,
-    memory: '256MB',
-    timeoutSeconds: 120,
-    maxInstances: 20
-  })
-  .firestore.document('patients/{patientId}')
-  .onWrite(async (change, context) => {
-    const before = dataFromSnapshot(change.before);
-    const after = dataFromSnapshot(change.after);
-    const ownerChanged =
-      (before.created_by || before.createdBy || null) !==
-      (after.created_by || after.createdBy || null);
-    const months = ownerChanged
-      ? recentMonthKeys(12)
-      : eventMonths(change.before, change.after);
-    await recomputePatientMonths(db(), context.params.patientId, periodsWithAllTime(months));
-  });
-
-const patientActivityWritten = functionsV1
-  .region(REGION)
-  .runWith({
-    failurePolicy: true,
-    memory: '256MB',
-    timeoutSeconds: 120,
-    maxInstances: 40
-  })
-  .firestore.document('patients/{patientId}/{subcollection}/{documentId}')
-  .onWrite(async (change, context) => {
-    const subcollection = context.params.subcollection;
-    if (!SUPPORTED_SUBCOLLECTIONS.has(subcollection)) return;
-    if (subcollection === 'records' && !SUPPORTED_RECORD_IDS.has(context.params.documentId)) {
-      return;
-    }
-    const months = eventMonths(change.before, change.after);
-    await recomputePatientMonths(db(), context.params.patientId, periodsWithAllTime(months));
-  });
-
-const providerWritten = functionsV1
-  .region(REGION)
-  .runWith({
-    failurePolicy: true,
-    memory: '256MB',
-    timeoutSeconds: 120,
-    maxInstances: 10
-  })
-  .firestore.document('users/{providerId}')
-  .onWrite(async (change, context) => {
-    if (!change.after.exists) return;
-    const after = dataFromSnapshot(change.after);
-    const role = String(after.role || '').toLowerCase();
-    if (role && role !== 'midwife') return;
-    const metadata = await loadProvider(db(), context.params.providerId);
-    const writer = db().bulkWriter();
-    periodsWithAllTime(recentMonthKeys(12)).forEach((month) => {
-      writer.set(summaryRef(db(), month, context.params.providerId), {
-        providerId: metadata.providerId,
-        providerName: metadata.providerName,
-        providerType: metadata.providerType,
-        township: metadata.township,
-        region: metadata.region,
-        phone: metadata.phone || '',
-        facilityCode: metadata.facilityCode || '',
-        department: metadata.department || 'other',
-        facilityType: metadata.facilityType || 'other',
-        calculatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
-    });
-    await writer.close();
-  });
+async function processRebuildUntilDeadline(maxRuntimeMs = WORKER_MAX_RUNTIME_MS) {
+  const started = Date.now();
+  let result = await processActiveRebuildBatch();
+  while (result.status === 'running' && Date.now() - started < maxRuntimeMs) {
+    result = await processActiveRebuildBatch();
+  }
+  return result;
+}
 
 const startLeaderboardRebuild = onCall({
   region: REGION,
@@ -337,7 +309,7 @@ const startLeaderboardRebuild = onCall({
   const requestedCount = Number(request.data && request.data.months || 4);
   const count = Math.min(12, Math.max(1, Math.floor(requestedCount)));
   const months = scheduledRebuildPeriods(count);
-  await startRebuildJob(months, request.auth.uid);
+  await startRebuildJob(months, request.auth.uid, { force: true });
   // Return as soon as the job is queued. Processing a patient batch here can
   // exceed the callable timeout because Firestore is in Bangkok while the
   // nearest supported Functions runtime is in us-central1. The scheduled
@@ -362,10 +334,10 @@ const leaderboardNightlyReconciliation = onSchedule({
   const jobRef = db().collection(JOB_COLLECTION).doc(JOB_ID);
   const jobSnapshot = await jobRef.get();
   if (jobSnapshot.exists && jobSnapshot.data().status === 'running') {
-    return processActiveRebuildBatch();
+    return { status: 'running', owner: 'leaderboardReconciliationWorker' };
   }
   await startRebuildJob(scheduledRebuildPeriods(), '48-hour-scheduler');
-  return processActiveRebuildBatch();
+  return { status: 'queued', owner: 'leaderboardReconciliationWorker' };
 });
 
 const leaderboardReconciliationWorker = onSchedule({
@@ -378,7 +350,7 @@ const leaderboardReconciliationWorker = onSchedule({
   concurrency: 1
 }, async () => {
   try {
-    return await processActiveRebuildBatch();
+    return await processRebuildUntilDeadline();
   } catch (error) {
     logger.error('Leaderboard reconciliation batch failed', error);
     await db().collection(JOB_COLLECTION).doc(JOB_ID).set({
@@ -390,14 +362,14 @@ const leaderboardReconciliationWorker = onSchedule({
 });
 
 module.exports = {
-  patientWritten,
-  patientActivityWritten,
-  providerWritten,
   startLeaderboardRebuild,
   getLeaderboardCustomRange,
   leaderboardNightlyReconciliation,
   leaderboardReconciliationWorker,
   processActiveRebuildBatch,
+  processRebuildUntilDeadline,
+  sweepPatient,
+  contributionFingerprint,
   eventMonths,
   periodsWithAllTime,
   aggregateDailyRows

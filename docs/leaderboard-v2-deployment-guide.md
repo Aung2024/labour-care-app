@@ -119,23 +119,21 @@ cd ..
 First perform a dry review:
 
 ```bash
-firebase deploy --dry-run --only functions:leaderboardPatientWritten,functions:leaderboardPatientActivityWritten,functions:leaderboardProviderWritten,functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
+firebase deploy --dry-run --only functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
 ```
 
-Confirm that it lists only the six new leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
+Confirm that it lists only these three leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
 
-**Bangkok limitation:** Firestore is in `asia-southeast3`. Google cannot attach document triggers in that region yet, so `leaderboardPatientWritten`, `leaderboardPatientActivityWritten`, and `leaderboardProviderWritten` will fail to create. That is expected. Deploy and keep these three, which do work:
-
-```bash
-firebase deploy --only functions:startLeaderboardRebuild,functions:leaderboardNightlyReconciliation,functions:leaderboardReconciliationWorker --project mnch-1cbda
-```
+The leaderboard has no per-write document triggers. Scores are updated only by the scheduled sweep (Firestore is in `asia-southeast3`, where document triggers are not supported, and per-write recomputes are not needed).
 
 After deployment, open Firebase Console → Functions and verify:
 
 - `adminSetUserPassword` and `processPendingPasswordResets` are still present;
 - `startLeaderboardRebuild`, `leaderboardNightlyReconciliation`, and `leaderboardReconciliationWorker` are healthy.
 
-The 15-minute worker continues Super Admin rebuilds. A separate 72-hour job starts all-time plus the current month only when no rebuild is already running, so scores still catch up without live document triggers while limiting Firestore reads.
+`leaderboardNightlyReconciliation` starts a sweep every 48 hours when none is running. `leaderboardReconciliationWorker` runs every 15 minutes and processes 50-patient batches (8 in parallel) for up to 7 minutes per run, checkpointing after each batch.
+
+Each sweep stores a per-period fingerprint in `leaderboard_v2_patient_state/{patientId}`. Patients whose calculated scores have not changed since the previous sweep are skipped with no leaderboard writes, so after the first sweep the cost is about one activity read set per patient. Super Admin rebuilds ignore fingerprints and recompute every patient.
 
 ## 7. Deploy indexes and additive rules
 
@@ -171,7 +169,7 @@ Use the Netlify branch preview for `version-2-upgrade`. Do not make it the produ
 2. Sign in as Super Admin.
 3. Click **Build all-time and last 4 months**.
 4. Confirm the prompt once.
-5. The request queues the rebuild immediately. The scheduled worker continues every 15 minutes in 10-patient batches and checkpoints after each patient.
+5. The request queues the rebuild immediately. The scheduled worker continues every 15 minutes in 50-patient batches and checkpoints after each batch.
 6. In Firestore Console, inspect `leaderboard_v2_jobs/leaderboard-v2-rebuild`.
 7. Wait until `status` becomes `complete`.
 
