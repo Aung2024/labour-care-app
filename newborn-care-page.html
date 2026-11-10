@@ -2884,12 +2884,17 @@
       return item && item.data ? item.data : (item || {});
     }
 
+    function getNewbornVisitNumber(data) {
+      const visitNumber = parseInt(data && (data.visit_number || data.visitNumber), 10);
+      return visitNumber >= 1 ? visitNumber : 1;
+    }
+
     function sortedNewbornVisits() {
       return (newbornCareVisits || []).slice().sort(function (a, b) {
         const ad = getVisitData(a);
         const bd = getVisitData(b);
-        const av = parseInt(ad.visit_number || ad.visitNumber, 10) || 0;
-        const bv = parseInt(bd.visit_number || bd.visitNumber, 10) || 0;
+        const av = getNewbornVisitNumber(ad);
+        const bv = getNewbornVisitNumber(bd);
         if (av !== bv) return av - bv;
         return String(ad.visitDate || ad.birth_time || ad.timestamp || '').localeCompare(String(bd.visitDate || bd.birth_time || bd.timestamp || ''));
       });
@@ -3631,16 +3636,13 @@
       if (!docId) return visits;
       try {
         const collectionRef = firebase.firestore().collection('patients').doc(docId).collection('newborn_care');
-        let snap;
-        try {
-          snap = await collectionRef.orderBy('visit_number', 'asc').get();
-        } catch (e) {
-          snap = await collectionRef.get();
-        }
+        // Firestore orderBy excludes documents that do not contain that field.
+        // Read the small visit collection once so legacy visitNumber records are included.
+        const snap = await collectionRef.get();
         if (snap && !snap.empty) {
           snap.forEach(function (doc) {
-            const data = doc.data() || {};
-            if (!data.visit_number) data.visit_number = 1;
+            const data = Object.assign({}, doc.data() || {});
+            data.visit_number = getNewbornVisitNumber(data);
             visits.push({ id: doc.id, data: data });
           });
         }
@@ -3672,8 +3674,7 @@
           return d.patientId === storagePatientId;
         }).forEach(function (r) {
           const data = Object.assign({}, r.data || r);
-          if (!data.visit_number && data.visitNumber) data.visit_number = data.visitNumber;
-          if (!data.visit_number) data.visit_number = 1;
+          data.visit_number = getNewbornVisitNumber(data);
           visits.push({ id: r.localId, data: data, pending: true });
           seenIds.add(r.localId);
         });
