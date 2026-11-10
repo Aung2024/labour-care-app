@@ -10,6 +10,7 @@ const readAppFile = (relativePath) => {
 
 test('stable worker has an atomic core shell and bounded network requests', () => {
   const sw = readAppFile('service-worker.js')
+  const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
 
   const requiredPaths = [
     '/index.html',
@@ -31,7 +32,7 @@ test('stable worker has an atomic core shell and bounded network requests', () =
 
   assert.match(sw, /cacheInBatches\(cache, REQUIRED_SHELL\)/)
   assert.match(sw, /CACHE_BATCH_SIZE = 6/)
-  assert.match(sw, /RELEASE_ID = '20261018-navigation-stability'/)
+  assert.match(sw, new RegExp(`RELEASE_ID = '${releaseConfig.releaseId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`))
   assert.match(sw, /required-shell-incomplete/)
   assert.match(sw, /fetchWithTimeout/)
   assert.match(sw, /AbortController/)
@@ -115,12 +116,14 @@ test('route manifest covers home and clinical navigation targets', () => {
   assert.match(navigation, /warmRoutes/)
 })
 
-test('testing release keeps the worker disabled and production build is explicit', () => {
+test('release config matches the explicit Netlify PWA build mode', () => {
   const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
   const netlify = readAppFile('netlify.toml')
   const buildScript = readAppFile('scripts/build-pwa-release.js')
 
-  assert.equal(releaseConfig.enabled, false)
+  const productionMode = /PWA_RELEASE_MODE\s*=\s*"production"/.test(netlify)
+  assert.equal(releaseConfig.enabled, productionMode)
+  assert.equal(releaseConfig.channel, productionMode ? 'production' : 'testing')
   assert.match(netlify, /scripts\/generate-pwa-manifest\.js/)
   assert.match(netlify, /scripts\/build-pwa-release\.js/)
   assert.match(buildScript, /PWA_RELEASE_MODE/)
