@@ -1583,7 +1583,7 @@
     var confirmed = global.AppDialog
       ? await global.AppDialog.confirm(t(
         'Save these back-fill changes? Existing values you replace stay in the audit history. Nothing is deleted.',
-        'ဤပြန်ဖြည့်ချက်များကို သိမ်းမည်လား။ အစားထိုးသော တန်ဖိုးဟောင်းများကို မှတ်တမ်းတွင် ထိန်းထားပြီး ဘာမှ မဖျက်ပါ။'
+        'ဤပြန်ဖြည့်ချက်များကို သိမ်းမည်လား။'
       ), { title: t('Save back fill', 'ပြန်ဖြည့်ချက် သိမ်းရန်'), okLabel: t('Save', 'သိမ်းရန်'), cancelLabel: t('Cancel', 'မလုပ်တော့ပါ') })
       : global.confirm(t('Save these back-fill changes?', 'ဤပြန်ဖြည့်ချက်များကို သိမ်းမည်လား။'));
     if (!confirmed) return;
