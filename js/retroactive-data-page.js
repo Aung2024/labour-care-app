@@ -19,6 +19,7 @@
     booted: false
   };
   var PAGE = 8;
+  var BACKGROUND_PAGE = 50;
 
   function lang() {
     return global.currentLanguage === 'en' ? 'en' : 'mm';
@@ -76,10 +77,19 @@
       show('workState', false);
       return;
     }
-    state.booted = true;
     var user = global.firebase.auth().currentUser;
     if (!user) return;
-    var profile = await global.firebase.firestore().collection('users').doc(user.uid).get();
+    state.booted = true;
+    var profile;
+    try {
+      profile = await global.firebase.firestore().collection('users').doc(user.uid).get();
+    } catch (error) {
+      console.error(error);
+      state.booted = false;
+      show('workState', true);
+      setMessage('statusText', t('Could not load your patients. Check the connection and try again.', 'လူနာများကို မဖွင့်နိုင်ပါ။ အင်တာနက်စစ်ပြီး ထပ်ကြိုးစားပါ။'));
+      return;
+    }
     var data = profile.exists ? profile.data() || {} : {};
     if (String(data.role || '').toLowerCase() !== 'midwife') {
       show('deniedState', true);
@@ -116,7 +126,7 @@
     await loadPatientPage();
   }
 
-  async function loadPatientPage() {
+  async function loadPatientPage(pageSize) {
     if (state.loadingPatients) return;
     state.loadingPatients = true;
     show('loadingState', true);
@@ -124,7 +134,7 @@
     if (loadMore) loadMore.disabled = true;
     try {
       var result = await global.RetroactiveDataService.listOwnedMothersPage(
-        global.firebase.firestore(), state.user.uid, state.pageCursors, PAGE
+        global.firebase.firestore(), state.user.uid, state.pageCursors, pageSize || PAGE
       );
       result.mothers.forEach(function (mother) {
         if (state.motherIds.has(mother.id)) return;
@@ -151,7 +161,7 @@
 
   async function loadRemainingPatientPages() {
     while (state.hasMorePatients && !state.loadingPatients) {
-      await loadPatientPage();
+      await loadPatientPage(BACKGROUND_PAGE);
     }
   }
 
@@ -1415,7 +1425,6 @@
   }
 
   function updateReviewCount() {
-    var count = selectedRequests().length;
     var button = document.getElementById('saveBtn');
     button.disabled = !state.activeId || state.saving;
     button.textContent = state.saving
@@ -1497,10 +1506,11 @@
       return;
     }
     var draft = captureDraft();
+    var patientId = state.activeId;
     state.saving = true;
     updateReviewCount();
     try {
-      var bundle = state.bundles.get(state.activeId);
+      var bundle = state.bundles.get(patientId);
       var result = await global.RetroactiveDataService.saveRequests(
         global.firebase.firestore(),
         state.user,
@@ -1508,10 +1518,10 @@
         requests,
         { requireComplete: false }
       );
-      state.bundles.set(state.activeId, result.bundle);
-      state.scans.set(state.activeId, result.inspection);
+      state.bundles.set(patientId, result.bundle);
+      state.scans.set(patientId, result.inspection);
       setMessage('saveStatus', t('Section saved.', 'အပိုင်းကို သိမ်းပြီးပါပြီ။'));
-      renderDetail(draft);
+      if (state.activeId === patientId) renderDetail(draft);
       renderList();
     } catch (error) {
       console.error(error);
@@ -1552,16 +1562,19 @@
       ), { title: t('Save back fill', 'ပြန်ဖြည့်ချက် သိမ်းရန်'), okLabel: t('Save', 'သိမ်းရန်'), cancelLabel: t('Cancel', 'မလုပ်တော့ပါ') })
       : global.confirm(t('Save these back-fill changes?', 'ဤပြန်ဖြည့်ချက်များကို သိမ်းမည်လား။'));
     if (!confirmed) return;
+    var patientId = state.activeId;
     state.saving = true;
     updateReviewCount();
     setMessage('saveStatus', t('Saving…', 'သိမ်းနေသည်…'));
     try {
       var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests);
-      state.bundles.set(state.activeId, result.bundle);
-      state.scans.set(state.activeId, result.inspection);
+      state.bundles.set(patientId, result.bundle);
+      state.scans.set(patientId, result.inspection);
       setMessage('saveStatus', t('Saved. The list has been refreshed.', 'သိမ်းပြီးပါပြီ။ စာရင်းကို ပြန်စစ်ပြီးပါပြီ။'));
-      if (!result.inspection.gapCount) closeDetail();
-      else renderDetail();
+      if (state.activeId === patientId) {
+        if (!result.inspection.gapCount) closeDetail();
+        else renderDetail();
+      }
       renderList();
     } catch (error) {
       console.error(error);
@@ -1584,7 +1597,10 @@
     var search = document.getElementById('patientSearch');
     search.placeholder = t('Search your patients', 'လူနာအမည် ရှာရန်');
     search.addEventListener('input', renderList);
-    document.getElementById('retryBtn').addEventListener('click', function () { loadQueue(true); });
+    document.getElementById('retryBtn').addEventListener('click', function () {
+      if (!state.user) boot();
+      else loadQueue(true);
+    });
     document.getElementById('loadMoreBtn').addEventListener('click', function () { loadQueue(false); });
     document.getElementById('backBtn').addEventListener('click', closeDetail);
     document.getElementById('homeBtn').addEventListener('click', function () {
