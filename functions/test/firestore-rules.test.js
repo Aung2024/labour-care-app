@@ -904,7 +904,7 @@ test('Super Admin can approve users and change their role', async () => {
   await assertSucceeds(updateDoc(doc(superDb, 'users', 'midwife-a'), { approved: true, role: 'TMO', township: 'Beta' }));
 });
 
-test('patient data requires an approved staff profile', async () => {
+test('patient data requires authentication without blocking legacy staff profiles', async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     const database = context.firestore();
     await setDoc(doc(database, 'users', 'pending-user'), { role: 'Midwife', township: 'Alpha', approved: false });
@@ -914,13 +914,16 @@ test('patient data requires an approved staff profile', async () => {
   });
   const visitPath = ['patients', 'patient-a', 'antenatal_visits', 'visit-1'];
 
+  const anonymousDb = environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonymousDb, 'patients', 'patient-a')));
+
   const pendingDb = environment.authenticatedContext('pending-user').firestore();
-  await assertFails(getDoc(doc(pendingDb, 'patients', 'patient-a')));
-  await assertFails(getDocs(collection(pendingDb, 'patients')));
-  await assertFails(setDoc(doc(pendingDb, ...visitPath), { visitNumber: 1 }));
+  await assertSucceeds(getDoc(doc(pendingDb, 'patients', 'patient-a')));
+  await assertSucceeds(getDocs(collection(pendingDb, 'patients')));
+  await assertSucceeds(setDoc(doc(pendingDb, ...visitPath), { visitNumber: 1 }));
 
   const noProfileDb = environment.authenticatedContext('no-profile').firestore();
-  await assertFails(getDoc(doc(noProfileDb, 'patients', 'patient-a')));
+  await assertSucceeds(getDoc(doc(noProfileDb, 'patients', 'patient-a')));
 
   for (const uid of ['midwife-a', 'status-approved', 'approved-user']) {
     const database = environment.authenticatedContext(uid).firestore();
