@@ -8,13 +8,14 @@ const projectId = process.env.GCLOUD_PROJECT || 'mnch-v2-functions-test';
 if (!admin.apps.length) admin.initializeApp({ projectId });
 const database = admin.firestore();
 const {
-  processActiveRebuildBatch
+  processActiveRebuildBatch,
+  processRebuildUntilDeadline
 } = require('../src/leaderboard/functions');
 const {
   processActiveDashboardBatch
 } = require('../src/analytics/functions');
 const {
-  processLeaderboardRefreshQueue
+  processUnifiedRefreshQueue
 } = require('../src/analytics/refresh-queue-functions');
 const {
   queryProjectionRows
@@ -44,7 +45,19 @@ async function waitForSummary(month, providerId, predicate, timeoutMs) {
   throw new Error('Timed out waiting for leaderboard summary.');
 }
 
-test('refresh queue updates summaries without double-counting and handles deletes', async () => {
+async function runScheduledSweep(months) {
+  await database.collection('leaderboard_v2_jobs').doc('leaderboard-v2-rebuild').set({
+    status: 'running',
+    months,
+    force: false,
+    lastPatientId: null,
+    processedPatients: 0
+  });
+  const result = await processRebuildUntilDeadline(30000);
+  assert.equal(result.status, 'complete');
+}
+
+test('scheduled sweep updates summaries without double-counting and handles deletes', async () => {
   const now = new Date();
   const month = monthOnly(now);
   const today = dateOnly(now);
@@ -76,12 +89,8 @@ test('refresh queue updates summaries without double-counting and handles delete
     lmp: '2026-01-01',
     visitNumber: 1
   });
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  const periods = [month, month.slice(0, 4), 'all'];
+  await runScheduledSweep(periods);
 
   const initial = await waitForSummary(
     month,
@@ -99,12 +108,9 @@ test('refresh queue updates summaries without double-counting and handles delete
     lmp: '2026-01-01',
     visitNumber: 1
   }, { merge: true });
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration-retry'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  await runScheduledSweep(periods);
+  const job = await database.collection('leaderboard_v2_jobs').doc('leaderboard-v2-rebuild').get();
+  assert.equal(job.data().changedPatients, 0);
   const retried = await waitForSummary(
     month,
     providerId,
@@ -113,12 +119,7 @@ test('refresh queue updates summaries without double-counting and handles delete
   assert.equal(retried.score, 6);
 
   await ancRef.delete();
-  await database.collection('leaderboard_v3_refresh_queue').doc(patientId).set({
-    patientId,
-    requestedBy: providerId,
-    reason: 'integration-delete'
-  });
-  await processLeaderboardRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  await runScheduledSweep(periods);
   const afterDelete = await waitForSummary(
     month,
     providerId,
@@ -134,6 +135,60 @@ test('refresh queue updates summaries without double-counting and handles delete
   );
   assert.equal(allTime.categories.registration, 1);
   assert.equal(allTime.categories.completeRegistration, 2);
+  assert.equal(allTime.categories.ancVisits, 0);
+});
+
+test('clinical refresh queue updates the leaderboard and removes deleted visit points', async () => {
+  const now = new Date();
+  const month = monthOnly(now);
+  const today = dateOnly(now);
+  const providerId = 'queue-midwife';
+  const patientId = 'queue-patient';
+  const patientRef = database.collection('patients').doc(patientId);
+  const ancRef = patientRef.collection('antenatal_visits').doc('visit-1');
+  const queuePatient = async (reason) => {
+    await database.collection('clinical_refresh_v1_queue').doc(patientId).set({
+      patientId,
+      requestedBy: providerId,
+      reason
+    });
+    await processUnifiedRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  };
+
+  await database.collection('users').doc(providerId).set({
+    role: 'Midwife',
+    name: 'Queue Midwife',
+    provider_type: 'rhc',
+    township: 'Queue Township',
+    region: 'Queue Region'
+  });
+  await patientRef.set({
+    created_by: providerId,
+    name: 'Queue Patient',
+    age: 28,
+    phone: '000000000',
+    address: 'Synthetic Address',
+    township: 'Queue Township',
+    village: 'Synthetic Village',
+    registration_date: today
+  });
+  await ancRef.set({ visitDate: today, lmp: '2026-01-01', visitNumber: 1 });
+  await queuePatient('integration');
+  const initial = await waitForSummary(month, providerId, (data) => data.score === 6);
+  assert.equal(initial.categories.ancVisits, 1);
+
+  const stateRef = database.collection('leaderboard_v2_patient_state').doc(patientId);
+  const firstState = await stateRef.get();
+  await queuePatient('integration-retry');
+  const secondState = await stateRef.get();
+  assert.equal(secondState.updateTime.isEqual(firstState.updateTime), true);
+  assert.equal((await waitForSummary(month, providerId, (data) => data.score === 6)).score, 6);
+
+  await ancRef.delete();
+  await queuePatient('integration-delete');
+  const afterDelete = await waitForSummary(month, providerId, (data) => data.score === 3);
+  assert.equal(afterDelete.categories.ancVisits, 0);
+  const allTime = await waitForSummary('all', providerId, (data) => data.score === 3);
   assert.equal(allTime.categories.ancVisits, 0);
 });
 

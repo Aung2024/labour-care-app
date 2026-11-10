@@ -43,9 +43,11 @@ async function documentData(ref) {
   return snapshot.exists ? (snapshot.data() || {}) : null;
 }
 
-async function loadPatientActivity(db, patientId) {
+async function loadPatientActivity(db, patientId, preloadedPatient) {
   const patientRef = db.collection('patients').doc(patientId);
-  const patientSnapshot = await patientRef.get();
+  const patientSnapshot = preloadedPatient
+    ? { exists: true, data: () => preloadedPatient }
+    : await patientRef.get();
   if (!patientSnapshot.exists) {
     return { patient: null, activity: {} };
   }
