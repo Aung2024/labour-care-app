@@ -5,13 +5,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function currentUserExists() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
     function currentUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Matches auth-guard.js: profiles created before the approval flag
+    // existed have no "approved" field and stay active.
+    function currentUserExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          currentUserData().get("approved", true) == true
+          || currentUserData().get("status", "") == "approved"
+        );
     }
 
     function isEditSupervisor() {
@@ -154,8 +160,33 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      // Allow users to read/write their own data
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Self-registration always starts unapproved with a non-admin role;
+      // only Super Admin can approve or grant other roles.
+      allow create: if
+        request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.get("approved", null) == false
+        && request.resource.data.get("status", "") != "approved"
+        && request.resource.data.get("role", "") in ["Midwife", "TMO", "Regional Officer"];
+
+      // Users may edit their own profile details, but not the fields that
+      // decide their access (role, approval, or geographic scope).
+      allow update: if
+        request.auth != null
+        && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "role",
+          "approved",
+          "status",
+          "township",
+          "region",
+          "facility_code",
+          "provider_type",
+          "department",
+          "facility_type"
+        ]);
       
       // Allow Super Admin to read/write all user data
       allow read, write: if
@@ -205,78 +236,74 @@ service cloud.firestore {
     // Midwives on the care team (care_team_midwife_ids) must be able to write
     // delivery notes and create baby patients for joint-care / transferred mothers.
     match /patients/{patientId} {
-      // Allow public read for share links (summary-view.html - clinicians share patient summary URLs)
-      allow read: if true;
-      // Allow authenticated users to read/write patient documents
-      allow read, write: if request.auth != null;
+      // Approved staff can read/write patient documents
+      allow read, write: if currentUserExists();
       
       // Allow access to plotData subcollection
       match /plotData/{plotId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to records subcollection (summary, startingTime, secondStage, birthRecord)
       match /records/{recordId} {
-        // Allow public read for share links (summary-view.html)
-        allow read: if true;
-        allow write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to medication subcollection
       match /medication/{medicationId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to antenatal_visits subcollection
       match /antenatal_visits/{visitId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to testRecords subcollection
       match /testRecords/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to test_records subcollection (alternative naming)
       match /test_records/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to immediate_newborn_care subcollection
       match /immediate_newborn_care/{careId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to newborn_care subcollection
       match /newborn_care/{careId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to postpartum_visits subcollection
       match /postpartum_visits/{visitId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to baby_records subcollection
       match /baby_records/{recordId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to labour_care subcollection
       match /labour_care/{recordId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to lab_tests subcollection
       match /lab_tests/{testId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
       
       // Allow access to consents subcollection (patient consent records)
       match /consents/{consentId} {
-        allow read: if request.auth != null;
+        allow read: if currentUserExists();
         allow write: if
-          request.auth != null
+          currentUserExists()
           && (
             request.resource.data.providerId == request.auth.uid
             || (
@@ -288,7 +315,7 @@ service cloud.firestore {
       
       // Catch-all for any other subcollections under patients
       match /{subcollection}/{document=**} {
-        allow read, write: if request.auth != null;
+        allow read, write: if currentUserExists();
       }
     }
 

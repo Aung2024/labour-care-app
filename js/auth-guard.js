@@ -10,8 +10,7 @@
 const PUBLIC_PAGES = [
   'login.html',
   'registration.html',
-  'privacy-policy.html',
-  'summary-view.html' // Allow public access for share links
+  'privacy-policy.html'
 ];
 
 // Pages that require authentication but allow unauthenticated access for specific flows

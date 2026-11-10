@@ -854,3 +854,87 @@ test('TMO and above can comment on QI plans in scope', async () => {
     doc(midwifeDb, 'quality_improvement_plans', 'midwife-a_2026-09', 'comments', 'skin_to_skin')
   ));
 });
+
+test('patient records are not readable without signing in', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'patients', 'patient-a'), { name: 'Patient A', township: 'Alpha' });
+    await setDoc(doc(database, 'patients', 'patient-a', 'records', 'summary'), { notes: 'labour summary' });
+  });
+  const anonymousDb = environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonymousDb, 'patients', 'patient-a')));
+  await assertFails(getDocs(collection(anonymousDb, 'patients')));
+  await assertFails(getDoc(doc(anonymousDb, 'patients', 'patient-a', 'records', 'summary')));
+
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a')));
+  await assertSucceeds(getDoc(doc(midwifeDb, 'patients', 'patient-a', 'records', 'summary')));
+});
+
+test('self-registration starts unapproved with a non-admin role', async () => {
+  const newDb = environment.authenticatedContext('new-user').firestore();
+  const base = { email: 'new@example.com', township: 'Alpha', region: 'North' };
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Super Admin', approved: false }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife', approved: true }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife' }));
+  await assertFails(setDoc(doc(newDb, 'users', 'new-user'), { ...base, role: 'Midwife', approved: false, status: 'approved' }));
+  await assertFails(setDoc(doc(newDb, 'users', 'someone-else'), { ...base, role: 'Midwife', approved: false }));
+  for (const role of ['Midwife', 'TMO', 'Regional Officer']) {
+    const uid = `new-${role.replace(/\s+/g, '-').toLowerCase()}`;
+    const roleDb = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(setDoc(doc(roleDb, 'users', uid), { ...base, role, approved: false }));
+  }
+});
+
+test('users cannot change their own role, approval, or scope', async () => {
+  const midwifeDb = environment.authenticatedContext('midwife-a').firestore();
+  const ownRef = doc(midwifeDb, 'users', 'midwife-a');
+  await assertFails(updateDoc(ownRef, { role: 'Super Admin' }));
+  await assertFails(updateDoc(ownRef, { approved: true }));
+  await assertFails(updateDoc(ownRef, { status: 'approved' }));
+  await assertFails(updateDoc(ownRef, { township: 'Beta' }));
+  await assertFails(setDoc(ownRef, { role: 'Super Admin' }, { merge: true }));
+  await assertFails(updateDoc(doc(midwifeDb, 'users', 'midwife-b'), { name: 'Changed' }));
+  await assertSucceeds(updateDoc(ownRef, { name: 'Midwife A', phone: '0912345678' }));
+  await assertSucceeds(setDoc(ownRef, { address: 'Clinic road' }, { merge: true }));
+});
+
+test('Super Admin can approve users and change their role', async () => {
+  const superDb = environment.authenticatedContext('super').firestore();
+  await assertSucceeds(updateDoc(doc(superDb, 'users', 'midwife-a'), { approved: true, role: 'TMO', township: 'Beta' }));
+});
+
+test('patient data requires an approved staff profile', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'users', 'pending-user'), { role: 'Midwife', township: 'Alpha', approved: false });
+    await setDoc(doc(database, 'users', 'status-approved'), { role: 'Midwife', township: 'Alpha', approved: false, status: 'approved' });
+    await setDoc(doc(database, 'users', 'approved-user'), { role: 'Midwife', township: 'Alpha', approved: true });
+    await setDoc(doc(database, 'patients', 'patient-a'), { name: 'Patient A', township: 'Alpha' });
+  });
+  const visitPath = ['patients', 'patient-a', 'antenatal_visits', 'visit-1'];
+
+  const pendingDb = environment.authenticatedContext('pending-user').firestore();
+  await assertFails(getDoc(doc(pendingDb, 'patients', 'patient-a')));
+  await assertFails(getDocs(collection(pendingDb, 'patients')));
+  await assertFails(setDoc(doc(pendingDb, ...visitPath), { visitNumber: 1 }));
+
+  const noProfileDb = environment.authenticatedContext('no-profile').firestore();
+  await assertFails(getDoc(doc(noProfileDb, 'patients', 'patient-a')));
+
+  for (const uid of ['midwife-a', 'status-approved', 'approved-user']) {
+    const database = environment.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(database, 'patients', 'patient-a')));
+    await assertSucceeds(setDoc(doc(database, ...visitPath), { visitNumber: 1, createdBy: uid }));
+  }
+});
+
+test('approved staff can commit large Back Fill batches', async () => {
+  const { writeBatch } = require('firebase/firestore');
+  const database = environment.authenticatedContext('midwife-a').firestore();
+  const batch = writeBatch(database);
+  for (let i = 0; i < 200; i++) {
+    batch.set(doc(database, 'patients', 'patient-a', 'antenatal_visits', `visit-${i}`), { visitNumber: i + 1 }, { merge: true });
+  }
+  await assertSucceeds(batch.commit());
+});
