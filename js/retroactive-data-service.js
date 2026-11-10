@@ -12,6 +12,7 @@
   var MAX_PNC = 8;
   var MAX_NEWBORN = 8;
   var MAX_IMMEDIATE = 4;
+  var MAX_BATCH_OPERATIONS = 200;
 
   function assertSafeData(data) {
     if (!data || typeof data !== 'object') return;
@@ -23,26 +24,14 @@
     });
   }
 
+  // One query per subcollection; the extra document only detects truncation.
   async function readAll(ref, maxDocs) {
+    var snap = await ref.limit(maxDocs + 1).get();
     var rows = [];
-    var cursor = null;
-    var truncated = false;
-    while (rows.length < maxDocs) {
-      var query = ref.limit(PAGE_SIZE);
-      if (cursor) query = query.startAfter(cursor);
-      var snap = await query.get();
-      if (!snap.size) break;
-      snap.forEach(function (doc) {
-        if (rows.length < maxDocs) rows.push({ id: doc.id, data: doc.data() || {} });
-      });
-      if (snap.size < PAGE_SIZE) break;
-      if (rows.length >= maxDocs) {
-        truncated = true;
-        break;
-      }
-      cursor = snap.docs[snap.docs.length - 1];
-    }
-    return { rows: rows, truncated: truncated };
+    snap.forEach(function (doc) {
+      if (rows.length < maxDocs) rows.push({ id: doc.id, data: doc.data() || {} });
+    });
+    return { rows: rows, truncated: snap.size > maxDocs };
   }
 
   async function listOwnedMothers(db, uid) {
@@ -99,25 +88,34 @@
 
   async function loadBundle(db, patient) {
     var ref = db.collection('patients').doc(patient.id);
-    var truncated = false;
-    var anc = await readAll(ref.collection('antenatal_visits'), MAX_ANC);
-    var tests = await readAll(ref.collection('testRecords'), MAX_TESTS);
-    var pnc = await readAll(ref.collection('postpartum_visits'), MAX_PNC);
-    var newborn = await readAll(ref.collection('newborn_care'), MAX_NEWBORN);
-    var immediate = await readAll(ref.collection('immediate_newborn_care'), MAX_IMMEDIATE);
-    truncated = anc.truncated || tests.truncated || pnc.truncated || newborn.truncated || immediate.truncated;
-    immediate.rows.forEach(function (row) { row.patientId = patient.id; });
-
     var babyIds = Array.isArray(patient.baby_patient_ids) ? patient.baby_patient_ids.slice(0, 3) : [];
-    for (var i = 0; i < babyIds.length; i++) {
-      var babyImmediate = await readAll(db.collection('patients').doc(babyIds[i]).collection('immediate_newborn_care'), MAX_IMMEDIATE);
-      babyImmediate.rows.forEach(function (row) {
-        row.patientId = babyIds[i];
+    var results = await Promise.all([
+      readAll(ref.collection('antenatal_visits'), MAX_ANC),
+      readAll(ref.collection('testRecords'), MAX_TESTS),
+      readAll(ref.collection('postpartum_visits'), MAX_PNC),
+      readAll(ref.collection('newborn_care'), MAX_NEWBORN),
+      readAll(ref.collection('immediate_newborn_care'), MAX_IMMEDIATE),
+      ref.collection('records').doc('deliveryNotes').get(),
+      Promise.all(babyIds.map(function (babyId) {
+        return readAll(db.collection('patients').doc(babyId).collection('immediate_newborn_care'), MAX_IMMEDIATE);
+      }))
+    ]);
+    var anc = results[0];
+    var tests = results[1];
+    var pnc = results[2];
+    var newborn = results[3];
+    var immediate = results[4];
+    var deliverySnap = results[5];
+    var babyImmediate = results[6];
+    var truncated = anc.truncated || tests.truncated || pnc.truncated || newborn.truncated || immediate.truncated;
+    immediate.rows.forEach(function (row) { row.patientId = patient.id; });
+    babyImmediate.forEach(function (babyResult, index) {
+      babyResult.rows.forEach(function (row) {
+        row.patientId = babyIds[index];
         immediate.rows.push(row);
       });
-    }
+    });
 
-    var deliverySnap = await ref.collection('records').doc('deliveryNotes').get();
     var delivery = null;
     if (deliverySnap.exists) {
       delivery = { id: deliverySnap.id, data: deliverySnap.data() || {}, canonical: true };
@@ -200,39 +198,43 @@
       throw planError;
     }
 
+    var mergeOperations = plan.operations.filter(function (operation) { return operation.kind !== 'delivery'; });
+    var deliveryOperations = plan.operations.filter(function (operation) { return operation.kind === 'delivery'; });
+    plan.operations.forEach(function (operation) { assertSafeData(operation.data || operation.notes); });
+    if (deliveryOperations.length && (!root.DeliveryNotesUtils || !root.BabyPatientUtils)) {
+      throw new Error('Delivery Notes module is not loaded. Refresh and try again.');
+    }
+
     var completedOperations = 0;
     try {
-      for (var i = 0; i < plan.operations.length; i++) {
-        var operation = plan.operations[i];
-        assertSafeData(operation.data || operation.notes);
-        if (operation.kind === 'delivery') {
-          if (!root.DeliveryNotesUtils || !root.BabyPatientUtils) {
-            throw new Error('Delivery Notes module is not loaded. Refresh and try again.');
-          }
-          await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
-            allowUpdate: operation.allowUpdate,
-            approvalId: rules.RULE_VERSION,
-            motherData: patient
-          });
-          await db.collection('patients').doc(patient.id).collection('records').doc('deliveryNotes').set({
-            retroactiveSource: rules.RULE_VERSION,
-            retroactiveUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            updatedBy: user.uid
-          }, { merge: true });
+      // Every Firestore batch is capped at 500 writes; each merge adds at most one audit write.
+      for (var start = 0; start < mergeOperations.length; start += MAX_BATCH_OPERATIONS) {
+        var chunk = mergeOperations.slice(start, start + MAX_BATCH_OPERATIONS);
+        var batch = db.batch();
+        chunk.forEach(function (operation) {
+          batch.set(db.doc(operation.path), Object.assign({}, operation.data, stamp(user, operation.create)), { merge: true });
           if (operation.audit && operation.audit.changes.length) {
-            await db.collection('audit_logs').add(auditEntry(user, patient.id, operation.audit));
-          }
-          completedOperations += 1;
-          continue;
-        }
-
-        var payload = Object.assign({}, operation.data, stamp(user, operation.create));
-        await db.runTransaction(async function (transaction) {
-          transaction.set(db.doc(operation.path), payload, { merge: true });
-          if (operation.audit && operation.audit.changes.length) {
-            transaction.set(db.collection('audit_logs').doc(), auditEntry(user, patient.id, operation.audit));
+            batch.set(db.collection('audit_logs').doc(), auditEntry(user, patient.id, operation.audit));
           }
         });
+        await batch.commit();
+        completedOperations += chunk.length;
+      }
+
+      for (var i = 0; i < deliveryOperations.length; i++) {
+        var operation = deliveryOperations[i];
+        await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
+          allowUpdate: operation.allowUpdate,
+          approvalId: rules.RULE_VERSION,
+          motherData: patient,
+          extraFields: {
+            retroactiveSource: rules.RULE_VERSION,
+            retroactiveUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }
+        });
+        if (operation.audit && operation.audit.changes.length) {
+          await db.collection('audit_logs').add(auditEntry(user, patient.id, operation.audit));
+        }
         completedOperations += 1;
       }
     } catch (writeError) {
@@ -250,8 +252,35 @@
       throw writeError;
     }
 
-    var reloaded = await loadBundle(db, patient);
-    return { plan: plan, bundle: reloaded, inspection: rules.scanPatient(reloaded) };
+    if (!plan.operations.length) {
+      return { plan: plan, bundle: bundle, inspection: rules.scanPatient(bundle) };
+    }
+    if (root.AnalyticsRefreshQueue) {
+      await root.AnalyticsRefreshQueue.requestSafely(patient.id, 'retroactive_backfill');
+    }
+    // Delivery Notes also create babies and sync mother fields, so only that path needs a server re-read.
+    if (deliveryOperations.length) {
+      var refreshed = await db.collection('patients').doc(patient.id).get();
+      var refreshedPatient = refreshed.exists ? Object.assign({ id: refreshed.id }, refreshed.data() || {}) : patient;
+      var reloaded = await loadBundle(db, refreshedPatient);
+      return { plan: plan, bundle: reloaded, inspection: rules.scanPatient(reloaded) };
+    }
+    var patched = Object.assign({}, bundle, {
+      patient: Object.assign({}, patient),
+      ancVisits: cloneRows(bundle.ancVisits),
+      testRecords: cloneRows(bundle.testRecords),
+      pncVisits: cloneRows(bundle.pncVisits),
+      newbornVisits: cloneRows(bundle.newbornVisits),
+      immediateRecords: cloneRows(bundle.immediateRecords)
+    });
+    plan.operations.forEach(function (operation) { rules.applyPlannedOperation(patched, operation); });
+    return { plan: plan, bundle: patched, inspection: rules.scanPatient(patched) };
+  }
+
+  function cloneRows(rows) {
+    return (rows || []).map(function (row) {
+      return Object.assign({}, row, { data: Object.assign({}, row.data || {}) });
+    });
   }
 
   root.RetroactiveDataService = {

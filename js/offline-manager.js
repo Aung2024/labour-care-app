@@ -8,6 +8,8 @@
   const DB_NAME = 'mch_offline_db';
   const DB_VERSION = 3;
   const OFFLINE_MODE_KEY = 'offlineMode';
+  const CLOUD_WRITE_TIMEOUT_MS = 15000;
+  const CLOUD_WRITE_TIMED_OUT = Symbol('cloudWriteTimedOut');
 
   const STORE_NAMES = [
     'pending_patients',
@@ -220,12 +222,31 @@
       return { local: true, cloud: false, queued: true, localId: queued.localId };
     }
 
-    try {
-      const cloudMeta = await cloudWriteFn(queued.data, queued.localId);
+    const finishCloudWrite = async (cloudMeta) => {
       await markSynced(storeName, queued.localId, cloudMeta && cloudMeta.cloudId ? cloudMeta.cloudId : null);
       await deleteRecord(storeName, queued.localId);
+      return cloudMeta;
+    };
+    const cloudWrite = Promise.resolve().then(() => cloudWriteFn(queued.data, queued.localId));
+    let timer = null;
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(CLOUD_WRITE_TIMED_OUT), CLOUD_WRITE_TIMEOUT_MS);
+    });
+
+    try {
+      const cloudMeta = await Promise.race([cloudWrite, timeout]);
+      clearTimeout(timer);
+      if (cloudMeta === CLOUD_WRITE_TIMED_OUT) {
+        // The queued copy stays pending; cloudWriteFn must be idempotent so a
+        // late ack and a later manual sync land on the same document.
+        cloudWrite.then(finishCloudWrite).catch(() => {});
+        console.warn('[OfflineManager] Cloud write slow, keeping queued record:', queued.localId);
+        return { local: true, cloud: false, queued: true, localId: queued.localId, timedOut: true };
+      }
+      await finishCloudWrite(cloudMeta);
       return { local: true, cloud: true, queued: false, localId: queued.localId, cloudMeta: cloudMeta || null };
     } catch (error) {
+      clearTimeout(timer);
       console.warn('[OfflineManager] Cloud write failed, keeping queued record:', error);
       return { local: true, cloud: false, queued: true, localId: queued.localId, error };
     }

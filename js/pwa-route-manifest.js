@@ -102,7 +102,6 @@ self.MNCH_PWA_MANIFEST = {
     "/patient-enhanced.html",
     "/patient-info-report.html",
     "/patient-transfers.html",
-    "/patient.html",
     "/postpartum-care.html",
     "/postpartum-form.html",
     "/postpartum-history.html",

@@ -254,11 +254,6 @@
       color: white;
     }
     
-    .btn-share {
-      background: #6f42c1;
-      color: white;
-    }
-    
     .btn-back {
       background: #6c757d;
       color: white;
@@ -333,10 +328,6 @@
     <button class="action-btn btn-export" onclick="exportToExcel()">
       <i class="fas fa-file-excel"></i>
       Export Excel
-    </button>
-    <button class="action-btn btn-share" onclick="shareSummary()">
-      <i class="fas fa-share-alt"></i>
-      Share Link
     </button>
     <button class="action-btn btn-back" onclick="goBack()">
       <i class="fas fa-arrow-left"></i>
@@ -548,15 +539,10 @@
     
     const patientId = getPatientIdFromUrl();
     
-    // Load data when page loads
-    // Allow public access for share links - no authentication required
+    // Patient data is readable only by signed-in staff; auth-guard redirects
+    // signed-out visitors to login.
     firebase.auth().onAuthStateChanged(function(user) {
-      if (user) {
-        console.log('User authenticated:', user.uid);
-      } else {
-        console.log('Public access - loading summary data without authentication');
-      }
-      // Load data regardless of authentication status for share link functionality
+      if (!user) return;
       loadSummaryData();
     });
     
@@ -2007,36 +1993,6 @@
       data.push(initialsRow);
       
       return data;
-    }
-    
-    function shareSummary() {
-      const url = new URL(window.location.href);
-      const isLocalOrigin =
-        url.protocol === 'file:' ||
-        url.origin === 'null' ||
-        /localhost|127\.0\.0\.1/i.test(url.origin);
-      const fileName = url.pathname.split('/').pop();
-      const safePath = fileName ? `/${fileName}` : '/summary-view.html';
-      const fallbackBase =
-        typeof firebaseConfig !== 'undefined' && firebaseConfig.authDomain
-          ? `https://${firebaseConfig.authDomain}`
-          : 'https://labourcare-2481a.firebaseapp.com';
-      const shareUrl = isLocalOrigin
-        ? `${fallbackBase}${safePath}${url.search}${url.hash}`
-        : url.href;
-
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
-      }).catch(() => {
-        // Fallback for older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = shareUrl;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        textArea.remove();
-        alert('Summary link copied to clipboard! Share this link with other clinicians for review.');
-      });
     }
     
     // Handle back button - prefer entry page; otherwise go to appropriate hub

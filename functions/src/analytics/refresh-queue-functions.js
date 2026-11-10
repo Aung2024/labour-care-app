@@ -12,7 +12,11 @@ const {
   buildPatientAchievements,
   monthKeyForDate
 } = require('../leaderboard/scoring')
-const { eventMonths, periodsWithAllTime } = require('../leaderboard/functions')
+const {
+  eventMonths,
+  periodsWithAllTime,
+  refreshLoadedPatientLeaderboard
+} = require('../leaderboard/functions')
 const { recomputeLoadedPatientQualityMonths } = require('../quality/service')
 const {
   normalizeClinicalFacts,
@@ -234,6 +238,9 @@ const refreshLoadedClinicalProducts = async (
     loaded,
     now
   )
+  await refreshLoadedPatientLeaderboard(db, patientId, loaded, Array.from(periods), {
+    includePreviousPeriods: true
+  })
   await enqueueDashboardV4Refresh(
     db,
     patientId,
