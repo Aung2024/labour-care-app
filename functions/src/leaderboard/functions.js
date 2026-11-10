@@ -24,9 +24,9 @@ const {
 const { loadPatientActivity } = require('./repository');
 
 const REGION = 'us-central1';
-// The leaderboard is refreshed only by the scheduled sweep below. There are
-// no per-write triggers: Firestore is in asia-southeast3 (Bangkok), where
-// document triggers are not supported, and per-write recomputes are not needed.
+// The leaderboard is refreshed by the clinical refresh queue worker (for
+// patients a form queued) and by a monthly full sweep. There are no document
+// triggers: Firestore is in asia-southeast3 (Bangkok), where they are not supported.
 const JOB_ID = 'leaderboard-v2-rebuild';
 const JOB_COLLECTION = 'leaderboard_v2_jobs';
 const PATIENT_STATE_COLLECTION = 'leaderboard_v2_patient_state';
@@ -210,20 +210,26 @@ function contributionFingerprint(providerId, calculated) {
 }
 
 // Recomputes only the periods whose calculated contribution differs from the
-// fingerprint stored by the previous sweep, so unchanged patients cost no
-// leaderboard writes. `force` ignores stored fingerprints.
-async function sweepPatient(database, patientId, patientData, months, force) {
-  const loaded = await loadPatientActivity(database, patientId, patientData);
-  const patient = loaded.patient;
+// stored fingerprint, so unchanged patients cost no leaderboard writes.
+// `force` ignores stored fingerprints. `includePreviousPeriods` also re-checks
+// every period the patient was scored in before, so a deleted or re-dated
+// record removes its old points.
+async function refreshLoadedPatientLeaderboard(database, patientId, loaded, months, options) {
+  const force = Boolean(options && options.force);
+  const patient = loaded && loaded.patient;
   const providerId = patient && (patient.created_by || patient.createdBy) || null;
   const stateRef = database.collection(PATIENT_STATE_COLLECTION).doc(patientId);
   const stateSnapshot = force ? null : await stateRef.get();
   const previous = stateSnapshot && stateSnapshot.exists
     ? (stateSnapshot.data().fingerprints || {})
     : {};
+  const periods = new Set((months || []).filter(isLeaderboardPeriod));
+  if (options && options.includePreviousPeriods) {
+    Object.keys(previous).filter(isLeaderboardPeriod).forEach((period) => periods.add(period));
+  }
   const fingerprints = {};
   const changed = [];
-  months.forEach((month) => {
+  periods.forEach((month) => {
     const calculated = patient ? calculatePatientContribution(patient, loaded.activity, month) : null;
     fingerprints[month] = contributionFingerprint(providerId, calculated);
     if (previous[month] !== fingerprints[month]) changed.push(month);
@@ -237,6 +243,11 @@ async function sweepPatient(database, patientId, patientData, months, force) {
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
   return true;
+}
+
+async function sweepPatient(database, patientId, patientData, months, force) {
+  const loaded = await loadPatientActivity(database, patientId, patientData);
+  return refreshLoadedPatientLeaderboard(database, patientId, loaded, months, { force });
 }
 
 async function mapWithConcurrency(items, concurrency, worker) {
@@ -324,8 +335,10 @@ const getLeaderboardCustomRange = onCall({
   enforceAppCheck: false
 }, queryLeaderboardRange);
 
+// Live updates come from the clinical refresh queue. This monthly full sweep
+// only catches what the queue cannot see, such as deleted patients.
 const leaderboardNightlyReconciliation = onSchedule({
-  schedule: 'every 48 hours',
+  schedule: '0 2 1 * *',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 120,
@@ -336,7 +349,7 @@ const leaderboardNightlyReconciliation = onSchedule({
   if (jobSnapshot.exists && jobSnapshot.data().status === 'running') {
     return { status: 'running', owner: 'leaderboardReconciliationWorker' };
   }
-  await startRebuildJob(scheduledRebuildPeriods(), '48-hour-scheduler');
+  await startRebuildJob(scheduledRebuildPeriods(), 'monthly-scheduler');
   return { status: 'queued', owner: 'leaderboardReconciliationWorker' };
 });
 
@@ -369,6 +382,7 @@ module.exports = {
   processActiveRebuildBatch,
   processRebuildUntilDeadline,
   sweepPatient,
+  refreshLoadedPatientLeaderboard,
   contributionFingerprint,
   eventMonths,
   periodsWithAllTime,

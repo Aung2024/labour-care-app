@@ -124,16 +124,19 @@ firebase deploy --dry-run --only functions:startLeaderboardRebuild,functions:lea
 
 Confirm that it lists only these three leaderboard Functions. It must not propose deleting either existing admin Function. Then run the same command without `--dry-run`.
 
-The leaderboard has no per-write document triggers. Scores are updated only by the scheduled sweep (Firestore is in `asia-southeast3`, where document triggers are not supported, and per-write recomputes are not needed).
+The leaderboard has no document triggers (Firestore is in `asia-southeast3`, where they are not supported). Scores are updated in two ways:
+
+- **Live:** clinical forms queue the patient in `clinical_refresh_v1_queue`. `unifiedClinicalRefreshWorker` (every 5 minutes) already loads that patient's records for tracking and the dashboard, and reuses the same data to update their leaderboard points. Also deploy `functions:unifiedClinicalRefreshWorker`.
+- **Monthly full sweep:** catches what the queue cannot see, such as deleted patients.
 
 After deployment, open Firebase Console → Functions and verify:
 
 - `adminSetUserPassword` and `processPendingPasswordResets` are still present;
 - `startLeaderboardRebuild`, `leaderboardNightlyReconciliation`, and `leaderboardReconciliationWorker` are healthy.
 
-`leaderboardNightlyReconciliation` starts a sweep every 48 hours when none is running. `leaderboardReconciliationWorker` runs every 15 minutes and processes 50-patient batches (8 in parallel) for up to 7 minutes per run, checkpointing after each batch.
+`leaderboardNightlyReconciliation` starts the full sweep at 02:00 on the 1st of each month (Asia/Yangon) when none is running. `leaderboardReconciliationWorker` runs every 15 minutes and processes 50-patient batches (8 in parallel) for up to 7 minutes per run, checkpointing after each batch.
 
-Each sweep stores a per-period fingerprint in `leaderboard_v2_patient_state/{patientId}`. Patients whose calculated scores have not changed since the previous sweep are skipped with no leaderboard writes, so after the first sweep the cost is about one activity read set per patient. Super Admin rebuilds ignore fingerprints and recompute every patient.
+Both paths store a per-period fingerprint in `leaderboard_v2_patient_state/{patientId}`. Periods whose calculated score has not changed are skipped with no leaderboard writes. The queue path also re-checks every period the patient was scored in before, so deleting or re-dating a record removes its old points. Super Admin rebuilds ignore fingerprints and recompute every patient.
 
 ## 7. Deploy indexes and additive rules
 

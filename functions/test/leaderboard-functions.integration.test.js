@@ -15,6 +15,9 @@ const {
   processActiveDashboardBatch
 } = require('../src/analytics/functions');
 const {
+  processUnifiedRefreshQueue
+} = require('../src/analytics/refresh-queue-functions');
+const {
   queryProjectionRows
 } = require('../src/analytics/tracking-functions');
 
@@ -132,6 +135,60 @@ test('scheduled sweep updates summaries without double-counting and handles dele
   );
   assert.equal(allTime.categories.registration, 1);
   assert.equal(allTime.categories.completeRegistration, 2);
+  assert.equal(allTime.categories.ancVisits, 0);
+});
+
+test('clinical refresh queue updates the leaderboard and removes deleted visit points', async () => {
+  const now = new Date();
+  const month = monthOnly(now);
+  const today = dateOnly(now);
+  const providerId = 'queue-midwife';
+  const patientId = 'queue-patient';
+  const patientRef = database.collection('patients').doc(patientId);
+  const ancRef = patientRef.collection('antenatal_visits').doc('visit-1');
+  const queuePatient = async (reason) => {
+    await database.collection('clinical_refresh_v1_queue').doc(patientId).set({
+      patientId,
+      requestedBy: providerId,
+      reason
+    });
+    await processUnifiedRefreshQueue(database, now, { maxRuntimeMs: 30000 });
+  };
+
+  await database.collection('users').doc(providerId).set({
+    role: 'Midwife',
+    name: 'Queue Midwife',
+    provider_type: 'rhc',
+    township: 'Queue Township',
+    region: 'Queue Region'
+  });
+  await patientRef.set({
+    created_by: providerId,
+    name: 'Queue Patient',
+    age: 28,
+    phone: '000000000',
+    address: 'Synthetic Address',
+    township: 'Queue Township',
+    village: 'Synthetic Village',
+    registration_date: today
+  });
+  await ancRef.set({ visitDate: today, lmp: '2026-01-01', visitNumber: 1 });
+  await queuePatient('integration');
+  const initial = await waitForSummary(month, providerId, (data) => data.score === 6);
+  assert.equal(initial.categories.ancVisits, 1);
+
+  const stateRef = database.collection('leaderboard_v2_patient_state').doc(patientId);
+  const firstState = await stateRef.get();
+  await queuePatient('integration-retry');
+  const secondState = await stateRef.get();
+  assert.equal(secondState.updateTime.isEqual(firstState.updateTime), true);
+  assert.equal((await waitForSummary(month, providerId, (data) => data.score === 6)).score, 6);
+
+  await ancRef.delete();
+  await queuePatient('integration-delete');
+  const afterDelete = await waitForSummary(month, providerId, (data) => data.score === 3);
+  assert.equal(afterDelete.categories.ancVisits, 0);
+  const allTime = await waitForSummary('all', providerId, (data) => data.score === 3);
   assert.equal(allTime.categories.ancVisits, 0);
 });
 

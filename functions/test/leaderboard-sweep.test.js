@@ -9,7 +9,7 @@ service.recomputeLoadedPatientMonths = async (db, patientId, months) => {
   recomputeCalls.push({ patientId, months: months.slice() });
   return [];
 };
-const { sweepPatient } = require('../src/leaderboard/functions');
+const { sweepPatient, refreshLoadedPatientLeaderboard } = require('../src/leaderboard/functions');
 
 function createFakeFirestore(seed) {
   const docs = new Map(Object.entries(seed || {}));
@@ -85,4 +85,22 @@ test('sweep recomputes a patient once, then skips it until its data changes', as
 
   assert.equal(await sweepPatient(db, 'p1', patient, months, true), true);
   assert.deepEqual(recomputeCalls[2].months, months);
+});
+
+test('queue refresh re-checks periods the patient was scored in before', async () => {
+  recomputeCalls.length = 0;
+  const db = createFakeFirestore({
+    'leaderboard_v2_patient_state/p2': { fingerprints: { '2026-09': 'old-score', all: 'old-score' } }
+  });
+  const loaded = { patient, activity: {} };
+
+  assert.equal(await refreshLoadedPatientLeaderboard(db, 'p2', loaded, ['2026-10', 'all'], {
+    includePreviousPeriods: true
+  }), true);
+  assert.deepEqual(recomputeCalls[0].months.slice().sort(), ['2026-09', '2026-10', 'all']);
+
+  assert.equal(await refreshLoadedPatientLeaderboard(db, 'p2', loaded, ['2026-10', 'all'], {
+    includePreviousPeriods: true
+  }), false);
+  assert.equal(recomputeCalls.length, 1);
 });
