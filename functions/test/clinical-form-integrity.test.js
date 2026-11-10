@@ -427,6 +427,18 @@ test('new newborn and PNC visits require canonical Delivery Notes identity', () 
   assert.match(report, /deliverySource\.mode_of_delivery \|\| visit1\.mode_of_delivery/);
 });
 
+test('PNC hub links directly to every linked baby without requiring a PNC visit', () => {
+  const source = readAppFile('postpartum-care.html');
+  const loadStart = source.indexOf('async function loadNewbornShortcut');
+  const loadEnd = source.indexOf('\n    document.addEventListener', loadStart);
+  const loadSource = source.slice(loadStart, loadEnd);
+  assert.match(loadSource, /BabyPatientUtils\.listBabiesForMother\(db, motherId\)/);
+  assert.doesNotMatch(loadSource, /collection\('postpartum_visits'\)/);
+  assert.match(loadSource, /babies\.forEach\(function \(baby\)/);
+  assert.match(source, /sessionStorage\.setItem\('selectedPatientId', baby\.id\)/);
+  assert.match(source, /sessionStorage\.setItem\('selectedPatientData', JSON\.stringify\(babyData\)\)/);
+});
+
 test('ANC, newborn, and PNC reports show resolved facility names', () => {
   const anc = readAppFile('antenatal-report.html');
   const newborn = readAppFile('newborn-report.html');

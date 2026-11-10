@@ -405,15 +405,12 @@
       await loadNewbornShortcut();
     });
 
-    async function openNewbornHub() {
-      var patientId = getPatientId();
-      if (window.BabyPatientUtils && BabyPatientUtils.keepMotherSelectedForPnc) {
-        patientId = await BabyPatientUtils.keepMotherSelectedForPnc(firebase.firestore()) || patientId;
-      }
+    async function openNewbornHub(baby, motherId) {
+      if (!baby || !baby.id || !motherId) return;
       var notes = null;
       try {
-        if (patientId && window.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes) {
-          notes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+        if (window.DeliveryNotesUtils && DeliveryNotesUtils.fetchDeliveryNotes) {
+          notes = await DeliveryNotesUtils.fetchDeliveryNotes(motherId);
         }
       } catch (error) {
         console.warn('Could not check Delivery Notes before newborn hub:', error);
@@ -435,6 +432,9 @@
         return;
       }
       try {
+        var babyData = Object.assign({ id: baby.id }, baby.data || {});
+        sessionStorage.setItem('selectedPatientId', baby.id);
+        sessionStorage.setItem('selectedPatientData', JSON.stringify(babyData));
         sessionStorage.setItem('mnchReturnAfterNewbornHub', 'postpartum-care.html');
       } catch (e) {}
       window.location.href = 'immediate-newborn-care.html';
@@ -456,34 +456,55 @@
       try {
         var db = firebase.firestore();
         var motherId = await motherIdForNewbornShortcut(db, patientId);
-        var visits = await db.collection('patients').doc(motherId).collection('postpartum_visits').limit(1).get();
-        if (!visits || visits.empty) {
+        var babies = window.BabyPatientUtils && BabyPatientUtils.listBabiesForMother
+          ? await BabyPatientUtils.listBabiesForMother(db, motherId)
+          : [];
+        if (!babies.length) {
           host.hidden = true;
           host.innerHTML = '';
           return;
         }
         host.innerHTML = '';
-        var card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'module-card';
-        card.style.minHeight = '44px';
-        card.onclick = openNewbornHub;
-        var title = document.createElement('div');
-        title.className = 'module-title';
-        title.textContent = currentLanguage === 'en'
-          ? 'Newborn hub'
-          : 'မွေးကင်းစ စောင့်ရှောက်မှု';
-        var hint = document.createElement('div');
-        hint.className = 'module-description';
-        hint.textContent = currentLanguage === 'en'
-          ? 'Open immediate newborn care, newborn visits, and the newborn report.'
-          : 'မွေးပြီးပြီးချင်း စောင့်ရှောက်မှု၊ မွေးကင်းစ မှတ်တမ်းနှင့် အစီရင်ခံစာကို ဖွင့်ရန်။';
-        var content = document.createElement('div');
-        content.className = 'module-content';
-        content.appendChild(title);
-        content.appendChild(hint);
-        card.appendChild(content);
-        host.appendChild(card);
+        babies.sort(function (a, b) {
+          var aData = a.data || {};
+          var bData = b.data || {};
+          return (parseInt(aData.birth_order, 10) || 1) - (parseInt(bData.birth_order, 10) || 1);
+        });
+        babies.forEach(function (baby) {
+          var babyData = baby.data || {};
+          var babyName = babyData.name || babyData.baby_name ||
+            (currentLanguage === 'en' ? 'Linked baby' : 'ချိတ်ဆက်ထားသော ကလေး');
+          var card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'module-card';
+          card.style.minHeight = '44px';
+          card.onclick = function () { openNewbornHub(baby, motherId); };
+          card.setAttribute('aria-label', (currentLanguage === 'en' ? 'Open newborn care for ' : 'မွေးကင်းစ စောင့်ရှောက်မှု ဖွင့်ရန် ') + babyName);
+          var icon = document.createElement('div');
+          icon.className = 'module-icon';
+          icon.innerHTML = '<i class="fas fa-baby" aria-hidden="true"></i>';
+          var title = document.createElement('div');
+          title.className = 'module-title';
+          title.textContent = currentLanguage === 'en'
+            ? babyName + ' — Newborn care'
+            : babyName + ' — မွေးကင်းစ စောင့်ရှောက်မှု';
+          var hint = document.createElement('div');
+          hint.className = 'module-description';
+          hint.textContent = currentLanguage === 'en'
+            ? 'Open this baby’s immediate care, newborn visits, and report.'
+            : 'ဤကလေး၏ မွေးပြီးပြီးချင်း စောင့်ရှောက်မှု၊ မွေးကင်းစ Visit များနှင့် အစီရင်ခံစာကို ဖွင့်ရန်။';
+          var content = document.createElement('div');
+          content.className = 'module-content';
+          content.appendChild(title);
+          content.appendChild(hint);
+          var arrow = document.createElement('i');
+          arrow.className = 'fas fa-chevron-right module-arrow';
+          arrow.setAttribute('aria-hidden', 'true');
+          card.appendChild(icon);
+          card.appendChild(content);
+          card.appendChild(arrow);
+          host.appendChild(card);
+        });
         host.hidden = false;
       } catch (error) {
         console.warn('Could not load newborn hub card:', error);
