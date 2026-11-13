@@ -29,7 +29,9 @@ var MOH_FIREBASE_CONFIG = {
 var RUNTIME_CONFIG_CACHE_KEY = "labourcare-firebase-runtime-config";
 var MOH_DEPLOY_HOSTS = [
   "mnch-v2.netlify.app",
-  "www.mnch-v2.netlify.app"
+  "www.mnch-v2.netlify.app",
+  "myanmardigitalhealth-mnch.com",
+  "www.myanmardigitalhealth-mnch.com"
 ];
 
 function currentHostname() {

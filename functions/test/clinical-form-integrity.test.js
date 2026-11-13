@@ -366,6 +366,7 @@ test('MOH login never falls back to the pilot Firebase project', () => {
 
   assert.match(firebaseInit, /isMohDeployHost/);
   assert.match(firebaseInit, /mnch-v2\.netlify\.app/);
+  assert.match(firebaseInit, /myanmardigitalhealth-mnch\.com/);
   assert.match(firebaseInit, /MOH_FIREBASE_CONFIG/);
   assert.match(firebaseInit, /projectId: "mnch-1cbda"/);
   assert.match(firebaseInit, /labourcare-firebase-runtime-config/);

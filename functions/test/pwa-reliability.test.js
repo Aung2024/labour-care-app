@@ -116,21 +116,21 @@ test('route manifest covers home and clinical navigation targets', () => {
   assert.match(navigation, /warmRoutes/)
 })
 
-test('release-candidate config explicitly enables the worker with a versioned cache', () => {
+test('production config explicitly enables the worker with a versioned cache', () => {
   const releaseConfig = JSON.parse(readAppFile('pwa-release-config.json'))
   const netlify = readAppFile('netlify.toml')
   const buildScript = readAppFile('scripts/build-pwa-release.js')
 
   assert.equal(releaseConfig.enabled, true)
-  assert.equal(releaseConfig.channel, 'release-candidate')
-  assert.match(releaseConfig.releaseId, /^\d{8}-v2-offline-rc\d+$/)
+  assert.equal(releaseConfig.channel, 'production')
+  assert.match(releaseConfig.releaseId, /^\d{8}-v2-offline-prod\d+$/)
   assert.match(netlify, /scripts\/generate-pwa-manifest\.js/)
   assert.match(netlify, /scripts\/build-pwa-release\.js/)
-  assert.match(netlify, /PWA_RELEASE_MODE = "release-candidate"/)
+  assert.match(netlify, /PWA_RELEASE_MODE = "production"/)
   assert.match(netlify, new RegExp(`PWA_RELEASE_ID = "${releaseConfig.releaseId}"`))
   assert.match(buildScript, /PWA_RELEASE_MODE/)
   assert.match(buildScript, /PWA_RELEASE_ID/)
-  assert.match(buildScript, /mode === 'release-candidate'/)
+  assert.match(buildScript, /mode === 'production'/)
 })
 
 test('stable shell includes Login, Home, List, and update dependencies', () => {
