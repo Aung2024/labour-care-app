@@ -2156,9 +2156,28 @@
       query = query.where(dateField, '>=', context.timestamp.fromDate(startDate))
         .where(dateField, '<=', context.timestamp.fromDate(endDate));
     }
-    query = query.orderBy(dateField, 'desc').limit(pageSize);
-    return query.get().then(function (snapshot) {
-      var rows = snapshot.docs.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); });
+    query = query.orderBy(dateField, 'desc');
+    var fetchAll = filters.fetchAll === true;
+    var allDocuments = [];
+
+    function fetchPage(lastDocument) {
+      var pageQuery = query;
+      if (lastDocument) pageQuery = pageQuery.startAfter(lastDocument);
+      return pageQuery.limit(pageSize).get().then(function (snapshot) {
+        allDocuments = allDocuments.concat(snapshot.docs);
+        if (fetchAll && snapshot.size === pageSize && snapshot.docs.length) {
+          return fetchPage(snapshot.docs[snapshot.docs.length - 1]);
+        }
+        return {
+          documents: allDocuments,
+          hasMore: !fetchAll && snapshot.size === pageSize,
+          lastDocument: snapshot.docs.length ? snapshot.docs[snapshot.docs.length - 1] : null
+        };
+      });
+    }
+
+    return fetchPage(null).then(function (page) {
+      var rows = page.documents.map(function (doc) { return Object.assign({ id: doc.id }, doc.data()); });
       var sheetIds = Array.from(new Set(rows.filter(function (row) {
         return !rowHasStoredTotals(row);
       }).map(function (row) { return row.priceSheetId; }).filter(Boolean)));
@@ -2179,7 +2198,7 @@
         });
         return {
           items: items,
-          nextCursor: snapshot.size === pageSize ? snapshot.docs[snapshot.docs.length - 1].id : null
+          nextCursor: page.hasMore && page.lastDocument ? page.lastDocument.id : null
         };
       });
     });
@@ -2218,8 +2237,10 @@
           return voucherSortMillis(b, dateField) - voucherSortMillis(a, dateField);
         });
         return {
-          items: items.slice(0, pageSize),
-          nextCursor: items.length > pageSize ? (items[pageSize - 1].code || items[pageSize - 1].id) : null
+          items: filters.fetchAll === true ? items : items.slice(0, pageSize),
+          nextCursor: filters.fetchAll !== true && items.length > pageSize
+            ? (items[pageSize - 1].code || items[pageSize - 1].id)
+            : null
         };
       });
     }

@@ -803,7 +803,8 @@
     var range = periodDateRange(period);
     var query = {
       labId: byId('verifyLab').value || undefined,
-      pageSize: 50,
+      pageSize: 400,
+      fetchAll: true,
       dateField: dateFieldForStatus(status || 'all')
     };
     if (status) query.status = status;
@@ -811,7 +812,7 @@
       query.startDate = range.startDate;
       query.endDate = range.endDate;
     }
-    byId('verifyTable').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading vouchers…</div>';
+    byId('verifyTable').innerHTML = '<div class="po-loading"><i class="fas fa-spinner fa-spin"></i>Loading all matching vouchers…</div>';
     var result;
     try {
       result = await service().queryVouchersPaged(query);
@@ -847,13 +848,16 @@
       return;
     }
     byId('verifyTable').innerHTML =
+      '<p class="text-muted small mb-2">' + formatNumber(state.queue.length) +
+      ' matching voucher(s). The header checkbox selects the complete filtered list.</p>' +
       '<table class="po-table po-table--verify"><thead><tr>' +
       '<th class="po-check-col"><label class="po-check-wrap">' +
-      '<input type="checkbox" id="verifySelectAll" aria-label="Select all vouchers">' +
+      '<input type="checkbox" id="verifySelectAll" aria-label="Select all ' +
+      escapeHtml(String(state.queue.length)) + ' filtered vouchers">' +
       '</label></th>' +
-      '<th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Project contribution</th><th>Client co-payment</th><th>Total</th><th>Status</th><th></th>' +
+      '<th>No.</th><th>Code</th><th>Patient</th><th>Lab</th><th>Midwife</th><th>Project contribution</th><th>Client co-payment</th><th>Total</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' +
-      state.queue.map(function (row) {
+      state.queue.map(function (row, index) {
         var code = row.code || row.id;
         var projectAmount = ((row.totals && row.totals.projectContributionMinor) || 0) / 100;
         var clientAmount = ((row.totals && row.totals.clientCopayMinor) || 0) / 100;
@@ -861,6 +865,7 @@
         return '<tr data-code="' + escapeHtml(code) + '">' +
           '<td><input type="checkbox" class="form-check-input verify-check" data-code="' + escapeHtml(code) + '"' +
           (state.selectedCodes[code] ? ' checked' : '') + ' aria-label="Select ' + escapeHtml(code) + '"></td>' +
+          '<td>' + escapeHtml(String(index + 1)) + '</td>' +
           '<td><strong>' + escapeHtml(code) + '</strong></td>' +
           '<td>' + escapeHtml(row.patientNameSnapshot || '—') + '</td>' +
           '<td>' + escapeHtml(row.labNameSnapshot || row.labId || '—') + '</td>' +
