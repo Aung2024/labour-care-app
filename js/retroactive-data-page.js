@@ -140,6 +140,8 @@
         if (state.motherIds.has(mother.id)) return;
         state.motherIds.add(mother.id);
         state.mothers.push(mother);
+        var completedScan = completedMarkerScan(mother);
+        if (completedScan) state.scans.set(mother.id, completedScan);
       });
       state.pageCursors = result.cursors;
       state.hasMorePatients = result.hasMore;
@@ -193,7 +195,7 @@
       state.mothers.forEach(function (mother) {
         var haystack = (String(mother.name || '') + ' ' + mother.id).toLowerCase();
         if (haystack.indexOf(query) === -1) return;
-        rows.push(state.scans.get(mother.id) || {
+        rows.push(state.scans.get(mother.id) || completedMarkerScan(mother) || {
           patientId: mother.id,
           patientName: mother.name || '',
           age: mother.age == null ? '' : mother.age,
@@ -203,7 +205,7 @@
       });
     } else {
       state.mothers.forEach(function (mother) {
-        rows.push(state.scans.get(mother.id) || {
+        rows.push(state.scans.get(mother.id) || completedMarkerScan(mother) || {
           patientId: mother.id,
           patientName: mother.name || '',
           age: mother.age == null ? '' : mother.age,
@@ -214,6 +216,19 @@
     }
     rows.sort(function (a, b) { return String(a.patientName).localeCompare(String(b.patientName)); });
     return rows;
+  }
+
+  function completedMarkerScan(mother) {
+    if (!global.RetroactiveDataRules.hasPermanentBackfillCompletion(mother)) return null;
+    return {
+      patientId: mother.id,
+      patientName: mother.name || '',
+      age: mother.age == null ? '' : mother.age,
+      gapCount: 0,
+      completedMarker: true,
+      pending: false,
+      categories: []
+    };
   }
 
   function renderList() {
@@ -281,12 +296,16 @@
     meta.className = 'patient-meta';
     meta.textContent = scan.pending
       ? t('Not checked yet', 'မစစ်ရသေး')
-      : ((scan.gapCount ? t(scan.gapCount + ' required items', scan.gapCount + ' ချက်လို') : t('Complete', 'ပြည့်စုံ')) + (listSummary(scan) ? ' · ' + listSummary(scan) : ''));
+      : (scan.completedMarker
+        ? t('Back Fill Completed', 'ဒေတာပြည့်စုံစွာဖြည့်ပြီးပါပြီ')
+        : ((scan.gapCount ? t(scan.gapCount + ' required items', scan.gapCount + ' ချက်လို') : t('Complete', 'ပြည့်စုံ')) + (listSummary(scan) ? ' · ' + listSummary(scan) : '')));
     var status = document.createElement('span');
     status.className = 'patient-status ' + (scan.pending ? '' : (isComplete ? 'is-complete' : 'is-missing'));
     status.textContent = scan.pending
       ? t('Not checked yet', 'မစစ်ရသေး')
-      : (isComplete ? t('Complete', 'ပြည့်စုံ') : t('Needs backfill', 'ပြန်ဖြည့်ရန်လို'));
+      : (scan.completedMarker
+        ? t('Back Fill Completed', 'ဒေတာပြည့်စုံစွာဖြည့်ပြီးပါပြီ')
+        : (isComplete ? t('Complete', 'ပြည့်စုံ') : t('Needs backfill', 'ပြန်ဖြည့်ရန်လို')));
     left.appendChild(name);
     left.appendChild(meta);
     button.appendChild(left);
@@ -306,7 +325,10 @@
         var mother = state.mothers.find(function (item) { return item.id === patientId; });
         var bundle = await global.RetroactiveDataService.loadBundle(global.firebase.firestore(), mother);
         state.bundles.set(patientId, bundle);
-        state.scans.set(patientId, global.RetroactiveDataRules.scanPatient(bundle));
+        var scan = global.RetroactiveDataRules.scanPatient(bundle);
+        state.scans.set(patientId, global.RetroactiveDataRules.hasPermanentBackfillCompletion(bundle.patient)
+          ? Object.assign(scan, { gapCount: 0, completedMarker: true, categories: [] })
+          : scan);
       } catch (error) {
         console.error(error);
         document.getElementById('detailName').textContent = t('Could not check this patient.', 'ဤလူနာကို မစစ်နိုင်ပါ။');
@@ -1567,6 +1589,24 @@
     var currentScan = state.scans.get(state.activeId);
     if (!requests.length) {
       if (currentScan && !currentScan.gapCount) {
+        if (currentScan.completedMarker) {
+          closeDetail();
+          return;
+        }
+        try {
+          var completionResult = await global.RetroactiveDataService.saveRequests(
+            global.firebase.firestore(),
+            state.user,
+            bundle,
+            [],
+            { markComplete: true }
+          );
+          state.bundles.set(state.activeId, completionResult.bundle);
+          state.scans.set(state.activeId, completionResult.inspection);
+        } catch (error) {
+          console.error(error);
+          setMessage('saveStatus', error.message || t('Could not mark Back Fill complete.', 'ဒေတာပြည့်စုံကြောင်း မမှတ်သားနိုင်ပါ။'));
+        }
         if (global.AppDialog && global.AppDialog.alert) {
           await global.AppDialog.alert(
             t('This patient has all required data completed.', 'ဤလူနာ၏ လိုအပ်သောအချက်အလက်များ အားလုံးပြည့်စုံပါပြီ။'),
@@ -1592,7 +1632,7 @@
     updateReviewCount();
     setMessage('saveStatus', t('Saving…', 'သိမ်းနေသည်…'));
     try {
-      var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests);
+      var result = await global.RetroactiveDataService.saveRequests(global.firebase.firestore(), state.user, bundle, requests, { markComplete: true });
       state.bundles.set(patientId, result.bundle);
       state.scans.set(patientId, result.inspection);
       setMessage('saveStatus', t('Saved. The list has been refreshed.', 'သိမ်းပြီးပါပြီ။ စာရင်းကို ပြန်စစ်ပြီးပါပြီ။'));

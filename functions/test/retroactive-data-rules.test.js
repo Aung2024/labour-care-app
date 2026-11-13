@@ -62,6 +62,11 @@ test('back fill includes only mothers owned by the signed-in midwife', () => {
   assert.equal(rules.isOwnedMother(mother({ created_by: 'other', createdBy: 'midwife-1' }), 'midwife-1'), true);
   assert.equal(rules.isOwnedMother(mother({ created_by: 'other', care_team_midwife_ids: ['midwife-1'] }), 'midwife-1'), false);
   assert.equal(rules.isOwnedMother(mother({ patient_type: 'baby', created_by: 'midwife-1' }), 'midwife-1'), false);
+  assert.equal(rules.isOwnedMother(mother({ status: 'duplicate_archived' }), 'midwife-1'), false);
+  assert.equal(rules.isOwnedMother(mother({ deleted: true }), 'midwife-1'), false);
+  assert.equal(rules.hasPermanentBackfillCompletion(mother({
+    retroactiveBackfill: { status: 'completed' }
+  })), true);
 });
 
 test('registration-only patients stay off ANC until a visit exists, and first pregnancy skips youngest-child age', () => {

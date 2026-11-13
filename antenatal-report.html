@@ -11,6 +11,7 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/outcome-system.js"></script>
   <script src="js/anc-tracking-status.js"></script>
@@ -1108,6 +1109,11 @@
         </div>
       </div>
 
+      <section class="treatment-section" id="ancDeliveryNotesSummary">
+        <h5 class="lang-text" data-en="Delivery Notes summary" data-mm="မွေးဖွားခြင်းမှတ်တမ်း အကျဉ်းချုပ်">Delivery Notes summary</h5>
+        <div id="ancDeliveryNotesSummaryBody" class="clinical-notes-content">-</div>
+      </section>
+
       <!-- Visit timeline (8-visit ANC schedule) -->
       <div class="visit-timeline no-print" id="visitTimelineWrap">
         <div class="visit-timeline-label lang-text" data-en="ANC visit schedule (8 visits)" data-mm="ANC အကြိမ် (၈ ကြိမ်)">ANC visit schedule (8 visits)</div>
@@ -1188,6 +1194,19 @@
           </div>
         </div>
       </div>
+
+      <section class="treatment-section" id="backfillAncInfo">
+        <h5 class="lang-text" data-en="Back Fill clinical fields" data-mm="ပြန်ဖြည့်ထားသော ဆေးမှတ်တမ်းများ">Back Fill clinical fields</h5>
+        <div class="table-scroll">
+          <table class="anc-block-table">
+            <thead><tr>
+              <th>No</th><th>Date</th><th>Goiter</th><th>TB</th><th>Pregnancy history</th>
+              <th>Maternal outcome</th><th>Clean delivery kit</th>
+            </tr></thead>
+            <tbody id="backfillAncInfoBody"></tbody>
+          </table>
+        </div>
+      </section>
 
       <div class="treatment-section" id="chiefComplaintInfo">
         <h5 class="lang-text" data-en="Chief complaints by visit" data-mm="Visit တစ်ကြိမ်ချင်းစီ၏ ဆေးခန်းလာရသော အကြောင်းရင်း">Chief complaints by visit</h5>
@@ -1296,6 +1315,7 @@
   <script>
     let currentUser = null;
     let currentPatient = null;
+    let deliveryNotes = null;
     let patientId = null;
     let antenatalVisits = [];
     let labTests = [];
@@ -1475,6 +1495,8 @@
         }
         
         currentPatient = patientDoc.data();
+        deliveryNotes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+        populateAncDeliveryNotesSummary();
         actualBirthDate = await resolveActualBirthDate(currentPatient);
         
         // Load antenatal visits - try visitDate first, fallback to timestamp
@@ -1536,6 +1558,23 @@
         alert("Error loading report data: " + error.message);
         window.close();
       }
+    }
+
+    function populateAncDeliveryNotesSummary() {
+      const body = document.getElementById('ancDeliveryNotesSummaryBody');
+      if (!body) return;
+      const details = deliveryNotes && deliveryNotes.deliveryDetails || {};
+      const babies = Array.isArray(details.babies) ? details.babies : [];
+      const values = [
+        ['Birth place', details.birthPlace || details.birthplace],
+        ['Mode of delivery', details.modeOfDelivery || details.mode_of_delivery],
+        ['Birth provider', details.birthProvider || details.birth_provider],
+        ['Maternal condition', details.maternalCondition || details.maternal_condition],
+        ['Babies', babies.length ? String(babies.length) : '']
+      ].filter(function (item) { return item[1] != null && item[1] !== ''; });
+      body.innerHTML = values.length
+        ? values.map(function (item) { return '<p><strong>' + escapeHtml(item[0]) + ':</strong> ' + escapeHtml(String(item[1])) + '</p>'; }).join('')
+        : escapeHtml(t('notRecorded'));
     }
 
     function parseClinicalDate(value) {
@@ -2122,6 +2161,12 @@
           ? OutcomeSystem.labelFor(maternalOutcomeOption, reportLang)
           : maternalOutcome ||
           (visit.provisionalDiagnosisType === 'Routine ANC' ? 'Alive/Routine ANC' : visit.provisionalDiagnosisType === 'Abortion' ? 'Abortion' : '-'),
+        goiterStatus: visit.goiterStatus || '-',
+        tbSymptoms: visit.tbSymptoms || '-',
+        pregnancyHistory: Array.isArray(visit.previousObstetricHistory) && visit.previousObstetricHistory.length
+          ? `${visit.previousObstetricHistory.length} record(s)`
+          : (visit.lastPregnancyOutcome || '-'),
+        cleanDeliveryKit: visit.cleanDeliveryKitStatus || (visit.cleanDeliveryKitNotGiven ? 'not_given' : '-'),
         nextVisitDate: visit.nextVisitDate ? formatReportDate(visit.nextVisitDate) : '-',
         initial: visit.initial || '-',
         hasData: true
@@ -2376,11 +2421,13 @@
       const vitalsBody = document.getElementById('blockTableVitalsBody');
       const fetalBody = document.getElementById('blockTableFetalBody');
       const treatmentBody = document.getElementById('blockTableTreatmentBody');
+      const backfillBody = document.getElementById('backfillAncInfoBody');
       if (!vitalsBody || !fetalBody || !treatmentBody) return;
 
       let vitalsHtml = '';
       let fetalHtml = '';
       let treatmentHtml = '';
+      let backfillHtml = '';
 
       screenRows.forEach(function (d) {
         const er = d.empty ? ' class="empty-row"' : '';
@@ -2412,11 +2459,21 @@
           <td>${escapeHtml(d.td)}</td>
           <td>${escapeHtml(d.initial)}</td>
         </tr>`;
+        backfillHtml += `<tr${er}>
+          <td>${d.visitNumber}</td>
+          <td>${escapeHtml(d.visitDate)}</td>
+          <td>${escapeHtml(d.goiterStatus)}</td>
+          <td>${escapeHtml(d.tbSymptoms)}</td>
+          <td>${escapeHtml(d.pregnancyHistory)}</td>
+          <td>${escapeHtml(d.maternalOutcome)}</td>
+          <td>${escapeHtml(d.cleanDeliveryKit)}</td>
+        </tr>`;
       });
 
       vitalsBody.innerHTML = vitalsHtml;
       fetalBody.innerHTML = fetalHtml;
       treatmentBody.innerHTML = treatmentHtml;
+      if (backfillBody) backfillBody.innerHTML = backfillHtml;
     }
 
     function populatePrintBookTable() {

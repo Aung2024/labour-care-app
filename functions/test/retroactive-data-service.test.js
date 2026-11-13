@@ -183,3 +183,10 @@ test('saveRequests writes nothing when every submitted value is already stored',
   assert.equal(db.stats.adds, 0);
   assert.equal(refreshRequests.length, 0);
 });
+
+test('service source excludes archived records and guards permanent completion', () => {
+  assert.match(rulesSource, /isArchivedPatient/)
+  assert.match(serviceSource, /retroactiveBackfill/)
+  assert.match(serviceSource, /status: 'completed'/)
+  assert.match(serviceSource, /bundle\.truncated/)
+})

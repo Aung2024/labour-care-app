@@ -275,7 +275,22 @@
   function isOwnedMother(patient, uid) {
     if (!patient || !uid) return false;
     if (patient.patient_type === 'baby') return false;
+    if (isArchivedPatient(patient)) return false;
     return patient.created_by === uid || patient.createdBy === uid;
+  }
+
+  function isArchivedPatient(patient) {
+    if (!patient || typeof patient !== 'object') return false;
+    var status = text(patient.status || patient.patientRecordStatus).toLowerCase();
+    return patient.deleted === true ||
+      patient.isDeleted === true ||
+      status === 'deleted' ||
+      status === 'duplicate_archived';
+  }
+
+  function hasPermanentBackfillCompletion(patient) {
+    var marker = patient && patient.retroactiveBackfill;
+    return !!(marker && marker.status === 'completed');
   }
 
   function riskFactorsOf(record) {
@@ -412,7 +427,7 @@
       vitaminB1: { key: 'vitaminB1', path: ['vitaminB1'], type: 'select', labelEn: 'Vitamin B1', labelMm: 'ဘီဝမ်း', options: medicationOptions(), normalize: normalizeMedication },
       deworming: { key: 'deworming', path: ['deworming'], type: 'select', labelEn: 'Deworming', labelMm: 'သန်ချဆေးပြား', options: medicationOptions(), normalize: normalizeMedication },
       tetanusToxoid: { key: 'tetanusToxoid', path: ['tetanusToxoid'], aliases: [['td']], type: 'select', labelEn: 'Tetanus diphtheria', labelMm: 'မေးခိုင်၊ ဆုံဆို့နာကာကွယ်ဆေး', options: tdOptions(), normalize: normalizeTd, sync: function (value) { return { td: value }; } },
-      maternalOutcome: { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternalOutcomeValue']], type: 'select', labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive/Routine ANC', 'အသက်ရှင်/ပုံမှန် ANC'), choice('maternal_death', 'Death', 'သေဆုံး'), choice('abortion', 'Abortion', 'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)')], normalize: normalizeMaternalOutcome },
+      maternalOutcome: { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternalOutcomeValue'], ['maternal_outcome']], type: 'select', labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive/Routine ANC', 'အသက်ရှင်/ပုံမှန် ANC'), choice('maternal_death', 'Death', 'သေဆုံး'), choice('abortion', 'Abortion (ကိုယ်ဝန်(၂၂)ပတ်မတိုင်မီ)', 'ကိုယ်ဝန်ပျက်'),], normalize: normalizeMaternalOutcome, sync: function (value) { return { maternal_outcome: value, maternalOutcomeValue: value }; } },
       maternalOutcomeCause: { key: 'maternalOutcomeCause', path: ['maternalOutcomeCause'], aliases: [['deathCause'], ['maternalDeathCause']], type: 'select', labelEn: 'Maternal death cause', labelMm: 'မိခင်သေဆုံးရသည့် အကြောင်းရင်း', options: [choice('pregnancy_related', 'Pregnancy-related disease', 'သားဖွားခြင်းဆိုင်ရာရောဂါ'), choice('injury', 'Injury/accident/suicide/homicide', 'ထိခိုက်ဒဏ်ရာ၊ မတော်တဆမှု၊ မိမိကိုယ်ကိုသတ်သေမှု၊ အသတ်ခံရမှု'), choice('other', 'Other disease', 'အခြားရောဂါ')] },
       maternalOutcomeReason: { key: 'maternalOutcomeReason', path: ['maternalOutcomeReason'], aliases: [['deathDetail'], ['maternalDeathReason']], type: 'text', labelEn: 'Maternal outcome details', labelMm: 'မိခင်ရလဒ် အသေးစိတ်' },
       cleanDeliveryKit: { key: 'cleanDeliveryKit', path: ['cleanDeliveryKitStatus'], type: 'cdk', labelEn: 'Clean delivery kit', labelMm: 'တစ်ခါသုံးမွေးဖွားအိတ်' }
@@ -436,7 +451,7 @@
 
   function pncFields() {
     return [
-      { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternal_outcome']], type: 'select', required: true, labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('maternal_death', 'Death', 'သေဆုံး')] },
+      { key: 'maternalOutcome', path: ['maternalOutcome'], aliases: [['maternal_outcome']], type: 'select', required: true, labelEn: 'Maternal outcome', labelMm: 'မိခင်ရလဒ်', options: [choice('alive', 'Alive', 'အသက်ရှင်'), choice('maternal_death', 'Death', 'သေဆုံး')], sync: function (value) { return { maternal_outcome: value, maternalOutcomeValue: value }; } },
       { key: 'maternalOutcomeCause', path: ['maternalDeathCause'], aliases: [['deathCause'], ['maternalOutcomeCause'], ['maternal_death_cause']], type: 'select', labelEn: 'Cause of death', labelMm: 'သေဆုံးရသည့် အကြောင်းအရင်း', options: [choice('pregnancy_related', 'Pregnancy-related disease', 'သားဖွားခြင်းဆိုင်ရာရောဂါ'), choice('injury', 'Injury, accident, suicide, or homicide', 'ထိခိုက်ဒဏ်ရာ၊ မတော်တဆမှု၊ မိမိကိုယ်ကိုသတ်သေမှု၊ အသတ်ခံရမှု'), choice('other', 'Other disease', 'အခြားရောဂါ')] },
       { key: 'maternalOutcomeReason', path: ['maternalDeathReason'], aliases: [['deathDetail'], ['maternalOutcomeReason'], ['maternal_death_reason']], type: 'text', labelEn: 'Death details', labelMm: 'သေဆုံးရသည့် အသေးစိတ်' },
       { key: 'otherVisits', path: ['otherVisits'], type: 'other-visits', required: false, labelEn: 'Other-facility visits', labelMm: 'အခြားဌာနတွင် ပြသခဲ့သောအကြိမ်များ' }
@@ -1738,6 +1753,8 @@
   return {
     RULE_VERSION: RULE_VERSION,
     isOwnedMother: isOwnedMother,
+    isArchivedPatient: isArchivedPatient,
+    hasPermanentBackfillCompletion: hasPermanentBackfillCompletion,
     scanPatient: scanPatient,
     createTemplate: createTemplate,
     planWrites: planWrites,

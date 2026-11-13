@@ -97,11 +97,13 @@ const maternalParity = (profile) => {
   return numericOrNull(raw)
 }
 
-const normalizeServiceOutcome = (value) => {
+const normalizeServiceOutcome = (value, patientType) => {
   const raw = asText(value).toLowerCase()
   if (['alive', 'live', 'living'].includes(raw)) return 'Alive'
   if (['dead', 'death', 'died', 'maternal_death'].includes(raw)) return 'Dead'
   if (['service_complete', 'complete', 'completed'].includes(raw)) return 'Service complete'
+  if (['stillbirth', 'still_birth'].includes(raw)) return 'Stillbirth'
+  if (['abortion', 'miscarriage'].includes(raw)) return 'Abortion'
   return raw ? 'Other' : 'In service'
 }
 
@@ -917,14 +919,12 @@ const calculateV4Metrics = (facts, inputPeriod) => {
   }
 
   const closure = unwrap(profile.serviceClosure)
+  let closureInPeriod = false
   if (closure.status === 'closed') {
     const closedAt = closure.closedAt || closure.closed_at
     if (inPeriod(closedAt, period)) {
-      const outcome = asText(closure.outcome) || 'other'
+      closureInPeriod = true
       metrics.serviceClosure.total = 1
-      const target = patientType === 'baby' ? metrics.serviceClosure.baby : metrics.serviceClosure.mother
-      target.total = 1
-      bump(target.byOutcome, outcome)
     } else if (!closedAt) {
       metrics.serviceClosure.undated = 1
     }
@@ -940,12 +940,13 @@ const calculateV4Metrics = (facts, inputPeriod) => {
     metrics.pnc.clients ||
     metrics.referral.maternal.total ||
     metrics.referral.baby.total ||
-    metrics.jointCare.clients
+    metrics.jointCare.clients ||
+    closureInPeriod
   )
   if (hasIncludedPatient) {
     metrics.serviceClosure.total = 1
     const outcome = closure.status === 'closed'
-      ? normalizeServiceOutcome(closure.outcome)
+      ? normalizeServiceOutcome(closure.outcome, patientType)
       : 'In service'
     bump(metrics.serviceClosure.outcomes, outcome)
     const patientOutcome = patientType === 'baby'

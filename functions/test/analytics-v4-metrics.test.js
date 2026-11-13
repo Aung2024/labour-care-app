@@ -109,6 +109,26 @@ test('calculates the v4 clinical contract from normalized patient facts', () => 
   assert.equal(metrics.newborn.kmcWeightGain.babiesWithTwoWeights, 1)
   assert.equal(metrics.pnc.ironFolate, 1)
   assert.equal(metrics.serviceClosure.total, 1)
+  assert.deepEqual(metrics.serviceClosure.mother.byOutcome, { 'Service complete': 1 })
+})
+
+test('counts an in-period closure once using the normalized outcome bucket', () => {
+  const metrics = calculateV4Metrics(facts({
+    profile: {
+      patient_type: 'mother',
+      registration_date: '2026-01-01',
+      serviceClosure: {
+        status: 'closed',
+        outcome: 'maternal_death',
+        closedAt: '2026-01-20'
+      }
+    },
+    antenatalVisits: []
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.deepEqual(metrics.serviceClosure.mother.byOutcome, { Dead: 1 })
 })
 
 test('calculates newborn care timing, early breastfeeding, and shared KMC metrics', () => {

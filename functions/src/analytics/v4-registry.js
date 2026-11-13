@@ -1,7 +1,7 @@
 'use strict'
 
 const ANALYTICS_V4_SCHEMA_VERSION = 'analytics-v4.3.0'
-const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-09-monthly-report'
+const ANALYTICS_V4_DEFINITION_VERSION = 'dashboard-2026-11-13-backfill-outcomes'
 
 const definition = (
   section,

@@ -175,6 +175,17 @@
     return payload;
   }
 
+  async function markBackfillComplete(db, patientId, user) {
+    await db.collection('patients').doc(patientId).set({
+      retroactiveBackfill: {
+        status: 'completed',
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: user.uid,
+        ruleVersion: rules.RULE_VERSION
+      }
+    }, { merge: true });
+  }
+
   async function saveRequests(db, user, bundle, requests, options) {
     options = options || {};
     var fresh = await db.collection('patients').doc(bundle.patient.id).get();
@@ -184,6 +195,9 @@
       var error = new Error('Back Fill can update only patients you registered.');
       error.errors = [{ en: error.message, mm: 'သင်မှတ်ပုံတင်ထားသော လူနာများကိုသာ ပြန်ဖြည့်နိုင်သည်။' }];
       throw error;
+    }
+    if (rules.isArchivedPatient(patient)) {
+      throw new Error('Archived patients are not available for Back Fill.');
     }
     bundle = Object.assign({}, bundle, { patient: patient });
     var preflight = options.requireComplete === false
@@ -196,6 +210,9 @@
       planError.errors = plan.errors;
       planError.inspection = preflight.inspection;
       throw planError;
+    }
+    if (options.markComplete && bundle.truncated) {
+      throw new Error('This patient has more records than the current inspection loaded. Reload the patient before marking Back Fill complete.');
     }
 
     var mergeOperations = plan.operations.filter(function (operation) { return operation.kind !== 'delivery'; });
@@ -253,7 +270,11 @@
     }
 
     if (!plan.operations.length) {
-      return { plan: plan, bundle: bundle, inspection: rules.scanPatient(bundle) };
+      var unchangedInspection = rules.scanPatient(bundle);
+      if (options.markComplete && !unchangedInspection.gapCount && !bundle.truncated) {
+        await markBackfillComplete(db, patient.id, user);
+      }
+      return { plan: plan, bundle: bundle, inspection: unchangedInspection };
     }
     if (root.AnalyticsRefreshQueue) {
       await root.AnalyticsRefreshQueue.requestSafely(patient.id, 'retroactive_backfill');
@@ -263,7 +284,11 @@
       var refreshed = await db.collection('patients').doc(patient.id).get();
       var refreshedPatient = refreshed.exists ? Object.assign({ id: refreshed.id }, refreshed.data() || {}) : patient;
       var reloaded = await loadBundle(db, refreshedPatient);
-      return { plan: plan, bundle: reloaded, inspection: rules.scanPatient(reloaded) };
+      var deliveryInspection = rules.scanPatient(reloaded);
+      if (options.markComplete && !deliveryInspection.gapCount && !reloaded.truncated) {
+        await markBackfillComplete(db, patient.id, user);
+      }
+      return { plan: plan, bundle: reloaded, inspection: deliveryInspection };
     }
     var patched = Object.assign({}, bundle, {
       patient: Object.assign({}, patient),
@@ -274,7 +299,11 @@
       immediateRecords: cloneRows(bundle.immediateRecords)
     });
     plan.operations.forEach(function (operation) { rules.applyPlannedOperation(patched, operation); });
-    return { plan: plan, bundle: patched, inspection: rules.scanPatient(patched) };
+    var patchedInspection = rules.scanPatient(patched);
+    if (options.markComplete && !patchedInspection.gapCount && !patched.truncated) {
+      await markBackfillComplete(db, patient.id, user);
+    }
+    return { plan: plan, bundle: patched, inspection: patchedInspection };
   }
 
   function cloneRows(rows) {

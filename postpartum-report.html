@@ -14,6 +14,7 @@
   <script src="js/auth-guard.js"></script>
   <script src="js/facility-config.js"></script>
   <script src="js/report-facility.js"></script>
+  <script src="js/delivery-notes-utils.js"></script>
   <style>
     @media print {
       body { margin: 0; background: #fff; }
@@ -746,6 +747,21 @@
         </div>
       </div>
 
+      <section class="treatment-section" id="deliveryNotesSummary">
+        <h5 class="lang-text" data-en="Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း">Delivery Notes</h5>
+        <div id="deliveryNotesSummaryBody" class="clinical-notes-content">-</div>
+      </section>
+
+      <section class="treatment-section" id="backfillPncInfo">
+        <h5 class="lang-text" data-en="Back Fill clinical fields" data-mm="ပြန်ဖြည့်ထားသော PNC ဆေးမှတ်တမ်းများ">Back Fill clinical fields</h5>
+        <div class="table-scroll">
+          <table class="pnc-block-table">
+            <thead><tr><th>No</th><th>Date</th><th>Maternal outcome</th><th>Death cause</th><th>Death details</th><th>Other-facility visits</th></tr></thead>
+            <tbody id="backfillPncInfoBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="visit-timeline no-print" id="visitTimelineWrap">
         <div class="visit-timeline-label lang-text" data-en="PNC visit schedule (4 visits)" data-mm="PNC အကြိမ် (၄ ကြိမ်)">PNC visit schedule (4 visits)</div>
         <div class="timeline-dots" id="visitTimeline"></div>
@@ -889,6 +905,7 @@
   <script>
     let currentUser = null;
     let currentPatient = null;
+    let deliveryNotes = null;
     let patientId = null;
     let postpartumVisits = [];
     let reportDb;
@@ -1050,6 +1067,8 @@
             .get();
         }
 
+        deliveryNotes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
+
         postpartumVisits = [];
         visitsSnapshot.forEach(doc => {
           postpartumVisits.push({
@@ -1061,6 +1080,8 @@
         postpartumVisits.sort(compareVisits);
 
         populatePatientInfo();
+        populateDeliveryNotesSummary();
+        populateBackfillPncInfo();
         initReportLanguageUI();
         populateAllVisitViews();
         populateDangerSignsInfo();
@@ -1079,6 +1100,48 @@
         alert("Error loading report data: " + error.message);
         window.close();
       }
+    }
+
+    function populateDeliveryNotesSummary() {
+      const body = document.getElementById('deliveryNotesSummaryBody');
+      if (!body) return;
+      const details = deliveryNotes && deliveryNotes.deliveryDetails || {};
+      const babies = Array.isArray(details.babies) ? details.babies : [];
+      if (!deliveryNotes || !Object.keys(details).length) {
+        body.textContent = t('notRecorded');
+        return;
+      }
+      const values = [
+        ['Birth place', details.birthPlace || details.birthplace],
+        ['Mode of delivery', details.modeOfDelivery || details.mode_of_delivery],
+        ['Birth provider', details.birthProvider || details.birth_provider],
+        ['Maternal condition', details.maternalCondition || details.maternal_condition],
+        ['Pregnancy type', details.pregnancyType || details.pregnancy_type],
+        ['Babies', babies.length ? babies.map(function (baby) {
+          return [baby.gender, baby.outcome, baby.birthWeightGram ? baby.birthWeightGram + ' g' : ''].filter(Boolean).join(' · ');
+        }).join('; ') : '']
+      ].filter(function (item) { return item[1] != null && item[1] !== ''; });
+      body.innerHTML = values.length
+        ? values.map(function (item) { return '<p><strong>' + escapeHtml(item[0]) + ':</strong> ' + escapeHtml(String(item[1])) + '</p>'; }).join('')
+        : escapeHtml(t('notRecorded'));
+    }
+
+    function populateBackfillPncInfo() {
+      const body = document.getElementById('backfillPncInfoBody');
+      if (!body) return;
+      body.innerHTML = postpartumVisits.map(function (visit, index) {
+        const outcome = visit.maternalOutcome && typeof visit.maternalOutcome === 'object'
+          ? visit.maternalOutcome.value
+          : (visit.maternalOutcome || visit.maternal_outcome || visit.maternalOutcomeValue || '-');
+        const otherVisits = Array.isArray(visit.otherVisits)
+          ? visit.otherVisits.map(function (item) { return item.visitDate || item.facilityName || ''; }).filter(Boolean).join(', ')
+          : '-';
+        return '<tr><td>' + (visit.visitNumber || index + 1) + '</td><td>' +
+          escapeHtml(formatVisitDate(visit)) + '</td><td>' + escapeHtml(outcome) + '</td><td>' +
+          escapeHtml(visit.maternalDeathCause || visit.deathCause || visit.maternalOutcomeCause || '-') +
+          '</td><td>' + escapeHtml(visit.maternalDeathReason || visit.deathDetail || visit.maternalOutcomeReason || '-') +
+          '</td><td>' + escapeHtml(otherVisits || '-') + '</td></tr>';
+      }).join('');
     }
 
     function getVisitTimestamp(visit) {
@@ -1151,8 +1214,15 @@
       }
 
       let deliveryDate = null;
+      const deliveryBaby = deliveryNotes && deliveryNotes.deliveryDetails &&
+        Array.isArray(deliveryNotes.deliveryDetails.babies)
+        ? deliveryNotes.deliveryDetails.babies[0]
+        : null;
+      if (deliveryBaby && deliveryBaby.birthTime) {
+        deliveryDate = new Date(deliveryBaby.birthTime);
+      }
 
-      if (postpartumVisits.length > 0) {
+      if (!deliveryDate && postpartumVisits.length > 0) {
         const firstVisit = postpartumVisits[0];
         if (firstVisit.deliveredDateTime) {
           if (firstVisit.deliveredDateTime.toDate) {
