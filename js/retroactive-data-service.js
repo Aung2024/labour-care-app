@@ -175,7 +175,8 @@
     return payload;
   }
 
-  async function markBackfillComplete(db, patientId, user) {
+  async function markBackfillComplete(db, patientId, user, patient) {
+    if (rules.hasPermanentBackfillCompletion(patient)) return;
     await db.collection('patients').doc(patientId).set({
       retroactiveBackfill: {
         status: 'completed',
@@ -272,7 +273,7 @@
     if (!plan.operations.length) {
       var unchangedInspection = rules.scanPatient(bundle);
       if (options.markComplete && !unchangedInspection.gapCount && !bundle.truncated) {
-        await markBackfillComplete(db, patient.id, user);
+        await markBackfillComplete(db, patient.id, user, patient);
       }
       return { plan: plan, bundle: bundle, inspection: unchangedInspection };
     }
@@ -286,7 +287,7 @@
       var reloaded = await loadBundle(db, refreshedPatient);
       var deliveryInspection = rules.scanPatient(reloaded);
       if (options.markComplete && !deliveryInspection.gapCount && !reloaded.truncated) {
-        await markBackfillComplete(db, patient.id, user);
+        await markBackfillComplete(db, patient.id, user, refreshedPatient);
       }
       return { plan: plan, bundle: reloaded, inspection: deliveryInspection };
     }
@@ -301,7 +302,7 @@
     plan.operations.forEach(function (operation) { rules.applyPlannedOperation(patched, operation); });
     var patchedInspection = rules.scanPatient(patched);
     if (options.markComplete && !patchedInspection.gapCount && !patched.truncated) {
-      await markBackfillComplete(db, patient.id, user);
+      await markBackfillComplete(db, patient.id, user, patient);
     }
     return { plan: plan, bundle: patched, inspection: patchedInspection };
   }

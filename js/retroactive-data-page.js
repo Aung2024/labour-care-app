@@ -1552,7 +1552,7 @@
         state.user,
         bundle,
         requests,
-        { requireComplete: false }
+        { requireComplete: false, markComplete: true }
       );
       state.bundles.set(patientId, result.bundle);
       state.scans.set(patientId, result.inspection);

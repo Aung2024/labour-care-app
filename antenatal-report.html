@@ -1455,7 +1455,6 @@
       populateAllVisitViews();
       renderWeightChart();
       populateLabTests();
-      populateHighRiskInfo();
       populateExaminationInfo();
       populateTreatmentInfo();
       populateGBVInfo();
@@ -1525,6 +1524,7 @@
           });
         });
 
+        antenatalVisits = dedupeAntenatalVisits(antenatalVisits);
         antenatalVisits.sort(compareVisits);
 
         const visitAccountIds = antenatalVisits.map(function (visit) {
@@ -1698,6 +1698,30 @@
       const timeDiff = getVisitTimestamp(a) - getVisitTimestamp(b);
       if (timeDiff !== 0) return timeDiff;
       return (a.created_at?.seconds || 0) - (b.created_at?.seconds || 0);
+    }
+
+    function dedupeAntenatalVisits(visits) {
+      const grouped = new Map();
+      (visits || []).forEach(function (visit) {
+        const visitNumber = parseInt(visit.visitNumber || visit.visit_number, 10) || 0;
+        const visitDate = String(visit.visitDate || visit.visit_date || '').slice(0, 10);
+        const key = visitNumber + '|' + visitDate;
+        if (!visitNumber && !visitDate) {
+          grouped.set((visit.id || '') + '|' + grouped.size, visit);
+          return;
+        }
+        const existing = grouped.get(key);
+        if (!existing) {
+          grouped.set(key, visit);
+          return;
+        }
+        const existingTime = parseReportDateMs(existing.updatedAt || existing.timestamp || existing.createdAt);
+        const currentTime = parseReportDateMs(visit.updatedAt || visit.timestamp || visit.createdAt);
+        const newer = currentTime >= existingTime ? visit : existing;
+        const older = newer === visit ? existing : visit;
+        grouped.set(key, Object.assign({}, older, newer));
+      });
+      return Array.from(grouped.values());
     }
 
     async function loadLabTests() {
