@@ -5570,7 +5570,39 @@
           visitData,
           async function (payload) {
             const cloudData = { ...payload };
-            const visitDocId = cloudData._docId;
+            const visitNumber = parseInt(cloudData.visitNumber, 10);
+            const visitDate = String(cloudData.visitDate || '').slice(0, 10);
+            let visitDocId = cloudData._docId;
+            if (visitNumber && visitDate) {
+              const visitsRef = firebase.firestore()
+                .collection('patients')
+                .doc(patientId)
+                .collection('antenatal_visits');
+              const existingSnapshots = await Promise.all([
+                visitsRef.where('visitNumber', '==', visitNumber).get(),
+                visitsRef.where('visit_number', '==', visitNumber).get()
+              ]);
+              const matchingDocs = existingSnapshots.reduce(function (docs, snapshot) {
+                return docs.concat(snapshot.docs);
+              }, []).filter(function (doc, index, docs) {
+                return docs.findIndex(function (candidate) { return candidate.id === doc.id; }) === index;
+              }).filter(function (doc) {
+                const data = doc.data() || {};
+                return String(data.visitDate || data.visit_date || '').slice(0, 10) === visitDate;
+              });
+              if (matchingDocs.length) {
+                matchingDocs.sort(function (left, right) {
+                  const leftData = left.data() || {};
+                  const rightData = right.data() || {};
+                  const leftTime = leftData.updatedAt || leftData.timestamp || leftData.createdAt;
+                  const rightTime = rightData.updatedAt || rightData.timestamp || rightData.createdAt;
+                  const leftMillis = leftTime && typeof leftTime.toMillis === 'function' ? leftTime.toMillis() : 0;
+                  const rightMillis = rightTime && typeof rightTime.toMillis === 'function' ? rightTime.toMillis() : 0;
+                  return rightMillis - leftMillis;
+                });
+                visitDocId = matchingDocs[0].id;
+              }
+            }
             delete cloudData._docId;
             delete cloudData._needsVisitNumber;
             delete cloudData.syncState;

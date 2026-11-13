@@ -557,6 +557,13 @@ test('ANC still carries TD and deworming into the next visit', () => {
   assert.match(source, /value="Already Prescribed"/);
 });
 
+test('ANC cloud saves reuse an existing visit for offline retry idempotency', () => {
+  const source = readAppFile('antenatal-form.html');
+  assert.match(source, /where\('visitNumber', '==', visitNumber\)/);
+  assert.match(source, /where\('visit_number', '==', visitNumber\)/);
+  assert.match(source, /visitDocId = matchingDocs\[0\]\.id/);
+});
+
 test('patient registration requires patient phone and allows reused numbers', () => {
   const source = readAppFile('patient-enhanced.html');
   assert.match(source, /name="phone" id="phone"[^>]*required/);
