@@ -341,7 +341,7 @@ test('existing newborn visits are filled inline and missing INC can be created',
         head_circumference_cm: 34,
         birth_length_cm: 48,
         eye_infection_status: 'nad',
-        eye_care_status: 'clean_and_dry',
+        cord_infection_status: 'no',
         cord_care: 'yes',
         baby_outcome: 'alive'
       }

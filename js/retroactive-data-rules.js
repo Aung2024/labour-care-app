@@ -481,7 +481,8 @@
       otherVisits: { key: 'otherVisits', path: ['otherVisits'], type: 'other-visits', labelEn: 'Other newborn-care visits', labelMm: 'အခြားကျန်းမာရေးဌာနတွင် ပြသခဲ့သော Newborn Care Visit များ', sync: function (value) { return { hasOtherVisits: value && value.length ? 'yes' : 'no' }; } },
       eye_infection_status: { key: 'eye_infection_status', path: ['eye_infection_status'], type: 'select', labelEn: 'Eye redness / swelling / pus', labelMm: 'မျက်စိ နီမှု၊ ရောင်ရမ်းမှု၊ ပြည်တည်မှု', options: [choice('nad', 'NAD', 'ပုံမှန် (NAD)'), choice('ad', 'AD', 'ပုံမှန် မဟုတ် (AD)')] },
       eye_infection_findings: { key: 'eye_infection_findings', path: ['eye_infection_findings'], type: 'findings', labelEn: 'Eye findings', labelMm: 'မျက်စိ လက္ခဏာများ', options: [choice('redness', 'Redness', 'နီခြင်း'), choice('swelling', 'Swelling', 'ရောင်ရမ်းခြင်း'), choice('pus_discharge', 'Pus discharge', 'ပြည်တည်ခြင်း')] },
-      eye_care_status: { key: 'eye_care_status', path: ['eye_care_status'], type: 'select', labelEn: 'Eye care', labelMm: 'မျက်စိကို ပြုစုစောင့်ရှောက်မှုပေးခြင်း', options: [choice('clean_and_dry', 'Clean and dry', 'ခြောက်သွေ့သန့်ရှင်းနေသည်'), choice('discharge_present', 'Discharge present', 'အရည်ထွက်နေသည်')] },
+      cord_infection_status: { key: 'cord_infection_status', path: ['cord_infection_status'], type: 'select', labelEn: 'Cord infection', labelMm: 'ချက်ပိုးဝင်ခြင်း', options: [choice('yes', 'Yes', 'ရှိ'), choice('no', 'No', 'မရှိ')] },
+      cord_infection_findings: { key: 'cord_infection_findings', path: ['cord_infection_findings'], type: 'findings', labelEn: 'Cord infection signs', labelMm: 'ချက်ပိုးဝင်ခြင်း လက္ခဏာများ', options: [choice('bleeding', 'Bleeding', 'ချက်သွေးထွက်ခြင်း'), choice('redness', 'Redness', 'နီခြင်း'), choice('swelling', 'Swelling', 'ရောင်ခြင်း'), choice('pus_discharge', 'Pus discharge', 'ပြည်ထွက်ခြင်း')] },
       cord_care: { key: 'cord_care', path: ['cord_care'], type: 'select', labelEn: 'Cord care', labelMm: 'ချက်တိုင်စောင့်ရှောက်မှုပေးခြင်း', options: [choice('yes', 'Yes', 'ရှိ'), choice('no', 'No', 'မရှိ')] },
       anatomy_abnormalities: { key: 'anatomy_abnormalities', path: ['anatomy_abnormalities'], type: 'checkbox', labelEn: 'Anatomy abnormalities', labelMm: 'ခန္ဓာကိုယ်အစိတ်အပိုင်းများ ပုံမှန်မရှိခြင်း' },
       anatomy_abnormality_details: { key: 'anatomy_abnormality_details', path: ['anatomy_abnormality_details'], type: 'text', labelEn: 'Abnormality details', labelMm: 'ပုံမမှန်မှု အသေးစိတ်' },
@@ -556,7 +557,7 @@
       pnc: pncFields(),
       test: testFields(),
       delivery: deliveryFieldDefs(),
-      newborn: ['visitDate', 'current_weight_gram', 'head_circumference_cm', 'birth_length_cm', 'otherVisits', 'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care', 'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand', 'baby_outcome', 'newborn_death_period', 'cause_of_death'].map(newbornField),
+      newborn: ['visitDate', 'current_weight_gram', 'head_circumference_cm', 'birth_length_cm', 'otherVisits', 'eye_infection_status', 'eye_infection_findings', 'cord_infection_status', 'cord_infection_findings', 'cord_care', 'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand', 'baby_outcome', 'newborn_death_period', 'cause_of_death'].map(newbornField),
       immediate: immediateFields()
     };
     (lists[moduleName] || []).forEach(function (field) { map[field.key] = field; });
@@ -1117,7 +1118,7 @@
     category.groups.push(other);
 
     category.groups.push(multiFieldGroup('assessment', [
-      'eye_infection_status', 'eye_infection_findings', 'eye_care_status', 'cord_care',
+      'eye_infection_status', 'eye_infection_findings', 'cord_infection_status', 'cord_infection_findings', 'cord_care',
       'anatomy_abnormalities', 'anatomy_abnormality_details', 'exclusive_breastfeeding_on_demand'
     ], visits, {
       labelEn: 'Assessment',
@@ -1125,8 +1126,9 @@
       hintEn: '',
       hintMm: ''
     }, function (visit, values) {
-      if (!values.eye_infection_status || !values.eye_care_status || !values.cord_care) return false;
+      if (!values.eye_infection_status || !values.cord_infection_status || !values.cord_care) return false;
       if (values.eye_infection_status === 'ad' && !(values.eye_infection_findings && values.eye_infection_findings.length)) return false;
+      if (values.cord_infection_status === 'yes' && !(values.cord_infection_findings && values.cord_infection_findings.length)) return false;
       if (values.anatomy_abnormalities === true && !text(values.anatomy_abnormality_details)) return false;
       return true;
     }, newbornField, 'newborn'));

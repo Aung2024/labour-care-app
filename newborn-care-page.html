@@ -922,7 +922,7 @@
         <h5 class="section-title">
           <span class="section-flow-step" aria-hidden="true">8</span>
           <i class="fas fa-calendar-alt" aria-hidden="true"></i>
-          <span class="lang-text" data-en="Return visit schedule" data-mm="ပြန်ပြရမည့် အချိန်ဇယား">Return visit schedule</span>
+          <span class="lang-text" data-en="Follow-up Visit" data-mm="ပြန်လည်လာရောက်ပြသခြင်း">Follow-up Visit</span>
         </h5>
         <div class="row g-3">
           <div class="col-12 col-lg-6">
@@ -1270,16 +1270,32 @@
           </div>
         </div>
 
-        <!-- Eye Care Status -->
+        <!-- Cord Infection Status -->
         <div class="mb-4">
-          <label for="eye_care_status" class="form-label">
-            <span class="lang-text" data-en="Eye Care" data-mm="မျက်စိကို ပြုစုစောင့်ရှောက်မှုပေးခြင်း">Eye Care</span><span class="required-marker" aria-hidden="true">*</span>
+          <label class="form-label d-block mb-2">
+            <span class="lang-text" data-en="Cord Infection" data-mm="ချက်ပိုးဝင်ခြင်း">Cord Infection</span><span class="required-marker" aria-hidden="true">*</span>
           </label>
-          <select class="form-control" id="eye_care_status" name="eye_care_status" data-choice required>
-            <option value="" data-en="Select status" data-mm="အခြေအနေ ရွေးချယ်ရန်">Select status</option>
-            <option value="clean_and_dry" data-en="Clean and dry" data-mm="ခြောက်သွေ့သန့်ရှင်းနေသည်">Clean and dry</option>
-            <option value="discharge_present" data-en="Discharge present" data-mm="အရည်ထွက်နေသည်">Discharge present</option>
-          </select>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="cord_infection_status" id="cord_infection_yes" value="yes" onchange="toggleCordInfectionFollowup()">
+            <label class="form-check-label" for="cord_infection_yes">
+              <span class="lang-text" data-en="Yes" data-mm="ရှိ">Yes</span>
+            </label>
+          </div>
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="cord_infection_status" id="cord_infection_no" value="no" onchange="toggleCordInfectionFollowup()">
+            <label class="form-check-label" for="cord_infection_no">
+              <span class="lang-text" data-en="No" data-mm="မရှိ">No</span>
+            </label>
+          </div>
+          <div class="followup-section" id="cordInfectionFollowup" style="display: none;">
+            <label class="form-label">
+              <span class="lang-text" data-en="Cord infection signs" data-mm="ချက်ပိုးဝင်ခြင်း လက္ခဏာများ">Cord infection signs</span>
+            </label>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cord_infection_bleeding" name="cord_infection_findings" value="bleeding"><label class="form-check-label" for="cord_infection_bleeding"><span class="lang-text" data-en="Bleeding" data-mm="ချက်သွေးထွက်ခြင်း">Bleeding</span></label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cord_infection_redness" name="cord_infection_findings" value="redness"><label class="form-check-label" for="cord_infection_redness"><span class="lang-text" data-en="Redness" data-mm="နီခြင်း">Redness</span></label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cord_infection_swelling" name="cord_infection_findings" value="swelling"><label class="form-check-label" for="cord_infection_swelling"><span class="lang-text" data-en="Swelling" data-mm="ရောင်ခြင်း">Swelling</span></label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cord_infection_pus" name="cord_infection_findings" value="pus_discharge"><label class="form-check-label" for="cord_infection_pus"><span class="lang-text" data-en="Pus discharge" data-mm="ပြည်ထွက်ခြင်း">Pus discharge</span></label></div>
+          </div>
         </div>
 
         <!-- Cord Care -->
@@ -1492,7 +1508,7 @@
     const BABY_SPECIFIC_FIELD_IDS = [
       'gender', 'birth_time', 'body_weight_gram', 'birth_length_cm', 'head_circumference_cm',
       'current_weight_gram',
-      'temperature', 'temperature_unit', 'heart_rate', 'respiration_rate', 'eye_care_status',
+      'temperature', 'temperature_unit', 'heart_rate', 'respiration_rate',
       'follow_up_appointment_date', 'clinical_notes', 'cause_of_death', 'baby_outcome', 'newborn_death_period',
       'discharge_date', 'kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day',
       'kmc_total_hours', 'feeding_type', 'feeding_method'
@@ -1999,6 +2015,7 @@
       state.outcome = state.baby_outcome === 'death' ? 'dead' : state.baby_outcome;
       state.difficult_breathing = getRadioValue('difficult_breathing');
       state.eye_infection_status = getRadioValue('eye_infection_status');
+      state.cord_infection_status = getRadioValue('cord_infection_status');
       state.cord_care = getRadioValue('cord_care');
       state.kmc_selected = getRadioValue('kmc_selected');
       state.anatomy_abnormalities = !!document.getElementById('anatomy_abnormalities')?.checked;
@@ -2006,6 +2023,7 @@
       state.exclusive_breastfeeding_on_demand = !!document.getElementById('exclusive_breastfeeding_on_demand')?.checked;
       state.difficult_breathing_signs = Array.from(document.querySelectorAll('input[name="difficult_breathing_signs"]:checked')).map(function (el) { return el.value; });
       state.eye_infection_findings = Array.from(document.querySelectorAll('input[name="eye_infection_findings"]:checked')).map(function (el) { return el.value; });
+      state.cord_infection_findings = Array.from(document.querySelectorAll('input[name="cord_infection_findings"]:checked')).map(function (el) { return el.value; });
       state.danger_signs = collectNewbornDangerSigns();
       return state;
     }
@@ -2036,6 +2054,7 @@
       setRadioValue('outcome', state.outcome || null);
       setRadioValue('difficult_breathing', state.difficult_breathing || null);
       setRadioValue('eye_infection_status', state.eye_infection_status || null);
+      setRadioValue('cord_infection_status', state.cord_infection_status || null);
       setRadioValue('cord_care', state.cord_care || null);
       setRadioValue('kmc_selected', state.kmc_selected || null);
       const anatomy = document.getElementById('anatomy_abnormalities');
@@ -2051,12 +2070,16 @@
       document.querySelectorAll('input[name="eye_infection_findings"]').forEach(function (el) {
         el.checked = (state.eye_infection_findings || []).includes(el.value);
       });
+      document.querySelectorAll('input[name="cord_infection_findings"]').forEach(function (el) {
+        el.checked = (state.cord_infection_findings || []).includes(el.value);
+      });
       NEWBORN_DANGER_SIGN_IDS.forEach(function (key) {
         const el = document.getElementById('danger_' + key);
         if (el) el.checked = !!(state.danger_signs && state.danger_signs[key]);
       });
       toggleDifficultBreathingFollowup();
       toggleEyeInfectionFollowup();
+      toggleCordInfectionFollowup();
       toggleOutcomeFollowup();
       populateKmcReasonOptions();
       toggleKmcDecisionFields();
@@ -2389,10 +2412,10 @@
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      ['difficult_breathing', 'eye_infection_status', 'cord_care', 'outcome'].forEach(function (name) {
+      ['difficult_breathing', 'eye_infection_status', 'cord_infection_status', 'cord_care', 'outcome'].forEach(function (name) {
         document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) { el.checked = false; });
       });
-      document.querySelectorAll('input[name="difficult_breathing_signs"], input[name="eye_infection_findings"]').forEach(function (el) {
+      document.querySelectorAll('input[name="difficult_breathing_signs"], input[name="eye_infection_findings"], input[name="cord_infection_findings"]').forEach(function (el) {
         el.checked = false;
       });
       NEWBORN_DANGER_SIGN_IDS.forEach(function (key) {
@@ -2406,8 +2429,6 @@
       toggleAnatomyAbnormalityDetails();
       const ebf = document.getElementById('exclusive_breastfeeding_on_demand');
       if (ebf) ebf.checked = false;
-      const eyeCare = document.getElementById('eye_care_status');
-      if (eyeCare) eyeCare.value = '';
       ['kmc_no_category', 'kmc_no_reason', 'kmc_hours_per_day', 'kmc_total_hours', 'feeding_type', 'feeding_method'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -3557,6 +3578,10 @@
         document.getElementById(`eye_infection_${data.eye_infection_status}`).checked = true;
         toggleEyeInfectionFollowup();
       }
+      if (data.cord_infection_status && document.getElementById(`cord_infection_${data.cord_infection_status}`)) {
+        document.getElementById(`cord_infection_${data.cord_infection_status}`).checked = true;
+        toggleCordInfectionFollowup();
+      }
       if (data.cord_care && document.getElementById(`cord_care_${data.cord_care}`)) {
         document.getElementById(`cord_care_${data.cord_care}`).checked = true;
       }
@@ -3593,8 +3618,11 @@
         const checkbox = document.querySelector(`input[name="eye_infection_findings"][value="${finding}"]`);
         if (checkbox) checkbox.checked = true;
       });
+      (data.cord_infection_findings || []).forEach(finding => {
+        const checkbox = document.querySelector(`input[name="cord_infection_findings"][value="${finding}"]`);
+        if (checkbox) checkbox.checked = true;
+      });
 
-      if (data.eye_care_status) document.getElementById('eye_care_status').value = data.eye_care_status;
       if (data.follow_up_appointment_date) document.getElementById('follow_up_appointment_date').value = data.follow_up_appointment_date;
       if (data.follow_up_manual_override) {
         document.getElementById('followUpManualOverride').checked = true;
@@ -3847,7 +3875,6 @@
         ['temperature', 'ကိုယ်အပူချိန် ထည့်ပါ။', 'Please enter temperature.'],
         ['heart_rate', 'နှလုံးခုန်နှုန်း ထည့်ပါ။', 'Please enter heart rate.'],
         ['respiration_rate', 'အသက်ရှူနှုန်း ထည့်ပါ။', 'Please enter respiration rate.'],
-        ['eye_care_status', 'မျက်စိ စောင့်ရှောက်မှု ရွေးပါ။', 'Please select eye care status.'],
         ['feeding_type', 'နို့တိုက်ကျွေးမှု အမျိုးအစား ရွေးပါ။', 'Please select feeding type.'],
         ['feeding_method', 'နို့တိုက်ကျွေးသည့် နည်းလမ်း ရွေးပါ။', 'Please select feeding method.'],
         ['baby_outcome', 'ရလဒ် ရွေးပါ။', 'Please select outcome.']
@@ -3868,6 +3895,15 @@
       }
       if (!getRadioValue('eye_infection_status')) {
         alert(currentLanguage === 'mm' ? 'မျက်စိ NAD/AD ရွေးပါ။' : 'Please select eye infection status (NAD/AD).');
+        return;
+      }
+      if (!getRadioValue('cord_infection_status')) {
+        alert(currentLanguage === 'mm' ? 'ချက်ပိုးဝင်ခြင်း ရှိ/မရှိ ရွေးပါ။' : 'Please select cord infection status.');
+        return;
+      }
+      if (getRadioValue('cord_infection_status') === 'yes' &&
+          !document.querySelector('input[name="cord_infection_findings"]:checked')) {
+        alert(currentLanguage === 'mm' ? 'ချက်ပိုးဝင်ခြင်း လက္ခဏာ အနည်းဆုံးတစ်ခု ရွေးပါ။' : 'Please select at least one cord infection sign.');
         return;
       }
       if (!getRadioValue('cord_care')) {
@@ -3980,6 +4016,10 @@
         document.querySelectorAll('input[name="eye_infection_findings"]:checked').forEach(cb => {
           eyeInfectionFindings.push(cb.value);
         });
+        const cordInfectionFindings = [];
+        document.querySelectorAll('input[name="cord_infection_findings"]:checked').forEach(cb => {
+          cordInfectionFindings.push(cb.value);
+        });
         
         const formData = {
           baby_name: firstBaby.babyName || generateBabyName(currentPatient && currentPatient.name, 1),
@@ -4005,7 +4045,8 @@
           difficult_breathing_signs: difficultBreathingSigns.length > 0 ? difficultBreathingSigns : null,
           eye_infection_status: document.querySelector('input[name="eye_infection_status"]:checked')?.value || null,
           eye_infection_findings: eyeInfectionFindings.length > 0 ? eyeInfectionFindings : null,
-          eye_care_status: document.getElementById('eye_care_status').value || null,
+          cord_infection_status: document.querySelector('input[name="cord_infection_status"]:checked')?.value || null,
+          cord_infection_findings: cordInfectionFindings.length > 0 ? cordInfectionFindings : null,
           cord_care: document.querySelector('input[name="cord_care"]:checked')?.value || null,
           anatomy_abnormalities: document.getElementById('anatomy_abnormalities').checked,
           anatomy_abnormality_details: document.getElementById('anatomy_abnormalities').checked
@@ -4286,6 +4327,12 @@
       const followup = document.getElementById('eyeInfectionFollowup');
       const isAD = document.getElementById('eye_infection_ad').checked;
       followup.style.display = isAD ? 'block' : 'none';
+    }
+
+    function toggleCordInfectionFollowup() {
+      const followup = document.getElementById('cordInfectionFollowup');
+      const isYes = document.getElementById('cord_infection_yes')?.checked;
+      if (followup) followup.style.display = isYes ? 'block' : 'none';
     }
 
     function toggleAnatomyAbnormalityDetails() {

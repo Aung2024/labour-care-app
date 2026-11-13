@@ -187,6 +187,21 @@
     }, { merge: true });
   }
 
+  async function markCompletedIfComplete(db, user, bundle, inspection) {
+    if (!bundle || !bundle.patient || !inspection || inspection.gapCount || bundle.truncated) {
+      return false;
+    }
+    var fresh = await db.collection('patients').doc(bundle.patient.id).get();
+    if (!fresh.exists) throw new Error('Patient record was not found.');
+    var patient = Object.assign({ id: fresh.id }, fresh.data() || {});
+    if (!rules.isOwnedMother(patient, user.uid)) {
+      throw new Error('Back Fill can update only patients you registered.');
+    }
+    if (rules.hasPermanentBackfillCompletion(patient)) return true;
+    await markBackfillComplete(db, patient.id, user, patient);
+    return true;
+  }
+
   async function saveRequests(db, user, bundle, requests, options) {
     options = options || {};
     var fresh = await db.collection('patients').doc(bundle.patient.id).get();
@@ -317,6 +332,7 @@
     listOwnedMothers: listOwnedMothers,
     listOwnedMothersPage: listOwnedMothersPage,
     loadBundle: loadBundle,
+    markCompletedIfComplete: markCompletedIfComplete,
     saveRequests: saveRequests
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

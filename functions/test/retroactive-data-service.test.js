@@ -189,4 +189,5 @@ test('service source excludes archived records and guards permanent completion',
   assert.match(serviceSource, /retroactiveBackfill/)
   assert.match(serviceSource, /status: 'completed'/)
   assert.match(serviceSource, /bundle\.truncated/)
+  assert.match(serviceSource, /markCompletedIfComplete/)
 })

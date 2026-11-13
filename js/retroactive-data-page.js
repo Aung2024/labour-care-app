@@ -326,9 +326,22 @@
         var bundle = await global.RetroactiveDataService.loadBundle(global.firebase.firestore(), mother);
         state.bundles.set(patientId, bundle);
         var scan = global.RetroactiveDataRules.scanPatient(bundle);
-        state.scans.set(patientId, global.RetroactiveDataRules.hasPermanentBackfillCompletion(bundle.patient)
-          ? Object.assign(scan, { gapCount: 0, completedMarker: true, categories: [] })
-          : scan);
+        if (global.RetroactiveDataRules.hasPermanentBackfillCompletion(bundle.patient)) {
+          scan = Object.assign(scan, { gapCount: 0, completedMarker: true, categories: [] });
+        } else if (!scan.gapCount && !bundle.truncated) {
+          try {
+            await global.RetroactiveDataService.markCompletedIfComplete(
+              global.firebase.firestore(),
+              state.user,
+              bundle,
+              scan
+            );
+            scan.completedMarker = true;
+          } catch (completionError) {
+            console.warn('Could not persist Back Fill completion:', completionError);
+          }
+        }
+        state.scans.set(patientId, scan);
       } catch (error) {
         console.error(error);
         document.getElementById('detailName').textContent = t('Could not check this patient.', 'ဤလူနာကို မစစ်နိုင်ပါ။');
