@@ -11,7 +11,6 @@
   <script src="js/vendor/firebase-firestore.js"></script>
   <script src="js/vendor/firebase-auth.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/delivery-notes-utils.js"></script>
   <script src="js/auth-guard.js"></script>
   <script src="js/outcome-system.js"></script>
   <script src="js/anc-tracking-status.js"></script>
@@ -1109,11 +1108,6 @@
         </div>
       </div>
 
-      <section class="treatment-section" id="ancDeliveryNotesSummary">
-        <h5 class="lang-text" data-en="Delivery Notes summary" data-mm="မွေးဖွားခြင်းမှတ်တမ်း အကျဉ်းချုပ်">Delivery Notes summary</h5>
-        <div id="ancDeliveryNotesSummaryBody" class="clinical-notes-content">-</div>
-      </section>
-
       <!-- Visit timeline (8-visit ANC schedule) -->
       <div class="visit-timeline no-print" id="visitTimelineWrap">
         <div class="visit-timeline-label lang-text" data-en="ANC visit schedule (8 visits)" data-mm="ANC အကြိမ် (၈ ကြိမ်)">ANC visit schedule (8 visits)</div>
@@ -1195,19 +1189,6 @@
         </div>
       </div>
 
-      <section class="treatment-section" id="backfillAncInfo">
-        <h5 class="lang-text" data-en="Back Fill clinical fields" data-mm="ပြန်ဖြည့်ထားသော ဆေးမှတ်တမ်းများ">Back Fill clinical fields</h5>
-        <div class="table-scroll">
-          <table class="anc-block-table">
-            <thead><tr>
-              <th>No</th><th>Date</th><th>Goiter</th><th>TB</th><th>Pregnancy history</th>
-              <th>Maternal outcome</th><th>Clean delivery kit</th>
-            </tr></thead>
-            <tbody id="backfillAncInfoBody"></tbody>
-          </table>
-        </div>
-      </section>
-
       <div class="treatment-section" id="chiefComplaintInfo">
         <h5 class="lang-text" data-en="Chief complaints by visit" data-mm="Visit တစ်ကြိမ်ချင်းစီ၏ ဆေးခန်းလာရသော အကြောင်းရင်း">Chief complaints by visit</h5>
         <div id="chiefComplaintContent"></div>
@@ -1256,7 +1237,7 @@
 
       <!-- High Risk Assessment -->
       <div class="treatment-section mt-4">
-        <h5 class="section-heading"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="High Risk Pregnancy Assessment" data-mm="အန္တရာယ်ဖြစ်နိုင်ခြေမြင့်မားသော ကိုယ်ဝန်ဆောင် ဟုတ်/မဟုတ် ဆန်းစစ်ခြင်း">High Risk Pregnancy Assessment</span></h5>
+        <h5 class="section-heading"><i class="fas fa-exclamation-circle me-2"></i><span class="lang-text" data-en="High Risk and Other Info" data-mm="အန္တရာယ်နှင့် အခြားအချက်အလက်များ">High Risk and Other Info</span></h5>
         <div id="highRiskInfo" class="treatment-info">
           <!-- High risk information will be populated here -->
         </div>
@@ -1315,7 +1296,6 @@
   <script>
     let currentUser = null;
     let currentPatient = null;
-    let deliveryNotes = null;
     let patientId = null;
     let antenatalVisits = [];
     let labTests = [];
@@ -1494,8 +1474,6 @@
         }
         
         currentPatient = patientDoc.data();
-        deliveryNotes = await DeliveryNotesUtils.fetchDeliveryNotes(patientId);
-        populateAncDeliveryNotesSummary();
         actualBirthDate = await resolveActualBirthDate(currentPatient);
         
         // Load antenatal visits - try visitDate first, fallback to timestamp
@@ -1558,23 +1536,6 @@
         alert("Error loading report data: " + error.message);
         window.close();
       }
-    }
-
-    function populateAncDeliveryNotesSummary() {
-      const body = document.getElementById('ancDeliveryNotesSummaryBody');
-      if (!body) return;
-      const details = deliveryNotes && deliveryNotes.deliveryDetails || {};
-      const babies = Array.isArray(details.babies) ? details.babies : [];
-      const values = [
-        ['Birth place', details.birthPlace || details.birthplace],
-        ['Mode of delivery', details.modeOfDelivery || details.mode_of_delivery],
-        ['Birth provider', details.birthProvider || details.birth_provider],
-        ['Maternal condition', details.maternalCondition || details.maternal_condition],
-        ['Babies', babies.length ? String(babies.length) : '']
-      ].filter(function (item) { return item[1] != null && item[1] !== ''; });
-      body.innerHTML = values.length
-        ? values.map(function (item) { return '<p><strong>' + escapeHtml(item[0]) + ':</strong> ' + escapeHtml(String(item[1])) + '</p>'; }).join('')
-        : escapeHtml(t('notRecorded'));
     }
 
     function parseClinicalDate(value) {
@@ -2445,13 +2406,11 @@
       const vitalsBody = document.getElementById('blockTableVitalsBody');
       const fetalBody = document.getElementById('blockTableFetalBody');
       const treatmentBody = document.getElementById('blockTableTreatmentBody');
-      const backfillBody = document.getElementById('backfillAncInfoBody');
       if (!vitalsBody || !fetalBody || !treatmentBody) return;
 
       let vitalsHtml = '';
       let fetalHtml = '';
       let treatmentHtml = '';
-      let backfillHtml = '';
 
       screenRows.forEach(function (d) {
         const er = d.empty ? ' class="empty-row"' : '';
@@ -2483,21 +2442,11 @@
           <td>${escapeHtml(d.td)}</td>
           <td>${escapeHtml(d.initial)}</td>
         </tr>`;
-        backfillHtml += `<tr${er}>
-          <td>${d.visitNumber}</td>
-          <td>${escapeHtml(d.visitDate)}</td>
-          <td>${escapeHtml(d.goiterStatus)}</td>
-          <td>${escapeHtml(d.tbSymptoms)}</td>
-          <td>${escapeHtml(d.pregnancyHistory)}</td>
-          <td>${escapeHtml(d.maternalOutcome)}</td>
-          <td>${escapeHtml(d.cleanDeliveryKit)}</td>
-        </tr>`;
       });
 
       vitalsBody.innerHTML = vitalsHtml;
       fetalBody.innerHTML = fetalHtml;
       treatmentBody.innerHTML = treatmentHtml;
-      if (backfillBody) backfillBody.innerHTML = backfillHtml;
     }
 
     function populatePrintBookTable() {
@@ -2878,7 +2827,7 @@
       examinationContainer.innerHTML = examinationHTML;
     }
 
-    function populateHighRiskInfo() {
+    function populateHighRiskInfoLegacy() {
       const highRiskContainer = document.getElementById('highRiskInfo');
       
       if (antenatalVisits.length === 0) {
@@ -2981,6 +2930,90 @@
       }
 
       highRiskContainer.innerHTML = highRiskHTML;
+    }
+
+    function populateHighRiskInfo() {
+      const container = document.getElementById('highRiskInfo');
+      if (!container) return;
+      if (!antenatalVisits.length) {
+        container.innerHTML = '<p class="text-muted">' + escapeHtml(t('noHighRisk')) + '</p>';
+        return;
+      }
+
+      const latestWith = function (predicate) {
+        return antenatalVisits.slice().reverse().find(predicate) || {};
+      };
+      const riskVisit = latestWith(function (visit) {
+        return visit.high_risk || (visit.risk_factors && visit.risk_factors.length) ||
+          visit.risk_notes || visit.pastHistoryStatus || visit.pastHistoryNotes;
+      });
+      const infoVisit = latestWith(function (visit) {
+        return visit.goiterStatus || visit.tbSymptoms || visit.cleanDeliveryKitDate ||
+          visit.cleanDeliveryKitStatus || visit.cleanDeliveryKitNotGiven ||
+          visit.lastPregnancyOutcome || (Array.isArray(visit.previousObstetricHistory) && visit.previousObstetricHistory.length);
+      });
+      const historyVisit = latestWith(function (visit) {
+        return Array.isArray(visit.previousObstetricHistory) && visit.previousObstetricHistory.length;
+      });
+      const riskFactorLabels = {
+        maternal_age_18_or_35: 'Maternal age <18 or >35 years',
+        parity_5: 'Parity ≥ 5',
+        multiple_pregnancy: 'Multiple pregnancy',
+        previous_complications: 'History of complications in previous pregnancies',
+        previous_stillbirths: 'Previous stillbirths or neonatal deaths',
+        previous_preterm: 'Previous preterm births',
+        obstructed_labour: 'History of obstructed labour, prolonged labour, or cesarean section',
+        uterine_scar: 'Uterine scar',
+        hypertension: 'Hypertension',
+        diabetes: 'Diabetes mellitus',
+        cardiac_disease: 'Cardiac disease',
+        tuberculosis: 'Tuberculosis',
+        epilepsy: 'Epilepsy',
+        kidney_disease: 'Kidney disease',
+        hiv: 'HIV infection',
+        previous_congenital_anomalies: 'Previous child with congenital anomalies',
+        short_interval_pregnancy: 'Short interval between pregnancies',
+        placenta_previa_abruption: 'Placenta previa/Abruption',
+        other_medical_conditions: 'Other Medical Conditions'
+      };
+      const history = historyVisit.previousObstetricHistory || [];
+      const historyTable = history.length
+        ? `<div class="table-responsive mt-2"><table class="table table-sm table-bordered mb-2">
+            <thead><tr><th>No.</th><th>Year</th><th>Mode of delivery</th><th>Birth place</th><th>Birth attendant</th><th>Birth weight (kg)</th><th>Condition after birth</th><th>Remark</th></tr></thead>
+            <tbody>${history.map(function (item, index) {
+              return '<tr><td>' + escapeHtml(item.serial || index + 1) + '</td>' +
+                '<td>' + escapeHtml(item.year || '') + '</td>' +
+                '<td>' + escapeHtml(item.deliveryType || item.outcome || '') + '</td>' +
+                '<td>' + escapeHtml(item.birthPlace || '') + '</td>' +
+                '<td>' + escapeHtml(item.attendant || '') + '</td>' +
+                '<td>' + escapeHtml(item.birthWeightKg || item.birthWeight || '') + '</td>' +
+                '<td>' + escapeHtml(item.conditionAfterBirth || item.condition || '') + '</td>' +
+                '<td>' + escapeHtml(item.remark || item.notes || '') + '</td></tr>';
+            }).join('')}</tbody>
+          </table></div>`
+        : '';
+      const cleanKit = infoVisit.cleanDeliveryKitDate
+        ? formatReportDate(infoVisit.cleanDeliveryKitDate)
+        : infoVisit.cleanDeliveryKitStatus || (infoVisit.cleanDeliveryKitNotGiven ? 'Not given' : '-');
+      const factors = (riskVisit.risk_factors || []).map(function (factor) {
+        return riskFactorLabels[factor] || factor;
+      }).join(', ');
+      const highRiskStatus = riskVisit.high_risk === 'yes' ? t('highRiskYes') : t('highRiskNo');
+      container.innerHTML = `<div class="treatment-item">
+        <div class="treatment-content">
+          <p><strong>High Risk Status:</strong> ${escapeHtml(highRiskStatus)}</p>
+          ${factors ? `<p><strong>Risk Factors:</strong> ${escapeHtml(factors)}</p>` : ''}
+          ${riskVisit.risk_notes ? `<p><strong>Risk Notes:</strong> ${escapeHtml(riskVisit.risk_notes)}</p>` : ''}
+          ${riskVisit.pastHistoryStatus && riskVisit.pastHistoryStatus !== 'nad' ? `<p><strong>Past History:</strong> ${escapeHtml(riskVisit.pastHistoryStatus)}</p>` : ''}
+          ${riskVisit.pastHistoryNotes ? `<p><strong>Past History Notes:</strong> ${escapeHtml(riskVisit.pastHistoryNotes)}</p>` : ''}
+          <p><strong>Goiter:</strong> ${escapeHtml(infoVisit.goiterStatus || '-')}</p>
+          <p><strong>TB:</strong> ${escapeHtml(infoVisit.tbSymptoms || '-')}</p>
+          <p><strong>Clean delivery kit:</strong> ${escapeHtml(cleanKit)}</p>
+          ${historyTable ? `<p><strong>Previous obstetric history:</strong></p>${historyTable}` : ''}
+          <p><strong>Last pregnancy outcome:</strong> ${escapeHtml(infoVisit.lastPregnancyOutcome || '-')}
+            ${infoVisit.lastPregnancyDate ? ' — ' + escapeHtml(formatReportDate(infoVisit.lastPregnancyDate)) : ''}</p>
+        </div>
+      </div>`;
     }
 
     function isLabPositiveResult(result, testType) {

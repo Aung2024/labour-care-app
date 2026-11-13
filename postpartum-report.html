@@ -748,12 +748,12 @@
       </div>
 
       <section class="treatment-section" id="deliveryNotesSummary">
-        <h5 class="lang-text" data-en="Delivery Notes" data-mm="မွေးဖွားခြင်းမှတ်တမ်း">Delivery Notes</h5>
+        <h5 class="lang-text" data-en="Birth and Delivery Summary" data-mm="မွေးဖွားခြင်း အကျဉ်းချုပ်">Birth and Delivery Summary</h5>
         <div id="deliveryNotesSummaryBody" class="clinical-notes-content">-</div>
       </section>
 
       <section class="treatment-section" id="backfillPncInfo">
-        <h5 class="lang-text" data-en="Back Fill clinical fields" data-mm="ပြန်ဖြည့်ထားသော PNC ဆေးမှတ်တမ်းများ">Back Fill clinical fields</h5>
+        <h5 class="lang-text" data-en="Maternal Outcome" data-mm="မိခင်ရလဒ်">Maternal Outcome</h5>
         <div class="table-scroll">
           <table class="pnc-block-table">
             <thead><tr><th>No</th><th>Date</th><th>Maternal outcome</th><th>Death cause</th><th>Death details</th><th>Other-facility visits</th></tr></thead>
@@ -1012,6 +1012,8 @@
       var activeTab = document.querySelector('.visit-tab-btn.active');
       var tabIdx = activeTab ? parseInt(activeTab.getAttribute('data-tab-index'), 10) : postpartumVisits.length - 1;
       populatePatientInfo();
+      populateDeliveryNotesSummary();
+      populateBackfillPncInfo();
       populateAllVisitViews();
       populateDangerSignsInfo();
       populateTreatmentInfo();
@@ -1102,6 +1104,41 @@
       }
     }
 
+    function formatDeliveryValue(value, type) {
+      if (value === true || value === 'true') return 'Yes';
+      if (value === false || value === 'false') return 'No';
+      const raw = String(value == null ? '' : value);
+      const key = raw.toLowerCase();
+      const labels = {
+        health_facility_subfacility: 'RHC / SRHC',
+        government_hospital: 'Government hospital',
+        private_facility: 'Private facility',
+        normal: 'Normal vaginal birth',
+        assisted: 'Assisted birth',
+        elective_c_section: 'Elective C-section',
+        emergency_c_section: 'Emergency C-section',
+        skilled_birth_attendant: 'Skilled birth attendant',
+        maternal_death: 'Maternal death',
+        service_complete: 'Service complete',
+        alive: 'Alive',
+        death: 'Death',
+        stillbirth: 'Stillbirth',
+        single: 'Single',
+        twins: 'Twins',
+        self: 'Self'
+      };
+      if (labels[key]) return labels[key];
+      if (type === 'date' && raw) {
+        const date = new Date(raw);
+        if (!isNaN(date.getTime())) return date.toLocaleString();
+      }
+      return raw.replace(/_/g, ' ');
+    }
+
+    function deliveryLabel(en, mm) {
+      return getReportLang() === 'en' ? en : mm;
+    }
+
     function populateDeliveryNotesSummary() {
       const body = document.getElementById('deliveryNotesSummaryBody');
       if (!body) return;
@@ -1113,23 +1150,22 @@
         return;
       }
       const values = [
-        ['Birth place', details.birthPlace || details.birthplace],
-        ['Mode of delivery', details.modeOfDelivery || details.mode_of_delivery],
-        ['Birth provider', details.birthProvider || details.birth_provider],
-        ['Maternal condition', details.maternalCondition || details.maternal_condition],
-        ['Maternal outcome', details.maternalOutcome && (details.maternalOutcome.value || details.maternalOutcome) || deliveryNotes.maternalOutcome && (deliveryNotes.maternalOutcome.value || deliveryNotes.maternalOutcome)],
-        ['Pregnancy type', details.pregnancyType || details.pregnancy_type],
-        ['Gestational week', details.gestationalWeek || details.gestational_week],
-        ['Oxytocin within one minute', thirdStage.oxytocinGiven],
-        ['Controlled cord traction', thirdStage.controlledCordTraction],
-        ['Babies', babies.length ? babies.map(function (baby) {
+        [deliveryLabel('Birth place', 'မွေးဖွားသည့်နေရာ'), formatDeliveryValue(details.birthPlace || details.birthplace)],
+        [deliveryLabel('Mode of delivery', 'မွေးဖွားသည့်နည်းလမ်း'), formatDeliveryValue(details.modeOfDelivery || details.mode_of_delivery)],
+        [deliveryLabel('Birth provider', 'မွေးဖွားပေးသူ'), formatDeliveryValue(details.birthProvider || details.birth_provider)],
+        [deliveryLabel('Maternal outcome', 'မိခင်ရလဒ်'), formatDeliveryValue(details.maternalOutcome && (details.maternalOutcome.value || details.maternalOutcome) || deliveryNotes.maternalOutcome && (deliveryNotes.maternalOutcome.value || deliveryNotes.maternalOutcome))],
+        [deliveryLabel('Pregnancy type', 'ကိုယ်ဝန်အမျိုးအစား'), formatDeliveryValue(details.pregnancyType || details.pregnancy_type)],
+        [deliveryLabel('Gestational week', 'ကိုယ်ဝန်ပတ်'), details.gestationalWeek || details.gestational_week],
+        [deliveryLabel('Oxytocin within one minute', 'တစ်မိနစ်အတွင်း Oxytocin'), formatDeliveryValue(thirdStage.oxytocinGiven)],
+        [deliveryLabel('Controlled cord traction', 'ချက်ကြိုးဆွဲ၍ အချင်းချခြင်း'), formatDeliveryValue(thirdStage.controlledCordTraction)],
+        [deliveryLabel('Babies', 'မွေးကင်းစကလေးများ'), babies.length ? babies.map(function (baby) {
           return [
             baby.babyIndex ? 'Baby ' + baby.babyIndex : '',
-            baby.gender,
-            baby.birthTime || baby.birth_time,
-            baby.birthWeightGram ? baby.birthWeightGram + ' g' : '',
-            baby.outcome,
-            baby.causeOfDeath || baby.cause_of_death
+            formatDeliveryValue(baby.gender),
+            formatDeliveryValue(baby.birthTime || baby.birth_time, 'date'),
+            baby.birthWeightGram ? (Number(baby.birthWeightGram) / 1000).toFixed(2) + ' kg' : '',
+            formatDeliveryValue(baby.outcome),
+            baby.causeOfDeath || baby.cause_of_death ? 'Cause: ' + (baby.causeOfDeath || baby.cause_of_death) : ''
           ].filter(Boolean).join(' · ');
         }).join('; ') : '']
       ].filter(function (item) { return item[1] != null && item[1] !== ''; });
