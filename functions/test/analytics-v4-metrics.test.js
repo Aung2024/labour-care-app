@@ -387,6 +387,19 @@ test('reads nested uterotonic recording and normalizes delivery modes', () => {
   assert.equal(delivery.uterotonic, true)
 })
 
+test('normalizes structured Delivery Note maternal outcomes', () => {
+  const delivery = deliveryRecord(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveryDate: '2026-01-19',
+        maternalOutcome: { subject: 'maternal', value: 'alive' },
+        babies: []
+      }
+    }
+  }))
+  assert.equal(delivery.maternalOutcome, 'alive')
+})
+
 test('accepts legacy delivery date aliases for range aggregation', () => {
   const delivery = deliveryRecord(facts({
     deliveryNotes: {

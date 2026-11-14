@@ -109,6 +109,7 @@ test('delivery notes save directly after recording and reuse ANC gestational age
   assert.match(source, /allowUpdate: !!loadedDeliveryNotes/);
   assert.match(source, /saveLabel\.dataset\.en = loadedDeliveryNotes \? 'Save Edits'/);
   assert.doesNotMatch(source, /Request supervised correction/);
+  assert.match(source, /AnalyticsRefreshQueue\.requestSafely\(babyId, 'delivery_notes_baby'\)/);
   const utils = readAppFile('js/baby-patient-utils.js');
   assert.match(utils, /copyMotherScopeFields/);
   assert.match(utils, /fetchLatestAncContext/);

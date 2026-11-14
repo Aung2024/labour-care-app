@@ -149,6 +149,9 @@ const hivResultIsReactive = (value) => ['reactive', 'positive', 'detected'].incl
 )
 
 const normalizeOutcome = (value) => {
+  if (value && typeof value === 'object') {
+    value = value.value || value.outcome || value.status || ''
+  }
   const raw = asText(value).toLowerCase()
   if (['alive', 'live', 'living'].includes(raw)) return 'alive'
   if (['death', 'dead', 'died', 'maternal_death'].includes(raw)) return 'death'
