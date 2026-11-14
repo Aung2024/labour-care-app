@@ -614,7 +614,7 @@
         completeMissing: 'KMC ကို ယခု မပြီးမြောက်သေးပါ။ လိုအပ်ချက်များ: {items}',
         completeCriteriaWeight: 'ကိုယ်အလေးချိန် ၂.၅ ကီလိုဂရမ် ပြည့်ရန်',
         completeCriteriaAge: 'ပြင်ဆင်ပြီး ကိုယ်ဝန်ဆောင်အသက် ၄၀+ ပတ် ပြည့်ရန်',
-        completeCriteriaFeeding: 'မိခင်နို့ သို့မဟုတ် ပုလင်းနို့ စို့/မျိုနိုင်ရန်',
+        completeCriteriaFeeding: 'မိခင်နို့ သို့မဟုတ် နို့ဗူး စို့/မျိုနိုင်ရန်',
         completeCriteriaTemperature: 'ကိုယ်အပူချိန် ၃ ရက်ဆက်တိုက် ပုံမှန်ဖြစ်ရန်',
         yes: 'လုပ်ခဲ့',
         no: 'မလုပ်',
@@ -1994,6 +1994,10 @@
             );
           }
           row.newbornCareVisits = visits;
+          if (!row.gestationalWeeks && row.readiness &&
+              row.readiness.gestationalAgeReady === false) {
+            row._kmcLatestAnc = await fetchLatestAnc(db, row.patientId);
+          }
           var history = buildWeightHistoryFromVisits(visits, babyIndex);
           if (history.length) {
             var fetchedHistory = history.map(function (point) {
@@ -2039,8 +2043,24 @@
       var birth = row.birthAnchorDate ? new Date(row.birthAnchorDate) : null;
       var edd = row.edd ? new Date(row.edd) : null;
       var ageDays = Number(row.ageDays);
-      var correctedWeeks = null;
-      if (birth && edd && !isNaN(birth.getTime()) && !isNaN(edd.getTime())) {
+      var birthGestationalWeeks = Number(
+        row.gestationalWeeks || latest.gestationalWeek ||
+        latest.gestational_week || latest.gestational_age_at_birth ||
+        latest.gestationalAgeAtBirth ||
+        row._kmcLatestAnc && (
+          row._kmcLatestAnc.gestationalAge ||
+          row._kmcLatestAnc.gestational_age ||
+          row._kmcLatestAnc.ga_weeks ||
+          row._kmcLatestAnc.manualGestationalAge ||
+          row._kmcLatestAnc.early_anc_gestational_age_weeks
+        )
+      );
+      var correctedWeeks = Number.isFinite(birthGestationalWeeks) &&
+        birthGestationalWeeks > 0 && Number.isFinite(ageDays)
+        ? birthGestationalWeeks + ageDays / 7
+        : null;
+      if (correctedWeeks == null && birth && edd &&
+          !isNaN(birth.getTime()) && !isNaN(edd.getTime())) {
         correctedWeeks = 40 - ((edd.getTime() - birth.getTime()) / 86400000 / 7) +
           (Number.isFinite(ageDays) ? ageDays / 7 : 0);
       }

@@ -329,6 +329,25 @@ function firstNewbornVisit(facts) {
   ) || visits[0] || {};
 }
 
+function latestAncGestationalWeeks(facts) {
+  const visits = (facts.antenatalVisits || [])
+    .map(unwrap)
+    .filter(Boolean)
+    .sort((left, right) =>
+      (firstDate(right, ['visitDate', 'visit_date', 'timestamp']) || 0) -
+      (firstDate(left, ['visitDate', 'visit_date', 'timestamp']) || 0)
+    );
+  for (const visit of visits) {
+    const weeks = Number(
+      visit.gestationalAge || visit.gestational_age ||
+      visit.ga_weeks || visit.manualGestationalAge ||
+      visit.early_anc_gestational_age_weeks
+    );
+    if (Number.isFinite(weeks) && weeks > 0) return weeks;
+  }
+  return null;
+}
+
 function parseWeightGram(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -366,6 +385,7 @@ function babiesForKmc(facts) {
   const care = firstNewbornVisit(facts);
   const profile = facts.profile || {};
   const identity = kmcIdentity(facts);
+  const ancGestationalWeeks = latestAncGestationalWeeks(facts);
   const byIndex = new Map();
   newbornVisitData(facts).sort((a, b) => {
     const visitDiff = Number(b.visit_number || b.visitNumber || 0) -
@@ -433,7 +453,8 @@ function babiesForKmc(facts) {
     gestationalWeeks: Number(
       baby.gestationalWeek || baby.gestational_week ||
       baby.gestational_age_at_birth || baby.gestationalAgeAtBirth ||
-      care.gestationalWeek || care.gestational_age_at_birth || 0
+      care.gestationalWeek || care.gestational_age_at_birth ||
+      ancGestationalWeeks || 0
     ) || null,
     latestWeightGram: null,
     birthDate: firstDate(baby, [
@@ -653,6 +674,7 @@ function buildKmcProjections(facts, options) {
       birthWeightGram,
       latestWeightGram,
       weightHistory: history,
+      gestationalWeeks: baby.gestationalWeeks,
       birthAnchorDate: isoDate(birth),
       birthAnchorSource: birth
         ? (facts.birthAnchor && facts.birthAnchor.source || 'newborn_baby') : null,

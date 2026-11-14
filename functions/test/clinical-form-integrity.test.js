@@ -128,6 +128,7 @@ test('KMC completion is manual, reversible, and has no outcome dropdown', () => 
 test('KMC keeps the guidance copy while refreshing readiness from the latest visit', () => {
   const source = readAppFile('kmc-tracking.html');
   assert.match(source, /completeCriteriaTemperature: 'normal temperature for 3 consecutive days'/);
+  assert.match(source, /completeCriteriaFeeding: 'မိခင်နို့ သို့မဟုတ် နို့ဗူး စို့\/မျိုနိုင်ရန်'/);
   assert.match(source, /completeCriteriaTemperature: 'ကိုယ်အပူချိန် ၃ ရက်ဆက်တိုက် ပုံမှန်ဖြစ်ရန်'/);
   assert.match(source, /function refreshKmcReadiness\(row\)/);
   assert.match(source, /latest\.temperature \|\| latest\.body_temperature/);
