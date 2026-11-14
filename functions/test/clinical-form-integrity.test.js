@@ -4,10 +4,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 function readAppFile(name) {
   return fs.readFileSync(path.resolve(__dirname, '../..', name), 'utf8');
 }
+
+test('patient registration inline scripts parse successfully', () => {
+  const source = readAppFile('patient-enhanced.html');
+  const scripts = Array.from(source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi))
+    .map((match) => match[1])
+    .filter((script) => script.trim());
+  assert.ok(scripts.length > 0);
+  scripts.forEach((script, index) => {
+    assert.doesNotThrow(() => new vm.Script(script), `Inline script ${index + 1} must parse`);
+  });
+});
 
 test('antenatal test save validates the form and hidden TB values are retained', () => {
   const source = readAppFile('antenatal-tests-form.html');
