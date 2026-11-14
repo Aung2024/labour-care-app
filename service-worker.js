@@ -12,7 +12,7 @@
 // caches, while the active worker remains in control of open pages.
 importScripts('/js/pwa-route-manifest.js');
 
-const RELEASE_ID = '20261113-v2-offline-prod1';
+const RELEASE_ID = '20261114-v2-offline-prod2';
 const CACHE_NAME = `mnch-v2-shell-${RELEASE_ID}`;
 const NETWORK_TIMEOUT_MS = 8000;
 const CACHE_BATCH_SIZE = 6;
