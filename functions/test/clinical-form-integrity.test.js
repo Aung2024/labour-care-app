@@ -133,6 +133,8 @@ test('KMC keeps the guidance copy while refreshing readiness from the latest vis
   assert.match(source, /function refreshKmcReadiness\(row\)/);
   assert.match(source, /latest\.temperature \|\| latest\.body_temperature/);
   assert.match(source, /temperatureDays: temperatureReady \? 1 : 0/);
+  assert.match(source, /calculatedGa/);
+  assert.match(source, /row\.readiness\.correctedWeeks/);
 });
 
 test('home page exposes a role-gated Quality Improvement card', () => {
