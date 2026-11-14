@@ -125,6 +125,15 @@ test('KMC completion is manual, reversible, and has no outcome dropdown', () => 
   assert.match(source, /completeReady/);
 });
 
+test('KMC keeps the guidance copy while refreshing readiness from the latest visit', () => {
+  const source = readAppFile('kmc-tracking.html');
+  assert.match(source, /completeCriteriaTemperature: 'normal temperature for 3 consecutive days'/);
+  assert.match(source, /completeCriteriaTemperature: 'ကိုယ်အပူချိန် ၃ ရက်ဆက်တိုက် ပုံမှန်ဖြစ်ရန်'/);
+  assert.match(source, /function refreshKmcReadiness\(row\)/);
+  assert.match(source, /latest\.temperature \|\| latest\.body_temperature/);
+  assert.match(source, /temperatureDays: temperatureReady \? 1 : 0/);
+});
+
 test('home page exposes a role-gated Quality Improvement card', () => {
   const source = readAppFile('home.html');
   assert.match(source, /id="qiCard"/);

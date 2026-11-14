@@ -2014,7 +2014,57 @@
           row._weightsEnriched = true;
         }));
       }
+      pending.forEach(refreshKmcReadiness);
       return rows;
+    }
+
+    function refreshKmcReadiness(row) {
+      if (!row || !Array.isArray(row.newbornCareVisits) || !row.newbornCareVisits.length) return;
+      var babyIndex = parseInt(row.babyIndex, 10) || 1;
+      var visits = row.newbornCareVisits.map(function (visit) {
+        var baby = visitBabyForIndex(visit, babyIndex);
+        return Object.assign({}, visit, baby || {});
+      }).sort(function (left, right) {
+        var leftDate = visitDateDetails(left).ms || 0;
+        var rightDate = visitDateDetails(right).ms || 0;
+        return rightDate - leftDate ||
+          positiveVisitNumber(right) - positiveVisitNumber(left);
+      });
+      var latest = visits[0] || {};
+      var reasons = Array.isArray(row.reasons) ? row.reasons : [];
+      var lowBirthWeight = reasons.indexOf('low_weight') !== -1;
+      var preterm = reasons.indexOf('preterm') !== -1;
+      var latestWeight = normalizeWeightToGrams(row.latestWeightGram);
+      var weightReady = !lowBirthWeight || (latestWeight != null && latestWeight >= 2500);
+      var birth = row.birthAnchorDate ? new Date(row.birthAnchorDate) : null;
+      var edd = row.edd ? new Date(row.edd) : null;
+      var ageDays = Number(row.ageDays);
+      var correctedWeeks = null;
+      if (birth && edd && !isNaN(birth.getTime()) && !isNaN(edd.getTime())) {
+        correctedWeeks = 40 - ((edd.getTime() - birth.getTime()) / 86400000 / 7) +
+          (Number.isFinite(ageDays) ? ageDays / 7 : 0);
+      }
+      var gestationalAgeReady = !preterm || (correctedWeeks != null && correctedWeeks >= 40);
+      var feeding = String(
+        latest.feeding_method || latest.feedingMethod ||
+        latest.feeding_type || latest.feedingType || ''
+      ).toLowerCase().replace(/_/g, ' ').trim();
+      var feedingReady = ['breastfeeding', 'bottle', 'bottle feeding'].indexOf(feeding) !== -1;
+      var temperature = Number(
+        latest.temperature || latest.body_temperature || latest.bodyTemperature
+      );
+      var temperatureReady = Number.isFinite(temperature) &&
+        temperature >= 36.5 && temperature <= 37.5;
+      row.readiness = {
+        ready: (lowBirthWeight || preterm) &&
+          weightReady && gestationalAgeReady && feedingReady && temperatureReady,
+        weightReady: weightReady,
+        gestationalAgeReady: gestationalAgeReady,
+        feedingReady: feedingReady,
+        temperatureReady: temperatureReady,
+        temperatureDays: temperatureReady ? 1 : 0,
+        criteria: { lowBirthWeight: lowBirthWeight, preterm: preterm }
+      };
     }
 
     function projectionKmcRow(row) {
