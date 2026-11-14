@@ -157,6 +157,22 @@
     }
   }
 
+  async function patientHasDeliveryNotes(patientId) {
+    if (!patientId || typeof firebase === 'undefined' || !firebase.firestore) return false;
+    try {
+      const snapshot = await firebase.firestore()
+        .collection('patients')
+        .doc(patientId)
+        .collection('records')
+        .doc('deliveryNotes')
+        .get();
+      return snapshot.exists;
+    } catch (error) {
+      console.warn('[StatusManager] Could not check Delivery Notes:', error);
+      return false;
+    }
+  }
+
   /**
    * Update patient status in Firestore
    */
@@ -501,6 +517,7 @@
     reconcileAntenatalStatuses,
     reconcilePostnatalNewbornStatus,
     patientHasPostnatalNewbornActivity,
+    patientHasDeliveryNotes,
     normalizePatientStatus,
     getStatusRank,
     shouldAdvanceStatus,

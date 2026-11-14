@@ -511,8 +511,12 @@ test('new vaccine page can record multiple vaccines at once', () => {
 test('status manager treats delivery notes as postnatal activity', () => {
   const source = readAppFile('js/status-manager.js');
   assert.match(source, /collection\('records'\)\.doc\('deliveryNotes'\)/);
+  assert.match(source, /async function patientHasDeliveryNotes/);
   const hub = readAppFile('patient-care-hub.html');
   assert.match(hub, /reconcilePostnatalNewbornStatus\(patientId/);
+  const list = readAppFile('list.html');
+  assert.match(list, /Delivery Note found — PNC status reconciliation/);
+  assert.match(list, /StatusManager\.STATUSES\.ANTENATAL/);
 });
 
 test('HRT SMS lets midwives choose templates, write custom text, and save a phone', () => {
@@ -599,7 +603,8 @@ test('patient registration uses explicit type selection and guardian-aware baby 
   assert.match(source, /name="patientType" id="patientTypeBaby"/);
   assert.match(source, /return document\.querySelector\('input\[name="patientType"\]:checked'\)\?\.value === 'baby'/);
   assert.match(source, /function handlePatientTypeChange\(\)/);
-  assert.match(source, /option\.addEventListener\('click'/);
+  assert.match(source, /id="patientTypeMother"[^>]*onchange="handlePatientTypeChange\(\)"/);
+  assert.match(source, /id="patientTypeBaby"[^>]*onchange="handlePatientTypeChange\(\)"/);
   assert.doesNotMatch(source, /id="motherPatientSearch"/);
   assert.match(source, /id="motherPatientId"/);
   assert.match(source, /findExistingMotherPatients/);

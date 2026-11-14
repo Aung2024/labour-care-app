@@ -3146,13 +3146,47 @@
     async function reconcileRegisteredPatientStatuses() {
       if (!window.StatusManager) return;
 
+      var statusUpdated = false;
+      var online = typeof navigator === 'undefined' || navigator.onLine;
+      var deliveryCandidates = allPatients.filter(function (patient) {
+        const normalizedStatus = StatusManager.normalizePatientStatus(patient.status);
+        const eligibleStatuses = [
+          StatusManager.STATUSES.REGISTERED,
+          StatusManager.STATUSES.ANTENATAL,
+          StatusManager.STATUSES.INTRAPARTUM
+        ];
+        return patientTypeOf(patient) === 'mother' && eligibleStatuses.includes(normalizedStatus);
+      });
+
+      if (online) {
+        for (let i = 0; i < deliveryCandidates.length; i += TRACKING_CONCURRENCY) {
+          const batch = deliveryCandidates.slice(i, i + TRACKING_CONCURRENCY);
+          await Promise.all(batch.map(async function (patient) {
+            try {
+              const hasDeliveryNotes = await StatusManager.patientHasDeliveryNotes(patient.id);
+              if (!hasDeliveryNotes) return;
+              await StatusManager.reconcilePostnatalNewbornStatus(patient.id, {
+                assumeActivityRecorded: true,
+                reason: 'Delivery Note found — PNC status reconciliation'
+              });
+              patient.status = StatusManager.STATUSES.POSTNATAL_NEWBORN;
+              statusUpdated = true;
+            } catch (err) {
+              console.warn('Delivery Note status reconciliation failed for', patient.id, err);
+            }
+          }));
+        }
+      }
+
       var registeredPatients = allPatients.filter(function (p) {
         return StatusManager.isRegisteredLikeStatus(p.status);
       });
-      if (!registeredPatients.length) return;
+      if (!registeredPatients.length) {
+        if (statusUpdated) filterPatients();
+        return;
+      }
 
       var db = typeof firebase !== 'undefined' && firebase.firestore ? firebase.firestore() : null;
-      var statusUpdated = false;
       var lang = getListLang();
       var cache = (await hasPendingAncVisits()) ? null : readTrackingCache();
 
