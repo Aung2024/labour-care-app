@@ -48,6 +48,8 @@ test('newborn care uses shared alert logic and canonical storage patient ID', ()
     /\.doc\(patientId\)\s*\.collection\('newborn_care'\)/
   );
   assert.match(source, /id="body_weight_gram"[^>]*required/);
+  assert.doesNotMatch(source, /id="birth_length_cm"[^>]*required/);
+  assert.doesNotMatch(source, /id="head_circumference_cm"[^>]*required/);
   assert.match(source, /function getSubstantiveNewbornVisits/);
   assert.match(source, /function maxSubstantiveNewbornVisitNumber/);
   assert.match(source, /function getNewbornVisitNumber/);
@@ -574,7 +576,7 @@ test('patient registration requires patient phone and allows reused numbers', ()
   assert.doesNotMatch(source, /liveDuplicateState\.phoneBlocked = phoneDup/);
 });
 
-test('patient registration uses explicit type selection and guarded baby identity checks', () => {
+test('patient registration uses explicit type selection and guardian-aware baby naming', () => {
   const source = readAppFile('patient-enhanced.html');
   assert.match(source, /name="patientType" id="patientTypeMother"/);
   assert.match(source, /name="patientType" id="patientTypeBaby"/);
@@ -585,11 +587,11 @@ test('patient registration uses explicit type selection and guarded baby identit
   assert.match(source, /openDelivery=1/);
   assert.match(source, /id="existingMotherAlert"/);
   assert.match(source, /continueWithDifferentMother/);
-  assert.match(source, /motherUnavailableReason/);
-  assert.match(source, /data-mm="မိခင် မသိပါ"/);
-  assert.match(source, /id="babyHasGuardian"/);
-  assert.match(source, /id="guardianName"/);
-  assert.match(source, /guardianCheckbox\.checked = false/);
+  assert.match(source, /data-en="Mother Name \(Guardian\)"/);
+  assert.match(source, /data-mm="မိခင် အမည် \(အုပ်ထိန်းသူ\)"/);
+  assert.doesNotMatch(source, /id="motherUnavailable"/);
+  assert.doesNotMatch(source, /id="babyHasGuardian"/);
+  assert.doesNotMatch(source, /id="guardianName"/);
   assert.match(source, /const duplicateName = registeringBaby \? data\.motherName : data\.name/);
   assert.match(source, /document\.getElementById\(babyRegistration \? 'motherName' : 'name'\)/);
   assert.match(source, /id="ageFieldGroup"/);

@@ -659,6 +659,41 @@ test('KMC remains active until a manual completion action is recorded', () => {
   assert.equal(row.postpartumAgeDays, 59);
 });
 
+test('KMC readiness uses the EDD-derived corrected age and latest normal temperature', () => {
+  const [row] = buildKmcProjections(facts({
+    profile: {
+      ...facts().profile,
+      edd: '2026-07-20'
+    },
+    newbornVisits: [
+      {
+        data: {
+          visit_number: 1,
+          visitDate: '2026-06-01',
+          birth_time: '2026-06-01T10:00:00Z',
+          body_weight_gram: 1800,
+          kmc_selected: 'yes'
+        }
+      },
+      {
+        data: {
+          visit_number: 2,
+          visitDate: '2026-09-08',
+          current_weight_gram: 2500,
+          temperature: 37,
+          feeding_method: 'breastfeeding',
+          kmc_selected: 'yes'
+        }
+      }
+    ]
+  }), { asOf: '2026-09-08' });
+
+  assert.equal(row.readiness.gestationalAgeReady, true);
+  assert.equal(row.readiness.temperatureReady, true);
+  assert.equal(row.readiness.temperatureDays, 1);
+  assert.equal(row.readiness.ready, true);
+});
+
 test('KMC completion can be manually reversed', () => {
   const [row] = buildKmcProjections(facts({
     kmcActions: [

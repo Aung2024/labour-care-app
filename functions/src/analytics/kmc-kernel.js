@@ -103,10 +103,14 @@ const dateOnly = (value) => {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
 }
 
-const correctedGestationalWeeks = ({ gestationalWeeks, birthDate, asOf }) => {
-  const weeks = normalizeGestationalWeeks(gestationalWeeks)
+const correctedGestationalWeeks = ({ gestationalWeeks, birthDate, edd, asOf }) => {
+  let weeks = normalizeGestationalWeeks(gestationalWeeks)
   const birth = firstDate({ value: birthDate }, ['value'])
+  const due = firstDate({ value: edd }, ['value'])
   const end = firstDate({ value: asOf }, ['value']) || new Date()
+  if (!weeks && birth && due) {
+    weeks = 40 - (due.getTime() - birth.getTime()) / DAY_MS / 7
+  }
   if (!weeks || !birth) return weeks
   return weeks + Math.max(0, end.getTime() - birth.getTime()) / DAY_MS / 7
 }
@@ -158,12 +162,10 @@ const deriveReadiness = ({
   const feeding = text(feedingMethod).replace(/_/g, ' ')
   const feedingReady = ['breastfeeding', 'bottle', 'bottle feeding'].includes(feeding)
   const temperatureNumber = Number(temperature)
-  const temperatureDays = temperatureHistory.length
-    ? consecutiveNormalTemperatureDays(temperatureHistory)
-    : (Number.isFinite(temperatureNumber) &&
-      temperatureNumber >= NORMAL_TEMPERATURE_MIN &&
-      temperatureNumber <= NORMAL_TEMPERATURE_MAX ? 1 : 0)
-  const temperatureReady = temperatureDays >= 3
+  const temperatureDays = Number.isFinite(temperatureNumber) &&
+    temperatureNumber >= NORMAL_TEMPERATURE_MIN &&
+    temperatureNumber <= NORMAL_TEMPERATURE_MAX ? 1 : 0
+  const temperatureReady = temperatureDays >= 1
   return {
     ready: Boolean((lowBirthWeight || preterm) &&
       weightReady && gestationalAgeReady && feedingReady && temperatureReady),

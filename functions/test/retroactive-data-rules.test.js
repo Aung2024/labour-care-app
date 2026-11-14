@@ -326,7 +326,7 @@ test('existing newborn visits are filled inline and missing INC can be created',
   assert.equal(group(incomplete, 'newborn', 'current_weight_gram').status, 'optional');
   assert.equal(group(incomplete, 'newborn', 'current_weight_gram').birthWeightGram, 3000);
   assert.equal(group(incomplete, 'newborn', 'current_weight_gram').visits[0].currentValue, '');
-  assert.equal(group(incomplete, 'newborn', 'head_circumference_cm').status, 'missing');
+  assert.equal(group(incomplete, 'newborn', 'head_circumference_cm').status, 'optional');
   assert.equal(group(incomplete, 'immediate', 'immediate:bf_immediate_1').status, 'missing');
   assert.ok(incomplete.gapCount >= 1);
 

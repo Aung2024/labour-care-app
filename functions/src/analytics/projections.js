@@ -607,6 +607,7 @@ function buildKmcProjections(facts, options) {
     const correctedWeeks = correctedGestationalWeeks({
       gestationalWeeks: baby.gestationalWeeks,
       birthDate: birth,
+      edd,
       asOf
     })
     const readiness = deriveReadiness({

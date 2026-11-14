@@ -2965,33 +2965,19 @@
         option.classList.toggle('active', !!(input && input.checked));
       });
 
-      const motherUnavailableChecked = !!document.getElementById('motherUnavailable')?.checked;
       ['birthDatePicker', 'babySex'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.required = babyMode;
       });
-      const motherUnavailable = document.getElementById('motherUnavailable');
-      const motherUnavailableReason = document.getElementById('motherUnavailableReason');
-      const guardianCheckbox = document.getElementById('babyHasGuardian');
-      const guardianFields = document.getElementById('guardianFields');
-      const guardianName = document.getElementById('guardianName');
       const ageInput = document.getElementById('age');
       if (ageInput) {
         ageInput.required = !babyMode;
         ageInput.readOnly = babyMode;
       }
-      if (motherUnavailable) motherUnavailable.required = false;
       ['motherName'].forEach(function (id) {
         const el = document.getElementById(id);
-        if (el) el.required = babyMode && !motherUnavailableChecked;
-      });
-      if (motherUnavailableReason) {
-        motherUnavailableReason.required = babyMode && motherUnavailableChecked;
-        motherUnavailableReason.style.display = babyMode && motherUnavailableChecked ? 'block' : 'none';
+        if (el) el.required = babyMode;
       }
-      const hasGuardian = babyMode && !!guardianCheckbox?.checked;
-      if (guardianFields) guardianFields.style.display = hasGuardian ? '' : 'none';
-      if (guardianName) guardianName.required = hasGuardian;
       ['gravidaSelect', 'parityPrimarySelect'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.required = !babyMode;
@@ -3193,17 +3179,6 @@
           evaluateAgeRisk();
         });
       });
-      const motherUnavailableInput = document.getElementById('motherUnavailable');
-      if (motherUnavailableInput) {
-        motherUnavailableInput.addEventListener('change', function () {
-          motherReviewConfirmed = false;
-          if (motherUnavailableInput.checked) {
-            clearMotherSelection();
-            if (guardianCheckbox) guardianCheckbox.checked = false;
-          }
-          updatePatientTypeFields();
-        });
-      }
       const motherNameInput = document.getElementById('motherName');
       if (motherNameInput) {
         motherNameInput.addEventListener('input', function () {
@@ -3212,17 +3187,6 @@
           scheduleLiveDuplicateCheck();
         });
         motherNameInput.addEventListener('change', scheduleLiveDuplicateCheck);
-      }
-      const guardianCheckbox = document.getElementById('babyHasGuardian');
-      if (guardianCheckbox) {
-        guardianCheckbox.addEventListener('change', function () {
-          if (guardianCheckbox.checked && motherUnavailableInput) {
-            motherUnavailableInput.checked = false;
-            const reason = document.getElementById('motherUnavailableReason');
-            if (reason) reason.value = '';
-          }
-          updatePatientTypeFields();
-        });
       }
       updatePatientTypeFields();
       
@@ -3549,21 +3513,18 @@
         return;
       }
 
-      const motherUnavailable = data.motherUnavailable === 'true';
       if (registeringBaby && (!getBirthDateFromParts() || !data.babySex ||
-        (!data.motherName && !motherUnavailable) ||
-        (data.babyHasGuardian === 'true' && !(data.guardianName || '').trim()) ||
-        (motherUnavailable && !(data.motherUnavailableReason || '').trim()))) {
+        !data.motherName)) {
         messageDiv.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' +
           (currentLanguage === 'mm'
-            ? 'ကလေးအတွက် မွေးဖွားရက်၊ ကျား/မနှင့် မိခင်အမည် ဖြည့်ပါ။ မိခင်မသိပါက အကြောင်းပြချက် ဖြည့်ပါ။'
-            : 'Baby patients require birth date, sex, and mother information. If the mother is unknown, enter a reason.') + '</div>';
+            ? 'ကလေးအတွက် မွေးဖွားရက်၊ ကျား/မနှင့် မိခင် သို့မဟုတ် အုပ်ထိန်းသူအမည် ဖြည့်ပါ။'
+            : 'Baby patients require birth date, sex, and mother or guardian name.') + '</div>';
         return;
       }
 
-      const motherCheckDeferred = registeringBaby && !motherUnavailable &&
+      const motherCheckDeferred = registeringBaby &&
         !data.motherPatientId && isOfflineNow();
-      if (registeringBaby && !motherUnavailable && !isOfflineNow() && window.BabyPatientUtils) {
+      if (registeringBaby && !isOfflineNow() && window.BabyPatientUtils) {
         const existingMothers = await BabyPatientUtils.findExistingMotherPatients(
           firebase.firestore(),
           data.motherName,
@@ -3790,18 +3751,7 @@
           mother_link_status: registeringBaby
             ? (linkedMotherPatientId
               ? 'linked'
-              : (motherUnavailable
-                ? 'unknown'
-                : (motherCheckDeferred ? 'pending_review' : 'not_registered')))
-            : null,
-          mother_unavailable_reason: registeringBaby && motherUnavailable
-            ? (data.motherUnavailableReason || null)
-            : null,
-          guardian_name: registeringBaby && data.babyHasGuardian === 'true'
-            ? (data.guardianName || null)
-            : null,
-          guardian_relationship: registeringBaby && data.babyHasGuardian === 'true'
-            ? (data.guardianRelationship || null)
+              : (motherCheckDeferred ? 'pending_review' : 'not_registered'))
             : null,
           date_of_birth: babyDob,
           birth_time: babyBirthTime,
@@ -3925,16 +3875,6 @@
           const motherTypeInput = document.getElementById('patientTypeMother');
           if (motherTypeInput) motherTypeInput.checked = true;
           clearMotherSelection();
-          const motherUnavailableInput = document.getElementById('motherUnavailable');
-          const motherUnavailableReason = document.getElementById('motherUnavailableReason');
-          const guardianCheckbox = document.getElementById('babyHasGuardian');
-          const guardianName = document.getElementById('guardianName');
-          const guardianRelationship = document.getElementById('guardianRelationship');
-          if (motherUnavailableInput) motherUnavailableInput.checked = false;
-          if (motherUnavailableReason) motherUnavailableReason.value = '';
-          if (guardianCheckbox) guardianCheckbox.checked = false;
-          if (guardianName) guardianName.value = '';
-          if (guardianRelationship) guardianRelationship.value = '';
           motherReviewConfirmed = false;
           closeExistingMotherAlert();
           updatePatientTypeFields();
@@ -4164,37 +4104,10 @@
                   <input type="hidden" name="motherPatientId" id="motherPatientId">
                   <input type="hidden" name="motherPatientSerial" id="motherPatientSerial">
                   <label for="motherName" class="form-label">
-                    <i class="fas fa-person-breastfeeding"></i><span class="lang-text" data-en="Mother Name" data-mm="မိခင်အမည်">Mother Name</span>
+                    <i class="fas fa-person-breastfeeding"></i><span class="lang-text" data-en="Mother Name (Guardian)" data-mm="မိခင် အမည် (အုပ်ထိန်းသူ)">Mother Name (Guardian)</span>
                     <span class="text-danger baby-required-marker" aria-hidden="true">*</span>
                   </label>
                   <input type="text" name="motherName" id="motherName" class="form-control">
-                </div>
-              </div>
-            </div>
-            <div class="form-group mt-2">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="motherUnavailable" name="motherUnavailable" value="true">
-                <label class="form-check-label lang-text" for="motherUnavailable" data-en="Mother unknown" data-mm="မိခင် မသိပါ">Mother unknown</label>
-              </div>
-              <textarea id="motherUnavailableReason" name="motherUnavailableReason" class="form-control mt-2" rows="2" style="display: none;" aria-label="Reason"></textarea>
-            </div>
-            <div class="form-group mt-2">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="babyHasGuardian" name="babyHasGuardian" value="true">
-                <label class="form-check-label lang-text" for="babyHasGuardian" data-en="Baby came with another guardian" data-mm="ကလေးကို အခြားအုပ်ထိန်းသူနှင့် လာရောက်သည်">Baby came with another guardian</label>
-              </div>
-              <div id="guardianFields" class="row g-2 mt-1" style="display: none;">
-                <div class="col-md-4">
-                  <label for="guardianName" class="form-label">
-                    <span class="lang-text" data-en="Guardian name" data-mm="အုပ်ထိန်းသူအမည်">Guardian name</span>
-                  </label>
-                  <input type="text" name="guardianName" id="guardianName" class="form-control">
-                </div>
-                <div class="col-md-4">
-                  <label for="guardianRelationship" class="form-label">
-                    <span class="lang-text" data-en="Relationship" data-mm="တော်စပ်ပုံ">Relationship</span>
-                  </label>
-                  <input type="text" name="guardianRelationship" id="guardianRelationship" class="form-control">
                 </div>
               </div>
             </div>

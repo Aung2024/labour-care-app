@@ -1099,12 +1099,12 @@
 
     ['head_circumference_cm', 'birth_length_cm'].forEach(function (key) {
       var measure = groupFromVisits({
-        key: key, module: 'newborn', mode: 'once', required: true,
+        key: key, module: 'newborn', mode: 'once', required: false, optional: true, counts: false,
         labelEn: newbornField(key).labelEn, labelMm: newbornField(key).labelMm,
         hintEn: 'This stays the same on every visit. Enter the centimetres once, or choose Not measured.',
         hintMm: 'အကြိမ်အားလုံးတွင် တူညီရမည်။ စင်တီမီတာကို တစ်ကြိမ်သာ ဖြည့်ပါ။ မတိုင်းရသေးလျှင် Not Measured ရွေးပါ။'
       }, visits, newbornField(key));
-      measure.status = measure.filledVisits ? 'ok' : 'missing';
+      measure.status = measure.filledVisits ? 'ok' : 'optional';
       category.groups.push(measure);
     });
 
