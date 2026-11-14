@@ -652,7 +652,7 @@ const applyHmisMetrics = (metrics, facts, period, context) => {
     metrics.hmis.newAncUnder24Months = 1
   }
   if (context.actualNoteInPeriod && delivery) {
-    const skilled = ['skilled_birth_attendant', 'amw', 'self'].includes(delivery.provider)
+    const skilled = ['skilled_birth_attendant', 'amw'].includes(delivery.provider)
     if (skilled && delivery.place === 'Public Health Facility') {
       metrics.hmis.publicSkilledDeliveries = 1
     }

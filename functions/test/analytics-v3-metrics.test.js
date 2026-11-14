@@ -233,6 +233,7 @@ test('Delivery Notes are authoritative and skilled means SBA or AMW only', () =>
         maternalCondition: 'alive',
         babies: [{
           birthTime: '2026-08-10T10:00:00+06:30',
+          sex: 'male',
           outcome: 'alive',
           birthWeightGram: 2499
         }]
@@ -253,6 +254,7 @@ test('Delivery Notes are authoritative and skilled means SBA or AMW only', () =>
   assert.equal(metrics.delivery.institutionalSkilled, 0)
   assert.equal(metrics.delivery.places.Home, 1)
   assert.equal(metrics.newborn.lowBirthWeight, 1)
+  assert.equal(metrics.hmis.skilledAliveMale, 0)
 
   facts.deliveryNotes.data.deliveryDetails.birthProvider = 'amw'
   const amw = calculateV3Metrics(facts, '2026-08')

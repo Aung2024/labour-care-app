@@ -239,6 +239,7 @@
     }
 
     var completedOperations = 0;
+    var affectedBabyIds = [];
     try {
       // Every Firestore batch is capped at 500 writes; each merge adds at most one audit write.
       for (var start = 0; start < mergeOperations.length; start += MAX_BATCH_OPERATIONS) {
@@ -256,7 +257,7 @@
 
       for (var i = 0; i < deliveryOperations.length; i++) {
         var operation = deliveryOperations[i];
-        await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
+        var deliveryResult = await root.DeliveryNotesUtils.saveDeliveryNotes(patient.id, operation.notes, user.uid, {
           allowUpdate: operation.allowUpdate,
           approvalId: rules.RULE_VERSION,
           motherData: patient,
@@ -265,6 +266,9 @@
             retroactiveUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
           }
         });
+        if (deliveryResult && Array.isArray(deliveryResult.babyIds)) {
+          affectedBabyIds = affectedBabyIds.concat(deliveryResult.babyIds);
+        }
         if (operation.audit && operation.audit.changes.length) {
           await db.collection('audit_logs').add(auditEntry(user, patient.id, operation.audit));
         }
@@ -294,6 +298,9 @@
     }
     if (root.AnalyticsRefreshQueue) {
       await root.AnalyticsRefreshQueue.requestSafely(patient.id, 'retroactive_backfill');
+      await Promise.all(Array.from(new Set(affectedBabyIds)).map(function (babyId) {
+        return root.AnalyticsRefreshQueue.requestSafely(babyId, 'retroactive_backfill_baby');
+      }));
     }
     // Delivery Notes also create babies and sync mother fields, so only that path needs a server re-read.
     if (deliveryOperations.length) {

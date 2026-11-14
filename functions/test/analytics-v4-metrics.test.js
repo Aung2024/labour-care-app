@@ -66,6 +66,21 @@ test('deduplicates copied external ANC visits', () => {
   assert.equal(visits.length, 1)
 })
 
+test('deduplicates repeated ANC documents with the same visit number', () => {
+  const metrics = calculateV4Metrics(facts({
+    antenatalVisits: [
+      { id: 'duplicate-a', visitDate: '2026-01-05', visitNumber: 1 },
+      { id: 'duplicate-b', visitDate: '2026-01-05', visit_number: 1 },
+      { id: 'visit-2', visitDate: '2026-01-20', visitNumber: 2 }
+    ]
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.anc.services, 2)
+  assert.equal(metrics.monthlyReport.ancVisits, 2)
+})
+
 test('early ANC supports LMP and legacy gestational-age fields', () => {
   const metrics = calculateV4Metrics(facts({
     profile: {
@@ -398,6 +413,25 @@ test('normalizes structured Delivery Note maternal outcomes', () => {
     }
   }))
   assert.equal(delivery.maternalOutcome, 'alive')
+})
+
+test('monthly report does not classify self-delivery as skilled attendance', () => {
+  const metrics = calculateV4Metrics(facts({
+    deliveryNotes: {
+      deliveryDetails: {
+        deliveryDate: '2026-01-19',
+        birthPlace: 'health_facility_subfacility',
+        birthProvider: 'self',
+        babies: [{ sex: 'female', outcome: 'alive', birthWeightGram: 3000 }]
+      }
+    }
+  }), {
+    startDate: '2026-01-01',
+    endDate: '2026-01-31'
+  })
+  assert.equal(metrics.monthlyReport.aliveFemale, 1)
+  assert.equal(metrics.monthlyReport.institutionalSkilledDeliveries, 0)
+  assert.equal(metrics.monthlyReport.skilledAliveFemale, 0)
 })
 
 test('accepts legacy delivery date aliases for range aggregation', () => {

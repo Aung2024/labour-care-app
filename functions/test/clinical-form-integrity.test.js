@@ -532,6 +532,20 @@ test('status manager treats delivery notes as postnatal activity', () => {
   assert.match(list, /StatusManager\.STATUSES\.ANTENATAL/);
 });
 
+test('monthly report uses calendar months and one clear Page 6 total', () => {
+  const page = readAppFile('monthly-report.html');
+  const renderer = readAppFile('js/monthly-report.js');
+  const functionsSource = readAppFile('functions/src/analytics/v4-functions.js');
+  assert.match(page, /new Date\(year, month - 1, 1\)/);
+  assert.match(page, /new Date\(year, month, 0\)/);
+  assert.doesNotMatch(page, /yearStartDate/);
+  assert.doesNotMatch(page, /yearToDate/);
+  assert.match(renderer, /Number\(male \|\| 0\) \+ Number\(female \|\| 0\)/);
+  assert.match(renderer, /အစီရင်ခံကာလ စုစုပေါင်း/);
+  assert.doesNotMatch(renderer, /<th colspan="2">ဌာန<\/th><th colspan="2">စုစုပေါင်း<\/th>/);
+  assert.match(functionsSource, /dashboardV4DailyRefreshWorker = onSchedule\(\{\s*schedule: 'every 5 minutes'/);
+});
+
 test('HRT SMS lets midwives choose templates, write custom text, and save a phone', () => {
   const source = readAppFile('high-risk-tracking.html');
   assert.match(source, /id="hrtSmsPhoneInput"/);
@@ -731,4 +745,6 @@ test('Back Fill explains nested baby requirements and Complete saves unsaved sec
   assert.match(completeSource, /var requests = selectedRequests\(\)/);
   assert.match(completeSource, /validateBeforeSave\(bundle, requests\)/);
   assert.doesNotMatch(completeSource, /saveSection\(/);
+  const service = readAppFile('js/retroactive-data-service.js');
+  assert.match(service, /requestSafely\(babyId, 'retroactive_backfill_baby'\)/);
 });

@@ -248,7 +248,7 @@ const clearDashboardV4Cache = async (database = db()) => {
 }
 
 const dashboardV4DailyRefreshWorker = onSchedule({
-  schedule: 'every 24 hours',
+  schedule: 'every 5 minutes',
   timeZone: 'Asia/Yangon',
   region: REGION,
   timeoutSeconds: 540,

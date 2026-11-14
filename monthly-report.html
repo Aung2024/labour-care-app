@@ -119,7 +119,7 @@
 
       function paint() {
         document.getElementById('monthlyForms').innerHTML =
-          MonthlyReport.renderPages(metrics.report || {}, facilityName(), metrics.yearToDate || {})
+          MonthlyReport.renderPages(metrics.report || {}, facilityName())
         var head = document.querySelector('#page-1 .monthly-paper-head')
         if (head) head.innerHTML = paperHead()
         var tabs = document.getElementById('monthlyTabs')
@@ -143,18 +143,16 @@
           return {
             mode: 'all_time',
             startDate: '1900-01-01',
-            endDate: dateKey(now),
-            yearStartDate: '1900-01-01'
+            endDate: dateKey(now)
           }
         }
         var year = Number(yearSelect.value)
         var month = Number(monthSelect.value)
-        var reportEnd = new Date(year, month - 1, 20)
-        var reportStart = new Date(year, month - 2, 21)
+        var reportStart = new Date(year, month - 1, 1)
+        var reportEnd = new Date(year, month, 0)
         return {
           startDate: dateKey(reportStart),
-          endDate: dateKey(reportEnd),
-          yearStartDate: year + '-01-01'
+          endDate: dateKey(reportEnd)
         }
       }
 
@@ -181,19 +179,13 @@
               trendMode: 'month'
             })
           }
-          var results = period.mode === 'all_time'
-            ? await Promise.all([query(period.startDate, period.endDate)])
-            : await Promise.all([
-              query(period.startDate, period.endDate),
-              query(period.yearStartDate, period.endDate)
-            ])
+          var result = await query(period.startDate, period.endDate)
           metrics = {
-            report: results[0].metrics || {},
-            yearToDate: (results[1] || results[0]).metrics || {}
+            report: result.metrics || {}
           }
         } catch (error) {
           console.warn('Monthly report summary is not available yet:', error)
-          metrics = { report: {}, yearToDate: {} }
+          metrics = { report: {} }
         } finally {
           applyButton.disabled = false
           applyButton.removeAttribute('aria-busy')

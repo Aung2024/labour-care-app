@@ -361,8 +361,22 @@ const externalAncVisits = (visits) => {
 }
 
 const allAncVisits = (facts) => {
-  const own = records(facts.antenatalVisits)
-    .map((visit, index) => ({ ...visit, id: recordId(visit, `anc-${index}`), external: false }))
+  const ownByVisit = new Map()
+  records(facts.antenatalVisits).forEach((visit, index) => {
+    const visitNumber = numericOrNull(visit.visitNumber || visit.visit_number)
+    const id = recordId(visit, `anc-${index}`)
+    const key = visitNumber && visitNumber > 0
+      ? `number-${visitNumber}`
+      : `record-${id}`
+    const existing = ownByVisit.get(key)
+    ownByVisit.set(key, {
+      ...(existing || {}),
+      ...visit,
+      id,
+      external: false
+    })
+  })
+  const own = Array.from(ownByVisit.values())
   return sorted(own.concat(externalAncVisits(facts.antenatalVisits)), ['visitDate', 'visit_date', 'createdAt'])
 }
 
@@ -604,7 +618,7 @@ const buildMonthlyReportMetrics = (facts, period, metrics, delivery, deliveryInP
       ? 'public'
       : delivery.place === 'Private Facility' ? 'private' : ''
     if (placeKey) report[`${placeKey}${outcomeKey}${sex}`] += 1
-    const skilled = ['self', 'skilled_birth_attendant', 'amw'].includes(delivery.provider)
+    const skilled = ['skilled_birth_attendant', 'amw'].includes(delivery.provider)
     if (skilled) report[`skilled${outcomeKey}${sex}`] += 1
     if (Number(baby.gestationalWeek) > 0 && Number(baby.gestationalWeek) < 37) {
       report[`preterm${outcomeKey}${sex}`] += 1

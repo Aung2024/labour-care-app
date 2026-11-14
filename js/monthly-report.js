@@ -277,12 +277,15 @@
         var hasSexBreakdown = Boolean(row[2])
         var male = hasSexBreakdown ? value('monthlyReport.' + row[1]) : ''
         var female = hasSexBreakdown ? value('monthlyReport.' + row[2]) : ''
-        var total = hasSexBreakdown ? male : (row[1] ? value('monthlyReport.' + row[1]) : '')
+        var total = hasSexBreakdown
+          ? String(Number(male || 0) + Number(female || 0))
+          : (row[1] ? value('monthlyReport.' + row[1]) : '')
         return '<tr><td>' + (index + 1) + '</td><td class="monthly-label">' + row[0] +
-          '</td><td>' + male + '</td><td>' + female + '</td><td>' + total + '</td><td>' + total + '</td></tr>'
+          '</td><td>' + male + '</td><td>' + female + '</td><td class="monthly-total">' + total + '</td></tr>'
       }).join('')
-    return '<table><thead><tr><th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th><th colspan="2">ဌာန</th><th colspan="2">စုစုပေါင်း</th></tr>' +
-      '<tr><th></th><th></th><th>ကျား</th><th>မ</th><th>ကျား</th><th>မ</th></tr></thead><tbody>' + body + '</tbody></table>'
+    return '<table><thead><tr><th>စဉ်</th><th>လုပ်ဆောင်ချက်အမျိုးအစား</th>' +
+      '<th>ကျား</th><th>မ</th><th class="monthly-total">အစီရင်ခံကာလ စုစုပေါင်း</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>'
   }
 
   function pageSeven() {
@@ -301,12 +304,12 @@
       '<tr><th></th><th></th><th colspan="3">ဌာန</th><th colspan="3">စုစုပေါင်း</th></tr></thead><tbody>' + body + '</tbody></table>'
   }
 
-  function renderPages(metrics, facilityName, yearToDate) {
+  function renderPages(metrics, facilityName) {
     return PAGES.map(function (page, index) {
       var inner
       if (page.layout === 'disease') inner = diseaseTable()
       else if (page.layout === 'simple') inner = pageFive()
-      else if (page.layout === 'vital') inner = pageSix(yearToDate || metrics)
+      else if (page.layout === 'vital') inner = pageSix(metrics)
       else if (page.layout === 'education') inner = pageSeven()
       else {
         var body = page.rows.map(function (item) {
