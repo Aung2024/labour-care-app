@@ -620,7 +620,7 @@
     await firebase.firestore().runTransaction(async function (transaction) {
       var existing = await transaction.get(ref);
       if (existing.exists && !options.allowUpdate) {
-        var error = new Error('Delivery Notes already exist. Use the supervised edit approval workflow to make a correction.');
+        var error = new Error('Delivery Notes already exist. Use Save Edits to make a correction.');
         error.code = 'delivery-notes/already-exists';
         throw error;
       }

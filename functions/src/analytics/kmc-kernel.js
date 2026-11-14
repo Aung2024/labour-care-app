@@ -169,7 +169,8 @@ const deriveReadiness = ({
   return {
     ready: Boolean((lowBirthWeight || preterm) &&
       weightReady && gestationalAgeReady && feedingReady && temperatureReady),
-    correctedWeeks: Number.isFinite(Number(correctedWeeks)) ? Number(correctedWeeks) : null,
+    correctedWeeks: correctedWeeks != null && Number.isFinite(Number(correctedWeeks))
+      ? Number(correctedWeeks) : null,
     weightReady,
     gestationalAgeReady,
     feedingReady,

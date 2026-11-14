@@ -1241,7 +1241,6 @@
     const deliveryEditParams = new URLSearchParams(window.location.search);
     const isDeliveryEditMode = deliveryEditParams.get('editDelivery') === '1';
     const openDeliveryOnLoad = deliveryEditParams.get('openDelivery') === '1';
-    const deliveryEditApprovalId = deliveryEditParams.get('editApprovalId') || '';
 
     function getPilotCachedUser() {
       const uid = localStorage.getItem('uid');
@@ -1285,6 +1284,20 @@
     }
 
     function refreshHubBackground(patientId) {
+      if (window.StatusManager) {
+        StatusManager.reconcilePostnatalNewbornStatus(patientId, {
+          reason: 'Delivery Note status reconciliation'
+        }).then(function () {
+          return StatusManager.getPatientStatus(patientId);
+        }).then(function (status) {
+          if (!status || !selectedPatient) return;
+          selectedPatient.status = status;
+          sessionStorage.setItem('selectedPatientData', JSON.stringify(selectedPatient));
+          displayPatientInfo();
+        }).catch(function (error) {
+          console.warn('Delivery Note status reconciliation failed:', error);
+        });
+      }
       loadLatestAncForRiskDisplay(patientId).catch(function () {});
       loadCareStats().catch(function () {});
       ensureBabyPatientsFromSavedDeliveryNotes().catch(function () {});
@@ -2475,7 +2488,7 @@
     }
 
     function isDeliveryNotesLocked() {
-      return !!loadedDeliveryNotes && !isDeliveryEditMode;
+      return false;
     }
 
     function applyDeliveryNotesFormState() {
@@ -2486,11 +2499,14 @@
       const banner = document.getElementById('deliveryNotesLockedBanner');
       if (banner) banner.style.display = locked ? 'block' : 'none';
       const editBanner = document.getElementById('deliveryNotesEditBanner');
-      if (editBanner) editBanner.style.display = isDeliveryEditMode ? 'block' : 'none';
+      if (editBanner) editBanner.style.display = 'none';
       const saveBtn = document.getElementById('deliverySaveBtn');
       if (saveBtn) saveBtn.style.display = locked ? 'none' : '';
-      const correctionBtn = document.getElementById('deliveryCorrectionBtn');
-      if (correctionBtn) correctionBtn.style.display = (loadedDeliveryNotes && !isDeliveryEditMode) ? '' : 'none';
+      const saveLabel = saveBtn && saveBtn.querySelector('.lang-text');
+      if (saveLabel) {
+        saveLabel.dataset.en = loadedDeliveryNotes ? 'Save Edits' : 'Save Delivery Notes';
+        saveLabel.dataset.mm = loadedDeliveryNotes ? 'ပြင်ဆင်ပြီး သိမ်းဆည်းရန်' : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းဆည်းရန်';
+      }
       modal.querySelectorAll('input, select, textarea, button.delivery-remove-btn, #deliveryAddBabyBtn').forEach(function (el) {
         if (!el) return;
         if (el.id === 'deliveryGestationalWeek' || el.id === 'deliveryGaWeeks' || el.id === 'deliveryGaDays') {
@@ -2766,11 +2782,6 @@
       renderDeliveryBabyRows(babies);
     }
 
-    function openDeliveryCorrectionWorkflow() {
-      if (!selectedPatient || !selectedPatient.id) return;
-      AppNavigation.open('visit-edit.html?type=delivery&patient=' + encodeURIComponent(selectedPatient.id));
-    }
-
     function removeDeliveryBabyRow(index) {
       const babies = collectDeliveryBabies();
       babies.splice(index, 1);
@@ -2779,15 +2790,6 @@
 
     async function saveThirdStageData() {
       if (window.SubmitGuard && SubmitGuard.isLocked('delivery-notes-save')) return;
-      if (isDeliveryNotesLocked()) {
-        showHubNotice(
-          currentLanguage === 'en'
-            ? 'Delivery Notes are already saved. Request a supervised correction to edit.'
-            : 'မွေးဖွားခြင်းမှတ်တမ်း သိမ်းပြီးပါပြီ။ ပြင်ဆင်ရန် ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းပါ။',
-          currentLanguage === 'mm' ? 'သိမ်းပြီး' : 'Already saved'
-        );
-        return;
-      }
       if (!selectedPatient || !selectedPatient.id) {
         alert(currentLanguage === 'en' ? 'No patient selected' : 'လူနာ ရွေးချယ်ထားခြင်း မရှိပါ');
         return;
@@ -2815,22 +2817,6 @@
 
         const oxytocinGiven = document.getElementById('thirdStageOxytocin').value === 'yes';
         const controlledCordTraction = document.getElementById('thirdStageCCT').value === 'yes';
-        let correctionApproval = null;
-        if (isDeliveryEditMode) {
-          if (!deliveryEditApprovalId || !window.JointCareUtils) {
-            throw new Error('An approved supervised edit request is required for Delivery Notes corrections.');
-          }
-          correctionApproval = await JointCareUtils.findUnusedApproval(
-            patientId,
-            'delivery',
-            DeliveryNotesUtils.DELIVERY_DOC_ID,
-            currentUser.uid
-          );
-          if (!correctionApproval || correctionApproval.id !== deliveryEditApprovalId) {
-            throw new Error('This Delivery Notes edit approval is invalid, expired, or already used.');
-          }
-        }
-
         const deliveryNotesData = {
           thirdStage: {
             oxytocinGiven: oxytocinGiven,
@@ -2863,17 +2849,15 @@
           currentUser.uid,
           {
             motherData: selectedPatient,
-            allowUpdate: !!correctionApproval,
-            approvalId: correctionApproval ? correctionApproval.id : null
+            allowUpdate: !!loadedDeliveryNotes
           }
         );
-        if (correctionApproval) {
-          await JointCareUtils.markApprovalUsed(correctionApproval.id, currentUser.uid);
-          await JointCareUtils.logJointCareEvent('delivery_notes_corrected', currentUser.uid, patientId, {
-            approvalId: correctionApproval.id,
-            before: loadedDeliveryNotes,
-            after: deliveryNotesData
-          });
+        if (window.StatusManager) {
+          await StatusManager.checkAndUpdateToPostnatalCare(
+            patientId,
+            loadedDeliveryNotes ? 'Delivery Notes edited' : 'Delivery Notes recorded',
+            { assumeActivityRecorded: true }
+          );
         }
         if (window.AnalyticsRefreshQueue) {
           await AnalyticsRefreshQueue.requestSafely(patientId, 'delivery_notes');
@@ -2959,16 +2943,6 @@
       </div>
       <div class="modal-body">
         <div id="deliveryInfectionAlert" style="display:none;"></div>
-        <div id="deliveryNotesLockedBanner" class="delivery-locked-banner lang-text"
-          data-en="Delivery Notes are saved and locked. Request a supervised correction if a change is needed."
-          data-mm="မွေးဖွားခြင်းမှတ်တမ်း သိမ်းပြီး ပိတ်ထားသည်။ ပြင်ဆင်ရန် ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းပါ။">
-          Delivery Notes are saved and locked. Request a supervised correction if a change is needed.
-        </div>
-        <div id="deliveryNotesEditBanner" class="delivery-edit-banner lang-text"
-          data-en="Supervised correction is approved. Review the fields and save to apply the change."
-          data-mm="ကြီးကြပ်ပြင်ဆင်ခွင့် ရပြီး ပြင်နိုင်ပါသည်။ စစ်ဆေးပြီး သိမ်းမှ အတည်ဖြစ်ပါမည်။">
-          Supervised correction is approved. Review the fields and save to apply the change.
-        </div>
         <section class="delivery-section">
           <h5 class="delivery-section-title"><i class="fas fa-clipboard-check"></i><span class="lang-text" data-en="Management of Labour Third Stage" data-mm="မွေးဖွားခြင်း တတိယအဆင့် စီမံဆောင်ရွက်ခြင်း">Management of Labour Third Stage</span></h5>
           <div class="delivery-field mb-3">
@@ -3079,9 +3053,6 @@
         </section>
       </div>
       <div class="modal-footer">
-        <button type="button" id="deliveryCorrectionBtn" class="btn btn-warning" style="display:none;" onclick="openDeliveryCorrectionWorkflow()">
-          <i class="fas fa-user-shield me-2"></i><span class="lang-text" data-en="Request supervised correction" data-mm="ကြီးကြပ်ပြင်ဆင်ခွင့် တောင်းရန်">Request supervised correction</span>
-        </button>
         <button type="button" class="btn btn-secondary" onclick="closeThirdStageModal()">
           <span class="lang-text" data-en="Close" data-mm="ပိတ်ရန်">Close</span>
         </button>

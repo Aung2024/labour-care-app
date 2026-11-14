@@ -79,7 +79,7 @@ test('newborn report hides KMC table and cause of death unless death is recorded
   assert.match(source, /showCauseOfDeath/);
 });
 
-test('delivery notes lock after save and reuse ANC gestational age', () => {
+test('delivery notes save directly after recording and reuse ANC gestational age', () => {
   const source = readAppFile('patient-care-hub.html');
   assert.match(source, /function isDeliveryNotesLocked/);
   assert.match(source, /function applyDeliveryGestationalWeek/);
@@ -94,6 +94,9 @@ test('delivery notes lock after save and reuse ANC gestational age', () => {
   assert.match(source, /id="thirdStageOxytocin"[^>]*required/);
   assert.match(source, /id="thirdStageCCT"[^>]*required/);
   assert.match(source, /data-field="causeOfDeath"/);
+  assert.match(source, /allowUpdate: !!loadedDeliveryNotes/);
+  assert.match(source, /saveLabel\.dataset\.en = loadedDeliveryNotes \? 'Save Edits'/);
+  assert.doesNotMatch(source, /Request supervised correction/);
   const utils = readAppFile('js/baby-patient-utils.js');
   assert.match(utils, /copyMotherScopeFields/);
   assert.match(utils, /fetchLatestAncContext/);
@@ -508,6 +511,8 @@ test('new vaccine page can record multiple vaccines at once', () => {
 test('status manager treats delivery notes as postnatal activity', () => {
   const source = readAppFile('js/status-manager.js');
   assert.match(source, /collection\('records'\)\.doc\('deliveryNotes'\)/);
+  const hub = readAppFile('patient-care-hub.html');
+  assert.match(hub, /reconcilePostnatalNewbornStatus\(patientId/);
 });
 
 test('HRT SMS lets midwives choose templates, write custom text, and save a phone', () => {
@@ -593,6 +598,8 @@ test('patient registration uses explicit type selection and guardian-aware baby 
   assert.match(source, /name="patientType" id="patientTypeMother"/);
   assert.match(source, /name="patientType" id="patientTypeBaby"/);
   assert.match(source, /return document\.querySelector\('input\[name="patientType"\]:checked'\)\?\.value === 'baby'/);
+  assert.match(source, /function handlePatientTypeChange\(\)/);
+  assert.match(source, /option\.addEventListener\('click'/);
   assert.doesNotMatch(source, /id="motherPatientSearch"/);
   assert.match(source, /id="motherPatientId"/);
   assert.match(source, /findExistingMotherPatients/);

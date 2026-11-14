@@ -161,7 +161,7 @@
     <div class="header-inner">
       <div>
         <h1 id="pageTitle">Edit Visits</h1>
-        <div class="sub" id="pageSubtitle">Edit records you created within 7 days, or request TMO approval.</div>
+        <div class="sub" id="pageSubtitle">Edit records you created within 7 days. Delivery Notes can be saved directly.</div>
       </div>
       <a href="patient-care-hub.html" class="btn-soft"><i class="fas fa-arrow-left"></i><span>Hub</span></a>
     </div>
@@ -278,10 +278,12 @@
         const ownRecord = creator === currentUser.uid ||
           (visitType === 'delivery' && !creator && JointCareUtils.isPatientOwner(currentPatient, currentUser.uid));
         const withinWindow = visitType !== 'delivery' && JointCareUtils.canUserEditVisitNow(visit, currentUser.uid);
-        const approval = ownRecord && !withinWindow
+        const approval = visitType !== 'delivery' && ownRecord && !withinWindow
           ? await JointCareUtils.findUnusedApproval(currentPatient.id, visitType, row.id, currentUser.uid)
           : null;
-        const canEdit = ownRecord && (withinWindow || approval);
+        const canEdit = visitType === 'delivery'
+          ? ownRecord
+          : ownRecord && (withinWindow || approval);
         const card = document.createElement('div');
         card.className = 'visit-card';
         card.innerHTML = `
@@ -302,7 +304,7 @@
             ? '<i class="fas fa-edit"></i> Edit Delivery Notes'
             : '<i class="fas fa-edit"></i> Edit Visit';
           actions.appendChild(link);
-        } else if (ownRecord) {
+        } else if (ownRecord && visitType !== 'delivery') {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'btn-action btn-request';
