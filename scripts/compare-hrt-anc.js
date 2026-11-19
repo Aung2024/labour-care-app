@@ -22,6 +22,8 @@ const { FacilityConfig } = require(path.join(ROOT, 'js', 'facility-config.js'));
 const PROJECT_ID = 'mnch-1cbda';
 const PILOT_TOWNSHIPS = ['Pyinmana', 'Tatkon'];
 const EARLY_ANC_MAX_DAYS = 12 * 7;
+const EXTRACT_DATE = process.env.EXTRACT_DATE ||
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Yangon' }).format(new Date());
 
 function townshipForCode(code) {
   const facility = FacilityConfig.getFacilityByCode(String(code || '').trim());
@@ -256,7 +258,7 @@ async function main() {
     });
 
     const output = {
-      extractedAt: '2026-10-15',
+      extractedAt: EXTRACT_DATE,
       scope: 'ANC clients created by Pyinmana and Tatkon midwives. HRT means the high-risk box was ticked on at least one ANC visit.',
       mothers: mothers.size,
       ancClients: motherIds.length,
@@ -265,7 +267,7 @@ async function main() {
         other: summarize(pair.other),
       }])),
     };
-    const jsonPath = path.join(ROOT, 'docs', 'hrt-vs-anc-2026-10-15.json');
+    const jsonPath = path.join(ROOT, 'docs', `hrt-vs-anc-${EXTRACT_DATE}.json`);
     fs.writeFileSync(jsonPath, JSON.stringify(output, null, 2));
     console.log(JSON.stringify(output.groups.all, null, 2));
     console.log('Wrote', jsonPath);
